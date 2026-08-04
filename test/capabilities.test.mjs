@@ -1640,6 +1640,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     `echo "$@" >> ${tmuxLog}`,
     'cmd="$1"',
     'case "$cmd" in',
+    "  display-message) echo /tmp/oas-test-fake.sock ;;",
     "  new-window)",
     `    while [ $# -gt 0 ]; do if [ "$1" = "-n" ]; then echo "$2" >> ${tmuxWins}; fi; shift; done ;;`,
     "  kill-window)",
@@ -3650,7 +3651,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   const home = join(root, "dev", "instances", "dev-retry");
   try {
     assert.throws(
-      () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-retry", launch: false }),
+      () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-retry", work: "worktree", launch: false }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /RETAINED/.test(e.message),
     );
     assert.equal(existsSync(remote), true, "external state exists and cleanup has not succeeded");
@@ -4563,15 +4564,11 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   rmSync(base, { recursive: true, force: true });
 });
 
-test("self-retire is NOT turned into an owner cleanup quarantine by the ordinary blocking path", () => {
-  // The blocking path above must not reach self-retire. A self-retiring instance
-  // IS the caller and cannot hold the authority to complete owner cleanup, so
-  // retaining and quarantining its home would change a path that change is not
-  // scoped to touch. This regression exists because the first draft did exactly
-  // that and only an independent reviewer's fixed-vs-control run caught it.
+test("self-retire refuses before hooks because its calling runtime cannot be quiesced for final work inspection", () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
   const remote = join(base, "remote-identity");
+  const retireRan = join(base, "retire-ran");
   capability(repo, "chan", {
     capability: "acme.chan",
     hooks: { spawn: "hook.mjs spawn", retire: "hook.mjs retire" },
@@ -4582,7 +4579,7 @@ if (process.env.OAS_EVENT === 'spawn') {
   console.log(JSON.stringify({ meta: { alias: 'probe' } }));
   process.exit(0);
 }
-// Always reports incomplete — on the ORDINARY path this blocks; on SELF it must not.
+writeFileSync(${JSON.stringify(retireRan)}, 'ran');
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));
 process.exit(1);`,
   });
@@ -4591,13 +4588,13 @@ process.exit(1);`,
   const home = join(root, "dev", "instances", "dev-self");
   try {
     spawnInstance(root, findAgent(root, "dev"), { instance: "dev-self", launch: false });
-    assert.equal(existsSync(home), true, "spawned ordinarily");
-
-    const r = retireInstance(root, "dev-self", { tmuxSession: "oas-test-nosuch", self: true });
-    assert.equal(r.rollbackIncomplete, undefined, "self-retire does not report an owner quarantine");
-    assert.equal(existsSync(join(home, ".oas-rollback-incomplete.json")), false,
-      "and writes no quarantine marker — the incomplete operation is the cleanup owner's to reconcile");
-    assert.equal(existsSync(home), false, "self-retire still tears down its own local state");
+    assert.throws(
+      () => retireInstance(root, "dev-self", { tmuxSession: "oas-test-nosuch", self: true }),
+      (e) => e.code === "E_SELF_RETIRE_NOT_QUIESCED" && /external operator/.test(e.message),
+    );
+    assert.equal(existsSync(retireRan), false, "the retire hook did not run before refusal");
+    assert.equal(existsSync(home), true, "the instance home remains untouched");
+    assert.equal(existsSync(remote), true, "capability-required state remains untouched");
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });

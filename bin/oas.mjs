@@ -2546,6 +2546,12 @@ function retireCmd() {
     process.exit(1);
   }
   console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}${r.harvested?.length ? `, harvested: ${r.harvested.join(", ")}` : ""}`);
+  // Preserving work and not saying so leaves the operator believing it is gone,
+  // which is most of the harm of deleting it. Name the classes and the path.
+  for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
+    console.log(`Work that was not committed has been preserved: ${recovery.classes.join(", ")}`);
+    console.log(`  ${recovery.path}`);
+  }
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
 
