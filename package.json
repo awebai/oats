@@ -1,7 +1,7 @@
 {
   "name": "@oas-framework/oas",
-  "version": "0.20.0",
-  "description": "OAS (Open Agent Specialization) — durable souls, disposable instances, targetable capability packages, and the runtime-neutral oas CLI/kernel.",
+  "version": "0.20.0-aweb.1",
+  "description": "OAS (Open Agent Specialization) \u2014 durable souls, disposable instances, targetable capability packages, and the runtime-neutral oas CLI/kernel.",
   "keywords": [
     "agents",
     "oas",
