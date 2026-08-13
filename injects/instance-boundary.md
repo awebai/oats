@@ -1,8 +1,8 @@
 ## Your two directories
 
-**`<instance-home>` is where this session starts** — the specific gitignored OAS
+**`<instance-home>` is where this session starts** — the specific gitignored OATS
 instance directory you woke up in, given to your runtime and to every lifecycle
-hook as `$OAS_INSTANCE_HOME`. It is not your user home (`~`), not the repository
+hook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repository
 root, and not the work tree. Anything that says "your home" means this directory.
 
 - **Your brain and your state live here**: `AGENTS.md` (your composed
@@ -10,13 +10,13 @@ root, and not the work tree. Anything that says "your home" means this directory
   `instance.json` (what you were given and from where), and whatever working
   state your role keeps — your knowledge layer names those files, if you have
   one. They belong here, not in the work tree.
-- **Run OAS operational/lifecycle commands, and commands from active
-  capabilities, from instance home** — `oas status`, `oas doctor`, `oas spawn`,
-  `oas retire`, and whatever your own capabilities add; for example, when the
+- **Run OATS operational/lifecycle commands, and commands from active
+  capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,
+  `oats retire`, and whatever your own capabilities add; for example, when the
   aweb messaging capability is active, run `aw` there too. They resolve their
   scope from the directory you run them in, so running them from the work tree
   points them at the wrong deployment. To act on a different package or config
-  scope deliberately, pass an explicit resolved path: `oas <cmd> --dir <path>`.
+  scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.
 - **The home's `soul` link is not your edit surface.** It is there so you can
   READ your durable knowledge. Writing through it changes durable state outside
   your branch, where no review sees it and nothing records what changed or why.

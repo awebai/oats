@@ -8,7 +8,7 @@ timestamp: 2026-07-25
 
 # Lesson
 
-The OAS kernel's instance-home discovery paths can overlap. `listAgents(root)`
+The OATS kernel's instance-home discovery paths can overlap. `listAgents(root)`
 already returns local souls discovered from `localAgentBases(root)`, while the
 capability-agent fallback also walks `localAgentBases(root)` to find
 `local-agents/<name>/instances/` homes for capability-defined agents without a

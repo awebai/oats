@@ -1,11 +1,11 @@
-// OAS desktop — CLI JSON v1 adapter (the ONLY mutation path).
+// OATS desktop — CLI JSON v1 adapter (the ONLY mutation path).
 //
-// Runs the two Desktop v1 mutations through a discovered absolute `oas`
+// Runs the two Desktop v1 mutations through a discovered absolute `oats`
 // binary via execFile/argv — never a shell, never kernel imports:
 //
-//   1. oas spawn <agent> --dir <workspace> --task-file <0600-temp>
+//   1. oats spawn <agent> --dir <workspace> --task-file <0600-temp>
 //      [allowlisted purpose/repo/work/runtime/model args] --json
-//   2. oas okf harvest --json           (cwd fixed to the instance home)
+//   2. oats okf harvest --json           (cwd fixed to the instance home)
 //
 // JSON mode emits exactly one stdout object (progress goes to stderr):
 //   success:  {"schemaVersion":1,"ok":true,"result":{...}}
@@ -102,7 +102,7 @@ export function writeTaskFile(taskText, io = {}) {
   const write = io.writeSync || writeSync;
   const close = io.closeSync || closeSync;
   const rm = io.rmSync || rmSync;
-  const dir = mkdtemp(join(io.tmpdir ? io.tmpdir() : tmpdir(), "oas-desktop-task-"));
+  const dir = mkdtemp(join(io.tmpdir ? io.tmpdir() : tmpdir(), "oats-desktop-task-"));
   const file = join(dir, "TASK.md");
   const fd = open(file, "wx", 0o600); // create-exclusive, owner-only from birth
   try { write(fd, String(taskText ?? "")); } finally { close(fd); }
@@ -116,11 +116,11 @@ function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_M
         const doc = parseEnvelope(stdout);
         if (doc) return resolveP(doc); // envelope wins — nonzero exit carries ok:false
         if (err && err.killed) {
-          return resolveP({ schemaVersion: 1, ok: false, error: { code: "E_CLI_TIMEOUT", message: `oas did not answer within ${timeout / 1000}s` } });
+          return resolveP({ schemaVersion: 1, ok: false, error: { code: "E_CLI_TIMEOUT", message: `oats did not answer within ${timeout / 1000}s` } });
         }
         return resolveP({
           schemaVersion: 1, ok: false,
-          error: { code: "E_CLI_PROTOCOL", message: "oas did not print a valid JSON envelope on stdout" },
+          error: { code: "E_CLI_PROTOCOL", message: "oats did not print a valid JSON envelope on stdout" },
         });
       });
   });

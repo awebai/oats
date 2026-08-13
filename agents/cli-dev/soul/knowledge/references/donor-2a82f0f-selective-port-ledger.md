@@ -2,7 +2,7 @@
 type: Reference
 title: What was ported from the frozen donor 2a82f0f, and what was rejected
 description: Ledger of the selective donor port for the capability-materialization CLI lane — two cases ported, one JSON field enriched, five donor assertions rejected as superseded.
-tags: [capability-materialization, oas-cli, testing, donor]
+tags: [capability-materialization, oats-cli, testing, donor]
 timestamp: 2026-07-29
 ---
 
@@ -15,11 +15,11 @@ assertions are invalid under the revised architecture.
 
 - **The 0.19.4 reproduction, restated as a doctor assertion.** The donor's
   case 1 buried it in a large fixture case; the bug it fixed was only visible
-  from `oas doctor` one command after `oas init`, so it is now its own case:
+  from `oats doctor` one command after `oats init`, so it is now its own case:
   a deployment created seconds ago has no `legacyLockFiles`, no
-  `officialMigration`, and the string `oas migrate` appears nowhere in either
+  `officialMigration`, and the string `oats migrate` appears nowhere in either
   the JSON or the human report. **Idea taken, assertions rewritten** — the
-  donor checked `.agents/packages/installed/<id>/oas-package.json` and
+  donor checked `.agents/packages/installed/<id>/oats-package.json` and
   `migrationResidue`, neither of which exists now.
 - **The host-requirement consent case** (donor case 3). Ported as: the
   requirement is reported with who asked, why, the install hint and the one
@@ -27,12 +27,12 @@ assertions are invalid under the revised architecture.
   still reports it afterwards, proving init changed nothing about the host.
 - **The empty-catalog hermetic fixture idea** — already in this lane before
   the donor was read, kept because it is the same idea: bind
-  `OAS_PACKAGE_CATALOG` to an empty catalog so a case exercises the offline
+  `OATS_PACKAGE_CATALOG` to an empty catalog so a case exercises the offline
   route with no network and no real catalog.
 
 # Product change the port forced
 
-`oas init --json` reported requirements as `{capability, command, install}`
+`oats init --json` reported requirements as `{capability, command, install}`
 while the human run printed the `why` and the consent command. Same run, two
 different sets of facts. The JSON row is now
 `{capability, command, why, install, consentCommand}` — the agent-callable

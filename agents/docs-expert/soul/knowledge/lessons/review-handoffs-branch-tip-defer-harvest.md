@@ -38,12 +38,12 @@ fix is missing.
 
 ## Do not harvest notes during an open review
 
-`oas okf harvest` can spawn an agent that commits the promoted lesson to your
+`oats okf harvest` can spawn an agent that commits the promoted lesson to your
 work branch. That advances the tip under the reviewer and feeds the SHA-drift
 problem above. Two harvest commits, `4b9d3c7` and `4287433`, sat between the
 docs commits and became noise in the integration commit map.
 
 During an open review, write `notes/` as you go. They live in the instance home,
-not the work tree, so they do not change the branch tip. Defer `oas okf harvest`
+not the work tree, so they do not change the branch tip. Defer `oats okf harvest`
 until the reviewer confirms closure. Then harvest once, so the final tip is
 stable and the integration map is just the docs commits.

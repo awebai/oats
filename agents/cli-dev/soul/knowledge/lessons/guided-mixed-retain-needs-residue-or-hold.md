@@ -2,14 +2,14 @@
 type: Lesson
 title: Mixed guided migration retain needs residue or a hold
 description: A guided official migration scope that both acquires official packages and retains custom v1 entries cannot be rewritten to revised-v2; the accepted fix is to refuse the whole mixed scope unchanged rather than add a residue container.
-tags: [packages, migration, oas-lock, residue, capability-materialization]
+tags: [packages, migration, oats-lock, residue, capability-materialization]
 timestamp: 2026-07-29
 ---
 
 # Failure mode
 
-A 0.18 scope can hold official legacy entries such as `oas.okf` and
-`oas.review` alongside custom or vendored `git:` and `path:` capabilities. In
+A 0.18 scope can hold official legacy entries such as `oats.okf` and
+`oats.review` alongside custom or vendored `git:` and `path:` capabilities. In
 that mixed shape, guided migration planned the custom entries as `retain`,
 reported them as "kept unchanged", and finished with `status: "migrated"` and
 `residue: []`.
@@ -19,7 +19,7 @@ official work. The custom rows were gone even though their artifacts remained on
 disk, so the next resolution failed with a missing-lock error such as:
 
 ```text
-external capability "custom.cap" is not usable: not locked in oas-lock.json
+external capability "custom.cap" is not usable: not locked in oats-lock.json
 ```
 
 All-official fixtures and `--official` scopes with no official work do not cover

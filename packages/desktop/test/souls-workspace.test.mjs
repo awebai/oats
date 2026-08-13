@@ -9,10 +9,10 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 // available before each mount — the CLI dimension has its own suite
 // (cli-degradation.test.mjs).
 const cliStatusMod = await import("../renderer/views/cli-status.mjs");
-const CLI_OK = { ok: true, bin: "/seed/oas", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
+const CLI_OK = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
 async function seedCliAvailable() {
   await cliStatusMod.refreshCli({
-    api: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, bin: "/seed/oas", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] }) }),
+    api: async () => ({ ok: true, status: 200, json: async () => ({ ok: true, bin: "/seed/oats", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] }) }),
   });
 }
 
@@ -552,7 +552,7 @@ test("Spawn modal: pre-relations CLI gates the RELATED options + picker disabled
   // card advertising a version below the floor it enforced (review b2c1688).
   // The floor is the locator's alone: with no relationsMin the note must name
   // NO version rather than guess one.
-  const CLI_OLD = { ok: true, bin: "/seed/oas", version: "0.18.0", source: "path",
+  const CLI_OLD = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path",
     required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, relations: false, probedAt: 1, tried: [] };
   await cliStatusMod2.refreshCli({ api: async () => ({ ok: true, status: 200, json: async () => CLI_OLD }) });
   const previousWs = common.currentWorkspace();
@@ -583,7 +583,7 @@ test("Spawn modal: pre-relations CLI gates the RELATED options + picker disabled
     assert.ok(note, "explanatory note present");
     assert.ok(!/\d+\.\d+\.\d+/.test(note.textContent),
       `note must not invent a floor when the probe sent none: ${note.textContent}`);
-    assert.match(note.textContent, /newer oas/, "…and still explains what is wrong");
+    assert.match(note.textContent, /newer oats/, "…and still explains what is wrong");
     assert.match(note.textContent, /spawns unrelated instances only/, "…and what the CLI will do instead");
     // With the backend's floor present, the note echoes exactly that value —
     // an arbitrary one, so a renderer-side constant cannot satisfy it. The
@@ -591,7 +591,7 @@ test("Spawn modal: pre-relations CLI gates the RELATED options + picker disabled
     await cliStatusMod2.refreshCli({ api: async () => ({ ok: true, status: 200,
       json: async () => ({ ...CLI_OLD, relationsMin: "9.9.9" }) }) });
     await tick();
-    assert.match(doc.querySelector(".spawn-dialog .frelnote").textContent, /oas >= 9\.9\.9/,
+    assert.match(doc.querySelector(".spawn-dialog .frelnote").textContent, /oats >= 9\.9\.9/,
       "the note states the floor the BACKEND served, not a renderer copy");
   } finally {
     spawn.unmount();
@@ -680,7 +680,7 @@ test("Spawn modal tracks CLI capability LIVE: relations flip disables/enables co
   const common = await import("../renderer/views/common.mjs");
   const spawn = await import("../renderer/views/spawn.mjs");
   const cliMod = await import("../renderer/views/cli-status.mjs");
-  const status = (relations) => ({ ok: true, bin: "/seed/oas", version: relations ? "0.18.6" : "0.18.0",
+  const status = (relations) => ({ ok: true, bin: "/seed/oats", version: relations ? "0.18.6" : "0.18.0",
     source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, relations, relationsMin: "0.18.6", probedAt: 1, tried: [] });
   const seed = (relations) => cliMod.refreshCli({ api: async () => ({ ok: true, status: 200, json: async () => status(relations) }) });
   await seed(true);
@@ -725,7 +725,7 @@ test("Spawn modal tracks CLI capability LIVE: relations flip disables/enables co
     assert.equal(ref.disabled, true, "downgrade disables the reference picker");
     const note = doc.querySelector(".frelnote");
     assert.equal(note.hidden, false, "version note appears live");
-    assert.match(note.textContent, /oas >= 0\.18\.6/, "note names the required version");
+    assert.match(note.textContent, /oats >= 0\.18\.6/, "note names the required version");
     assert.equal(doc.querySelector(".ftask").value, "typed task text", "typed fields survive the resync");
     assert.equal(rel.value, "child", "chosen relation value preserved (visible, disabled)");
     // the completed phrase must NOT keep promising the spawn that submit

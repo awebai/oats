@@ -12,8 +12,8 @@ In a fresh linked worktree with no capability dependencies installed, the kernel
 shows an asymmetric failure posture:
 
 ```text
-capabilitySkillDirs("oas.aweb", <worktree>)  ->  []      # silently empty, no error
-resolveOasConfig(<worktree>, "cli-dev")      ->  throws  # missing MANIFEST fails closed
+capabilitySkillDirs("oats.aweb", <worktree>)  ->  []      # silently empty, no error
+resolveOatsConfig(<worktree>, "cli-dev")      ->  throws  # missing MANIFEST fails closed
 ```
 
 A missing **manifest** fails closed loudly, while missing capability **resources**
@@ -23,7 +23,7 @@ into `.agents/skills/`.
 
 ## Root cause
 
-`oas.aweb`'s manifest declared skills as work-tree-relative dependency paths:
+`oats.aweb`'s manifest declared skills as work-tree-relative dependency paths:
 
 ```json
 "skills": [
@@ -44,7 +44,7 @@ Observed symptoms:
 - `instance.json` lists the reduced skill set with no marker that anything was
   expected and missing;
 - nothing is written to stderr;
-- `oas doctor` still prints the capability's declared skill paths under `Active
+- `oats doctor` still prints the capability's declared skill paths under `Active
   capabilities`, which reads as if they were composed.
 
 The self-concealing case is losing the messaging skills: the agent most needs
@@ -103,7 +103,7 @@ must happen after creation should reduce rollback to removing the scaffold by
 comparing `expected == materialized`.
 
 Declaring resources under `node_modules/` is a **manifest defect**, not a runtime
-condition. The founder-decided sourcing for `oas-aweb` is to vendor reviewed,
+condition. The founder-decided sourcing for `oats-aweb` is to vendor reviewed,
 MIT-attributed copies of `aweb-messaging`, `aweb-team-membership`, and
 `aweb-identity` with exact upstream repo/tag/commit provenance and deterministic
 sync tooling. Do not re-open shipping `@awebai/pi`/`@awebai/aw` and their native

@@ -28,7 +28,7 @@ test("rejects off-origin resolution: protocol-relative and backslash forms", () 
 });
 
 test("pins the verified workspace on scoped endpoints, overwriting unknown ws", () => {
-  const ws = "/Users/me/oas";
+  const ws = "/Users/me/oats";
   assert.equal(apiUrl("/api/panel", BASE, ws).searchParams.get("ws"), ws);
   // caller-supplied ws NOT advertised by the server must be overwritten
   assert.equal(apiUrl("/api/panel?ws=/Users/me/other", BASE, ws).searchParams.get("ws"), ws);
@@ -38,7 +38,7 @@ test("pins the verified workspace on scoped endpoints, overwriting unknown ws", 
 });
 
 test("allows switching to a workspace the server advertises", () => {
-  const ws = "/Users/me/oas", other = "/Users/me/lfx";
+  const ws = "/Users/me/oats", other = "/Users/me/lfx";
   const allowed = new Set([ws, other]);
   assert.equal(apiUrl(`/api/panel?ws=${other}`, BASE, ws, allowed).searchParams.get("ws"), other);
   assert.equal(apiUrl(`/api/agents?ws=${other}`, BASE, ws, allowed).searchParams.get("ws"), other);
@@ -47,7 +47,7 @@ test("allows switching to a workspace the server advertises", () => {
 });
 
 test("pins ws on /api/brain/* like the other scoped endpoints", () => {
-  const ws = "/Users/me/oas", other = "/Users/me/lfx";
+  const ws = "/Users/me/oats", other = "/Users/me/lfx";
   // no caller ws → verified id pinned
   assert.equal(apiUrl("/api/brain/tui-dev", BASE, ws).searchParams.get("ws"), ws);
   // unknown/stale caller ws → overwritten
@@ -58,7 +58,7 @@ test("pins ws on /api/brain/* like the other scoped endpoints", () => {
 });
 
 test("pins ws on the whole instance-addressed route family", () => {
-  const ws = "/Users/me/oas", other = "/Users/me/lfx";
+  const ws = "/Users/me/oats", other = "/Users/me/lfx";
   for (const ep of ["session", "keys", "interrupt", "chat", "brain"]) {
     // omitted ws → fails safe to the verified workspace
     assert.equal(apiUrl(`/api/${ep}/inst-a`, BASE, ws).searchParams.get("ws"), ws, `${ep}: pin on omission`);
@@ -70,7 +70,7 @@ test("pins ws on the whole instance-addressed route family", () => {
 });
 
 test("does not pin ws on unscoped endpoints and without a verified id", () => {
-  assert.equal(apiUrl("/api/file?path=/x", BASE, "/Users/me/oas").searchParams.get("ws"), null);
+  assert.equal(apiUrl("/api/file?path=/x", BASE, "/Users/me/oats").searchParams.get("ws"), null);
   assert.equal(apiUrl("/api/panel", BASE, null).searchParams.get("ws"), null);
 });
 

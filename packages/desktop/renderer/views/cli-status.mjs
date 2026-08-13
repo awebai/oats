@@ -1,9 +1,9 @@
-/* oas desktop — CLI degradation state (shared, view-independent).
+/* oats desktop — CLI degradation state (shared, view-independent).
 
-   The desktop-dist contract: without a compatible installed `oas` CLI, all
+   The desktop-dist contract: without a compatible installed `oats` CLI, all
    reads and existing terminal access keep working, while Spawn and Harvest
    are disabled behind ONE consistent card showing the detected path/version,
-   the required range, **Choose oas…**, **Retry**, a docs link, and a
+   the required range, **Choose oats…**, **Retry**, a docs link, and a
    copyable install command. Never silently install. Missing tmux is a
    SEPARATE diagnosis — never conflated with CLI compatibility.
 
@@ -24,8 +24,8 @@ import { escapeHtml } from "./common.mjs";
 /** Recovery command when the backend could not tell us which version to
  * pin — version-LESS on purpose: it names the package without restating any
  * band, so it cannot fall out of agreement with what the locator enforces. */
-export const GENERIC_INSTALL_COMMAND = "npm install -g @oas-framework/oas";
-export const DOCS_URL = "https://github.com/OAS-Framework/oas/blob/main/docs/desktop-cli-api.md";
+export const GENERIC_INSTALL_COMMAND = "npm install -g @awebai/oats";
+export const DOCS_URL = "https://github.com/awebai/oats/blob/main/docs/desktop-cli-api.md";
 
 /** The install command to show/copy: the backend's derived, version-pinned
  * one when a payload settled, else the version-less fallback. */
@@ -135,15 +135,15 @@ export function cliCard(doc, ctx) {
     const s = cli;
     const detected = s?.tried?.find((t) => t.version) || null;
     el.innerHTML = `
-      <div class="cli-head"><span class="glyph" aria-hidden="true">⚠</span> Compatible <code>oas</code> CLI required</div>
+      <div class="cli-head"><span class="glyph" aria-hidden="true">⚠</span> Compatible <code>oats</code> CLI required</div>
       <div class="cli-body">
-        Spawn and Harvest run through the installed <code>oas</code> CLI. Reads and
+        Spawn and Harvest run through the installed <code>oats</code> CLI. Reads and
         terminals keep working without it.
         <div class="cli-kv">
           <span class="k">Detected</span>
           <span class="v">${detected
             ? `${escapeHtml(detected.path)} <span class="cli-ver">(${escapeHtml(detected.version || "unknown")})</span>`
-            : "no oas binary found"}</span>
+            : "no oats binary found"}</span>
           <span class="k">Required</span>
           <span class="v">${escapeHtml(cliRequirementText(s))}</span>
         </div>
@@ -153,7 +153,7 @@ export function cliCard(doc, ctx) {
         </div>
       </div>
       <div class="cli-actions">
-        <button class="act cli-choose">Choose oas…</button>
+        <button class="act cli-choose">Choose oats…</button>
         <button class="act cli-retry">Retry</button>
         <a class="cli-docs" href="#" title="${escapeHtml(DOCS_URL)}">CLI setup docs</a>
         <span class="cli-status" role="status"></span>
@@ -170,7 +170,7 @@ export function cliCard(doc, ctx) {
       // onCliChange re-renders; if still failing, say so explicitly
       if (!cliAvailable() && el.isConnected) {
         const st2 = el.querySelector(".cli-status");
-        if (st2) st2.textContent = "Still no compatible oas CLI.";
+        if (st2) st2.textContent = "Still no compatible oats CLI.";
       }
     });
     const choose = el.querySelector(".cli-choose");
@@ -183,7 +183,7 @@ export function cliCard(doc, ctx) {
         await reprobeCli(ctx, picked.path);
         if (!cliAvailable() && el.isConnected) {
           const st2 = el.querySelector(".cli-status");
-          if (st2) st2.textContent = "Chosen binary is not a compatible oas CLI.";
+          if (st2) st2.textContent = "Chosen binary is not a compatible oats CLI.";
         }
       });
     } else choose.disabled = true;

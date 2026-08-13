@@ -1,6 +1,6 @@
 # Conventions — canonical files and generated views
 
-OAS uses one canonical source for durable soul content and generated,
+OATS uses one canonical source for durable soul content and generated,
 instance-local views for deployment composition.
 
 ## Operating documents
@@ -16,13 +16,13 @@ Never maintain an independent soul `CLAUDE.md`. Config-dependent capability,
 work-mode, and workspace instructions belong only in generated instance
 `AGENTS.md`; they must not be reconciled into the committed soul.
 
-Generated blocks use `<!-- oas:<source> src=<file> -->` markers for
+Generated blocks use `<!-- oats:<source> src=<file> -->` markers for
 provenance. Edit the canonical soul, source file, or target binding, then spawn
-a new instance. `oas doctor --soul <name>` previews the same final composition.
+a new instance. `oats doctor --soul <name>` previews the same final composition.
 
 ## Skills
 
-The only OAS-managed runtime skill root is the instance:
+The only OATS-managed runtime skill root is the instance:
 
 ```text
 instance/.agents/skills/                    # canonical exact set
@@ -32,7 +32,7 @@ instance/.claude/skills -> ../.agents/skills
 Spawn copies kernel + soul-private + active capability skills into real
 instance-local directories there. Directory symlinks are not used because
 harness recursive discovery may not descend through them. Packages retain
-skills in their own artifact; activation selects them for materialization. Config-level `.agents/skills` is not an OAS capability source
+skills in their own artifact; activation selects them for materialization. Config-level `.agents/skills` is not an OATS capability source
 or an ambient runtime discovery root.
 
 Pi starts spawned sessions with ambient skill and context discovery disabled
@@ -42,7 +42,7 @@ and `CLAUDE.md` symlinks, and the operator's own user and project
 configuration — skills, plugins, settings — stays in effect. Neither runtime
 gets a redirected config home. `composition.materialized.runtimePosture` in
 `instance.json` records what each instance actually exposes.
-`oas-getting-started` is the sole pre-workspace ambient bootstrap.
+`oats-getting-started` is the sole pre-workspace ambient bootstrap.
 
 Duplicate skill directory names are errors unless config's `skill-overrides`
 selects a source.
@@ -50,18 +50,18 @@ selects a source.
 ## Package locations
 
 ```text
-<package>/capabilities/<name>/oas.json                 # the official marketplace (install source, not ambient)
-<level>/.agents/capabilities/installed/<name>/oas.json # acquired (gitignored, restorable)
-<level>/.agents/capabilities/owned/<name>/oas.json     # authored at this scope (source; committed where the scope is a repo)
-<level>/oas-lock.json                                  # external source/integrity/trust
+<package>/capabilities/<name>/oats.json                 # the official marketplace (install source, not ambient)
+<level>/.agents/capabilities/installed/<name>/oats.json # acquired (gitignored, restorable)
+<level>/.agents/capabilities/owned/<name>/oats.json     # authored at this scope (source; committed where the scope is a repo)
+<level>/oats-lock.json                                  # external source/integrity/trust
 ```
 
 ## Quick map
 
 | Thing | Canonical location |
 |---|---|
-| Config | `<level>/oas-config.yaml` |
-| Acquisition lock | `<level>/oas-lock.json` |
+| Config | `<level>/oats-config.yaml` |
+| Acquisition lock | `<level>/oats-lock.json` |
 | Soul operating doc | `soul/AGENTS.md` |
 | Soul Claude view | `soul/CLAUDE.md -> AGENTS.md` |
 | Soul-private skills | `soul/skills/` |

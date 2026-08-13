@@ -2,7 +2,7 @@
 type: Decision
 title: A materialized capability id is a directory name, enforced by grammar at two chokepoints
 description: Revised-v2 capability ids get one strict directory-name grammar in the lock reader and package-manifest validation, with installedCapabilityDir retaining a redundant containment proof as defense in depth.
-tags: [security, capability-materialization, oas-kernel, path-containment]
+tags: [security, capability-materialization, oats-kernel, path-containment]
 timestamp: 2026-07-29
 ---
 

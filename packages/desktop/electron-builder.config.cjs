@@ -1,7 +1,7 @@
-// OAS Desktop — electron-builder configuration (v0.18.2 public matrix).
+// OATS Desktop — electron-builder configuration (v0.18.2 public matrix).
 //
 // Contract (desktop-dist): macOS arm64/x64 DMG+ZIP, Linux x64 AppImage+DEB,
-// artifacts named oas-desktop-* under packages/desktop/dist/ (the release
+// artifacts named oats-desktop-* under packages/desktop/dist/ (the release
 // workflow uploads `desktop-<os>-<arch>` from that glob). macOS bundles are
 // AD-HOC SIGNED (identity "-"), NOT Developer ID signed and NOT notarized —
 // no Apple credentials exist; certificate auto-discovery stays disabled
@@ -13,12 +13,12 @@
 // A JS config (not JSON) so the file can carry these binding comments and
 // compute nothing — keep it static and reviewable.
 module.exports = {
-  appId: "ai.oas.desktop",
-  productName: "OAS Desktop",
-  // artifactName pins the seam: dist/oas-desktop-<version>-<os>-<arch>.<ext>
-  // — the workflow globs dist/oas-desktop-* and must never catch stray
+  appId: "ai.oats.desktop",
+  productName: "OATS Desktop",
+  // artifactName pins the seam: dist/oats-desktop-<version>-<os>-<arch>.<ext>
+  // — the workflow globs dist/oats-desktop-* and must never catch stray
   // builder metadata; every artifact below inherits this name.
-  artifactName: "oas-desktop-${version}-${os}-${arch}.${ext}",
+  artifactName: "oats-desktop-${version}-${os}-${arch}.${ext}",
   directories: { output: "dist" },
   // Ship exactly the app: sources + production deps. The test tree, harness,
   // and builder config itself stay out of the package (inventory-tested).
@@ -70,7 +70,7 @@ module.exports = {
     // AD-HOC SIGNED: identity "-" makes electron-builder/@electron/osx-sign
     // produce a COMPLETE ad-hoc bundle signature — every nested Electron
     // helper/framework signed and resources sealed — so
-    //   codesign --verify --deep --strict --verbose=2 "OAS Desktop.app"
+    //   codesign --verify --deep --strict --verbose=2 "OATS Desktop.app"
     // exits zero (verified for arm64 and the x64 cross-build; gated by
     // dist:smoke). The former identity:null DISABLED signing entirely,
     // which shipped the v0.18.2 defect: the arm64 executable kept only its
@@ -84,17 +84,17 @@ module.exports = {
   linux: {
     // Filesystem-safe binary/package name. WITHOUT this, electron-builder
     // derives executableName from the SCOPED package name
-    // "@oas-framework/desktop" → "@oas-frameworkdesktop", which contains
+    // "@awebai/oats-desktop" → "@awebaioats-desktop", which contains
     // "@"/"/" and FAILS the AppImage/DEB build ('characters that cannot be
     // safely used in file paths') — the v0.18.x Linux leg never went green
-    // without it. Scoped to linux so the mac .app stays "OAS Desktop.app".
-    executableName: "oas-desktop",
+    // without it. Scoped to linux so the mac .app stays "OATS Desktop.app".
+    executableName: "oats-desktop",
     target: ["AppImage", "deb"],
     category: "Development",
     // tmux is a hard runtime prerequisite (terminal attach path).
     // DEB declares it; AppImage cannot declare deps — docs carry it.
-    synopsis: "Control panel for OAS agent deployments",
-    description: "OAS Desktop — roster, brain and terminal access for OAS agent deployments. Requires tmux and an installed @oas-framework/oas CLI for lifecycle actions.",
+    synopsis: "Control panel for OATS agent deployments",
+    description: "OATS Desktop — roster, brain and terminal access for OATS agent deployments. Requires tmux and an installed @awebai/oats CLI for lifecycle actions.",
   },
   deb: {
     depends: ["tmux"],
@@ -102,7 +102,7 @@ module.exports = {
     // them the deb target fails AFTER the AppImage builds (surfaced by the
     // build-installers CI). homepage is read from packages/desktop
     // package.json; the maintainer is set explicitly here.
-    maintainer: "OAS Framework <maintainers@oas-framework.dev>",
+    maintainer: "OATS Framework <maintainers@oats-framework.dev>",
   },
   dmg: {
     // default layout; no code that would require signing

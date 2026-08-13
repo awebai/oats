@@ -14,7 +14,7 @@ that contains both `package.json` and `package-lock.json`.
 
 Each qualifying root is an independent `npm ci --ignore-scripts` unit. This lets
 inner capability resources such as `node_modules/@awebai/pi/skills/...` resolve
-relative to the inner `oas.json` while staying inside that capability's
+relative to the inner `oats.json` while staying inside that capability's
 containment boundary.
 
 # Boundaries

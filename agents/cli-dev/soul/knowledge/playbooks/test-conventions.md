@@ -1,7 +1,7 @@
 ---
 type: Playbook
 title: Test conventions in test/capabilities.test.mjs
-description: Kernel and CLI tests run node:test against temp directories with fixture souls, fake/runtime tmux shims on PATH, spawnSync of bin/oas.mjs for CLI behavior, and regression coverage at the layer where bugs occurred.
+description: Kernel and CLI tests run node:test against temp directories with fixture souls, fake/runtime tmux shims on PATH, spawnSync of bin/oats.mjs for CLI behavior, and regression coverage at the layer where bugs occurred.
 tags: [testing, conventions, fixtures, cli, regression, tmux]
 timestamp: 2026-07-29
 ---
@@ -11,12 +11,12 @@ timestamp: 2026-07-29
 All kernel/CLI behavior tests live in `test/capabilities.test.mjs`
 (node:test + assert/strict). Run with `npm test`. Conventions:
 
-- **Temp dirs**: `temp()` = `mkdtempSync(join(tmpdir(), "oas-cap-test-"))`;
+- **Temp dirs**: `temp()` = `mkdtempSync(join(tmpdir(), "oats-cap-test-"))`;
   every test builds its whole world (repos, agents roots, configs) inside one.
 - **`gitRepo(dir)`**: real `git init` + identity + initial commit — needed
   because spawn/worktree logic shells out to git.
 - **`capability(repo, folder, manifest, files)`**: writes an owned package
-  under `.agents/capabilities/owned/<folder>/oas.json` (with sane defaults:
+  under `.agents/capabilities/owned/<folder>/oats.json` (with sane defaults:
   version, compatibility) plus any files.
 - **`fixtureSoul(base, runtime, type)`**: a `dev` soul with soul.yaml,
   canonical AGENTS.md (with the CLAUDE.md symlink), instances dir, and a repo
@@ -27,14 +27,14 @@ All kernel/CLI behavior tests live in `test/capabilities.test.mjs`
   add a fake `tmux` that records its argv and exits 0 so launch succeeds
   without touching a real session.
 - **CLI behavior**: `spawnSync(process.execPath, [CLI, ...args], { cwd, env })`
-  against `bin/oas.mjs` — test the actual command surface (init, install,
+  against `bin/oats.mjs` — test the actual command surface (init, install,
   spawn, retire, status), asserting on stdout/stderr and filesystem effects.
-  Helpers that spawn `bin/oas.mjs` must build child environments by exclusion:
-  strip inherited `OAS_*` / `PI_*`, pin `HOME` to a fixture directory, and set a
-  fixture `OAS_HOME_DIR`; otherwise tests run from inside an OAS instance can
+  Helpers that spawn `bin/oats.mjs` must build child environments by exclusion:
+  strip inherited `OATS_*` / `PI_*`, pin `HOME` to a fixture directory, and set a
+  fixture `OATS_HOME_DIR`; otherwise tests run from inside an OATS instance can
   resolve the live instance repo or laptop-level config/locks instead of the
   temp scope. See
-  [CLI env hermeticity](/lessons/cli-tests-scrub-oas-pi-env.md).
+  [CLI env hermeticity](/lessons/cli-tests-scrub-oats-pi-env.md).
 - Spawn probes in tests use `spawnInstance(..., { launch: false })`
   (scaffold-only) and inspect the created home.
 
@@ -102,7 +102,7 @@ All kernel/CLI behavior tests live in `test/capabilities.test.mjs`
   only once anyway; shape the fixture so the pre-fix path attempts the same
   acquisition more than once.
 - Regression tests must exercise the layer where the bug lived. For CLI-surface
-  bugs, spawn `bin/oas.mjs` with `spawnSync(...)` (for example `--work attached
+  bugs, spawn `bin/oats.mjs` with `spawnSync(...)` (for example `--work attached
   --relation unrelated --json`) and assert the CLI-visible effect, such as
   `parent === null`; a direct `spawnInstance()` test can stay green if the CLI
   regresses before calling the kernel. When cheap, temporarily reintroduce the
@@ -127,10 +127,10 @@ All kernel/CLI behavior tests live in `test/capabilities.test.mjs`
   purely local closure (`file:` / `link: true` entries only), and portability
   checks should run with `npm_config_cache=$(mktemp -d)` so a warm local cache
   cannot hide CI-only failures.
-- Config-chain discovery needs an `oas-config.yaml` at the level — a lock or
+- Config-chain discovery needs an `oats-config.yaml` at the level — a lock or
   installed store alone is invisible (see the init-acquisition lesson).
 - Capability fixture packages under `.agents/capabilities/` are discovered only
-  at config-chain levels; a bare git repo without `oas-config.yaml` can silently
+  at config-chain levels; a bare git repo without `oats-config.yaml` can silently
   hide a fixture and turn the assertion into `E_UNKNOWN_COMMAND` instead of
   exercising manifest code.
 - `assertCapabilitySelfContained` reads `manifest.commands` values as command
@@ -152,7 +152,7 @@ All kernel/CLI behavior tests live in `test/capabilities.test.mjs`
   all-match lookup bugs can pass cross-repo tests while double-counting local
   homes; see [overlapping instance-home scans](/lessons/overlapping-instance-home-scans-dedupe.md).
 - Tests that reach real tmux must be idempotent against leftover session state.
-  `oas okf harvest` launches a `memory-harvest-<slug>` tmux window in
+  `oats okf harvest` launches a `memory-harvest-<slug>` tmux window in
   `PI_AGENTS_TMUX_SESSION`, so a fixed instance name can pass once and fail on
   rerun when that window still exists. Derive the instance name from the
   `mkdtemp` suffix and kill the launched window during cleanup.

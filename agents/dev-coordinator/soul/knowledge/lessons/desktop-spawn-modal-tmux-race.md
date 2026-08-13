@@ -11,4 +11,4 @@ In `packages/desktop`, `doSpawn` (`renderer/views/spawn.mjs`) polled `waitForIns
 
 The panel snapshot can list the instance a beat before tmux registration, so the auto-open path can alert spuriously and leave the spawn modal appearing stuck if the modal is not closed on success.
 
-Lesson: any post-spawn auto-navigation must wait for the same readiness predicate the open path enforces (`running` plus tmux session). Automated paths should avoid blocking `alert()` failures; degrade to status text when readiness is still pending. This was routed as a single-developer fix to the `oas-desktop-engineer` soul.
+Lesson: any post-spawn auto-navigation must wait for the same readiness predicate the open path enforces (`running` plus tmux session). Automated paths should avoid blocking `alert()` failures; degrade to status text when readiness is still pending. This was routed as a single-developer fix to the `oats-desktop-engineer` soul.

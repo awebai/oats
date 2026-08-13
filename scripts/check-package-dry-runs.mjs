@@ -14,10 +14,10 @@ function requireFiles(pack, required) {
 }
 const kernel = dryRun(root);
 const kernelFiles = requireFiles(kernel, [
-  "bin/oas.mjs", "lib/core.mjs", "lib/tmux-config.mjs", "capabilities/oas-okf/oas.json",
-  "capabilities/oas-authoring/oas.json", "docs/capabilities.md", "docs/capability-manifest.schema.json", "package.json",
+  "bin/oats.mjs", "lib/core.mjs", "lib/tmux-config.mjs", "capabilities/oats-okf/oats.json",
+  "capabilities/oats-authoring/oats.json", "docs/capabilities.md", "docs/capability-manifest.schema.json", "package.json",
 ]);
-for (const path of kernelFiles) if (path.startsWith("agents/") || path === "oas-config.yaml" || path.startsWith("test/") || path.startsWith("tests/")) throw new Error(`kernel tarball leaks non-runtime file ${path}`);
+for (const path of kernelFiles) if (path.startsWith("agents/") || path === "oats-config.yaml" || path.startsWith("test/") || path.startsWith("tests/")) throw new Error(`kernel tarball leaks non-runtime file ${path}`);
 const adapter = dryRun(resolve(root, "packages", "pi"));
 requireFiles(adapter, ["extension/index.ts", "extension/core-loader.mjs", "README.md", "package.json"]);
 console.log(`Package dry runs passed: kernel ${kernel.entryCount} files, pi adapter ${adapter.entryCount} files; required surfaces present and workspace/test state excluded.`);

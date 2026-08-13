@@ -36,7 +36,7 @@ double-fragment spec on update now that the selected root is its own field).
 - **`defaultCatalogResolve` dropped the entry's `path`.** The feature worked
   perfectly in every test because tests inject their own catalog resolver; only
   the PRODUCTION resolver was lossy. Test a data-driven contract through its real
-  reader (`OAS_PACKAGE_CATALOG`), not only through the injection seam, or the
+  reader (`OATS_PACKAGE_CATALOG`), not only through the injection seam, or the
   seam is all you have verified.
 - **"Absent" and "present but malformed" must not collapse.** Returning
   `undefined` for a `null` input let a catalog entry spelling `"path": null`

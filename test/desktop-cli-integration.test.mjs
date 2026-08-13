@@ -1,5 +1,5 @@
 // Desktop server ↔ CLI integration: discovery status endpoint, re-probe,
-// and the two v1 mutations routed through a FAKE compatible `oas` binary — a
+// and the two v1 mutations routed through a FAKE compatible `oats` binary — a
 // fixture that speaks the exact contract, so acceptance, the band edges and
 // the liar/timeout paths are exercised deterministically at any repo version.
 import { test } from "node:test";
@@ -11,19 +11,19 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SRV = join(ROOT, "packages", "desktop", "server", "oas-web.mjs");
+const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
-/** A fake `oas` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
+/** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
 function fakeCli(dir, { version = "0.18.0", desktopApi = 1, probeExit = 0, probeHangMs = 0 } = {}) {
   const log = join(dir, "cli-calls.jsonl");
-  const js = join(dir, "oas.cjs");
-  const bin = join(dir, "oas");
+  const js = join(dir, "oats.cjs");
+  const bin = join(dir, "oats");
   writeFileSync(js, `const { appendFileSync, readFileSync } = require("node:fs");
 const argv = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, cwd: process.cwd() }) + "\\n");
 if (argv[0] === "version" && argv.includes("--json")) {
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@oas-framework/oas", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)} }));
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)} }));
   // Liar modes (review 0b83988): print a VALID probe, then exit nonzero or
   // REALLY hang past the probe timeout — either must be rejected by
   // discovery. if/else if throughout: fallthrough to the trailing exit(2)
@@ -85,10 +85,10 @@ async function startServer(env) {
   throw new Error("server did not come up");
 }
 
-test("desktop server: /api/cli reports discovery status; compatible fake CLI accepted via OAS_DESKTOP_OAS_BIN", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oas-clifake-"));
+test("desktop server: /api/cli reports discovery status; compatible fake CLI accepted via OATS_DESKTOP_OATS_BIN", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oats-clifake-"));
   const { bin, real } = fakeCli(dir);
-  const { proc, port } = await startServer({ OAS_DESKTOP_OAS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     // startup probe may still be running — reprobe deterministically
     const s = await (await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
@@ -100,9 +100,9 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
     const desktopVersion = JSON.parse(readFileSync(new URL("../packages/desktop/package.json", import.meta.url), "utf8")).version;
-    assert.equal(s.install, `npm install -g @oas-framework/oas@${desktopVersion}`);
+    assert.equal(s.install, `npm install -g @awebai/oats@${desktopVersion}`);
     const { acceptProbe } = await import("../packages/desktop/cli-locator.mjs");
-    assert.equal(acceptProbe({ schemaVersion: 1, name: "@oas-framework/oas", version: desktopVersion, desktopApi: 1 }).ok, true,
+    assert.equal(acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: desktopVersion, desktopApi: 1 }).ok, true,
       `the served install command pins ${desktopVersion}, which this Desktop would reject`);
     const g = await (await fetch(`http://127.0.0.1:${port}/api/cli`)).json();
     assert.equal(g.ok, true);
@@ -111,9 +111,9 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
 });
 
 test("desktop server: incompatible CLI → status carries per-candidate diagnostics; spawn degrades 503", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oas-cliold-"));
+  const dir = mkdtempSync(join(tmpdir(), "oats-cliold-"));
   const { bin, real } = fakeCli(dir, { version: "0.17.6" });
-  const { proc, port } = await startServer({ OAS_DESKTOP_OAS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
     assert.equal(s.ok, false);
@@ -138,9 +138,9 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // every unit test passed. These two fakes are the released kernel this
 // Desktop ships beside (accepted) and the next minor (rejected).
 test("desktop server: a released 0.20.x CLI is ACCEPTED and 0.21.0 is REJECTED at the band ceiling", async () => {
-  const okDir = mkdtempSync(join(tmpdir(), "oas-cli020-"));
+  const okDir = mkdtempSync(join(tmpdir(), "oats-cli020-"));
   const ok020 = fakeCli(okDir, { version: "0.20.4" });
-  const a = await startServer({ OAS_DESKTOP_OAS_BIN: ok020.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const a = await startServer({ OATS_DESKTOP_OATS_BIN: ok020.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${a.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
     assert.equal(s.ok, true, `0.20.4 rejected by discovery: ${JSON.stringify(s.tried)}`);
@@ -149,9 +149,9 @@ test("desktop server: a released 0.20.x CLI is ACCEPTED and 0.21.0 is REJECTED a
     assert.equal(s.relations, true, "a 0.20.x CLI is above the spawn-relations floor");
   } finally { a.proc.kill(); }
 
-  const badDir = mkdtempSync(join(tmpdir(), "oas-cli021-"));
+  const badDir = mkdtempSync(join(tmpdir(), "oats-cli021-"));
   const next = fakeCli(badDir, { version: "0.21.0" });
-  const b = await startServer({ OAS_DESKTOP_OAS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const b = await startServer({ OATS_DESKTOP_OATS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
     assert.equal(s.ok, false, "0.21.0 is past the exclusive ceiling and must not become the mutation binary");
@@ -164,9 +164,9 @@ test("desktop server: a released 0.20.x CLI is ACCEPTED and 0.21.0 is REJECTED a
 
 test("desktop server: a CLI that prints a valid probe but exits nonzero (or hangs) is REJECTED (review 0b83988)", async () => {
   // exercises the PRODUCTION probeBin callback: err && stdout must reject.
-  const dir1 = mkdtempSync(join(tmpdir(), "oas-cliliar-"));
+  const dir1 = mkdtempSync(join(tmpdir(), "oats-cliliar-"));
   const liar = fakeCli(dir1, { probeExit: 1 });     // valid probe on stdout, exit 1
-  const { proc, port } = await startServer({ OAS_DESKTOP_OAS_BIN: liar.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: liar.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
     assert.equal(s.ok, false, `nonzero-exit liar accepted: ${JSON.stringify(s)}`);
@@ -180,7 +180,7 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
   // actually hangs and (b) the reprobe crossed the production timeout —
   // review 6b90702 caught the previous "hanger" exiting in 0.058s via
   // fallthrough, leaving the timeout path untested.
-  const dir2 = mkdtempSync(join(tmpdir(), "oas-clihang-"));
+  const dir2 = mkdtempSync(join(tmpdir(), "oats-clihang-"));
   const hanger = fakeCli(dir2, { probeHangMs: 20000 });
   // (a) the fixture hangs: run it directly and confirm it is still alive
   // after 1s (then kill it).
@@ -192,7 +192,7 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
     assert.equal(exited, false, "hanger fixture really hangs (no fallthrough exit)");
     direct.kill("SIGKILL");
   }
-  const r2 = await startServer({ OAS_DESKTOP_OAS_BIN: hanger.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const r2 = await startServer({ OATS_DESKTOP_OATS_BIN: hanger.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const t0 = Date.now();
     const s2 = await (await fetch(`http://127.0.0.1:${r2.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
@@ -206,9 +206,9 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
 });
 
 test("desktop server: spawn routes through the CLI with --dir/--task-file argv; harvest fixes cwd to the instance home", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oas-climut-"));
+  const dir = mkdtempSync(join(tmpdir(), "oats-climut-"));
   const { bin, calls } = fakeCli(dir);
-  const { proc, port } = await startServer({ OAS_DESKTOP_OAS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
@@ -256,22 +256,22 @@ test("desktop server: spawn routes through the CLI with --dir/--task-file argv; 
 });
 
 test("desktop server: hostile instance.json cannot steer the harvest cwd (review 53a20c7 blocker)", async () => {
-  const cliDir = mkdtempSync(join(tmpdir(), "oas-clihostile-"));
+  const cliDir = mkdtempSync(join(tmpdir(), "oats-clihostile-"));
   const { bin, calls } = fakeCli(cliDir);
   // Workspace with an instance whose instance.json points home at an
   // ARBITRARY directory — the roster and the endpoint must both pin the
   // directory-derived home; the CLI must never run in the steered cwd.
-  const scope = realpathSync(mkdtempSync(join(tmpdir(), "oas-hostile-ws-")));
-  const steerTarget = realpathSync(mkdtempSync(join(tmpdir(), "oas-steer-target-")));
+  const scope = realpathSync(mkdtempSync(join(tmpdir(), "oats-hostile-ws-")));
+  const steerTarget = realpathSync(mkdtempSync(join(tmpdir(), "oats-steer-target-")));
   const instHome = join(scope, "agents", "dev", "instances", "dev-evil");
   mkdirSync(join(scope, "agents", "dev", "soul"), { recursive: true });
   writeFileSync(join(scope, "agents", "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
   mkdirSync(instHome, { recursive: true });
   writeFileSync(join(instHome, "instance.json"),
     JSON.stringify({ instance: "dev-evil", agent: "dev", home: steerTarget }));
-  const { proc, port } = await startServer({ OAS_DESKTOP_OAS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   const proc2 = spawn(process.execPath, [SRV, "start", "--port", String(port + 1), "--dir", scope],
-    { stdio: "ignore", env: { ...process.env, OAS_DESKTOP_OAS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" } });
+    { stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" } });
   proc.kill(); // only the scope-scoped server matters here
   try {
     let up = false;
@@ -297,9 +297,9 @@ test("desktop server: hostile instance.json cannot steer the harvest cwd (review
 });
 
 test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches the client UNSLICED; other codes stay capped (review 835a05f)", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "oas-cliambig-"));
+  const dir = mkdtempSync(join(tmpdir(), "oats-cliambig-"));
   const { bin } = fakeCli(dir);
-  const { proc, port } = await startServer({ OAS_DESKTOP_OAS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();

@@ -1,6 +1,6 @@
 // Guided official-capability migration: existing 0.18.x deployments (ordinary
-// oas-config.yaml + v1 oas-lock.json + .agents/capabilities/installed/ official
-// artifacts) upgrading to the official OAS packages.
+// oats-config.yaml + v1 oats-lock.json + .agents/capabilities/installed/ official
+// artifacts) upgrading to the official OATS packages.
 //
 // The fixture is a REAL 0.18 shape — a laptop/outer scope, a team boundary and
 // a nested scope, each with its own v1 lock and installed capability artifacts,
@@ -14,13 +14,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  OAS_LOCK_FILE, capabilityIntegrity, capabilityManifests, installedCapabilitiesDir, ownedCapabilitiesDir,
-  officialCapabilityPackage, resolveOasConfig, writeCapabilityLock,
+  OATS_LOCK_FILE, capabilityIntegrity, capabilityManifests, installedCapabilitiesDir, ownedCapabilitiesDir,
+  officialCapabilityPackage, resolveOatsConfig, writeCapabilityLock,
 } from "../lib/core.mjs";
 import { discoverMigrationScopes } from "../lib/packages.mjs";
 
-const CLI = resolve(new URL("../bin/oas.mjs", import.meta.url).pathname);
-function temp() { return mkdtempSync(join(tmpdir(), "oas-official-mig-")); }
+const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
+function temp() { return mkdtempSync(join(tmpdir(), "oats-official-mig-")); }
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 function gitify(dir) {
   execFileSync("git", ["init", "-q", dir]);
@@ -31,26 +31,26 @@ function gitify(dir) {
   return execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
 
-/** Hermetic child environment. The suite runs INSIDE an OAS instance in this
+/** Hermetic child environment. The suite runs INSIDE an OATS instance in this
  * fleet, so two leaks have to be closed or a case silently reads real state:
  *   - HOME: the config/lock walk climbs to `/` and unions the laptop level, so
- *     a developer's own ~/oas-config.yaml or ~/oas-lock.json would be seen.
- *   - OAS_* / PI_*: `OAS_HOME`/`PI_AGENT_HOME` make the CLI adopt the ambient
+ *     a developer's own ~/oats-config.yaml or ~/oats-lock.json would be seen.
+ *   - OATS_* / PI_*: `OATS_HOME`/`PI_AGENT_HOME` make the CLI adopt the ambient
  *     instance's `instance.json` and re-point its context at the REAL repo. */
-const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oas-official-migration-home-"));
+const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-official-migration-home-"));
 function hermeticEnv() {
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!/^(OAS|PI)_/.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
   env.HOME = HERMETIC_HOME;
-  env.OAS_HOME_DIR = join(HERMETIC_HOME, ".oas");
+  env.OATS_HOME_DIR = join(HERMETIC_HOME, ".oats");
   return env;
 }
 
-/** Run the CLI with a fixture catalog bound through OAS_PACKAGE_CATALOG. */
+/** Run the CLI with a fixture catalog bound through OATS_PACKAGE_CATALOG. */
 function cli(cwd, catalogFile, ...argv) {
   const env = hermeticEnv();
-  if (catalogFile) env.OAS_PACKAGE_CATALOG = catalogFile;
-  else delete env.OAS_PACKAGE_CATALOG;
+  if (catalogFile) env.OATS_PACKAGE_CATALOG = catalogFile;
+  else delete env.OATS_PACKAGE_CATALOG;
   return spawnSync(process.execPath, [CLI, ...argv], { cwd, env, encoding: "utf8" });
 }
 function json(r) {
@@ -81,38 +81,38 @@ function pkgSource(dir, pkgId, capabilities) {
     rels.push(rel);
     for (const [file, body] of Object.entries(cm._files || {})) write(join(dir, rel, file), body);
     const { _files, ...manifest } = cm;
-    write(join(dir, rel, "oas.json"), JSON.stringify({ version: "2.0.0", description: "official", ...manifest }, null, 2));
+    write(join(dir, rel, "oats.json"), JSON.stringify({ version: "2.0.0", description: "official", ...manifest }, null, 2));
   }
-  write(join(dir, "oas-package.json"), JSON.stringify({
+  write(join(dir, "oats-package.json"), JSON.stringify({
     package: pkgId, version: "2.0.0", description: `official ${pkgId}`,
-    compatibility: { oas: ">=0.1.0" }, capabilities: rels,
+    compatibility: { oats: ">=0.1.0" }, capabilities: rels,
   }, null, 2));
   gitify(dir);
   return dir;
 }
 
-/** The official packages of the release contract (oas.review ships inside oas.dev). */
+/** The official packages of the release contract (oats.review ships inside oats.dev). */
 function officialSources(base) {
   const p = (n) => join(base, "pkgs", n);
   return {
-    "oas.okf": pkgSource(p("okf"), "oas.okf", {
-      okf: { capability: "oas.okf", layer: "knowledge", commands: { harvest: "harvest.mjs" }, requires: [{ command: "git", why: "knowledge bundles live in git" }], _files: { "harvest.mjs": "// harvest\n" } },
+    "oats.okf": pkgSource(p("okf"), "oats.okf", {
+      okf: { capability: "oats.okf", layer: "knowledge", commands: { harvest: "harvest.mjs" }, requires: [{ command: "git", why: "knowledge bundles live in git" }], _files: { "harvest.mjs": "// harvest\n" } },
     }),
-    "oas.dev": pkgSource(p("dev"), "oas.dev", {
-      review: { capability: "oas.review", commands: { review: "review.mjs" }, _files: { "review.mjs": "// review\n" } },
+    "oats.dev": pkgSource(p("dev"), "oats.dev", {
+      review: { capability: "oats.review", commands: { review: "review.mjs" }, _files: { "review.mjs": "// review\n" } },
     }),
-    "oas.aweb": pkgSource(p("aweb"), "oas.aweb", {
-      aweb: { capability: "oas.aweb", hooks: { spawn: "spawn.mjs" }, _files: { "spawn.mjs": "// spawn\n" } },
+    "oats.aweb": pkgSource(p("aweb"), "oats.aweb", {
+      aweb: { capability: "oats.aweb", hooks: { spawn: "spawn.mjs" }, _files: { "spawn.mjs": "// spawn\n" } },
     }),
-    "oas.authoring": pkgSource(p("authoring"), "oas.authoring", {
-      authoring: { capability: "oas.authoring" },
+    "oats.authoring": pkgSource(p("authoring"), "oats.authoring", {
+      authoring: { capability: "oats.authoring" },
     }),
   };
 }
 
 /** Write a fixture catalog. `packages` names which official packages this
  * release publishes; aliases map legacy capability ids onto them. */
-function writeCatalog(file, sources, packages, aliases = { "oas.review": "oas.dev" }) {
+function writeCatalog(file, sources, packages, aliases = { "oats.review": "oats.dev" }) {
   const entries = {};
   for (const id of packages) entries[id] = { url: sources[id], path: "." };
   write(file, JSON.stringify({ packages: entries, capabilities: aliases }, null, 2));
@@ -124,7 +124,7 @@ function writeCatalog(file, sources, packages, aliases = { "oas.review": "oas.de
 /** Install a 0.18-style capability artifact + its v1 lock entry at a scope. */
 function legacyCap(level, capId, { dirName, manifest = {}, source, version = "1.0.0" } = {}) {
   const dir = join(installedCapabilitiesDir(level), dirName || capId.replace(/\./g, "-"));
-  write(join(dir, "oas.json"), JSON.stringify({ capability: capId, version, description: "0.18 capability", ...manifest }, null, 2));
+  write(join(dir, "oats.json"), JSON.stringify({ capability: capId, version, description: "0.18 capability", ...manifest }, null, 2));
   writeCapabilityLock(level, capId, {
     source: source || `marketplace:${capId}@${version}`,
     version, integrity: capabilityIntegrity(dir), trustedExecutables: true,
@@ -133,33 +133,33 @@ function legacyCap(level, capId, { dirName, manifest = {}, source, version = "1.
 }
 
 /**
- * base/outer                laptop-ish outer scope: config + v1 lock (oas.authoring)
- * base/outer/team           team boundary: config + v1 lock (oas.okf knowledge layer,
- *                           oas.review, custom.cap via git:, vendored.cap via path:)
+ * base/outer                laptop-ish outer scope: config + v1 lock (oats.authoring)
+ * base/outer/team           team boundary: config + v1 lock (oats.okf knowledge layer,
+ *                           oats.review, custom.cap via git:, vendored.cap via path:)
  *                           plus an owned capability that is not locked at all
- * base/outer/team/nested    descendant scope: config + v1 lock (oas.aweb)
+ * base/outer/team/nested    descendant scope: config + v1 lock (oats.aweb)
  */
 /** `custom: false` drops the git:/path: capabilities, giving the all-official
  * cutover shape — the only shape a guided upgrade can actually convert, since
  * a mixed scope is refused whole. */
 function deploy018(base, { custom = true } = {}) {
   const outer = join(base, "outer");
-  write(join(outer, "oas-config.yaml"), "name: outer\ncapabilities:\n  additive:\n    oas.authoring:\n      from: installed\n      global: true\n");
-  legacyCap(outer, "oas.authoring");
+  write(join(outer, "oats-config.yaml"), "name: outer\ncapabilities:\n  additive:\n    oats.authoring:\n      from: installed\n      global: true\n");
+  legacyCap(outer, "oats.authoring");
 
   const team = join(outer, "team");
-  write(join(team, "oas-config.yaml"), [
+  write(join(team, "oats-config.yaml"), [
     "name: team",
     "team:",
     "  name: fixture-team",
     "capabilities:",
     "  layers:",
     "    knowledge:",
-    "      capability: oas.okf",
+    "      capability: oats.okf",
     "      from: installed",
     "      global: true",
     "  additive:",
-    "    oas.review:",
+    "    oats.review:",
     "      from: installed",
     "      global: true",
     "      settings:",
@@ -179,21 +179,21 @@ function deploy018(base, { custom = true } = {}) {
     ] : []),
     "",
   ].join("\n"));
-  legacyCap(team, "oas.okf", { manifest: { layer: "knowledge" }, version: "1.4.1" });
-  legacyCap(team, "oas.review", { version: "1.2.0" });
+  legacyCap(team, "oats.okf", { manifest: { layer: "knowledge" }, version: "1.4.1" });
+  legacyCap(team, "oats.review", { version: "1.2.0" });
   if (custom) legacyCap(team, "custom.cap", { dirName: "custom", source: `git:https://host/custom.git`, version: "0.3.0" });
   // Owned capability: authored at this scope, never locked, never migrated.
-  write(join(ownedCapabilitiesDir(team), "mine", "oas.json"), JSON.stringify({ capability: "mine.cap", version: "0.1.0", description: "mine" }, null, 2));
+  write(join(ownedCapabilitiesDir(team), "mine", "oats.json"), JSON.stringify({ capability: "mine.cap", version: "0.1.0", description: "mine" }, null, 2));
   // from: path capability — locked with a path: v1 source, like 0.18 did.
   if (custom) {
     const vendored = join(team, "vendor", "vendored");
-    write(join(vendored, "oas.json"), JSON.stringify({ capability: "vendored.cap", version: "0.2.0", description: "vendored" }, null, 2));
+    write(join(vendored, "oats.json"), JSON.stringify({ capability: "vendored.cap", version: "0.2.0", description: "vendored" }, null, 2));
     writeCapabilityLock(team, "vendored.cap", { source: `path:${vendored}`, version: "0.2.0", integrity: capabilityIntegrity(vendored), trustedExecutables: true });
   }
 
   const nested = join(team, "nested");
-  write(join(nested, "oas-config.yaml"), "name: nested\ncapabilities:\n  additive:\n    oas.aweb:\n      from: installed\n      global: true\n");
-  legacyCap(nested, "oas.aweb", { version: "1.1.0" });
+  write(join(nested, "oats-config.yaml"), "name: nested\ncapabilities:\n  additive:\n    oats.aweb:\n      from: installed\n      global: true\n");
+  legacyCap(nested, "oats.aweb", { version: "1.1.0" });
 
   return { outer, team, nested };
 }
@@ -203,33 +203,33 @@ function deploy018(base, { custom = true } = {}) {
 test("0.18 state still works under the new kernel, and doctor names the exact guided command", () => {
   const base = temp();
   const { outer, team, nested } = deploy018(base);
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
 
   // Config activation resolves BEFORE any migration: v1 locks + installed artifacts.
-  const r = resolveOasConfig(team);
-  assert.equal(r.layers.knowledge.id, "oas.okf");
-  assert.deepEqual(r.capabilities.map((c) => c.id).sort(), ["custom.cap", "mine.cap", "oas.authoring", "oas.okf", "oas.review", "vendored.cap"]);
-  assert.equal(r.capabilities.find((c) => c.id === "oas.review").settings.depth, "full");
-  assert.ok(capabilityManifests(nested)["oas.aweb"]);
+  const r = resolveOatsConfig(team);
+  assert.equal(r.layers.knowledge.id, "oats.okf");
+  assert.deepEqual(r.capabilities.map((c) => c.id).sort(), ["custom.cap", "mine.cap", "oats.authoring", "oats.okf", "oats.review", "vendored.cap"]);
+  assert.equal(r.capabilities.find((c) => c.id === "oats.review").settings.depth, "full");
+  assert.ok(capabilityManifests(nested)["oats.aweb"]);
 
-  // The alias is what makes oas.review resolvable at all.
-  process.env.OAS_PACKAGE_CATALOG = catalog;
+  // The alias is what makes oats.review resolvable at all.
+  process.env.OATS_PACKAGE_CATALOG = catalog;
   try {
-    assert.deepEqual(officialCapabilityPackage("oas.review"), { capability: "oas.review", package: "oas.dev", via: "alias", available: true });
-    assert.deepEqual(officialCapabilityPackage("oas.okf"), { capability: "oas.okf", package: "oas.okf", via: "identity", available: true });
-  } finally { delete process.env.OAS_PACKAGE_CATALOG; }
+    assert.deepEqual(officialCapabilityPackage("oats.review"), { capability: "oats.review", package: "oats.dev", via: "alias", available: true });
+    assert.deepEqual(officialCapabilityPackage("oats.okf"), { capability: "oats.okf", package: "oats.okf", via: "identity", available: true });
+  } finally { delete process.env.OATS_PACKAGE_CATALOG; }
 
   const doc = JSON.parse(cli(team, catalog, "doctor", team, "--json").stdout);
   assert.equal(doc.officialMigration.status, "ready");
-  assert.equal(doc.officialMigration.command, `oas migrate --official --recursive --dir ${team}`);
+  assert.equal(doc.officialMigration.command, `oats migrate --official --recursive --dir ${team}`);
   assert.deepEqual(
-    doc.officialMigration.capabilities.filter((c) => c.capability === "oas.review"),
-    [{ capability: "oas.review", package: "oas.dev", via: "alias", available: true, file: join(team, OAS_LOCK_FILE), level: team }],
+    doc.officialMigration.capabilities.filter((c) => c.capability === "oats.review"),
+    [{ capability: "oats.review", package: "oats.dev", via: "alias", available: true, file: join(team, OATS_LOCK_FILE), level: team }],
   );
   const human = cli(team, catalog, "doctor", team);
   assert.match(human.stdout, /Official capability migration/);
-  assert.match(human.stdout, /oas\.review → package oas\.dev \(catalog alias\)/);
-  assert.match(human.stdout, /READY: migrate with `oas migrate --official --recursive --dir /);
+  assert.match(human.stdout, /oats\.review → package oats\.dev \(catalog alias\)/);
+  assert.match(human.stdout, /READY: migrate with `oats migrate --official --recursive --dir /);
   void outer;
   rmSync(base, { recursive: true, force: true });
 });
@@ -260,7 +260,7 @@ test("no catalog mappings (0.19.0): doctor says not yet available and the guided
 test("dry-run across outer + team + nested scopes is deterministic, complete and side-effect-free", () => {
   const base = temp();
   const { outer, team, nested } = deploy018(base);
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
   const before = snapshot(outer);
 
   assert.deepEqual(discoverMigrationScopes(team, { teamScope: team }), [outer, team, nested]);
@@ -281,15 +281,15 @@ test("dry-run across outer + team + nested scopes is deterministic, complete and
   assert.deepEqual(details.scopes.map((s) => s.status), ["ready", "blocked", "ready"]);
   const teamPlan = details.scopes.find((s) => s.level === team).plan;
   assert.deepEqual(teamPlan.filter((p) => p.action === "acquire").map((p) => [p.capability, p.package, p.spec, p.via]), [
-    ["oas.okf", "oas.okf", "oas.okf", "identity"],
-    ["oas.review", "oas.dev", "oas.dev", "alias"],
+    ["oats.okf", "oats.okf", "oats.okf", "identity"],
+    ["oats.review", "oats.dev", "oats.dev", "alias"],
   ]);
   assert.deepEqual(teamPlan.filter((p) => p.action === "retain").map((p) => p.capability).sort(), ["custom.cap", "vendored.cap"]);
   assert.deepEqual(snapshot(outer), before, "a dry run writes nothing");
 
   const human = cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--dry-run");
   assert.notEqual(human.status, 0, "dry-run and apply agree: a blocked scope is not a ready migration");
-  assert.match(human.stdout, /migrate\s+oas\.review → package oas\.dev\s+\(catalog alias: package oas\.dev exports oas\.review\)/);
+  assert.match(human.stdout, /migrate\s+oats\.review → package oats\.dev\s+\(catalog alias: package oats\.dev exports oats\.review\)/);
   assert.match(human.stdout, /keep\s+custom\.cap\s+\(git:https:\/\/host\/custom\.git\) — not converted/);
   assert.match(human.stdout, /is NOT rewritten — capability ids, layers, targets, settings/);
   assert.match(human.stdout, /executable approvals are NOT carried over/);
@@ -303,13 +303,13 @@ test("dry-run across outer + team + nested scopes is deterministic, complete and
 test("a MIXED scope is refused byte-identically: no official artifact is even partially acquired, and the whole v1 scope keeps working", () => {
   const base = temp();
   const { outer, team, nested } = deploy018(base);
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
   // The team scope's OWN files: `nested/` is a separate scope that converts on
   // its own, so including it would compare two different verdicts.
   const ownFiles = (d) => Object.fromEntries(Object.entries(snapshot(d)).filter(([k]) => !k.startsWith("nested/")));
   const teamBefore = ownFiles(team);
-  const legacyLock = JSON.parse(readFileSync(join(team, OAS_LOCK_FILE), "utf8"));
-  const resolvedBefore = resolveOasConfig(team).capabilities.map((c) => c.id).sort();
+  const legacyLock = JSON.parse(readFileSync(join(team, OATS_LOCK_FILE), "utf8"));
+  const resolvedBefore = resolveOatsConfig(team).capabilities.map((c) => c.id).sort();
 
   const r = cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--json");
   assert.notEqual(r.status, 0, "a run containing a blocked scope is not a success");
@@ -332,18 +332,18 @@ test("a MIXED scope is refused byte-identically: no official artifact is even pa
   assert.match(byScope[team].error.message, /NOTHING was changed and the whole v1 scope stays usable/);
   // Both retained sources are package-mappable, so the guidance names the exact
   // command that CAN convert this scope completely.
-  assert.match(byScope[team].error.message, new RegExp(`\`oas migrate --dir ${team.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}\` \\(without --official\\)`));
+  assert.match(byScope[team].error.message, new RegExp(`\`oats migrate --dir ${team.replace(/[.*+?^$()|[\]\\]/g, "\\$&")}\` \\(without --official\\)`));
 
   // 1. NOTHING at the refused scope moved: lock bytes, config, artifacts, the
   //    ignore file, trust. Not one official artifact was partially acquired.
   assert.deepEqual(ownFiles(team), teamBefore, "a refused scope is byte-identical");
-  assert.deepEqual(JSON.parse(readFileSync(join(team, OAS_LOCK_FILE), "utf8")), legacyLock);
-  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oas.okf")), false, "no materialized artifact was created");
-  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oas.review")), false);
-  assert.ok(existsSync(join(installedCapabilitiesDir(team), "oas-okf")), "the v1 artifact is still there");
+  assert.deepEqual(JSON.parse(readFileSync(join(team, OATS_LOCK_FILE), "utf8")), legacyLock);
+  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oats.okf")), false, "no materialized artifact was created");
+  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oats.review")), false);
+  assert.ok(existsSync(join(installedCapabilitiesDir(team), "oats-okf")), "the v1 artifact is still there");
 
   // 2. and the scope still RESOLVES — the whole point of refusing.
-  assert.deepEqual(resolveOasConfig(team).capabilities.map((c) => c.id).sort(), resolvedBefore);
+  assert.deepEqual(resolveOatsConfig(team).capabilities.map((c) => c.id).sort(), resolvedBefore);
   assert.ok(resolvedBefore.includes("custom.cap") && resolvedBefore.includes("vendored.cap"));
 
   // 3. the human report says the same thing.
@@ -356,8 +356,8 @@ test("a MIXED scope is refused byte-identically: no official artifact is even pa
 test("guided migration of an ALL-OFFICIAL scope: config bytes preserved, exact v2 graph, superseded artifacts removed, owned untouched, trust + requirements reported", () => {
   const base = temp();
   const { outer, team, nested } = deploy018(base, { custom: false });
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
-  const configsBefore = Object.fromEntries([outer, team, nested].map((d) => [d, readFileSync(join(d, "oas-config.yaml"), "utf8")]));
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
+  const configsBefore = Object.fromEntries([outer, team, nested].map((d) => [d, readFileSync(join(d, "oats-config.yaml"), "utf8")]));
   const ownedArtifact = snapshot(ownedCapabilitiesDir(team));
 
   const env = json(cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--json"));
@@ -367,14 +367,14 @@ test("guided migration of an ALL-OFFICIAL scope: config bytes preserved, exact v
   for (const sc of env.result.scopes) assert.equal(Object.hasOwn(sc, "residue"), false, JSON.stringify(sc));
 
   // 1. config files are byte-for-byte what they were.
-  for (const [d, text] of Object.entries(configsBefore)) assert.equal(readFileSync(join(d, "oas-config.yaml"), "utf8"), text, `${d} config rewritten`);
+  for (const [d, text] of Object.entries(configsBefore)) assert.equal(readFileSync(join(d, "oats-config.yaml"), "utf8"), text, `${d} config rewritten`);
 
-  // 2. exact v2 lock graph at the team scope; oas.review arrives through oas.dev.
-  const lock = JSON.parse(readFileSync(join(team, OAS_LOCK_FILE), "utf8"));
+  // 2. exact v2 lock graph at the team scope; oats.review arrives through oats.dev.
+  const lock = JSON.parse(readFileSync(join(team, OATS_LOCK_FILE), "utf8"));
   assert.equal(lock.lockfileVersion, 2);
-  assert.deepEqual(Object.keys(lock.packages).sort(), ["oas.dev", "oas.okf"]);
-  assert.equal(lock.packages["oas.review"], undefined, "the package identity is oas.dev, not the capability id");
-  for (const [id, expectCaps] of [["oas.okf", ["oas.okf"]], ["oas.dev", ["oas.review"]]]) {
+  assert.deepEqual(Object.keys(lock.packages).sort(), ["oats.dev", "oats.okf"]);
+  assert.equal(lock.packages["oats.review"], undefined, "the package identity is oats.dev, not the capability id");
+  for (const [id, expectCaps] of [["oats.okf", ["oats.okf"]], ["oats.dev", ["oats.review"]]]) {
     const e = lock.packages[id];
     assert.equal(e.source, `catalog:${id}`, "the ORIGINAL bare catalog spec is locked — no ref guessed from the v1 version");
     assert.equal(e.path, ".");
@@ -391,27 +391,27 @@ test("guided migration of an ALL-OFFICIAL scope: config bytes preserved, exact v
       assert.equal(lock.capabilities[cap].trusted, false, "executable approvals are re-earned, never carried over");
     }
   }
-  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oas.okf", "oas.review"]);
+  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oats.okf", "oats.review"]);
 
   // 3. superseded official artifacts are removed; owned capabilities are not touched.
-  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oas-okf")), false);
-  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oas-review")), false);
-  assert.ok(existsSync(join(installedCapabilitiesDir(team), "oas.okf", "oas.json")), "materialized flat, by capability id");
+  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oats-okf")), false);
+  assert.equal(existsSync(join(installedCapabilitiesDir(team), "oats-review")), false);
+  assert.ok(existsSync(join(installedCapabilitiesDir(team), "oats.okf", "oats.json")), "materialized flat, by capability id");
   assert.deepEqual(snapshot(ownedCapabilitiesDir(team)), ownedArtifact);
 
   // 4. activation behavior is unchanged — same ids, same layer, same settings, now package-provided.
-  const r = resolveOasConfig(team);
-  assert.equal(r.layers.knowledge.id, "oas.okf");
-  assert.deepEqual(r.capabilities.map((c) => c.id).sort(), ["mine.cap", "oas.authoring", "oas.okf", "oas.review"]);
-  assert.equal(r.capabilities.find((c) => c.id === "oas.review").settings.depth, "full");
-  assert.equal(capabilityManifests(team)["oas.okf"]._package, "oas.okf");
-  assert.equal(capabilityManifests(team)["oas.review"]._package, "oas.dev");
+  const r = resolveOatsConfig(team);
+  assert.equal(r.layers.knowledge.id, "oats.okf");
+  assert.deepEqual(r.capabilities.map((c) => c.id).sort(), ["mine.cap", "oats.authoring", "oats.okf", "oats.review"]);
+  assert.equal(r.capabilities.find((c) => c.id === "oats.review").settings.depth, "full");
+  assert.equal(capabilityManifests(team)["oats.okf"]._package, "oats.okf");
+  assert.equal(capabilityManifests(team)["oats.review"]._package, "oats.dev");
 
   // 5. trust must be re-earned, with exact commands; installed host requirements need no reinstall.
-  assert.deepEqual(env.result.trust.map((t) => t.capability).sort(), ["oas.aweb", "oas.okf", "oas.review"]);
-  assert.ok(env.result.trust.every((t) => t.command === `oas trust ${t.capability} --dir ${t.level}`), JSON.stringify(env.result.trust));
+  assert.deepEqual(env.result.trust.map((t) => t.capability).sort(), ["oats.aweb", "oats.okf", "oats.review"]);
+  assert.ok(env.result.trust.every((t) => t.command === `oats trust ${t.capability} --dir ${t.level}`), JSON.stringify(env.result.trust));
   assert.deepEqual(env.result.requirements, [], "git is on PATH — an installed requirement is verified, not reinstalled");
-  assert.equal(env.result.nextCommands.at(-1), `oas install --dir ${team}`);
+  assert.equal(env.result.nextCommands.at(-1), `oats install --dir ${team}`);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -421,10 +421,10 @@ test("one scope's failure rolls that scope back byte-identically and the aggrega
   // rollback, and the point here is the rollback of a scope that DID start.
   const { outer, team, nested } = deploy018(base, { custom: false });
   const sources = officialSources(base);
-  // Injected failure: the catalog entry for oas.aweb resolves to a package that
-  // does not export oas.aweb — the nested scope's conversion must fail.
-  sources["oas.aweb"] = sources["oas.authoring"];
-  const catalog = writeCatalog(join(base, "catalog.json"), sources, ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
+  // Injected failure: the catalog entry for oats.aweb resolves to a package that
+  // does not export oats.aweb — the nested scope's conversion must fail.
+  sources["oats.aweb"] = sources["oats.authoring"];
+  const catalog = writeCatalog(join(base, "catalog.json"), sources, ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
   const nestedBefore = snapshot(nested);
 
   const r = cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--json");
@@ -438,17 +438,17 @@ test("one scope's failure rolls that scope back byte-identically and the aggrega
   assert.equal(byScope[nested].status, "failed");
   assert.match(byScope[nested].error.message, /rolled back/);
   assert.deepEqual(snapshot(nested), nestedBefore, "the failing scope is byte-identical to before");
-  assert.equal(JSON.parse(readFileSync(join(team, OAS_LOCK_FILE), "utf8")).lockfileVersion, 2);
+  assert.equal(JSON.parse(readFileSync(join(team, OATS_LOCK_FILE), "utf8")).lockfileVersion, 2);
   rmSync(base, { recursive: true, force: true });
 });
 
 test("a scope with only custom capabilities is left on v1, untouched, and reports what it RETAINED", () => {
   const base = temp();
   const custom = join(base, "custom-only");
-  write(join(custom, "oas-config.yaml"), "name: custom\n");
+  write(join(custom, "oats-config.yaml"), "name: custom\n");
   legacyCap(custom, "only.cap", { dirName: "only", source: "git:https://host/only.git" });
   legacyCap(custom, "vendor.cap", { dirName: "vendor", source: "path:/somewhere/vendor" });
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev"]);
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev"]);
   const before = snapshot(custom);
 
   const env = json(cli(custom, catalog, "migrate", "--official", "--dir", custom, "--json"));
@@ -460,52 +460,52 @@ test("a scope with only custom capabilities is left on v1, untouched, and report
   assert.deepEqual(scope.retained.sort(), ["only.cap", "vendor.cap"]);
   assert.equal(Object.hasOwn(scope, "residue"), false);
   assert.deepEqual(snapshot(custom), before, "a lock with no official capabilities is not even reformatted");
-  assert.equal(JSON.parse(readFileSync(join(custom, OAS_LOCK_FILE), "utf8")).lockfileVersion ?? 1, 1);
+  assert.equal(JSON.parse(readFileSync(join(custom, OATS_LOCK_FILE), "utf8")).lockfileVersion ?? 1, 1);
   rmSync(base, { recursive: true, force: true });
 });
 
 test("several legacy capabilities aliased to ONE package migrate together, acquired once (reviewer-90dbb36)", () => {
   const base = temp();
   // One package exporting two capabilities, both reached through catalog aliases —
-  // the shape oas.dev already has, and the shape that must not collide with its
+  // the shape oats.dev already has, and the shape that must not collide with its
   // own still-unconverted v1 entries during acquisition.
-  const bundle = pkgSource(join(base, "pkgs", "bundle"), "oas.bundle", {
-    a: { capability: "oas.a" },
-    b: { capability: "oas.b", commands: { go: "go.mjs" }, _files: { "go.mjs": "// go\n" } },
+  const bundle = pkgSource(join(base, "pkgs", "bundle"), "oats.bundle", {
+    a: { capability: "oats.a" },
+    b: { capability: "oats.b", commands: { go: "go.mjs" }, _files: { "go.mjs": "// go\n" } },
   });
-  const catalog = writeCatalog(join(base, "catalog.json"), { "oas.bundle": bundle }, ["oas.bundle"], { "oas.a": "oas.bundle", "oas.b": { package: "oas.bundle" } });
+  const catalog = writeCatalog(join(base, "catalog.json"), { "oats.bundle": bundle }, ["oats.bundle"], { "oats.a": "oats.bundle", "oats.b": { package: "oats.bundle" } });
   const scope = join(base, "scope");
-  write(join(scope, "oas-config.yaml"), "name: s\ncapabilities:\n  additive:\n    oas.a:\n      from: installed\n      global: true\n    oas.b:\n      from: installed\n      global: true\n");
-  legacyCap(scope, "oas.a", { dirName: "a" });
-  legacyCap(scope, "oas.b", { dirName: "b" });
+  write(join(scope, "oats-config.yaml"), "name: s\ncapabilities:\n  additive:\n    oats.a:\n      from: installed\n      global: true\n    oats.b:\n      from: installed\n      global: true\n");
+  legacyCap(scope, "oats.a", { dirName: "a" });
+  legacyCap(scope, "oats.b", { dirName: "b" });
 
   const env = json(cli(scope, catalog, "migrate", "--official", "--dir", scope, "--json"));
   assert.equal(env.ok, true, JSON.stringify(env));
   const row = env.result.scopes[0];
   assert.equal(row.status, "migrated");
   assert.deepEqual(row.migrated, [
-    { capability: "oas.a", package: "oas.bundle", version: "2.0.0" },
-    { capability: "oas.b", package: "oas.bundle", version: "2.0.0" },
+    { capability: "oats.a", package: "oats.bundle", version: "2.0.0" },
+    { capability: "oats.b", package: "oats.bundle", version: "2.0.0" },
   ]);
-  const lock = JSON.parse(readFileSync(join(scope, OAS_LOCK_FILE), "utf8"));
-  assert.deepEqual(Object.keys(lock.packages), ["oas.bundle"]);
+  const lock = JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"));
+  assert.deepEqual(Object.keys(lock.packages), ["oats.bundle"]);
   // Package rows lock the TRANSPORT only; the capability rows' `package`
   // back-reference is the single provider truth, so BOTH aliases land as
   // capability rows naming the one package that was acquired once.
-  assert.equal(Object.hasOwn(lock.packages["oas.bundle"], "capabilities"), false);
-  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oas.a", "oas.b"]);
-  for (const id of ["oas.a", "oas.b"]) assert.equal(lock.capabilities[id].package, "oas.bundle");
+  assert.equal(Object.hasOwn(lock.packages["oats.bundle"], "capabilities"), false);
+  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oats.a", "oats.b"]);
+  for (const id of ["oats.a", "oats.b"]) assert.equal(lock.capabilities[id].package, "oats.bundle");
   assert.deepEqual(Object.values(lock.capabilities).map((c) => c.trusted), [false, false], "executable approvals are re-earned, never carried over");
-  assert.deepEqual(env.result.trust.map((t) => t.capability), ["oas.b"], "only the executable capability needs re-approval");
-  assert.deepEqual(resolveOasConfig(scope).capabilities.map((c) => c.id).sort(), ["oas.a", "oas.b"]);
+  assert.deepEqual(env.result.trust.map((t) => t.capability), ["oats.b"], "only the executable capability needs re-approval");
+  assert.deepEqual(resolveOatsConfig(scope).capabilities.map((c) => c.id).sort(), ["oats.a", "oats.b"]);
   rmSync(base, { recursive: true, force: true });
 });
 
 test("a held dry run reports nonzero — automation can never read it as ready (reviewer-90dbb36)", () => {
   const base = temp();
   const { team } = deploy018(base);
-  // Catalog publishes oas.okf but not oas.dev: the team scope is held, the rest planned.
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.aweb", "oas.authoring"]);
+  // Catalog publishes oats.okf but not oats.dev: the team scope is held, the rest planned.
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.aweb", "oats.authoring"]);
 
   const r = cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--dry-run", "--json");
   assert.notEqual(r.status, 0, "a plan containing held scopes is not a success");
@@ -515,7 +515,7 @@ test("a held dry run reports nonzero — automation can never read it as ready (
   assert.match(env.error.message, /1 scope held \(no official package mapping yet\).*2 ready/);
   const byScope = Object.fromEntries(env.error.details.scopes.map((s) => [s.level, s]));
   assert.equal(byScope[team].status, "held", "the complete plan still travels under error.details");
-  assert.ok(byScope[team].plan.some((p) => p.action === "hold" && p.capability === "oas.review" && /does not resolve "oas.dev"/.test(p.reason)));
+  assert.ok(byScope[team].plan.some((p) => p.action === "hold" && p.capability === "oats.review" && /does not resolve "oats.dev"/.test(p.reason)));
 
   const human = cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--dry-run");
   assert.notEqual(human.status, 0);
@@ -527,7 +527,7 @@ test("a held dry run reports nonzero — automation can never read it as ready (
 test("--recursive without --official refuses a scope it cannot fully map, leaving its v1 lock working", () => {
   const base = temp();
   const root = join(base, "generic");
-  write(join(root, "oas-config.yaml"), "name: generic\n");
+  write(join(root, "oats-config.yaml"), "name: generic\n");
   legacyCap(root, "some.cap", { dirName: "some" });
   const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), []);
   const before = snapshot(root);
@@ -549,7 +549,7 @@ test("--recursive without --official refuses a scope it cannot fully map, leavin
   assert.match(scope.error.message, /left unchanged and its v1 capabilities keep working/);
 
   assert.deepEqual(snapshot(root), before, "a refused scope is byte-identical");
-  const lock = JSON.parse(readFileSync(join(root, OAS_LOCK_FILE), "utf8"));
+  const lock = JSON.parse(readFileSync(join(root, OATS_LOCK_FILE), "utf8"));
   assert.equal(lock.lockfileVersion ?? 1, 1, "it is still a v1 lock");
   assert.deepEqual(Object.keys(lock.capabilities), ["some.cap"]);
   rmSync(base, { recursive: true, force: true });
@@ -559,12 +559,12 @@ test("rerun is idempotent and the migrated deployment reaches zero v1 lock files
   const base = temp();
   // All-official deployment (the plain existing-user cutover).
   const root = join(base, "deployment");
-  write(join(root, "oas-config.yaml"), "name: root\nteam:\n  name: cutover\ncapabilities:\n  layers:\n    knowledge:\n      capability: oas.okf\n      from: installed\n      global: true\n");
-  legacyCap(root, "oas.okf", { manifest: { layer: "knowledge" }, version: "1.4.1" });
+  write(join(root, "oats-config.yaml"), "name: root\nteam:\n  name: cutover\ncapabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      from: installed\n      global: true\n");
+  legacyCap(root, "oats.okf", { manifest: { layer: "knowledge" }, version: "1.4.1" });
   const inner = join(root, "inner");
-  write(join(inner, "oas-config.yaml"), "name: inner\ncapabilities:\n  additive:\n    oas.aweb:\n      from: installed\n      global: true\n");
-  legacyCap(inner, "oas.aweb");
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
+  write(join(inner, "oats-config.yaml"), "name: inner\ncapabilities:\n  additive:\n    oats.aweb:\n      from: installed\n      global: true\n");
+  legacyCap(inner, "oats.aweb");
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
 
   const first = json(cli(root, catalog, "migrate", "--official", "--recursive", "--dir", root, "--json"));
   assert.deepEqual(first.result.scopes.map((s) => s.status), ["migrated", "migrated"]);
@@ -595,10 +595,10 @@ test("CLI surface: help documents the guided command and the JSON contract is on
   const base = temp();
   // All-official, so a successful dry run is available to pin the SUCCESS shape.
   const { team } = deploy018(base, { custom: false });
-  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oas.okf", "oas.dev", "oas.aweb", "oas.authoring"]);
+  const catalog = writeCatalog(join(base, "catalog.json"), officialSources(base), ["oats.okf", "oats.dev", "oats.aweb", "oats.authoring"]);
 
   const help = cli(base, catalog, "help");
-  assert.match(help.stdout, /oas migrate --official \[--recursive\]/);
+  assert.match(help.stdout, /oats migrate --official \[--recursive\]/);
 
   const env = json(cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--dry-run", "--json"));
   assert.deepEqual(Object.keys(env).sort(), ["ok", "result", "schemaVersion"]);
@@ -611,7 +611,7 @@ test("CLI surface: help documents the guided command and the JSON contract is on
   for (const sc of env.result.scopes) assert.equal(Object.hasOwn(sc, "residue"), false);
 
   // Failure stays the exact three-key envelope, with the complete report under error.details.
-  write(join(team, OAS_LOCK_FILE), "{ not json");
+  write(join(team, OATS_LOCK_FILE), "{ not json");
   const bad = cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--json");
   const badEnv = json(bad);
   assert.notEqual(bad.status, 0);

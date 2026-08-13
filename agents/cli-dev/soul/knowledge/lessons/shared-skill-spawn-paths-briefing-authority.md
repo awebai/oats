@@ -8,7 +8,7 @@ timestamp: 2026-07-27
 
 # Lesson
 
-`oas okf harvest` spawns its harvester three ways, decided by the source instance's custody:
+`oats okf harvest` spawns its harvester three ways, decided by the source instance's custody:
 
 - **repo-resident soul** → attached to the source work tree, one commit on that shared tree;
 - **workspace-mode soul** → a worktree of the soul's OWN home repo, commit, push, open a PR,

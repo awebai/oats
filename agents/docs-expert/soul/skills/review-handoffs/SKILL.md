@@ -5,7 +5,7 @@ description: >-
   commit. Use when sending a branch for review, reporting fixes to a reviewer,
   or deciding whether to run memory harvest while review is open. Covers branch
   tip SHA handoffs, copy-paste verification commands, stale-SHA triage, and
-  deferring `oas okf harvest` until review closes.
+  deferring `oats okf harvest` until review closes.
 ---
 
 # Review handoffs
@@ -46,7 +46,7 @@ Check the target before changing code:
 
 ## Harvest timing
 
-Do not run `oas okf harvest` while review is open. Harvest can spawn a harvester
+Do not run `oats okf harvest` while review is open. Harvest can spawn a harvester
 that commits to your work branch. That advances the tip under the reviewer.
 
 Write notes as you work. Wait until the reviewer confirms the review is closed.

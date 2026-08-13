@@ -1,13 +1,13 @@
 ---
 type: Lesson
 title: Post-merge developer harvests land on instance branches — preserve before retiring
-description: A developer's final oas okf harvest after the feature PR merged commits to their instance worktree branch, which retirement deletes; verify with merge-base and cherry-pick the harvest commits onto a knowledge-only PR before oas retire --delete-branch.
+description: A developer's final oats okf harvest after the feature PR merged commits to their instance worktree branch, which retirement deletes; verify with merge-base and cherry-pick the harvest commits onto a knowledge-only PR before oats retire --delete-branch.
 tags: [retirement, harvest, okf, coordination]
 ---
 
 # Post-merge harvests strand on instance branches
 
-When a developer runs `oas okf harvest` after the feature PR has merged, the harvest commit lands on their instance worktree branch — not on main and not on any delivery branch. `oas retire --delete-branch` would delete it, losing the soul-knowledge promotion.
+When a developer runs `oats okf harvest` after the feature PR has merged, the harvest commit lands on their instance worktree branch — not on main and not on any delivery branch. `oats retire --delete-branch` would delete it, losing the soul-knowledge promotion.
 
 Before retiring, run:
 
@@ -25,4 +25,4 @@ git log origin/main..<branch> -- <soul-path>
 
 Otherwise the maintainer's knowledge-consistency gate can return the PR.
 
-Also hold retirement while the developer's harvester instance is still running on their tree; check `oas status` for `memory-harvest-*` before deleting the branch.
+Also hold retirement while the developer's harvester instance is still running on their tree; check `oats status` for `memory-harvest-*` before deleting the branch.

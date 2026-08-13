@@ -61,10 +61,10 @@ test("all build/smoke steps precede npm publication", () => {
 });
 
 test("GitHub Release is created after npm publication, from the same assets", () => {
-  const pubOas = yml.indexOf("Publish @oas-framework/oas");
-  const pubPi = yml.indexOf("Publish @oas-framework/pi");
+  const pubOats = yml.indexOf("Publish @awebai/oats");
+  const pubPi = yml.indexOf("Publish @awebai/oats-pi");
   const ghRelease = yml.indexOf("gh release create");
-  assert.ok(pubOas > 0 && pubPi > pubOas && ghRelease > pubPi, "order: oas → pi → GitHub Release");
+  assert.ok(pubOats > 0 && pubPi > pubOats && ghRelease > pubPi, "order: oats → pi → GitHub Release");
   assert.match(yml, /--verify-tag/, "release verifies the pushed tag");
   assert.match(yml, /SHA256SUMS\.txt/, "checksums published");
   assert.match(yml, /attest-build-provenance/, "provenance attestation");
@@ -162,11 +162,11 @@ test("npm publication and GitHub Release are same-tag retryable (idempotent)", (
   // Re-running the publish job must skip already-live npm versions instead of
   // failing on npm's already-published rejection, and re-upload GH assets.
   const publishJob = yml.slice(yml.indexOf("publish:\n"));
-  const oasStep = publishJob.slice(publishJob.indexOf("Publish @oas-framework/oas"), publishJob.indexOf("Publish @oas-framework/pi"));
-  const piStep = publishJob.slice(publishJob.indexOf("Publish @oas-framework/pi"), publishJob.indexOf("Download Desktop artifacts"));
-  assert.match(oasStep, /npm view "@oas-framework\/oas@\$\{V\}"/, "oas publish guarded by npm view");
-  assert.match(piStep, /npm view "@oas-framework\/pi@\$\{V\}"/, "pi publish guarded by npm view");
-  for (const step of [oasStep, piStep]) {
+  const oatsStep = publishJob.slice(publishJob.indexOf("Publish @awebai/oats"), publishJob.indexOf("Publish @awebai/oats-pi"));
+  const piStep = publishJob.slice(publishJob.indexOf("Publish @awebai/oats-pi"), publishJob.indexOf("Download Desktop artifacts"));
+  assert.match(oatsStep, /npm view "@awebai\/oats@\$\{V\}"/, "oats publish guarded by npm view");
+  assert.match(piStep, /npm view "@awebai\/oats-pi@\$\{V\}"/, "pi publish guarded by npm view");
+  for (const step of [oatsStep, piStep]) {
     assert.ok(step.indexOf("npm view") < step.indexOf("npm publish"), "guard precedes publish");
     assert.match(step, /already published/, "skip message on retry");
   }
@@ -189,7 +189,7 @@ test("desktop package scripts invoked by the workflow exist and run", () => {
   assert.equal(r.status, 0, `packages/desktop npm test failed:\n${r.stderr?.slice(-2000)}`);
   assert.match(yml, /npm run dist\b/, "workflow invokes npm run dist in packages/desktop");
   assert.equal(typeof desktopPkg.scripts.dist, "string",
-    "packages/desktop needs a dist script (electron-builder packaging producing dist/oas-desktop-*) — the release workflow runs `npm run dist` in every desktop matrix leg; this is the Desktop owner's deliverable, landed via feature/desktop-dist");
+    "packages/desktop needs a dist script (electron-builder packaging producing dist/oats-desktop-*) — the release workflow runs `npm run dist` in every desktop matrix leg; this is the Desktop owner's deliverable, landed via feature/desktop-dist");
   assert.ok(
     Object.keys(desktopPkg.devDependencies || {}).some((d) => d.includes("electron-builder")) || /electron-builder/.test(desktopPkg.scripts.dist),
     "dist script is electron-builder packaging");
@@ -197,7 +197,7 @@ test("desktop package scripts invoked by the workflow exist and run", () => {
 
 test("electron-builder declares a filesystem-safe Linux executableName (AppImage/DEB name guard)", () => {
   // Without a safe executableName, electron-builder derives it from the
-  // SCOPED package name "@oas-framework/desktop" → "@oas-frameworkdesktop",
+  // SCOPED package name "@awebai/oats-desktop" → "@awebaioats-desktop",
   // whose "@"/"/" fail the Linux AppImage/DEB build ("characters that cannot
   // be safely used in file paths"). This guards that regressing.
   const cfg = readFileSync(new URL("../packages/desktop/electron-builder.config.cjs", import.meta.url), "utf8");
@@ -247,9 +247,9 @@ test("release and build-only installer smoke are consistent build-verify gates",
   const bi = readFileSync(new URL("../.github/workflows/build-installers.yml", import.meta.url), "utf8");
   const desktopJob = yml.slice(yml.indexOf("desktop-build:"), yml.indexOf("\n  publish:", yml.indexOf("desktop-build:")));
   for (const [name, text] of [["release", desktopJob], ["build-installers", bi]]) {
-    assert.match(text, /OAS_SMOKE_SKIP_LAUNCH:\s*"1"/, `${name} marks GUI launch skipped`);
-    assert.match(text, /OAS_SMOKE_BUILD_VERIFY:\s*"1"/, `${name} explicitly authorizes build-verify mode`);
-    assert.match(text, /OAS_SMOKE_TARGET_ARCH:\s*\$\{\{ matrix\.arch \}\}/, `${name} passes the matrix arch to the ABI probe`);
+    assert.match(text, /OATS_SMOKE_SKIP_LAUNCH:\s*"1"/, `${name} marks GUI launch skipped`);
+    assert.match(text, /OATS_SMOKE_BUILD_VERIFY:\s*"1"/, `${name} explicitly authorizes build-verify mode`);
+    assert.match(text, /OATS_SMOKE_TARGET_ARCH:\s*\$\{\{ matrix\.arch \}\}/, `${name} passes the matrix arch to the ABI probe`);
     assert.match(text, /npm run dist:smoke/, `${name} still gates inventory + codesign + node-pty ABI`);
     // The smoke's codesign phase is unconditional on darwin — both CI gates
     // rely on it; neither may set an env var that could skip it (there is

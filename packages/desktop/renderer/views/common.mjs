@@ -1,4 +1,4 @@
-/* oas desktop — shared helpers for renderer views.
+/* oats desktop — shared helpers for renderer views.
    Plain ES module, DOM-only, no frameworks (contract). Views import from
    here; the shell provides ctx = { api(pathname, opts), openFile(path),
    openTerminal(instance) } per the desktop-app contract. */
@@ -60,7 +60,7 @@ export function postJson(ctx, pathname, body) {
    The selected workspace is shared across views and persisted, so switching
    in one view switches everywhere. Views subscribe to react to changes made
    elsewhere (e.g. a shell-level switcher can call setWorkspace too). */
-const WS_KEY = "oas.desktop.ws";
+const WS_KEY = "oats.desktop.ws";
 const wsListeners = new Set();
 /* In-memory source of truth; localStorage is persistence only (absent in
    node tests and storage-less shells). */
@@ -130,11 +130,11 @@ export function renderWorkspaceSelect(selectEl, list, current) {
 /* Load the shared token stylesheet once per document (views are mounted by
    the shell, which may or may not include theme.css itself). */
 export function ensureTheme(doc = document) {
-  if (doc.querySelector('link[data-oas-theme], style[data-oas-theme]')) return;
+  if (doc.querySelector('link[data-oats-theme], style[data-oats-theme]')) return;
   const link = doc.createElement("link");
   link.rel = "stylesheet";
   link.href = new URL("../theme.css", import.meta.url).href; // views/ → renderer/theme.css
-  link.dataset.oasTheme = "1";
+  link.dataset.oatsTheme = "1";
   doc.head.appendChild(link);
 }
 

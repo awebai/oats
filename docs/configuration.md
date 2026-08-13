@@ -1,15 +1,15 @@
 # Configuration
 
-OAS configuration lives in `oas-config.yaml` at a laptop, workspace, or
+OATS configuration lives in `oats-config.yaml` at a laptop, workspace, or
 repository root. It owns deployment policy: agent-type declarations, the three
 fundamental layer slots, additive capability activations, settings,
 exclusions, instruction overrides, and work modes.
 
-The CLI is the primary config author: `oas init` scaffolds the full shape,
-`oas use` writes capability entries, `oas create --type` sets a soul's type.
+The CLI is the primary config author: `oats init` scaffolds the full shape,
+`oats use` writes capability entries, `oats create --type` sets a soul's type.
 Hand-editing is valid but never required. Packages never declare their
 targets. See the machine-readable
-[`oas-config.schema.json`](oas-config.schema.json) alongside the examples
+[`oats-config.schema.json`](oats-config.schema.json) alongside the examples
 below.
 
 ## Scopes
@@ -25,12 +25,12 @@ it. It does not escape that scope. This lets a laptop set defaults, a workspace
 add shared team capabilities, and one repository make a narrower choice.
 
 ```text
-~/oas-config.yaml
-~/workspace/oas-config.yaml
-~/workspace/service/oas-config.yaml
+~/oats-config.yaml
+~/workspace/oats-config.yaml
+~/workspace/service/oats-config.yaml
 ```
 
-Use `oas doctor <context> --soul <name>` to inspect the result.
+Use `oats doctor <context> --soul <name>` to inspect the result.
 
 ## Schema
 
@@ -55,20 +55,20 @@ capabilities:
   # Fundamental layers — exclusive slots; a capability entry or an explicit none.
   layers:
     knowledge:
-      capability: oas.okf
+      capability: oats.okf
       from: installed
       settings:
         harvest-model: github-copilot/gpt-5.5
-      # injection-override: .agents/injections/capabilities/oas.okf.md
+      # injection-override: .agents/injections/capabilities/oats.okf.md
     messaging: none
     tasks:
-      capability: oas.linear
+      capability: oats.linear
       from: installed
       agent-types:
         developers:
           enabled: true
           settings: {team: ENG}
-      # injection-override: .agents/injections/capabilities/oas.linear.md
+      # injection-override: .agents/injections/capabilities/oats.linear.md
 
   # Additive capabilities — non-exclusive; target global, agent-types, or souls.
   additive:
@@ -96,9 +96,9 @@ work-modes:
     # scripts (installs, .env copying, direnv/mise). Relative to this config's dir.
     setup: scripts/setup-worktree.sh
 
-# ── OAS defaults — the framework's baseline instruction block.
-oas:
-  # injection-override: .agents/injections/oas-defaults/oas.md
+# ── OATS defaults — the framework's baseline instruction block.
+oats:
+  # injection-override: .agents/injections/oats-defaults/oats.md
 
 # Extra unconditional instruction blocks for every instance at this scope.
 agents-md-injection:
@@ -114,13 +114,13 @@ same team. `name:` is required; `id:` optionally pins the provider team id
 it:
 
 - **Identity**: instances record their team in `instance.json` and their
-  TASK.md briefing; hooks receive `OAS_TEAM_NAME`/`OAS_TEAM_ID`/`OAS_TEAM_SCOPE`.
-- **Discovery**: `oas status --team` lists agents across every `agents/`
+  TASK.md briefing; hooks receive `OATS_TEAM_NAME`/`OATS_TEAM_ID`/`OATS_TEAM_SCOPE`.
+- **Discovery**: `oats status --team` lists agents across every `agents/`
   root in the team scope (the scope's own plus each member repo's), so an
   agent in one repo can see teammates defined at the workspace level or in
   sibling repos. There is no explicit member list — every repo under the
   team scope is a member by construction.
-- **Cross-repo spawn/retire**: `oas spawn <soul>` and `oas retire <instance>`
+- **Cross-repo spawn/retire**: `oats spawn <soul>` and `oats retire <instance>`
   resolve across the team scope's repos when the name isn't found locally
   (unique match wins; ambiguity errors with guidance to pass `--dir`). The
   instance homes with the soul's own repo, works in that repo, and resolves
@@ -130,15 +130,15 @@ it:
   resolved team (id wins over name; a bare name is resolved against the aweb
   root's memberships), with the instance name as the discoverable alias.
   Because every instance joins with its own name, the aweb team roster is
-  also the **cross-machine directory**: `oas aweb roster` lists team members
-  wherever they run, complementing the local `oas status --team`.
+  also the **cross-machine directory**: `oats aweb roster` lists team members
+  wherever they run, complementing the local `oats status --team`.
 
 ### `agent-types`
 
 Agent types are agent families. Config declares type names (optionally with a
 description); membership is **not** listed in config — each soul opts in with
-an optional single `type: <name>` in its `soul.yaml` (`oas create --type <t>`
-sets it; `oas type add <name>` declares it in config). A type is identity: what kind of agent a soul is travels with the
+an optional single `type: <name>` in its `soul.yaml` (`oats create --type <t>`
+sets it; `oats type add <name>` declares it in config). A type is identity: what kind of agent a soul is travels with the
 soul, while config decides what each type gets. Tags, dynamic selectors, and
 instance names are not supported.
 
@@ -149,7 +149,7 @@ exclusive slots with an explicit home. Each slot holds either a capability
 entry (`capability: <id>` plus optional `from`, targets, `settings`,
 `injection-override`) or the explicit string `none`, which suppresses an integration
 inherited from an outer scope. A slot absent from a config inherits from
-outer scopes; `oas init` writes all three so the resolution is visible.
+outer scopes; `oats init` writes all three so the resolution is visible.
 
 The entry's capability must declare the same layer in its manifest; a
 mismatch is an error, as is a layer-declaring capability placed under
@@ -171,7 +171,7 @@ precedence is:
 3. global;
 4. at equal target specificity, closer config scope.
 
-Conflicting values at equal specificity and the same scope are errors. OAS
+Conflicting values at equal specificity and the same scope are errors. OATS
 never uses YAML order as an implicit winner. `enabled: false` uses the same
 precedence, allowing global enable → type exclusion → soul re-enable.
 
@@ -185,11 +185,11 @@ or `path:<dir>` (development declaration pointing at a manifest directory).
 A mismatch between `from:` and the discovered artifact origin is an error.
 `from: bundled` was removed. Official capabilities are acquired like any other
 package, and acquisition never grants executable trust — approve executable
-surfaces explicitly with `oas trust <capability>`.
+surfaces explicitly with `oats trust <capability>`.
 
 ### `injection-override`
 
-Every injectable item — each capability entry, each work mode, and the `oas:`
+Every injectable item — each capability entry, each work mode, and the `oats:`
 kernel block — accepts an `injection-override:` key: a config-relative path replaces
 the packaged instruction file, `none` suppresses it, and `default` restores
 it. The closest scope declaring the key wins. Scaffolded configs carry these
@@ -197,10 +197,10 @@ as commented-out lines pointing at the conventional locations:
 
 ```text
 .agents/injections/capabilities/<capability-id>.md
-.agents/injections/oas-defaults/oas.md
+.agents/injections/oats-defaults/oats.md
 ```
 
-The clean path is `oas inject eject <capability|oas>`: it copies
+The clean path is `oats inject eject <capability|oats>`: it copies
 the packaged default to the conventional path and sets the key — the ejected
 file then deliberately stops tracking package updates. Overrides are not
 allowed on `from: owned`/`path:` entries: the scope owns the package source,
@@ -211,7 +211,7 @@ so its `injects/` file is edited directly.
 Spawn fails when two sources contribute the same skill directory name. An
 explicit override maps that name to the winning source (`soul`, `kernel`, a
 capability ID, or a config source shown by doctor). Overrides are deliberate;
-OAS never keeps whichever filesystem entry happened to be discovered first.
+OATS never keeps whichever filesystem entry happened to be discovered first.
 
 ### Instruction sources
 
@@ -219,7 +219,7 @@ OAS never keeps whichever filesystem entry happened to be discovered first.
 adds content; it does not override packaged defaults — that is `injection-override:`).
 Capability packages can ship an `inject`; work modes have their own source.
 
-OAS reads the canonical soul `AGENTS.md`, composes selected blocks in a new
+OATS reads the canonical soul `AGENTS.md`, composes selected blocks in a new
 instance file, and records every source. It never reconciles deployment
 instructions into the committed soul; spawn and doctor are the composition
 boundaries.
@@ -243,7 +243,7 @@ Its failure warns without hiding the instance.
 
 ## Acquisition and lockfile
 
-External acquisition writes `oas-lock.json` beside the declaring config in
+External acquisition writes `oats-lock.json` beside the declaring config in
 `lockfileVersion: 2`. It records two levels — a `packages` map (source, exact
 commit, selected path, payload integrity, dependencies) and a `capabilities`
 map (each materialized capability's version, provider package, path, artifact
@@ -257,7 +257,7 @@ integrity, and executable trust):
       "source": "git:https://example.invalid/engineering.git@v1.4.2",
       "version": "1.4.2",
       "commit": "0123456789abcdef0123456789abcdef01234567",
-      "path": "oas-package",
+      "path": "oats-package",
       "integrity": "sha256-…",
       "dependencies": []
     }
@@ -275,17 +275,17 @@ integrity, and executable trust):
 ```
 
 No command silently updates this record. Changed capability integrity blocks the
-artifact and resets its trust. `oas trust <id>` approves commands, hooks, and
+artifact and resets its trust. `oats trust <id>` approves commands, hooks, and
 launch-environment authority only for the exact locked artifact integrity, and
 official identity never grants it.
 Declarative skill/instruction capabilities need a valid lock but no executable
 approval. Capabilities authored under a scope's `.agents/capabilities/owned/`
 follow their reviewed source provenance. Materialized artifacts live in
 `.agents/capabilities/installed/<id>/` beside their lock, stay gitignored, and
-are re-materialized by bare `oas install` with integrity verification.
+are re-materialized by bare `oats install` with integrity verification.
 
 Legacy `lockfileVersion: 1` locks (per-capability marketplace installs) remain
-readable and usable. `oas migrate` converts a scope to the revised v2 lock
+readable and usable. `oats migrate` converts a scope to the revised v2 lock
 **all-or-nothing**: if any entry cannot map to a package yet, the whole scope
 stays byte-identical v1 and keeps working, and a successful run converts the
 entire scope at once. There is no residue container — a converted lock never
@@ -293,27 +293,27 @@ carries leftover v1 entries. The earlier transitional v2 shape — capability
 lists on package rows, a persistent `.agents/packages/installed/` store — is
 rejected as an invalid lock and recreated by a fresh acquisition, never
 migrated. See `docs/capabilities.md` (“Distribution packages”), the schemas
-`docs/oas-package.schema.json` / `docs/oas-lock.schema.json`, and
+`docs/oats-package.schema.json` / `docs/oats-lock.schema.json`, and
 `docs/design/package-engine-contract.md`.
 
 ## CLI
 
 ```bash
-oas init [--raw] [--template <name|path|git-url>] [--knowledge <id|none>] [--messaging <id|none>] [--tasks <id|none>]
-oas install [<id|git-url|path>] [--dir <dir>]  # acquire; bare form restores; inactive by default
-oas trust <capability> [--dir <dir>]
-oas use <capability> [--global|--type <t>|--soul <s>] [--disable] [--settings k=v [k2=v2 ...]]
-oas use none --layer <layer>
-oas type add <name> [--description <d>]   # declare an agent type
-oas type list
-oas inject eject <capability|oas>  # materialize an injection override
-oas create <name> --type <agent-type> ...
-oas doctor [context] --soul <name> [--json]
+oats init [--raw] [--template <name|path|git-url>] [--knowledge <id|none>] [--messaging <id|none>] [--tasks <id|none>]
+oats install [<id|git-url|path>] [--dir <dir>]  # acquire; bare form restores; inactive by default
+oats trust <capability> [--dir <dir>]
+oats use <capability> [--global|--type <t>|--soul <s>] [--disable] [--settings k=v [k2=v2 ...]]
+oats use none --layer <layer>
+oats type add <name> [--description <d>]   # declare an agent type
+oats type list
+oats inject eject <capability|oats>  # materialize an injection override
+oats create <name> --type <agent-type> ...
+oats doctor [context] --soul <name> [--json]
 ```
 
-`oas init` writes only explicitly selected defaults, acquiring marketplace
+`oats init` writes only explicitly selected defaults, acquiring marketplace
 layer capabilities into this scope's installed/ store as needed; it does not
-activate every acquired package. `oas use`
+activate every acquired package. `oats use`
 places a layer-declaring capability under `capabilities.layers.<layer>` and
 everything else under `capabilities.additive`, regenerating the conventional
 injection comments; custom comments inside the `capabilities:` block are not
@@ -321,16 +321,16 @@ preserved.
 
 ### Templates
 
-`oas init --template <name|path|git-url>` seeds the new config from a template
+`oats init --template <name|path|git-url>` seeds the new config from a template
 config file: a local path, a git URL whose default branch carries an
-`oas-config.yaml`, or a name resolved through a `templates:` map declared in an
+`oats-config.yaml`, or a name resolved through a `templates:` map declared in an
 outer scope (typically the laptop config):
 
 ```yaml
-# ~/oas-config.yaml
+# ~/oats-config.yaml
 templates:
-  personal: ~/templates/personal-oas-config.yaml
-  team: https://example.invalid/oas-templates.git
+  personal: ~/templates/personal-oats-config.yaml
+  team: https://example.invalid/oats-templates.git
 ```
 
 A template seed is copied once. `init` copies the content, records provenance in
@@ -341,11 +341,11 @@ edits never propagate silently.
 ### Package config templates
 
 When the config and its capability providers travel together, prefer
-`oas init --package <source> [--config <name>]`. It validates a reference config
+`oats init --package <source> [--config <name>]`. It validates a reference config
 template shipped by a distribution package and writes it as your local
-`oas-config.yaml`, recording the exact template as a commit-safe adopted base
-with package, template, and commit provenance. `oas config diff` and
-`oas config sync` compare against that base later. Installing the package alone
+`oats-config.yaml`, recording the exact template as a commit-safe adopted base
+with package, template, and commit provenance. `oats config diff` and
+`oats config sync` compare against that base later. Installing the package alone
 adopts no template. See [Distribution packages](packages.md).
 
 ## Fundamental-layer disable
@@ -359,7 +359,7 @@ capabilities:
     tasks: none
 ```
 
-`oas use none --layer tasks` writes this. Pre-v0.9 spellings (`groups:`,
+`oats use none --layer tasks` writes this. Pre-v0.9 spellings (`groups:`,
 top-level `layers:`, flat `capabilities.<id>` maps, `source:`,
 `agents-md-injection` on capability entries) are rejected with pointed
 migration errors.
@@ -375,10 +375,10 @@ agent-types:
 capabilities:
   layers:
     knowledge:
-      capability: oas.okf
+      capability: oats.okf
       from: installed
     tasks:
-      capability: oas.linear
+      capability: oats.linear
       from: installed
       agent-types:
         developers:
@@ -394,7 +394,7 @@ Laptop:
 capabilities:
   layers:
     messaging:
-      capability: oas.aweb
+      capability: oats.aweb
       from: installed
 ```
 
@@ -422,15 +422,15 @@ does not download, update, or approve code.
 
 ## Tmux scrolling during init
 
-Interactive `oas init` offers to add `set -g mouse on` to the existing
+Interactive `oats init` offers to add `set -g mouse on` to the existing
 `~/.tmux.conf` or XDG tmux config so agent windows scroll normally with a mouse
 or trackpad. It never changes terminal keyboard mappings. Agent-led and
 scripted setup should pass the user's answer explicitly:
 
 ```bash
-oas init --tmux-mouse
-oas init --no-tmux-mouse
-oas init --raw --tmux-mouse
+oats init --tmux-mouse
+oats init --no-tmux-mouse
+oats init --raw --tmux-mouse
 ```
 
 An accepted change is idempotent and reloads a running tmux server when

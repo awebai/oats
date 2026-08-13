@@ -6,7 +6,7 @@
 //      team resolution, agents roots, souls, capability agents, instances;
 //   2. fault tolerance: malformed configs/souls degrade to "not visible";
 //   3. the bridge is really gone: no core.mjs import, no
-//      OAS_DESKTOP_FRAMEWORK_ROOT acceptance, no repo-root inference in the
+//      OATS_DESKTOP_FRAMEWORK_ROOT acceptance, no repo-root inference in the
 //      desktop package's shipped sources.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -29,7 +29,7 @@ test("reader parity: team scope and agents roots match the kernel on this repo",
   // a lock/installed-store integrity mismatch between branches). Parity is
   // only comparable when the kernel itself resolves.
   let k;
-  try { k = core.resolveOasConfig(ROOT); }
+  try { k = core.resolveOatsConfig(ROOT); }
   catch (e) { t.diagnostic(`kernel threw (${e.message}) — reader still resolved; parity skipped`); return; }
   assert.equal(!!r.team, !!k.team, "team presence matches");
   if (r.team) {
@@ -79,9 +79,9 @@ test("reader parity: souls and capability agents match the kernel", (t) => {
 // the parity proof that can never be skipped — the kernel MUST resolve here
 // and MUST agree with the reader on every read seam.
 test("reader parity (clean fixture, unconditional): kernel resolves and matches on every seam", () => {
-  const scope = mkdtempSync(join(tmpdir(), "oas-reader-clean-"));
+  const scope = mkdtempSync(join(tmpdir(), "oats-reader-clean-"));
   // team deployment: scope config + two member repos with agents roots
-  writeFileSync(join(scope, "oas-config.yaml"), "name: clean-team\nteam:\n  name: clean-team\n");
+  writeFileSync(join(scope, "oats-config.yaml"), "name: clean-team\nteam:\n  name: clean-team\n");
   mkdirSync(join(scope, "agents"), { recursive: true });
   for (const repo of ["repo-a", "repo-b"]) {
     mkdirSync(join(scope, repo, "agents"), { recursive: true });
@@ -99,7 +99,7 @@ test("reader parity (clean fixture, unconditional): kernel resolves and matches 
   // a capability package (owned store) declaring an agent soul
   const capDir = join(scope, ".agents", "capabilities", "owned", "clean-cap");
   mkdirSync(join(capDir, "agents", "helper"), { recursive: true });
-  writeFileSync(join(capDir, "oas.json"), JSON.stringify({
+  writeFileSync(join(capDir, "oats.json"), JSON.stringify({
     capability: "clean.cap", version: "1.0.0", description: "clean fixture capability",
     agents: ["agents/helper"], skills: ["skills"],
   }));
@@ -107,11 +107,11 @@ test("reader parity (clean fixture, unconditional): kernel resolves and matches 
   writeFileSync(join(capDir, "agents", "helper", "AGENTS.md"), "# helper\n");
   mkdirSync(join(capDir, "skills", "how-to"), { recursive: true });
   writeFileSync(join(capDir, "skills", "how-to", "SKILL.md"), "---\nname: how-to\ndescription: d\n---\n# s\n");
-  writeFileSync(join(scope, "repo-a", "oas-config.yaml"),
+  writeFileSync(join(scope, "repo-a", "oats-config.yaml"),
     "name: repo-a\ncapabilities:\n  additive:\n    clean.cap:\n      from: owned\n");
 
   // Kernel MUST resolve on the clean fixture — no conditional escape here.
-  const k = core.resolveOasConfig(join(scope, "repo-a"));
+  const k = core.resolveOatsConfig(join(scope, "repo-a"));
   const r = reader.resolveDeployment(join(scope, "repo-a"));
   assert.ok(k.team, "kernel resolves the team on a clean fixture");
   assert.ok(r.team, "reader resolves the team on a clean fixture");
@@ -168,7 +168,7 @@ test("reader parity: listInstances shape matches the kernel", () => {
 });
 
 test("reader: local souls (scope-sibling local-agents/) are first-class roster citizens", () => {
-  const scope = mkdtempSync(join(tmpdir(), "oas-reader-local-"));
+  const scope = mkdtempSync(join(tmpdir(), "oats-reader-local-"));
   // committed persistent soul under agents/, LOCAL soul under the SIBLING
   // local-agents/ (gitignored by kernel contract — invisible to git, fully
   // visible to the app)
@@ -200,7 +200,7 @@ test("reader: local souls (scope-sibling local-agents/) are first-class roster c
 });
 
 test("reader: an ALL-LOCAL scope (no agents/ at all) resolves and rosters", () => {
-  const scope = mkdtempSync(join(tmpdir(), "oas-reader-alllocal-"));
+  const scope = mkdtempSync(join(tmpdir(), "oats-reader-alllocal-"));
   const localBase = join(scope, "local-agents");
   mkdirSync(join(localBase, "solo", "soul"), { recursive: true });
   writeFileSync(join(localBase, "solo", "soul", "soul.yaml"), "name: solo\ndescription: only local souls here\n");
@@ -213,8 +213,8 @@ test("reader: an ALL-LOCAL scope (no agents/ at all) resolves and rosters", () =
   const agents = reader.listAgents(root);
   assert.deepEqual(agents.map((a) => `${a.kind}:${a.name}`), ["local:solo"], "all-local scope rosters its souls");
   // team scopes count all-local members
-  const team = mkdtempSync(join(tmpdir(), "oas-reader-teamlocal-"));
-  writeFileSync(join(team, "oas-config.yaml"), "name: t\nteam:\n  name: t\n");
+  const team = mkdtempSync(join(tmpdir(), "oats-reader-teamlocal-"));
+  writeFileSync(join(team, "oats-config.yaml"), "name: t\nteam:\n  name: t\n");
   mkdirSync(join(team, "member-a", "agents"), { recursive: true });          // classic member
   mkdirSync(join(team, "member-b", "local-agents", "x", "soul"), { recursive: true }); // all-local member
   writeFileSync(join(team, "member-b", "local-agents", "x", "soul", "soul.yaml"), "name: x\n");
@@ -224,9 +224,9 @@ test("reader: an ALL-LOCAL scope (no agents/ at all) resolves and rosters", () =
 });
 
 test("reader: malformed configs and souls degrade instead of throwing", () => {
-  const base = mkdtempSync(join(tmpdir(), "oas-reader-"));
-  // invalid oas-config.yaml at the top level — chain must skip it
-  writeFileSync(join(base, "oas-config.yaml"), ": : :\n\t\tbroken");
+  const base = mkdtempSync(join(tmpdir(), "oats-reader-"));
+  // invalid oats-config.yaml at the top level — chain must skip it
+  writeFileSync(join(base, "oats-config.yaml"), ": : :\n\t\tbroken");
   mkdirSync(join(base, "agents", "good-soul", "soul"), { recursive: true });
   writeFileSync(join(base, "agents", "good-soul", "soul", "soul.yaml"), "name: good-soul\ndescription: fine\n");
   mkdirSync(join(base, "agents", "bad-soul", "soul"), { recursive: true });
@@ -240,11 +240,11 @@ test("reader: malformed configs and souls degrade instead of throwing", () => {
 });
 
 test("reader: manifest paths escaping the package boundary do not resolve", () => {
-  const base = mkdtempSync(join(tmpdir(), "oas-reader-esc-"));
+  const base = mkdtempSync(join(tmpdir(), "oats-reader-esc-"));
   const capDir = join(base, ".agents", "capabilities", "installed", "evil");
   mkdirSync(capDir, { recursive: true });
-  writeFileSync(join(base, "oas-config.yaml"), "name: t\ncapabilities:\n  additive:\n    evil.cap: {}\n");
-  writeFileSync(join(capDir, "oas.json"), JSON.stringify({
+  writeFileSync(join(base, "oats-config.yaml"), "name: t\ncapabilities:\n  additive:\n    evil.cap: {}\n");
+  writeFileSync(join(capDir, "oats.json"), JSON.stringify({
     capability: "evil.cap", version: "1.0.0", description: "x",
     agents: ["../../../../outside-soul"], skills: ["../../.."],
   }));
@@ -255,7 +255,7 @@ test("reader: manifest paths escaping the package boundary do not resolve", () =
 });
 
 test("reader: nested soul.yaml/SKILL.md symlinks escaping the package never get read", () => {
-  const base = mkdtempSync(join(tmpdir(), "oas-reader-nest-"));
+  const base = mkdtempSync(join(tmpdir(), "oats-reader-nest-"));
   const { symlinkSync } = fsExtra;
   // Secret files OUTSIDE the package that symlinks will point at.
   writeFileSync(join(base, "outside-soul.yaml"), "name: leaked\ndescription: TOP-SECRET-SOUL\n");
@@ -263,8 +263,8 @@ test("reader: nested soul.yaml/SKILL.md symlinks escaping the package never get 
   const capDir = join(base, ".agents", "capabilities", "installed", "nest");
   mkdirSync(join(capDir, "agents", "helper"), { recursive: true });
   mkdirSync(join(capDir, "skills", "sneaky"), { recursive: true });
-  writeFileSync(join(base, "oas-config.yaml"), "name: t\ncapabilities:\n  additive:\n    nest.cap: {}\n");
-  writeFileSync(join(capDir, "oas.json"), JSON.stringify({
+  writeFileSync(join(base, "oats-config.yaml"), "name: t\ncapabilities:\n  additive:\n    nest.cap: {}\n");
+  writeFileSync(join(capDir, "oats.json"), JSON.stringify({
     capability: "nest.cap", version: "1.0.0", description: "x",
     agents: ["agents/helper"], skills: ["skills"],
   }));
@@ -288,7 +288,7 @@ test("reader: nested soul.yaml/SKILL.md symlinks escaping the package never get 
 });
 
 test("reader: semantically malformed instance.json degrades to the bare instance, hides nothing", () => {
-  const base = mkdtempSync(join(tmpdir(), "oas-reader-meta-"));
+  const base = mkdtempSync(join(tmpdir(), "oats-reader-meta-"));
   const root = join(base, "agents");
   mkdirSync(join(root, "dev", "soul"), { recursive: true });
   writeFileSync(join(root, "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
@@ -337,20 +337,20 @@ function desktopSources() {
 test("no shipped desktop source imports the checkout kernel or accepts a framework-root override", () => {
   for (const [f, src] of desktopSources()) {
     assert.ok(!src.includes("lib/core.mjs"), `${f}: references the checkout kernel`);
-    assert.ok(!src.includes("OAS_DESKTOP_FRAMEWORK_ROOT"), `${f}: accepts the framework-root env override`);
+    assert.ok(!src.includes("OATS_DESKTOP_FRAMEWORK_ROOT"), `${f}: accepts the framework-root env override`);
     assert.ok(!/FRAMEWORK_ROOT|REPO_ROOT/.test(src), `${f}: infers a repo/framework root`);
   }
 });
 
 test("desktop hides tampered locked capability agents while kernel fails closed", () => {
-  const scope = mkdtempSync(join(tmpdir(), "oas-reader-agent-trust-"));
-  writeFileSync(join(scope, "oas-config.yaml"), "name: trust\ncapabilities:\n  additive:\n    locked.agent:\n      from: installed\n");
+  const scope = mkdtempSync(join(tmpdir(), "oats-reader-agent-trust-"));
+  writeFileSync(join(scope, "oats-config.yaml"), "name: trust\ncapabilities:\n  additive:\n    locked.agent:\n      from: installed\n");
   const capDir = join(scope, ".agents", "capabilities", "installed", "locked-agent");
   mkdirSync(join(capDir, "agents", "helper"), { recursive: true });
-  writeFileSync(join(capDir, "oas.json"), JSON.stringify({ capability: "locked.agent", version: "1.0.0", description: "d", agents: ["agents/helper"] }));
+  writeFileSync(join(capDir, "oats.json"), JSON.stringify({ capability: "locked.agent", version: "1.0.0", description: "d", agents: ["agents/helper"] }));
   writeFileSync(join(capDir, "agents", "helper", "soul.yaml"), "name: helper\nkind: local\n");
   writeFileSync(join(capDir, "agents", "helper", "AGENTS.md"), "SAFE\n");
-  writeFileSync(join(scope, "oas-lock.json"), JSON.stringify({ lockfileVersion: 1, capabilities: {
+  writeFileSync(join(scope, "oats-lock.json"), JSON.stringify({ lockfileVersion: 1, capabilities: {
     "locked.agent": { source: "path:/fixture", version: "1.0.0", integrity: core.capabilityIntegrity(capDir), trustedExecutables: false },
   } }));
   const root = join(scope, "agents"); mkdirSync(root);
@@ -366,14 +366,14 @@ test("desktop hides tampered locked capability agents while kernel fails closed"
 });
 
 test("desktop discards whole invalid lock files before capability-agent trust", () => {
-  const scope = mkdtempSync(join(tmpdir(), "oas-reader-invalid-lock-"));
-  writeFileSync(join(scope, "oas-config.yaml"), "name: trust\ncapabilities:\n  additive:\n    valid.agent:\n      from: installed\n");
+  const scope = mkdtempSync(join(tmpdir(), "oats-reader-invalid-lock-"));
+  writeFileSync(join(scope, "oats-config.yaml"), "name: trust\ncapabilities:\n  additive:\n    valid.agent:\n      from: installed\n");
   const capDir = join(scope, ".agents", "capabilities", "installed", "valid-agent");
   mkdirSync(join(capDir, "agents", "helper"), { recursive: true });
-  writeFileSync(join(capDir, "oas.json"), JSON.stringify({ capability: "valid.agent", version: "1.0.0", description: "d", agents: ["agents/helper"] }));
+  writeFileSync(join(capDir, "oats.json"), JSON.stringify({ capability: "valid.agent", version: "1.0.0", description: "d", agents: ["agents/helper"] }));
   writeFileSync(join(capDir, "agents", "helper", "soul.yaml"), "name: helper\nkind: local\n");
   const good = { source: "path:/fixture", version: "1.0.0", integrity: core.capabilityIntegrity(capDir), trustedExecutables: false };
-  const file = join(scope, "oas-lock.json");
+  const file = join(scope, "oats-lock.json");
   const invalidBodies = [
     "{", "null", "1", "[]",
     JSON.stringify({ lockfileVersion: 3, capabilities: { "valid.agent": good } }),

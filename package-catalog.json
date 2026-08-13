@@ -1,37 +1,37 @@
 {
   "packages": {
-    "oas.okf": {
-      "url": "https://github.com/OAS-Framework/oas-okf.git",
+    "oats.okf": {
+      "url": "https://github.com/awebai/oats-okf.git",
       "ref": "v1.4.1",
-      "path": "oas-package"
+      "path": "oats-package"
     },
-    "oas.aweb": {
-      "url": "https://github.com/OAS-Framework/oas-aweb.git",
+    "oats.aweb": {
+      "url": "https://github.com/awebai/oats-aweb.git",
       "ref": "v1.8.0",
-      "path": "oas-package"
+      "path": "oats-package"
     },
-    "oas.jira": {
-      "url": "https://github.com/OAS-Framework/oas-jira.git",
+    "oats.jira": {
+      "url": "https://github.com/awebai/oats-jira.git",
       "ref": "v1.0.0",
-      "path": "oas-package"
+      "path": "oats-package"
     },
-    "oas.linear": {
-      "url": "https://github.com/OAS-Framework/oas-linear.git",
+    "oats.linear": {
+      "url": "https://github.com/awebai/oats-linear.git",
       "ref": "v1.0.0",
-      "path": "oas-package"
+      "path": "oats-package"
     },
-    "oas.authoring": {
-      "url": "https://github.com/OAS-Framework/oas-authoring.git",
+    "oats.authoring": {
+      "url": "https://github.com/awebai/oats-authoring.git",
       "ref": "v1.0.0",
-      "path": "oas-package"
+      "path": "oats-package"
     },
-    "oas.dev": {
-      "url": "https://github.com/OAS-Framework/oas-dev.git",
+    "oats.dev": {
+      "url": "https://github.com/awebai/oats-dev.git",
       "ref": "v1.0.0",
-      "path": "oas-package"
+      "path": "oats-package"
     }
   },
   "capabilities": {
-    "oas.review": "oas.dev"
+    "oats.review": "oats.dev"
   }
 }

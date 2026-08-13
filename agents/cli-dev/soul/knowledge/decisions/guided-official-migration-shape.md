@@ -2,14 +2,14 @@
 type: Decision
 title: Guided official migration uses catalog aliases and mixed-scope refusals
 description: Guided official migration maps legacy marketplace capabilities through catalog aliases, holds scopes unchanged when official mappings are missing, skips non-official-only scopes, and refuses mixed acquire-plus-retain scopes before mutation.
-tags: [packages, migration, catalog, oas-lock, cli]
+tags: [packages, migration, catalog, oats-lock, cli]
 timestamp: 2026-07-29
 ---
 
 # Decision
 
 The existing-user 0.18→0.19 upgrade path is a guided command over the existing
-legacy-lock migration engine: `oas migrate --official [--recursive] [--dry-run]
+legacy-lock migration engine: `oats migrate --official [--recursive] [--dry-run]
 [--dir <d>] [--json]`. Guided mode is selected by `--official` or
 `--recursive`; with neither flag, the command keeps the previous single-scope
 migration path.
@@ -41,7 +41,7 @@ marketplace behaviors:
    so dry-run and apply agree that the scope is not convertible. The refusal
    message names every retained entry, states the whole v1 scope remains usable,
    and, when every retained source is package-mappable, names plain
-   `oas migrate` as the complete conversion path. Do not add a revised-v2
+   `oats migrate` as the complete conversion path. Do not add a revised-v2
    `residue` container. See [mixed scope migration refuses whole](/decisions/mixed-scope-migration-refuses-whole.md)
    and the original [residue-or-hold failure lesson](/lessons/guided-mixed-retain-needs-residue-or-hold.md).
 
@@ -51,13 +51,13 @@ The catalog is data, not code:
 
 ```json
 {
-  "packages": { "oas.dev": { "url": "...", "path": "oas-package" } },
-  "capabilities": { "oas.review": "oas.dev" }
+  "packages": { "oats.dev": { "url": "...", "path": "oats-package" } },
+  "capabilities": { "oats.review": "oats.dev" }
 }
 ```
 
 `capabilities` is the legacy-capability → package alias map. Identity mappings
-such as `oas.okf` → `oas.okf` need no entry. Both catalog maps are untrusted
+such as `oats.okf` → `oats.okf` need no entry. Both catalog maps are untrusted
 input: parse them into null-prototype objects and read with `Object.hasOwn`, as
 in the [prototype-safe policy map lesson](/lessons/prototype-safe-policy-map-lookups.md).
 Catalog package roots still follow the [package payload root

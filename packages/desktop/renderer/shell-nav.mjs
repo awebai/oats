@@ -1,4 +1,4 @@
-/* oas desktop — shell navigation manifest + stage-view loader.
+/* oats desktop — shell navigation manifest + stage-view loader.
    Extracted from shell.mjs so shell-level tests can exercise the SAME
    name→module wiring the production rail uses. shell.mjs binds these
    one-to-one. */

@@ -2,7 +2,7 @@
 type: Lesson
 title: Run npm with --prefix from a worktree instance — npm walks up into the main checkout
 description: A stray cd to instance home makes npm find the main checkout's package.json, so the quality gate silently validates the wrong tree.
-tags: [oas, worktree, tooling, quality-gate]
+tags: [oats, worktree, tooling, quality-gate]
 timestamp: 2026-07-29
 ---
 

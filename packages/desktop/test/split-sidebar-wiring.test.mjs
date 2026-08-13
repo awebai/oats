@@ -81,7 +81,7 @@ test("splits are terminal-only, route through editor-group transitions, and clea
 
 test("sidebar toggle is class-driven and persisted like other shell prefs", () => {
   const src = read("renderer/shell.mjs");
-  assert.match(src, /const SIDEBAR_HIDDEN_KEY = "oas-desktop-sidebar-hidden"/);
+  assert.match(src, /const SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden"/);
   assert.match(src, /classList\.toggle\("sidebar-hidden", on\)/);
   assert.match(src, /localStorage\.getItem\(SIDEBAR_HIDDEN_KEY\) === "1"/, "restored at startup");
   const css = read("renderer/shell.css");

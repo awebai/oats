@@ -25,12 +25,12 @@ const setup = (overrides = {}) => {
   return { dom, document: dom.window.document, selected, controller };
 };
 
-const A = { id: "/org-a/oas", path: "/org-a/oas", name: "oas", team: { name: "alpha" } };
-const B = { id: "/org-b/oas", path: "/org-b/oas", name: "oas", team: { name: "beta" } };
+const A = { id: "/org-a/oats", path: "/org-a/oats", name: "oats", team: { name: "alpha" } };
+const B = { id: "/org-b/oats", path: "/org-b/oats", name: "oats", team: { name: "beta" } };
 
 test("workspace choice labels disambiguate duplicate names with team and canonical ID", () => {
   assert.deepEqual(workspaceChoiceLabels([A, B, { id: "/docs", name: "docs" }]), [
-    "oas — alpha · /org-a/oas", "oas — beta · /org-b/oas", "docs",
+    "oats — alpha · /org-a/oats", "oats — beta · /org-b/oats", "docs",
   ]);
 });
 
@@ -43,31 +43,31 @@ test("workspace switcher: deferred A completing after B cannot overwrite B", asy
   const b = bGate.promise.then((workspace) => commitB(workspace, [workspace]));
   bGate.resolve(B);
   assert.equal(await b, true);
-  assert.equal(document.getElementById("ws-name").textContent, "oas");
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-b/oas");
+  assert.equal(document.getElementById("ws-name").textContent, "oats");
+  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-b/oats");
   aGate.resolve(A);
   assert.equal(await a, false);
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-b/oas");
+  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-b/oats");
   dom.window.close();
 });
 
 test("workspace menu is searchable, disambiguated, keyboard closable, and switches explicitly", () => {
   const { dom, document, selected, controller } = setup();
   controller.begin()(B, [A, B]);
-  assert.equal(document.getElementById("ws-name").textContent, "oas — beta · /org-b/oas");
+  assert.equal(document.getElementById("ws-name").textContent, "oats — beta · /org-b/oats");
   document.getElementById("ws-trigger").click();
   assert.equal(document.getElementById("ws-trigger").getAttribute("aria-expanded"), "true");
   const options = [...document.querySelectorAll(".ws-option")];
   assert.deepEqual(options.map((option) => option.querySelector(".ws-option-name").textContent), [
-    "oas — alpha · /org-a/oas", "oas — beta · /org-b/oas",
+    "oats — alpha · /org-a/oats", "oats — beta · /org-b/oats",
   ]);
   assert.equal(options[1].getAttribute("aria-selected"), "true");
   options[0].focus();
   controller.begin()(B, [A, B]);
-  assert.equal(document.activeElement.dataset.workspaceId, "/org-a/oas",
+  assert.equal(document.activeElement.dataset.workspaceId, "/org-a/oats",
     "roster refresh preserves the focused workspace option identity");
   document.activeElement.click();
-  assert.deepEqual(selected, ["/org-a/oas"]);
+  assert.deepEqual(selected, ["/org-a/oats"]);
   assert.equal(document.getElementById("ws-menu").hidden, true);
   assert.equal(document.activeElement, document.getElementById("ws-trigger"));
 
@@ -95,7 +95,7 @@ test("add workspace modal discovers, filters, selects and confirms a suggestion"
   const modal = document.getElementById("ws-modal");
   assert.equal(modal.hidden, false);
   assert.equal(document.activeElement, document.getElementById("ws-suggestion-search"));
-  assert.deepEqual([...document.querySelectorAll(".ws-suggestion-title")].map((node) => node.textContent), ["oas", "tools"]);
+  assert.deepEqual([...document.querySelectorAll(".ws-suggestion-title")].map((node) => node.textContent), ["oats", "tools"]);
   let choices = [...document.querySelectorAll(".ws-suggestion")];
   assert.deepEqual(choices.map((choice) => choice.tabIndex), [0, -1]);
   choices[0].focus();
@@ -123,7 +123,7 @@ test("filtering out the selected suggestion clears it and prevents hidden submis
   });
   controller.begin()(B, [B]);
   await controller.openModal();
-  document.querySelector('.ws-suggestion[data-workspace-id="/org-a/oas"]').click();
+  document.querySelector('.ws-suggestion[data-workspace-id="/org-a/oats"]').click();
   assert.equal(document.getElementById("ws-confirm").disabled, false);
   const search = document.getElementById("ws-suggestion-search");
   search.value = "tools";
@@ -172,12 +172,12 @@ test("picker cancellation does not orphan an in-flight discovery loading state",
   document.getElementById("ws-browse").click();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(document.querySelector(".ws-dialog").getAttribute("aria-busy"), "false");
-  assert.equal(document.getElementById("ws-dialog-status").textContent, "Finding OAS workspaces…",
+  assert.equal(document.getElementById("ws-dialog-status").textContent, "Finding OATS workspaces…",
     "loading remains truthful while the still-owned discovery is pending");
   discovery.resolve({ stale: false, suggestions: [A] });
   await opening;
   assert.equal(document.getElementById("ws-dialog-status").textContent, "1 suggested workspace");
-  assert.equal(document.querySelector(".ws-suggestion").dataset.workspaceId, "/org-a/oas");
+  assert.equal(document.querySelector(".ws-suggestion").dataset.workspaceId, "/org-a/oats");
   dom.window.close();
 });
 
@@ -311,16 +311,16 @@ test("pending add is single-flight, cannot be dismissed, and always reconciles",
   suggestionButtons[1].click();
   suggestionButtons[0].dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }));
   document.getElementById("ws-confirm").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
-  assert.deepEqual(mutationCalls, ["/org-a/oas"], "busy UI and handler guard enforce one mutation");
-  assert.equal(document.querySelector('.ws-suggestion[aria-checked="true"]').dataset.workspaceId, "/org-a/oas");
+  assert.deepEqual(mutationCalls, ["/org-a/oats"], "busy UI and handler guard enforce one mutation");
+  assert.equal(document.querySelector('.ws-suggestion[aria-checked="true"]').dataset.workspaceId, "/org-a/oats");
   dialog.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   modal.dispatchEvent(new dom.window.MouseEvent("mousedown", { bubbles: true }));
   assert.equal(modal.hidden, false, "Escape and backdrop cannot abandon an in-flight mutation");
   addGate.resolve({ ok: true, workspace: A });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(modal.hidden, true);
-  assert.deepEqual(selected, ["/org-a/oas"]);
-  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-a/oas");
+  assert.deepEqual(selected, ["/org-a/oats"]);
+  assert.equal(document.getElementById("ws-trigger").title, "Active workspace: /org-a/oats");
   dom.window.close();
 });
 

@@ -1,4 +1,4 @@
-/* oas desktop — "Active" overview (the home surface): cluster-first live
+/* oats desktop — "Active" overview (the home surface): cluster-first live
    view of everything currently happening. Agent clusters — connected
    components of parent/child/sibling links (see clusters.mjs) — are the
    primary visual unit: each multi-member cluster renders as a card with its
@@ -243,7 +243,7 @@ export function mount(el, ctx) {
     nodeEls: new Map(), lineage: new Set(),
   };
   el.innerHTML = `
-    <div class="hier oas-view" style="display:flex">
+    <div class="hier oats-view" style="display:flex">
       <style>${CSS}</style>
       <div class="hier-bar">
         <select class="field wssel" style="display:none"></select>
@@ -376,7 +376,7 @@ function render(s) {
     w.className = "hier-empty-wrap";
     w.style.height = "100%";
     w.innerHTML = `<div class="empty"><span class="big">◎</span>` +
-      `No instances yet.<br>Spawn one from the Spawn view or with <code>oas spawn &lt;agent&gt;</code>.</div>`;
+      `No instances yet.<br>Spawn one from the Spawn view or with <code>oats spawn &lt;agent&gt;</code>.</div>`;
     canvas.append(w);
     return;
   }

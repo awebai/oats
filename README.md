@@ -1,18 +1,19 @@
-# OAS — Open Agent Specialization
+# OATS — Open Agent Team Specification
 
 **Build durable specialist agents that compound expertise across sessions, tools, models, and repositories.**
 
-OAS (Open Agent Specialization) makes agents first-class project artifacts.
+OATS (Open Agent Team Specification, formerly published as OAS) makes agents
+first-class project artifacts.
 Instead of giving every task the same general assistant, a workspace can own a
 backend expert, UI specialist, maintainer, reviewer, package owner, or any other
 role—with a precise curriculum, durable knowledge, and a full provider-native
 session you can enter and steer.
 
-OAS works with both **Pi** and **Claude Code**. A team may mix providers and
+OATS works with both **Pi** and **Claude Code**. A team may mix providers and
 models while sharing the same souls, package/config contracts, instance
 lifecycle, and coordination topology.
 
-## Why OAS
+## Why OATS
 
 ### Specialists are real project assets
 
@@ -36,10 +37,10 @@ and inspect exactly what it received.
 
 ### Each instance gets the right curriculum
 
-At spawn, OAS resolves the scoped config for the target soul and materializes
-only the OAS-managed resources selected for that agent:
+At spawn, OATS resolves the scoped config for the target soul and materializes
+only the OATS-managed resources selected for that agent:
 
-- the three kernel skills: `oas`, `oas-config`, and `oas-packages`;
+- the three kernel skills: `oats`, `oats-config`, and `oats-packages`;
 - soul-private skills and instructions; and
 - skills/injections from capabilities active for that soul or agent type.
 
@@ -52,26 +53,26 @@ Provider-native behavior remains deliberate:
 - **Pi** runs with ambient skill/context/template discovery curtailed, while
   operator-configured extensions remain enabled.
 - **Claude Code** keeps the operator's user/repository settings, skills,
-  plugins, MCP, hooks, and memory; OAS adds its canonical composed resources.
+  plugins, MCP, hooks, and memory; OATS adds its canonical composed resources.
 
-The guarantee is an exact **OAS-managed curriculum**, not a claim that every
+The guarantee is an exact **OATS-managed curriculum**, not a claim that every
 provider exposes identical ambient behavior.
 
 ### Expertise compounds
 
-With the official `oas.okf` knowledge package, an instance keeps resumable
+With the official `oats.okf` knowledge package, an instance keeps resumable
 working state and captures non-obvious lessons as it works. A memory-harvest
 agent promotes durable knowledge and procedures back into the soul. Future
 instances begin where earlier ones finished.
 
 ### Teams remain steerable
 
-OAS instances are ordinary provider sessions hosted in tmux. They can have
+OATS instances are ordinary provider sessions hosted in tmux. They can have
 explicit `child`, `parent`, `sibling`, or unrelated relationships and can use a
-messaging capability such as `oas.aweb` for cross-machine identities and
+messaging capability such as `oats.aweb` for cross-machine identities and
 real-time mail/chat awakenings.
 
-The CLI is the mutation boundary; **OAS Desktop** is the situational-awareness
+The CLI is the mutation boundary; **OATS Desktop** is the situational-awareness
 layer. It gives one view of identities, tasks, relationships, specialist
 context, workspaces, real terminals, and lifecycle state when a team has too
 many concurrent sessions for a flat terminal list to remain understandable.
@@ -84,7 +85,7 @@ many concurrent sessions for a flat terminal list to remain understandable.
 | --- | --- |
 | **Package** | Git/local acquisition, exact lock, update, integrity, dependency, and review unit. |
 | **Capability** | Independently targetable behavior inside a package: skills, instructions, commands, agents, requirements, or lifecycle hooks. |
-| **Config template** | A complete reference `oas-config.yaml` a package ships. You adopt one explicitly, and it becomes your ordinary local config. |
+| **Config template** | A complete reference `oats-config.yaml` a package ships. You adopt one explicitly, and it becomes your ordinary local config. |
 | **Adopted base** | The exact template recorded at adoption, kept commit-safe so guided sync can compare against it. |
 | **Config** | Local authority: selects layers, targets capabilities to agent types/souls, applies settings/exclusions/overrides. |
 | **Soul** | Durable specialist identity, curriculum, and accumulated knowledge. |
@@ -112,12 +113,12 @@ Every instance has two operational surfaces:
 ```
 
 - **Instance home** is the brain and operational boundary: instructions, task,
-  soul reference, selected skills, provenance, and episodic state. Run OAS
+  soul reference, selected skills, provenance, and episodic state. Run OATS
   lifecycle commands and commands from active capabilities here.
 - **`work/`** is the repository or workspace view. Repository reading, editing,
   Git, builds, tests, and commits happen there according to the work mode.
 
-`OAS_INSTANCE_HOME` gives the absolute home to both runtimes and lifecycle
+`OATS_INSTANCE_HOME` gives the absolute home to both runtimes and lifecycle
 hooks. For Git-backed souls, homes live under the soul-owning repository's
 **primary checkout**, even when spawn is invoked from a linked worktree; the
 assigned `work/` may still be an isolated worktree. Placement that cannot be
@@ -134,34 +135,34 @@ See [Souls and instances](docs/souls-and-instances.md).
 
 ## Distribution packages
 
-A Git repository may contain ordinary development content and one or more OAS
+A Git repository may contain ordinary development content and one or more OATS
 package payloads. The configured payload path is part of the source contract;
-the official convention/default is `oas-package/`.
+the official convention/default is `oats-package/`.
 
 ```text
 example-package-repo/
   agents/example-package-expert/soul/   # development state, not distributed
   .github/
   README.md
-  oas-package/                          # the acquired, hash-locked payload
-    oas-package.json
+  oats-package/                          # the acquired, hash-locked payload
+    oats-package.json
     capabilities/                       # one dedicated root per capability
     config-templates/                   # optional reference configs
 ```
 
 ```bash
 # Official short id (from the kernel-bundled catalog)
-oas install oas.okf
+oats install oats.okf
 
-# Git source: defaults to oas-package/
-oas install https://github.com/example/project.git@v1.0.0
+# Git source: defaults to oats-package/
+oats install https://github.com/example/project.git@v1.0.0
 
 # Custom contained path, or explicit repository root
-oas install 'https://github.com/example/project.git@v1.0.0#dist/oas'
-oas install 'https://github.com/example/root-package.git@v1.0.0#.'
+oats install 'https://github.com/example/project.git@v1.0.0#dist/oats'
+oats install 'https://github.com/example/root-package.git@v1.0.0#.'
 
 # Local paths name the exact package root
-oas install ../project/oas-package
+oats install ../project/oats-package
 ```
 
 Installing a package materializes each capability it declares into
@@ -169,26 +170,26 @@ Installing a package materializes each capability it declares into
 The `lockfileVersion: 2` lock records two levels. A `packages` map holds source,
 exact commit, selected path, payload integrity, and dependencies. A
 `capabilities` map holds each capability's version, provider package, path,
-artifact integrity, and executable trust. Bare `oas install` restores the exact
+artifact integrity, and executable trust. Bare `oats install` restores the exact
 lock and never advances source state. Updating is explicit:
 
 ```bash
-oas update <package-id>
+oats update <package-id>
 ```
 
 ## Official packages
 
 The official packages are independently versioned Git repositories in the
-[`OAS-Framework`](https://github.com/OAS-Framework) organization:
+[`awebai`](https://github.com/awebai) organization:
 
 | Package | Provides |
 | --- | --- |
-| [`oas-okf`](https://github.com/OAS-Framework/oas-okf) | `oas.okf` knowledge layer and memory harvesting |
-| [`oas-aweb`](https://github.com/OAS-Framework/oas-aweb) | `oas.aweb` messaging/identity layer |
-| [`oas-authoring`](https://github.com/OAS-Framework/oas-authoring) | capability, skill, soul, and integration authoring craft |
-| [`oas-jira`](https://github.com/OAS-Framework/oas-jira) | adopter-selected Jira tasks layer |
-| [`oas-linear`](https://github.com/OAS-Framework/oas-linear) | adopter-selected Linear tasks layer |
-| [`oas-dev`](https://github.com/OAS-Framework/oas-dev) | OAS development config template plus `oas.review` |
+| [`oats-okf`](https://github.com/awebai/oats-okf) | `oats.okf` knowledge layer and memory harvesting |
+| [`oats-aweb`](https://github.com/awebai/oats-aweb) | `oats.aweb` messaging/identity layer |
+| [`oats-authoring`](https://github.com/awebai/oats-authoring) | capability, skill, soul, and integration authoring craft |
+| [`oats-jira`](https://github.com/awebai/oats-jira) | adopter-selected Jira tasks layer |
+| [`oats-linear`](https://github.com/awebai/oats-linear) | adopter-selected Linear tasks layer |
+| [`oats-dev`](https://github.com/awebai/oats-dev) | OATS development config template plus `oats.review` |
 
 External CLIs and runtime plugins are separate informed-consent requirements.
 For example, aweb vendors its reviewed Markdown skills but declares Pi and
@@ -201,13 +202,13 @@ Config is scoped from laptop → workspace → repository. Closer declarations w
 within a level, soul > agent type > global specificity. Explicit exclusions and
 layer `none` are supported.
 
-OAS has five conceptual layers:
+OATS has five conceptual layers:
 
 1. **Soul** — durable specialist identity and curriculum (kernel).
-2. **Knowledge** — capture/promotion contract (official option: `oas.okf`).
+2. **Knowledge** — capture/promotion contract (official option: `oats.okf`).
 3. **Instances** — homes, work modes, sessions, lifecycle (kernel).
-4. **Messaging** — reachable agent identities (official option: `oas.aweb`).
-5. **Tasks** — durable work queue (optional `oas.jira`, `oas.linear`, or another provider).
+4. **Messaging** — reachable agent identities (official option: `oats.aweb`).
+5. **Tasks** — durable work queue (optional `oats.jira`, `oats.linear`, or another provider).
 
 Knowledge, messaging, and tasks are exclusive integration slots. Additive
 capabilities such as authoring/review compose independently.
@@ -215,7 +216,7 @@ capabilities such as authoring/review compose independently.
 Inspect the resolved result with:
 
 ```bash
-oas doctor [context] --soul <name> --json
+oats doctor [context] --soul <name> --json
 ```
 
 See [Configuration](docs/configuration.md), [Layers](docs/layers.md), and
@@ -224,15 +225,15 @@ See [Configuration](docs/configuration.md), [Layers](docs/layers.md), and
 ## Install
 
 ```bash
-npm install -g @oas-framework/oas@latest
-pi install npm:@oas-framework/pi@latest
+npm install -g @awebai/oats@latest
+pi install npm:@awebai/oats-pi@latest
 ```
 
 Install matching kernel/Pi adapter versions. Claude Code uses the same generated
-instance files without an OAS Claude adapter.
+instance files without an OATS Claude adapter.
 
-OAS Desktop is distributed through the
-[GitHub Releases](https://github.com/OAS-Framework/oas/releases) page. macOS
+OATS Desktop is distributed through the
+[GitHub Releases](https://github.com/awebai/oats/releases) page. macOS
 arm64/x64 and Linux x64 installers are published with checksums and provenance.
 The Desktop may also be run from `packages/desktop/` in a framework checkout.
 
@@ -241,35 +242,35 @@ The Desktop may also be run from `packages/desktop/` in a framework checkout.
 ### Basic setup
 
 ```bash
-oas init
-oas doctor
+oats init
+oats doctor
 ```
 
-Or ask a Pi agent to load `oas-getting-started` and guide the setup.
+Or ask a Pi agent to load `oats-getting-started` and guide the setup.
 
 ### Adopt a package config template
 
 ```bash
 mkdir my-workspace
 cd my-workspace
-oas init --package <package-id> --config <template>
-oas install
+oats init --package <package-id> --config <template>
+oats install
 ```
 
-`oas init --package` acquires and exact-locks the full closure, validates the
+`oats init --package` acquires and exact-locks the full closure, validates the
 chosen template against its providers, and writes it as your local
-`oas-config.yaml`. It also records the exact template as a commit-safe adopted
-base under `.agents/config-templates/adopted/`, so `oas config diff` and
-`oas config sync` can compare against it later. Bare `oas install` reconciles the
+`oats-config.yaml`. It also records the exact template as a commit-safe adopted
+base under `.agents/config-templates/adopted/`, so `oats config diff` and
+`oats config sync` can compare against it later. Bare `oats install` reconciles the
 team boundary and nested repository locks.
 
-For OAS framework and package development itself:
+For OATS framework and package development itself:
 
 ```bash
-oas init --package oas.dev --config default
+oats init --package oats.dev --config default
 ```
 
-The template preserves the `oas-framework` team name, defines
+The template preserves the `oats-framework` team name, defines
 `framework-authors`, `developers`, and `package-maintainers`, enables OKF and
 aweb, keeps tasks optional, and assigns authoring and review appropriately. It
 carries no provider team ID, credentials, account, or machine paths. Those stay
@@ -281,30 +282,30 @@ Existing valid v1 locks and installed capabilities continue to work after the
 kernel upgrade. Preview and apply the guided migration when ready:
 
 ```bash
-oas migrate --official --recursive --dry-run --dir <team-root>
-oas migrate --official --recursive --dir <team-root>
+oats migrate --official --recursive --dry-run --dir <team-root>
+oats migrate --official --recursive --dir <team-root>
 ```
 
 The command preserves config files and capability IDs, leaves custom/owned/path
 capabilities untouched, does not transfer executable trust silently, and prints
-exact trust/install follow-ups. `oas doctor` reports readiness and cutover state.
+exact trust/install follow-ups. `oats doctor` reports readiness and cutover state.
 
 ## CLI essentials
 
 ```bash
-oas status --team
-oas create <soul> --type <agent-type> --repo <repo> --work worktree
-oas spawn <soul> --purpose <role> --task "..."
-oas retire <instance>
+oats status --team
+oats create <soul> --type <agent-type> --repo <repo> --work worktree
+oats spawn <soul> --purpose <role> --task "..."
+oats retire <instance>
 
-oas install [<package-source>]
-oas update <package-id>
-oas trust <capability>
-oas init --package <package-id> --config <template>
-oas config diff
-oas config sync
-oas config adopt <package-id> --config <template>
-oas doctor --json
+oats install [<package-source>]
+oats update <package-id>
+oats trust <capability>
+oats init --package <package-id> --config <template>
+oats config diff
+oats config sync
+oats config adopt <package-id> --config <template>
+oats doctor --json
 ```
 
 Mainstream package/config/lock operations have deterministic CLI and stable JSON
@@ -321,10 +322,10 @@ resolver behavior with ad-hoc shell commands.
 - [Knowledge theory](docs/knowledge-theory.md)
 - [Integrations](docs/integrations.md)
 - [Implementation](docs/implementation.md)
-- [OAS Desktop](docs/desktop.md)
+- [OATS Desktop](docs/desktop.md)
 
 ## Origins
 
-OAS grew from the a2am team architecture and the LFX engineering vision for
+OATS grew from the a2am team architecture and the LFX engineering vision for
 agent-native engineering. It builds on open formats and conventions including
 AGENTS.md, Agent Skills, and OKF.

@@ -15,7 +15,7 @@ Claude Code's official skills documentation says:
 > picks up skills defined at the root."
 
 Observed probes matched that bound: the walk stops at the repository root, not `~`
-and not the filesystem root. From an instance home inside the OAS repo,
+and not the filesystem root. From an instance home inside the OATS repo,
 `~/.claude/skills/beads` was not enumerated.
 
 Precedence for same-named skills is enterprise > personal > project; any of

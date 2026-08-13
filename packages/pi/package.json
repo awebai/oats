@@ -1,15 +1,15 @@
 {
-  "name": "@oas-framework/pi",
+  "name": "@awebai/oats-pi",
   "version": "0.20.0",
-  "description": "OAS pi runtime bridge — memory session events and pre-workspace bootstrap over the runtime-neutral @oas-framework/oas kernel",
+  "description": "OATS pi runtime bridge — memory session events and pre-workspace bootstrap over the runtime-neutral @awebai/oats kernel",
   "keywords": [
     "pi-package",
     "agents",
-    "oas"
+    "oats"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/OAS-Framework/oas",
+    "url": "https://github.com/awebai/oats",
     "directory": "packages/pi"
   },
   "license": "MIT",

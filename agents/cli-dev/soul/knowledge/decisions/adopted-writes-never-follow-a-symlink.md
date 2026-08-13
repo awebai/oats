@@ -2,7 +2,7 @@
 type: Decision
 title: Adopted-base and backup writes validate their parents and never follow a link
 description: Every existing component from scope to adopted template dir is checked immediately before each write, fixed .bak paths are replaced instead of written through, and backups are journalled run state.
-tags: [security, config-templates, oas-cli, symlink]
+tags: [security, config-templates, oats-cli, symlink]
 timestamp: 2026-07-29
 ---
 
@@ -12,10 +12,10 @@ timestamp: 2026-07-29
    `.agents/config-templates/adopted/<package>/<template>/` without checking any
    existing component, so a symlink anywhere on that path redirected the run's
    bytes.
-2. `oas config sync` and `--reset` used `copyFileSync(file, `${file}.bak`)`.
+2. `oats config sync` and `--reset` used `copyFileSync(file, `${file}.bak`)`.
    `copyFileSync` opens the destination for write, so a planted, predictable
    `.bak` symlink was followed.
-3. `oas-config.yaml.bak` was absent from `RUN_JOURNAL_PATHS`, so a failed sync
+3. `oats-config.yaml.bak` was absent from `RUN_JOURNAL_PATHS`, so a failed sync
    could leave behind a backup the operator never had while rollback reported a
    clean failure.
 

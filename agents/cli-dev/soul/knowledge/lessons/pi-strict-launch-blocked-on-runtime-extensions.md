@@ -1,7 +1,7 @@
 ---
 type: Lesson
 title: Pi strict launch is blocked until runtime extensions are capability resources
-description: Pi strict launch cannot enable --no-extensions yet because oas-aweb only supplies Claude launch args and Pi messaging currently depends on the user's global pi extension.
+description: Pi strict launch cannot enable --no-extensions yet because oats-aweb only supplies Claude launch args and Pi messaging currently depends on the user's global pi extension.
 tags: [pi, runtime, capabilities, aweb, strict-curriculum, launch]
 timestamp: 2026-07-27
 ---
@@ -25,11 +25,11 @@ Enabling this launch line before runtime extensions are declared by capabilities
 would silently remove messaging from Pi instances. `--no-extensions` disables the
 **aweb Pi extension**, which is what wakes a Pi session on incoming mail.
 
-The `oas-aweb` capability currently contributes a launch flag only for Claude:
+The `oats-aweb` capability currently contributes a launch flag only for Claude:
 
 ```js
-// capabilities/oas-aweb/bin/oas-aweb.mjs
-if ((process.env.OAS_RUNTIME || "") === "claude") {
+// capabilities/oats-aweb/bin/oats-aweb.mjs
+if ((process.env.OATS_RUNTIME || "") === "claude") {
   …claude plugin install aweb-channel@awebai-marketplace…
   launch = { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" };
 }

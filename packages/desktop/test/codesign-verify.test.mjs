@@ -10,15 +10,15 @@
 //   * platform behavior (non-darwin can NEVER pass as verified);
 //   * the reaper contract (async group-tracked execution only);
 //   * the dist-smoke wiring: the codesign phase is unconditional on darwin
-//     and cannot be skipped by any OAS_SMOKE_* env flag.
+//     and cannot be skipped by any OATS_SMOKE_* env flag.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { verifyArgv, displayArgv, verifyAppSignature } from "../scripts/codesign-verify.mjs";
 
-const APP = "/dist/mac-arm64/OAS Desktop.app";
+const APP = "/dist/mac-arm64/OATS Desktop.app";
 const goodDisplay = [
-  "Executable=/dist/mac-arm64/OAS Desktop.app/Contents/MacOS/OAS Desktop",
+  "Executable=/dist/mac-arm64/OATS Desktop.app/Contents/MacOS/OATS Desktop",
   "CodeDirectory v=20500 size=431 flags=0x10002(adhoc,runtime) hashes=3+7 location=embedded",
   "Signature=adhoc",
   "TeamIdentifier=not set",
@@ -156,10 +156,10 @@ test("dist-smoke wires the codesign gate unconditionally on darwin (no env skip)
   const m = src.match(/if \(([^)]*)\) \{\n\s*const r = await verifyAppSignature/);
   assert.ok(m, "codesign gate present with its guard");
   assert.equal(m[1], `process.platform === "darwin"`, "codesign phase guarded by platform ONLY");
-  assert.ok(!/OAS_SMOKE[A-Z_]*[^\n]*verifyAppSignature|verifyAppSignature[^\n]*OAS_SMOKE/.test(src),
-    "no OAS_SMOKE_* flag on the codesign line");
+  assert.ok(!/OATS_SMOKE[A-Z_]*[^\n]*verifyAppSignature|verifyAppSignature[^\n]*OATS_SMOKE/.test(src),
+    "no OATS_SMOKE_* flag on the codesign line");
   // the codesign phase must run BEFORE the launch-skip branching
-  assert.ok(src.indexOf("verifyAppSignature") < src.indexOf("OAS_SMOKE_SKIP_LAUNCH"),
+  assert.ok(src.indexOf("verifyAppSignature") < src.indexOf("OATS_SMOKE_SKIP_LAUNCH"),
     "codesign gate precedes the launch-skip logic — skip flags cannot reach it");
 });
 

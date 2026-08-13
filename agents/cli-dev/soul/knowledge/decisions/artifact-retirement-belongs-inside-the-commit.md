@@ -2,7 +2,7 @@
 type: Decision
 title: Dropped exports retire inside the acquire commit, and rollback state is registered before the first rename
 description: updatePackage deleted dropped-export artifacts after the lock commit, leaving a lock/store disagreement window and rollback with no route back.
-tags: [oas-kernel, transactions, capability-materialization, rollback]
+tags: [oats-kernel, transactions, capability-materialization, rollback]
 timestamp: 2026-07-29
 ---
 

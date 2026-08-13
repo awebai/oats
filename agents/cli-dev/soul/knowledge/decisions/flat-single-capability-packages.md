@@ -14,7 +14,7 @@ compatibility discriminator in [A "." capability root is discriminated by config
 
 This supersedes the older broad rule that flat single-capability packages were
 newly supported. The accepted legacy shape still has the package root as the
-capability directory, with `oas-package.json` and `oas.json` side by side, but
+capability directory, with `oats-package.json` and `oats.json` side by side, but
 only when the manifest is on the legacy side of that discriminator.
 
 `"."` must still be the only `capabilities` entry. Mixing it with other

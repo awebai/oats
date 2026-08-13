@@ -1,4 +1,4 @@
-/* oas desktop — Spawn view: the souls browser.
+/* oats desktop — Spawn view: the souls browser.
    Browse available agents (souls) per workspace as a card grid — description
    and capability chips up front — and spawn from the card: "Spawn" opens a
    MODAL dialog with every spawn option (purpose, task, relation + reference
@@ -142,7 +142,7 @@ export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
   const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterGen: null };
   el.innerHTML = `
-    <div class="oas-view" style="display:block">
+    <div class="oats-view" style="display:block">
       <style>${CSS}</style>
       <div class="souls">
         <div class="souls-bar">
@@ -421,8 +421,8 @@ function soulCard(s, a) {
         // Pending probe renders NO card (frozen contract) — the tooltip must
         // not point at a card that is not there.
         ? (cliProbePending()
-          ? "Checking for a compatible oas CLI — spawning enables once it is verified"
-          : "Spawning requires a compatible installed oas CLI — see the card above")
+          ? "Checking for a compatible oats CLI — spawning enables once it is verified"
+          : "Spawning requires a compatible installed oats CLI — see the card above")
         : `Spawn ${a.name}`;
     spawn.addEventListener("click", () => {
       if (!cliAvailable()) return; // state may have flipped since render
@@ -645,7 +645,7 @@ function openSpawnModal(s, a) {
       : `Pick the instance this one is a ${phrase[rel.value]}.`;
     note.hidden = relations;
     const min = relationsMinLabel();
-    note.textContent = relations ? "" : `${min ? `Relations require oas >= ${min}` : "Relations require a newer oas than the one installed"} — the installed CLI spawns unrelated instances only. Set the relation to "Unrelated" to spawn now.`;
+    note.textContent = relations ? "" : `${min ? `Relations require oats >= ${min}` : "Relations require a newer oats than the one installed"} — the installed CLI spawns unrelated instances only. Set the relation to "Unrelated" to spawn now.`;
   };
   s.syncModalRelations = syncRelationControls;
   syncRelationControls();
@@ -783,7 +783,7 @@ export async function doSpawn(s, ui) {
   // so the typed task can still spawn on the old CLI.
   if (relation !== "unrelated" && !cliRelationsAvailable()) {
     ui.status.classList?.add("err");
-    ui.status.textContent = `Spawn failed: the installed oas CLI cannot spawn related instances — set the relation to "unrelated" to spawn now, or upgrade the CLI.`;
+    ui.status.textContent = `Spawn failed: the installed oats CLI cannot spawn related instances — set the relation to "unrelated" to spawn now, or upgrade the CLI.`;
     return;
   }
   // Relation pairing is validated BEFORE dispatch: a chosen relation needs a

@@ -11,7 +11,7 @@ timestamp: 2026-07-27
 `spawnInstance` can roll back in two places: a required capability hook fails before the
 instance exists, or something fails AFTER it is already launched (re-pointing a parent
 anchor). Six review rounds turned the first into a careful quarantine — retain the home,
-record what is outstanding, let `oas retire` retry, never delete state that cleanup still
+record what is outstanding, let `oats retire` retry, never delete state that cleanup still
 needs. The second kept its original shape: run compensation, append any failures to a prose
 list, then `rmSync(home)` unconditionally.
 
@@ -31,7 +31,7 @@ Two copies that agree are just a divergence that has not happened yet.
 # Half a guarantee is the producer without the consumer
 
 Extracting one quarantine producer for both rollback paths still left the guarantee broken,
-because the CONSUMER never recognised the new case: `oas retire` parsed the marker only when
+because the CONSUMER never recognised the new case: `oats retire` parsed the marker only when
 `instance.json` was absent. The post-launch rollback retains a home that already has one — it
 is written before the anchor step — so retire ignored the quarantine, took the ordinary path
 where hook failures do not retain, and deleted the credential anyway. Retained at rollback,

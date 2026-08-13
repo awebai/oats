@@ -1,10 +1,10 @@
-// OAS desktop — preload. The ONLY bridge between the isolated renderer and
+// OATS desktop — preload. The ONLY bridge between the isolated renderer and
 // the main process. Exposes a minimal, promise-based surface; no Node objects
 // cross the boundary.
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("oasDesktop", {
-  /** ctx.api backing: proxied fetch against the oas-web server. */
+contextBridge.exposeInMainWorld("oatsDesktop", {
+  /** ctx.api backing: proxied fetch against the oats-web server. */
   api: (pathname, opts) => ipcRenderer.invoke("api", pathname, opts),
 
   /** Integrated terminal channels (one pty per open terminal tab). */
@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld("oasDesktop", {
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),
   workspacePick: () => ipcRenderer.invoke("workspace:pick"),
 
-  /** CLI degradation affordances: native binary picker (Choose oas…) and
+  /** CLI degradation affordances: native binary picker (Choose oats…) and
    * focus-triggered re-probe notifications (contract re-probe triggers). */
   cliPickBinary: () => ipcRenderer.invoke("cli:pick"),
   onAppFocus: (cb) => {

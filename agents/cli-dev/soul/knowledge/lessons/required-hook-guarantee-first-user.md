@@ -1,7 +1,7 @@
 ---
 type: Lesson
 title: A required-hook guarantee shipped inert because its only user swallowed its own failures
-description: The kernel enforced required spawn hooks correctly, but oas-aweb converted every fatal path into a warning on exit 0, so the mechanism never fired for the capability it was built for.
+description: The kernel enforced required spawn hooks correctly, but oats-aweb converted every fatal path into a warning on exit 0, so the mechanism never fired for the capability it was built for.
 tags: [capabilities, hooks, fail-closed, testing, contracts]
 timestamp: 2026-07-27
 ---
@@ -11,7 +11,7 @@ timestamp: 2026-07-27
 `required: true` on a spawn hook was implemented, tested, and green: a nonzero exit fails
 the spawn and rolls it back. It protected nothing.
 
-`capabilities/oas-aweb/bin/oas-aweb.mjs` caught missing `aw`, a missing `.aw` root, and
+`capabilities/oats-aweb/bin/oats-aweb.mjs` caught missing `aw`, a missing `.aw` root, and
 every minting exception, printed `{"warning": …}` and exited **0**. The kernel saw success.
 An instance still started with no messaging — precisely the outcome the flag existed to
 prevent.
@@ -75,7 +75,7 @@ annoyance into a spawn blocker and discredit the mechanism.
 # Schema must not out-permit the runtime
 
 The published schema accepted `required` on `retire`/`soul-scaffold` while the runtime
-rejected it, so authoring tools could approve a manifest OAS refuses to load. Any
+rejected it, so authoring tools could approve a manifest OATS refuses to load. Any
 constraint enforced at load time needs the same constraint in the public schema, with a
 test compiling the real schema and asserting BOTH directions.
 

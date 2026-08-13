@@ -1,4 +1,4 @@
-# oas desktop — renderer views (webpanel-dev)
+# oats desktop — renderer views (webpanel-dev)
 
 Ports of the retired browser panel's functionality as desktop renderer views,
 per the desktop-app contract: each view is a plain ES module exporting
@@ -11,10 +11,10 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 - **spawn.mjs** — available agents (`GET /api/agents`) with spawn-from-app
   (`POST /api/spawn`), purpose/task fields. Panel defaults hold: empty task
   spawns an instance awaiting instructions; attached-mode agents are not
-  spawnable standalone. Without a compatible installed `oas` CLI the view
+  spawnable standalone. Without a compatible installed `oats` CLI the view
   shows the shared degradation card and disables Spawn consistently.
 - **cli-status.mjs** — shared CLI degradation state + the ONE card
-  (detected path/version, required range, **Choose oas…**, **Retry**, docs
+  (detected path/version, required range, **Choose oats…**, **Retry**, docs
   link, copyable install command). Views subscribe via `onCliChange`;
   re-probe triggers: launch, app focus, Retry, choose (contract).
 - **common.mjs** — shared helpers: escaping, mini-markdown, ctx.api JSON
@@ -24,7 +24,7 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 `theme.css` carries the panel's semantic design tokens (dark + solarised
 light, WCAG AA); views style themselves against tokens only, scoped under
-`.oas-view` so shell chrome is unaffected.
+`.oats-view` so shell chrome is unaffected.
 
 ## Keybindings (shell-level)
 
@@ -33,7 +33,7 @@ light, WCAG AA); views style themselves against tokens only, scoped under
   `defaultChord` that folds into the effective keymap like a
   `DEFAULT_KEYMAP` entry — override wins, explicit unbind kills it),
   `DEFAULT_KEYMAP`, user overrides
-  persisted under `localStorage["oas-desktop-keymap"]`, chord
+  persisted under `localStorage["oats-desktop-keymap"]`, chord
   parse/format/match, and dispatch (`matchEvent`/`handleKeydown`). The engine
   skips already-consumed (`defaultPrevented`) events, and unmodified/
   shift-only chords never fire while an editable field (input, textarea,
@@ -118,7 +118,7 @@ serves it and proxies `/api/*` to a running backend server (same-origin, so
 GETs and guarded POSTs both work exactly as in the real shell):
 
 ```sh
-node packages/desktop/server/oas-web.mjs start --port 4821 --dir <workspace>
+node packages/desktop/server/oats-web.mjs start --port 4821 --dir <workspace>
 node packages/desktop/renderer/harness-server.mjs --port 4899 --api http://127.0.0.1:4821
 open "http://127.0.0.1:4899/"
 ```

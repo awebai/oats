@@ -8,7 +8,7 @@ timestamp: 2026-07-29
 
 # Legacy resource spelling is not a safe package-format discriminator
 
-Using the presence of deprecated `configs` to identify a legacy package and permit a `capabilities: ["."]` root looked convenient, but an immutable published package (`oas.authoring@1.0.0`) uses `.` and has no config resource at all. The optional spelling therefore cannot identify its format.
+Using the presence of deprecated `configs` to identify a legacy package and permit a `capabilities: ["."]` root looked convenient, but an immutable published package (`oats.authoring@1.0.0`) uses `.` and has no config resource at all. The optional spelling therefore cannot identify its format.
 
 When no explicit format version exists, compatibility reading and new authoring validation are separate contracts:
 

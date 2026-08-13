@@ -62,7 +62,7 @@ test("spawnArgv: option-shaped values are REJECTED, never forwarded (review 53a2
 test("cliSpawn: option-shaped values resolve as E_BAD_ARGS envelopes (never reach the CLI)", async () => {
   let execCalled = false;
   const exec = fakeExec(() => { execCalled = true; return { stdout: OK({}) }; });
-  const env = await cliSpawn("/abs/oas", { agent: "dev", workspaceDir: "/ws", purpose: "--no-launch" }, { exec });
+  const env = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws", purpose: "--no-launch" }, { exec });
   assert.equal(env.ok, false);
   assert.equal(env.error.code, "E_BAD_ARGS");
   assert.equal(execCalled, false, "the CLI is never invoked with a rejected value");
@@ -105,10 +105,10 @@ test("cliSpawn: success envelope resolves with result; task file cleaned up afte
     assert.equal(readFileSync(taskFile, "utf8"), "do the thing");
     return { stdout: OK({ instance: "dev-x1", agent: "dev", home: "/h", work: "worktree", branch: "b", launched: true, warnings: [], tmux: { session: "pi-agents", window: "dev-x1" } }) };
   });
-  const env = await cliSpawn("/abs/oas", { agent: "dev", workspaceDir: "/ws", task: "do the thing", purpose: "x1" }, { exec });
+  const env = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws", task: "do the thing", purpose: "x1" }, { exec });
   assert.equal(env.ok, true);
   assert.equal(env.result.instance, "dev-x1");
-  assert.equal(seen.bin, "/abs/oas", "discovered absolute binary");
+  assert.equal(seen.bin, "/abs/oats", "discovered absolute binary");
   assert.equal(seen.opts.shell, false, "never a shell");
   assert.equal(seen.opts.cwd, "/ws");
   const taskFile = seen.argv[seen.argv.indexOf("--task-file") + 1];
@@ -117,28 +117,28 @@ test("cliSpawn: success envelope resolves with result; task file cleaned up afte
 
 test("cliSpawn: CLI failure envelope resolves (never rejects) with the stable code", async () => {
   const exec = fakeExec(() => ({ err: Object.assign(new Error("exit 1"), { code: 1 }), stdout: ERR("E_UNKNOWN_AGENT", 'unknown agent "nope"') }));
-  const env = await cliSpawn("/abs/oas", { agent: "nope", workspaceDir: "/ws", task: "" }, { exec });
+  const env = await cliSpawn("/abs/oats", { agent: "nope", workspaceDir: "/ws", task: "" }, { exec });
   assert.equal(env.ok, false);
   assert.equal(env.error.code, "E_UNKNOWN_AGENT");
 });
 
 test("cliSpawn: contaminated stdout resolves with E_CLI_PROTOCOL; timeout with E_CLI_TIMEOUT", async () => {
   const contaminated = fakeExec(() => ({ stdout: "Spawning dev...\n" + OK({}) }));
-  let env = await cliSpawn("/abs/oas", { agent: "dev", workspaceDir: "/ws" }, { exec: contaminated });
+  let env = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws" }, { exec: contaminated });
   assert.equal(env.error.code, "E_CLI_PROTOCOL");
   const timedOut = fakeExec(() => ({ err: Object.assign(new Error("timeout"), { killed: true }), stdout: "" }));
-  env = await cliSpawn("/abs/oas", { agent: "dev", workspaceDir: "/ws" }, { exec: timedOut });
+  env = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws" }, { exec: timedOut });
   assert.equal(env.error.code, "E_CLI_TIMEOUT");
 });
 
 test("cliSpawn: an agent literally named __TASKFILE__ cannot collide with the placeholder (review 0b83988)", async () => {
   let seen = null;
   const exec = fakeExec((bin, argv) => { seen = argv; return { stdout: OK({ instance: "x" }) }; });
-  await cliSpawn("/abs/oas", { agent: "__TASKFILE__", workspaceDir: "/ws", task: "t" }, { exec });
+  await cliSpawn("/abs/oats", { agent: "__TASKFILE__", workspaceDir: "/ws", task: "t" }, { exec });
   assert.equal(seen[1], "__TASKFILE__", "agent name slot untouched");
   const tf = seen[seen.indexOf("--task-file") + 1];
   assert.notEqual(tf, "__TASKFILE__", "the --task-file slot got the real temp path");
-  assert.ok(tf.includes("oas-desktop-task-"), `task file is the mkdtemp path (${tf})`);
+  assert.ok(tf.includes("oats-desktop-task-"), `task file is the mkdtemp path (${tf})`);
 });
 
 test("cliHarvest: runs `okf harvest --json` with cwd fixed to the given instance home", async () => {
@@ -147,7 +147,7 @@ test("cliHarvest: runs `okf harvest --json` with cwd fixed to the given instance
     seen = { bin, argv, opts };
     return { stdout: OK({ harvest: "skipped", reason: "no pending notes" }) };
   });
-  const env = await cliHarvest("/abs/oas", "/homes/dev-1", { exec });
+  const env = await cliHarvest("/abs/oats", "/homes/dev-1", { exec });
   assert.equal(env.ok, true);
   assert.equal(env.result.harvest, "skipped");
   assert.deepEqual(seen.argv, ["okf", "harvest", "--json"]);
@@ -193,12 +193,12 @@ test("cliSpawn: relation pair reaches the CLI argv; bad pairs resolve E_BAD_ARGS
   let seen = null;
   const exec = (bin, argv, o, cb) => { seen = argv; cb(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-1" } })); };
   const io = { exec, mkdtempSync: () => "/t", openSync: () => 3, writeSync: () => {}, closeSync: () => {}, rmSync: () => {}, tmpdir: () => "/tmp" };
-  const env = await cliSpawn("/abs/oas", { agent: "dev", workspaceDir: "/ws", relation: "parent", relativeTo: "worker-2" }, io);
+  const env = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws", relation: "parent", relativeTo: "worker-2" }, io);
   assert.equal(env.ok, true);
   assert.ok(seen.includes("--relation") && seen.includes("parent") && seen.includes("--relative-to") && seen.includes("worker-2"));
 
   seen = null;
-  const bad = await cliSpawn("/abs/oas", { agent: "dev", workspaceDir: "/ws", relation: "child" }, io);
+  const bad = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws", relation: "child" }, io);
   assert.equal(bad.ok, false);
   assert.equal(bad.error.code, "E_BAD_ARGS");
   assert.equal(seen, null, "invalid relation pair never reaches the CLI");

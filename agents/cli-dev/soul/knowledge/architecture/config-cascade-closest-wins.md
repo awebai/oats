@@ -1,16 +1,16 @@
 ---
 type: Concept
 title: Config cascade with closest-wins semantics
-description: resolveOasConfig walks the full directory chain of oas-config.yaml files upward and resolves every setting with closest-declaration-wins semantics, which is the single rule to internalize before touching resolution code.
-tags: [config, cascade, resolveOasConfig, configChain]
+description: resolveOatsConfig walks the full directory chain of oats-config.yaml files upward and resolves every setting with closest-declaration-wins semantics, which is the single rule to internalize before touching resolution code.
+tags: [config, cascade, resolveOatsConfig, configChain]
 timestamp: 2026-07-21
 ---
 
 # How resolution works
 
-`configChain(startDir)` collects every `oas-config.yaml` from `startDir` up
+`configChain(startDir)` collects every `oats-config.yaml` from `startDir` up
 to filesystem root (typical chain: repo → workspace → laptop `~`). Each entry
-carries `_level` (its directory). `resolveOasConfig(contextDir, soulName)`
+carries `_level` (its directory). `resolveOatsConfig(contextDir, soulName)`
 then resolves against that chain with one consistent rule: **the closest
 declaration wins**.
 
@@ -18,7 +18,7 @@ Concretely:
 
 - **team**: `chain.find((c) => c.team)` — first (closest) `team:` block wins
   and its `_level` becomes `team.scope`, the deployment boundary.
-- **kernel injection**: closest scope that declares `oas: injection-override:`.
+- **kernel injection**: closest scope that declares `oats: injection-override:`.
 - **fundamental layers** (knowledge/messaging/tasks): exclusive slots filled
   by capability manifests' `layer:` declarations; `capabilities.layers.<layer>:
   none` at a closer scope suppresses an inherited outer activation; activating

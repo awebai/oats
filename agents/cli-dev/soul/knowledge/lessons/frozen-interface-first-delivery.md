@@ -11,7 +11,7 @@ timestamp: 2026-07-26
 For the package-engine workstream, two sibling teams blocked on the shared
 contract. The effective move was to push a first commit containing only:
 
-- machine-readable JSON Schemas (`oas-package.json`, `oas-lock.json` v2, and
+- machine-readable JSON Schemas (`oats-package.json`, `oats-lock.json` v2, and
   legacy v1);
 - a design doc (`docs/design/package-engine-contract.md`) freezing the source
   grammar and normalized identity;

@@ -49,7 +49,7 @@ const fakeIo = (calls, opts = {}) => ({
   tmux: (args) => { calls.push(["tmux", ...args]); if (opts.tmuxFails?.(args)) throw new Error("tmux failed"); },
   tmuxOut: (args) => { calls.push(["tmuxOut", ...args]); return opts.windowId ?? "@7"; },
   spawnPty: (t, c, r) => { calls.push(["spawn", t, c, r]); if (opts.spawnFails) throw new Error("pty failed"); return opts.pty ?? {}; },
-  uniqueName: () => "oasdesk-test-1",
+  uniqueName: () => "oatsdesk-test-1",
 });
 
 test("openTerm: failed preflight rejects before any viewer/pty exists", () => {
@@ -65,22 +65,22 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
   const r = openTerm({ session: "s", window: "w", cols: 120, rows: 40 }, fakeIo(calls, { pty: fake }));
   assert.deepEqual(calls, [
     ["preflight", "=s:=w"],
-    ["tmuxOut", "new-session", "-d", "-s", "oasdesk-test-1", "-P", "-F", "#{window_id}"], // placeholder, id captured (index-agnostic)
-    ["tmux", "link-window", "-s", "=s:=w", "-t", "=oasdesk-test-1:"],        // exact window linked; tmux picks a free index
+    ["tmuxOut", "new-session", "-d", "-s", "oatsdesk-test-1", "-P", "-F", "#{window_id}"], // placeholder, id captured (index-agnostic)
+    ["tmux", "link-window", "-s", "=s:=w", "-t", "=oatsdesk-test-1:"],        // exact window linked; tmux picks a free index
     ["tmux", "kill-window", "-t", "@7"],                                      // placeholder dropped BY ID — link is the ONLY window
-    ["tmux", "set-option", "-t", "oasdesk-test-1", "prefix", "None"],         // key lock: no prefix → no window-management ops
-    ["tmux", "set-option", "-t", "oasdesk-test-1", "prefix2", "None"],
-    ["tmux", "set-option", "-t", "oasdesk-test-1", "key-table", "oasdesk-locked"],
-    ["tmux", "unbind-key", "-a", "-q", "-T", "oasdesk-locked"],              // tables are server-global: clear stale bindings first
-    ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oasdesk-locked", ...b]), // provisioned wheel bindings
-    ["tmux", "set-option", "-t", "oasdesk-test-1", "mouse", "on"],            // wheel events reach tmux
-    ["spawn", "=oasdesk-test-1", 120, 40],                                     // pty attaches to the viewer
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "prefix", "None"],         // key lock: no prefix → no window-management ops
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "prefix2", "None"],
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "key-table", "oatsdesk-locked"],
+    ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-locked"],              // tables are server-global: clear stale bindings first
+    ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked", ...b]), // provisioned wheel bindings
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "mouse", "on"],            // wheel events reach tmux
+    ["spawn", "=oatsdesk-test-1", 120, 40],                                     // pty attaches to the viewer
   ]);
   assert.equal(r.pty, fake);
-  assert.equal(r.viewer, "oasdesk-test-1");
+  assert.equal(r.viewer, "oatsdesk-test-1");
   // cleanup contract: killViewer kills ONLY the =-anchored viewer session
   r.killViewer();
-  assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oasdesk-test-1"]);
+  assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oatsdesk-test-1"]);
 });
 
 test("openTerm: viewer is killed (not leaked) when link, lock, or pty spawn fails — and on a malformed window id", () => {
@@ -92,14 +92,14 @@ test("openTerm: viewer is killed (not leaked) when link, lock, or pty spawn fail
   ]) {
     const calls = [];
     assert.throws(() => openTerm({ session: "s", window: "w" }, fakeIo(calls, opts)));
-    assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oasdesk-test-1"], `viewer cleaned up (${JSON.stringify(Object.keys(opts))})`);
+    assert.deepEqual(calls.at(-1), ["tmux", "kill-session", "-t", "=oatsdesk-test-1"], `viewer cleaned up (${JSON.stringify(Object.keys(opts))})`);
   }
 });
 
 test("openTerm: dimension clamping and validation flow through", () => {
   const calls = [];
   openTerm({ session: "s", cols: 0, rows: -5 }, fakeIo(calls));
-  assert.deepEqual(calls.at(-1), ["spawn", "=oasdesk-test-1", 80, 5], "cols default applied, rows clamped to minimum");
+  assert.deepEqual(calls.at(-1), ["spawn", "=oatsdesk-test-1", 80, 5], "cols default applied, rows clamped to minimum");
   // no window → whole session linked? No: link-window needs a window — the
   // session-only form links the session's target shorthand — assert we still
   // linked from the anchored session target.
@@ -107,21 +107,21 @@ test("openTerm: dimension clamping and validation flow through", () => {
   assert.throws(() => openTerm({ session: "a:b", window: "w" }, fakeIo([])), /bad session/);
 });
 
-test("sweepViewers: kills only dead-pid oasdesk sessions", () => {
+test("sweepViewers: kills only dead-pid oatsdesk sessions", () => {
   const killed = [];
   const swept = sweepViewers({
-    listSessions: () => ["pi-agents", "oasdesk-99999999-1-abc", `oasdesk-${process.pid}-1-live`, "oasdesk-1-2-x", "unrelated"],
+    listSessions: () => ["pi-agents", "oatsdesk-99999999-1-abc", `oatsdesk-${process.pid}-1-live`, "oatsdesk-1-2-x", "unrelated"],
     killSession: (n) => killed.push(n),
     pidAlive: (pid) => pid === 1, // pid 1 "alive", 99999999 dead
   });
-  assert.deepEqual(swept, ["oasdesk-99999999-1-abc"], "only the dead orphan");
-  assert.deepEqual(killed, ["oasdesk-99999999-1-abc"]);
+  assert.deepEqual(swept, ["oatsdesk-99999999-1-abc"], "only the dead orphan");
+  assert.deepEqual(killed, ["oatsdesk-99999999-1-abc"]);
 });
 
 test("live tmux: anchored target rejects a missing exact window instead of prefix-matching", (t) => {
   const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
   if (probe.error || probe.status !== 0) return t.skip("tmux not available");
-  const session = `oastgt${process.pid}`;
+  const session = `oatstgt${process.pid}`;
   try {
     execFileSync("tmux", ["new-session", "-d", "-s", session, "-n", "reviewer-15c135c", "sh"], { timeout: 5000 });
     // Unanchored "session:reviewer-1" would PREFIX-MATCH the live
@@ -149,7 +149,7 @@ test("live tmux: linked-window viewer — source window death terminates the vie
   // viewer/pty target dies (NEVER activates B); B and the source survive.
   const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
   if (probe.error || probe.status !== 0) return t.skip("tmux not available");
-  const src = `oaslwsrc${process.pid}`;
+  const src = `oatslwsrc${process.pid}`;
   let viewer = null;
   try {
     execFileSync("tmux", ["new-session", "-d", "-s", src, "-n", "instA", "sh"], { timeout: 5000 });
@@ -196,7 +196,7 @@ test("live tmux: viewer key path cannot leave the linked window; viewer kill spa
   // source. Driven via send-keys of the default prefix + window-nav keys.
   const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
   if (probe.error || probe.status !== 0) return t.skip("tmux not available");
-  const src = `oaslwsrc2${process.pid}`;
+  const src = `oatslwsrc2${process.pid}`;
   let viewer = null;
   try {
     execFileSync("tmux", ["new-session", "-d", "-s", src, "-n", "instA", "sh"], { timeout: 5000 });
@@ -211,7 +211,7 @@ test("live tmux: viewer key path cannot leave the linked window; viewer kill spa
     // prefix and key-table are locked
     const opts = spawnSync("tmux", ["show-options", "-t", viewer], { encoding: "utf8", timeout: 5000 }).stdout;
     assert.match(opts, /prefix None/, "prefix disabled");
-    assert.match(opts, /key-table oasdesk-locked/, "nonexistent key table");
+    assert.match(opts, /key-table oatsdesk-locked/, "nonexistent key table");
     // attempt window-management via the (disabled) prefix path: C-b n / C-b l /
     // C-b c / C-b 1 — with prefix None these are raw bytes to the pane, not commands
     for (const keys of [["C-b", "n"], ["C-b", "l"], ["C-b", "c"], ["C-b", "1"]]) {
@@ -236,7 +236,7 @@ test("live tmux: viewer construction works under a nonzero base-index (isolated 
   // server (-S socket) so the user's real server/options are untouched.
   const probe = spawnSync("tmux", ["-V"], { encoding: "utf8" });
   if (probe.error || probe.status !== 0) return t.skip("tmux not available");
-  const sock = `/tmp/oasbi-${process.pid}.sock`;
+  const sock = `/tmp/oatsbi-${process.pid}.sock`;
   const T = (args, out = false) => {
     const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
     if (r.status !== 0) throw new Error(`tmux ${args[0]} failed: ${r.stderr}`);
@@ -282,7 +282,7 @@ test("locked table provisions ONLY the approved wheel bindings — no window man
 
 test("live tmux: real wheel events through an attached pty client — installed binding enters copy mode and scrolls; stale table bindings are cleared", async (t) => {
   // reviewer-wheelbind regressions: (1) key tables are server-global — a
-  // stale forbidden binding seeded into oasdesk-locked BEFORE openTerm must
+  // stale forbidden binding seeded into oatsdesk-locked BEFORE openTerm must
   // be gone after construction; (2) the INSTALLED WheelUpPane binding is
   // driven by real SGR mouse bytes from an attached client (node-pty), not
   // by manually running copy-mode: first wheel enters copy mode, second
@@ -300,7 +300,7 @@ test("live tmux: real wheel events through an attached pty client — installed 
     probePty.kill();
   }
   catch { return t.skip("node-pty not available/built for this node ABI"); }
-  const sock = `/tmp/oaswhl-${process.pid}.sock`;
+  const sock = `/tmp/oatswhl-${process.pid}.sock`;
   const T = (args, out = false) => {
     const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
     if (r.status !== 0) throw new Error(`tmux ${args.join(" ")} failed: ${r.stderr}`);
@@ -314,7 +314,7 @@ test("live tmux: real wheel events through an attached pty client — installed 
     await sleep(800); // >pane-height history
 
     // seed a STALE forbidden binding into the (server-global) locked table
-    T(["bind-key", "-T", "oasdesk-locked", "n", "next-window"]);
+    T(["bind-key", "-T", "oatsdesk-locked", "n", "next-window"]);
 
     const r = openTerm({ session: "src", window: "instA" }, {
       preflight: (target) => T(["list-panes", "-t", target]),
@@ -328,7 +328,7 @@ test("live tmux: real wheel events through an attached pty client — installed 
     await sleep(1200); // client attached
 
     // (1) the stale forbidden binding was cleared by the unbind-all
-    const table = T(["list-keys", "-T", "oasdesk-locked"], true);
+    const table = T(["list-keys", "-T", "oatsdesk-locked"], true);
     assert.ok(!table.includes("next-window"), "stale forbidden binding cleared from the server-global table");
     assert.match(table, /WheelUpPane/, "allow-list installed");
 
@@ -370,13 +370,13 @@ test("live tmux: dedupe + cap 6 + baseline restoration on an isolated server", a
   const { createTerminalRegistry, terminalTargetKey } = await import("../packages/desktop/terminal-registry.mjs");
   const { mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const sock = join(mkdtempSync(join(tmpdir(), "oasg-")), "s");
+  const sock = join(mkdtempSync(join(tmpdir(), "oatsg-")), "s");
   const tx = (args, out = false) => {
     const r = spawnSync("tmux", ["-S", sock, ...args], { encoding: "utf8", timeout: 5000 });
     if (r.status !== 0 && !out) throw new Error(`tmux ${args.join(" ")}: ${r.stderr}`);
     return (r.stdout || "").trim();
   };
-  const viewerCount = () => tx(["list-sessions", "-F", "#{session_name}"], true).split("\n").filter((s) => s.startsWith("oasdesk-")).length;
+  const viewerCount = () => tx(["list-sessions", "-F", "#{session_name}"], true).split("\n").filter((s) => s.startsWith("oatsdesk-")).length;
   // Faithful main.mjs handler over REAL openTerm on the isolated server.
   const reg = createTerminalRegistry({ max: 6 });
   const ptys = new Map(); // id -> { key, killViewer }

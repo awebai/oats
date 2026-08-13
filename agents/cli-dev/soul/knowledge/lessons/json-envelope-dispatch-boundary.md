@@ -8,7 +8,7 @@ timestamp: 2026-07-26
 
 # Lesson
 
-Review of `e0f6e68` caught that `oas okf harvest --json` only honored the
+Review of `e0f6e68` caught that `oats okf harvest --json` only honored the
 JSON envelope once the OKF executable ran. The kernel's `capabilityCommand()`
 dispatcher could still fail first with stderr or stdout help for inactive
 namespaces, untrusted executables, duplicate namespaces, unknown subcommands,
@@ -37,7 +37,7 @@ Patterns that generalized from the fix:
   checks, and manifest decoding can all throw before the capability process
   starts;
 - move fallible module-top-level initialization, such as inherited
-  `OAS_SETTINGS` parsing, inside the command boundary;
+  `OATS_SETTINGS` parsing, inside the command boundary;
 - keep command implementations as thin JSON-aware boundaries around their full
   fallible path, so exceptions thrown before the normal report call still emit
   `{schemaVersion, ok:false, error:{code,message}}` in JSON mode, preserving
@@ -50,6 +50,6 @@ Patterns that generalized from the fix:
   failures, and add noisy-child shims that prove `JSON.parse(r.stdout)` works
   on the whole stdout for both successful and failing child exits.
 
-Also, `oas.okf` is a fundamental-layer capability: test configs that need it
+Also, `oats.okf` is a fundamental-layer capability: test configs that need it
 must declare it under `capabilities.layers.knowledge`, not `additive`, or the
 configuration fails with `E_CONFIG_BROKEN`.

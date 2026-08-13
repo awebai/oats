@@ -6,7 +6,7 @@ tags: [cli, validation, transactions, gates, rollback, seams, testing]
 timestamp: 2026-07-29
 ---
 
-The capability-materialization engine exposes a pre-commit gate (`acquirePackage(..., { assertCommittable })`) that runs after the whole closure is projected in staging and before any mutation. It is the right place for guided `oas init --package` config-template validation, because a refusal there needs no rollback.
+The capability-materialization engine exposes a pre-commit gate (`acquirePackage(..., { assertCommittable })`) that runs after the whole closure is projected in staging and before any mutation. It is the right place for guided `oats init --package` config-template validation, because a refusal there needs no rollback.
 
 # The preview gap
 

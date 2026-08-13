@@ -1,0 +1,24 @@
+{
+  "capability": "oats.linear",
+  "command": "linear",
+  "version": "1.0.0",
+  "compatibility": { "oats": ">=0.6.2" },
+  "layer": "tasks",
+  "description": "Tasks layer via Linear: JSON-first GraphQL commands, project/issue/sub-issue workflow, label-based agent identity.",
+  "requires": [],
+  "skills": [
+    "skills"
+  ],
+  "commands": {
+    "auth": "bin/oats-linear.mjs auth",
+    "teams": "bin/oats-linear.mjs teams",
+    "states": "bin/oats-linear.mjs states",
+    "projects": "bin/oats-linear.mjs projects",
+    "labels": "bin/oats-linear.mjs labels",
+    "issue": "bin/oats-linear.mjs issue"
+  },
+  "inject": "injects/linear.md",
+  "hooks": {
+    "spawn": "bin/oats-linear-hook.mjs spawn"
+  }
+}

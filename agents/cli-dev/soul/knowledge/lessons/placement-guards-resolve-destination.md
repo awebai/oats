@@ -41,7 +41,7 @@ for any path Git did not own, that helper returned the input unchanged, so a pre
 `instances/` symlink to an arbitrary directory passed. The reported home was inside the
 deployment while the real files, including capability credentials, landed elsewhere.
 
-The durable form is equality against the object OAS intended to create: the resolved home must
+The durable form is equality against the object OATS intended to create: the resolved home must
 be `<resolved agent dir>/instances/<instance>`, and the resolved agent dir must lie inside one
 of the deployment's allowed bases.
 
@@ -50,7 +50,7 @@ of the deployment's allowed bases.
 A positive rule still fails if it trusts derived bases after resolving them. For example,
 `<scope>/local-agents -> /foreign/repo` made `/foreign/repo` an allowed base unless the base
 itself was checked against the scope. The agents root the operator supplies may legitimately
-be a symlink; everything OAS derives from that anchor, such as sibling `local-agents` or nested
+be a symlink; everything OATS derives from that anchor, such as sibling `local-agents` or nested
 legacy dirs, has to remain under the anchor it claims to be under.
 
 # Re-assert after creation
@@ -58,9 +58,9 @@ legacy dirs, has to remain under the anchor it claims to be under.
 A path check expires the moment it returns. If composition or runtime preflight runs between
 validation and `mkdirSync`, another writer can swap a parent directory for a link during the
 window. Re-resolve the home immediately after creating it and before writing bytes or running
-hooks; if it is not the intended destination, remove only the empty directory OAS just created
+hooks; if it is not the intended destination, remove only the empty directory OATS just created
 and abort. Do not recursively delete an unexpected resolved destination, because it is not
-OAS-owned state.
+OATS-owned state.
 
 This narrows the race; it does not eliminate it. Node lacks an `openat`/`O_NOFOLLOW`-relative
 creation API, so hostile local filesystems still require OS-level protection on the deployment

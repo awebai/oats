@@ -1,8 +1,8 @@
-// OAS desktop — terminal viewer resource registry (Slice G).
+// OATS desktop — terminal viewer resource registry (Slice G).
 //
 // HARD invariant (human release blocker): the Desktop app must never fan out
 // enough terminal/viewer sessions to hang the machine. The main process owns
-// every node-pty and its `oasdesk-*` tmux viewer session, so the ceiling and
+// every node-pty and its `oatsdesk-*` tmux viewer session, so the ceiling and
 // the dedupe live HERE — not in the renderer, whose tab-key dedupe is a
 // best-effort UX nicety scoped to one workspace's tab list, NOT a resource
 // bound.

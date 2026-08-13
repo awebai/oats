@@ -2,13 +2,13 @@
 
 The reference implementation publishes two npm packages:
 
-- **`@oas-framework/oas`**: runtime-neutral kernel, universal `oas` CLI,
+- **`@awebai/oats`**: runtime-neutral kernel, universal `oats` CLI,
   bootstrap skills, instruction sources, and the official capability marketplace.
-- **`@oas-framework/pi`**: minimal pi adapter for instance-local resource
+- **`@awebai/oats-pi`**: minimal pi adapter for instance-local resource
   exposure and memory session events. It registers no agent tools.
 
 Claude instances consume the generated standard files directly through the
-instance home's `.claude/` and `CLAUDE.md` symlinks. OAS does **not** redirect
+instance home's `.claude/` and `CLAUDE.md` symlinks. OATS does **not** redirect
 Claude's config home: an isolated one cannot authenticate, and the operator's
 own Claude configuration is deliberately left enabled.
 
@@ -17,25 +17,25 @@ own Claude configuration is deliberately left enabled.
 | Path | Purpose |
 |---|---|
 | `lib/core.mjs` | Souls, instances, config/target resolver, capability discovery, composition, locks/trust, hooks. |
-| `bin/oas.mjs` | Agent lifecycle, config, acquisition/trust/activation, doctor, and operational command dispatch. |
-| `capabilities/` | Bundled additive packages and layer integrations, each with `oas.json`. |
+| `bin/oats.mjs` | Agent lifecycle, config, acquisition/trust/activation, doctor, and operational command dispatch. |
+| `capabilities/` | Bundled additive packages and layer integrations, each with `oats.json`. |
 | `skills/` | Kernel/bootstrap and package-authoring skills. |
 | `injects/` | Kernel and work-mode instruction sources. |
 | `packages/pi/` | Thin pi adapter. |
-| `packages/desktop/` | OAS Desktop — the Electron control panel and its bundled zero-dependency backend server (private, not published). |
+| `packages/desktop/` | OATS Desktop — the Electron control panel and its bundled zero-dependency backend server (private, not published). |
 | `test/` | Capability resolver/composition/security lifecycle tests. |
 | `agents/` | The framework's own portable expert souls. |
 
 Capability discovery has one layout: each config scope's `.agents/capabilities/` split into
-`installed/` (acquired, locked, gitignored, restorable via bare `oas install`)
+`installed/` (acquired, locked, gitignored, restorable via bare `oats install`)
 and `owned/` (authored at that scope, config-owned trusted; committed where
 the scope is a git repo, plain scope-durable files elsewhere).
 
-The live control panel is the OAS Desktop app (`packages/desktop/`): an
+The live control panel is the OATS Desktop app (`packages/desktop/`): an
 Electron shell over a bundled zero-dependency localhost server that uses
-plain OAS metadata/files plus git and tmux; no pi APIs cross into the
-feature, so the same surface works for pi and Claude instances. (`oas pane`
-and the `oas.web` browser panel were retired in its favor.)
+plain OATS metadata/files plus git and tmux; no pi APIs cross into the
+feature, so the same surface works for pi and Claude instances. (`oats pane`
+and the `oats.web` browser panel were retired in its favor.)
 
 ## Instance layout
 
@@ -62,7 +62,7 @@ their names.
 
 ## Resolution
 
-`configChain(context)` loads `oas-config.yaml` from closest scope outward.
+`configChain(context)` loads `oats-config.yaml` from closest scope outward.
 `resolveCapabilities(context, soulName)`:
 
 1. resolves explicit group definitions;
@@ -73,7 +73,7 @@ their names.
    integrity, and skill/layer collisions; and
 6. returns deterministic active capability records with provenance.
 
-`resolveOasConfig` maps active packages declaring `layer` into the exclusive
+`resolveOatsConfig` maps active packages declaring `layer` into the exclusive
 knowledge/messaging/tasks slots. `layers.<layer>: none` explicitly suppresses
 an inherited slot and remains distinct from absence.
 
@@ -102,7 +102,7 @@ an inherited slot and remains distinct from absence.
 
 Pi launches with `--no-skills --skill <instance-home>/.agents/skills
 --no-context-files --no-prompt-templates --append-system-prompt
-<instance-home>/AGENTS.md`. The OAS-managed skill set is exactly the composed
+<instance-home>/AGENTS.md`. The OATS-managed skill set is exactly the composed
 one: no user, project, ancestor or package skill catalogs. It is not a claim
 that nothing else can reach the session — extensions stay ambient (below), and
 what they contribute stays with them.
@@ -110,8 +110,8 @@ what they contribute stays with them.
 After the canonical soul and kernel text, every generated `AGENTS.md` states the
 runtime-neutral **home/work boundary** (`injects/instance-boundary.md`) — for
 every work mode and for capability service agents alike — immediately before the
-work-mode block it frames: `<instance-home>` (`$OAS_INSTANCE_HOME`) holds the
-brain, task, provenance and working state, and is where OAS operational/lifecycle
+work-mode block it frames: `<instance-home>` (`$OATS_INSTANCE_HOME`) holds the
+brain, task, provenance and working state, and is where OATS operational/lifecycle
 commands are run from — together with the commands of whatever capabilities are
 active, `aw` among them when aweb messaging is — since they resolve scope from
 the working directory (`--dir <path>` reaches another deliberately); the home's
@@ -128,10 +128,10 @@ so that is delivered explicitly; the work tree's `AGENTS.md` stays readable by
 the file tools — readable, not auto-injected.
 
 Pi **extensions stay ambient**: operators run cross-agent extensions (web
-search, output formatting) that every instance should keep, so OAS does not
+search, output formatting) that every instance should keep, so OATS does not
 pass `--no-extensions`. The accepted residue is narrow but real — an
 extension's `resources_discover` hook can contribute skill paths that survive
-`--no-skills`. Today only the OAS bridge does that, and inside an instance it
+`--no-skills`. Today only the OATS bridge does that, and inside an instance it
 contributes that instance's own `.agents/skills`, leaving the composed set
 unchanged.
 
@@ -139,18 +139,18 @@ Runtime packages that active capabilities declare (see
 [capabilities](capabilities.md)) are verified at spawn and recorded in
 `instance.json`; a missing one fails the spawn with the consent command to fix
 it, rather than starting an agent whose instructions promise a capability it
-does not have. OAS does not resolve their extension entry points — pi owns that
+does not have. OATS does not resolve their extension entry points — pi owns that
 resolution, including globs and conventional directories.
 
 Claude discovers the same set natively through the instance's `.claude/skills`
 symlink, and its composed instructions through `CLAUDE.md -> AGENTS.md`.
 
 Claude Code's **own configuration stays enabled**: user and project skills,
-plugins, settings and `CLAUDE.md` all resolve into an OAS session as they
+plugins, settings and `CLAUDE.md` all resolve into an OATS session as they
 normally would. That is a deliberate product choice — those mechanisms are
 powerful and the operator decides whether to use them; a deployment that wants
-only the OAS-composed surface achieves it by configuring everything OAS-side.
-So OAS passes no `--setting-sources`, no exclusions, and no synthetic plugin.
+only the OATS-composed surface achieves it by configuring everything OATS-side.
+So OATS passes no `--setting-sources`, no exclusions, and no synthetic plugin.
 
 Measured behavior worth knowing when reasoning about an instance: project
 skills resolve from the working directory up to the **repository root**, so an
@@ -159,7 +159,7 @@ too. Project *settings* — hooks, plugins, permissions, custom agents — resol
 from the instance home rather than from ancestors.
 
 Both runtimes record what they actually expose in `instance.json` under
-`composition.materialized.runtimePosture`: the OAS-composed set, what is
+`composition.materialized.runtimePosture`: the OATS-composed set, what is
 curtailed, and what remains ambient. The deviation from strict composition is
 auditable rather than implied.
 
@@ -168,26 +168,26 @@ auditable rather than implied.
 The generated order is:
 
 1. canonical soul content;
-2. kernel OAS block;
+2. kernel OATS block;
 3. local-soul block (local souls only);
 4. **home/work boundary block** — runtime-neutral, every mode and every kind;
 5. actual spawn work-mode block;
 6. active capability blocks in resolver order; and
 7. unconditional config blocks outermost to innermost.
 
-Every generated block carries its source path. `oas doctor --soul <name>` uses
+Every generated block carries its source path. `oats doctor --soul <name>` uses
 the same composer and prints/returns the final text. Config-dependent prose is
 never reconciled into committed souls.
 
 ## Acquisition and trust
 
 External installation copies/clones one exact artifact and writes
-`oas-lock.json` with source, version/commit, and SHA-256 tree integrity. An
+`oats-lock.json` with source, version/commit, and SHA-256 tree integrity. An
 existing destination is never pulled silently. Resolution rejects changed
 locked artifacts and unlocked installed/path packages.
 
 Executable package hooks, commands, and launch-environment authority are omitted
-until `oas trust <id>` marks the exact locked integrity approved. Bundled
+until `oats trust <id>` marks the exact locked integrity approved. Bundled
 packages are framework-trusted.
 Packages under a scope's `owned/` subtree are config-owned. Anything under
 `installed/` requires a matching lock entry, so an acquired artifact cannot
@@ -205,7 +205,7 @@ API and error taxonomy.
 
 Only `soul-scaffold`, `spawn`, and `retire` manifest hooks are accepted.
 Spawn/scaffold use outer-scope then capability-ID order; retire reverses it.
-Each hook receives package identity/layer plus structured OAS environment and
+Each hook receives package identity/layer plus structured OATS environment and
 may emit a final JSON object containing `meta`, `brief`, `warning`, or `launch`.
 Only a spawn hook may add `env`; other lifecycle events reject it rather than
 silently discard it. Launch environment is string-only,
@@ -227,7 +227,7 @@ when cleanup completed. Failed compensation or reported state with no retire
 hook uses the same retryable quarantine as every other incomplete spawn.
 
 Soul scaffolding snapshots files around each package hook and records new-file
-ownership in `.oas-scaffold-owners.json`. Overwriting canonical or another
+ownership in `.oats-scaffold-owners.json`. Overwriting canonical or another
 package's file restores the prior bytes and raises a conflict.
 
 ## Commands
@@ -251,7 +251,7 @@ npm run smoke:tarball
 
 Pull-request CI runs this matrix on supported Node 22. `validate` compiles both
 public JSON schemas, validates clean-contract manifests, parses documented
-OAS config examples with the production parser, and checks maintainable public
+OATS config examples with the production parser, and checks maintainable public
 local links/anchors. `pack:check` dry-runs both npm packages and rejects missing
 runtime surfaces or leaked workspace/test state.
 
@@ -262,7 +262,7 @@ exact skills, generated instructions, canonical soul immutability, and
 metadata.
 
 One manual probe is required after every release and before 0.19.0 ships: from
-the **published** kernel (not a checkout), install `oas.authoring` into a fresh
+the **published** kernel (not a checkout), install `oats.authoring` into a fresh
 scope, activate it for a framework-author soul, and spawn that soul. The spawn
 must succeed with `integration-authoring`, `skill-craft`, and `soul-craft`
 materialized in the instance's `.agents/skills/`. Framework-hoisted resources

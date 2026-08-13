@@ -16,7 +16,7 @@ briefing meanwhile still said:
 > **`cd work/` once, at the start of the session, and stay there.** Home is where you wake
 > up; `work/` is where you live.
 
-Every worktree instance read that at wake-up and then ran `aw` and `oas` from the work tree —
+Every worktree instance read that at wake-up and then ran `aw` and `oats` from the work tree —
 which is the exact misresolution the code was being hardened against. The kernel and its own
 instructions were arguing, and the instructions win, because they are what the agent acts on.
 
@@ -29,8 +29,8 @@ still teach it, you have shipped a contradiction that costs a full review cycle 
 
 The replacement is deliberately not "cd home and stay there" — that would be the same failure
 mirrored. The contract states the PURPOSE of each directory and lets the agent move:
-`<instance-home>` (`$OAS_INSTANCE_HOME`) holds the brain, task, provenance and episodic
-state, and is where OAS operational/lifecycle commands and commands from active
+`<instance-home>` (`$OATS_INSTANCE_HOME`) holds the brain, task, provenance and episodic
+state, and is where OATS operational/lifecycle commands and commands from active
 capabilities resolve their scope — for example, `aw` when the aweb messaging capability is
 active — with `--dir <path>` as the deliberate way to reach a different one.
 `<instance-home>/work` is where permitted repository edits, builds, tests and commits happen,
@@ -88,7 +88,7 @@ edit for a local one) and to assert it on a genuinely local composition.
 
 Fixing the local-soul contradiction, I wrote the resolution INTO the kernel boundary: "you
 write what you learn to `notes/`, and the harvester promotes it." One layer down, that is
-the same mistake again. `notes/` and `oas okf harvest` come from the oas.okf capability;
+the same mistake again. `notes/` and `oats okf harvest` come from the oats.okf capability;
 an instance without it has neither. Worse, capability service agents have their knowledge
 layer suppressed BY DESIGN, and the shipped reviewer's own soul says "do not write notes/,
 do not run any harvest" — so my always-composed block told it to do exactly what its
@@ -100,10 +100,10 @@ own injection, where it appears exactly when the capability does. The kernel blo
 to state the invariant and DEFER: "how your own learnings reach your soul is your knowledge
 layer's business, and its instructions below say so if you have one."
 
-The same audit caught two more of my own: the boundary listed `oas okf harvest` among the
+The same audit caught two more of my own: the boundary listed `oats okf harvest` among the
 commands to run from home, and the workspace briefing enumerated `STATE.md/log.md/notes/` as
 "your episodic files". Both name OKF artifacts in kernel-composed text. Generalised to "your
-role's working state" and "any other `oas` subcommand your capabilities add", they are true
+role's working state" and "any other `oats` subcommand your capabilities add", they are true
 for everyone.
 
 The test that holds it: compose kind x mode x knowledge-layer and assert NEGATIVELY —
@@ -121,7 +121,7 @@ Worse, the companion test asserted only that the composed text matched the proto
 once, which is true whether ONE block owns it or three compete. The fix was to stop testing
 prose and test structure: `composeInstanceAgentsMd(...).blocks` gives every block with its source,
 so the property becomes an equality — the set of blocks matching the protocol must be exactly
-`["capability:oas.okf"]`, and exactly `[]` when the layer is suppressed. That cannot pass
+`["capability:oats.okf"]`, and exactly `[]` when the layer is suppressed. That cannot pass
 vacuously, and it names the offender when it fails.
 
 Widening the regex then flagged "service agents (harvesters, reviewers, fixers)" — a MENTION,
@@ -182,7 +182,7 @@ too. **An allowlist has to bound the whole input, not find a substring in it.**
 And it has to count what the reader counts. My token regex used character classes to exclude
 backticks, which meant ``` ``aw`` ``` — a perfectly ordinary Markdown spelling — matched
 nothing at all and sailed through. `\baw\b` counts the word, since backticks are already
-non-word characters. The same check had the opposite fault too: OAS provenance markers embed
+non-word characters. The same check had the opposite fault too: OATS provenance markers embed
 absolute PATHS, so composing from a directory whose name contained "aw" made unchanged prose
 fail. Strip the machine-generated markers before reading text as prose — provenance is not
 instruction.

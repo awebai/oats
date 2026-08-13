@@ -1,4 +1,4 @@
-/* oas desktop — agent-cluster computation for the Active overview.
+/* oats desktop — agent-cluster computation for the Active overview.
    Pure functions, no DOM: clusters are the connected components of the
    roster under parent/child (parentInstance) and sibling (siblingInstance)
    links. ALL reading of sibling data goes through siblingLinksOf() — the

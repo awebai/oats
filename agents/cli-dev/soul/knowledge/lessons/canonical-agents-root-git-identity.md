@@ -57,7 +57,7 @@ the desktop server, adapters, and tests can call it directly and bypass the CLI'
 
 Full gate was green after the fix: 750 tests, check, check:pi, validate,
 validate:okf, and pack:check. A real linked-worktree probe changed
-`ensureRoot()` from returning `/private/tmp/oas-strict-curriculum-spike/agents` to
-returning `/Users/pepe-reyero/oas/agents`; `oas status --json` from that worktree
+`ensureRoot()` from returning `/private/tmp/oats-strict-curriculum-spike/agents` to
+returning `/Users/pepe-reyero/oats/agents`; `oats status --json` from that worktree
 changed from reporting the worktree root with no instances to reporting the
 deployment root with its real instances.

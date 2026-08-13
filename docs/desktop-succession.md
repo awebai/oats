@@ -1,42 +1,42 @@
-# BREAKING: desktop succession — `oas.web`, `oas pane`, and the control-pane library are retired
+# BREAKING: desktop succession — `oats.web`, `oats pane`, and the control-pane library are retired
 
-**The next release of `@oas-framework/oas` containing this change is a
+**The next release of `@awebai/oats` containing this change is a
 BREAKING release.** Three previously shipped surfaces were removed in favor of
-the OAS Desktop app (`packages/desktop/` in the framework repo):
+the OATS Desktop app (`packages/desktop/` in the framework repo):
 
 | Removed surface | Replacement |
 |---|---|
-| `oas.web` marketplace capability (`oas web start`, browser panel) | OAS Desktop app — the same zero-dependency loopback server is bundled at `packages/desktop/server/` and spawned by the app |
-| `oas pane` CLI command and the Control Pane TUI | OAS Desktop app (Active overview / instance roster) |
-| `@oas-framework/oas/control-pane` package export (`lib/control-pane/model.mjs`) | The roster model moved into `packages/desktop/server/model.mjs`; it is no longer a public kernel export |
+| `oats.web` marketplace capability (`oats web start`, browser panel) | OATS Desktop app — the same zero-dependency loopback server is bundled at `packages/desktop/server/` and spawned by the app |
+| `oats pane` CLI command and the Control Pane TUI | OATS Desktop app (Active overview / instance roster) |
+| `@awebai/oats/control-pane` package export (`lib/control-pane/model.mjs`) | The roster model moved into `packages/desktop/server/model.mjs`; it is no longer a public kernel export |
 
-## Migrating a deployment that used `oas.web`
+## Migrating a deployment that used `oats.web`
 
-1. Remove the `oas.web` entry from `capabilities.additive` in every
-   `oas-config.yaml` in your config chain.
-2. Remove the `oas.web` entry from `oas-lock.json` at the same scope(s), and
+1. Remove the `oats.web` entry from `capabilities.additive` in every
+   `oats-config.yaml` in your config chain.
+2. Remove the `oats.web` entry from `oats-lock.json` at the same scope(s), and
    delete any stale installed copy under `.agents/capabilities/installed/`.
-3. Use the OAS Desktop app instead: `cd packages/desktop && npm install &&
+3. Use the OATS Desktop app instead: `cd packages/desktop && npm install &&
    npm run rebuild && npm start` (see `packages/desktop/README.md`).
 
 The CLI diagnoses stale references instead of failing opaquely:
 
-- `oas doctor` warns when an `oas-lock.json` still pins `oas.web`, with the
+- `oats doctor` warns when an `oats-lock.json` still pins `oats.web`, with the
   fix spelled out.
-- Bare `oas install` reports the lock entry as `RETIRED` (with guidance)
+- Bare `oats install` reports the lock entry as `RETIRED` (with guidance)
   rather than a restore failure.
-- `oas install oas.web` and a config activation of `oas.web` fail with a
+- `oats install oats.web` and a config activation of `oats.web` fail with a
   message naming the successor and the exact cleanup steps.
 
-## Migrating `oas pane` usage
+## Migrating `oats pane` usage
 
-`oas pane` now exits with a pointer to the desktop app. Scripts or docs
-invoking it should launch OAS Desktop instead. The `--theme` themes (dark,
+`oats pane` now exits with a pointer to the desktop app. Scripts or docs
+invoking it should launch OATS Desktop instead. The `--theme` themes (dark,
 solarized) exist in the app's theme system.
 
 ## Consumers of the `./control-pane` export
 
-`import ... from "@oas-framework/oas/control-pane"` no longer resolves. The
+`import ... from "@awebai/oats/control-pane"` no longer resolves. The
 model's pure helpers (`readMarkdownSection`, `parseTmuxWindows`,
 `parseGitStatus`, `parseGitDiffStat`, `buildConstellation`, `relativeAge`)
 live in `packages/desktop/server/model.mjs`, which is private to the desktop

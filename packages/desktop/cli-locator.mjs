@@ -1,18 +1,18 @@
-// OAS desktop — CLI locator/probe (Desktop CLI API v1).
+// OATS desktop — CLI locator/probe (Desktop CLI API v1).
 //
 // The app's ONLY path to lifecycle mutations is a compatible installed
-// `oas` CLI (desktop-dist contract). This module finds it:
+// `oats` CLI (desktop-dist contract). This module finds it:
 //
 //   discovery order (first acceptable candidate wins):
 //     1. persisted user-selected absolute executable
-//     2. OAS_DESKTOP_OAS_BIN (test/development only)
+//     2. OATS_DESKTOP_OATS_BIN (test/development only)
 //     3. the app process PATH
 //     4. npm global-prefix candidates
-//     5. login-shell `command -v oas` with a timeout
+//     5. login-shell `command -v oats` with a timeout
 //
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
-//   {"schemaVersion":1,"name":"@oas-framework/oas","version":"0.20.x","desktopApi":1}
+//   {"schemaVersion":1,"name":"@awebai/oats","version":"0.20.x","desktopApi":1}
 // Desktop accepts desktopApi === 1 and semver >=0.18.0 <0.21.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
@@ -39,7 +39,7 @@ export const ACCEPT_RANGE = { min: [0, 18, 0], maxExclusive: [0, 21, 0] };
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */
 export const ACCEPT_RANGE_TEXT = `>=${ACCEPT_RANGE.min.join(".")} <${ACCEPT_RANGE.maxExclusive.join(".")}`;
-export const PROBE_NAME = "@oas-framework/oas";
+export const PROBE_NAME = "@awebai/oats";
 // Spawn-time agent relations (--relation/--relative-to) AND the anchor
 // qualifier (--relative-root, a later contract addition in the same
 // unreleased feature) gate on ONE floor: the first release carrying BOTH.
@@ -73,7 +73,7 @@ export function relationSupportError(cliState, { relation, relativeTo } = {}) {
   const rel = relation === "unrelated" || relation === "" ? undefined : relation;
   if (!rel && !relativeTo) return null;
   if (cliState?.ok && supportsRelations(cliState.version)) return null;
-  const err = new Error(`spawn-time relations require oas >= ${RELATIONS_MIN.join(".")} — installed ${cliState?.version || "none"} would silently spawn an unrelated instance`);
+  const err = new Error(`spawn-time relations require oats >= ${RELATIONS_MIN.join(".")} — installed ${cliState?.version || "none"} would silently spawn an unrelated instance`);
   err.code = "cli-no-relations";
   return err;
 }
@@ -93,7 +93,7 @@ const cmp = (a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 export function acceptProbe(payload) {
   if (!payload || typeof payload !== "object") return { ok: false, reason: "no probe payload" };
   if (payload.schemaVersion !== 1) return { ok: false, reason: `unexpected schemaVersion ${payload.schemaVersion}` };
-  if (payload.name !== PROBE_NAME) return { ok: false, reason: `not the oas CLI (name: ${payload.name || "missing"})` };
+  if (payload.name !== PROBE_NAME) return { ok: false, reason: `not the oats CLI (name: ${payload.name || "missing"})` };
   if (payload.desktopApi !== DESKTOP_API) return { ok: false, reason: `desktopApi ${payload.desktopApi ?? "missing"} (need ${DESKTOP_API})` };
   const v = parseSemver(payload.version);
   if (!v) return { ok: false, reason: `unparsable version "${payload.version}"` };
@@ -137,9 +137,9 @@ export function candidateSources(io) {
   const sources = [
     { source: "persisted", paths: () => [abs(io.persisted?.())] },
     // test/development only — never documented for end users
-    { source: "env", paths: () => [abs(io.env?.OAS_DESKTOP_OAS_BIN)] },
-    { source: "path", paths: () => String(io.env?.PATH || "").split(delimiter).filter(Boolean).map((dir) => abs(join(dir, "oas"))) },
-    { source: "npm-global", paths: async () => { const bin = await io.npmGlobalBin?.(); return [abs(bin && join(bin, "oas"))]; } },
+    { source: "env", paths: () => [abs(io.env?.OATS_DESKTOP_OATS_BIN)] },
+    { source: "path", paths: () => String(io.env?.PATH || "").split(delimiter).filter(Boolean).map((dir) => abs(join(dir, "oats"))) },
+    { source: "npm-global", paths: async () => { const bin = await io.npmGlobalBin?.(); return [abs(bin && join(bin, "oats"))]; } },
     { source: "login-shell", paths: async () => [abs(await io.loginShellWhich?.())] },
   ];
   return sources;

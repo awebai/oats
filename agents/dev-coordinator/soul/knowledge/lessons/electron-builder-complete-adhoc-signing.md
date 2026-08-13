@@ -11,7 +11,7 @@ tags:
 
 # Electron linker signatures are not complete ad-hoc app-bundle signatures
 
-The official OAS Desktop v0.18.2 arm64 DMG had a valid published checksum and the correct arm64 executable, but macOS reported the app as damaged. The bundle was not simply unsigned:
+The official OATS Desktop v0.18.2 arm64 DMG had a valid published checksum and the correct arm64 executable, but macOS reported the app as damaged. The bundle was not simply unsigned:
 
 - `codesign -dvvv` reported `Signature=adhoc` and `flags=adhoc,linker-signed`;
 - `Sealed Resources=none`;
@@ -23,7 +23,7 @@ The executable's linker-generated signature was therefore not evidence that the 
 A macOS packaging gate should verify the packaged `.app`, not merely inspect the main executable:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 "OAS Desktop.app"
+codesign --verify --deep --strict --verbose=2 "OATS Desktop.app"
 ```
 
 For stronger diagnosis, also require `_CodeSignature/CodeResources`, inspect signature details, and reject `linker-signed` as the only signature. Run the check after packaging and before artifact upload. This catches both the malformed v0.18.2 arm64 class and a completely unsigned bundle.

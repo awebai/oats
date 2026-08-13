@@ -1,14 +1,14 @@
 ---
 type: Decision
 title: A "." capability root is discriminated by configTemplates, never by configs
-description: Keying legacy-package acceptance on the deprecated `configs` spelling would strand oas.authoring@1.0.0, because it declares "." without either template map.
+description: Keying legacy-package acceptance on the deprecated `configs` spelling would strand oats.authoring@1.0.0, because it declares "." without either template map.
 tags: [kernel, packages, manifest, compatibility]
 timestamp: 2026-07-29
 ---
 
 # The rule
 
-`oas-package.json` may declare `capabilities: ["."]` — the package root is
+`oats-package.json` may declare `capabilities: ["."]` — the package root is
 itself the capability root. Newly authored packages must never emit it. The
 reader accepts it **iff the manifest does not carry `configTemplates`**, and
 rejects it as soon as it does, because a `configTemplates` manifest is
@@ -22,7 +22,7 @@ The intuitive reading is "legacy manifests use `configs`, new ones use
 `configTemplates`, so `.` is legacy iff `configs` is present." That is wrong for
 the exact case the compatibility exists to serve:
 
-**`oas.authoring@1.0.0` is `capabilities: ["."]` and ships no template map at
+**`oats.authoring@1.0.0` is `capabilities: ["."]` and ships no template map at
 all** — neither `configs` nor `configTemplates`. A `configs`-keyed discriminator
 rejects it, i.e. breaks the one immutable published tag the rule was written
 for.
@@ -31,7 +31,7 @@ The asymmetry is the point:
 
 | manifest                              | `"."` accepted? |
 |---------------------------------------|-----------------|
-| no template map (oas.authoring@1.0.0) | yes             |
+| no template map (oats.authoring@1.0.0) | yes             |
 | `configs: {...}` (deprecated 0.19)    | yes             |
 | `configTemplates: {...}`              | **no**          |
 | both spellings                        | invalid manifest, whatever the roots |

@@ -11,7 +11,7 @@ timestamp: 2026-07-24T10:35:50Z
 
 # Decision
 
-The OAS desktop shell uses agents and their instances as its primary objects. A single fixed-width sidebar keeps the instance hierarchy visible beneath a small set of first-class navigation surfaces. Terminal, brain, and markdown views open as context-scoped tabs rather than becoming additional global destinations.
+The OATS desktop shell uses agents and their instances as its primary objects. A single fixed-width sidebar keeps the instance hierarchy visible beneath a small set of first-class navigation surfaces. Terminal, brain, and markdown views open as context-scoped tabs rather than becoming additional global destinations.
 
 # Rationale
 

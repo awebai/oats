@@ -145,7 +145,7 @@ export function createWorkspaceSwitcher({
       [...suggestionsEl.querySelectorAll(".ws-suggestion")]
         .find((button) => button.dataset.workspaceId === focusId)?.focus();
     }
-    if (!visible.length && !status.textContent) setStatus("No matching OAS workspaces found.");
+    if (!visible.length && !status.textContent) setStatus("No matching OATS workspaces found.");
   };
 
   const paintDiscoveryState = () => {
@@ -183,7 +183,7 @@ export function createWorkspaceSwitcher({
     modalSearch.value = "";
     suggestions = [];
     selected = null;
-    discoveryState = { message: "Finding OAS workspaces…", error: false };
+    discoveryState = { message: "Finding OATS workspaces…", error: false };
     setAdding(false);
     paintDiscoveryState();
     modalSearch.focus();
@@ -197,14 +197,14 @@ export function createWorkspaceSwitcher({
         const added = new Set(workspaces.map((workspace) => workspace.id));
         suggestions = found.filter((candidate) => candidateId(candidate) && !added.has(candidateId(candidate)));
         discoveryState = {
-          message: suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OAS workspaces were discovered.",
+          message: suggestions.length ? `${suggestions.length} suggested workspace${suggestions.length === 1 ? "" : "s"}` : "No additional OATS workspaces were discovered.",
           error: false,
         };
       }
       if (!adding) paintDiscoveryState();
     } catch (error) {
       if (discoveryToken !== discoveryGeneration || modal.hidden) return;
-      discoveryState = { message: error?.message || "Could not discover OAS workspaces.", error: true };
+      discoveryState = { message: error?.message || "Could not discover OATS workspaces.", error: true };
       if (!adding) paintDiscoveryState();
     }
   };
@@ -228,7 +228,7 @@ export function createWorkspaceSwitcher({
     if (adding) return;
     const token = ++modalGeneration;
     setAdding(true);
-    setStatus("Choose an OAS workspace folder…");
+    setStatus("Choose an OATS workspace folder…");
     try {
       const result = await pickWorkspace();
       if (token !== modalGeneration) return;

@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-const CLI = resolve(new URL("../bin/oas.mjs", import.meta.url).pathname);
+const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
 
 function write(path, content, mode) {
@@ -14,7 +14,7 @@ function write(path, content, mode) {
 }
 
 function fixture({ disposable = [] } = {}) {
-  const base = mkdtempSync(join(tmpdir(), "oas-retire-work-"));
+  const base = mkdtempSync(join(tmpdir(), "oats-retire-work-"));
   temporaryDirectories.push(base);
   const repo = join(base, "repo");
   mkdirSync(repo);
@@ -27,7 +27,7 @@ function fixture({ disposable = [] } = {}) {
   execFileSync("git", ["-C", repo, "commit", "-qm", "init"]);
 
   if (disposable.length) {
-    write(join(repo, "oas-config.yaml"), `work-modes:\n  worktree:\n    retirement-disposable: [${disposable.join(", ")}]\n`);
+    write(join(repo, "oats-config.yaml"), `work-modes:\n  worktree:\n    retirement-disposable: [${disposable.join(", ")}]\n`);
     execFileSync("git", ["-C", repo, "add", "."]);
     execFileSync("git", ["-C", repo, "commit", "-qm", "config"]);
   }
@@ -44,7 +44,7 @@ function fixture({ disposable = [] } = {}) {
   const env = {
     ...process.env,
     PATH: `${bin}:${process.env.PATH}`,
-    OAS_HOME_DIR: join(base, "oas-state"),
+    OATS_HOME_DIR: join(base, "oats-state"),
   };
   delete env.PI_AGENTS_ROOT;
   return { base, repo, root, env };
@@ -175,7 +175,7 @@ test("human retire output reports preserved classes and recovery location", () =
   const retired = cli(f, ["retire", "dev-reported"]);
   assert.equal(retired.status, 0, retired.stderr);
   assert.match(retired.stdout, /Work that was not committed has been preserved: .*untracked or ignored worktree bytes/);
-  assert.match(retired.stdout, /\.oas-retirement\/recovery\/dev-reported-/);
+  assert.match(retired.stdout, /\.oats-retirement\/recovery\/dev-reported-/);
 });
 
 test("production recovery reopens staged index state after the original worktree is gone", () => {
@@ -220,7 +220,7 @@ test("missing or corrupt independent authority fails closed before quiescence or
     const f = fixture({ disposable: ["cache"] });
     const spawned = spawn(f, corrupt ? "receipt-corrupt" : "receipt-missing");
     write(join(spawned.home, "work", "cache", "later.bin"), "generated-later\n");
-    const baselineDir = join(dirname(spawned.home), ".oas-retirement", "baselines");
+    const baselineDir = join(dirname(spawned.home), ".oats-retirement", "baselines");
     const baseline = join(baselineDir, readdirSync(baselineDir)[0]);
     if (corrupt) write(baseline, "{not-json\n");
     else rmSync(baseline);
@@ -234,9 +234,9 @@ test("missing or corrupt independent authority fails closed before quiescence or
 test("retire-hook bytes are caught by the final post-hook inspection", () => {
   const f = fixture();
   const cap = join(f.repo, ".agents", "capabilities", "owned", "writer");
-  write(join(cap, "oas.json"), JSON.stringify({ capability: "acme.writer", version: "1.0.0", description: "writer", hooks: { retire: "hook.mjs" } }));
-  write(join(cap, "hook.mjs"), "import {writeFileSync} from 'node:fs'; import {join} from 'node:path'; writeFileSync(join(process.env.OAS_HOME, 'hook-created.txt'), 'hook-bytes\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n");
-  write(join(f.repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.writer:\n      global: true\n");
+  write(join(cap, "oats.json"), JSON.stringify({ capability: "acme.writer", version: "1.0.0", description: "writer", hooks: { retire: "hook.mjs" } }));
+  write(join(cap, "hook.mjs"), "import {writeFileSync} from 'node:fs'; import {join} from 'node:path'; writeFileSync(join(process.env.OATS_HOME, 'hook-created.txt'), 'hook-bytes\\n'); console.log(JSON.stringify({meta:{retired:true}}));\n");
+  write(join(f.repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.writer:\n      global: true\n");
   const spawned = spawn(f, "hook-write");
   const retired = cli(f, ["retire", "dev-hook-write", "--json"]);
   assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);

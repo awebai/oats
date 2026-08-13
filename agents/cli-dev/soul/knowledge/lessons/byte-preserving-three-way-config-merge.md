@@ -6,8 +6,8 @@ tags: [config, templates, sync, merge, yaml, byte-preservation, testing]
 timestamp: 2026-07-29
 ---
 
-`oas config sync` compares a recorded adopted base, the current local
-`oas-config.yaml`, and the template from the currently locked package. The
+`oats config sync` compares a recorded adopted base, the current local
+`oats-config.yaml`, and the template from the currently locked package. The
 binding rule is that untouched local bytes stay byte-identical — comments,
 key ordering, blank lines, indentation style, and the presence or absence of a
 trailing newline.

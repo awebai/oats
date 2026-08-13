@@ -2,7 +2,7 @@
 // clustering and ux-designer's cluster-first overview consume these exact
 // fields, but renderer tests inject them directly — a dropped or typo'd
 // projection field would stay green there. Extract the REAL projection
-// function from server/oas-web.mjs via block markers (house pattern,
+// function from server/oats-web.mjs via block markers (house pattern,
 // keySendError) and assert the relation contract fields end to end.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -10,11 +10,11 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SRV = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "oas-web.mjs");
+const SRV = join(dirname(fileURLToPath(import.meta.url)), "..", "server", "oats-web.mjs");
 
 function projection() {
   const src = readFileSync(SRV, "utf8");
-  const m = src.match(/\/\* OASWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OASWEB_PANELPROJ_END \*\//);
+  const m = src.match(/\/\* OATSWEB_PANELPROJ_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_PANELPROJ_END \*\//);
   assert.ok(m, "PANELPROJ block markers present");
   return new Function("dirname", m[1] + "\nreturn projectPanelInstance;")(dirname);
 }
@@ -47,7 +47,7 @@ test("/api/panel projection: absent relation metadata is stable null, never unde
 
 function spawnError() {
   const src = readFileSync(SRV, "utf8");
-  const m = src.match(/\/\* OASWEB_SPAWNERR_BEGIN[^*]*\*\/([\s\S]*?)\/\* OASWEB_SPAWNERR_END \*\//);
+  const m = src.match(/\/\* OATSWEB_SPAWNERR_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_SPAWNERR_END \*\//);
   assert.ok(m, "SPAWNERR block markers present");
   return new Function(m[1] + "\nreturn spawnErrorPayload;")();
 }
@@ -84,7 +84,7 @@ test("/api/spawn errors: E_RELATIVE_AMBIGUOUS passes through UNSLICED; others st
 
 function findInstanceFns() {
   const src = readFileSync(SRV, "utf8");
-  const m = src.match(/\/\* OASWEB_FINDINST_BEGIN[^*]*\*\/([\s\S]*?)\/\* OASWEB_FINDINST_END \*\//);
+  const m = src.match(/\/\* OATSWEB_FINDINST_BEGIN[^*]*\*\/([\s\S]*?)\/\* OATSWEB_FINDINST_END \*\//);
   assert.ok(m, "FINDINST block markers present");
   // the block references the module-level snapshot + Date — inject stubs
   const make = new Function("snapshot", "Date", "send",

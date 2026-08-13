@@ -1,7 +1,7 @@
 ---
 name: knowledge-integration
 description: >-
-  Building a knowledge-layer OAS integration (replacing or extending the
+  Building a knowledge-layer OATS integration (replacing or extending the
   default OKF format) — what the kernel contract guarantees vs what the
   format owns, and how to teach a different knowledge discipline. Use when
   integrating a knowledge format other than OKF or customizing knowledge
@@ -15,19 +15,19 @@ description: >-
 memory-agnostic. Agents without a knowledge integration get no STATE.md, no
 log.md, no notes/, no soul knowledge dir, no harvest: whatever the repo or
 coding agent already defines is all they have. Load integration-craft first.
-Template: `capabilities/oas-okf/` — read `bin/oas-okf.mjs` fully.
+Template: `capabilities/oats-okf/` — read `bin/oats-okf.mjs` fully.
 
 ## What your integration must provide (the okf reference shape)
 
 Everything below is YOUR scaffolding, delivered via hooks — the kernel only
 provides the hook points and env:
 
-- **`soul-scaffold` hook** — called at soul creation (OAS_SOUL = soul dir):
+- **`soul-scaffold` hook** — called at soul creation (OATS_SOUL = soul dir):
   create your long-term memory structure (okf: `knowledge/` bundle with
   index/log/core sections; honor `settings["sections-file"]` for seeding).
   Must be idempotent — it's also called lazily at spawn for older souls.
 - **`spawn` hook** — create the instance's episodic memory (okf: STATE.md +
-  log.md + notes/; OAS_TASK/OAS_REPO/OAS_BRANCH/OAS_WORK env available) and
+  log.md + notes/; OATS_TASK/OATS_REPO/OATS_BRANCH/OATS_WORK env available) and
   return a `brief` telling the instance how to use its memory — that line is
   the ONLY memory instruction TASK.md will carry.
 - **Optional `retire` hook** — consolidate before deletion only if the format

@@ -1,17 +1,17 @@
 ---
 type: Lesson
 title: Capability-materialization doc terminology and the depsIntegrity trap
-description: When documenting OAS packages after the capability-materialization/config-template change, use config template / adopted base and verify runtime-closure integrity lives on the capability artifact, not a separate depsIntegrity field.
-tags: [oas, packages, capabilities, config-templates, docs, terminology]
+description: When documenting OATS packages after the capability-materialization/config-template change, use config template / adopted base and verify runtime-closure integrity lives on the capability artifact, not a separate depsIntegrity field.
+tags: [oats, packages, capabilities, config-templates, docs, terminology]
 timestamp: 2026-07-29
 ---
 
 # Capability-materialization doc terminology and the depsIntegrity trap
 
 The founder-accepted capability-materialization/config-template model replaced
-several older public doc terms. When auditing or writing OAS package/config
+several older public doc terms. When auditing or writing OATS package/config
 docs, apply this mapping and verify against `lib/core.mjs`, `lib/packages.mjs`,
-`docs/oas-lock.schema.json`, and `docs/oas-package.schema.json`.
+`docs/oats-lock.schema.json`, and `docs/oats-package.schema.json`.
 
 ## Terminology mapping (old -> current)
 
@@ -43,14 +43,14 @@ trust like source drift. `npm ci` flags are
 - Trust binds to the exact capability artifact integrity; official
   catalog/package identity grants NO executable trust. Only kernel-bundled
   legacy capabilities are framework-trusted, and that must be labeled legacy.
-- `oas install <pkg>` materializes capabilities but adopts NO template.
-  `oas init --package <src> [--config <t>]` adopts exactly one.
-- Config commands: `oas config diff | sync [--accept <regionId>=local|package] |
+- `oats install <pkg>` materializes capabilities but adopts NO template.
+  `oats init --package <src> [--config <t>]` adopts exactly one.
+- Config commands: `oats config diff | sync [--accept <regionId>=local|package] |
   sync --reset --yes | adopt <pkg> [--config <t>]`.
 
 ## Gotcha: CLI static help lagged the runtime
 
 At integrated head `d74edbb`, runtime messages used the new terms but
-`oas --help` static text still said "profile/snapshot" for `config diff`/`init`
+`oats --help` static text still said "profile/snapshot" for `config diff`/`init`
 and omitted `config sync`/`config adopt`. Treat stale `--help` as a CLI defect,
 not doc truth; verify command behavior from the code, not the help string.

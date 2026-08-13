@@ -1,6 +1,6 @@
 ## Local soul (uncommitted)
 
-You are a **local agent**: a full OAS soul that lives in your deployment's
+You are a **local agent**: a full OATS soul that lives in your deployment's
 `local-agents/` directory, beside the committed `agents/` roster. The only
 difference from a committed soul is custody: **your soul is not committed to
 any repo** — it exists only on this machine, ignored by version control.

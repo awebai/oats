@@ -2,7 +2,7 @@
 
 An **integration is a capability package selected to satisfy one exclusive
 fundamental layer**: knowledge, messaging, or tasks. The layer model remains a
-formal part of OAS; capability packages generalize how its implementations and
+formal part of OATS; capability packages generalize how its implementations and
 other reusable agent features are distributed and targeted.
 
 Read [Capability packages](capabilities.md) first for manifests, acquisition,
@@ -10,14 +10,14 @@ targeting, instance-local composition, locks, trust, hooks, and commands.
 
 ## Fundamental-layer contract
 
-For each soul, OAS resolves zero or one implementation for each pluggable
+For each soul, OATS resolves zero or one implementation for each pluggable
 layer:
 
 | Layer | Contract | Bundled choices |
 |---|---|---|
-| knowledge | capture, durable knowledge form, and promotion lifecycle | `oas.okf` |
-| messaging | reachable instance identity and human/agent communication | `oas.aweb` |
-| tasks | durable work queue, ownership, and status | `oas.jira`, `oas.linear` |
+| knowledge | capture, durable knowledge form, and promotion lifecycle | `oats.okf` |
+| messaging | reachable instance identity and human/agent communication | `oats.aweb` |
+| tasks | durable work queue, ownership, and status | `oats.jira`, `oats.linear` |
 
 A capability manifest becomes an integration by declaring one `layer`. It may
 not declare several layers. Two active packages for the same layer are a
@@ -38,10 +38,10 @@ agent-types:
 capabilities:
   layers:
     knowledge:
-      capability: oas.okf
+      capability: oats.okf
       from: installed
     messaging:
-      capability: oas.aweb
+      capability: oats.aweb
       from: installed
       agent-types:
         product-agents:
@@ -49,7 +49,7 @@ capabilities:
           settings:
             team: example-team
     tasks:
-      capability: oas.linear
+      capability: oats.linear
       from: installed
       agent-types:
         product-agents:
@@ -66,49 +66,49 @@ unresolved.
 CLI equivalents:
 
 ```bash
-oas use oas.okf --global
-oas use oas.aweb --type product-agents
-oas use oas.linear --type product-agents
+oats use oats.okf --global
+oats use oats.aweb --type product-agents
+oats use oats.linear --type product-agents
 ```
 
 The manifest-declared layer makes a separate CLI/config layer selection
-unnecessary — `oas use` writes the entry under `capabilities.layers.<layer>`.
+unnecessary — `oats use` writes the entry under `capabilities.layers.<layer>`.
 To leave an inherited layer deliberately unfilled, use
-`oas use none --layer <layer>` (writes `capabilities.layers.<layer>: none`).
+`oats use none --layer <layer>` (writes `capabilities.layers.<layer>: none`).
 
 ## Bundled integrations
 
-### `oas.okf`
+### `oats.okf`
 
 The knowledge integration creates OKF soul bundles, instance `STATE.md`,
 `log.md`, and `notes/`, and exposes the `okf` and `memory-harvest` skills. The
-instance-triggered `oas okf harvest` command promotes pending notes after a
+instance-triggered `oats okf harvest` command promotes pending notes after a
 commit. Its scaffold/spawn hooks own memory mechanics; the kernel remains
 knowledge-format agnostic.
 
-### `oas.aweb`
+### `oats.aweb`
 
 The messaging integration mints an instance identity at spawn, removes it at
 retire, and contributes official aweb messaging/team skills. It requires the
 `aw` CLI. Messaging does not become the task system.
 
-### `oas.jira`
+### `oats.jira`
 
 The Jira tasks integration contributes the `jira-tasks` protocol and an
 advisory spawn hook. It requires `acli`; settings commonly include `site` and
 `project`.
 
-### `oas.linear`
+### `oats.linear`
 
-The Linear tasks integration contributes JSON-first `oas linear` commands,
+The Linear tasks integration contributes JSON-first `oats linear` commands,
 the `linear-tasks` skill, and an advisory spawn hook. It uses
-`LINEAR_API_KEY`; secrets never belong in OAS config. See
-`capabilities/oas-linear/README.md` for its support boundary.
+`LINEAR_API_KEY`; secrets never belong in OATS config. See
+`capabilities/oats-linear/README.md` for its support boundary.
 
-> **Removed: `oas.web`.** The browser web-panel capability was retired in
-> favor of the OAS Desktop app (`packages/desktop/`), which bundles the same
-> zero-dependency loopback server. If an `oas-lock.json` or `oas-config.yaml`
-> still names `oas.web`, remove that entry — the capability no longer exists
+> **Removed: `oats.web`.** The browser web-panel capability was retired in
+> favor of the OATS Desktop app (`packages/desktop/`), which bundles the same
+> zero-dependency loopback server. If an `oats-lock.json` or `oats-config.yaml`
+> still names `oats.web`, remove that entry — the capability no longer exists
 > in the marketplace. Full migration steps: [docs/desktop-succession.md](desktop-succession.md).
 
 ## Build an integration
@@ -120,4 +120,4 @@ work to it, while the package itself lives under `capabilities/` or
 `.agents/capabilities/`.
 
 Do not put target soul names in the manifest. Acquisition, agent types,
-activation, settings, exclusions, and overrides belong to `oas-config.yaml`.
+activation, settings, exclusions, and overrides belong to `oats-config.yaml`.

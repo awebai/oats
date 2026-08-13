@@ -1,6 +1,6 @@
-// Fresh CLASSIC `oas init` over capability materialization.
+// Fresh CLASSIC `oats init` over capability materialization.
 //
-// Classic init (no --package, no --template) seeds an oas-config.yaml and, for
+// Classic init (no --package, no --template) seeds an oats-config.yaml and, for
 // the fundamental layers, acquires whatever backs them. The contract this file
 // pins:
 //
@@ -14,7 +14,7 @@
 //   - `--raw`, `--template`, and local/owned/path capabilities are unchanged;
 //   - `--json` emits exactly one schema-v1 envelope on success and on failure.
 //
-// Every catalog here is a LOCAL Git fixture bound through OAS_PACKAGE_CATALOG,
+// Every catalog here is a LOCAL Git fixture bound through OATS_PACKAGE_CATALOG,
 // so nothing in this file touches the network.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -24,11 +24,11 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync,
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import {
-  OAS_LOCK_FILE, capabilityIntegrity, installedCapabilitiesDir, ownedCapabilitiesDir, writeCapabilityLock,
+  OATS_LOCK_FILE, capabilityIntegrity, installedCapabilitiesDir, ownedCapabilitiesDir, writeCapabilityLock,
 } from "../lib/core.mjs";
 
-const CLI = resolve(new URL("../bin/oas.mjs", import.meta.url).pathname);
-const temp = () => mkdtempSync(join(tmpdir(), "oas-classic-init-"));
+const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
+const temp = () => mkdtempSync(join(tmpdir(), "oats-classic-init-"));
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
 function gitify(dir) {
@@ -41,28 +41,28 @@ function gitify(dir) {
   return dir;
 }
 
-/** Hermetic child environment. The suite runs INSIDE an OAS instance in this
+/** Hermetic child environment. The suite runs INSIDE an OATS instance in this
  * fleet, so two leaks have to be closed or a case silently reads real state:
  *   - HOME: the config/lock walk climbs to `/` and unions the laptop level, so
- *     a developer's own ~/oas-config.yaml or ~/oas-lock.json would be seen.
- *   - OAS_* / PI_*: `OAS_HOME`/`PI_AGENT_HOME` make the CLI adopt the ambient
+ *     a developer's own ~/oats-config.yaml or ~/oats-lock.json would be seen.
+ *   - OATS_* / PI_*: `OATS_HOME`/`PI_AGENT_HOME` make the CLI adopt the ambient
  *     instance's `instance.json` and re-point its context at the REAL repo. */
-const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oas-classic-init-home-"));
+const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-classic-init-home-"));
 function hermeticEnv() {
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!/^(OAS|PI)_/.test(k)) env[k] = v;
+  for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
   env.HOME = HERMETIC_HOME;
-  env.OAS_HOME_DIR = join(HERMETIC_HOME, ".oas");
+  env.OATS_HOME_DIR = join(HERMETIC_HOME, ".oats");
   return env;
 }
 
-/** Run the CLI with a fixture catalog bound through OAS_PACKAGE_CATALOG.
+/** Run the CLI with a fixture catalog bound through OATS_PACKAGE_CATALOG.
  * Passing `null` binds an EMPTY catalog — the clean-room shape, where the
  * official route is unavailable and init must say so instead of guessing. */
 function cli(argv, { catalog, cwd, env: extra } = {}) {
   const env = hermeticEnv();
-  if (catalog) env.OAS_PACKAGE_CATALOG = catalog;
-  else delete env.OAS_PACKAGE_CATALOG;
+  if (catalog) env.OATS_PACKAGE_CATALOG = catalog;
+  else delete env.OATS_PACKAGE_CATALOG;
   Object.assign(env, extra);
   return spawnSync(process.execPath, [CLI, ...argv], { cwd: cwd || tmpdir(), env, encoding: "utf8" });
 }
@@ -98,11 +98,11 @@ function pkgSource(dir, pkgId, capabilities) {
     rels.push(rel);
     for (const [file, body] of Object.entries(cm._files || {})) write(join(dir, rel, file), body);
     const { _files, ...manifest } = cm;
-    write(join(dir, rel, "oas.json"), JSON.stringify({ version: "2.0.0", description: "official", ...manifest }, null, 2));
+    write(join(dir, rel, "oats.json"), JSON.stringify({ version: "2.0.0", description: "official", ...manifest }, null, 2));
   }
-  write(join(dir, "oas-package.json"), JSON.stringify({
+  write(join(dir, "oats-package.json"), JSON.stringify({
     package: pkgId, version: "2.0.0", description: `official ${pkgId}`,
-    compatibility: { oas: ">=0.1.0" }, capabilities: rels,
+    compatibility: { oats: ">=0.1.0" }, capabilities: rels,
   }, null, 2));
   return gitify(dir);
 }
@@ -111,9 +111,9 @@ function pkgSource(dir, pkgId, capabilities) {
 function officialSources(base) {
   const p = (n) => join(base, "pkgs", n);
   return {
-    "oas.okf": pkgSource(p("okf"), "oas.okf", {
+    "oats.okf": pkgSource(p("okf"), "oats.okf", {
       okf: {
-        capability: "oas.okf", layer: "knowledge",
+        capability: "oats.okf", layer: "knowledge",
         commands: { harvest: "harvest.mjs" },
         skills: ["skills"], inject: "inject.md",
         requires: [{ command: "definitely-not-a-real-cmd-xyz", why: "knowledge harvest needs it", install: "brew install nope" }],
@@ -124,13 +124,13 @@ function officialSources(base) {
         },
       },
     }),
-    "oas.aweb": pkgSource(p("aweb"), "oas.aweb", {
-      aweb: { capability: "oas.aweb", layer: "messaging", hooks: { spawn: "spawn.mjs" }, _files: { "spawn.mjs": "// spawn\n" } },
+    "oats.aweb": pkgSource(p("aweb"), "oats.aweb", {
+      aweb: { capability: "oats.aweb", layer: "messaging", hooks: { spawn: "spawn.mjs" }, _files: { "spawn.mjs": "// spawn\n" } },
     }),
     // A package whose exported capability declares the WRONG layer for the slot
     // it will be asked to fill.
-    "oas.mislabelled": pkgSource(p("mislabelled"), "oas.mislabelled", {
-      cap: { capability: "oas.mislabelled", layer: "tasks" },
+    "oats.mislabelled": pkgSource(p("mislabelled"), "oats.mislabelled", {
+      cap: { capability: "oats.mislabelled", layer: "tasks" },
     }),
   };
 }
@@ -143,7 +143,7 @@ function writeCatalog(file, sources, packages, aliases = {}) {
 }
 
 /** A base with official sources published and a catalog naming them. */
-function published(packages = ["oas.okf", "oas.aweb", "oas.mislabelled"], aliases = {}) {
+function published(packages = ["oats.okf", "oats.aweb", "oats.mislabelled"], aliases = {}) {
   const base = temp();
   const sources = officialSources(base);
   return { base, sources, catalog: writeCatalog(join(base, "catalog.json"), sources, packages, aliases) };
@@ -157,17 +157,17 @@ test("classic init acquires official layers through the package engine: flat cap
   const { base, catalog } = published();
   const scope = gitify(join(base, "scope"));
 
-  const r = cli(["init", "--knowledge", "oas.okf", "--messaging", "oas.aweb", "--tasks", "none", "--dir", scope], { catalog });
+  const r = cli(["init", "--knowledge", "oats.okf", "--messaging", "oats.aweb", "--tasks", "none", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 
   // The LOCK is a capability-materialization lock with both maps — never v1.
-  const lock = JSON.parse(readFileSync(join(scope, OAS_LOCK_FILE), "utf8"));
+  const lock = JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"));
   assert.equal(lock.lockfileVersion, 2);
-  assert.deepEqual(Object.keys(lock.packages).sort(), ["oas.aweb", "oas.okf"]);
-  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oas.aweb", "oas.okf"]);
+  assert.deepEqual(Object.keys(lock.packages).sort(), ["oats.aweb", "oats.okf"]);
+  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oats.aweb", "oats.okf"]);
   // Capability rows back-reference their providing package; package rows carry
   // no capability list of their own (that is the transitional shape).
-  assert.equal(lock.capabilities["oas.okf"].package, "oas.okf");
+  assert.equal(lock.capabilities["oats.okf"].package, "oats.okf");
   for (const row of Object.values(lock.packages)) {
     for (const retired of ["capabilities", "trustedCapabilities", "depsIntegrity"]) {
       assert.equal(Object.hasOwn(row, retired), false, `package rows must not carry "${retired}"`);
@@ -175,18 +175,18 @@ test("classic init acquires official layers through the package engine: flat cap
   }
 
   // Capabilities are materialized FLAT; there is no persistent package store.
-  assert.ok(existsSync(join(scope, ".agents/capabilities/installed/oas.okf/oas.json")));
-  assert.ok(existsSync(join(scope, ".agents/capabilities/installed/oas.aweb/oas.json")));
+  assert.ok(existsSync(join(scope, ".agents/capabilities/installed/oats.okf/oats.json")));
+  assert.ok(existsSync(join(scope, ".agents/capabilities/installed/oats.aweb/oats.json")));
   assert.equal(existsSync(join(scope, ".agents/packages")), false, "capability materialization keeps no package store");
 
   // The config binds both slots to the materialized capabilities.
-  const cfg = readFileSync(join(scope, "oas-config.yaml"), "utf8");
-  assert.match(cfg, /knowledge:\n      capability: oas\.okf\n      from: installed/);
-  assert.match(cfg, /messaging:\n      capability: oas\.aweb\n      from: installed/);
+  const cfg = readFileSync(join(scope, "oats-config.yaml"), "utf8");
+  assert.match(cfg, /knowledge:\n      capability: oats\.okf\n      from: installed/);
+  assert.match(cfg, /messaging:\n      capability: oats\.aweb\n      from: installed/);
   assert.match(cfg, /tasks: none/);
 
   // No legacy/migration warning anywhere: nothing legacy happened.
-  assert.doesNotMatch(r.stdout + r.stderr, /LEGACY|oas migrate|lockfileVersion 1/i);
+  assert.doesNotMatch(r.stdout + r.stderr, /LEGACY|oats migrate|lockfileVersion 1/i);
 
   // Materialized artifacts stay uncommitted; the ignore is part of the run.
   assert.match(readFileSync(join(scope, ".agents/capabilities/.gitignore"), "utf8"), /installed/);
@@ -197,13 +197,13 @@ test("acquisition is not trust and not requirement consent: init says so and lea
   const { base, catalog } = published();
   const scope = gitify(join(base, "scope"));
 
-  const r = cli(["init", "--knowledge", "oas.okf", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog });
+  const r = cli(["init", "--knowledge", "oats.okf", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
 
-  // oas.okf ships a command, so its executable surface is BLOCKED until trusted.
-  const lock = JSON.parse(readFileSync(join(scope, OAS_LOCK_FILE), "utf8"));
-  assert.equal(lock.capabilities["oas.okf"].trusted, false, "the package route never trusts at acquisition");
-  assert.match(r.stdout, /blocked until trusted[\s\S]*oas trust oas\.okf/);
+  // oats.okf ships a command, so its executable surface is BLOCKED until trusted.
+  const lock = JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"));
+  assert.equal(lock.capabilities["oats.okf"].trusted, false, "the package route never trusts at acquisition");
+  assert.match(r.stdout, /blocked until trusted[\s\S]*oats trust oats\.okf/);
 
   // Its unmet command requirement is REPORTED, never installed or consented to.
   assert.match(r.stdout, /required command "definitely-not-a-real-cmd-xyz" not on PATH/);
@@ -214,15 +214,15 @@ test("classic init --json is one envelope on success and on failure", () => {
   const { base, catalog } = published();
   const scope = gitify(join(base, "scope"));
 
-  const ok = cli(["init", "--knowledge", "oas.okf", "--messaging", "none", "--tasks", "none", "--json", "--dir", scope], { catalog });
+  const ok = cli(["init", "--knowledge", "oats.okf", "--messaging", "none", "--tasks", "none", "--json", "--dir", scope], { catalog });
   assert.equal(ok.status, 0, ok.stdout + ok.stderr);
   const doc = envelope(ok);
   assert.equal(doc.ok, true);
   assert.equal(doc.result.adopted, false, "classic init adopts no config template");
-  assert.deepEqual(doc.result.layers, { knowledge: "oas.okf", messaging: "none", tasks: "none" });
-  assert.deepEqual(doc.result.acquired.map((a) => [a.layer, a.capability, a.route, a.trusted]), [["knowledge", "oas.okf", "package", false]]);
-  assert.deepEqual(doc.result.acquired[0].packages.map((p) => p.package), ["oas.okf"]);
-  assert.deepEqual(doc.result.activated, [{ capability: "oas.okf", layer: "knowledge" }]);
+  assert.deepEqual(doc.result.layers, { knowledge: "oats.okf", messaging: "none", tasks: "none" });
+  assert.deepEqual(doc.result.acquired.map((a) => [a.layer, a.capability, a.route, a.trusted]), [["knowledge", "oats.okf", "package", false]]);
+  assert.deepEqual(doc.result.acquired[0].packages.map((p) => p.package), ["oats.okf"]);
+  assert.deepEqual(doc.result.activated, [{ capability: "oats.okf", layer: "knowledge" }]);
   assert.deepEqual(doc.result.requirements.map((q) => q.command), ["definitely-not-a-real-cmd-xyz"]);
 
   // Failure: a second init at the same scope.
@@ -252,14 +252,14 @@ test("a package whose capability declares the wrong layer is refused and the who
   const scope = gitify(join(base, "scope"));
   const before = snapshot(scope);
 
-  // oas.mislabelled declares layer "tasks"; asking it to fill "knowledge" is a lie
+  // oats.mislabelled declares layer "tasks"; asking it to fill "knowledge" is a lie
   // that is only checkable against the MATERIALIZED manifest.
-  const r = cli(["init", "--knowledge", "oas.mislabelled", "--json", "--dir", scope], { catalog });
+  const r = cli(["init", "--knowledge", "oats.mislabelled", "--json", "--dir", scope], { catalog });
   assert.equal(r.status, 1, r.stdout);
   assert.equal(envelope(r).error.code, "E_LAYER_MISMATCH");
   assert.deepEqual(snapshot(scope), before, "the acquisition that happened before the check is rolled back");
-  assert.equal(existsSync(join(scope, "oas-config.yaml")), false);
-  assert.equal(existsSync(join(scope, OAS_LOCK_FILE)), false);
+  assert.equal(existsSync(join(scope, "oats-config.yaml")), false);
+  assert.equal(existsSync(join(scope, OATS_LOCK_FILE)), false);
   assert.equal(existsSync(join(scope, ".agents")), false);
   rmSync(base, { recursive: true, force: true });
 });
@@ -301,9 +301,9 @@ test("a failing init restores this scope's pre-existing capabilities, lock and p
   assert.deepEqual(snapshot(scope), before, "every pre-existing byte is restored, and nothing of the run survives");
   assert.equal(readFileSync(join(scope, ".agents/capabilities/installed/house.knowledge/NOTE.md"), "utf8"),
     "the version that was already here\n", "the pre-existing artifact is the ORIGINAL one");
-  assert.equal(existsSync(join(scope, "oas-config.yaml")), false);
+  assert.equal(existsSync(join(scope, "oats-config.yaml")), false);
   assert.equal(existsSync(join(scope, ".agents/capabilities/installed/house.wrong")), false, "the failing run's artifact is gone");
-  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(scope, OAS_LOCK_FILE), "utf8")).packages), ["house.suite"]);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8")).packages), ["house.suite"]);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -336,9 +336,9 @@ test("--raw creates a config with every layer explicitly none and acquires nothi
 
   const r = cli(["init", "--raw", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  const cfg = readFileSync(join(scope, "oas-config.yaml"), "utf8");
+  const cfg = readFileSync(join(scope, "oats-config.yaml"), "utf8");
   for (const layer of ["knowledge", "messaging", "tasks"]) assert.match(cfg, new RegExp(`${layer}: none`));
-  assert.equal(existsSync(join(scope, OAS_LOCK_FILE)), false, "raw init locks nothing");
+  assert.equal(existsSync(join(scope, OATS_LOCK_FILE)), false, "raw init locks nothing");
   assert.equal(existsSync(join(scope, ".agents")), false, "raw init acquires nothing");
   rmSync(base, { recursive: true, force: true });
 });
@@ -346,29 +346,29 @@ test("--raw creates a config with every layer explicitly none and acquires nothi
 test("--template seeds from a declared template and reports through the same JSON envelope", () => {
   const { base, catalog } = published();
   const outer = join(base, "outer"); mkdirSync(outer, { recursive: true });
-  const seed = join(base, "seed", "oas-config.yaml");
+  const seed = join(base, "seed", "oats-config.yaml");
   write(seed, "name: seeded\ncapabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
-  write(join(outer, "oas-config.yaml"), `name: outer\ntemplates:\n  house: ${seed}\n`);
+  write(join(outer, "oats-config.yaml"), `name: outer\ntemplates:\n  house: ${seed}\n`);
   const scope = gitify(join(outer, "repo"));
 
   const r = cli(["init", "--template", "house", "--json", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const doc = envelope(r);
   assert.equal(doc.result.template, "house");
-  const seeded = readFileSync(join(scope, "oas-config.yaml"), "utf8");
+  const seeded = readFileSync(join(scope, "oats-config.yaml"), "utf8");
   // A template is a SNAPSHOT: it records where it came from and takes this
   // scope's own name, so later edits to the template never propagate.
-  assert.match(seeded, /^# template: .*seed\/oas-config\.yaml \(snapshot/m);
+  assert.match(seeded, /^# template: .*seed\/oats-config\.yaml \(snapshot/m);
   assert.match(seeded, /^name: repo$/m);
   assert.match(seeded, /knowledge: none/);
-  assert.equal(existsSync(join(scope, OAS_LOCK_FILE)), false, "a template seeds config only — it acquires nothing");
+  assert.equal(existsSync(join(scope, OATS_LOCK_FILE)), false, "a template seeds config only — it acquires nothing");
 
   // An unknown template name is a coded failure, not a bare stderr string.
   const scope2 = gitify(join(outer, "repo2"));
   const bad = cli(["init", "--template", "nope", "--json", "--dir", scope2], { catalog });
   assert.equal(bad.status, 1);
   assert.equal(envelope(bad).error.code, "E_UNKNOWN_TEMPLATE");
-  assert.equal(existsSync(join(scope2, "oas-config.yaml")), false);
+  assert.equal(existsSync(join(scope2, "oats-config.yaml")), false);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -376,14 +376,14 @@ test("an OWNED capability at this scope fills a layer without any acquisition, b
   const { base, catalog } = published();
   const scope = gitify(join(base, "scope"));
   // Owned capabilities are authored in place and committed — never acquired.
-  write(join(ownedCapabilitiesDir(scope), "house-knowledge", "oas.json"),
+  write(join(ownedCapabilitiesDir(scope), "house-knowledge", "oats.json"),
     JSON.stringify({ capability: "house.knowledge", version: "1.0.0", description: "ours", layer: "knowledge" }, null, 2));
 
   const r = cli(["init", "--knowledge", "house.knowledge", "--messaging", "none", "--tasks", "none", "--json", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(envelope(r).result.acquired, [], "an owned capability is not acquired");
-  assert.match(readFileSync(join(scope, "oas-config.yaml"), "utf8"), /knowledge:\n      capability: house\.knowledge\n      from: owned/);
-  assert.equal(existsSync(join(scope, OAS_LOCK_FILE)), false, "nothing was locked");
+  assert.match(readFileSync(join(scope, "oats-config.yaml"), "utf8"), /knowledge:\n      capability: house\.knowledge\n      from: owned/);
+  assert.equal(existsSync(join(scope, OATS_LOCK_FILE)), false, "nothing was locked");
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -407,10 +407,10 @@ test("a capability materialized EARLIER IN THE SAME RUN fills a later layer with
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const acquired = envelope(r).result.acquired;
   assert.deepEqual(acquired.map((a) => a.layer), ["knowledge"], "the package is acquired ONCE, for the first slot that needs it");
-  const lock = JSON.parse(readFileSync(join(scope, OAS_LOCK_FILE), "utf8"));
+  const lock = JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"));
   assert.deepEqual(Object.keys(lock.packages), ["house.suite"]);
   assert.deepEqual(Object.keys(lock.capabilities).sort(), ["house.knowledge", "house.messaging"]);
-  const cfg = readFileSync(join(scope, "oas-config.yaml"), "utf8");
+  const cfg = readFileSync(join(scope, "oats-config.yaml"), "utf8");
   assert.match(cfg, /knowledge:\n      capability: house\.knowledge/);
   assert.match(cfg, /messaging:\n      capability: house\.messaging/);
   rmSync(base, { recursive: true, force: true });
@@ -421,16 +421,16 @@ test("a 0.18 scope keeps working: an existing v1 capability lock is neither read
   const scope = gitify(join(base, "scope"));
   // A real 0.18 shape: v1 lock + installed artifact, no config yet.
   const dir = join(installedCapabilitiesDir(scope), "legacy-knowledge");
-  write(join(dir, "oas.json"), JSON.stringify({ capability: "legacy.knowledge", version: "1.0.0", description: "0.18", layer: "knowledge" }, null, 2));
+  write(join(dir, "oats.json"), JSON.stringify({ capability: "legacy.knowledge", version: "1.0.0", description: "0.18", layer: "knowledge" }, null, 2));
   writeCapabilityLock(scope, "legacy.knowledge", {
     source: "marketplace:legacy.knowledge@1.0.0", version: "1.0.0", integrity: capabilityIntegrity(dir), trustedExecutables: true,
   });
-  const lockBefore = readFileSync(join(scope, OAS_LOCK_FILE), "utf8");
+  const lockBefore = readFileSync(join(scope, OATS_LOCK_FILE), "utf8");
 
   const r = cli(["init", "--knowledge", "legacy.knowledge", "--messaging", "none", "--tasks", "none", "--json", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(envelope(r).result.acquired, []);
-  assert.equal(readFileSync(join(scope, OAS_LOCK_FILE), "utf8"), lockBefore, "the v1 lock is left exactly as it was");
+  assert.equal(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"), lockBefore, "the v1 lock is left exactly as it was");
   assert.equal(JSON.parse(lockBefore).lockfileVersion ?? 1, 1);
   rmSync(base, { recursive: true, force: true });
 });
@@ -453,11 +453,11 @@ test("a NON-GIT scope is first class: the same materialization route, and no ign
   const { base, catalog } = published();
   const scope = join(base, "plain"); mkdirSync(scope, { recursive: true });
 
-  const r = cli(["init", "--knowledge", "oas.okf", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog });
+  const r = cli(["init", "--knowledge", "oats.okf", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(existsSync(join(scope, ".git")), false, "the boundary must not need git");
-  assert.equal(JSON.parse(readFileSync(join(scope, OAS_LOCK_FILE), "utf8")).lockfileVersion, 2);
-  assert.ok(existsSync(join(scope, ".agents/capabilities/installed/oas.okf/oas.json")));
+  assert.equal(JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8")).lockfileVersion, 2);
+  assert.ok(existsSync(join(scope, ".agents/capabilities/installed/oats.okf/oats.json")));
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -466,19 +466,19 @@ test("a NON-GIT scope is first class: the same materialization route, and no ign
 test("a capability alias resolves to its owning package: the catalog decides which package supplies a layer", () => {
   const base = temp();
   const sources = officialSources(base);
-  // The capability id and the package id differ — exactly the oas.review/oas.dev
+  // The capability id and the package id differ — exactly the oats.review/oats.dev
   // shape the release catalog publishes.
-  const catalog = writeCatalog(join(base, "catalog.json"), sources, ["oas.okf"], { "house.knowledge": "oas.okf" });
+  const catalog = writeCatalog(join(base, "catalog.json"), sources, ["oats.okf"], { "house.knowledge": "oats.okf" });
   const scope = gitify(join(base, "scope"));
 
   const r = cli(["init", "--knowledge", "house.knowledge", "--json", "--dir", scope], { catalog });
-  // oas.okf does not export house.knowledge, so the alias is followed and the
+  // oats.okf does not export house.knowledge, so the alias is followed and the
   // lie is caught at the ONLY place it can be: the acquired package's exports.
   assert.equal(r.status, 1, r.stdout);
   const doc = envelope(r);
   assert.equal(doc.error.code, "E_LAYER_NOT_EXPORTED");
-  assert.match(doc.error.message, /package oas\.okf does not export capability "house\.knowledge"/);
-  assert.equal(existsSync(join(scope, OAS_LOCK_FILE)), false, "the acquisition rolled back");
+  assert.match(doc.error.message, /package oats\.okf does not export capability "house\.knowledge"/);
+  assert.equal(existsSync(join(scope, OATS_LOCK_FILE)), false, "the acquisition rolled back");
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -487,9 +487,9 @@ test("a template carrying keys this kernel refuses fails typed, and leaves no co
   const outer = join(base, "outer"); mkdirSync(outer, { recursive: true });
   // A pre-0.19 template: `layers:` moved under `capabilities.layers` and the
   // kernel refuses the old spelling outright.
-  const seed = join(base, "seed", "oas-config.yaml");
-  write(seed, "name: old\nlayers:\n  knowledge: oas.okf\n");
-  write(join(outer, "oas-config.yaml"), `name: outer\ntemplates:\n  stale: ${seed}\n`);
+  const seed = join(base, "seed", "oats-config.yaml");
+  write(seed, "name: old\nlayers:\n  knowledge: oats.okf\n");
+  write(join(outer, "oats-config.yaml"), `name: outer\ntemplates:\n  stale: ${seed}\n`);
   const scope = gitify(join(outer, "repo"));
   const before = snapshot(scope);
 
@@ -497,11 +497,11 @@ test("a template carrying keys this kernel refuses fails typed, and leaves no co
   assert.equal(r.status, 1, r.stdout);
   const doc = envelope(r);
   assert.match(doc.error.message, /could not be seeded from template stale/);
-  assert.match(doc.error.message, /unsupported oas-config key "layers"/);
+  assert.match(doc.error.message, /unsupported oats-config key "layers"/);
 
   // Seeding is a transaction: the config this run wrote is gone, not left for
   // the next command to trip over.
-  assert.equal(existsSync(join(scope, "oas-config.yaml")), false);
+  assert.equal(existsSync(join(scope, "oats-config.yaml")), false);
   assert.deepEqual(snapshot(scope), before, "a refused seed is byte-identical");
   rmSync(base, { recursive: true, force: true });
 });
@@ -509,18 +509,18 @@ test("a template carrying keys this kernel refuses fails typed, and leaves no co
 test("a template may activate what is not acquired yet: it seeds, says so, and does not roll back", () => {
   const { base, catalog } = published();
   const outer = join(base, "outer"); mkdirSync(outer, { recursive: true });
-  const seed = join(base, "seed", "oas-config.yaml");
+  const seed = join(base, "seed", "oats-config.yaml");
   // Seeding policy you then acquire is the whole point of a template — an
   // unresolvable activation right after seeding is the expected state, not a
   // broken config.
   write(seed, "name: seeded\ncapabilities:\n  additive:\n    not.acquired.yet:\n      from: installed\n      global: true\n");
-  write(join(outer, "oas-config.yaml"), `name: outer\ntemplates:\n  house: ${seed}\n`);
+  write(join(outer, "oats-config.yaml"), `name: outer\ntemplates:\n  house: ${seed}\n`);
   const scope = gitify(join(outer, "repo"));
 
   const r = cli(["init", "--template", "house", "--json", "--dir", scope], { catalog });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(envelope(r).result.activated, [], "nothing resolves yet, and that is fine");
-  assert.match(readFileSync(join(scope, "oas-config.yaml"), "utf8"), /not\.acquired\.yet/, "the config survives");
+  assert.match(readFileSync(join(scope, "oats-config.yaml"), "utf8"), /not\.acquired\.yet/, "the config survives");
   assert.match(r.stderr, /does not resolve yet/, "…and the run says so, on stderr, outside the envelope");
   rmSync(base, { recursive: true, force: true });
 });
@@ -530,28 +530,28 @@ test("a template may activate what is not acquired yet: it seeds, says so, and d
 test("a deployment created seconds ago is never told to migrate: doctor reports no legacy lock and no official migration", () => {
   const { base, catalog } = published();
   const s = gitify(join(base, "scope"));
-  assert.equal(cli(["init", "--knowledge", "oas.okf", "--messaging", "oas.aweb", "--tasks", "none", "--dir", s], { catalog }).status, 0);
+  assert.equal(cli(["init", "--knowledge", "oats.okf", "--messaging", "oats.aweb", "--tasks", "none", "--dir", s], { catalog }).status, 0);
 
   // THE regression. Through 0.19.4 a fresh init acquired its layers as legacy
   // marketplace capabilities, so doctor greeted a brand-new deployment with
-  // `oas migrate --official --recursive`. Init's own output being clean is not
+  // `oats migrate --official --recursive`. Init's own output being clean is not
   // enough — the bug was visible only from doctor, one command later.
   const d = JSON.parse(cli(["doctor", s, "--json"], { cwd: s }).stdout);
   assert.ok(!d.lockError, JSON.stringify(d.lockError));
   assert.deepEqual(d.legacyLockFiles, [], "a brand-new deployment has no v1 lock files");
-  assert.ok(!d.officialMigration, "doctor must not ask a fresh init to run oas migrate --official");
-  assert.equal(JSON.stringify(d).includes("oas migrate"), false, "no migration advice anywhere in the report");
+  assert.ok(!d.officialMigration, "doctor must not ask a fresh init to run oats migrate --official");
+  assert.equal(JSON.stringify(d).includes("oats migrate"), false, "no migration advice anywhere in the report");
 
   // The only thing wrong with a fresh deployment is what the operator has not
   // consented to yet: the executable surfaces are untrusted, by design.
-  assert.deepEqual(d.capabilities.map((c) => c.id).sort(), ["oas.aweb", "oas.okf"]);
+  assert.deepEqual(d.capabilities.map((c) => c.id).sort(), ["oats.aweb", "oats.okf"]);
   const listed = JSON.parse(cli(["list", "--dir", s, "--json"], { cwd: s }).stdout).result.capabilities;
   assert.deepEqual([...new Set(listed.filter((c) => c.status !== "ok").map((c) => c.code))], ["untrusted-surface"],
     JSON.stringify(listed));
 
   const human = cli(["doctor", s], { cwd: s });
   assert.equal(human.status, 0, human.stderr);
-  assert.doesNotMatch(human.stdout, /oas migrate/, "the human report is clean too");
+  assert.doesNotMatch(human.stdout, /oats migrate/, "the human report is clean too");
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -559,15 +559,15 @@ test("a host requirement is reported with its consent command and survives init:
   const { base, catalog } = published();
   const s = gitify(join(base, "scope"));
 
-  const r = cli(["init", "--knowledge", "oas.okf", "--messaging", "none", "--tasks", "none", "--json", "--dir", s], { catalog });
+  const r = cli(["init", "--knowledge", "oats.okf", "--messaging", "none", "--tasks", "none", "--json", "--dir", s], { catalog });
   assert.equal(r.status, 0, r.stderr);
   const req = envelope(r).result.requirements.find((q) => q.command === "definitely-not-a-real-cmd-xyz");
   assert.ok(req, "the missing host requirement is reported");
-  assert.equal(req.capability, "oas.okf", "the report names who asked for it");
+  assert.equal(req.capability, "oats.okf", "the report names who asked for it");
   assert.equal(req.why, "knowledge harvest needs it");
   assert.equal(req.install, "brew install nope");
   // The consent command is the ONLY way to install it, and init did not run it.
-  assert.match(req.consentCommand, /oas install --accept-requirement definitely-not-a-real-cmd-xyz/);
+  assert.match(req.consentCommand, /oats install --accept-requirement definitely-not-a-real-cmd-xyz/);
   assert.match(req.consentCommand, new RegExp(s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the consent command is scoped to this deployment");
 
   // Doctor still reports it afterwards: init changed nothing about the host.
@@ -594,8 +594,8 @@ test("pi and Claude instances of a MATERIALIZED capability scaffold identically 
 
   // A deployment built the way a fresh one is: the layer capability arrives as
   // a package and is materialized flat, not copied into the repository.
-  assert.equal(cli(["init", "--knowledge", "oas.okf", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog }).status, 0);
-  assert.equal(cli(["trust", "oas.okf", "--dir", scope], { catalog }).status, 0, "the fixture must be trusted to compose its executable surface");
+  assert.equal(cli(["init", "--knowledge", "oats.okf", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog }).status, 0);
+  assert.equal(cli(["trust", "oats.okf", "--dir", scope], { catalog }).status, 0, "the fixture must be trusted to compose its executable surface");
   mkdirSync(join(scope, "agents"), { recursive: true }); // the roster root createAgent writes into
   const created = cli(["create", "dev", "--repo", scope, "--work", "checkout", "--dir", scope], { catalog });
   assert.equal(created.status, 0, created.stdout + created.stderr);
@@ -630,7 +630,7 @@ test("pi and Claude instances of a MATERIALIZED capability scaffold identically 
     assert.equal(readlinkSync(join(home, ".claude", "skills")), join("..", ".agents", "skills"));
     // And the instance records the capability by its materialized identity.
     const meta = JSON.parse(read(home, "instance.json"));
-    assert.ok(meta.capabilities.some((c) => c.id === "oas.okf"), JSON.stringify(meta.capabilities));
+    assert.ok(meta.capabilities.some((c) => c.id === "oats.okf"), JSON.stringify(meta.capabilities));
     assert.deepEqual(meta.skills.map((x) => x.name).sort(), skillsOf(home));
   }
 

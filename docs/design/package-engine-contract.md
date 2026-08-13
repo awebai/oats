@@ -13,8 +13,8 @@ Contract changes go through the coordinator to the maintainer.
 
 Companion machine-readable schemas:
 
-- [`docs/oas-package.schema.json`](../oas-package.schema.json) — `oas-package.json`
-- [`docs/oas-lock.schema.json`](../oas-lock.schema.json) — `oas-lock.json` v2 (+ readable, usable v1)
+- [`docs/oats-package.schema.json`](../oats-package.schema.json) — `oats-package.json`
+- [`docs/oats-lock.schema.json`](../oats-lock.schema.json) — `oats-lock.json` v2 (+ readable, usable v1)
 
 Addendum: [`package-runtime-api.md`](./package-runtime-api.md) — the public
 package-runtime CLI boundary, npm runtime closure semantics, incremental
@@ -43,9 +43,9 @@ A **package source spec** (CLI argument, or an entry in a manifest's
 | Form | Examples | Notes |
 |---|---|---|
 | Shorthand git | `git:github.com/org/repo@v1.2.0#<path>`, `git:host/org/repo@<ref>` | `@ref` and `#<path>` both optional at the CLI; resolved once and exact-locked, never advanced on restore |
-| Raw git URL | `https://host/org/repo.git@v1.2.0#dist/oas`, `git@host:org/repo.git@ref#.` | HTTPS or SSH; same `@ref` and `#<path>` rules |
+| Raw git URL | `https://host/org/repo.git@v1.2.0#dist/oats`, `git@host:org/repo.git@ref#.` | HTTPS or SSH; same `@ref` and `#<path>` rules |
 | Local path | `./pkgs/mypkg`, `/abs/path`, `path:./pkgs/mypkg` | development escape hatch; locked with `commit: "local"` and tree integrity; **exact directory** — no `#<path>` and no default-path heuristic |
-| Official catalog short ID | `oas.okf`, `oas.okf@v1.4.0` | pattern `^[a-z0-9][a-z0-9._-]*$` with optional `@selector`; resolved through the catalog to a git repo **and its `path`**; takes no `#<path>` |
+| Official catalog short ID | `oats.okf`, `oats.okf@v1.4.0` | pattern `^[a-z0-9][a-z0-9._-]*$` with optional `@selector`; resolved through the catalog to a git repo **and its `path`**; takes no `#<path>` |
 
 Manifest `dependencies[]` entries must be pinnable: an official selector, a
 pinned git tag/commit (`@ref` required), or a local path. There is **no
@@ -54,7 +54,7 @@ general semver solver**.
 ### 1.1 Contained package root (`path`)
 
 A Git repository is not a package: it *contains* one. The **package root** is
-the directory inside the fetched source that carries `oas-package.json`, and it
+the directory inside the fetched source that carries `oats-package.json`, and it
 is selected by the source contract — never hardcoded at a use site:
 
 - **Git specs** select it with a single `#<path>` fragment, split off *before*
@@ -62,8 +62,8 @@ is selected by the source contract — never hardcoded at a use site:
   fragment maximum; a second `#` is `invalid-source`.
 - **Catalog entries** carry it as data: `{ url, ref?, path? }`. The catalog
   owns its packages' roots, so an entry may move one (see §5.5 `updatePackage`).
-- **Omitted** on either: the default is **`oas-package`**.
-- **Local paths** never take one. `oas install /repo/custom-root` treats that
+- **Omitted** on either: the default is **`oats-package`**.
+- **Local paths** never take one. `oats install /repo/custom-root` treats that
   exact directory as the package root whatever it is named, and locks `.`.
 
 **Canonical form.** A path is POSIX-relative with no redundant or trailing
@@ -74,7 +74,7 @@ Windows drive paths, `~` spellings, backslash separators and NUL are
 `invalid-source`; `..` traversal is `path-escape`.
 
 **Resolution and containment.** One exact commit is cloned once; the configured
-path is resolved *inside that checkout by realpath*; `oas-package.json` must be
+path is resolved *inside that checkout by realpath*; `oats-package.json` must be
 there; and **only that subtree** is staged, hashed and projected. A path that
 resolves outside the checkout — through a symlink at any depth — and a broken
 link are `path-escape`, decided before any store or lock mutation. Staged
@@ -85,12 +85,12 @@ always stripped on staging, including direct local roots.
 
 One repository may contain several packages selected by different paths. Because
 the closure dedupe key is *source **and** selected path*, two contained roots
-claiming the same OAS package identity still fail `duplicate-package-identity`.
+claiming the same OATS package identity still fail `duplicate-package-identity`.
 
 **Normalized identity** (what dedupe and lock keys use):
 
 - The **package identity** is the `package` field of the staged
-  `oas-package.json` — never derived from the source string.
+  `oats-package.json` — never derived from the source string.
 - The **normalized source** recorded in the lock is one of
   `git:<canonical-url>@<ref>`, `path:<dir>`, `catalog:<id>` for an originally
   bare catalog request, or `catalog:<id>@<selector>` for an originally explicit
@@ -119,12 +119,12 @@ catalog for tests.
   "package": "example.engineering",
   "version": "3.0.0",
   "description": "Shared agent capabilities and workspace defaults.",
-  "compatibility": { "oas": ">=0.20.0" },
+  "compatibility": { "oats": ">=0.20.0" },
   "capabilities": ["capabilities/example-review", "capabilities/example-delivery"],
   "configTemplates": {
-    "default": { "path": "config-templates/default/oas-config.yaml", "default": true }
+    "default": { "path": "config-templates/default/oats-config.yaml", "default": true }
   },
-  "dependencies": ["oas.okf@v1.4.0"]
+  "dependencies": ["oats.okf@v1.4.0"]
 }
 ```
 
@@ -135,7 +135,7 @@ addendum §4):
    are rejected: `invalid-package-manifest`. A package's reason to exist is the
    capabilities it materializes.
 2. **Dedicated capability roots.** Each entry names a directory carrying one
-   `oas.json`. Authoring never emits `"."`; conventional roots are
+   `oats.json`. Authoring never emits `"."`; conventional roots are
    `capabilities/<slug>/`.
 3. **`configTemplates` is the canonical spelling and is OPTIONAL.** A package
    that ships no template is perfectly valid — installation is about
@@ -145,7 +145,7 @@ addendum §4):
    `invalid-package-manifest`.
 4. **Legacy `"."` capability roots are read compatibility, and the discriminator
    is `configTemplates` — never `configs`.** Published packages exist with a
-   `"."` root and *no* template map at all (`oas.authoring@1.0.0` is
+   `"."` root and *no* template map at all (`oats.authoring@1.0.0` is
    `capabilities: ["."]` with neither spelling), so keying acceptance on
    `configs` would strand them. The rule is therefore:
    - a manifest **without** `configTemplates` may declare `"."` — the
@@ -161,7 +161,7 @@ addendum §4):
    package-only paths, sibling capabilities, or outside the package is
    `capability-not-self-contained` — it cannot be materialized, and the engine
    fails rather than silently installing a broken artifact.
-6. At most one `configTemplates.*.default === true`; `compatibility.oas` is
+6. At most one `configTemplates.*.default === true`; `compatibility.oats` is
    required with exactly the grammar `>=x.y.z` / `^x.y.z` / `x.y.z`.
 7. Two capability paths in one package exporting the same capability ID is
    `duplicate-capability-id`; two packages at one scope exporting the same
@@ -170,8 +170,8 @@ addendum §4):
 ## 3. Store layout and the materialized artifact
 
 ```text
-<scope>/oas-config.yaml                              zero or one active config
-<scope>/oas-lock.json                                lock (v2)
+<scope>/oats-config.yaml                              zero or one active config
+<scope>/oats-lock.json                                lock (v2)
 <scope>/.agents/capabilities/.gitignore              contains exactly `installed/`
 <scope>/.agents/capabilities/owned/<id>/             authored; normally committed
 <scope>/.agents/capabilities/installed/<id>/         MATERIALIZED artifact; ignored
@@ -188,12 +188,12 @@ addendum §4):
   by discovery because it is dot-prefixed) and removed unconditionally when the
   transaction ends.
 - The **materialized artifact** at `installed/<id>/` is the complete validated
-  capability root: its `oas.json`, skills, injections, commands, hooks,
+  capability root: its `oats.json`, skills, injections, commands, hooks,
   capability-defined agents, and its materialized runtime closure
   (`node_modules`, §6). It additionally carries a generated
-  **`.oas-installation.json`** provenance file.
+  **`.oats-installation.json`** provenance file.
 
-### 3.1 `.oas-installation.json` — deterministic, replayable provenance
+### 3.1 `.oats-installation.json` — deterministic, replayable provenance
 
 The file is **inside** the hashed tree, so tampering with it is integrity drift.
 That is only sound if a future kernel reprojecting the same locked bytes
@@ -209,7 +209,7 @@ only lock-, source- and manifest-derived values:
   "packageVersion": "3.0.0",
   "source": "catalog:example.engineering",
   "commit": "0123456789abcdef0123456789abcdef01234567",
-  "packagePath": "oas-package",
+  "packagePath": "oats-package",
   "capabilityPath": "capabilities/example-review"
 }
 ```
@@ -226,11 +226,11 @@ restore under a newer kernel therefore reproduces the identical artifact hash.
 
 - **Capability artifact integrity** (`capabilityArtifactIntegrity`) hashes
   **every byte** under the artifact root — no exclusions, including
-  `node_modules` and `.oas-installation.json`. It is the only thing executable
+  `node_modules` and `.oats-installation.json`. It is the only thing executable
   trust binds to; the runtime closure is *inside* the artifact, so there is no
   separate dependency digest anywhere in this model.
 - **Package payload integrity** (`packageIntegrity`) hashes the staged package
-  subtree excluding any `node_modules` and a root `oas-lock.json`. It proves the
+  subtree excluding any `node_modules` and a root `oats-lock.json`. It proves the
   distribution bytes and is what bare restore re-verifies before reprojecting.
 - `.agents/capabilities/owned/<id>/` and `from: path:<dir>` keep their exact
   current semantics, precedence, and structural trust. `from: installed` means
@@ -261,11 +261,11 @@ alongside its other state; no engine transaction handle or callback is exchanged
   "packages": {
     "example.engineering": {
       "source": "git:https://example.invalid/engineering.git@v3.0.0",
-      "path": "oas-package",
+      "path": "oats-package",
       "version": "3.0.0",
       "commit": "0123456789abcdef0123456789abcdef01234567",
       "integrity": "sha256-…",
-      "dependencies": ["oas.okf"]
+      "dependencies": ["oats.okf"]
     }
   },
   "capabilities": {
@@ -284,7 +284,7 @@ alongside its other state; no engine transaction handle or callback is exchanged
   unit: `source`, selected package `path`, `version`, `commit`, package payload
   `integrity`, and **package-identity** `dependencies` — always present, an
   empty array when there are none. `capabilities` rows exact-lock the installed
-  entity: `version` (from the capability's own `oas.json`), provider `package`,
+  entity: `version` (from the capability's own `oats.json`), provider `package`,
   dedicated manifest `path` inside that package, materialized artifact
   `integrity`, and boolean `trusted` bound **only** to that artifact integrity.
 - A package row carries **no** capability list and **no** trust: the capability
@@ -314,7 +314,7 @@ unsupported transitional v2 shape and scope recreation. It is never converted
 and never partially interpreted.
 
 Detection uses **direct raw lock-scope reads** — walking ancestor directories
-that own an `oas-lock.json`, *not* `configChain`, so lock-only scopes with no
+that own an `oats-lock.json`, *not* `configChain`, so lock-only scopes with no
 config are visible — and this exact OR predicate:
 
 1. a **nonempty** `lockfileVersion: 2` document with no top-level `capabilities`
@@ -345,7 +345,7 @@ kernel. Errors are thrown `Error`s carrying `code` (§8) and, where relevant,
 
 ```js
 export function parsePackageSource(spec, { baseDir } = {})
-export const DEFAULT_PACKAGE_PATH               // "oas-package"
+export const DEFAULT_PACKAGE_PATH               // "oats-package"
 export function normalizePackagePath(raw, opts)
 export function inspectGitSourceRoot(spec)
 export function resolvePackageRoot(checkout, packagePath, spec)
@@ -354,7 +354,7 @@ export function packageIntegrity(dir)            // payload hash; excludes node_
 export function capabilityArtifactIntegrity(dir) // materialized artifact hash, no exclusions
 export function capabilityIntegrity(dir)         // v1 artifact hash (legacy capability store)
 
-/** Load + validate an oas-package.json against §2. Returns the manifest plus
+/** Load + validate an oats-package.json against §2. Returns the manifest plus
  * _dir, _legacySpelling (true when the deprecated `configs` key was used),
  * _configTemplates (normalized { name: { path, description?, default } } from
  * either spelling), and _capabilities: [{ id, rel, dir, manifest }].
@@ -384,7 +384,7 @@ export function assertCapabilitySelfContained(capDir, manifest)
 export function parseLockFileStrict(file)
 
 /** Read every lock visible from a directory — every ancestor owning an
- * oas-lock.json, plus config-chain levels — closest scope wins per identity.
+ * oats-lock.json, plus config-chain levels — closest scope wins per identity.
  * SOLE strict reader; consumers never see an invalid lock as absent or usable.
  * @returns {{
  *   packages: Record<pkgId, PackageRow & { _file, _level }>,
@@ -440,7 +440,7 @@ export function validateCapabilityLockEntry(capabilityId, entry, allPackages, op
  *
  * A v1 lock at the scope is refused BEFORE any source fetch, staging, ignore or
  * artifact work — every v1, INCLUDING AN EMPTY ONE. An empty v1 is still an
- * unconverted scope: converting it as a side effect of `oas install` is the
+ * unconverted scope: converting it as a side effect of `oats install` is the
  * implicit migration §7 forbids, and failing later would make the caller pay for
  * a fetch to learn it.
  *
@@ -466,9 +466,9 @@ export function validateCapabilityLockEntry(capabilityId, entry, allPackages, op
  *   // It is a PURE GATE: inspect and (optionally) throw, nothing else. A throw
  *   // propagates unchanged, staging is discarded, and NOTHING is mutated — no
  *   // ignore file, no artifact, no lock byte — so a refusal needs no rollback.
- *   // This is what lets guided `oas init --package` present and validate the
+ *   // This is what lets guided `oats init --package` present and validate the
  *   // complete selected template plan before any engine mutation, and what lets
- *   // `oas update` refuse a config-referenced export drop byte-exactly (§5.5).
+ *   // `oats update` refuse a config-referenced export drop byte-exactly (§5.5).
  *   // Staging paths are deliberately NOT exposed: the gate decides, it does not
  *   // reach into the transaction.
  *   //
@@ -503,7 +503,7 @@ export function validateCapabilityLockEntry(capabilityId, entry, allPackages, op
  * @throws "invalid-source", "invalid-package-manifest", "path-escape",
  *         "capability-not-self-contained", "dependency-cycle",
  *         "duplicate-package-identity", "duplicate-capability-id",
- *         "incompatible-oas", "integrity-drift", "legacy-lock", "invalid-lock"
+ *         "incompatible-oats", "integrity-drift", "legacy-lock", "invalid-lock"
  */
 export function acquirePackage(levelDir, spec, opts)
 
@@ -534,12 +534,12 @@ export function restorePackages(startDir, opts)
  *   capabilities: Array<{ id, version, path, dir, integrity, trusted,
  *                         installed: boolean, manifest? }> }>}
  *   // `installed:false` + absent `manifest` = locked but not materialized —
- *   // exactly what a bare `oas install` repairs. It is reported, never hidden.
+ *   // exactly what a bare `oats install` repairs. It is reported, never hidden.
  */
 export function listInstalledPackages(startDir)
 
 export function installedCapabilityDir(levelDir, capabilityId)
-export const CAPABILITY_INSTALLATION_FILE   // ".oas-installation.json"
+export const CAPABILITY_INSTALLATION_FILE   // ".oats-installation.json"
 ```
 
 ### 5.4 Trust
@@ -564,7 +564,7 @@ export function capabilityTrust(a, b)
  *
  * Two preconditions per target, BOTH required before any flag is set:
  *   1. the materialized artifact hashes to the capability row's `integrity`;
- *   2. its `.oas-installation.json` agrees with that capability row and its
+ *   2. its `.oats-installation.json` agrees with that capability row and its
  *      provider package row.
  * Integrity alone is not sufficient — a provenance file edited and then
  * re-hashed into its row leaves every byte matching its recorded digest with
@@ -608,7 +608,7 @@ export function removePackage(startDir, packageId)
 
 ```js
 /** Read config templates from the EXACT currently locked source of one package
- * — the config lane's `oas config diff` / `oas config sync` / `oas config adopt`
+ * — the config lane's `oats config diff` / `oats config sync` / `oats config adopt`
  * input.
  *
  * Stages the locked source (source + commit + path), validates the manifest and
@@ -623,7 +623,7 @@ export function removePackage(startDir, packageId)
  *   templates: Array<{ template, path, description?, default, content,
  *                      contentIntegrity, legacySpelling }> }}
  *   // `integrity` is the package PAYLOAD integrity, verified equal to the lock.
- *   // The CLI lane owns oas-config schema/policy validation.
+ *   // The CLI lane owns oats-config schema/policy validation.
  * @throws "unknown-capability" (no such locked package), "invalid-lock",
  *         "integrity-drift", "invalid-package-manifest", "invalid-source",
  *         "unknown-config-template"
@@ -737,7 +737,7 @@ Stable `error.code` values (also the `--json` envelope codes):
 | code | Meaning |
 |---|---|
 | `invalid-source` | source spec parses to none of the four grammar forms |
-| `invalid-package-manifest` | `oas-package.json` missing/invalid against §2, or a declared path does not identify the expected resource kind |
+| `invalid-package-manifest` | `oats-package.json` missing/invalid against §2, or a declared path does not identify the expected resource kind |
 | `path-escape` | a declared path resolves outside its containment root after symlink resolution (package root when staging, capability root when projecting, artifact root at runtime) |
 | `capability-not-self-contained` | a declared capability cannot be materialized as a self-contained artifact (a declared resource is missing, or resolves outside its capability root) |
 | `dependency-cycle` | package dependency graph contains a cycle (provenance: the cycle path) |
@@ -745,7 +745,7 @@ Stable `error.code` values (also the `--json` envelope codes):
 | `duplicate-capability-id` | two packages export the same capability ID at one scope, or one package exports it twice (provenance: both) |
 | `integrity-drift` | staged/installed bytes ≠ locked integrity (package payload or capability artifact), or a trust operation against a drifted artifact |
 | `capability-list-mismatch` | a locked capability's provider package no longer exports it at the locked path |
-| `incompatible-oas` | `compatibility.oas` floor not met by the running kernel |
+| `incompatible-oats` | `compatibility.oats` floor not met by the running kernel |
 | `retired-capability` | a package exports / config references a capability the kernel has retired |
 | `legacy-lock` | operation requires the current lock shape but the scope has v1 — run the explicit migration command |
 | `invalid-lock` | lock violates the semantic invariants of §4, **or** is the unsupported transitional v2 shape of §4.1 — fail closed, no normalization, no auto-repair, no side effects |
@@ -777,12 +777,12 @@ continues past an invalid lock, and it never uses the invalid data.
   official catalog identity is not executable approval; any artifact change
   resets `trusted` to false.
 - No silent lock advancement anywhere: bare restore never changes
-  source/version/commit/path; only an explicit `oas update <package-id>` may.
+  source/version/commit/path; only an explicit `oats update <package-id>` may.
   The selected package ROOT advances only where the source owns it: a catalog
   entry supplies `path`, so an update adopts a moved root and reports
   `pathChanged`; a Git spec's `#<path>` is the operator's own selection and
   stays sticky across updates. A path mismatch on acquire therefore names the
-  route that can resolve it — `oas update` for catalog sources, `oas remove`
+  route that can resolve it — `oats update` for catalog sources, `oats remove`
   followed by a re-install with the intended `#<path>` for Git sources (removal
   still refuses while config or dependent packages reference the package).
 - No npm lifecycle scripts, ever; production closure only; platform-invariant

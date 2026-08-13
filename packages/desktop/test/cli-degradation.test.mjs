@@ -1,5 +1,5 @@
 // CLI degradation card + Spawn-view disable behavior (desktop-dist contract:
-// without a compatible oas CLI, reads work, mutation UI is consistently
+// without a compatible oats CLI, reads work, mutation UI is consistently
 // disabled behind ONE card with detected/required/Choose/Retry/docs/install).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,10 +12,10 @@ function dom() {
   return d.window.document;
 }
 const payload = (ok, extra = {}) => ({
-  ok, bin: ok ? "/usr/local/bin/oas" : null, version: ok ? "0.18.0" : null,
+  ok, bin: ok ? "/usr/local/bin/oats" : null, version: ok ? "0.18.0" : null,
   source: ok ? "path" : null, required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" },
-  install: "npm install -g @oas-framework/oas@0.19.0",
-  probedAt: 1, tried: ok ? [] : [{ path: "/old/oas", source: "path", reason: "version 0.17.6 outside >=0.18.0 <0.21.0", version: "0.17.6" }],
+  install: "npm install -g @awebai/oats@0.19.0",
+  probedAt: 1, tried: ok ? [] : [{ path: "/old/oats", source: "path", reason: "version 0.17.6 outside >=0.18.0 <0.21.0", version: "0.17.6" }],
   ...extra,
 });
 const jsonCtx = (state) => ({
@@ -69,9 +69,9 @@ test("refreshCli/reprobeCli update shared state and notify subscribers", async (
 
 test("reprobeCli forwards a chosen binary path in the body", async () => {
   const state = { get: payload(false), post: payload(true), reprobes: [] };
-  await cs.reprobeCli(jsonCtx(state), "/chosen/oas");
+  await cs.reprobeCli(jsonCtx(state), "/chosen/oats");
   assert.equal(state.reprobes.length, 1);
-  assert.match(String(state.reprobes[0]), /\/chosen\/oas/);
+  assert.match(String(state.reprobes[0]), /\/chosen\/oats/);
 });
 
 test("cliCard renders the full contract surface: detected, required, Choose, Retry, docs, copyable install", async () => {
@@ -81,23 +81,23 @@ test("cliCard renders the full contract surface: detected, required, Choose, Ret
   let chosen = 0, opened = null;
   const ctx = {
     ...jsonCtx(state),
-    chooseCliBinary: async () => { chosen++; return { path: "/picked/oas" }; },
+    chooseCliBinary: async () => { chosen++; return { path: "/picked/oats" }; },
     openExternal: (url) => { opened = url; },
   };
   const { el, dispose } = cs.cliCard(doc, ctx);
   doc.body.append(el);
   // detected path + version from diagnostics
-  assert.ok(el.textContent.includes("/old/oas"), "detected path shown");
+  assert.ok(el.textContent.includes("/old/oats"), "detected path shown");
   assert.ok(el.textContent.includes("0.17.6"), "detected version shown");
   // required range + api
   assert.ok(el.textContent.includes(">=0.18.0 <0.21.0"), "required range shown");
   // copyable install command — the BACKEND's derived, version-pinned one
-  assert.ok(el.querySelector(".cli-cmd").textContent.includes("npm install -g @oas-framework/oas@0.19.0"));
+  assert.ok(el.querySelector(".cli-cmd").textContent.includes("npm install -g @awebai/oats@0.19.0"));
   assert.ok(el.querySelector(".cli-copy"), "copy affordance present");
   // actions
   const choose = el.querySelector(".cli-choose");
   const retry = el.querySelector(".cli-retry");
-  assert.ok(choose && !choose.disabled, "Choose oas… enabled when the picker hook exists");
+  assert.ok(choose && !choose.disabled, "Choose oats… enabled when the picker hook exists");
   assert.ok(retry, "Retry present");
   // docs link opens externally, never navigates the shell
   el.querySelector(".cli-docs").dispatchEvent(new doc.defaultView.Event("click", { bubbles: true, cancelable: true }));
@@ -106,7 +106,7 @@ test("cliCard renders the full contract surface: detected, required, Choose, Ret
   choose.dispatchEvent(new doc.defaultView.Event("click"));
   await new Promise((r) => setTimeout(r, 10));
   assert.equal(chosen, 1);
-  assert.ok(state.reprobes.some((b) => String(b).includes("/picked/oas")), "picked path reprobed");
+  assert.ok(state.reprobes.some((b) => String(b).includes("/picked/oats")), "picked path reprobed");
   dispose();
 });
 
@@ -137,8 +137,8 @@ test("cliCard states the requirement from the payload and never invents one when
 });
 
 test("cli-status: install/requirement helpers prefer the backend payload, fall back version-lessly", () => {
-  const withPayload = { required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, install: "npm install -g @oas-framework/oas@0.19.0" };
-  assert.equal(cs.cliInstallCommand(withPayload), "npm install -g @oas-framework/oas@0.19.0");
+  const withPayload = { required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, install: "npm install -g @awebai/oats@0.19.0" };
+  assert.equal(cs.cliInstallCommand(withPayload), "npm install -g @awebai/oats@0.19.0");
   assert.equal(cs.cliRequirementText(withPayload), ">=0.18.0 <0.21.0 with desktop API 1");
   for (const absent of [null, undefined, {}, { install: "" }, { required: {} }]) {
     assert.equal(cs.cliInstallCommand(absent), cs.GENERIC_INSTALL_COMMAND);
@@ -442,7 +442,7 @@ test("spawn view: no compatible CLI disables every spawn button and shows ONE ca
     assert.equal(cards.length, 2, "soul cards (reads) still render");
     for (const b of el.querySelectorAll(".spawn-act")) {
       assert.equal(b.disabled, true, "every spawn button disabled");
-      assert.match(b.title, /oas CLI/, "tooltip explains the CLI requirement");
+      assert.match(b.title, /oats CLI/, "tooltip explains the CLI requirement");
     }
     // clicking a disabled-state card never opens the form
     cards[0].querySelector(".spawn-act")?.dispatchEvent(new doc.defaultView.Event("click"));

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* oas desktop — dev harness server (NOT part of the app).
+/* oats desktop — dev harness server (NOT part of the app).
    Serves the renderer directory and proxies /api/* to a running backend
    server, so the harness page is same-origin with the API (the server sends no
    CORS headers, and its loopback origin guard governs POSTs — same-origin

@@ -14,8 +14,8 @@ source: user `~/.agents/skills`, ancestor and project `.agents/skills`, project
 
 `pi --no-skills --skill <dir>` removes every *discovered* skill and keeps the
 explicit one, but it does **not** remove skills contributed by an extension's
-`resources_discover` hook. The OAS Pi bridge (`packages/pi/extension/index.ts`)
-uses that hook, so `oas-getting-started` still appeared under `--no-skills`.
+`resources_discover` hook. The OATS Pi bridge (`packages/pi/extension/index.ts`)
+uses that hook, so `oats-getting-started` still appeared under `--no-skills`.
 Any installed third-party extension can leak skills the same way.
 
 The fail-closed launch is therefore:
@@ -35,7 +35,7 @@ Confirmed properties:
 - Both behaviors are documented in pi's `docs/skills.md` and were observed in
   the runtime.
 - `--no-context-files` also suppresses the instance's **own** composed
-  `AGENTS.md`, so OAS must deliver it explicitly. `--append-system-prompt
+  `AGENTS.md`, so OATS must deliver it explicitly. `--append-system-prompt
   <file>` reads the file contents into the system prompt, verified by canary.
 - The repository's `./work/AGENTS.md` remains readable by the `read` tool but is
   not auto-injected, which is the intended "readable, not auto-loaded" contract.

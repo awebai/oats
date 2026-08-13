@@ -1,7 +1,7 @@
 ---
 name: tasks-integration
 description: >-
-  Building a tasks-layer OAS integration (Jira, GitHub Issues, Linear, plain
+  Building a tasks-layer OATS integration (Jira, GitHub Issues, Linear, plain
   TODO files) — the layer with no shipped default. Use when integrating a
   task tracker: what the skills must teach, CLI-wrapping patterns, and the
   boundary with messaging. Triggers: "Jira integration", "task tracking for
@@ -15,9 +15,9 @@ tracker. Load integration-craft first; this adds the layer specifics.
 
 **The tracker choice is a deployment decision, not a framework rule.** LFX
 chose Jira over aweb's task features (one source of truth: Jira records,
-aweb only messages) — but that rationale is LFX's, not OAS's. A deployment
+aweb only messages) — but that rationale is LFX's, not OATS's. A deployment
 that prefers aweb can bind `tasks: <aweb-tasks-integration>` and build an
-integration teaching `aw task`/`work`/`lock`/`roles`; the bundled oas-aweb
+integration teaching `aw task`/`work`/`lock`/`roles`; the bundled oats-aweb
 integration is deliberately messaging-only, so tasks-on-aweb is a separate
 integration. Never present the tasks≠messaging boundary as "tasks must not
 be aweb" — the boundary is *whichever framework the tasks layer resolves to

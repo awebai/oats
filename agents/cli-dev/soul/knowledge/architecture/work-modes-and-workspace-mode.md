@@ -35,7 +35,7 @@ other key under `work-modes.<mode>` with a migration error.
   or git operations in member repos), consistent with the other modes.
 - Knowledge consequence: the soul lives in a committed home repo, so OKF
   harvest for workspace instances delivers promotions as PRs to that repo —
-  the "commit in your work tree" protocol is wrong there (oas-okf 1.1.0 varies
+  the "commit in your work tree" protocol is wrong there (oats-okf 1.1.0 varies
   its brief by mode).
 
-Reference decision: `agents/oas-expert/soul/knowledge/decisions/workspace-work-mode.md`.
+Reference decision: `agents/oats-expert/soul/knowledge/decisions/workspace-work-mode.md`.

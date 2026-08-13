@@ -1,6 +1,6 @@
 # Capability packages
 
-A **capability package** is OAS's reusable distribution unit. It can contribute
+A **capability package** is OATS's reusable distribution unit. It can contribute
 skills, instance instructions, requirements, namespaced commands, and approved
 lifecycle hooks. Configuration—not the package—decides which souls receive it.
 
@@ -10,31 +10,31 @@ claim no layer and compose additively.
 
 ## Mental model
 
-This is OAS's first public capability-package contract. The unpublished,
+This is OATS's first public capability-package contract. The unpublished,
 pre-release integration prototype has no compatibility promise: its manifest,
 config, discovery, and command aliases are intentionally not accepted.
 
 The contract is:
 
-1. **Acquire** a package. External artifacts are pinned in `oas-lock.json`.
+1. **Acquire** a package. External artifacts are pinned in `oats-lock.json`.
 2. **Activate** it for global scope, a config-owned soul group, or one soul.
-3. **Spawn** a soul. OAS resolves the target, creates the exact
+3. **Spawn** a soul. OATS resolves the target, creates the exact
    `.agents/skills/`, and generates that instance's `AGENTS.md` without
    changing the canonical soul.
 
-Acquired does not mean active. `oas init` activates only the explicit defaults
+Acquired does not mean active. `oats init` activates only the explicit defaults
 it writes; it never enables every package merely because it is available.
 
 ## Manifest
 
-A self-contained package has an `oas.json`:
+A self-contained package has an `oats.json`:
 
 ```json
 {
   "capability": "example.team-chat",
   "command": "team-chat",
   "version": "1.2.3",
-  "compatibility": { "oas": ">=0.6.2" },
+  "compatibility": { "oats": ">=0.6.2" },
   "description": "Messaging through Team Chat.",
   "layer": "messaging",
   "requires": [
@@ -61,7 +61,7 @@ A self-contained package has an `oas.json`:
   as `aweb.identity`, because that prefix owns the corresponding `AWEB_*`
   namespace.
 - `command` is an optional, unique CLI namespace. The example exposes
-  `oas team-chat auth`.
+  `oats team-chat auth`.
 - `layer` is optional and may name exactly one fundamental layer. Two active
   packages cannot implement the same layer for one soul.
 - `skills` entries can be skill directories or roots containing skills.
@@ -76,22 +76,22 @@ A self-contained package has an `oas.json`:
   required: they run outside a spawn transaction, so there is no moment to
   enforce them.
 - A capability declaring a **required** spawn hook should declare a `retire` hook
-  too. Without one, OAS has no way to undo what the spawn hook did and no way to
+  too. Without one, OATS has no way to undo what the spawn hook did and no way to
   know whether it did anything, so a failure quarantines the home rather than
   rolling it back — the operator cleans up by hand and removes it with `--force`.
 - A required hook must also be **able** to run: if its capability's executable
-  surface is not trusted, the spawn fails with the `oas trust` remedy rather
+  surface is not trusted, the spawn fails with the `oats trust` remedy rather
   than starting without the setup. Advisory executable hooks stay
   disabled-with-warning.
 - When a required hook fails and its compensation cannot finish, the instance
   home is **retained**, not deleted — it holds the credentials and metadata a
   retry needs, and removing it would turn a transient cleanup failure into
-  permanent external residue. It is marked `.oas-rollback-incomplete.json`, so
-  `oas status` reports it as retained state rather than a live instance, and
-  `oas retire <instance>` retries the cleanup — re-running the retire hooks and
+  permanent external residue. It is marked `.oats-rollback-incomplete.json`, so
+  `oats status` reports it as retained state rather than a live instance, and
+  `oats retire <instance>` retries the cleanup — re-running the retire hooks and
   the rollback-owned Git steps, and verifying both. A retry that still cannot
   finish keeps the home again, names what is outstanding, and exits nonzero.
-- The **escape hatch is `oas retire <instance> --force`**, for a home OAS cannot
+- The **escape hatch is `oats retire <instance> --force`**, for a home OATS cannot
   identify at all: no `instance.json` and no **usable** cleanup descriptor. Usable
   means it satisfies the versioned cleanup contract the rollback writes, checked
   to the depth the retry consumes it: `version`, a context `repo`, a recognised
@@ -111,7 +111,7 @@ A self-contained package has an `oas.json`:
 - Because some cleanups can never succeed (a capability offering no way to undo its
   own setup, a permanently unreachable remote), **`--force` also overrides
   retention**: the home is removed, and everything still outstanding is printed as
-  state the operator now owns. Nothing is ever permanently unremovable through OAS,
+  state the operator now owns. Nothing is ever permanently unremovable through OATS,
   and nothing is silently dropped. Without `--force` that state fails closed with
   `E_UNIDENTIFIED_INSTANCE_HOME` rather than deleting whatever credentials the
   directory still holds; `--force` removes it and leaves any external state for
@@ -129,14 +129,14 @@ A self-contained package has an `oas.json`:
   would mutate the operator's runtime configuration without asking, in the
   middle of a spawn. A missing, uninstalled or disabled package fails the spawn
   with the consent command that fixes it.
-- OAS never installs a requirement silently. `oas install` prompts per
+- OATS never installs a requirement silently. `oats install` prompts per
   requirement with the exact argv, source and scope; automation passes
   `--accept-requirement <name>` (the name is the command, or
   `<runtime>:<package>`), and `--no-requirements` skips the gate. When a plan
   has several steps — registering a Claude marketplace before installing from
   it — every step is shown, because agreeing to a plugin also means agreeing to
   the source it comes from. Declining
-  leaves an actionable `oas doctor` warning. Consent to install is separate
+  leaves an actionable `oats doctor` warning. Consent to install is separate
   from capability trust.
 - `environment` lists the exact launch variables executable trust approves;
   spawn hook output must be a subset and use the capability vendor prefix.
@@ -157,9 +157,9 @@ agent-types:
 capabilities:
   layers:
     knowledge:
-      capability: oas.okf
+      capability: oats.okf
       from: installed
-      # injection-override: .agents/injections/capabilities/oas.okf.md
+      # injection-override: .agents/injections/capabilities/oats.okf.md
     messaging: none
     tasks: none
 
@@ -211,24 +211,24 @@ suppresses an inherited integration), everything else under
 Every spawned instance receives:
 
 - canonical soul skills;
-- the kernel `oas` skill; and
+- the kernel `oats` skill; and
 - skills from capabilities active for that soul.
 
-OAS copies only those skill trees into real directories under
+OATS copies only those skill trees into real directories under
 `<instance>/.agents/skills/` and records the names and source capability in
 `instance.json`. `.claude/skills` points to
 the same canonical directory. Pi launches with this directory as an explicit
 skill path; ambient skills (user-level, pi packages, the work tree) coexist
-with the OAS-composed set rather than being excluded — `instance.json`
-records exactly what OAS composed, not everything the harness may discover.
-`oas-getting-started` is the pi adapter's one ambient contribution before a workspace exists.
+with the OATS-composed set rather than being excluded — `instance.json`
+records exactly what OATS composed, not everything the harness may discover.
+`oats-getting-started` is the pi adapter's one ambient contribution before a workspace exists.
 
 Duplicate skill names fail spawn unless `skill-overrides` explicitly names the
-winning source. Pi and Claude therefore receive the same OAS-managed set rather
+winning source. Pi and Claude therefore receive the same OATS-managed set rather
 than relying on different ancestor-discovery rules.
 
 For pi, exact isolation needs the capability-aware versions of both
-`@oas-framework/oas` and `@oas-framework/pi`. The kernel disables normal skill
+`@awebai/oats` and `@awebai/oats-pi`. The kernel disables normal skill
 discovery at launch. The changed adapter contributes only the instance-local
 set instead of the older workspace and package roots. Install matching package
 versions and upgrade them together.
@@ -247,8 +247,8 @@ instance; do not edit generated blocks as source-of-truth changes.
 Inspect a final composition:
 
 ```bash
-oas doctor /path/to/repo --soul api-expert
-oas doctor /path/to/repo --soul api-expert --json
+oats doctor /path/to/repo --soul api-expert
+oats doctor /path/to/repo --soul api-expert --json
 ```
 
 Doctor reports active/acquired packages, target provenance, settings, skills,
@@ -258,58 +258,58 @@ semantic contradictions between two prose injections; review the output.
 ## Distribution packages
 
 A **distribution package** is the install/update/review unit above
-capabilities: a directory with an `oas-package.json` manifest that explicitly
+capabilities: a directory with an `oats-package.json` manifest that explicitly
 enumerates one or more capabilities and optional reference config templates
 (schema:
-`docs/oas-package.schema.json`; contract:
+`docs/oats-package.schema.json`; contract:
 `docs/design/package-engine-contract.md`). A capability remains the
 targeting/activation unit — every capability a package exports stays
 independently addressable by ID with `from: installed`.
 
 A Git repository *contains* that directory; `#<path>` selects which one, and
 only the selected subtree is installed and hashed. Omitting it selects
-`oas-package/` (the convention for every official example and scaffold); `#.`
+`oats-package/` (the convention for every official example and scaffold); `#.`
 selects the repository root. Local paths are always exact directories.
 
 ```bash
-oas install git:github.com/org/repo@v1.0.0 --dir /path/to/scope   # git shorthand → oas-package/
-oas install git:github.com/org/repo@v1.0.0#dist/oas                # a custom contained root
-oas install https://host/org/repo.git@v1.0.0#.                     # raw git URL, repository root
-oas install ../my-package                                          # local path (exact directory)
-oas install oas.okf                                                # official catalog id
-oas install                     # bare: exact restore of this chain's locks
-oas list                        # installed packages, exported capabilities, scopes
-oas update <package>            # transactional re-resolve + diff + trust reset
-oas remove <package>            # refuses while config/dependents reference it
-oas migrate [--dry-run]         # map v1 capability locks to package locks
+oats install git:github.com/org/repo@v1.0.0 --dir /path/to/scope   # git shorthand → oats-package/
+oats install git:github.com/org/repo@v1.0.0#dist/oats                # a custom contained root
+oats install https://host/org/repo.git@v1.0.0#.                     # raw git URL, repository root
+oats install ../my-package                                          # local path (exact directory)
+oats install oats.okf                                                # official catalog id
+oats install                     # bare: exact restore of this chain's locks
+oats list                        # installed packages, exported capabilities, scopes
+oats update <package>            # transactional re-resolve + diff + trust reset
+oats remove <package>            # refuses while config/dependents reference it
+oats migrate [--dry-run]         # map v1 capability locks to package locks
 ```
 
 Installing a package materializes each capability into the owning scope's
 `.agents/capabilities/installed/<id>/` (gitignored, like the capability store).
-There is no persistent package store. `oas-lock.json` uses `lockfileVersion: 2`
+There is no persistent package store. `oats-lock.json` uses `lockfileVersion: 2`
 with two maps: `packages` (exact source, commit, selected path, payload
 integrity, and dependencies) and `capabilities` (each artifact's version,
 provider package, path, integrity, and trust) — schema
-`docs/oas-lock.schema.json`. Dependencies are pinned (official selector,
+`docs/oats-lock.schema.json`. Dependencies are pinned (official selector,
 tag/commit, or local path — no semver solver). Cycles and two sources claiming
 one package identity at a scope are errors with provenance. Acquisition
 **activates nothing** and adopts no config template; an unpinned git source
 resolves once and never advances on restore.
 
 Trust binds to each materialized capability artifact at its exact integrity.
-`oas trust <capability>` approves only that capability's commands, hooks, and
+`oats trust <capability>` approves only that capability's commands, hooks, and
 declared launch environment.
-`oas trust <package> --all-capabilities` is the explicit bulk path and prints
+`oats trust <package> --all-capabilities` is the explicit bulk path and prints
 the full executable surface first. Any artifact integrity change (including
-`oas update`) resets that capability's trust.
+`oats update`) resets that capability's trust.
 Skill/instruction/config-only capabilities need lock integrity but no
 executable approval, and official-catalog identity grants **no** executable
 trust. A capability may carry a checked-in `package-lock.json` for JS runtime
-dependencies; OAS materializes it with `npm ci --ignore-scripts` only — npm
+dependencies; OATS materializes it with `npm ci --ignore-scripts` only — npm
 lifecycle scripts never run at acquisition, and capability code/hook paths
 must resolve inside the materialized capability root.
 
-`oas migrate` converts a scope's v1 marketplace/git/path capability locks to
+`oats migrate` converts a scope's v1 marketplace/git/path capability locks to
 the revised v2 lock, preserving `from: installed` activation. It is
 all-or-nothing per scope: a scope converts only when every entry maps to a
 package. If any entry is held, manual, or retained, the whole scope stays
@@ -318,41 +318,41 @@ executable approvals are never carried over.
 
 All package operations are agent-callable: every command above supports
 `--json` (one stdout envelope; failures carry the contract's stable error
-codes) and noninteractive operation. Agents never hand-edit `oas-lock.json`
-or the stores — the kernel-owned **oas-packages** skill (composed into every
+codes) and noninteractive operation. Agents never hand-edit `oats-lock.json`
+or the stores — the kernel-owned **oats-packages** skill (composed into every
 instance) teaches the full lifecycle.
 
 ## Acquisition, lock, restore, and trust (single capabilities)
 
 ```bash
-oas install oas.jira --dir /path/to/repo             # official catalog id; approve executable surfaces with `oas trust`
-oas install https://example.invalid/team-chat.git --dir /path/to/repo
-oas install ../team-chat --dir /path/to/repo
-oas install                       # bare: restore locked-but-missing artifacts
+oats install oats.jira --dir /path/to/repo             # official catalog id; approve executable surfaces with `oats trust`
+oats install https://example.invalid/team-chat.git --dir /path/to/repo
+oats install ../team-chat --dir /path/to/repo
+oats install                       # bare: restore locked-but-missing artifacts
 ```
 
 Every acquired artifact lands in the owning scope's
-`.agents/capabilities/installed/`, beside the `oas-config.yaml` and
-`oas-lock.json` that govern it. Install maintains a one-line
+`.agents/capabilities/installed/`, beside the `oats-config.yaml` and
+`oats-lock.json` that govern it. Install maintains a one-line
 `.agents/capabilities/.gitignore` so acquired artifacts stay uncommitted, like
 `node_modules`. A fresh clone with a committed config and lock runs bare
-`oas install` to reacquire everything; each restored artifact must hash to the
+`oats install` to reacquire everything; each restored artifact must hash to the
 locked integrity or the restore fails and removes the fetched copy.
 
-Installation acquires and locks; it does **not** activate. `oas-lock.json`
+Installation acquires and locks; it does **not** activate. `oats-lock.json`
 records:
 
 - source;
 - exact package version and git commit when available; and
 - SHA-256 integrity of the artifact.
 
-OAS never pulls an existing package silently. Changed integrity blocks use
+OATS never pulls an existing package silently. Changed integrity blocks use
 until the package is deliberately reacquired. For external packages containing
 commands, hooks, or launch-environment authority, approve that exact locked
 artifact:
 
 ```bash
-oas trust example.team-chat --dir /path/to/repo
+oats trust example.team-chat --dir /path/to/repo
 ```
 
 Changing integrity invalidates approval. Skill/instruction-only packages still
@@ -367,22 +367,22 @@ restored artifact hashes to the locked integrity.
 One narrow exception exists for the kernel's own marketplace, kept only until
 official packages replace legacy `marketplace:` installs. A capability whose
 lock source is `marketplace:<id>@<version>` may declare resources that live
-outside its installed copy — `oas.authoring` selects framework skills with
+outside its installed copy — `oats.authoring` selects framework skills with
 `../../skills/<name>` — and those declarations are resolved against the
 capability's directory in the kernel marketplace
 (`<kernel>/capabilities/<slug>`), located by capability id rather than by the
 lock selector's spelling. If that declared path names an npm dependency hoisted
-by npm, OAS also checks the equivalent path from the kernel root; this is the
-published `oas.aweb` layout (`node_modules/@awebai/pi/skills/...`). The shipped source must still have the same
+by npm, OATS also checks the equivalent path from the kernel root; this is the
+published `oats.aweb` layout (`node_modules/@awebai/pi/skills/...`). The shipped source must still have the same
 capability identity, while its version may advance with an explicitly installed
 kernel upgrade: framework-hoisted resources belong to that trusted kernel, and
 this preserves valid older v1 installs until official-package migration. The
 installed copy and its lock must still agree on version and integrity. If they
 do not, recovery is to delete the installed copy the error names and then run
-`oas install <id> --dir <scope>`, which re-acquires and rewrites the lock entry;
+`oats install <id> --dir <scope>`, which re-acquires and rewrites the lock entry;
 run with the copy still in place, that command reports `Already acquired` and
 changes nothing, and legacy v1 capability entries are not removable with
-`oas remove`, which services packages. Such a tree may leave the
+`oats remove`, which services packages. Such a tree may leave the
 installed copy but never the kernel package: `..` segments and symlinks that
 resolve outside it are rejected exactly like any other escape. Capabilities
 exported by packages, authored at a scope, or referenced by path never receive
@@ -393,7 +393,7 @@ Bundled framework packages are trusted. Packages you author at a scope live in
 scope trusts them; review them like other repository instructions and code.
 In a git-managed scope they are committed; at a non-git scope (the laptop
 level, a plain workspace root) they are ordinary files whose durability is the
-scope's own — they have no lock and are not restorable by `oas install`, so
+scope's own — they have no lock and are not restorable by `oats install`, so
 back them up with whatever backs up that scope. Capabilities directly
 under `.agents/capabilities/` are rejected — move them into `installed/` or
 `owned/`.
@@ -401,21 +401,21 @@ under `.agents/capabilities/` are rejected — move them into `installed/` or
 ## Activation and exclusions
 
 ```bash
-oas use oas.okf --global --dir /path/to/repo
-oas use example.code-review --type developers --dir /path/to/repo
-oas use example.deploy --type reviewers --disable --dir /path/to/repo
-oas use example.deploy --soul release-reviewer --dir /path/to/repo
+oats use oats.okf --global --dir /path/to/repo
+oats use example.code-review --type developers --dir /path/to/repo
+oats use example.deploy --type reviewers --disable --dir /path/to/repo
+oats use example.deploy --soul release-reviewer --dir /path/to/repo
 ```
 
 `--global` is the default. Choose only one target. An integration's manifest
 declares its layer, so activation does not repeat it. Disable an inherited
-fundamental layer with `oas use none --layer <layer>`.
+fundamental layer with `oats use none --layer <layer>`.
 
 ## Capability-defined agents
 
 A manifest may declare `agents: ["agents/<name>"]` — package-relative soul
 directories (`soul.yaml` + `AGENTS.md` directly inside). Wherever the
-capability is **declared** in the config chain, `oas spawn <name>` resolves
+capability is **declared** in the config chain, `oats spawn <name>` resolves
 these like local souls: the canonical soul stays read-only inside the package
 (a fresh identity every spawn — by design for service agents like reviewers),
 while instances home under the scope's `local-agents/`. Capability agents
@@ -427,9 +427,9 @@ Operational commands resolve only when their package is active in the current
 instance or soul context. Package-management commands (`install`, `trust`,
 `use`, `doctor`) remain available globally.
 
-Hooks receive `OAS_EVENT`, `OAS_CAPABILITY`, `OAS_LAYER`, `OAS_INSTANCE`,
-`OAS_HOME`, `OAS_AGENT`, `OAS_SOUL`, `OAS_CONTEXT`, `OAS_WORKSPACE`,
-`OAS_ROOT`, `OAS_LEVEL`, `OAS_SETTINGS`, and `OAS_META`. A final JSON line may
+Hooks receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
+`OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
+`OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, and `OATS_META`. A final JSON line may
 return `meta`, `brief`, `warning`, or runtime-specific `launch` arguments. A
 **spawn hook only** may also return an `env` object for the launched process;
 returning `env` from retire or soul-scaffold is an explicit contract error.
@@ -445,7 +445,7 @@ hyphen to `_` would let `aweb-evil.*` collide with names already inside
 
 A hook may return only names in its manifest's exact `environment` declaration.
 For acquired packages that declaration is part of the integrity-locked artifact.
-Third-party install previews the future request, and `oas trust` prints the
+Third-party install previews the future request, and `oats trust` prints the
 exact request before persisting executable authority. Marketplace automatic
 trust likewise prints it before writing the trusted lock. Undeclared output is
 fatal. Config-owned packages receive the same exact-subset enforcement under
@@ -453,7 +453,7 @@ their existing config-owned trust. This positive authority is the contract
 boundary — adding a new launch variable requires a visible manifest/trust
 change.
 
-`OAS_*`, `PI_AGENT_*`, kernel launch variables, and known shell/bootstrap/loader
+`OATS_*`, `PI_AGENT_*`, kernel launch variables, and known shell/bootstrap/loader
 names are also rejected as defense in depth. The denylist includes current Node,
 JVM, .NET, Python, Perl, Ruby, Lua, PHP, ELF, and dyld surfaces, but is explicitly
 not the authority boundary: runtime bootstrap names are open-ended, so the
@@ -464,7 +464,7 @@ match.
 Environment names are sorted before shell-quoted command construction, and a
 contributed value deliberately overrides an ambient value of the same name.
 Invalid or colliding contributions abort before `instance.json` and session
-launch. OAS enters the same rollback transaction as a required spawn-hook
+launch. OATS enters the same rollback transaction as a required spawn-hook
 failure: declared retire compensation runs in reverse, worktree-mode Git state
 is removed and verified, and the home is deleted only after cleanup completes.
 A failed compensation, unverifiable topology removal, or reported spawn state
@@ -473,7 +473,7 @@ advisory hook execution failure itself contributes no environment.
 
 The environment prefix applies to the initial Pi or Claude process. `--no-launch`
 validates command preparation but has no runtime consumer. The fallback shell
-after that process exits does not inherit command-scoped assignments, and OAS
+after that process exits does not inherit command-scoped assignments, and OATS
 has no restart command or replay policy yet. The generated command is persisted
 as before; hooks must contribute locators, selectors, or broker endpoints—not
 bearer tokens or private key material. An instance-lifetime local principal may
@@ -485,7 +485,7 @@ and must not be encoded into this persisted spawn command.
 
 Spawn/scaffold order is outer scope to inner scope, then capability ID;
 retirement reverses successful spawn order. Scaffold hooks cannot modify or
-delete canonical or another package's files. OAS records ownership, restores
+delete canonical or another package's files. OATS records ownership, restores
 the pre-hook snapshot, and raises a conflict instead of accepting destructive
 or last-writer-wins behavior.
 
@@ -493,11 +493,11 @@ or last-writer-wins behavior.
 
 | Capability | Kind | Provides |
 |---|---|---|
-| `oas.okf` | knowledge integration | OKF bundles, instance memory, harvest skills and command |
-| `oas.aweb` | messaging integration | aweb identity lifecycle and messaging skills |
-| `oas.jira` | tasks integration | Jira task protocol via `acli` |
-| `oas.linear` | tasks integration | Linear GraphQL task commands and workflow |
-| `oas.authoring` | additive | capability, skill, and soul authoring guidance |
+| `oats.okf` | knowledge integration | OKF bundles, instance memory, harvest skills and command |
+| `oats.aweb` | messaging integration | aweb identity lifecycle and messaging skills |
+| `oats.jira` | tasks integration | Jira task protocol via `acli` |
+| `oats.linear` | tasks integration | Linear GraphQL task commands and workflow |
+| `oats.authoring` | additive | capability, skill, and soul authoring guidance |
 
 The source packages live under `capabilities/`. Acquired packages live under
 `<level>/.agents/capabilities/installed/` (gitignored, restorable); packages

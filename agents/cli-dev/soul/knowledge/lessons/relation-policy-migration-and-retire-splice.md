@@ -10,12 +10,12 @@ timestamp: 2026-07-25
 
 A spawn-relation policy change is unsafe if code and agent-facing recipes move
 apart. When the "reviewers are your parent" policy became binding, stale
-`oas-review` injection examples still showed relation-less attached reviewer
+`oats-review` injection examples still showed relation-less attached reviewer
 spawns, which auto-nested the reviewer under the developer, and maintainer
-spawns with `--parent "$OAS_INSTANCE"`, which made maintainers children.
+spawns with `--parent "$OATS_INSTANCE"`, which made maintainers children.
 
 Future changes to spawn semantics or relation policy must migrate every live
-recipe in the same change. Grep for `oas spawn` across injections, soul skills,
+recipe in the same change. Grep for `oats spawn` across injections, soul skills,
 and docs, not only kernel docs. This extends the migration rule in
 [spawn-lineage-explicit-only](/decisions/spawn-lineage-explicit-only.md).
 

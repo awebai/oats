@@ -29,8 +29,8 @@ Write one task brief per developer. Each brief must state:
   and never merge into the feature branch;
 - who the coordinator is (your instance alias) for questions/dependencies.
 
-Spawn each developer with `oas spawn <dev> --task-file <brief>
---parent "$OAS_INSTANCE"` (worktree mode is their soul default) — lineage is
+Spawn each developer with `oats spawn <dev> --task-file <brief>
+--parent "$OATS_INSTANCE"` (worktree mode is their soul default) — lineage is
 explicit, so pass your own instance as the parent or they land as top-level
 operator roots. Sequence dependency-heavy parts first.
 
@@ -81,14 +81,14 @@ After ALL developer branches are merged and the gate is green, launch a
 fresh reviewer on the integrated diff:
 
 ```bash
-oas spawn reviewer --work attached --work-dir <integration-worktree> \
-  --parent "$OAS_INSTANCE" \
+oats spawn reviewer --work attached --work-dir <integration-worktree> \
+  --parent "$OATS_INSTANCE" \
   --purpose "<feature-short-sha>" \
   --task "Review the merged feature diff origin/main..feature/<name>. Report to <your-instance> per your operating loop."
 ```
 
 (The integration worktree is yours, not an instance's `<home>/work`, so the
-owner cannot be inferred — `--parent "$OAS_INSTANCE"` names you explicitly;
+owner cannot be inferred — `--parent "$OATS_INSTANCE"` names you explicitly;
 attached agents are always children of their owner.)
 
 Go idle; the verdict arrives by aweb mail. `NEEDS CHANGES` → route findings
@@ -97,7 +97,7 @@ to the owning developer(s), re-merge, re-gate, re-review.
 ## 5. Delivery
 
 - **Check for peer features first**: other coordinator instances may be
-  running parallel features against the same main (`oas status --team` shows
+  running parallel features against the same main (`oats status --team` shows
   live coordinators; `git ls-remote origin 'refs/heads/feature/*'` shows their
   branches). This check is silent — do not mail peer coordinators to announce
   yourself or ask about their plans. Contact one only when there is an actual
@@ -108,12 +108,12 @@ to the owning developer(s), re-merge, re-gate, re-review.
   2. Whoever merges second updates their feature branch from main after the
      first PR lands, resolves, re-gates, and re-requests review.
   3. If you two cannot agree (competing designs, contested ownership or
-     order), spawn an oas-expert as **parent of both coordinators** to
+     order), spawn an oats-expert as **parent of both coordinators** to
      arbitrate:
 
      ```bash
-     oas spawn oas-expert --purpose "merge-conflict-<a>-vs-<b>" \
-       --relation parent --relative-to "$OAS_INSTANCE" \
+     oats spawn oats-expert --purpose "merge-conflict-<a>-vs-<b>" \
+       --relation parent --relative-to "$OATS_INSTANCE" \
        --task "Arbitrate the merge conflict between feature/<a> (coordinator <you>) and feature/<b> (coordinator <peer>). You oversee both coordinators for this conflict: decide merge order and resolution ownership, and consult the human if you need product/direction input. Report your ruling to both coordinators by aweb mail."
      ```
 
@@ -124,12 +124,12 @@ to the owning developer(s), re-merge, re-gate, re-review.
      changes.
 - `gh pr create` from `feature/<name>` (you own the PR). Summarize scope,
   developer branches merged, review verdict.
-- **Launch the framework expert (oas-expert) for the merge** — main only
+- **Launch the framework expert (oats-expert) for the merge** — main only
   moves through its maintainer review, and every PR gets its **own fresh
-  maintainer instance** (even if another oas-expert is live):
+  maintainer instance** (even if another oats-expert is live):
 
   ```bash
-  oas spawn oas-expert --purpose "pr<n>" --relation parent --relative-to "$OAS_INSTANCE" \
+  oats spawn oats-expert --purpose "pr<n>" --relation parent --relative-to "$OATS_INSTANCE" \
     --task "Maintainer review of PR #<n> (feature/<name>): run your pr-review gates. You own this PR to its terminal outcome — on RETURN stay alive and idle for my fixed-mail, re-review, repeat; on merge/close record the delivery in your stewardship knowledge and retire yourself. Report verdicts to <your-instance> by aweb mail."
   ```
 
@@ -185,7 +185,7 @@ to the owning developer(s), re-merge, re-gate, re-review.
   deaths can come from tmux prefix-target
   kills](../knowledge/lessons/reviewer-deaths-tmux-prefix-targets.md).
 - If review flags factual errors in a developer's `notes/` or knowledge content,
-  have the developer fix the notes before running `oas okf harvest`; harvest
+  have the developer fix the notes before running `oats okf harvest`; harvest
   promotes notes verbatim. See [Fix doc nits in notes before the harvest
   runs](../knowledge/lessons/fix-note-errors-before-harvest.md).
 - A docs-only follow-up PR does not require keeping the authoring developer
@@ -196,7 +196,7 @@ to the owning developer(s), re-merge, re-gate, re-review.
   [Retire developers without holding on docs-only follow-up
   PRs](../knowledge/lessons/retire-dev-without-docs-pr.md).
 - Post-merge developer harvests can strand on the developer's instance branch.
-  Before `oas retire --delete-branch`, check whether every harvest commit is an
+  Before `oats retire --delete-branch`, check whether every harvest commit is an
   ancestor of `origin/main`; if not, cherry-pick the whole harvest chain onto a
   knowledge-only PR and wait for any `memory-harvest-*` instance on that tree to
   finish. See [Post-merge developer harvests land on instance branches —

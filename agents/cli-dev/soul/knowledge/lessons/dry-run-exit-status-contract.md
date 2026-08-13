@@ -17,7 +17,7 @@ A consumer scripting the obvious readiness check could therefore misread the
 state:
 
 ```bash
-oas migrate --official --dry-run && oas migrate --official
+oats migrate --official --dry-run && oats migrate --official
 ```
 
 The report existed, but the answer was still "not ready". Exit status was part

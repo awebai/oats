@@ -1,15 +1,15 @@
-/* oas desktop — theme runtime.
+/* oats desktop — theme runtime.
    theme.css defines the semantic tokens (incl. the --ansi-* terminal set);
    this module owns switching (OS-follow by default, manual override
    persisted under the SAME key as the web panel so the two products feel
    like one) and derives the xterm.js theme object from the live tokens. */
 
-const KEY = "oasweb.theme"; // legacy key name kept so existing user prefs survive
+const KEY = "oatsweb.theme"; // legacy key name kept so existing user prefs survive
 
 const listeners = new Set();
 const terminalListeners = new Set();
-const TERM_FONT_KEY = "oas.desktop.terminal.fontFamily";
-const TERM_SIZE_KEY = "oas.desktop.terminal.fontSize";
+const TERM_FONT_KEY = "oats.desktop.terminal.fontFamily";
+const TERM_SIZE_KEY = "oats.desktop.terminal.fontSize";
 
 export function currentTheme() {
   return document.documentElement.dataset.theme || "dark";

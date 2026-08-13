@@ -1,10 +1,10 @@
 # The five layers of agent specialization
 
 A capable model in a fresh session is not a specialist. A specialist has
-identity, habits, memory, teammates, and work to track. OAS names those needs
+identity, habits, memory, teammates, and work to track. OATS names those needs
 as five layers.
 
-Two layers are the OAS pattern itself: **soul** and **instances**. The kernel
+Two layers are the OATS pattern itself: **soul** and **instances**. The kernel
 implements them directly. The other three are formally defined, exclusive
 contracts: **knowledge**, **messaging**, and **tasks**. An integration is the
 capability package selected to bind one contract to a real tool; general
@@ -45,9 +45,9 @@ The kernel is memory-agnostic. It only provides lifecycle events such as
 uses those events to create memory files, teach the protocol, and run
 promotion.
 
-The default `oas-okf` integration creates an OKF bundle in the soul and
+The default `oats-okf` integration creates an OKF bundle in the soul and
 `STATE.md`, `log.md`, and `notes/` in instances. Instances capture what they
-learn, and after committing with pending notes run `oas okf harvest`, which
+learn, and after committing with pending notes run `oats okf harvest`, which
 spawns a memory-harvest agent that judges notes and promotes
 what belongs in the soul.
 
@@ -76,7 +76,7 @@ Team agents need to reach humans and each other. The messaging layer maps an
 instance name to a communication identity, then cleans that identity up when
 the instance retires.
 
-The default integration is `oas-aweb`. It gives each instance an aweb identity
+The default integration is `oats-aweb`. It gives each instance an aweb identity
 and teaches agents to use `aw mail` and `aw chat`.
 
 Messaging is deliberately narrow. It is about communication only. Task
@@ -85,7 +85,7 @@ coordination belongs to layer 5.
 ## 5. Tasks — shared work state
 
 Work needs a queue and status that outlive any one instance: planned, in
-flight, blocked, done. OAS does not choose the tracker. It only requires that
+flight, blocked, done. OATS does not choose the tracker. It only requires that
 agents know where the shared work state lives and how to use it.
 
 There is no shipped default task integration. One deployment can bind Jira,

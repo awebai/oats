@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const validator = join(root, "capabilities", "oas-okf", "skills", "okf", "scripts", "okf-validate.mjs");
+const validator = join(root, "capabilities", "oats-okf", "skills", "okf", "scripts", "okf-validate.mjs");
 const agents = join(root, "agents");
 let count = 0;
 for (const entry of readdirSync(agents, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {

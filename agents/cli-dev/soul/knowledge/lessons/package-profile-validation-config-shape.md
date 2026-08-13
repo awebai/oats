@@ -8,7 +8,7 @@ timestamp: 2026-07-26
 
 # Lesson
 
-A config profile for `oas init --package` is config source material, so its
+A config profile for `oats init --package` is config source material, so its
 schema validity must use the same check as `loadLevelConfig`. The implementation
 refactored the inline validation in `lib/core.mjs` into an exported
 `validateConfigShape(cfg, file)` and calls it from `validateProfile()` in
@@ -17,7 +17,7 @@ refactored the inline validation in `lib/core.mjs` into an exported
 This keeps one source of truth for config-key, entry-key, and renamed-key rules.
 Profile-only rules stay in the package module: capabilities supplied by the
 package and dependency closure, layer agreement with the package's own
-capability `oas.json`, agent-type syntax, injection-override and setup path
+capability `oats.json`, agent-type syntax, injection-override and setup path
 containment, and rejection of `from: path:` in profiles. When a dependency
 supplies a capability by id, validation must still fetch the provider manifest
 before enforcing layer agreement; identifier-only validation let a profile bind

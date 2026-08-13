@@ -1,12 +1,12 @@
 ---
 name: integration-authoring
 description: >-
-  Route custom OAS capability-package and integration work to the framework's
+  Route custom OATS capability-package and integration work to the framework's
   integrations expert. Use when building, adapting, or debugging a reusable
-  capability, new task/messaging/knowledge integration, oas.json manifest,
+  capability, new task/messaging/knowledge integration, oats.json manifest,
   lifecycle hook, or operational command—not merely activating an existing
   package. Triggers: "custom integration", "capability package", "integrate
-  our tracker", "new messaging integration", "write an oas.json".
+  our tracker", "new messaging integration", "write an oats.json".
 ---
 
 # Capability and integration authoring — delegate
@@ -20,17 +20,17 @@ the framework's **integrations-expert** soul rather than improvising.
 If the user only wants an existing package, use:
 
 ```bash
-oas install <source>            # external acquisition + exact lock; inactive
-oas trust <id>                  # only if commands/hooks exist
-oas use <id> --global|--type <t>|--soul <s>
+oats install <source>            # external acquisition + exact lock; inactive
+oats trust <id>                  # only if commands/hooks exist
+oats use <id> --global|--type <t>|--soul <s>
 ```
 
-## 1. Locate the OAS framework repository
+## 1. Locate the OATS framework repository
 
 Check a local pi package path, then likely locations such as
-`~/oas`; verify with `git -C <dir> remote get-url origin`. Avoid
+`~/oats`; verify with `git -C <dir> remote get-url origin`. Avoid
 pi-managed git clones because updates reset them. If absent, ask where to
-clone `https://github.com/OAS-Framework/oas`.
+clone `https://github.com/awebai/oats`.
 
 ## 2. Spawn the expert against the user's repository
 

@@ -1,0 +1,9 @@
+# Repository-specific OATS policy for the framework checkout.
+# Team-wide layers, families, authoring, and review come from the adopted
+# oats.dev profile at the non-Git workspace root.
+name: oats-framework-repo
+
+# This instruction is specific to the framework repository and must not apply
+# to sibling package maintainers.
+agents-md-injection:
+  framework: injects/framework-workspace.md

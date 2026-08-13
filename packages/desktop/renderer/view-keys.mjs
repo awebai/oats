@@ -1,4 +1,4 @@
-/* oas desktop — view-local key dispatch resolved through the engine keymap.
+/* oats desktop — view-local key dispatch resolved through the engine keymap.
    Views own single-key shortcuts scoped to their focused surface (hierarchy
    canvas, spawn grid): dispatch stays DOM-local so typing in inputs is never
    affected, but the CHORD each action answers to comes from the engine —

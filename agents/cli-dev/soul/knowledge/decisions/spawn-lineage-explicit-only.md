@@ -10,7 +10,7 @@ timestamp: 2026-07-26
 
 Non-attached manual spawns with no explicit relation land top-level
 (`spawnOrigin: operator`, no lineage fields). `lib/core.mjs` `spawnInstance`
-never reads `OAS_INSTANCE` or
+never reads `OATS_INSTANCE` or
 `PI_AGENT_INSTANCE` as relation intent. Lineage sources are:
 
 1. An explicit relation inside the target deployment:
@@ -37,18 +37,18 @@ work-tree owner are rejected at both CLI and kernel boundaries. See
 and [path-first resolution](/lessons/path-first-resolution-round-trip.md).
 
 Agent-driven spawn surfaces that target the same deployment express their
-final topology explicitly: `oas-okf harvest` passes its owner as a child parent;
+final topology explicitly: `oats-okf harvest` passes its owner as a child parent;
 attached post-commit reviewers inherit child-of-work-owner automatically; and a
 non-attached maintainer spawned to oversee the caller uses
-`--relation parent --relative-to "$OAS_INSTANCE"`. The oas skill and canonical
+`--relation parent --relative-to "$OATS_INSTANCE"`. The oats skill and canonical
 soul policies document these rules.
 
 # Cross-deployment boundary
 
 `parentInstance` only makes sense within the target deployment's agents roots
 (local root plus team scope). Cross-deployment helpers that spawn into a foreign
-agents root, such as the oas-support `--dir <repo>` pattern, must leave lineage
-operator-origin instead of passing `--parent "$OAS_INSTANCE"`.
+agents root, such as the oats-support `--dir <repo>` pattern, must leave lineage
+operator-origin instead of passing `--parent "$OATS_INSTANCE"`.
 
 Even if the caller's home could prove that a foreign parent exists, recording it
 in the target deployment would create a dangling parent: target hierarchy
@@ -57,7 +57,7 @@ top-level fallback avoids misattribution-shaped metadata.
 
 When changing spawn semantics or relation policy again, migrate every
 agent-facing spawn recipe in the same change, not just kernel docs. Grep
-Markdown for `oas spawn` across soul skills, injections, and documentation so
+Markdown for `oats spawn` across soul skills, injections, and documentation so
 live agents do not keep following stale recipes.
 
 # Why not "env only when alive"

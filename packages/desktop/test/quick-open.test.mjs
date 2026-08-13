@@ -19,7 +19,7 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 test("subsequenceScore: subsequence matches, prefix bonus, no-match null", () => {
   assert.equal(subsequenceScore("abc", "zzz"), null);
-  assert.ok(subsequenceScore("oas-desktop-engineer", "ode") != null);
+  assert.ok(subsequenceScore("oats-desktop-engineer", "ode") != null);
   assert.ok(subsequenceScore("reviewer", "rev") < subsequenceScore("harvester-rev", "rev"),
     "prefix match scores better (lower)");
   assert.ok(subsequenceScore("theme: toggle", "theme") < 0,
@@ -29,14 +29,14 @@ test("subsequenceScore: subsequence matches, prefix bonus, no-match null", () =>
 // ── quick-open rows (pure) ───────────────────────────────────────────────
 
 const AGENTS = [
-  { name: "oas-expert", repoName: "oas", description: "maintainer", work: "worktree", agentsRoot: "/r1" },
-  { name: "reviewer", repoName: "oas", description: "post-commit review", work: "attached", agentsRoot: "/r1" },
-  { name: "ux-designer", repoName: "oas", description: "design", work: "worktree", agentsRoot: "/r2" },
+  { name: "oats-expert", repoName: "oats", description: "maintainer", work: "worktree", agentsRoot: "/r1" },
+  { name: "reviewer", repoName: "oats", description: "post-commit review", work: "attached", agentsRoot: "/r1" },
+  { name: "ux-designer", repoName: "oats", description: "design", work: "worktree", agentsRoot: "/r2" },
 ];
 
 test("quickOpenRows: empty query lists all souls alphabetically", () => {
   const rows = quickOpenRows(AGENTS, "", { onPick: () => {} });
-  assert.deepEqual(rows.map((r) => r.label), ["oas-expert", "reviewer", "ux-designer"]);
+  assert.deepEqual(rows.map((r) => r.label), ["oats-expert", "reviewer", "ux-designer"]);
 });
 
 test("quickOpenRows: fuzzy filter narrows to matching souls; picking passes name + agentsRoot", () => {
@@ -174,7 +174,7 @@ test("palette and quick open share the overlay-picker machinery (no duplicated c
 
 // ── Spawn view preselect handoff (jsdom) ─────────────────────────────────
 
-const CLI_OK = { ok: true, bin: "/seed/oas", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
+const CLI_OK = { ok: true, bin: "/seed/oats", version: "0.18.0", source: "path", required: { desktopApi: 1, range: ">=0.18.0 <0.21.0" }, probedAt: 1, tried: [] };
 
 async function mountSpawn(t, { cliOk = true } = {}) {
   const dom = new JSDOM("<!doctype html><body><div id=host></div>", { url: "http://localhost" });

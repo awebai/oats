@@ -8,7 +8,7 @@ timestamp: 2026-07-25
 
 # Lesson
 
-Any OAS operation that records a bare instance name in cross-instance lineage
+Any OATS operation that records a bare instance name in cross-instance lineage
 metadata has to treat the name as ambiguous until proven otherwise. Attached
 ownership, the retire splice, and ordinary relation anchors share the same
 posture: enumerate all candidates across the local root and team scope instead

@@ -31,7 +31,7 @@ curriculum enforcement:
   `--plugin-dir` for each selected provider plugin, `--settings <file>`, and
   `--append-system-prompt-file <home>/AGENTS.md`. This excludes user/project and
   ancestor skills, ambient plugins, and project/ancestor `CLAUDE.md` while keeping
-  auth, built-ins, OAS-owned settings, and explicitly selected plugin MCP
+  auth, built-ins, OATS-owned settings, and explicitly selected plugin MCP
   servers. Use `--debug-file` output, not model self-report, as the oracle. See
   [claude strict launch](/lessons/claude-strict-launch-setting-sources.md).
 - Sequencing: package-engine merges first; the strict-curriculum branch is cut
@@ -40,7 +40,7 @@ curriculum enforcement:
   `instance.json` surface evidence rides the curriculum PR, not M2.
 - After the fail-open defect in
   [work-tree-relative-capability-skills-fail-open](/lessons/work-tree-relative-capability-skills-fail-open.md),
-  `oas-expert-oas-packages` relayed founder reinforcement that complete
+  `oats-expert-oats-packages` relayed founder reinforcement that complete
   active-capability curriculum is an explicit release gate for the overall
   effort, not deferred past 0.19.0. The implementation must prove that every
   skill, injection, and plugin declared by capabilities active for the soul is
@@ -54,7 +54,7 @@ curriculum enforcement:
   evidence and lesson. Resolving from locked/materialized sources removes the
   spawn-time race because materialization has a defined package-lifecycle
   completion point, unlike a bare path probe. The founder-decided sourcing for
-  `oas-aweb` is to vendor reviewed, MIT-attributed copies of the three aweb
+  `oats-aweb` is to vendor reviewed, MIT-attributed copies of the three aweb
   Markdown skills with exact upstream repo/tag/commit provenance and
   deterministic sync tooling, not to ship `@awebai/pi`/`@awebai/aw` and their
   native/platform dependency closure just to obtain those skills.

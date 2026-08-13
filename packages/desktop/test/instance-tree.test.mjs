@@ -47,7 +47,7 @@ test("tree guides terminate final siblings and continue only real ancestor branc
 });
 
 test("instance repo label prefers roster name and falls back to path basename", () => {
-  assert.equal(instanceRepoLabel({ repoName: "oas", repo: "/tmp/ignored" }), "oas");
+  assert.equal(instanceRepoLabel({ repoName: "oats", repo: "/tmp/ignored" }), "oats");
   assert.equal(instanceRepoLabel({ repo: "/work/projects/desktop-app" }), "desktop-app");
   assert.equal(instanceRepoLabel({ workspace: "/work/team" }), "team");
   assert.equal(instanceRepoLabel({}), "workspace");

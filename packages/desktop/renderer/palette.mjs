@@ -1,4 +1,4 @@
-/* oas desktop — command palette (⌘K).
+/* oats desktop — command palette (⌘K).
    One input, two result kinds: instances (default; fuzzy jump-to-terminal)
    and commands (also matched by name — ">" prefix restricts to commands).
    Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with

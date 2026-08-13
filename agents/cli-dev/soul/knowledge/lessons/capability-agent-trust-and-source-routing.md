@@ -9,7 +9,7 @@ timestamp: 2026-07-26
 # Capability-agent trust and source routing
 
 Reviewer-d45641e found that capability-defined agents resolve from declaration,
-not active config, and had bypassed `resolveOasConfig` trust. Containment
+not active config, and had bypassed `resolveOatsConfig` trust. Containment
 prevents path escape but does not authenticate bytes inside the package. Before
 reading or returning an agent soul tree, verify package/capability lock integrity
 and dependency-closure integrity. Instruction-only agents do not need
@@ -18,8 +18,8 @@ command/hook executable approval. This sharpens the trust side of
 and the [depsIntegrity trust binding](/lessons/deps-integrity-trust-binding.md).
 
 The same review clarified acquisition source routing: a remote Git root can be
-either a distribution package (`oas-package.json`) or the documented legacy
-standalone capability (`oas.json`). Probe package acquisition transactionally and
+either a distribution package (`oats-package.json`) or the documented legacy
+standalone capability (`oats.json`). Probe package acquisition transactionally and
 fall back only on the specific missing-package-manifest error; all other package
 errors fail closed.
 

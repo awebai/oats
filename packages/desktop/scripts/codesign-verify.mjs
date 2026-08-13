@@ -5,7 +5,7 @@
 // DMG): the app executable carried only the LINKER-GENERATED partial ad-hoc
 // signature (`flags=adhoc,linker-signed`, `Sealed Resources=none`, no
 // Contents/_CodeSignature), which fails
-//   codesign --verify --deep --strict --verbose=2 "OAS Desktop.app"
+//   codesign --verify --deep --strict --verbose=2 "OATS Desktop.app"
 // with "code has no resources but signature indicates they must be present"
 // and makes Gatekeeper report the app as damaged. The x64 bundle was not
 // signed at all. A COMPLETE ad-hoc bundle signature (electron-builder

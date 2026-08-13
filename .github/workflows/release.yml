@@ -12,7 +12,7 @@ name: Release
 #   3. run ALL build/test/smoke steps — kernel tests, pack checks, tarball
 #      clean-room smoke, Desktop build + artifact inventory — BEFORE any
 #      publication;
-#   4. publish @oas-framework/oas, then @oas-framework/pi;
+#   4. publish @awebai/oats, then @awebai/oats-pi;
 #   5. create the public GitHub Release LAST (after npm), attaching Desktop
 #      artifacts, SHA256SUMS.txt, and provenance attestations;
 #   6. open the bump PR covering all three package manifests/locks.
@@ -20,7 +20,7 @@ name: Release
 # retagged.
 #
 # Requires the repo secret NPM_TOKEN: a granular npm automation token with
-# read/write on the @oas-framework packages (Settings → Secrets → Actions).
+# read/write on the @awebai packages (Settings → Secrets → Actions).
 
 on:
   push:
@@ -101,21 +101,21 @@ jobs:
       - name: Sanity-check tarballs
         run: |
           npm run pack:check
-          npm pack --dry-run 2>&1 | grep -q "name: @oas-framework/oas" || { echo "::error::kernel pack check failed"; exit 1; }
+          npm pack --dry-run 2>&1 | grep -q "name: @awebai/oats" || { echo "::error::kernel pack check failed"; exit 1; }
           # never ship deployment state (top-level agents/ or a workspace config)
-          if npm pack --dry-run 2>&1 | grep -E "^npm notice" | grep -qE " (agents/|oas-config\.yaml)"; then
+          if npm pack --dry-run 2>&1 | grep -E "^npm notice" | grep -qE " (agents/|oats-config\.yaml)"; then
             echo "::error::kernel tarball contains workspace state"; exit 1
           fi
           cd packages/pi
-          npm pack --dry-run 2>&1 | grep -q "name: @oas-framework/pi" || { echo "::error::adapter pack check failed"; exit 1; }
+          npm pack --dry-run 2>&1 | grep -q "name: @awebai/oats-pi" || { echo "::error::adapter pack check failed"; exit 1; }
 
       - name: Clean-room tarball smoke (install packed artifacts outside the checkout)
         run: npm run smoke:tarball
 
       - name: Probe the Desktop CLI API v1 contract from the bumped tree
         run: |
-          OUT="$(node bin/oas.mjs version --json)"
-          EXPECTED='{"schemaVersion":1,"name":"@oas-framework/oas","version":"${{ steps.v.outputs.version }}","desktopApi":1}'
+          OUT="$(node bin/oats.mjs version --json)"
+          EXPECTED='{"schemaVersion":1,"name":"@awebai/oats","version":"${{ steps.v.outputs.version }}","desktopApi":1}'
           [ "$OUT" = "$EXPECTED" ] || { echo "::error::version --json probe mismatch: $OUT"; exit 1; }
 
       - name: Upload bumped manifests for the version-bump PR
@@ -140,7 +140,7 @@ jobs:
   # test/release-workflow.test.mjs — the release cannot ship without them):
   #   * `npm test` — unit/integration tests (present);
   #   * `npm run dist` — electron-builder packaging producing
-  #     dist/oas-desktop-* artifacts for the platform (DMG+ZIP on macOS,
+  #     dist/oats-desktop-* artifacts for the platform (DMG+ZIP on macOS,
   #     AppImage+DEB on Linux);
   #   * an installed-artifact smoke script (optional).
   desktop-build:
@@ -220,15 +220,15 @@ jobs:
       - name: Installed-artifact smoke (build-verify)
         working-directory: packages/desktop
         env:
-          OAS_SMOKE_SKIP_LAUNCH: "1"
-          OAS_SMOKE_BUILD_VERIFY: "1"
-          OAS_SMOKE_TARGET_ARCH: ${{ matrix.arch }}
+          OATS_SMOKE_SKIP_LAUNCH: "1"
+          OATS_SMOKE_BUILD_VERIFY: "1"
+          OATS_SMOKE_TARGET_ARCH: ${{ matrix.arch }}
         run: npm run dist:smoke --if-present
 
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.os }}-${{ matrix.arch }}
-          path: packages/desktop/dist/oas-desktop-*
+          path: packages/desktop/dist/oats-desktop-*
           if-no-files-found: error
 
   # -------------------------------------------------------------- publication
@@ -253,22 +253,22 @@ jobs:
           (cd packages/pi && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version)
           (cd packages/desktop && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version)
 
-      - name: Publish @oas-framework/oas (idempotent — skip if this exact version is live)
+      - name: Publish @awebai/oats (idempotent — skip if this exact version is live)
         run: |
           V="${GITHUB_REF_NAME#v}"
-          if npm view "@oas-framework/oas@${V}" version >/dev/null 2>&1; then
-            echo "@oas-framework/oas@${V} already published — skipping (same-tag retry)"
+          if npm view "@awebai/oats@${V}" version >/dev/null 2>&1; then
+            echo "@awebai/oats@${V} already published — skipping (same-tag retry)"
           else
             npm publish --access public
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @oas-framework/pi (idempotent — skip if this exact version is live)
+      - name: Publish @awebai/oats-pi (idempotent — skip if this exact version is live)
         run: |
           V="${GITHUB_REF_NAME#v}"
-          if npm view "@oas-framework/pi@${V}" version >/dev/null 2>&1; then
-            echo "@oas-framework/pi@${V} already published — skipping (same-tag retry)"
+          if npm view "@awebai/oats-pi@${V}" version >/dev/null 2>&1; then
+            echo "@awebai/oats-pi@${V} already published — skipping (same-tag retry)"
           else
             npm publish --access public
           fi
@@ -302,7 +302,7 @@ jobs:
             gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber
           else
             gh release create "${GITHUB_REF_NAME}" release-assets/* \
-              --title "OAS ${GITHUB_REF_NAME}" \
+              --title "OATS ${GITHUB_REF_NAME}" \
               --notes-file docs/release-notes/${GITHUB_REF_NAME}.md \
               --verify-tag
           fi

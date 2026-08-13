@@ -1,10 +1,10 @@
 /**
- * OAS pi runtime bridge — minimal glue.
+ * OATS pi runtime bridge — minimal glue.
  *
  * The kernel materializes every spawned instance's exact set in
  * .agents/skills; this bridge contributes it inside an instance, plus the
- * pre-workspace oas-getting-started bootstrap outside one, and drives the
- * memory session events. Ambient skills coexist with the OAS-composed set.
+ * pre-workspace oats-getting-started bootstrap outside one, and drives the
+ * memory session events. Ambient skills coexist with the OATS-composed set.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { appendLogEntry, PACKAGED_SKILLS_DIR } from "./core-loader.mjs";
@@ -20,7 +20,7 @@ export default function (pi: ExtensionAPI) {
       const local = join(agentHome!, ".agents", "skills");
       return existsSync(local) ? { skillPaths: [local] } : undefined;
     }
-    const gettingStarted = join(PACKAGED_SKILLS_DIR, "oas-getting-started");
+    const gettingStarted = join(PACKAGED_SKILLS_DIR, "oats-getting-started");
     return existsSync(gettingStarted) ? { skillPaths: [gettingStarted] } : undefined;
   });
 
@@ -36,7 +36,7 @@ export default function (pi: ExtensionAPI) {
         );
       } catch { /* memory automation must never break a session */ }
       pi.sendMessage({
-        customType: "oas-memory",
+        customType: "oats-memory",
         content: "Context was just compacted. Before continuing, update ./STATE.md (Plan/Progress/Next) so a fresh session could resume from files alone.",
         display: false,
       }, { deliverAs: "steer" });
@@ -50,7 +50,7 @@ export default function (pi: ExtensionAPI) {
       const touched = !/_No task assigned yet/.test(state) || !/_\(the single next action/.test(state);
       if (event.reason === "startup" && !touched) return;
       pi.sendMessage({
-        customType: "oas-memory",
+        customType: "oats-memory",
         content: `You are agent instance home ${agentHome}. Read ./STATE.md and the recent entries of ./log.md now, then continue from STATE.md's "Next" section. Keep STATE.md current as you work.`,
         display: false,
       }, { deliverAs: "steer", triggerTurn: false });

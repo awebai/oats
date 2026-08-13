@@ -2,7 +2,7 @@
 type: Decision
 title: A capability's provider package is resolved at the capability's own lock level
 description: Merged lock maps resolve packages and capabilities independently, so provider package lookup for a capability row must use the row's own lock file instead of the closest package identity.
-tags: [oas-kernel, locks, provenance, trust, nested-scopes]
+tags: [oats-kernel, locks, provenance, trust, nested-scopes]
 timestamp: 2026-07-29
 ---
 
@@ -49,7 +49,7 @@ At the CLI, `levelRows(locks, level)` applies the same rule for `list` and
    `list` and `doctor` while still locked and materialized. Key by
    `level \0 id` to keep both rows. The array stays outermost to innermost, so
    callers resolving an identity take the last match to preserve closest wins.
-2. `oas trust <pkg> --all-capabilities` must not filter the merged capability
+2. `oats trust <pkg> --all-capabilities` must not filter the merged capability
    map by `row.package === id` across every level and then write all rows into
    one target lock. A package identity resolves to exactly one scope — the
    closest scope that locks it — and only that scope's capability rows are the

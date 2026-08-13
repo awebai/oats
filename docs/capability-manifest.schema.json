@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://oas.dev/schemas/capability-manifest.schema.json",
-  "title": "OAS capability package manifest",
+  "$id": "https://oats.dev/schemas/capability-manifest.schema.json",
+  "title": "OATS capability package manifest",
   "type": "object",
   "required": [
     "capability",
@@ -24,12 +24,12 @@
     "compatibility": {
       "type": "object",
       "properties": {
-        "oas": {
+        "oats": {
           "type": "string"
         }
       },
       "required": [
-        "oas"
+        "oats"
       ],
       "additionalProperties": false
     },

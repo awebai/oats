@@ -11,8 +11,8 @@ timestamp: 2026-07-10
 
 # Prefer an integration-owned Linear GraphQL wrapper
 
-For a contributed OAS Linear tasks integration, use Linear's official GraphQL
-API through an integration-owned `oas linear` command wrapper. Node's built-in
+For a contributed OATS Linear tasks integration, use Linear's official GraphQL
+API through an integration-owned `oats linear` command wrapper. Node's built-in
 `fetch` avoids an extra runtime dependency, while the wrapper can expose only
 the task-safe operations agents need and return stable JSON.
 
@@ -25,9 +25,9 @@ for a small set of GraphQL operations.
 
 Personal script authentication is a human-created Linear API key passed as the
 raw `Authorization` header. Keep it in `LINEAR_API_KEY`, never tracker settings
-in a checked-in `oas-config.yaml`. Because OAS `requires` describes commands,
+in a checked-in `oats-config.yaml`. Because OATS `requires` describes commands,
 not environment variables, use a non-blocking spawn-hook warning plus an
-actionable `oas linear auth` failure to surface missing authentication.
+actionable `oats linear auth` failure to surface missing authentication.
 
 # Citations
 

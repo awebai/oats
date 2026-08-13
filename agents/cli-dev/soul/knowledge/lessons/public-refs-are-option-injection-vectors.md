@@ -45,7 +45,7 @@ dropping the last one is how a silent no-op survives.
 
 # Where the untrusted refs come from
 
-Not only the CLI. A package's `oas-package.json` `dependencies[]` entries carry
+Not only the CLI. A package's `oats-package.json` `dependencies[]` entries carry
 refs, so a **remote, third-party manifest** supplies argv here. Any git
 invocation reachable from acquisition must assume its ref is hostile. Three
 call sites shared this hole (acquisition fetch, source inspection, WS2 profile

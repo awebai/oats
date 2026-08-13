@@ -1,7 +1,7 @@
 ---
 type: Lesson
 title: Verify through the exact executable and scope the session will use, not the canonical one
-description: Claude plugin checks ran through the literal `claude` while sessions launch with the oas-claude-config wrapper, and parsed human output that drops plugin scope — so a different account's or another project's plugin could satisfy a requirement.
+description: Claude plugin checks ran through the literal `claude` while sessions launch with the oats-claude-config wrapper, and parsed human output that drops plugin scope — so a different account's or another project's plugin could satisfy a requirement.
 tags: [claude-code, capabilities, requirements, verification, fail-closed]
 timestamp: 2026-07-27
 ---
@@ -13,7 +13,7 @@ use**. Two ways that broke at once when extending runtime requirements to Claude
 
 ## The executable is context-selected
 
-`resolveClaudeBinary(contextDir)` reads `oas-claude-config`, which may name a wrapper —
+`resolveClaudeBinary(contextDir)` reads `oats-claude-config`, which may name a wrapper —
 `claude-personal` in this deployment. Probing and install-planning went through the literal
 `claude`. Separate account wrappers have separate plugin sets, so the default account could
 hold the plugin, preflight would pass, and the instance would launch on the wrapper with no

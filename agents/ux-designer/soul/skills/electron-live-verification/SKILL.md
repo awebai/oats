@@ -1,7 +1,7 @@
 ---
 name: electron-live-verification
 description: >-
-  Use when verifying live OAS desktop/Electron interactions that DOM tests,
+  Use when verifying live OATS desktop/Electron interactions that DOM tests,
   jsdom, screenshots, or synthetic JavaScript events cannot prove: terminal
   wheel scrolling, tmux copy mode, xterm attachment identity, ephemeral viewer
   cleanup, or interactions that must be driven through Chrome DevTools Protocol

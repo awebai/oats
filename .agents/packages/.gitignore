@@ -1,2 +1,2 @@
-# OAS: installed packages are restored from oas-lock.json by `oas install`.
+# OATS: installed packages are restored from oats-lock.json by `oats install`.
 installed/

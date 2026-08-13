@@ -36,20 +36,20 @@ corrective chain. When WS1 broadcasts c62a30e or later, absorb these deltas:
    `path-escape`.
 4. **`depsIntegrity` format validation** in `validateLockEntry` rejects
    malformed `depsIntegrity`.
-5. **`OAS_CLI_BIN` runtime env contract.** The corrected head passes a
-   canonical absolute CLI path in `OAS_CLI_BIN`; packages invoke it with
+5. **`OATS_CLI_BIN` runtime env contract.** The corrected head passes a
+   canonical absolute CLI path in `OATS_CLI_BIN`; packages invoke it with
    `execFile`, never by relying on `PATH`. Confirm WS2 capability dispatch gains
-   the variable after re-merge; the 054f7ba branch only set `OAS_SETTINGS` and
-   `OAS_TEAM_*`. Also check the platform-invariant v1 `depsIntegrity`
+   the variable after re-merge; the 054f7ba branch only set `OATS_SETTINGS` and
+   `OATS_TEAM_*`. Also check the platform-invariant v1 `depsIntegrity`
    comparison in doctor.
-6. **`skills/oas-packages` wording changed.** Re-sync the oas-config and
+6. **`skills/oats-packages` wording changed.** Re-sync the oats-config and
    getting-started routing wording at integration, then execute the
    content-migration split.
 7. **Acquire-package lock-integrity fix.** When the relayed corrective item
    lands, batch item 6's regression should assert the fixed behavior and drop
    any pinned-current-behavior fallback.
 
-Merge risk: `bin/oas.mjs` changed in the same doctor/install/restore regions as
+Merge risk: `bin/oats.mjs` changed in the same doctor/install/restore regions as
 the teardown edits. Resolve with the same disposition: engine remains resolver
 truth, while WS2 keeps policy and envelope mapping. See
 [package-engine seam teardown](/decisions/package-engine-seam-teardown.md) and

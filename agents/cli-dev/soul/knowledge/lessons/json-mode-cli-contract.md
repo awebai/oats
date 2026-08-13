@@ -8,12 +8,12 @@ timestamp: 2026-07-24
 
 # Lesson
 
-Adding `--json` to `oas spawn` for the Desktop CLI API v1 was not just wrapping
+Adding `--json` to `oats spawn` for the Desktop CLI API v1 was not just wrapping
 the result in JSON: every failure path (`die()`) and every progress line
 (`console.log` for capability-agent or cross-repo notes) on the command's path
 can contaminate stdout.
 
-The pattern that worked in `bin/oas.mjs`:
+The pattern that worked in `bin/oats.mjs`:
 
 - module-level `JSON_MODE = args.includes("--json")`, `jsonOk(result)`, and
   `jsonFail(code, message)` with exit 1;

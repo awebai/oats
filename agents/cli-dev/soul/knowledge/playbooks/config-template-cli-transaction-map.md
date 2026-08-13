@@ -8,15 +8,15 @@ timestamp: 2026-07-29
 
 Mapped during the engine contract freeze, from the accepted decision
 `capability-materialization-and-config-template-sync.md` plus the current
-0.19 surface in `bin/oas.mjs` (`initPackage`, `configDiffCmd`) and
+0.19 surface in `bin/oats.mjs` (`initPackage`, `configDiffCmd`) and
 `lib/packages.mjs`.
 
 # Durable artifacts the CLI owns
 
 ```text
-<scope>/oas-config.yaml                                        # zero or one active config
+<scope>/oats-config.yaml                                        # zero or one active config
 <scope>/.agents/config-templates/adopted/<package-id>/<template-name>/
-    oas-config.yaml                                            # exact adopted base, commit-safe
+    oats-config.yaml                                            # exact adopted base, commit-safe
     adoption.json                                              # package/template/source/version/commit/path/hash
 ```
 
@@ -26,41 +26,41 @@ meaningless if the base drifts toward the local file.
 
 # Per-command transactions
 
-**`oas install <package>`** — installs every exported capability, applies no
+**`oats install <package>`** — installs every exported capability, applies no
 template. Reports available templates as an optional follow-up. No config write,
 no adopted-base write. This is a report-only relationship to templates.
 
-**`oas init --package <src> --config <name>`** (first adoption) — order matters:
+**`oats init --package <src> --config <name>`** (first adoption) — order matters:
 1. acquire/stage and validate the whole payload; project capabilities; write the
    exact lock;
 2. select the template (explicit name → single marked default → only template →
    otherwise ambiguous);
 3. validate the template as a config (schema + capability supply + layer
    agreement + no scope-escaping paths) BEFORE any durable write;
-4. write, atomically together: local `oas-config.yaml`, the adopted base copy,
+4. write, atomically together: local `oats-config.yaml`, the adopted base copy,
    `adoption.json`;
 5. any failure after step 1 rolls back only this run's writes and leaves
    pre-existing bytes byte-identical.
 
-**`oas config diff`** — read-only. Base + local + template from the current exact
+**`oats config diff`** — read-only. Base + local + template from the current exact
 lock → merge plan → render. Never writes, never merges.
 
-**`oas config sync`** — plan first, present the complete plan, then mutate:
+**`oats config sync`** — plan first, present the complete plan, then mutate:
 backup the current config → apply selected regions → write config → update the
 adopted base to the template just synced against → update `adoption.json`. The
 adopted base advances ONLY on success; on any failure the config, base, and
 metadata are byte-identical to their pre-run bytes.
 
-**`oas config sync --reset`** — preview every local change that will be lost,
+**`oats config sync --reset`** — preview every local change that will be lost,
 require strong confirmation (or an explicit noninteractive acceptance flag),
 back up, then replace config + base + metadata atomically.
 
-**`oas config adopt <other.package> --config <name>`** — base switch. Rebases the
+**`oats config adopt <other.package> --config <name>`** — base switch. Rebases the
 one local config against the new base; on success exactly one adopted base
 remains (the old one is removed in the same commit step); on failure the prior
 config, base, and metadata are unchanged.
 
-**Fresh classic `oas init`** — one run-level transaction spanning config, lock,
+**Fresh classic `oats init`** — one run-level transaction spanning config, lock,
 flat capability artifacts, provenance files, `.agents/capabilities/.gitignore`,
 and any newly created anchor. The rollback set is *this run's* changes only; a
 pre-existing same-name installed capability must come back byte-identical.
@@ -72,8 +72,8 @@ pre-existing same-name installed capability must come back byte-identical.
 * Acquisition ≠ activation ≠ executable trust ≠ requirement consent. Four
   separate decisions; adopting a template grants none of the others.
 * Mid-init the config chain cannot see the scope being initialized (there is no
-  `oas-config.yaml` yet), so own-scope lock/manifest visibility must be read
-  directly rather than through `resolveOasConfig`. This bit the 0.19 lane twice
+  `oats-config.yaml` yet), so own-scope lock/manifest visibility must be read
+  directly rather than through `resolveOatsConfig`. This bit the 0.19 lane twice
   already.
 * Exactly one stdout JSON envelope per run, success or failure; human progress
   prose goes to stderr in JSON mode.

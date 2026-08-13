@@ -23,4 +23,4 @@
 * **Creation**: [Workspace manager privileged boundary](/decisions/workspace-manager-privileged-boundary.md) — promoted decision from ux-designer-desktop-ux notes.
 
 ## 2026-07-22
-* **Initialization**: knowledge bundle scaffolded by oas-okf.
+* **Initialization**: knowledge bundle scaffolded by oats-okf.

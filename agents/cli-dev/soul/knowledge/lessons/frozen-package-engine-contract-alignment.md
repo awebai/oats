@@ -27,7 +27,7 @@ highest-value alignment points:
 - **Error codes as `error.code`**: reuse the package-engine taxonomy
   (`invalid-package-manifest`, `path-escape`, `invalid-source`, …) on thrown
   `Error` objects so `--json` envelopes and tests stay stable across the seam.
-  After parsing package manifests or declared capability `oas.json` resources,
+  After parsing package manifests or declared capability `oats.json` resources,
   assert object-and-not-array before dereferencing; missing, malformed,
   null/array, or id-less declared resources must route through
   `invalid-package-manifest` rather than leaking uncoded `TypeError`s. Add local

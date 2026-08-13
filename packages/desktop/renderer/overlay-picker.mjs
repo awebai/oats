@@ -1,4 +1,4 @@
-// oas desktop — shared overlay picker machinery (command palette family).
+// oats desktop — shared overlay picker machinery (command palette family).
 // One input over a fuzzy-filtered listbox: type-to-filter, ArrowUp/Down,
 // Enter runs the active row, Esc/backdrop closes. Extracted from palette.mjs
 // so Quick Open (Mod+P) and the palette (Mod+K) share ONE overlay + fuzzy

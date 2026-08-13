@@ -37,7 +37,7 @@ same as failing the command.
    explicit `FAILED` line plus nonzero exit.
 3. **Consented install failures are fatal.** `--accept-requirement` manager
    failures and post-install PATH verification misses must increment a failed
-   count and make `oas install` exit nonzero. Unaccepted/skipped requirements
+   count and make `oats install` exit nonzero. Unaccepted/skipped requirements
    stay non-fatal; only a consented attempt that fails becomes a CI failure.
 
 Regression coverage should assert the observable truth, not only printed text:

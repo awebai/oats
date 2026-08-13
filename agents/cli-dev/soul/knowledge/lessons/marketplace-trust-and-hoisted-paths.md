@@ -2,39 +2,39 @@
 type: Lesson
 title: Marketplace over bundled — trust at acquisition, hoisted paths via lock source
 description: Official capabilities are acquired from the kernel-shipped marketplace folder into a scope's installed/ store with trust written into the lock at acquisition, and hoisted-resource fallbacks stay keyed to marketplace lock provenance rather than capability id heuristics.
-tags: [capabilities, marketplace, trust, integrity, oas-lock, hoisted]
+tags: [capabilities, marketplace, trust, integrity, oats-lock, hoisted]
 timestamp: 2026-07-29
 ---
 
 # The migration (v0.13.x)
 
 "From bundled" is gone. `MARKETPLACE_DIR = <PKG_ROOT>/capabilities` is the
-official marketplace; packages there are **not ambient** — `oas install <id>`
+official marketplace; packages there are **not ambient** — `oats install <id>`
 (or init) copies them into the scope's `.agents/capabilities/installed/`,
-writes `oas-lock.json` with `source: marketplace:<id>@<version>` and computes
+writes `oats-lock.json` with `source: marketplace:<id>@<version>` and computes
 `integrity`. `from: bundled` in configs is rejected with a migration error.
 
 # Trust at acquisition
 
 Marketplace installs are **auto-trusted at acquisition** — the lock records
 `trustedExecutables: true`. Rationale: they ship with the kernel you already
-installed; a second `oas trust` would be ceremony without a security boundary.
-Third-party git/path installs keep explicit `oas trust`. `capabilityTrust`
-reads the lock; committed trust survives `oas install` restore **only when
+installed; a second `oats trust` would be ceremony without a security boundary.
+Third-party git/path installs keep explicit `oats trust`. `capabilityTrust`
+reads the lock; committed trust survives `oats install` restore **only when
 integrity matches** (the repo is the trust boundary).
 
 This trust rule is specific to the kernel marketplace copy route. When classic
 init resolves an official fundamental layer through the package catalog, it is a
 package acquisition instead: it may clone from the catalog URL and leave
-executables untrusted until `oas trust`. See [catalog-first classic init costs](/lessons/catalog-first-classic-init-costs.md).
+executables untrusted until `oats trust`. See [catalog-first classic init costs](/lessons/catalog-first-classic-init-costs.md).
 
 # The hoisted-path gotcha
 
-Bundled packages (e.g. oas-aweb) reference framework-hoisted resources like
+Bundled packages (e.g. oats-aweb) reference framework-hoisted resources like
 `node_modules/@awebai/pi/skills/...` that exist only in the kernel tree. A
 copied install loses those paths, so the fallback must stay provenance-scoped:
 only installed manifests tied to a marketplace lock source may reach the
-kernel-shipped marketplace source. Do NOT widen this to id heuristics (`oas.*`
+kernel-shipped marketplace source. Do NOT widen this to id heuristics (`oats.*`
 prefix) — the exemption must stay tied to the lock's provenance, or third-party
 packages could escape their integrity boundary.
 
@@ -50,9 +50,9 @@ from containment.
 # Related trap
 
 A marketplace package copied into a scope also loses **JavaScript relative
-imports** into the kernel (v0.13.1 bug: oas-okf's hook imported
+imports** into the kernel (v0.13.1 bug: oats-okf's hook imported
 `../../lib/core.mjs`). Package scripts must not rely on their position inside
 the kernel tree — resolve the kernel explicitly or keep such logic in the
 kernel itself.
 
-Reference decision: `agents/oas-expert/soul/knowledge/decisions/marketplace-workmodes-runtime.md`.
+Reference decision: `agents/oats-expert/soul/knowledge/decisions/marketplace-workmodes-runtime.md`.

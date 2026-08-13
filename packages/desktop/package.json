@@ -1,8 +1,8 @@
 {
-  "name": "@oas-framework/desktop",
+  "name": "@awebai/oats-desktop",
   "version": "0.20.0",
   "private": true,
-  "description": "OAS desktop app — Electron shell, integrated tmux terminal, and view host for the agent control panel.",
+  "description": "OATS desktop app — Electron shell, integrated tmux terminal, and view host for the agent control panel.",
   "type": "module",
   "main": "main.mjs",
   "scripts": {
@@ -29,5 +29,5 @@
     "esbuild": "^0.28.1",
     "jsdom": "^29.1.1"
   },
-  "homepage": "https://github.com/OAS-Framework/oas"
+  "homepage": "https://github.com/awebai/oats"
 }

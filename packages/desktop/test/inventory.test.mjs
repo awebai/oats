@@ -4,7 +4,7 @@
 // routes, helpers, tests, styles, imports, and harness entries. This suite
 // pins the ABSENCE so a stray revert or cherry-pick cannot silently reship
 // them. Markdown's /api/file stays (contract keeps it), and the framework's
-// separate oas.jira capability is out of scope here.
+// separate oats.jira capability is out of scope here.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -20,7 +20,7 @@ test("inventory: dormant view modules are gone", () => {
 });
 
 test("inventory: server exposes no /api/diff or /api/jira route or helpers", () => {
-  const src = read("server/oas-web.mjs");
+  const src = read("server/oats-web.mjs");
   assert.ok(!/api\/diff|api\/jira/i.test(src), "no diff/jira API routes");
   assert.ok(!/\bjiraPanel\b|\bacliJson\b|\bparseRoster\b/.test(src), "no jira helpers");
   assert.ok(!/\bdiffData\b|\bparseDiffStats\b|\bsynthUntracked\b/.test(src), "no diff helpers");

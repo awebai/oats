@@ -5,11 +5,11 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
-  capabilityIntegrity, capabilityManifest, composeInstanceAgentsMd, createAgent, findAgent, findInstanceHomes, resolveOasConfig,
+  capabilityIntegrity, capabilityManifest, composeInstanceAgentsMd, createAgent, findAgent, findInstanceHomes, resolveOatsConfig,
   listInstances, resolveClaudeBinary, resolveWorkMode, retireInstance, runLifecycleHooks, spawnInstance, writeCapabilityLock,
 } from "../lib/core.mjs";
 
-const CLI = resolve(new URL("../bin/oas.mjs", import.meta.url).pathname);
+const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
  *  exactly one JSON object {schemaVersion:1,ok:true,result} — no progress prose. */
 function jsonResult(r) {
@@ -18,7 +18,7 @@ function jsonResult(r) {
   assert.equal(env.ok, true, JSON.stringify(env.error));
   return env.result;
 }
-function temp() { return mkdtempSync(join(tmpdir(), "oas-cap-test-")); }
+function temp() { return mkdtempSync(join(tmpdir(), "oats-cap-test-")); }
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 function gitRepo(dir) {
   mkdirSync(dir, { recursive: true });
@@ -31,7 +31,7 @@ function gitRepo(dir) {
 }
 function capability(repo, folder, manifest, files = {}) {
   const dir = join(repo, ".agents", "capabilities", "owned", folder);
-  write(join(dir, "oas.json"), JSON.stringify({ version: "1.0.0", compatibility: { oas: ">=0.6.2" }, description: "Test capability.", ...manifest }, null, 2));
+  write(join(dir, "oats.json"), JSON.stringify({ version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "Test capability.", ...manifest }, null, 2));
   for (const [name, body] of Object.entries(files)) write(join(dir, name), body);
   return dir;
 }
@@ -81,57 +81,57 @@ test("target composition applies global + agent-type + soul specificity and excl
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   capability(repo, "theme", { capability: "acme.theme", description: "theme" });
   typedSoul(repo, "dev", "devs"); typedSoul(repo, "reviewer", "devs"); typedSoul(repo, "other", undefined);
-  write(join(repo, "oas-config.yaml"), `agent-types:\n  devs:\n    description: dev family\ncapabilities:\n  additive:\n    acme.theme:\n      global:\n        enabled: true\n        settings:\n          tone: neutral\n          depth: low\n      agent-types:\n        devs:\n          enabled: false\n          settings:\n            depth: medium\n      souls:\n        dev:\n          enabled: true\n          settings:\n            depth: high\n`);
-  const dev = resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "acme.theme");
+  write(join(repo, "oats-config.yaml"), `agent-types:\n  devs:\n    description: dev family\ncapabilities:\n  additive:\n    acme.theme:\n      global:\n        enabled: true\n        settings:\n          tone: neutral\n          depth: low\n      agent-types:\n        devs:\n          enabled: false\n          settings:\n            depth: medium\n      souls:\n        dev:\n          enabled: true\n          settings:\n            depth: high\n`);
+  const dev = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "acme.theme");
   assert.deepEqual(dev.settings, { tone: "neutral", depth: "high" });
   assert.ok(dev);
-  assert.equal(resolveOasConfig(repo, "reviewer").capabilities.some((c) => c.id === "acme.theme"), false);
-  assert.equal(resolveOasConfig(repo, "other").capabilities.some((c) => c.id === "acme.theme"), true);
+  assert.equal(resolveOatsConfig(repo, "reviewer").capabilities.some((c) => c.id === "acme.theme"), false);
+  assert.equal(resolveOatsConfig(repo, "other").capabilities.some((c) => c.id === "acme.theme"), true);
 });
 
 test("layer entries compose with soul targeting and layer/manifest mismatches error", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   capability(repo, "knowledge", { capability: "acme.knowledge", layer: "knowledge" });
-  write(join(repo, "oas-config.yaml"), `capabilities:\n  layers:\n    knowledge:\n      capability: acme.knowledge\n      global:\n        enabled: true\n        settings:\n          format: default\n      souls:\n        dev:\n          enabled: true\n          settings:\n            format: targeted\n        excluded: false\n`);
-  const dev = resolveOasConfig(repo, "dev");
+  write(join(repo, "oats-config.yaml"), `capabilities:\n  layers:\n    knowledge:\n      capability: acme.knowledge\n      global:\n        enabled: true\n        settings:\n          format: default\n      souls:\n        dev:\n          enabled: true\n          settings:\n            format: targeted\n        excluded: false\n`);
+  const dev = resolveOatsConfig(repo, "dev");
   assert.equal(dev.layers.knowledge.id, "acme.knowledge");
   assert.deepEqual(dev.layers.knowledge.settings, { format: "targeted" });
-  const excluded = resolveOasConfig(repo, "excluded");
+  const excluded = resolveOatsConfig(repo, "excluded");
   assert.equal(excluded.layers.knowledge, undefined);
   assert.equal(excluded.capabilities.some((c) => c.id === "acme.knowledge"), false);
   // A layer capability declared as additive errors; wrong slot errors.
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.knowledge:\n      global: true\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /declare it under capabilities.layers.knowledge/);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    tasks:\n      capability: acme.knowledge\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /manifest declares layer "knowledge"/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.knowledge:\n      global: true\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /declare it under capabilities.layers.knowledge/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    tasks:\n      capability: acme.knowledge\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /manifest declares layer "knowledge"/);
 });
 
 test("pre-contract manifest, config, and discovery spellings are rejected or ignored", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   const oldDir = join(repo, ".agents", "integrations", "old");
-  write(join(repo, "oas-config.yaml"), "name: clean-contract-test\n");
-  write(join(oldDir, "oas.json"), JSON.stringify({ integration: "old", layer: "knowledge" }));
+  write(join(repo, "oats-config.yaml"), "name: clean-contract-test\n");
+  write(join(oldDir, "oats.json"), JSON.stringify({ integration: "old", layer: "knowledge" }));
   assert.equal(capabilityManifest("old", repo), undefined);
-  write(join(repo, ".agents", "capabilities", "owned", "bad", "oas.json"), JSON.stringify({ integration: "old", layer: "knowledge" }));
+  write(join(repo, ".agents", "capabilities", "owned", "bad", "oats.json"), JSON.stringify({ integration: "old", layer: "knowledge" }));
   assert.throws(() => capabilityManifest("old", repo), /needs "capability"/);
   rmSync(join(repo, ".agents", "capabilities", "owned", "bad"), { recursive: true });
-  write(join(repo, "oas-config.yaml"), "integrations:\n  old: {}\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /unsupported oas-config key.*integrations/);
+  write(join(repo, "oats-config.yaml"), "integrations:\n  old: {}\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /unsupported oats-config key.*integrations/);
   // v0.8 spellings are rejected with pointed migration errors.
-  write(join(repo, "oas-config.yaml"), "groups:\n  devs: [dev]\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /agent-types/);
-  write(join(repo, "oas-config.yaml"), "layers:\n  knowledge: none\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /capabilities.layers/);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  acme.flat:\n    global: true\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /must nest under "layers:"/);
+  write(join(repo, "oats-config.yaml"), "groups:\n  devs: [dev]\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /agent-types/);
+  write(join(repo, "oats-config.yaml"), "layers:\n  knowledge: none\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /capabilities.layers/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  acme.flat:\n    global: true\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /must nest under "layers:"/);
 });
 
 test("explicit layer none excludes inherited integrations and same-scope contradictions error", () => {
   const base = temp(); const outer = join(base, "workspace"); const repo = join(outer, "repo"); mkdirSync(repo, { recursive: true });
   capability(outer, "knowledge", { capability: "acme.knowledge", layer: "knowledge" });
-  write(join(outer, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: acme.knowledge\n      global: true\n");
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n");
-  assert.equal(resolveOasConfig(repo, "dev").capabilities.some((c) => c.id === "acme.knowledge"), false);
+  write(join(outer, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: acme.knowledge\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n");
+  assert.equal(resolveOatsConfig(repo, "dev").capabilities.some((c) => c.id === "acme.knowledge"), false);
 });
 
 test("equal-specificity type conflicts and competing fundamental integrations error", () => {
@@ -139,8 +139,8 @@ test("equal-specificity type conflicts and competing fundamental integrations er
   capability(repo, "a", { capability: "acme.a", layer: "knowledge" });
   capability(repo, "b", { capability: "acme.b", layer: "knowledge" });
   const outer = join(base, "outer"); // two scopes each binding a different knowledge capability
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: acme.a\n      global: true\n");
-  const dev = resolveOasConfig(repo, "dev");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: acme.a\n      global: true\n");
+  const dev = resolveOatsConfig(repo, "dev");
   assert.equal(dev.layers.knowledge.id, "acme.a");
 });
 
@@ -152,14 +152,14 @@ test("pi and Claude instances receive the same exact local skills and generated 
   }, { "skills/review/SKILL.md": "---\nname: review\ndescription: Review.\n---\n# Review\n", "inject.md": "## Review capability\n\nUse review." });
   write(join(soul, "skills", "private", "SKILL.md"), "---\nname: private\ndescription: Private.\n---\n# Private\n");
   write(join(repo, ".agents", "skills", "pollution", "SKILL.md"), "---\nname: pollution\ndescription: No.\n---\n# No\n");
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const pi = spawnInstance(root, agent, { instance: "dev-pi", runtime: "pi", launch: false });
     const claude = spawnInstance(root, agent, { instance: "dev-claude", runtime: "claude", launch: false });
     for (const meta of [pi, claude]) {
       const names = readdirSync(join(meta.home, ".agents", "skills")).sort();
-      assert.deepEqual(names, ["oas", "oas-config", "oas-packages", "private", "review"]);
+      assert.deepEqual(names, ["oats", "oats-config", "oats-packages", "private", "review"]);
       assert.equal(lstatSync(join(meta.home, ".agents", "skills", "review")).isDirectory(), true);
       assert.equal(existsSync(join(meta.home, ".agents", "skills", "pollution")), false);
       assert.equal(lstatSync(join(meta.home, "AGENTS.md")).isSymbolicLink(), false);
@@ -193,11 +193,11 @@ test("duplicate skill names fail unless config explicitly selects a source", () 
   const base = temp(); const { repo, root, soul, agent } = fixtureSoul(base);
   capability(repo, "dup", { capability: "acme.dup", skills: ["skills"] }, { "skills/shared/SKILL.md": "---\nname: shared\ndescription: A.\n---\n" });
   write(join(soul, "skills", "shared", "SKILL.md"), "---\nname: shared\ndescription: B.\n---\n");
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.dup:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.dup:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(() => spawnInstance(root, agent, { instance: "dev-bad", launch: false }), /duplicate skill/);
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.dup:\n      global: true\nskill-overrides:\n  shared: soul\n");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.dup:\n      global: true\nskill-overrides:\n  shared: soul\n");
     const result = spawnInstance(root, agent, { instance: "dev-good", launch: false });
     assert.match(readFileSync(join(result.home, ".agents", "skills", "shared", "SKILL.md"), "utf8"), /description: B/);
   } finally { process.env.PATH = oldPath; }
@@ -210,23 +210,23 @@ test("classic init acquires layers as PACKAGES, bundled is rejected, restore re-
   // no bundled-marketplace fallback for a cataloged ID — an unreachable source
   // fails and the run rolls back — so the fixture IS the official source here.
   const src = join(base, "src", "okf");
-  write(join(src, "capabilities/okf/oas.json"), JSON.stringify({
-    capability: "oas.okf", version: "2.0.0", description: "knowledge layer", layer: "knowledge",
+  write(join(src, "capabilities/okf/oats.json"), JSON.stringify({
+    capability: "oats.okf", version: "2.0.0", description: "knowledge layer", layer: "knowledge",
     commands: { harvest: "harvest.mjs" },
   }, null, 2));
   write(join(src, "capabilities/okf/harvest.mjs"), "// harvest\n");
-  write(join(src, "oas-package.json"), JSON.stringify({
-    package: "oas.okf", version: "2.0.0", description: "official oas.okf",
-    compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/okf"],
+  write(join(src, "oats-package.json"), JSON.stringify({
+    package: "oats.okf", version: "2.0.0", description: "official oats.okf",
+    compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/okf"],
   }, null, 2));
   gitRepo(src);
   const catalog = join(base, "catalog.json");
-  write(catalog, JSON.stringify({ packages: { "oas.okf": { url: src, path: "." } } }));
-  const env = { ...process.env, OAS_PACKAGE_CATALOG: catalog };
+  write(catalog, JSON.stringify({ packages: { "oats.okf": { url: src, path: "." } } }));
+  const env = { ...process.env, OATS_PACKAGE_CATALOG: catalog };
 
-  let r = spawnSync(process.execPath, [CLI, "init", "--knowledge", "oas.okf", "--messaging", "none", "--no-tmux-mouse", "--dir", repo], { encoding: "utf8", env });
+  let r = spawnSync(process.execPath, [CLI, "init", "--knowledge", "oats.okf", "--messaging", "none", "--no-tmux-mouse", "--dir", repo], { encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
-  const config = readFileSync(join(repo, "oas-config.yaml"), "utf8");
+  const config = readFileSync(join(repo, "oats-config.yaml"), "utf8");
   assert.match(config, /from: installed/);
   assert.doesNotMatch(config, /bundled/);
   // Work modes scaffold shows setup:, not injection overrides.
@@ -235,40 +235,40 @@ test("classic init acquires layers as PACKAGES, bundled is rejected, restore re-
 
   // Revised-v2 flat capability state: a package row for the transport, a
   // capability row back-referencing it, and an id-keyed artifact directory.
-  const lock = JSON.parse(readFileSync(join(repo, "oas-lock.json"), "utf8"));
+  const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8"));
   assert.equal(lock.lockfileVersion, 2);
-  assert.deepEqual(Object.keys(lock.packages), ["oas.okf"]);
-  assert.equal(lock.capabilities["oas.okf"].package, "oas.okf");
-  const artifact = join(repo, ".agents", "capabilities", "installed", "oas.okf");
-  assert.ok(existsSync(join(artifact, "oas.json")));
+  assert.deepEqual(Object.keys(lock.packages), ["oats.okf"]);
+  assert.equal(lock.capabilities["oats.okf"].package, "oats.okf");
+  const artifact = join(repo, ".agents", "capabilities", "installed", "oats.okf");
+  assert.ok(existsSync(join(artifact, "oats.json")));
 
   // Acquisition is NOT trust: the layer resolves, but its executable surface
-  // stays blocked until an explicit `oas trust`.
-  assert.equal(lock.capabilities["oas.okf"].trusted, false);
-  const cap = resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "oas.okf");
+  // stays blocked until an explicit `oats trust`.
+  assert.equal(lock.capabilities["oats.okf"].trusted, false);
+  const cap = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
   assert.equal(cap.trust.trusted, false);
-  assert.match(cap.trust.reason, /oas trust oas\.okf/);
+  assert.match(cap.trust.reason, /oats trust oats\.okf/);
   assert.ok(cap._dir || cap.provenance);
-  assert.equal(spawnSync(process.execPath, [CLI, "trust", "oas.okf", "--dir", repo], { encoding: "utf8", env }).status, 0);
-  assert.equal(resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "oas.okf").trust.trusted, true);
+  assert.equal(spawnSync(process.execPath, [CLI, "trust", "oats.okf", "--dir", repo], { encoding: "utf8", env }).status, 0);
+  assert.equal(resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf").trust.trusted, true);
 
   // from: bundled is rejected with migration guidance.
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oas.okf\n      from: bundled\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /no longer supported.*oas install/s);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      from: bundled\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /no longer supported.*oats install/s);
   // Restore: delete the artifact, bare install re-materializes it at locked integrity.
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oas.okf\n      from: installed\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      from: installed\n");
   rmSync(artifact, { recursive: true });
   r = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /restored\s+package oas\.okf/);
-  assert.ok(existsSync(join(artifact, "oas.json")), "the flat capability artifact is back");
+  assert.match(r.stdout, /restored\s+package oats\.okf/);
+  assert.ok(existsSync(join(artifact, "oats.json")), "the flat capability artifact is back");
 });
 
 test("work-mode injection overrides are rejected; setup script resolves and runs at worktree spawn", () => {
   const base = temp(); const { repo, root, agent } = fixtureSoul(base);
-  write(join(repo, "oas-config.yaml"), "work-modes:\n  worktree:\n    injection-override: x.md\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /work-mode injection overrides were removed/);
-  write(join(repo, "oas-config.yaml"), "work-modes:\n  worktree:\n    setup: setup.sh\n");
+  write(join(repo, "oats-config.yaml"), "work-modes:\n  worktree:\n    injection-override: x.md\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /work-mode injection overrides were removed/);
+  write(join(repo, "oats-config.yaml"), "work-modes:\n  worktree:\n    setup: setup.sh\n");
   write(join(repo, "setup.sh"), "#!/bin/sh\necho ran > setup-ran\n");
   execFileSync("chmod", ["+x", join(repo, "setup.sh")]);
   const wm = resolveWorkMode(repo, "worktree");
@@ -284,11 +284,11 @@ test("work-mode injection overrides are rejected; setup script resolves and runs
   assert.equal(r.status, 1); assert.match(r.stderr, /removed/);
 });
 
-test("claude runtime resolves oas-claude-config and hooks contribute launch args", () => {
+test("claude runtime resolves oats-claude-config and hooks contribute launch args", () => {
   const base = temp(); const { repo, root, agent } = fixtureSoul(base, "claude");
-  // Closest oas-claude-config names the binary; none → claude.
+  // Closest oats-claude-config names the binary; none → claude.
   assert.equal(resolveClaudeBinary(repo), "claude");
-  write(join(base, "oas-claude-config"), "# personal account\nclaude-personal\n");
+  write(join(base, "oats-claude-config"), "# personal account\nclaude-personal\n");
   assert.equal(resolveClaudeBinary(repo), "claude-personal");
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "claude-personal"), "#!/bin/sh\nexit 0\n");
@@ -296,7 +296,7 @@ test("claude runtime resolves oas-claude-config and hooks contribute launch args
   // A spawn hook contributes runtime launch args (the aweb channel-plugin pattern).
   const script = `console.log(JSON.stringify({ launch: { claude: "--extra-flag", pi: "--never-used" } }));`;
   capability(repo, "chan", { capability: "acme.chan", hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = `${bin}:${fakeRuntimes(base)}`;
   try {
     const res = spawnInstance(root, agent, { instance: "dev-cl", launch: false });
@@ -319,7 +319,7 @@ test("pi task positional precedes capability-contributed launch args", () => {
   const base = temp(); const { repo, root, agent } = fixtureSoul(base, "pi");
   const script = `console.log(JSON.stringify({ launch: { pi: "--append-system-prompt" } }));`;
   capability(repo, "chan", { capability: "acme.chan", hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const res = spawnInstance(root, agent, { instance: "dev-pi-order", launch: false });
@@ -341,10 +341,10 @@ test("spawn hook environment reaches exact Pi and Claude processes and overrides
   capability(repo, "identity", {
     capability: "aweb.identity", environment: ["AWEB_A_FIRST", "AWEB_IDENTITY_HOME", "AWEB_Z_LAST"], hooks: { spawn: "hook.mjs" },
   }, { "hook.mjs": `console.log(JSON.stringify({ env: { AWEB_Z_LAST: "z", AWEB_IDENTITY_HOME: ${JSON.stringify(externalHome)}, AWEB_A_FIRST: "a" } }));` });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.identity:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.identity:\n      global: true\n");
   const bin = join(base, "bin"); mkdirSync(bin);
   for (const runtime of ["pi", "claude"]) {
-    write(join(bin, runtime), "#!/bin/sh\nprintf '%s' \"$AWEB_IDENTITY_HOME\" > \"$OAS_CAPTURE\"\n");
+    write(join(bin, runtime), "#!/bin/sh\nprintf '%s' \"$AWEB_IDENTITY_HOME\" > \"$OATS_CAPTURE\"\n");
     execFileSync("chmod", ["+x", join(bin, runtime)]);
   }
   const oldPath = process.env.PATH; process.env.PATH = `${bin}:${oldPath}`;
@@ -354,7 +354,7 @@ test("spawn hook environment reaches exact Pi and Claude processes and overrides
       const result = spawnInstance(root, agent, { instance: `dev-env-${runtime}`, runtime, launch: false });
       execFileSync("/bin/sh", ["-c", result.command], {
         cwd: result.home,
-        env: { ...process.env, AWEB_IDENTITY_HOME: join(base, "wrong ambient"), OAS_CAPTURE: capture },
+        env: { ...process.env, AWEB_IDENTITY_HOME: join(base, "wrong ambient"), OATS_CAPTURE: capture },
       });
       assert.equal(readFileSync(capture, "utf8"), externalHome);
       assert.match(result.command, /AWEB_IDENTITY_HOME=/);
@@ -375,14 +375,14 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
     ["invalid-name", { "AWEB-BAD": "x" }, /name/],
     ["oversize", { AWEB_IDENTITY_HOME: "x".repeat(8193) }, /8192/],
     ["bootstrap-path", { PATH: "/tmp/evil" }, /process bootstrap/],
-    ["core", { OAS_INSTANCE: "other" }, /reserved core/],
+    ["core", { OATS_INSTANCE: "other" }, /reserved core/],
   ];
   for (const [label, env, error] of invalidCases) {
     const base = temp(); const { repo, root, agent } = fixtureSoul(base);
     capability(repo, "identity", { capability: "aweb.identity", environment: ["AWEB_IDENTITY_HOME"], hooks: { spawn: "hook.mjs" } }, {
       "hook.mjs": `console.log(${JSON.stringify(JSON.stringify({ env }))});`,
     });
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.identity:\n      global: true\n");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.identity:\n      global: true\n");
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
       const instance = `dev-env-${label}`;
@@ -397,7 +397,7 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
       "hook.mjs": `console.log(JSON.stringify({ env: { AWEB_IDENTITY_HOME: "/${name}" } }));`,
     });
   }
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.one:\n      global: true\n    aweb.two:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.one:\n      global: true\n    aweb.two:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(() => spawnInstance(root, agent, { instance: "dev-env-collision", launch: false }), /both claim.*AWEB_IDENTITY_HOME/);
@@ -418,7 +418,7 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
     capability(capRepo, "hostile", { capability: id, environment: Object.keys(env), hooks: { spawn: "hook.mjs" } }, {
       "hook.mjs": `console.log(${JSON.stringify(JSON.stringify({ env }))});`,
     });
-    write(join(capRepo, "oas-config.yaml"), `capabilities:\n  additive:\n    ${id}:\n      global: true\n`);
+    write(join(capRepo, "oats-config.yaml"), `capabilities:\n  additive:\n    ${id}:\n      global: true\n`);
     const priorPath = process.env.PATH; process.env.PATH = fakeRuntimes(isolated);
     try {
       assert.throws(() => spawnInstance(capRoot, capAgent, { instance: "dev-hostile-env", launch: false }), error);
@@ -435,7 +435,7 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
     capability(undeclaredRepo, "undeclared", { capability: id, hooks: { spawn: "hook.mjs" } }, {
       "hook.mjs": `console.log(${JSON.stringify(JSON.stringify({ env: { [name]: value } }))});`,
     });
-    write(join(undeclaredRepo, "oas-config.yaml"), `capabilities:\n  additive:\n    ${id}:\n      global: true\n`);
+    write(join(undeclaredRepo, "oats-config.yaml"), `capabilities:\n  additive:\n    ${id}:\n      global: true\n`);
     const undeclaredPath = process.env.PATH; process.env.PATH = fakeRuntimes(undeclaredBase);
     try {
       assert.throws(
@@ -450,7 +450,7 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
   capability(worktreeRepo, "invalid-worktree", { capability: "aweb.invalid", environment: ["AWEB_IDENTITY_HOME"], hooks: { spawn: "hook.mjs" } }, {
     "hook.mjs": `console.log(JSON.stringify({ env: { AWEB_IDENTITY_HOME: 42 } }));`,
   });
-  write(join(worktreeRepo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.invalid:\n      global: true\n");
+  write(join(worktreeRepo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.invalid:\n      global: true\n");
   const worktreePath = join(worktreeRoot, "dev", "instances", "dev-invalid-worktree", "work");
   const worktreeBranch = "agents/dev-invalid-worktree";
   const priorPath = process.env.PATH; process.env.PATH = fakeRuntimes(worktreeBase);
@@ -464,7 +464,7 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
       `console.log(JSON.stringify({ env: { AWEB_IDENTITY_HOME: "/retry-succeeds" } }));`);
     const retried = spawnInstance(worktreeRoot, worktreeAgent, { instance: "dev-invalid-worktree", work: "worktree", launch: false });
     assert.equal(existsSync(join(retried.home, "instance.json")), true, "same name is retryable after fatal contract rollback");
-    retireInstance(worktreeRoot, "dev-invalid-worktree", { keepDir: false, tmuxSession: "oas-test-nosuch" });
+    retireInstance(worktreeRoot, "dev-invalid-worktree", { keepDir: false, tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = priorPath; }
 });
 
@@ -473,26 +473,26 @@ test("fatal hook environment contract compensates every attempted hook in revers
   const events = join(repo, "hook-events");
   capability(repo, "one", { capability: "aweb.one", environment: ["AWEB_ONE"], hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, {
     "hook.mjs": `import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(events)}, "one:" + process.env.OAS_EVENT + "\\n");
-if (process.env.OAS_EVENT === "spawn") console.log(JSON.stringify({ env: { AWEB_ONE: "1" } }));`,
+appendFileSync(${JSON.stringify(events)}, "one:" + process.env.OATS_EVENT + "\\n");
+if (process.env.OATS_EVENT === "spawn") console.log(JSON.stringify({ env: { AWEB_ONE: "1" } }));`,
   });
   capability(repo, "two", { capability: "aweb.two", environment: ["AWEB_TWO"], hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, {
     "hook.mjs": `import { appendFileSync } from "node:fs";
-appendFileSync(${JSON.stringify(events)}, "two:" + process.env.OAS_EVENT + "\\n");
+appendFileSync(${JSON.stringify(events)}, "two:" + process.env.OATS_EVENT + "\\n");
 console.log(JSON.stringify({ env: { AWEB_TWO: 2 } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.one:\n      global: true\n    aweb.two:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.one:\n      global: true\n    aweb.two:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
       () => spawnInstance(root, agent, { instance: "dev-env-compensate", launch: false }),
       /rollback INCOMPLETE.*retire hook aweb.two.*supported only for spawn/,
     );
-    assert.equal(existsSync(join(root, "dev", "instances", "dev-env-compensate", ".oas-rollback-incomplete.json")), true);
+    assert.equal(existsSync(join(root, "dev", "instances", "dev-env-compensate", ".oats-rollback-incomplete.json")), true);
     assert.deepEqual(readFileSync(events, "utf8").trim().split("\n"), [
       "one:spawn", "two:spawn", "two:retire", "one:retire",
     ]);
-    retireInstance(root, "dev-env-compensate", { tmuxSession: "oas-test-nosuch", force: true });
+    retireInstance(root, "dev-env-compensate", { tmuxSession: "oats-test-nosuch", force: true });
   } finally { process.env.PATH = oldPath; }
 });
 
@@ -504,7 +504,7 @@ test("fatal hook environment contract reports missing compensation without hidin
 writeFileSync(${JSON.stringify(externalMarker)}, "spawn ran");
 console.log(JSON.stringify({ meta: { created: true }, env: { AWEB_IDENTITY_HOME: 42 } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.sideeffect:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.sideeffect:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -517,8 +517,8 @@ console.log(JSON.stringify({ meta: { created: true }, env: { AWEB_IDENTITY_HOME:
     );
     assert.equal(readFileSync(externalMarker, "utf8"), "spawn ran", "external side effect is observable and never claimed compensated");
     const retained = join(root, "dev", "instances", "dev-env-sideeffect");
-    assert.equal(existsSync(join(retained, ".oas-rollback-incomplete.json")), true, "cleanup evidence is retained");
-    retireInstance(root, "dev-env-sideeffect", { tmuxSession: "oas-test-nosuch", force: true });
+    assert.equal(existsSync(join(retained, ".oats-rollback-incomplete.json")), true, "cleanup evidence is retained");
+    retireInstance(root, "dev-env-sideeffect", { tmuxSession: "oats-test-nosuch", force: true });
   } finally { process.env.PATH = oldPath; }
 });
 
@@ -528,8 +528,8 @@ test("hook environment is rejected outside the spawn event", () => {
     capability(repo, "event-env", { capability: "aweb.event", environment: ["AWEB_IDENTITY_HOME"], hooks: { [event]: "hook.mjs" } }, {
       "hook.mjs": `console.log(JSON.stringify({ env: { AWEB_IDENTITY_HOME: "/ignored" } }));`,
     });
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    aweb.event:\n      global: true\n");
-    const resolved = resolveOasConfig(repo, "dev");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    aweb.event:\n      global: true\n");
+    const resolved = resolveOatsConfig(repo, "dev");
     const home = join(base, `${event}-home`); mkdirSync(home);
     const result = runLifecycleHooks(event, {
       home, instance: "dev-event", agentName: "dev", soulDir: home, contextDir: repo, resolved,
@@ -544,12 +544,12 @@ test("hook environment is rejected outside the spawn event", () => {
 test("team block resolves closest-first, reaches hooks/TASK.md, and drives team-wide status", () => {
   const base = temp(); const ws = join(base, "lfx"); mkdirSync(ws);
   const repo = join(ws, "self-serve"); gitRepo(repo);
-  write(join(ws, "oas-config.yaml"), "name: lfx\nteam:\n  name: lfx-engineering\n  id: lfx-engineering:example.com\n");
+  write(join(ws, "oats-config.yaml"), "name: lfx\nteam:\n  name: lfx-engineering\n  id: lfx-engineering:example.com\n");
   // Team env reaches hooks.
-  const script = `import {appendFileSync} from 'node:fs'; appendFileSync(process.env.OAS_HOME + '/team', process.env.OAS_TEAM_NAME + '|' + process.env.OAS_TEAM_ID);`;
+  const script = `import {appendFileSync} from 'node:fs'; appendFileSync(process.env.OATS_HOME + '/team', process.env.OATS_TEAM_NAME + '|' + process.env.OATS_TEAM_ID);`;
   capability(repo, "t", { capability: "acme.t", hooks: { spawn: "hook.mjs" } }, { "hook.mjs": script });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.t:\n      global: true\n");
-  const resolved = resolveOasConfig(repo, "dev");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.t:\n      global: true\n");
+  const resolved = resolveOatsConfig(repo, "dev");
   assert.equal(resolved.team.name, "lfx-engineering");
   assert.equal(resolved.team.id, "lfx-engineering:example.com");
   assert.equal(resolved.team.scope, ws);
@@ -561,7 +561,7 @@ test("team block resolves closest-first, reaches hooks/TASK.md, and drives team-
   write(join(ws, "agents", "ws-agent", "soul", "AGENTS.md"), "# ws-agent\n");
   write(join(repo, "agents", "repo-agent", "soul", "soul.yaml"), `name: repo-agent\nkind: persistent\nrepo: ${repo}\nwork: checkout\n`);
   write(join(repo, "agents", "repo-agent", "soul", "AGENTS.md"), "# repo-agent\n");
-  const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" }; delete env.PI_AGENTS_ROOT;
+  const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" }; delete env.PI_AGENTS_ROOT;
   const r = spawnSync(process.execPath, [CLI, "status", "--team", "--json", "--dir", repo], { encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
   const payload = JSON.parse(r.stdout);
@@ -584,7 +584,7 @@ test("workspace mode links work to the team scope, records no branch, and requir
   const base = temp(); const ws = join(base, "lfx"); mkdirSync(ws);
   const agentsRepo = join(ws, "lfx-agents"); gitRepo(agentsRepo);
   const member = join(ws, "member-repo"); gitRepo(member);
-  write(join(ws, "oas-config.yaml"), "name: lfx\nteam:\n  name: lfx\n");
+  write(join(ws, "oats-config.yaml"), "name: lfx\nteam:\n  name: lfx\n");
   const root = join(agentsRepo, "agents");
   write(join(root, "coord", "soul", "soul.yaml"), `name: coord\nkind: persistent\nrepo: ${agentsRepo}\nwork: workspace\nruntime: pi\n`);
   write(join(root, "coord", "soul", "AGENTS.md"), "# coord\n");
@@ -599,7 +599,7 @@ test("workspace mode links work to the team scope, records no branch, and requir
     const meta = JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8"));
     assert.equal(meta.branch, undefined);
     // Retire never touches the workspace tree.
-    retireInstance(root, "coord-1", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "coord-1", { tmuxSession: "oats-test-nosuch" });
     assert.ok(existsSync(join(ws, "member-repo")));
   } finally { process.env.PATH = oldPath; }
   // No boundary: a bare repo outside any team/workspace config refuses workspace mode.
@@ -617,11 +617,11 @@ test("cross-repo spawn resolves a sibling repo's soul via the team scope and hom
   const base = temp(); const ws = join(base, "lfx"); mkdirSync(ws);
   const repoA = join(ws, "self-serve"); gitRepo(repoA);
   const repoB = join(ws, "projects-api"); gitRepo(repoB);
-  write(join(ws, "oas-config.yaml"), "name: lfx\nteam:\n  name: lfx-engineering\n");
+  write(join(ws, "oats-config.yaml"), "name: lfx\nteam:\n  name: lfx-engineering\n");
   mkdirSync(join(repoA, "agents"), { recursive: true });
   write(join(repoB, "agents", "api-dev", "soul", "soul.yaml"), `name: api-dev\nkind: persistent\nrepo: ${repoB}\nwork: checkout\nruntime: pi\n`);
   write(join(repoB, "agents", "api-dev", "soul", "AGENTS.md"), "# api-dev\n");
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" }; delete env.PI_AGENTS_ROOT;
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" }; delete env.PI_AGENTS_ROOT;
   // Spawn from repo A; soul lives in repo B — unique team-wide match wins.
   let r = spawnSync(process.execPath, [CLI, "spawn", "api-dev", "--no-launch", "--json", "--dir", repoA], { encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
@@ -681,7 +681,7 @@ test("capability-defined agents resolve when active, home locally, and keep the 
     "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\nmodel: fake/model\ndescription: Fresh reviewer.\n",
     "agents/reviewer/AGENTS.md": "# Reviewer\n\nReview fresh.\n",
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
   const { findCapabilityAgent, listCapabilityAgents } = { findCapabilityAgent: undefined, listCapabilityAgents: undefined };
   return import("../lib/core.mjs").then((core) => {
     const listed = core.listCapabilityAgents(repo);
@@ -698,7 +698,7 @@ test("capability-defined agents resolve when active, home locally, and keep the 
       assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Review fresh/);
       // the package soul was not written to (no instances/, no scaffolded memory)
       assert.ok(!existsSync(join(capDir, "agents", "reviewer", "instances")));
-      core.retireInstance(root, "reviewer-1", { tmuxSession: "oas-test-nosuch" });
+      core.retireInstance(root, "reviewer-1", { tmuxSession: "oats-test-nosuch" });
     } finally { process.env.PATH = oldPath; }
   });
 });
@@ -711,7 +711,7 @@ test("capability agents carry their own capability's skills regardless of target
     "skills/deep-check/SKILL.md": "---\nname: deep-check\ndescription: Deep checking.\n---\n",
   });
   // Targeted at a type the checker does NOT belong to — its own skills must still compose.
-  write(join(repo, "oas-config.yaml"), "agent-types:\n  devs:\n    description: devs\ncapabilities:\n  additive:\n    acme.rev2:\n      agent-types:\n        devs: true\n");
+  write(join(repo, "oats-config.yaml"), "agent-types:\n  devs:\n    description: devs\ncapabilities:\n  additive:\n    acme.rev2:\n      agent-types:\n        devs: true\n");
   return import("../lib/core.mjs").then((core) => {
     const agent = core.findCapabilityAgent(repo, root, "checker");
     assert.ok(agent, "checker resolves on declaration despite type targeting");
@@ -719,18 +719,18 @@ test("capability agents carry their own capability's skills regardless of target
     try {
       const res = core.spawnInstance(root, { ...agent, repo }, { instance: "checker-1", launch: false });
       assert.ok(existsSync(join(res.home, ".agents", "skills", "deep-check", "SKILL.md")), "own capability skill materialized");
-      core.retireInstance(root, "checker-1", { tmuxSession: "oas-test-nosuch" });
+      core.retireInstance(root, "checker-1", { tmuxSession: "oats-test-nosuch" });
     } finally { process.env.PATH = oldPath; }
   });
 });
 
 test("hooks run in deterministic order, with retire reversing spawn", () => {
   const base = temp(); const repo = join(base, "repo"); const home = join(base, "home"); mkdirSync(home); mkdirSync(repo);
-  const script = `import {appendFileSync} from 'node:fs'; appendFileSync(process.env.OAS_HOME + '/order', process.env.OAS_EVENT + ':' + process.env.OAS_CAPABILITY + '\\n');`;
+  const script = `import {appendFileSync} from 'node:fs'; appendFileSync(process.env.OATS_HOME + '/order', process.env.OATS_EVENT + ':' + process.env.OATS_CAPABILITY + '\\n');`;
   capability(repo, "z", { capability: "acme.z", hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, { "hook.mjs": script });
   capability(repo, "a", { capability: "acme.a", hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, { "hook.mjs": script });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.z:\n      global: true\n    acme.a:\n      global: true\n");
-  const resolved = resolveOasConfig(repo, "dev");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.z:\n      global: true\n    acme.a:\n      global: true\n");
+  const resolved = resolveOatsConfig(repo, "dev");
   runLifecycleHooks("spawn", { home, instance: "dev-1", agentName: "dev", soulDir: home, contextDir: repo, resolved });
   runLifecycleHooks("retire", { home, instance: "dev-1", agentName: "dev", soulDir: home, contextDir: repo, resolved });
   assert.deepEqual(readFileSync(join(home, "order"), "utf8").trim().split("\n"), ["spawn:acme.a", "spawn:acme.z", "retire:acme.z", "retire:acme.a"]);
@@ -742,51 +742,51 @@ test("CLI activation writes stable global/type/soul bindings without activating 
   assert.equal(r.status, 0, r.stderr);
   const emptyCatalog = join(base, "empty-catalog.json");
   write(emptyCatalog, JSON.stringify({ packages: {} }));
-  r = spawnSync(process.execPath, [CLI, "install", "oas.okf", "--dir", repo], { encoding: "utf8", env: { ...process.env, OAS_PACKAGE_CATALOG: emptyCatalog } });
+  r = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8", env: { ...process.env, OATS_PACKAGE_CATALOG: emptyCatalog } });
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /not activated/);
   // With no official catalog entry this deliberately exercises the legacy
   // marketplace install: copied into installed/, locked, trusted at acquisition.
-  const okfLock = JSON.parse(readFileSync(join(repo, "oas-lock.json"), "utf8")).capabilities["oas.okf"];
-  assert.match(okfLock.source, /^marketplace:oas\.okf@/);
+  const okfLock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["oats.okf"];
+  assert.match(okfLock.source, /^marketplace:oats\.okf@/);
   assert.equal(okfLock.trustedExecutables, true);
-  assert.ok(existsSync(join(repo, ".agents", "capabilities", "installed", "oas-okf", "oas.json")));
-  assert.equal(resolveOasConfig(repo, "dev").capabilities.length, 0);
+  assert.ok(existsSync(join(repo, ".agents", "capabilities", "installed", "oats-okf", "oats.json")));
+  assert.equal(resolveOatsConfig(repo, "dev").capabilities.length, 0);
   for (const argv of [
-    ["use", "oas.okf", "--global", "--dir", repo],
-    ["use", "oas.okf", "--type", "reviewers", "--disable", "--dir", repo],
-    ["use", "oas.okf", "--soul", "lead", "--dir", repo],
+    ["use", "oats.okf", "--global", "--dir", repo],
+    ["use", "oats.okf", "--type", "reviewers", "--disable", "--dir", repo],
+    ["use", "oats.okf", "--soul", "lead", "--dir", repo],
   ]) {
     r = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr);
   }
-  const config = readFileSync(join(repo, "oas-config.yaml"), "utf8");
+  const config = readFileSync(join(repo, "oats-config.yaml"), "utf8");
   // Layer capability lands under capabilities.layers.knowledge with from + injection comment.
-  assert.match(config, /layers:\n    knowledge:\n      capability: oas\.okf/);
+  assert.match(config, /layers:\n    knowledge:\n      capability: oats\.okf/);
   assert.match(config, /from: installed/);
-  assert.match(config, /# injection-override: \.agents\/injections\/capabilities\/oas\.okf\.md/);
+  assert.match(config, /# injection-override: \.agents\/injections\/capabilities\/oats\.okf\.md/);
   assert.match(config, /global: true/); assert.match(config, /reviewers: false/); assert.match(config, /lead: true/);
-  assert.equal(resolveOasConfig(repo, "reviewer").capabilities.some((c) => c.id === "oas.okf"), true);
+  assert.equal(resolveOatsConfig(repo, "reviewer").capabilities.some((c) => c.id === "oats.okf"), true);
 });
 
 test("--settings accepts multiple pairs per flag, repeated flags, and rejects malformed pairs", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  r = spawnSync(process.execPath, [CLI, "install", "oas.okf", "--dir", repo], { encoding: "utf8" });
+  r = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   // One flag, multiple consecutive k=v pairs — all pairs land, none silently dropped.
-  r = spawnSync(process.execPath, [CLI, "use", "oas.okf", "--global", "--settings", "site=acme", "project=core", "--dir", repo], { encoding: "utf8" });
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "site=acme", "project=core", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   // Repeated flags still compose (and later flags override earlier keys).
-  r = spawnSync(process.execPath, [CLI, "use", "oas.okf", "--global", "--settings", "depth=low", "--settings", "site=umbrella", "--dir", repo], { encoding: "utf8" });
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "depth=low", "--settings", "site=umbrella", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  const okf = resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "oas.okf");
+  const okf = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
   assert.deepEqual(okf.settings, { site: "umbrella", project: "core", depth: "low" });
   // Malformed pair (missing '=') dies loudly.
-  r = spawnSync(process.execPath, [CLI, "use", "oas.okf", "--global", "--settings", "nonsense", "--dir", repo], { encoding: "utf8" });
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "nonsense", "--dir", repo], { encoding: "utf8" });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /--settings expects key=value, got "nonsense"/);
   // Bare --settings with no pairs dies loudly instead of being ignored.
-  r = spawnSync(process.execPath, [CLI, "use", "oas.okf", "--global", "--settings", "--dir", repo], { encoding: "utf8" });
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "--dir", repo], { encoding: "utf8" });
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /--settings expects one or more key=value pairs/);
 });
@@ -794,7 +794,7 @@ test("--settings accepts multiple pairs per flag, repeated flags, and rejects ma
 test("manifest targeting is rejected because activation is config-owned", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   capability(repo, "bad-target", { capability: "acme.bad-target", souls: ["dev"] });
-  write(join(repo, "oas-config.yaml"), "name: test\n");
+  write(join(repo, "oats-config.yaml"), "name: test\n");
   assert.throws(() => capabilityManifest("acme.bad-target", repo), /cannot declare config-owned targets: souls/);
 });
 
@@ -802,7 +802,7 @@ test("launch environment authority requires an unambiguous dotted capability ID"
   for (const id of ["aweb@evil", "aweb/evil", "aweb.evil@other", "aweb.evil/other", "Aweb.evil"]) {
     const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
     capability(repo, "invalid-id", { capability: id, environment: ["AWEB_IDENTITY_HOME"] });
-    write(join(repo, "oas-config.yaml"), "name: invalid-id-test\n");
+    write(join(repo, "oats-config.yaml"), "name: invalid-id-test\n");
     assert.throws(() => capabilityManifest(id, repo), /must use a lowercase dotted ID/);
   }
 
@@ -810,24 +810,24 @@ test("launch environment authority requires an unambiguous dotted capability ID"
   // that request no environment authority.
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   capability(repo, "compatible-id", { capability: "aweb.evil/other" });
-  write(join(repo, "oas-config.yaml"), "name: compatible-id-test\n");
+  write(join(repo, "oats-config.yaml"), "name: compatible-id-test\n");
   assert.equal(capabilityManifest("aweb.evil/other", repo).capability, "aweb.evil/other");
 });
 
 test("external acquisition locks exact integrity and executable trust is explicit", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   const source = join(base, "external");
-  write(join(source, "oas.json"), JSON.stringify({ capability: "vendor.tool", command: "vendor", version: "2.1.0", description: "External test tool.", environment: ["VENDOR_IDENTITY_HOME"], commands: { ping: "ping.mjs" } }));
+  write(join(source, "oats.json"), JSON.stringify({ capability: "vendor.tool", command: "vendor", version: "2.1.0", description: "External test tool.", environment: ["VENDOR_IDENTITY_HOME"], commands: { ping: "ping.mjs" } }));
   write(join(source, "ping.mjs"), "console.log('pong')\n");
   let r = spawnSync(process.execPath, [CLI, "install", source, "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /not activated/);
   assert.match(r.stdout, /Future trust request includes launch environment: VENDOR_IDENTITY_HOME/);
   const installed = join(repo, ".agents", "capabilities", "installed", "external");
-  const lock = JSON.parse(readFileSync(join(repo, "oas-lock.json"), "utf8")).capabilities["vendor.tool"];
+  const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["vendor.tool"];
   assert.equal(lock.version, "2.1.0"); assert.equal(lock.integrity, capabilityIntegrity(installed)); assert.equal(lock.trustedExecutables, false);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    vendor.tool:\n      global: true\n");
-  assert.equal(resolveOasConfig(repo, "dev").capabilities[0].trust.trusted, false);
-  const lockPath = join(repo, "oas-lock.json");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    vendor.tool:\n      global: true\n");
+  assert.equal(resolveOatsConfig(repo, "dev").capabilities[0].trust.trusted, false);
+  const lockPath = join(repo, "oats-lock.json");
   execFileSync("chmod", ["444", lockPath]);
   let refusedPersistence;
   try {
@@ -842,35 +842,35 @@ test("external acquisition locks exact integrity and executable trust is explici
   r = spawnSync(process.execPath, [CLI, "trust", "vendor.tool", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Requested launch environment: VENDOR_IDENTITY_HOME/, "trust gate discloses exact environment authority before persistence");
-  const trustedCapability = resolveOasConfig(repo, "dev").capabilities[0];
+  const trustedCapability = resolveOatsConfig(repo, "dev").capabilities[0];
   assert.equal(trustedCapability.trust.trusted, true);
   assert.deepEqual(trustedCapability.environment, ["VENDOR_IDENTITY_HOME"]);
   write(join(installed, "ping.mjs"), "console.log('tampered')\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /integrity differs/);
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /integrity differs/);
 });
 
 test("marketplace automatic trust discloses environment before authority persistence", () => {
   const base = temp();
   const framework = join(base, "framework");
   const packageRoot = resolve(dirname(CLI), "..");
-  for (const relativePath of ["bin/oas.mjs", "lib/core.mjs", "lib/packages.mjs", "lib/tmux-config.mjs", "package.json"]) {
+  for (const relativePath of ["bin/oats.mjs", "lib/core.mjs", "lib/packages.mjs", "lib/tmux-config.mjs", "package.json"]) {
     write(join(framework, relativePath), readFileSync(join(packageRoot, relativePath)));
   }
   const marketplace = join(framework, "capabilities", "vendor-market");
-  write(join(marketplace, "oas.json"), JSON.stringify({
+  write(join(marketplace, "oats.json"), JSON.stringify({
     capability: "vendor.market", version: "1.0.0", description: "Marketplace trust ordering.",
     environment: ["VENDOR_IDENTITY_HOME"], hooks: { spawn: "hook.mjs" },
   }));
   write(join(marketplace, "hook.mjs"), "console.log('{}')\n");
 
   const repo = join(base, "repo"); mkdirSync(repo);
-  write(join(repo, "oas-config.yaml"), "name: marketplace-ordering\n");
-  const lockPath = join(repo, "oas-lock.json");
+  write(join(repo, "oats-config.yaml"), "name: marketplace-ordering\n");
+  const lockPath = join(repo, "oats-lock.json");
   write(lockPath, JSON.stringify({ lockfileVersion: 1, capabilities: {} }, null, 2) + "\n");
   execFileSync("chmod", ["444", lockPath]);
   let result;
   try {
-    result = spawnSync(process.execPath, [join(framework, "bin", "oas.mjs"), "install", "vendor.market", "--dir", repo], { encoding: "utf8" });
+    result = spawnSync(process.execPath, [join(framework, "bin", "oats.mjs"), "install", "vendor.market", "--dir", repo], { encoding: "utf8" });
   } finally {
     execFileSync("chmod", ["644", lockPath]);
   }
@@ -888,23 +888,23 @@ test("executable and nested skill paths cannot escape the package integrity boun
   writeCapabilityLock(repo, "acme.escape", {
     source: "path:escape", version: "1.0.0", integrity: capabilityIntegrity(dir), trustedExecutables: true,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.escape:\n      global: true\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /path escapes its integrity boundary/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.escape:\n      global: true\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /path escapes its integrity boundary/);
 
   const skillRepo = join(base, "skill-repo"); mkdirSync(skillRepo);
   const skillDir = capability(skillRepo, "escape-skill", { capability: "acme.escape-skill", skills: ["skills"] });
   write(join(skillDir, "skills", "escape", "SKILL.md"), "---\nname: escape\ndescription: Escape.\n---\n");
   write(join(base, "outside.md"), "unlocked instructions\n");
   symlinkSync(join(base, "outside.md"), join(skillDir, "skills", "escape", "outside.md"));
-  write(join(skillRepo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.escape-skill:\n      global: true\n");
-  assert.throws(() => resolveOasConfig(skillRepo, "dev"), /skill path escapes its integrity boundary/);
+  write(join(skillRepo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.escape-skill:\n      global: true\n");
+  assert.throws(() => resolveOatsConfig(skillRepo, "dev"), /skill path escapes its integrity boundary/);
 });
 
 test("operational commands are gated by active instance metadata; doctor exposes final instructions", () => {
   const base = temp(); const { repo, root, soul } = fixtureSoul(base);
   capability(repo, "ops", { capability: "acme.ops", command: "ops", commands: { ping: "ping.mjs" }, inject: "inject.md" }, { "ping.mjs": "console.log('pong')\n", "inject.md": "## Ops instructions" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.ops:\n      souls:\n        dev: true\n");
-  let r = spawnSync(process.execPath, [CLI, "ops", "ping"], { cwd: repo, encoding: "utf8", env: { ...process.env, PI_AGENT_HOME: "", OAS_HOME: "" } });
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.ops:\n      souls:\n        dev: true\n");
+  let r = spawnSync(process.execPath, [CLI, "ops", "ping"], { cwd: repo, encoding: "utf8", env: { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "" } });
   assert.equal(r.status, 1); assert.match(r.stderr, /not active/);
   const home = join(base, "instance"); mkdirSync(home); write(join(home, "instance.json"), JSON.stringify({ repo, capabilities: [{ id: "acme.ops" }] }));
   r = spawnSync(process.execPath, [CLI, "ops", "ping"], { cwd: home, encoding: "utf8", env: { ...process.env, PI_AGENT_HOME: home } });
@@ -918,10 +918,10 @@ test("operational commands are gated by active instance metadata; doctor exposes
 
 test("soul-scaffold ownership prevents overwrites and deletion of canonical files", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo); const root = join(base, "agents"); mkdirSync(root);
-  const hook = (value) => `import {writeFileSync} from 'node:fs'; writeFileSync(process.env.OAS_SOUL + '/shared.txt', '${value}');`;
+  const hook = (value) => `import {writeFileSync} from 'node:fs'; writeFileSync(process.env.OATS_SOUL + '/shared.txt', '${value}');`;
   capability(repo, "a", { capability: "acme.a", hooks: { "soul-scaffold": "hook.mjs" } }, { "hook.mjs": hook("a") });
   capability(repo, "b", { capability: "acme.b", hooks: { "soul-scaffold": "hook.mjs" } }, { "hook.mjs": hook("b") });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.a:\n      global: true\n    acme.b:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.a:\n      global: true\n    acme.b:\n      global: true\n");
   assert.throws(() => createAgent(root, { name: "dev", repo, work: "checkout", runtime: "pi" }), /ownership conflict/);
   const soul = join(root, "dev", "soul");
   assert.match(readFileSync(join(soul, "AGENTS.md"), "utf8"), /# dev/);
@@ -929,9 +929,9 @@ test("soul-scaffold ownership prevents overwrites and deletion of canonical file
 
   const deleteBase = temp(); const deleteRepo = join(deleteBase, "repo"); gitRepo(deleteRepo); const deleteRoot = join(deleteBase, "agents"); mkdirSync(deleteRoot);
   capability(deleteRepo, "delete", { capability: "acme.delete", hooks: { "soul-scaffold": "hook.mjs" } }, {
-    "hook.mjs": "import {rmSync} from 'node:fs'; rmSync(process.env.OAS_SOUL + '/soul.yaml'); rmSync(process.env.OAS_SOUL + '/CLAUDE.md');",
+    "hook.mjs": "import {rmSync} from 'node:fs'; rmSync(process.env.OATS_SOUL + '/soul.yaml'); rmSync(process.env.OATS_SOUL + '/CLAUDE.md');",
   });
-  write(join(deleteRepo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.delete:\n      global: true\n");
+  write(join(deleteRepo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.delete:\n      global: true\n");
   assert.throws(() => createAgent(deleteRoot, { name: "dev", repo: deleteRepo }), /ownership conflict.*soul.yaml/);
   const restored = join(deleteRoot, "dev", "soul");
   assert.equal(existsSync(join(restored, "soul.yaml")), true);
@@ -940,9 +940,9 @@ test("soul-scaffold ownership prevents overwrites and deletion of canonical file
 
 test("bare install restores locked-but-missing capabilities with integrity verification", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
-  write(join(repo, "oas-config.yaml"), "name: restore-test\n");
+  write(join(repo, "oats-config.yaml"), "name: restore-test\n");
   const source = join(base, "external");
-  write(join(source, "oas.json"), JSON.stringify({ capability: "vendor.restorable", version: "1.0.0", description: "Restorable." }));
+  write(join(source, "oats.json"), JSON.stringify({ capability: "vendor.restorable", version: "1.0.0", description: "Restorable." }));
   write(join(source, "body.md"), "content\n");
   let r = spawnSync(process.execPath, [CLI, "install", source, "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
@@ -953,7 +953,7 @@ test("bare install restores locked-but-missing capabilities with integrity verif
   rmSync(artifact, { recursive: true });
   r = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { cwd: repo, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /restored\s+vendor\.restorable/);
-  const lock = JSON.parse(readFileSync(join(repo, "oas-lock.json"), "utf8")).capabilities["vendor.restorable"];
+  const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["vendor.restorable"];
   assert.equal(capabilityIntegrity(artifact), lock.integrity);
   // Drifted source aborts restore and leaves no artifact behind.
   rmSync(artifact, { recursive: true });
@@ -965,8 +965,8 @@ test("bare install restores locked-but-missing capabilities with integrity verif
 
 test("capabilities outside installed/ and owned/ are rejected with a move error", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  write(join(repo, ".agents", "capabilities", "stray", "oas.json"), JSON.stringify({ capability: "acme.stray", version: "1.0.0", description: "Stray." }));
-  write(join(repo, "oas-config.yaml"), "name: test\n");
+  write(join(repo, ".agents", "capabilities", "stray", "oats.json"), JSON.stringify({ capability: "acme.stray", version: "1.0.0", description: "Stray." }));
+  write(join(repo, "oats-config.yaml"), "name: test\n");
   assert.throws(() => capabilityManifest("acme.stray", repo), /must live under installed\/ \(acquired\) or owned\/ \(authored at this scope\)/);
 });
 
@@ -974,37 +974,37 @@ test("config can override an installed capability's injection per scope", () => 
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   capability(repo, "chat", { capability: "acme.chat", inject: "inject.md" }, { "inject.md": "## Packaged instructions" });
   write(join(repo, "custom.md"), "## Custom instructions");
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chat:\n      global: true\n      injection-override: custom.md\n");
-  const cap = resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chat:\n      global: true\n      injection-override: custom.md\n");
+  const cap = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat");
   assert.equal(cap.inject, join(repo, "custom.md"));
   // `none` suppresses; `default` restores the packaged inject.
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chat:\n      global: true\n      injection-override: none\n");
-  assert.equal(resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat").inject, undefined);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chat:\n      global: true\n      injection-override: default\n");
-  assert.match(resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat").inject, /inject\.md$/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chat:\n      global: true\n      injection-override: none\n");
+  assert.equal(resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat").inject, undefined);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chat:\n      global: true\n      injection-override: default\n");
+  assert.match(resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat").inject, /inject\.md$/);
 });
 
 test("injection-override is rejected on owned/path capabilities; old injection key is rejected", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   capability(repo, "own", { capability: "acme.own", inject: "inject.md" }, { "inject.md": "## Own" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.own:\n      from: owned\n      global: true\n      injection-override: custom.md\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /not allowed for from: owned.*edit its injects\/ file directly/);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.own:\n      global: true\n      injection: custom.md\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /renamed to "injection-override:"/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.own:\n      from: owned\n      global: true\n      injection-override: custom.md\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /not allowed for from: owned.*edit its injects\/ file directly/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.own:\n      global: true\n      injection: custom.md\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /renamed to "injection-override:"/);
 });
 
-test("oas type add declares agent types; inject eject copies a packaged default and sets the override", () => {
+test("oats type add declares agent types; inject eject copies a packaged default and sets the override", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   // Installed-provenance capability (eject allowed) and an owned one (refused).
   const inst = join(repo, ".agents", "capabilities", "installed", "chat");
-  write(join(inst, "oas.json"), JSON.stringify({ capability: "acme.chat", version: "1.0.0", compatibility: { oas: ">=0.6.2" }, description: "Chat.", inject: "inject.md" }));
+  write(join(inst, "oats.json"), JSON.stringify({ capability: "acme.chat", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "Chat.", inject: "inject.md" }));
   write(join(inst, "inject.md"), "## Packaged instructions");
   writeCapabilityLock(repo, "acme.chat", { source: "test", version: "1.0.0", integrity: capabilityIntegrity(inst) });
   capability(repo, "own", { capability: "acme.own", inject: "inject.md" }, { "inject.md": "## Own" });
-  write(join(repo, "oas-config.yaml"), "name: test\ncapabilities:\n  additive:\n    acme.chat:\n      global: true\n    acme.own:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "name: test\ncapabilities:\n  additive:\n    acme.chat:\n      global: true\n    acme.own:\n      global: true\n");
   let r = spawnSync(process.execPath, [CLI, "type", "add", "reviewers", "--description", "Review agents", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  const cfg = readFileSync(join(repo, "oas-config.yaml"), "utf8");
+  const cfg = readFileSync(join(repo, "oats-config.yaml"), "utf8");
   assert.match(cfg, /agent-types:\n  reviewers:\n    description: Review agents/);
   r = spawnSync(process.execPath, [CLI, "type", "list", "--dir", repo], { encoding: "utf8" });
   assert.match(r.stdout, /reviewers/);
@@ -1013,7 +1013,7 @@ test("oas type add declares agent types; inject eject copies a packaged default 
   assert.equal(r.status, 0, r.stderr);
   const ejected = join(repo, ".agents", "injections", "capabilities", "acme.chat.md");
   assert.equal(readFileSync(ejected, "utf8"), "## Packaged instructions");
-  const cap = resolveOasConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat");
+  const cap = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat");
   assert.equal(cap.inject, ejected);
   // Second eject refuses; owned capability refuses.
   r = spawnSync(process.execPath, [CLI, "inject", "eject", "acme.chat", "--dir", repo], { encoding: "utf8" });
@@ -1027,20 +1027,20 @@ test("init --template snapshots a local or named template with provenance and re
   const tpl = join(base, "template.yaml");
   // `layers:` moved under `capabilities.layers` — the top-level spelling is
   // refused outright, so a template carrying it can never be seeded.
-  writeFileSync(tpl, "name: template-origin\ncapabilities:\n  layers:\n    tasks: none\n  additive:\n    oas.okf:\n      from: installed\n      global: true\n");
+  writeFileSync(tpl, "name: template-origin\ncapabilities:\n  layers:\n    tasks: none\n  additive:\n    oats.okf:\n      from: installed\n      global: true\n");
   const repo = join(base, "proj"); mkdirSync(repo);
   let r = spawnSync(process.execPath, [CLI, "init", "--template", tpl, "--dir", repo, "--no-tmux-mouse"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  const cfg = readFileSync(join(repo, "oas-config.yaml"), "utf8");
+  const cfg = readFileSync(join(repo, "oats-config.yaml"), "utf8");
   assert.match(cfg, /^# template: .*template\.yaml \(snapshot/m);
   assert.match(cfg, /^name: proj$/m);
-  assert.match(cfg, /oas\.okf/);
+  assert.match(cfg, /oats\.okf/);
   // Named template resolved through an outer config's templates: map (workspace level).
   const ws = join(base, "ws"); const inner = join(ws, "repo2"); mkdirSync(inner, { recursive: true });
-  writeFileSync(join(ws, "oas-config.yaml"), `name: ws\ntemplates:\n  personal: ${tpl}\n`);
+  writeFileSync(join(ws, "oats-config.yaml"), `name: ws\ntemplates:\n  personal: ${tpl}\n`);
   r = spawnSync(process.execPath, [CLI, "init", "--template", "personal", "--dir", inner, "--no-tmux-mouse"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  const cfg2 = readFileSync(join(inner, "oas-config.yaml"), "utf8");
+  const cfg2 = readFileSync(join(inner, "oats-config.yaml"), "utf8");
   assert.match(cfg2, /^name: repo2$/m);
   assert.doesNotMatch(cfg2, /templates:/);
   // Unknown named template errors clearly.
@@ -1052,84 +1052,84 @@ test("init --template snapshots a local or named template with provenance and re
 test("owned capabilities at a non-git scope are discovered and config-owned trusted", () => {
   const base = temp(); const ws = join(base, "workspace"); mkdirSync(ws); // no git init
   capability(ws, "lfx", { capability: "acme.lfx", inject: "inject.md" }, { "inject.md": "## LFX" });
-  write(join(ws, "oas-config.yaml"), "name: ws\ncapabilities:\n  additive:\n    acme.lfx:\n      global: true\n");
-  const cap = resolveOasConfig(ws, "dev").capabilities.find((c) => c.id === "acme.lfx");
+  write(join(ws, "oats-config.yaml"), "name: ws\ncapabilities:\n  additive:\n    acme.lfx:\n      global: true\n");
+  const cap = resolveOatsConfig(ws, "dev").capabilities.find((c) => c.id === "acme.lfx");
   assert.equal(cap.trust.trusted, true); assert.equal(cap.trust.configOwned, true);
   // No git repo: install's gitignore maintenance must not have created one here.
   assert.equal(existsSync(join(ws, ".agents", "capabilities", ".gitignore")), false);
 });
 
-test("retired oas.web: config, install, and lock paths all give actionable migration diagnostics", () => {
+test("retired oats.web: config, install, and lock paths all give actionable migration diagnostics", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   // config activation of the retired capability names the migration, not "no manifest"
-  write(join(repo, "oas-config.yaml"), `capabilities:\n  additive:\n    oas.web:\n      global: true\n`);
-  assert.throws(() => resolveOasConfig(repo), /oas\.web web panel was retired[\s\S]*OAS Desktop app[\s\S]*Remove the oas\.web entry/,
+  write(join(repo, "oats-config.yaml"), `capabilities:\n  additive:\n    oats.web:\n      global: true\n`);
+  assert.throws(() => resolveOatsConfig(repo), /oats\.web web panel was retired[\s\S]*OATS Desktop app[\s\S]*Remove the oats\.web entry/,
     "config activation explains the retirement and the fix");
   // doctor must diagnose the stale activation cleanly (text and JSON), not crash
   const docText = spawnSync(process.execPath, [CLI, "doctor", repo], { encoding: "utf8" });
   assert.notEqual(docText.status, 0);
-  assert.match(docText.stderr, /retired.*OAS Desktop app.*Remove the oas\.web entry/s, "doctor (text) emits the cleanup instruction");
+  assert.match(docText.stderr, /retired.*OATS Desktop app.*Remove the oats\.web entry/s, "doctor (text) emits the cleanup instruction");
   assert.doesNotMatch(docText.stderr, /at resolveCapabilities|at file:/, "doctor (text) does not dump a stack trace");
   const docJson = spawnSync(process.execPath, [CLI, "doctor", repo, "--json"], { encoding: "utf8" });
   assert.notEqual(docJson.status, 0);
   const dj = JSON.parse(docJson.stdout);
   assert.equal(dj.schemaVersion, 1, "the retired-capability error document carries the doctor v1 schema version");
-  assert.deepEqual(dj.retired, ["oas.web"], "doctor --json reports the retired id");
-  assert.match(dj.error, /Remove the oas\.web entry/, "doctor --json carries the cleanup instruction");
+  assert.deepEqual(dj.retired, ["oats.web"], "doctor --json reports the retired id");
+  assert.match(dj.error, /Remove the oats\.web entry/, "doctor --json carries the cleanup instruction");
   // explicit install of the retired id explains instead of "not a marketplace capability"
-  const inst = spawnSync(process.execPath, [CLI, "install", "oas.web", "--dir", repo], { encoding: "utf8" });
+  const inst = spawnSync(process.execPath, [CLI, "install", "oats.web", "--dir", repo], { encoding: "utf8" });
   assert.notEqual(inst.status, 0);
-  assert.match(inst.stderr + inst.stdout, /retired.*OAS Desktop app/s, "explicit install names the successor");
+  assert.match(inst.stderr + inst.stdout, /retired.*OATS Desktop app/s, "explicit install names the successor");
   assert.doesNotMatch(inst.stderr + inst.stdout, /not a marketplace capability/, "no unexplained missing-capability failure");
   // bare install with a stale lock entry reports RETIRED (actionable), and doctor warns
   const repo2 = join(base, "repo2"); mkdirSync(repo2);
-  write(join(repo2, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
-  write(join(repo2, "oas-lock.json"), JSON.stringify({ capabilities: { "oas.web": { version: "0.9.6", integrity: "sha256-x", source: "marketplace:oas-web@0.9.6" } } }));
+  write(join(repo2, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
+  write(join(repo2, "oats-lock.json"), JSON.stringify({ capabilities: { "oats.web": { version: "0.9.6", integrity: "sha256-x", source: "marketplace:oats-web@0.9.6" } } }));
   const restore = spawnSync(process.execPath, [CLI, "install", "--dir", repo2], { encoding: "utf8" });
-  assert.match(restore.stdout, /RETIRED\s+oas\.web.*Remove the oas\.web entry/s, "lock restore reports the retirement with the fix");
-  assert.doesNotMatch(restore.stdout + restore.stderr, /FAILED\s+oas\.web/, "retired lock entry is not an opaque failure");
+  assert.match(restore.stdout, /RETIRED\s+oats\.web.*Remove the oats\.web entry/s, "lock restore reports the retirement with the fix");
+  assert.doesNotMatch(restore.stdout + restore.stderr, /FAILED\s+oats\.web/, "retired lock entry is not an opaque failure");
   const doctor = spawnSync(process.execPath, [CLI, "doctor", repo2], { encoding: "utf8" });
-  assert.match(doctor.stdout, /WARNING: oas\.web is locked in .*retired.*OAS Desktop app/s, "doctor surfaces the stale lock with migration guidance");
+  assert.match(doctor.stdout, /WARNING: oats\.web is locked in .*retired.*OATS Desktop app/s, "doctor surfaces the stale lock with migration guidance");
   const doctorJson2 = spawnSync(process.execPath, [CLI, "doctor", repo2, "--json"], { encoding: "utf8" });
   assert.equal(doctorJson2.status, 0, "lock-only state resolves");
   const dj2 = JSON.parse(doctorJson2.stdout);
-  assert.equal(dj2.retiredLocks?.[0]?.id, "oas.web", "doctor --json lists the stale retired lock");
-  assert.match(dj2.retiredLocks[0].reason, /Remove the oas\.web entry/, "JSON lock report carries the fix");
+  assert.equal(dj2.retiredLocks?.[0]?.id, "oats.web", "doctor --json lists the stale retired lock");
+  assert.match(dj2.retiredLocks[0].reason, /Remove the oats\.web entry/, "JSON lock report carries the fix");
 });
 
-test("retired oas.web: a STALE INSTALLED ARTIFACT never bypasses the retirement diagnostics", () => {
+test("retired oats.web: a STALE INSTALLED ARTIFACT never bypasses the retirement diagnostics", () => {
   // The migration's own upgrade state: the user hasn't deleted the stale
   // installed copy yet. Presence must not short-circuit retirement.
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  const staleDir = join(repo, ".agents", "capabilities", "installed", "oas-web");
-  write(join(staleDir, "oas.json"), JSON.stringify({ capability: "oas.web", version: "0.9.6", description: "stale web panel copy" }));
-  write(join(repo, "oas-lock.json"), JSON.stringify({ capabilities: { "oas.web": { version: "0.9.6", integrity: "sha256-x", source: "marketplace:oas-web@0.9.6" } } }));
+  const staleDir = join(repo, ".agents", "capabilities", "installed", "oats-web");
+  write(join(staleDir, "oats.json"), JSON.stringify({ capability: "oats.web", version: "0.9.6", description: "stale web panel copy" }));
+  write(join(repo, "oats-lock.json"), JSON.stringify({ capabilities: { "oats.web": { version: "0.9.6", integrity: "sha256-x", source: "marketplace:oats-web@0.9.6" } } }));
   // config activation with the artifact present still throws the retirement guidance
-  write(join(repo, "oas-config.yaml"), `capabilities:\n  additive:\n    oas.web:\n      global: true\n`);
-  assert.throws(() => resolveOasConfig(repo), /retired[\s\S]*OAS Desktop app[\s\S]*Remove the oas\.web entry/,
+  write(join(repo, "oats-config.yaml"), `capabilities:\n  additive:\n    oats.web:\n      global: true\n`);
+  assert.throws(() => resolveOatsConfig(repo), /retired[\s\S]*OATS Desktop app[\s\S]*Remove the oats\.web entry/,
     "stale artifact does not let config activation succeed");
   // explicit install with the artifact present must not exit "Already acquired"
-  const inst = spawnSync(process.execPath, [CLI, "install", "oas.web", "--dir", repo], { encoding: "utf8" });
+  const inst = spawnSync(process.execPath, [CLI, "install", "oats.web", "--dir", repo], { encoding: "utf8" });
   assert.notEqual(inst.status, 0, "explicit install of a retired id fails even when an artifact is present");
-  assert.match(inst.stderr, /retired.*OAS Desktop app/s);
+  assert.match(inst.stderr, /retired.*OATS Desktop app/s);
   assert.doesNotMatch(inst.stdout, /Already acquired/, "presence does not short-circuit retirement");
   // bare install must report RETIRED, never ok/present
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
   const restore = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { encoding: "utf8" });
-  assert.match(restore.stdout, /RETIRED\s+oas\.web/s, "lock restore reports RETIRED despite the present artifact");
-  assert.doesNotMatch(restore.stdout, /ok\s+oas\.web/, "no 'ok' for a retired capability's stale artifact");
+  assert.match(restore.stdout, /RETIRED\s+oats\.web/s, "lock restore reports RETIRED despite the present artifact");
+  assert.doesNotMatch(restore.stdout, /ok\s+oats\.web/, "no 'ok' for a retired capability's stale artifact");
   // doctor's acquired listing flags the stale artifact with the deletion hint
   const doctor = spawnSync(process.execPath, [CLI, "doctor", repo], { encoding: "utf8" });
-  assert.match(doctor.stdout, /oas\.web[\s\S]*WARNING: artifact of a retired capability[\s\S]*also delete/, "doctor names the stale installed copy with delete guidance");
+  assert.match(doctor.stdout, /oats\.web[\s\S]*WARNING: artifact of a retired capability[\s\S]*also delete/, "doctor names the stale installed copy with delete guidance");
 });
 
-test("retired oas.web: non-installed origins and source-manifest retirement are handled safely", () => {
+test("retired oats.web: non-installed origins and source-manifest retirement are handled safely", () => {
   const base = temp();
   // owned origin: doctor warns WITHOUT destructive delete guidance
   const repo = join(base, "repo"); mkdirSync(repo);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
-  write(join(repo, ".agents", "capabilities", "owned", "oas-web", "oas.json"),
-    JSON.stringify({ capability: "oas.web", version: "0.9.6", description: "owned copy" }));
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
+  write(join(repo, ".agents", "capabilities", "owned", "oats-web", "oats.json"),
+    JSON.stringify({ capability: "oats.web", version: "0.9.6", description: "owned copy" }));
   const doc = spawnSync(process.execPath, [CLI, "doctor", repo], { encoding: "utf8" });
   assert.match(doc.stdout, /WARNING: artifact of a retired capability/, "owned retired artifact is flagged");
   assert.match(doc.stdout, /remove its declaration/, "non-installed origin gets declaration guidance");
@@ -1137,18 +1137,18 @@ test("retired oas.web: non-installed origins and source-manifest retirement are 
   // doctor --json reports the artifact in retiredArtifacts
   const docJson = spawnSync(process.execPath, [CLI, "doctor", repo, "--json"], { encoding: "utf8" });
   const dj = JSON.parse(docJson.stdout);
-  assert.equal(dj.retiredArtifacts?.[0]?.id, "oas.web", "doctor --json lists the retired artifact");
+  assert.equal(dj.retiredArtifacts?.[0]?.id, "oats.web", "doctor --json lists the retired artifact");
   assert.match(dj.retiredArtifacts[0].origin, /^owned:/, "artifact record carries the origin");
   // local-path acquisition of a package whose MANIFEST declares a retired id is rejected and cleaned up
   const src = join(base, "ext-pkg"); mkdirSync(src);
-  write(join(src, "oas.json"), JSON.stringify({ capability: "oas.web", version: "0.9.9", description: "external" }));
+  write(join(src, "oats.json"), JSON.stringify({ capability: "oats.web", version: "0.9.9", description: "external" }));
   const target = join(base, "target"); mkdirSync(target);
-  write(join(target, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+  write(join(target, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
   const inst = spawnSync(process.execPath, [CLI, "install", src, "--dir", target], { encoding: "utf8" });
   assert.notEqual(inst.status, 0, "path install of a retired-manifest package fails");
-  assert.match(inst.stderr, /declares capability "oas\.web".*retired/s, "failure names the manifest's retired id");
+  assert.match(inst.stderr, /declares capability "oats\.web".*retired/s, "failure names the manifest's retired id");
   assert.equal(existsSync(join(target, ".agents", "capabilities", "installed", "ext-pkg")), false, "destination artifact removed");
-  assert.equal(existsSync(join(target, "oas-lock.json")), false, "no lock entry written");
+  assert.equal(existsSync(join(target, "oats-lock.json")), false, "no lock entry written");
 });
 
 test("spawn lineage is explicit: ambient env never sets parent; --parent and attached owner do", () => {
@@ -1158,11 +1158,11 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
   write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
   mkdirSync(join(root, "dev", "instances"), { recursive: true });
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
   delete env.PI_AGENTS_ROOT;
   // 1. Env-polluted shell (a terminal opened inside an agent's tmux window) WITHOUT
   //    --parent: operator origin, top-level, and the task still lands in TASK.md.
-  const polluted = { ...env, OAS_INSTANCE: "dev-existing", PI_AGENT_INSTANCE: "dev-existing" };
+  const polluted = { ...env, OATS_INSTANCE: "dev-existing", PI_AGENT_INSTANCE: "dev-existing" };
   let r = spawnSync(process.execPath, [CLI, "spawn", "dev", "--task", "manual human task", "--purpose", "manual", "--no-launch", "--json"], { cwd: repo, env: polluted, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const manual = jsonResult(r);
@@ -1188,9 +1188,9 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
   // 5. Kernel: attached mode still nests under the work-tree OWNER (no env, no parent).
   const agent = findAgent(root, "dev");
   const oldPath = process.env.PATH;
-  const oldInst = process.env.OAS_INSTANCE; const oldPiInst = process.env.PI_AGENT_INSTANCE;
+  const oldInst = process.env.OATS_INSTANCE; const oldPiInst = process.env.PI_AGENT_INSTANCE;
   process.env.PATH = fakeRuntimes(base);
-  process.env.OAS_INSTANCE = "dev-existing"; process.env.PI_AGENT_INSTANCE = "dev-existing";
+  process.env.OATS_INSTANCE = "dev-existing"; process.env.PI_AGENT_INSTANCE = "dev-existing";
   try {
     const attached = spawnInstance(root, agent, { instance: "dev-svc", work: "attached", workDir: join(manual.home, "work"), task: "attached task", launch: false });
     assert.equal(attached.parentInstance, manual.instance, "attached fallback: work-tree owner is the parent");
@@ -1207,7 +1207,7 @@ test("spawn lineage is explicit: ambient env never sets parent; --parent and att
     assert.match(readFileSync(join(top.home, "TASK.md"), "utf8"), /No task was provided/);
   } finally {
     process.env.PATH = oldPath;
-    if (oldInst === undefined) delete process.env.OAS_INSTANCE; else process.env.OAS_INSTANCE = oldInst;
+    if (oldInst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = oldInst;
     if (oldPiInst === undefined) delete process.env.PI_AGENT_INSTANCE; else process.env.PI_AGENT_INSTANCE = oldPiInst;
   }
 });
@@ -1218,7 +1218,7 @@ test("--parent accepts capability-defined parent instances homing under local-ag
     "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Reviewer.\n",
     "agents/reviewer/AGENTS.md": "# Reviewer\n",
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.rev:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.rev:\n      global: true\n");
   return import("../lib/core.mjs").then((core) => {
     const capAgent = core.findCapabilityAgent(repo, root, "reviewer");
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -1226,11 +1226,11 @@ test("--parent accepts capability-defined parent instances homing under local-ag
       // Capability agent instance homes under <root>/local-agents/reviewer/instances/.
       const parent = core.spawnInstance(root, { ...capAgent, repo }, { instance: "reviewer-abc", launch: false });
       assert.ok(parent.home.includes(join("local-agents", "reviewer", "instances")));
-      // Kernel lookup sees it (this is what `oas spawn --parent` validates with).
+      // Kernel lookup sees it (this is what `oats spawn --parent` validates with).
       assert.ok(core.findInstanceHome(root, "reviewer-abc"), "findInstanceHome sees capability-agent homes");
       // Coordinator-style spawn: a capability-defined instance passes itself as
       // --parent when spawning a child through the CLI.
-      const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+      const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
       delete env.PI_AGENTS_ROOT;
       const r = spawnSync(process.execPath, [CLI, "spawn", "dev", "--parent", "reviewer-abc", "--task", "child work", "--purpose", "child", "--no-launch", "--json"], { cwd: repo, env, encoding: "utf8" });
       assert.equal(r.status, 0, r.stderr);
@@ -1238,7 +1238,7 @@ test("--parent accepts capability-defined parent instances homing under local-ag
       assert.equal(child.parent, "reviewer-abc");
       assert.equal(child.spawnOrigin, "instance");
       assert.match(readFileSync(join(child.home, "TASK.md"), "utf8"), /child work/);
-      core.retireInstance(root, "reviewer-abc", { tmuxSession: "oas-test-nosuch" });
+      core.retireInstance(root, "reviewer-abc", { tmuxSession: "oats-test-nosuch" });
     } finally { process.env.PATH = oldPath; }
   });
 });
@@ -1249,7 +1249,7 @@ test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, valida
   write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
   write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
   mkdirSync(join(root, "dev", "instances"), { recursive: true });
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
   delete env.PI_AGENTS_ROOT;
   const spawn = (...extra) => spawnSync(process.execPath, [CLI, "spawn", "dev", "--no-launch", "--json", ...extra], { cwd: repo, env, encoding: "utf8" });
   const metaOf = (home) => JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
@@ -1399,10 +1399,10 @@ test("spawn relations: child/sibling/parent/unrelated, sugar equivalence, valida
 test("relation anchors are ambiguity-safe across same-named team instances", () => {
   const base = temp();
   const ws = join(base, "ws"); mkdirSync(ws, { recursive: true });
-  write(join(ws, "oas-config.yaml"), "team:\n  name: t\n");
+  write(join(ws, "oats-config.yaml"), "team:\n  name: t\n");
   const mkMember = (repoName) => {
     const repo = join(ws, repoName); gitRepo(repo);
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
     const root = join(repo, "agents");
     write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
     write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
@@ -1625,9 +1625,9 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
   // Capability whose spawn/retire hooks record every event — compensation must
   // fire retire for the rolled-back instance.
   const hookLog = join(base, "hook-events");
-  const script = `import {appendFileSync} from 'node:fs'; appendFileSync(${JSON.stringify(hookLog)}, process.env.OAS_EVENT + ':' + process.env.OAS_INSTANCE + '\\n');`;
+  const script = `import {appendFileSync} from 'node:fs'; appendFileSync(${JSON.stringify(hookLog)}, process.env.OATS_EVENT + ':' + process.env.OATS_INSTANCE + '\\n');`;
   capability(repo, "comp", { capability: "acme.comp", hooks: { spawn: "hook.mjs", retire: "hook.mjs" } }, { "hook.mjs": script });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.comp:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.comp:\n      global: true\n");
   // STATEFUL fake tmux: tracks window names in a file so list-windows reflects
   // new-window/kill-window; TMUX_FAKE_STUBBORN names a window that kill-window
   // silently fails to remove (for truth-telling assertions).
@@ -1640,7 +1640,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     `echo "$@" >> ${tmuxLog}`,
     'cmd="$1"',
     'case "$cmd" in',
-    "  display-message) echo /tmp/oas-test-fake.sock ;;",
+    "  display-message) echo /tmp/oats-test-fake.sock ;;",
     "  new-window)",
     `    while [ $# -gt 0 ]; do if [ "$1" = "-n" ]; then echo "$2" >> ${tmuxWins}; fi; shift; done ;;`,
     "  kill-window)",
@@ -1661,7 +1661,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
   process.env.PATH = `${bin}`;
   try {
     const agentDef = findAgent(root, "dev");
-    const anchor = spawnInstance(root, agentDef, { instance: "dev-anchor", tmuxSession: "oas-test-fake", launch: false });
+    const anchor = spawnInstance(root, agentDef, { instance: "dev-anchor", tmuxSession: "oats-test-fake", launch: false });
     const anchorMetaPath = join(anchor.home, "instance.json");
     const before = readFileSync(anchorMetaPath, "utf8");
     // Force the ATOMIC anchor write to fail AFTER a successful launch: 555 on
@@ -1670,7 +1670,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     execFileSync("chmod", ["555", anchor.home]);
     try {
       assert.throws(
-        () => spawnInstance(root, agentDef, { instance: "dev-zomb", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: true }),
+        () => spawnInstance(root, agentDef, { instance: "dev-zomb", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
         /failed to re-point anchor.*rolled back/s);
     } finally { execFileSync("chmod", ["755", anchor.home]); }
     // Anchor file NEVER truncated or altered (atomic temp+rename path).
@@ -1678,7 +1678,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     // The launched window was killed with an exact-match target.
     const tmuxCalls = readFileSync(tmuxLog, "utf8");
     assert.match(tmuxCalls, /new-window .*dev-zomb/, "window was launched");
-    assert.match(tmuxCalls, /kill-window -t =oas-test-fake:=dev-zomb/, "launched window killed exact-match");
+    assert.match(tmuxCalls, /kill-window -t =oats-test-fake:=dev-zomb/, "launched window killed exact-match");
     // Spawn hooks were compensated with retire for the rolled-back instance.
     const events = readFileSync(hookLog, "utf8").trim().split("\n");
     assert.ok(events.includes("spawn:dev-zomb"), "spawn hook ran");
@@ -1696,13 +1696,13 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     mkdirSync(tmpDir); write(join(tmpDir, "blocker"), "x");
     try {
       assert.throws(
-        () => spawnInstance(root, agentDef, { instance: "dev-zomb2", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: true }),
+        () => spawnInstance(root, agentDef, { instance: "dev-zomb2", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
         /failed to re-point anchor.*rollback INCOMPLETE.*tmp-dev-zomb2/s,
         "original anchor-write error surfaces, and the unremovable temp is reported for manual cleanup");
     } finally { rmSync(tmpDir, { recursive: true, force: true }); }
     assert.equal(readFileSync(anchorMetaPath, "utf8"), before, "anchor still byte-identical");
     const tmuxCalls2 = readFileSync(tmuxLog, "utf8");
-    assert.match(tmuxCalls2, /kill-window -t =oas-test-fake:=dev-zomb2/, "window killed despite temp-cleanup failure");
+    assert.match(tmuxCalls2, /kill-window -t =oats-test-fake:=dev-zomb2/, "window killed despite temp-cleanup failure");
     const events2 = readFileSync(hookLog, "utf8").trim().split("\n");
     assert.ok(events2.includes("retire:dev-zomb2"), "hooks compensated despite temp-cleanup failure");
     assert.equal(existsSync(join(root, "dev", "instances", "dev-zomb2")), false, "scaffold removed despite temp-cleanup failure");
@@ -1715,14 +1715,14 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     mkdirSync(tmpDir3); write(join(tmpDir3, "blocker"), "x"); // anchor write fails again
     write(join(repo, ".agents", "capabilities", "owned", "comp", "hook.mjs"),
       `import {appendFileSync, mkdirSync, writeFileSync, chmodSync} from 'node:fs';\n` +
-      `appendFileSync(${JSON.stringify(hookLog)}, process.env.OAS_EVENT + ':' + process.env.OAS_INSTANCE + '\\n');\n` +
-      `if (process.env.OAS_EVENT === 'retire' && process.env.OAS_INSTANCE === 'dev-zomb3') {\n` +
-      `  const d = process.env.OAS_HOME + '/locked'; mkdirSync(d); writeFileSync(d + '/pin', 'x'); chmodSync(d, 0o555);\n` +
+      `appendFileSync(${JSON.stringify(hookLog)}, process.env.OATS_EVENT + ':' + process.env.OATS_INSTANCE + '\\n');\n` +
+      `if (process.env.OATS_EVENT === 'retire' && process.env.OATS_INSTANCE === 'dev-zomb3') {\n` +
+      `  const d = process.env.OATS_HOME + '/locked'; mkdirSync(d); writeFileSync(d + '/pin', 'x'); chmodSync(d, 0o555);\n` +
       `}\n`);
     const zombHome = join(root, "dev", "instances", "dev-zomb3");
     try {
       assert.throws(
-        () => spawnInstance(root, agentDef, { instance: "dev-zomb3", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: false }),
+        () => spawnInstance(root, agentDef, { instance: "dev-zomb3", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: false }),
         /failed to re-point anchor.*rollback INCOMPLETE.*instance home/s,
         "unremovable home reported as incomplete with the failed path");
       assert.ok(existsSync(zombHome), "zombie home really remains (message told the truth)");
@@ -1739,8 +1739,8 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     process.env.TMUX_FAKE_STUBBORN = "dev-zomb4";
     try {
       assert.throws(
-        () => spawnInstance(root, agentDef, { instance: "dev-zomb4", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: true }),
-        /rollback INCOMPLETE.*tmux window oas-test-fake:dev-zomb4 still running/s,
+        () => spawnInstance(root, agentDef, { instance: "dev-zomb4", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
+        /rollback INCOMPLETE.*tmux window oats-test-fake:dev-zomb4 still running/s,
         "unkillable window reported despite kill-window exiting 0");
     } finally {
       delete process.env.TMUX_FAKE_STUBBORN;
@@ -1754,8 +1754,8 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     process.env.TMUX_FAKE_LIST_FAIL = "1";
     try {
       assert.throws(
-        () => spawnInstance(root, agentDef, { instance: "dev-zomb4b", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: true }),
-        /rollback INCOMPLETE.*tmux window oas-test-fake:dev-zomb4b: could not verify removal/s,
+        () => spawnInstance(root, agentDef, { instance: "dev-zomb4b", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: true }),
+        /rollback INCOMPLETE.*tmux window oats-test-fake:dev-zomb4b: could not verify removal/s,
         "failed verification probe reported as could-not-verify, never as success");
     } finally {
       delete process.env.TMUX_FAKE_LIST_FAIL;
@@ -1768,11 +1768,11 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     mkdirSync(tmpDir5); write(join(tmpDir5, "blocker"), "x");
     write(join(repo, ".agents", "capabilities", "owned", "comp", "hook.mjs"),
       `import {appendFileSync} from 'node:fs';\n` +
-      `appendFileSync(${JSON.stringify(hookLog)}, process.env.OAS_EVENT + ':' + process.env.OAS_INSTANCE + '\\n');\n` +
-      `if (process.env.OAS_EVENT === 'retire' && process.env.OAS_INSTANCE === 'dev-zomb5') process.exit(3);\n`);
+      `appendFileSync(${JSON.stringify(hookLog)}, process.env.OATS_EVENT + ':' + process.env.OATS_INSTANCE + '\\n');\n` +
+      `if (process.env.OATS_EVENT === 'retire' && process.env.OATS_INSTANCE === 'dev-zomb5') process.exit(3);\n`);
     try {
       assert.throws(
-        () => spawnInstance(root, agentDef, { instance: "dev-zomb5", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: false }),
+        () => spawnInstance(root, agentDef, { instance: "dev-zomb5", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: false }),
         /rollback INCOMPLETE.*retire hook acme\.comp/s,
         "nonzero retire hook reported via structured failures");
     } finally { rmSync(tmpDir5, { recursive: true, force: true }); }
@@ -1784,14 +1784,14 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     mkdirSync(tmpDir6); write(join(tmpDir6, "blocker"), "x");
     write(join(repo, ".agents", "capabilities", "owned", "comp", "hook.mjs"),
       `import {appendFileSync, mkdirSync as mk, writeFileSync as wf, chmodSync} from 'node:fs';\n` +
-      `appendFileSync(${JSON.stringify(hookLog)}, process.env.OAS_EVENT + ':' + process.env.OAS_INSTANCE + '\\n');\n` +
-      `if (process.env.OAS_EVENT === 'retire' && process.env.OAS_INSTANCE === 'dev-zomb6') {\n` +
-      `  const d = process.env.OAS_HOME + '/work/pin'; mk(d); wf(d + '/x', 'x'); chmodSync(d, 0o555); chmodSync(process.env.OAS_HOME + '/work', 0o555);\n` +
+      `appendFileSync(${JSON.stringify(hookLog)}, process.env.OATS_EVENT + ':' + process.env.OATS_INSTANCE + '\\n');\n` +
+      `if (process.env.OATS_EVENT === 'retire' && process.env.OATS_INSTANCE === 'dev-zomb6') {\n` +
+      `  const d = process.env.OATS_HOME + '/work/pin'; mk(d); wf(d + '/x', 'x'); chmodSync(d, 0o555); chmodSync(process.env.OATS_HOME + '/work', 0o555);\n` +
       `}\n`);
     const zomb6Home = join(root, "dev", "instances", "dev-zomb6");
     try {
       assert.throws(
-        () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-zomb6", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oas-test-fake", launch: false }),
+        () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-zomb6", relation: "parent", relativeTo: anchor.instance, tmuxSession: "oats-test-fake", launch: false }),
         /rollback INCOMPLETE.*(git worktree .* still registered|instance home)/s,
         "failed worktree cleanup reported");
     } finally {
@@ -1815,7 +1815,7 @@ test("parent-relation rollback after LAUNCH kills the window, compensates hooks,
     const zomb7Home = join(root, "dev", "instances", "dev-zomb7");
     try {
       assert.throws(
-        () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-zomb7", relation: "parent", relativeTo: anchor.instance, branch: evilBranch, tmuxSession: "oas-test-fake", launch: false }),
+        () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-zomb7", relation: "parent", relativeTo: anchor.instance, branch: evilBranch, tmuxSession: "oats-test-fake", launch: false }),
         /failed to re-point anchor/s,
         "rollback runs with the hostile branch name");
       assert.equal(existsSync(marker), false, "no command injection: metacharacter branch never executed");
@@ -1839,9 +1839,9 @@ test("rollback detects a still-registered canonical worktree through a symlinked
   mkdirSync(join(realRoot, "dev", "instances"), { recursive: true });
   // Compensation hook can remove one target's worktree directory BEFORE Git
   // verification, reproducing the canonical-path-loss race from review.
-  const vanishHook = `import {rmSync} from 'node:fs'; if (process.env.OAS_EVENT === 'retire' && process.env.OAS_INSTANCE === 'dev-sym-missing') rmSync(process.env.OAS_HOME + '/work', {recursive:true, force:true});`;
+  const vanishHook = `import {rmSync} from 'node:fs'; if (process.env.OATS_EVENT === 'retire' && process.env.OATS_INSTANCE === 'dev-sym-missing') rmSync(process.env.OATS_HOME + '/work', {recursive:true, force:true});`;
   capability(repo, "vanish", { capability: "acme.vanish", hooks: { retire: "hook.mjs" } }, { "hook.mjs": vanishHook });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.vanish:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.vanish:\n      global: true\n");
   const linkedRoot = join(base, "agents-link"); symlinkSync(realRoot, linkedRoot);
 
   // Git wrapper delegates normally, but can force selected cleanup/probe operations to fail.
@@ -1968,10 +1968,10 @@ test("rollback detects a still-registered canonical worktree through a symlinked
 test("retire splice crosses member repos inside a team deployment", () => {
   const base = temp();
   const ws = join(base, "ws"); mkdirSync(ws, { recursive: true });
-  write(join(ws, "oas-config.yaml"), "team:\n  name: t\n");
+  write(join(ws, "oats-config.yaml"), "team:\n  name: t\n");
   const mkMember = (repoName, soulName) => {
     const repo = join(ws, repoName); gitRepo(repo);
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
     const root = join(repo, "agents");
     write(join(root, soulName, "soul", "soul.yaml"), `name: ${soulName}\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
     write(join(root, soulName, "soul", "AGENTS.md"), `# ${soulName}\n`);
@@ -2000,10 +2000,10 @@ test("retire splice crosses member repos inside a team deployment", () => {
 test("retire splice is identity-safe: a same-named instance in another repo keeps its links", () => {
   const base = temp();
   const ws = join(base, "ws"); mkdirSync(ws, { recursive: true });
-  write(join(ws, "oas-config.yaml"), "team:\n  name: t\n");
+  write(join(ws, "oats-config.yaml"), "team:\n  name: t\n");
   const mkMember = (repoName) => {
     const repo = join(ws, repoName); gitRepo(repo);
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
     const root = join(repo, "agents");
     write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
     write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
@@ -2037,10 +2037,10 @@ test("retire splice is identity-safe: a same-named instance in another repo keep
 test("attached ownership is path-first: a same-named local instance cannot shadow the tree's true owner", () => {
   const base = temp();
   const ws = join(base, "ws"); mkdirSync(ws, { recursive: true });
-  write(join(ws, "oas-config.yaml"), "team:\n  name: t\n");
+  write(join(ws, "oats-config.yaml"), "team:\n  name: t\n");
   const mkMember = (repoName) => {
     const repo = join(ws, repoName); gitRepo(repo);
-    write(join(repo, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
     const root = join(repo, "agents");
     write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
     write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
@@ -2079,17 +2079,17 @@ test("attached ownership is path-first: a same-named local instance cannot shado
 test("attached owner discovery reaches all-local sibling scopes (no agents/ dir)", () => {
   const base = temp();
   const ws = join(base, "ws"); mkdirSync(ws, { recursive: true });
-  write(join(ws, "oas-config.yaml"), "team:\n  name: t\n");
+  write(join(ws, "oats-config.yaml"), "team:\n  name: t\n");
   // Repo A: ALL-LOCAL — no agents/ dir, its soul lives under local-agents/.
   const repoA = join(ws, "repo-a"); gitRepo(repoA);
-  write(join(repoA, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+  write(join(repoA, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
   const laDir = join(repoA, "local-agents");
   write(join(laDir, "helper", "soul", "soul.yaml"), `name: helper\nkind: local\nrepo: ${repoA}\nwork: worktree\nruntime: pi\n`);
   write(join(laDir, "helper", "soul", "AGENTS.md"), "# helper\n");
   mkdirSync(join(laDir, "helper", "instances"), { recursive: true });
   // Repo B: regular agents/ root; spawns attach onto A's local instance tree.
   const repoB = join(ws, "repo-b"); gitRepo(repoB);
-  write(join(repoB, "oas-config.yaml"), "capabilities:\n  additive: {}\n");
+  write(join(repoB, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
   const rootB = join(repoB, "agents");
   write(join(rootB, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repoB}\nwork: checkout\nruntime: pi\n`);
   write(join(rootB, "dev", "soul", "AGENTS.md"), "# dev\n");
@@ -2136,13 +2136,13 @@ test("lineage is deployment-local: --parent from an unrelated deployment is reje
   const base = temp();
   // Deployment A: the caller's instance lives here.
   const a = fixtureSoul(base);
-  // Deployment B: a separate repo + agents root (oas-support's --dir <repo> case).
+  // Deployment B: a separate repo + agents root (oats-support's --dir <repo> case).
   const repoB = join(base, "other-repo"); gitRepo(repoB);
   const rootB = join(repoB, "agents");
   write(join(rootB, "expert", "soul", "soul.yaml"), `name: expert\nkind: persistent\nrepo: ${repoB}\nwork: checkout\nruntime: pi\n`);
   write(join(rootB, "expert", "soul", "AGENTS.md"), "# expert\n");
   mkdirSync(join(rootB, "expert", "instances"), { recursive: true });
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
   delete env.PI_AGENTS_ROOT;
   // A real instance in deployment A…
   let r = spawnSync(process.execPath, [CLI, "spawn", "dev", "--purpose", "caller", "--no-launch", "--json"], { cwd: a.repo, env, encoding: "utf8" });
@@ -2164,7 +2164,7 @@ test("lineage is deployment-local: --parent from an unrelated deployment is reje
 
 test("traversal names are rejected: --parent and retire cannot reach outside instances/", () => {
   const base = temp(); const { repo, root, soul, agent } = fixtureSoul(base);
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
   delete env.PI_AGENTS_ROOT;
   // A real instance to anchor the fixture (and prove normal lookups still work).
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -2191,7 +2191,7 @@ test("traversal names are rejected: --parent and retire cannot reach outside ins
     assert.ok(existsSync(join(soul, "soul.yaml")), "canonical soul.yaml survives");
     assert.ok(existsSync(join(soul, "AGENTS.md")), "canonical AGENTS.md survives");
     // Kernel retire with a traversal name also refuses.
-    assert.throws(() => core.retireInstance(root, "../../dev/soul", { tmuxSession: "oas-test-nosuch" }), /no instance named/);
+    assert.throws(() => core.retireInstance(root, "../../dev/soul", { tmuxSession: "oats-test-nosuch" }), /no instance named/);
     assert.ok(existsSync(join(soul, "soul.yaml")));
     // A VALIDLY NAMED symlink inside instances/ that points OUTSIDE must also be
     // rejected — this exercises the realpath containment guard independently of
@@ -2201,17 +2201,17 @@ test("traversal names are rejected: --parent and retire cannot reach outside ins
     writeFileSync(join(outside, "precious.txt"), "keep me");
     symlinkSync(outside, join(root, "dev", "instances", "dev-linked"));
     assert.equal(core.findInstanceHome(root, "dev-linked"), undefined, "escaping symlink rejected by containment");
-    assert.throws(() => core.retireInstance(root, "dev-linked", { tmuxSession: "oas-test-nosuch" }), /no instance named/);
+    assert.throws(() => core.retireInstance(root, "dev-linked", { tmuxSession: "oats-test-nosuch" }), /no instance named/);
     assert.ok(existsSync(join(outside, "precious.txt")), "symlink target untouched");
     // Real instance still retires normally.
-    core.retireInstance(root, "dev-real", { tmuxSession: "oas-test-nosuch" });
+    core.retireInstance(root, "dev-real", { tmuxSession: "oats-test-nosuch" });
     assert.ok(!existsSync(real.home));
   });
 });
 
 test("local souls: --local creates a full gitignored soul beside agents/, with memory and injection", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" }; delete env.PI_AGENTS_ROOT;
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" }; delete env.PI_AGENTS_ROOT;
   // Bootstrap: NO agents/ dir exists — --local must still work (all-local scopes).
   let r = spawnSync(process.execPath, [CLI, "create", "helper", "--local", "--description", "Local helper.", "--dir", repo], { cwd: repo, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
@@ -2236,7 +2236,7 @@ test("local souls: --local creates a full gitignored soul beside agents/, with m
     const helper = agents.find((a) => a.name === "helper");
     assert.ok(helper, "local soul listed");
     assert.equal(helper.kind, "local");
-    // Spawn: full memory scaffold (STATE.md via oas-okf would need the layer —
+    // Spawn: full memory scaffold (STATE.md via oats-okf would need the layer —
     // kernel-level checks here: local-soul injection composed, soul symlinked).
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
@@ -2245,25 +2245,25 @@ test("local souls: --local creates a full gitignored soul beside agents/, with m
       assert.equal(JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8")).kind, "local");
       // findInstanceHome + retire see sibling local-agents homes.
       assert.ok(core.findInstanceHome(root, "helper-1"), "instance home found");
-      core.retireInstance(root, "helper-1", { tmuxSession: "oas-test-nosuch" });
+      core.retireInstance(root, "helper-1", { tmuxSession: "oats-test-nosuch" });
       assert.ok(!existsSync(res.home));
     } finally { process.env.PATH = oldPath; }
   });
 });
 
-test("local souls get memory scaffolding from oas-okf; capability agents stay memory-less and skip the okf injection", () => {
+test("local souls get memory scaffolding from oats-okf; capability agents stay memory-less and skip the okf injection", () => {
   const base = temp(); const { repo, root } = fixtureSoul(base);
-  // Bind oas.okf from the real package tree (owned copy so no lock needed).
-  const okfSrc = resolve(new URL("../capabilities/oas-okf", import.meta.url).pathname);
-  const dest = join(repo, ".agents", "capabilities", "owned", "oas-okf");
+  // Bind oats.okf from the real package tree (owned copy so no lock needed).
+  const okfSrc = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
+  const dest = join(repo, ".agents", "capabilities", "owned", "oats-okf");
   mkdirSync(dirname(dest), { recursive: true });
   execFileSync("cp", ["-R", okfSrc, dest]);
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oas.okf\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      global: true\n");
   capability(repo, "rev", { capability: "acme.rev", agents: ["agents/reviewer"] }, {
     "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Reviewer.\n",
     "agents/reviewer/AGENTS.md": "# Reviewer\n",
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oas.okf\n      global: true\n  additive:\n    acme.rev:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      global: true\n  additive:\n    acme.rev:\n      global: true\n");
   return import("../lib/core.mjs").then((core) => {
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
@@ -2282,8 +2282,8 @@ test("local souls get memory scaffolding from oas-okf; capability agents stay me
       const rev = core.spawnInstance(root, { ...cap, repo }, { instance: "reviewer-1", launch: false });
       assert.ok(!existsSync(join(rev.home, "STATE.md")), "capability agent gets no STATE.md");
       assert.doesNotMatch(readFileSync(join(rev.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
-      core.retireInstance(root, "scratch-1", { tmuxSession: "oas-test-nosuch" });
-      core.retireInstance(root, "reviewer-1", { tmuxSession: "oas-test-nosuch" });
+      core.retireInstance(root, "scratch-1", { tmuxSession: "oats-test-nosuch" });
+      core.retireInstance(root, "reviewer-1", { tmuxSession: "oats-test-nosuch" });
     } finally { process.env.PATH = oldPath; }
   });
 });
@@ -2295,7 +2295,7 @@ test("capability-agent trust isolates providers and preserves path/owned structu
   // Developer-owned path provider: instruction agents are structurally trusted
   // without a lock, while its executable command policy remains unchanged.
   const pathDir = join(base, "path-cap");
-  write(join(pathDir, "oas.json"), JSON.stringify({ capability: "path.agent", version: "1.0.0", description: "path", agents: ["agents/helper"], commands: { run: "run.mjs" } }));
+  write(join(pathDir, "oats.json"), JSON.stringify({ capability: "path.agent", version: "1.0.0", description: "path", agents: ["agents/helper"], commands: { run: "run.mjs" } }));
   write(join(pathDir, "agents", "helper", "soul.yaml"), "name: helper\nkind: capability\nwork: checkout\nruntime: pi\n");
   write(join(pathDir, "agents", "helper", "AGENTS.md"), "# path helper\n");
   write(join(pathDir, "run.mjs"), "// executable remains subject to old policy\n");
@@ -2308,7 +2308,7 @@ test("capability-agent trust isolates providers and preserves path/owned structu
 
   // Locked installed provider with two names; tamper after locking.
   const badDir = join(repo, ".agents", "capabilities", "installed", "bad-agent");
-  write(join(badDir, "oas.json"), JSON.stringify({ capability: "bad.agent", version: "1.0.0", description: "bad", agents: ["agents/helper", "agents/badonly"] }));
+  write(join(badDir, "oats.json"), JSON.stringify({ capability: "bad.agent", version: "1.0.0", description: "bad", agents: ["agents/helper", "agents/badonly"] }));
   for (const name of ["helper", "badonly"]) {
     write(join(badDir, "agents", name, "soul.yaml"), `name: ${name}\nkind: capability\nwork: checkout\nruntime: pi\n`);
     write(join(badDir, "agents", name, "AGENTS.md"), `# ${name}\n`);
@@ -2318,7 +2318,7 @@ test("capability-agent trust isolates providers and preserves path/owned structu
 
   const config = (badFirst) => `capabilities:\n  additive:\n${badFirst ? "    bad.agent:\n      from: installed\n" : ""}    path.agent:\n      from: path:${pathDir}\n    owned.agent:\n      from: owned\n${badFirst ? "" : "    bad.agent:\n      from: installed\n"}`;
   for (const badFirst of [true, false]) {
-    write(join(repo, "oas-config.yaml"), config(badFirst));
+    write(join(repo, "oats-config.yaml"), config(badFirst));
     const helper = core.findCapabilityAgent(repo, root, "helper");
     assert.equal(helper.capability, "path.agent", `trusted match survives invalid provider ${badFirst ? "before" : "after"}`);
     assert.equal(core.findCapabilityAgent(repo, root, "does-not-exist"), undefined, "unrelated invalid provider never poisons not-found");
@@ -2338,7 +2338,7 @@ test("capability-agent trust isolates providers and preserves path/owned structu
   try {
     const spawned = core.spawnInstance(root, { ...agent, repo }, { instance: "helper-path", launch: false });
     assert.match(readFileSync(join(spawned.home, "AGENTS.md"), "utf8"), /path helper/);
-    core.retireInstance(root, "helper-path", { tmuxSession: "oas-test-nosuch" });
+    core.retireInstance(root, "helper-path", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -2415,7 +2415,7 @@ test("spawnInstance refuses to create an instance home inside a linked worktree"
     // Spawning against the canonical root is unaffected.
     const spawned = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-ok", launch: false });
     assert.equal(spawned.home, join(root, "dev", "instances", "dev-ok"));
-    retireInstance(root, "dev-ok", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-ok", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   execFileSync("git", ["-C", repo, "worktree", "remove", "--force", wt]);
   rmSync(base, { recursive: true, force: true });
@@ -2468,32 +2468,32 @@ test("a failed Git probe fails closed instead of passing as a non-Git scope (rev
   rmSync(base, { recursive: true, force: true });
 });
 
-test("OAS_INSTANCE_HOME is exported to the runtime and to lifecycle hooks, aliases retained", () => {
+test("OATS_INSTANCE_HOME is exported to the runtime and to lifecycle hooks, aliases retained", () => {
   const base = temp();
   const { repo, root, soul } = fixtureSoul(base, "pi");
   // A hook that records the env it was given.
   const probe = `import {writeFileSync} from 'node:fs';
-writeFileSync(process.env.OAS_CONTEXT + '/hook-env.json', JSON.stringify({
-  instanceHome: process.env.OAS_INSTANCE_HOME || null,
-  legacyHome: process.env.OAS_HOME || null,
-  storeDir: process.env.OAS_HOME_DIR || null,
+writeFileSync(process.env.OATS_CONTEXT + '/hook-env.json', JSON.stringify({
+  instanceHome: process.env.OATS_INSTANCE_HOME || null,
+  legacyHome: process.env.OATS_HOME || null,
+  storeDir: process.env.OATS_HOME_DIR || null,
 }));
 console.log('{}');`;
   capability(repo, "envprobe", { capability: "acme.envprobe", hooks: { spawn: "hook.mjs" } }, { "hook.mjs": probe });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.envprobe:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.envprobe:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-env", launch: false });
     const seen = JSON.parse(readFileSync(join(repo, "hook-env.json"), "utf8"));
     assert.equal(seen.instanceHome, r.home, "hooks receive the runtime-neutral name");
-    assert.equal(seen.legacyHome, r.home, "OAS_HOME stays a compatibility alias for shipped capability hooks");
+    assert.equal(seen.legacyHome, r.home, "OATS_HOME stays a compatibility alias for shipped capability hooks");
     // The package STORE root is a different concept and must never be conflated.
     assert.notEqual(seen.storeDir, r.home);
     // Every runtime gets the neutral name; the pi-branded ones remain as aliases
-    // because the separately published @oas-framework/pi extension reads them.
-    assert.match(r.command, new RegExp(`OAS_INSTANCE_HOME='${r.home}'`));
+    // because the separately published @awebai/oats-pi extension reads them.
+    assert.match(r.command, new RegExp(`OATS_INSTANCE_HOME='${r.home}'`));
     assert.match(r.command, new RegExp(`PI_AGENT_HOME='${r.home}'`));
-    retireInstance(root, "dev-env", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-env", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -2532,7 +2532,7 @@ test("symlinks on the path to the home cannot smuggle it into a linked worktree 
     const linkRoot = join(base, "agents-link"); symlinkSync(root, linkRoot);
     const viaLink = spawnInstance(linkRoot, findAgent(linkRoot, "dev"), { instance: "dev-via-link", launch: false });
     assert.equal(realpathSync(viaLink.home), join(realpathSync(root), "dev", "instances", "dev-via-link"));
-    retireInstance(linkRoot, "dev-via-link", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(linkRoot, "dev-via-link", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   execFileSync("git", ["-C", repo, "worktree", "remove", "--force", wt]);
   rmSync(base, { recursive: true, force: true });
@@ -2551,7 +2551,7 @@ test("a capability whose declared skill does not resolve fails the spawn closed,
     capability: "acme.ghost",
     skills: ["node_modules/@vendor/pkg/skills/ghost-skill"],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.ghost:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.ghost:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -2573,7 +2573,7 @@ test("preflight distinguishes declared-and-missing from declared-nothing and inj
   capability(repo, "quiet", { capability: "acme.quiet" });
   // Declares an injection that DOES resolve.
   capability(repo, "loud", { capability: "acme.loud", inject: "injects/loud.md" }, { "injects/loud.md": "## Loud\n" });
-  write(join(repo, "oas-config.yaml"),
+  write(join(repo, "oats-config.yaml"),
     "capabilities:\n  additive:\n    acme.quiet:\n      global: true\n    acme.loud:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
@@ -2585,14 +2585,14 @@ test("preflight distinguishes declared-and-missing from declared-nothing and inj
     assert.equal(meta.composition.expected.some((e) => e.source === "acme.quiet"), false,
       "a capability declaring nothing contributes nothing");
     assert.match(readFileSync(join(r.home, "AGENTS.md"), "utf8"), /## Loud/);
-    retireInstance(root, "dev-quiet", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-quiet", { tmuxSession: "oats-test-nosuch" });
 
     // injection-override: none is an explicit choice, not a missing resource.
-    write(join(repo, "oas-config.yaml"),
+    write(join(repo, "oats-config.yaml"),
       "capabilities:\n  additive:\n    acme.loud:\n      global: true\n      injection-override: none\n");
     const r2 = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-none", launch: false });
     assert.doesNotMatch(readFileSync(join(r2.home, "AGENTS.md"), "utf8"), /## Loud/);
-    retireInstance(root, "dev-none", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-none", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -2603,7 +2603,7 @@ test("instance.json records expected == materialized, and the .claude/skills ali
   write(join(soul, "skills", "soul-skill", "SKILL.md"), "---\nname: soul-skill\ndescription: A soul-private skill.\n---\nbody\n");
   capability(repo, "withskill", { capability: "acme.withskill", skills: ["skills"] },
     { "skills/cap-skill/SKILL.md": "---\nname: cap-skill\ndescription: A capability skill.\n---\nbody\n" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.withskill:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.withskill:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-mat", launch: false });
@@ -2620,7 +2620,7 @@ test("instance.json records expected == materialized, and the .claude/skills ali
     assert.equal(readlinkSync(join(r.home, "CLAUDE.md")), "AGENTS.md");
     // Every expected resource carries provenance for audit.
     for (const e of meta.composition.expected) assert.ok(e.type && e.source && e.declared, `provenance on ${JSON.stringify(e)}`);
-    retireInstance(root, "dev-mat", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-mat", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -2634,7 +2634,7 @@ test("a declared skill tree that exists but yields no skills fails closed (revie
   const dir = capability(repo, "hollow", { capability: "acme.hollow", skills: ["skills"] });
   mkdirSync(join(dir, "skills", "not-a-skill"), { recursive: true });
   write(join(dir, "skills", "not-a-skill", "README.md"), "no SKILL.md here\n");
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.hollow:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.hollow:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -2658,7 +2658,7 @@ test("a skill directory represented by a symlink is reported, never silently dro
   write(join(dir, "real", "aliased-skill", "SKILL.md"), "---\nname: aliased-skill\ndescription: Reached only through a symlink.\n---\nbody\n");
   mkdirSync(join(dir, "skills"), { recursive: true });
   symlinkSync(join("..", "real", "aliased-skill"), join(dir, "skills", "aliased-skill"));
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.linked:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.linked:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -2677,7 +2677,7 @@ test("an empty soul skills/ dir is not a broken promise, unlike a declared capab
   try {
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-emptysoul", launch: false });
     assert.ok(existsSync(join(r.home, "instance.json")), "spawn succeeds");
-    retireInstance(root, "dev-emptysoul", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-emptysoul", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -2691,13 +2691,13 @@ test("a promised skill still counts when an override satisfies its name from ano
   write(join(soul, "skills", "shared", "SKILL.md"), "---\nname: shared\ndescription: Soul version.\n---\nsoul\n");
   capability(repo, "dup", { capability: "acme.dup", skills: ["skills"] },
     { "skills/shared/SKILL.md": "---\nname: shared\ndescription: Capability version.\n---\ncap\n" });
-  write(join(repo, "oas-config.yaml"),
+  write(join(repo, "oats-config.yaml"),
     "skill-overrides:\n  shared: soul\ncapabilities:\n  additive:\n    acme.dup:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-dup", launch: false });
     assert.match(readFileSync(join(r.home, ".agents", "skills", "shared", "SKILL.md"), "utf8"), /Soul version/);
-    retireInstance(root, "dev-dup", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-dup", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -2710,7 +2710,7 @@ test("a SKILL.md that is not a regular file does not count as a skill (reviewer-
   // with no readable skill document.
   const dir = capability(repo, "fakedoc", { capability: "acme.fakedoc", skills: ["skills"] });
   mkdirSync(join(dir, "skills", "fake", "SKILL.md"), { recursive: true });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.fakedoc:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.fakedoc:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -2731,13 +2731,13 @@ test("spawn fails closed when a capability's runtime package is missing, even af
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:@awebai/pi", why: "channel extension for pi sessions" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const oldHome = process.env.HOME; process.env.HOME = join(base, "nohome"); // no pi packages
   try {
     // Claude is unaffected: it never needed the pi package.
     const claude = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-claude", launch: false });
-    retireInstance(root, "dev-claude", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-claude", { tmuxSession: "oats-test-nosuch" });
     assert.doesNotMatch(claude.command, /-e /);
 
     // --runtime pi overrides the soul default long after install-time
@@ -2764,7 +2764,7 @@ test("a required runtime package is verified and recorded, and pi loads it throu
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   // A relocated pi config dir (PI_CODING_AGENT_DIR) holding the package entry.
   const piDir = join(base, "pi-agent");
   write(join(piDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-channel@1.2.3"] }));
@@ -2786,7 +2786,7 @@ test("a required runtime package is verified and recorded, and pi loads it throu
     assert.equal(pkgs[0].capability, "acme.chan");
     assert.equal(pkgs[0].package, "npm:fake-channel");
     assert.equal(pkgs[0].loadedBy, "runtime-discovery", "provenance says how it reaches the session");
-    retireInstance(root, "dev-ext", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-ext", { tmuxSession: "oats-test-nosuch" });
   } finally {
     process.env.PATH = oldPath;
     if (oldPi === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldPi;
@@ -2801,7 +2801,7 @@ test("PI_PACKAGE_DIR pointing elsewhere does not break detection (reviewer-ad1b9
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const piDir = join(base, "pi-agent");
   write(join(piDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-channel"] }));
   const pkgDir = join(piDir, "npm", "node_modules", "fake-channel");
@@ -2815,7 +2815,7 @@ test("PI_PACKAGE_DIR pointing elsewhere does not break detection (reviewer-ad1b9
     // must key off the agent dir alone, or a Nix/Guix-style host fails every spawn.
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-nix", launch: false });
     assert.ok(existsSync(join(r.home, "instance.json")));
-    retireInstance(root, "dev-nix", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-nix", { tmuxSession: "oats-test-nosuch" });
   } finally {
     process.env.PATH = oldPath;
     if (oldPi === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldPi;
@@ -2831,7 +2831,7 @@ test('a settings entry with "extensions": [] fails the spawn — it loads none o
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const piDir = join(base, "pi-agent");
   // Installed and listed, but the operator disabled every extension from it.
   // A settings row is not proof the capability's extension will load.
@@ -2861,7 +2861,7 @@ test("a stale settings row whose files were never installed fails the spawn (rev
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const piDir = join(base, "pi-agent");
   write(join(piDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-channel"] }));
   // Configured but never installed: pi prints the source line and NO path line,
@@ -2889,7 +2889,7 @@ test("a non-empty extensions filter fails as unverifiable; a skills-only filter 
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const piDir = join(base, "pi-agent");
   const pkgDir = join(piDir, "npm", "node_modules", "fake-channel");
   write(join(pkgDir, "package.json"), JSON.stringify({ name: "fake-channel" }));
@@ -2907,7 +2907,7 @@ test("a non-empty extensions filter fails as unverifiable; a skills-only filter 
     );
 
     // A filter on OTHER resource kinds is unrelated and must keep working —
-    // the real oas-aweb entry filters skills only, and pi still marks the row
+    // the real oats-aweb entry filters skills only, and pi still marks the row
     // "(filtered)", so the two must not be conflated.
     write(join(piDir, "settings.json"), JSON.stringify({ packages: [{ source: "npm:fake-channel", skills: ["skills/one"] }] }));
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-skillfilt", launch: false });
@@ -2915,7 +2915,7 @@ test("a non-empty extensions filter fails as unverifiable; a skills-only filter 
     const pkg = meta.composition.materialized.runtimePackages[0];
     assert.equal(pkg.filtered, true, "pi's own (filtered) marker is recorded…");
     assert.equal(pkg.dir, pkgDir, "…along with where the runtime says it lives");
-    retireInstance(root, "dev-skillfilt", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-skillfilt", { tmuxSession: "oats-test-nosuch" });
   } finally {
     process.env.PATH = oldPath;
     if (oldPi === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = oldPi;
@@ -2930,7 +2930,7 @@ test("a directory pi names but that does not exist also fails the spawn", () => 
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const piDir = join(base, "pi-agent");
   write(join(piDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-channel"] }));
   const oldPath = process.env.PATH;
@@ -2955,7 +2955,7 @@ test("when pi cannot be run, a config entry is not accepted as an installation",
     capability: "acme.chan",
     requires: [{ runtime: "pi", package: "npm:fake-channel", why: "channel extension" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const piDir = join(base, "pi-agent");
   write(join(piDir, "settings.json"), JSON.stringify({ packages: ["npm:fake-channel"] }));
   // `pi list` fails, so only settings are readable — which record intent, never
@@ -2987,13 +2987,13 @@ test("instance.json records the runtime posture — what is composed, curtailed,
       const { root } = fixtureSoul(b, runtime);
       const r = spawnInstance(root, findAgent(root, "dev"), { instance: `dev-${runtime}`, launch: false });
       const posture = JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")).composition.materialized.runtimePosture;
-      assert.ok(posture.oasComposed, `${runtime} records the composed surface`);
+      assert.ok(posture.oatsComposed, `${runtime} records the composed surface`);
       assert.ok(posture.ambient?.length, `${runtime} states what remains ambient`);
       assert.ok(posture.why, `${runtime} records why`);
       if (runtime === "pi") assert.ok(posture.curtailed?.includes("user skills"), "pi curtails ambient skills");
       // Claude keeps its own global and per-repo configuration by founder ruling.
       else assert.ok(posture.ambient.some((a) => /plugins/.test(a)), "claude keeps user/project plugins");
-      retireInstance(root, `dev-${runtime}`, { tmuxSession: "oas-test-nosuch" });
+      retireInstance(root, `dev-${runtime}`, { tmuxSession: "oats-test-nosuch" });
     }
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
@@ -3008,7 +3008,7 @@ test("a failing REQUIRED spawn hook fails the spawn and rolls it back", () => {
   // would start believing this capability works.
   capability(repo, "chan", { capability: "acme.chan", hooks: { spawn: { command: "hook.mjs spawn", required: true } } },
     { "hook.mjs": "process.stderr.write('identity minting failed\\n'); process.exit(1);" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -3029,12 +3029,12 @@ test("a failing hook that is NOT required still only warns", () => {
   // blocker just because required hooks now exist.
   capability(repo, "soft", { capability: "acme.soft", hooks: { spawn: "hook.mjs spawn" } },
     { "hook.mjs": "process.stderr.write('scaffolding failed\\n'); process.exit(1);" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.soft:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.soft:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-soft", launch: false });
     assert.ok(r.warnings?.some((w) => /acme\.soft spawn hook failed/.test(w)), `failure is surfaced: ${JSON.stringify(r.warnings)}`);
-    retireInstance(root, "dev-soft", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-soft", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -3044,7 +3044,7 @@ test("a required worktree spawn rolls back the worktree and branch too", () => {
   const { repo, root } = fixtureSoul(base, "pi");
   capability(repo, "chan", { capability: "acme.chan", hooks: { spawn: { command: "hook.mjs spawn", required: true } } },
     { "hook.mjs": "process.exit(1);" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   execFileSync("git", ["-C", repo, "add", "-A"]);
   execFileSync("git", ["-C", repo, "commit", "-qm", "cap"]);
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -3067,8 +3067,8 @@ test("only the spawn hook may be declared required", () => {
   // retire and soul-scaffold run outside a spawn transaction, so "required"
   // there would promise an enforcement with no moment to act.
   capability(repo, "bad", { capability: "acme.bad", hooks: { retire: { command: "hook.mjs retire", required: true } } }, { "hook.mjs": "" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.bad:\n      global: true\n");
-  assert.throws(() => resolveOasConfig(repo, "dev"), /cannot be required — only the spawn hook is enforced/);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.bad:\n      global: true\n");
+  assert.throws(() => resolveOatsConfig(repo, "dev"), /cannot be required — only the spawn hook is enforced/);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -3077,7 +3077,7 @@ test("a clean rollback reports no verification problems (probe stderr regression
   const { repo, root } = fixtureSoul(base, "pi");
   capability(repo, "chan", { capability: "acme.chan", hooks: { spawn: { command: "hook.mjs spawn", required: true } } },
     { "hook.mjs": "process.exit(1);" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   execFileSync("git", ["-C", repo, "add", "-A"]);
   execFileSync("git", ["-C", repo, "commit", "-qm", "cap"]);
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -3108,16 +3108,16 @@ test("a failed required hook hands back its metadata so compensation can undo ex
   }, {
     "hook.mjs": `import {writeFileSync, rmSync, existsSync} from 'node:fs';
 const marker = ${JSON.stringify(marker)};
-if (process.env.OAS_EVENT === 'spawn') {
+if (process.env.OATS_EVENT === 'spawn') {
   writeFileSync(marker, 'joined');                       // external state exists now
   console.log(JSON.stringify({ meta: { alias: 'probe-alias' } }));
   process.exit(1);                                        // …and then we fail
 }
-const meta = JSON.parse(process.env.OAS_META || '{}');
+const meta = JSON.parse(process.env.OATS_META || '{}');
 if (meta.alias === 'probe-alias' && existsSync(marker)) rmSync(marker);   // compensate
 console.log('{}');`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -3134,25 +3134,25 @@ test("the SHIPPED aweb spawn hook exits nonzero when it cannot mint an identity"
   // The required-hook contract is worthless if the capability that declares it
   // swallows its own failures. This executes the real hook, not a fixture.
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oas-aweb/bin/oas-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, OAS_EVENT: "spawn", OAS_INSTANCE: "probe", OAS_HOME: join(base, "no-such-home"), OAS_WORKSPACE: base, OAS_CONTEXT: base, OAS_TEAM_SCOPE: base },
+    env: { ...process.env, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: join(base, "no-such-home"), OATS_WORKSPACE: base, OATS_CONTEXT: base, OATS_TEAM_SCOPE: base },
   });
   assert.notEqual(r.status, 0, `no aweb root must be fatal, got exit ${r.status}: ${r.stdout}`);
   assert.match(r.stdout, /no identity could be minted/);
-  const manifest = JSON.parse(readFileSync(resolve(new URL("../capabilities/oas-aweb/oas.json", import.meta.url).pathname), "utf8"));
+  const manifest = JSON.parse(readFileSync(resolve(new URL("../capabilities/oats-aweb/oats.json", import.meta.url).pathname), "utf8"));
   assert.equal(manifest.hooks.spawn.required, true, "and the manifest declares it required, so the kernel acts on that exit code");
   rmSync(base, { recursive: true, force: true });
 });
 
 test("the manifest schema rejects `required` on non-spawn hooks, matching runtime validation", async () => {
   // A schema more permissive than the runtime lets authoring approve a manifest
-  // OAS then refuses to load.
+  // OATS then refuses to load.
   const { default: Ajv2020 } = await import("ajv/dist/2020.js");   // the schema declares draft 2020-12, as validate-project.mjs does
   const schema = JSON.parse(readFileSync(resolve(new URL("../docs/capability-manifest.schema.json", import.meta.url).pathname), "utf8"));
   const validate = new Ajv2020({ strict: false, allowUnionTypes: true }).compile(schema);
-  const manifest = (hooks) => ({ capability: "acme.x", version: "1.0.0", compatibility: { oas: ">=0.6.2" }, description: "x", hooks });
+  const manifest = (hooks) => ({ capability: "acme.x", version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "x", hooks });
   assert.equal(validate(manifest({ spawn: { command: "h.mjs spawn", required: true } })), true, "spawn may be required");
   assert.equal(validate(manifest({ retire: { command: "h.mjs retire", required: true } })), false, "retire may not");
   assert.equal(validate(manifest({ "soul-scaffold": { command: "h.mjs s", required: true } })), false, "soul-scaffold may not");
@@ -3161,7 +3161,7 @@ test("the manifest schema rejects `required` on non-spawn hooks, matching runtim
 
 test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5b78764)", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oas-aweb/bin/oas-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   // A stub `aw` that reports an initialized root but NO team, so the hook gets
   // past the root check and reaches team resolution — the paths that used to
   // warn-and-exit-0 while minting nothing.
@@ -3173,16 +3173,16 @@ test("the SHIPPED aweb hook is fatal on every terminal pre-mint path (reviewer-5
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const run = (env) => spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OAS_EVENT: "spawn", OAS_INSTANCE: "probe", OAS_HOME: root, OAS_WORKSPACE: root, OAS_CONTEXT: root, OAS_TEAM_SCOPE: root, ...env },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, ...env },
   });
 
   // Root present, no team resolvable at all.
-  const noTeam = run({ OAS_TEAM_ID: "", OAS_TEAM_NAME: "" });
+  const noTeam = run({ OATS_TEAM_ID: "", OATS_TEAM_NAME: "" });
   assert.notEqual(noTeam.status, 0, `no active team must be fatal, got ${noTeam.status}: ${noTeam.stdout}`);
   assert.match(noTeam.stdout, /no identity could be minted/);
 
   // A bare team name with no matching membership.
-  const noMatch = run({ OAS_TEAM_NAME: "nosuchteam" });
+  const noMatch = run({ OATS_TEAM_NAME: "nosuchteam" });
   assert.notEqual(noMatch.status, 0, `unresolved team must be fatal, got ${noMatch.status}: ${noMatch.stdout}`);
   assert.match(noMatch.stdout, /no membership matching team/);
   rmSync(base, { recursive: true, force: true });
@@ -3198,13 +3198,13 @@ test("a compensation hook that reports incomplete cleanup is not announced as a 
     capability: "acme.chan",
     hooks: { spawn: { command: "hook.mjs spawn", required: true }, retire: "hook.mjs retire" },
   }, {
-    "hook.mjs": `if (process.env.OAS_EVENT === 'spawn') {
-  console.log(JSON.stringify({ meta: { alias: 'probe' }, warning: 'oas-chan: minting failed — run: chan setup' }));
+    "hook.mjs": `if (process.env.OATS_EVENT === 'spawn') {
+  console.log(JSON.stringify({ meta: { alias: 'probe' }, warning: 'oats-chan: minting failed — run: chan setup' }));
   process.exit(1);
 }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -3221,12 +3221,12 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     // turning a transient cleanup failure into permanent external residue.
     const kept = join(root, "dev", "instances", "dev-badcomp");
     assert.equal(existsSync(kept), true, "the home is quarantined, not destroyed");
-    const marker = JSON.parse(readFileSync(join(kept, ".oas-rollback-incomplete.json"), "utf8"));
+    const marker = JSON.parse(readFileSync(join(kept, ".oats-rollback-incomplete.json"), "utf8"));
     assert.equal(marker.instance, "dev-badcomp");
     assert.ok(marker.incomplete.length, "the marker records what is outstanding");
     assert.equal(JSON.stringify(marker).includes("chan setup"), false, "and carries no hook output");
     // status must read it as retained state, never as a live instance.
-    const listed = listInstances(root, "oas-test-nosuch").flatMap((a) => a.instances || []).find((i) => i.instance === "dev-badcomp");
+    const listed = listInstances(root, "oats-test-nosuch").flatMap((a) => a.instances || []).find((i) => i.instance === "dev-badcomp");
     assert.ok(listed?.rollbackIncomplete, "status identifies the quarantine");
     assert.equal(listed.running, false);
     rmSync(kept, { recursive: true, force: true });
@@ -3241,10 +3241,10 @@ test("a compensation hook with nothing to undo still counts as a clean rollback"
     capability: "acme.chan",
     hooks: { spawn: { command: "hook.mjs spawn", required: true }, retire: "hook.mjs retire" },
   }, {
-    "hook.mjs": `if (process.env.OAS_EVENT === 'spawn') { console.log(JSON.stringify({ warning: 'nope' })); process.exit(1); }
+    "hook.mjs": `if (process.env.OATS_EVENT === 'spawn') { console.log(JSON.stringify({ warning: 'nope' })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'nothing-to-delete' } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(
@@ -3258,7 +3258,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'nothing-to-delete'
 
 test("a name-only team config resolves against the CURRENT aw memberships shape (reviewer-602627c)", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oas-aweb/bin/oas-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // A real membership exists under `memberships`. Reading only `teams` here
   // classified it as "no membership" — and since that path is now fatal, it
@@ -3273,7 +3273,7 @@ exit 0
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OAS_EVENT: "spawn", OAS_INSTANCE: "probe", OAS_HOME: root, OAS_WORKSPACE: root, OAS_CONTEXT: root, OAS_TEAM_SCOPE: root, OAS_TEAM_NAME: "default", OAS_TEAM_ID: "" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, OATS_TEAM_NAME: "default", OATS_TEAM_ID: "" },
   });
   assert.equal(r.status, 0, `a resolvable name-only team must succeed, got ${r.status}: ${r.stdout} ${r.stderr}`);
   assert.match(r.stdout, /"alias":"probe"/);
@@ -3281,7 +3281,7 @@ exit 0
 });
 
 test("no failure path discloses the invite token (reviewer-aggregate2, reviewer-1a6e82e)", () => {
-  const hook = resolve(new URL("../capabilities/oas-aweb/bin/oas-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const TOKEN = "inv_SUPERSECRET_TOKEN_9f3a";
   // execFileSync puts the whole argv in its error message, JSON.parse quotes the
   // malformed input in its SyntaxError, and a command that MINTS a credential can
@@ -3309,7 +3309,7 @@ exit 0
     const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
     const r = spawnSync(process.execPath, [hook, "spawn"], {
       encoding: "utf8",
-      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OAS_EVENT: "spawn", OAS_INSTANCE: "probe", OAS_HOME: root, OAS_WORKSPACE: root, OAS_CONTEXT: root, OAS_TEAM_SCOPE: root, OAS_TEAM_NAME: "default", OAS_TEAM_ID: "" },
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, OATS_TEAM_NAME: "default", OATS_TEAM_ID: "" },
     });
     assert.notEqual(r.status, 0, `${label}: the spawn still fails`);
     assert.doesNotMatch(r.stdout, new RegExp(TOKEN), `${label}: the token must not reach stdout`);
@@ -3321,7 +3321,7 @@ exit 0
 
 test("a WELL-FORMED join response cannot reflect the invite token into the output (reviewer-a6aa1c5)", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oas-aweb/bin/oas-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   // Suppressing the FAILURE paths achieves nothing if a successful reply is
   // copied into meta and the briefing verbatim. Here every command succeeds and
@@ -3338,7 +3338,7 @@ exit 0
   const root = join(base, "awroot"); mkdirSync(join(root, ".aw"), { recursive: true });
   const r = spawnSync(process.execPath, [hook, "spawn"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OAS_EVENT: "spawn", OAS_INSTANCE: "probe", OAS_HOME: root, OAS_WORKSPACE: root, OAS_CONTEXT: root, OAS_TEAM_SCOPE: root, OAS_TEAM_NAME: "default", OAS_TEAM_ID: "" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: root, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_SCOPE: root, OATS_TEAM_NAME: "default", OATS_TEAM_ID: "" },
   });
   assert.doesNotMatch(r.stdout, new RegExp(TOKEN), "no emitted field may carry the token");
   assert.doesNotMatch(r.stderr, new RegExp(TOKEN));
@@ -3352,14 +3352,14 @@ exit 0
 
 test("an alias minted with no local key is incomplete cleanup, not 'nothing to delete'", () => {
   const base = temp();
-  const hook = resolve(new URL("../capabilities/oas-aweb/bin/oas-aweb.mjs", import.meta.url).pathname);
+  const hook = resolve(new URL("../capabilities/oats-aweb/bin/oats-aweb.mjs", import.meta.url).pathname);
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   write(join(bin, "aw"), "#!/bin/sh\nexit 0\n");
   execFileSync("chmod", ["+x", join(bin, "aw")]);
   const homeDir = join(base, "home"); mkdirSync(homeDir, { recursive: true });   // no .aw
   const r = spawnSync(process.execPath, [hook, "retire"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OAS_EVENT: "retire", OAS_INSTANCE: "probe", OAS_HOME: homeDir, OAS_META: JSON.stringify({ alias: "probe", team: "default:acme.aweb.ai" }) },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "retire", OATS_INSTANCE: "probe", OATS_HOME: homeDir, OATS_META: JSON.stringify({ alias: "probe", team: "default:acme.aweb.ai" }) },
   });
   // The remote record exists and its key is gone: the self-delete cannot be
   // authenticated, so this must NOT read as a vacuous no-op.
@@ -3370,7 +3370,7 @@ test("an alias minted with no local key is incomplete cleanup, not 'nothing to d
   // …while a retire with no alias at all genuinely has nothing to undo.
   const noAlias = spawnSync(process.execPath, [hook, "retire"], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OAS_EVENT: "retire", OAS_INSTANCE: "probe", OAS_HOME: homeDir, OAS_META: "{}" },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_EVENT: "retire", OATS_INSTANCE: "probe", OATS_HOME: homeDir, OATS_META: "{}" },
   });
   assert.equal(noAlias.status, 0);
   assert.match(noAlias.stdout, /nothing-to-delete/);
@@ -3421,7 +3421,7 @@ test("a Claude capability plugin is verified at spawn, never installed there", (
     capability: "acme.chan",
     requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH;
   // The stub REFUSES any `claude plugin` subcommand other than list, so an
   // imperative install during spawn would fail loudly rather than pass silently.
@@ -3432,7 +3432,7 @@ test("a Claude capability plugin is verified at spawn, never installed there", (
     const pkg = meta.composition.materialized.runtimePackages[0];
     assert.equal(pkg.runtime, "claude");
     assert.equal(pkg.package, "chan@acme-marketplace");
-    retireInstance(root, "dev-cc", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-cc", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -3444,7 +3444,7 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
     capability: "acme.chan",
     requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH;
   try {
     // Absent entirely: the remedy names the consent command AND both install steps.
@@ -3463,7 +3463,7 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
     );
     // REGISTERED but gone: Claude still lists the plugin and names an installPath
     // that no longer exists (a cleared cache, a pruned directory). The row is not
-    // the install — a registration OAS accepts on the strength of the row alone
+    // the install — a registration OATS accepts on the strength of the row alone
     // starts an instance whose required channel is simply absent
     // (reviewer-aggregate2).
     process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace", missing: true }]);
@@ -3477,21 +3477,21 @@ test("a missing or DISABLED Claude plugin fails the spawn with the consent remed
 });
 
 test("the shipped aweb capability declares the Claude channel instead of installing it", () => {
-  const dir = resolve(new URL("../capabilities/oas-aweb", import.meta.url).pathname);
-  const manifest = JSON.parse(readFileSync(join(dir, "oas.json"), "utf8"));
+  const dir = resolve(new URL("../capabilities/oats-aweb", import.meta.url).pathname);
+  const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
   const req = (manifest.requires || []).find((r) => r.runtime === "claude");
   assert.ok(req, "the Claude channel plugin is a declared requirement");
   assert.equal(req.package, "aweb-channel@awebai-marketplace");
   assert.equal(req.marketplace, "awebai/claude-plugins");
   // …and the hook no longer mutates the operator's Claude installation at spawn.
-  const hook = readFileSync(join(dir, "bin", "oas-aweb.mjs"), "utf8");
+  const hook = readFileSync(join(dir, "bin", "oats-aweb.mjs"), "utf8");
   assert.doesNotMatch(hook, /claude plugin marketplace add/, "no imperative marketplace registration");
   assert.doesNotMatch(hook, /claude plugin install/, "no imperative plugin install");
 });
 
 test("the aweb hook runs argv only, and detects `aw` without a shell builtin", () => {
-  const dir = resolve(new URL("../capabilities/oas-aweb", import.meta.url).pathname);
-  const hook = readFileSync(join(dir, "bin", "oas-aweb.mjs"), "utf8");
+  const dir = resolve(new URL("../capabilities/oats-aweb", import.meta.url).pathname);
+  const hook = readFileSync(join(dir, "bin", "oats-aweb.mjs"), "utf8");
   // This is a REQUIRED spawn hook: it gates every spawn, and team ids, aliases,
   // instance names and invite tokens all flow through it. argv removes the
   // injection class rather than relying on one quoting helper staying correct.
@@ -3505,9 +3505,9 @@ test("the aweb hook runs argv only, and detects `aw` without a shell builtin", (
 
   // Drive it with a PATH that has no `aw`: the diagnosis must name the CLI.
   const base = temp();
-  const r = spawnSync(process.execPath, [join(dir, "bin", "oas-aweb.mjs"), "spawn"], {
+  const r = spawnSync(process.execPath, [join(dir, "bin", "oats-aweb.mjs"), "spawn"], {
     encoding: "utf8",
-    env: { PATH: "/usr/bin:/bin", OAS_EVENT: "spawn", OAS_INSTANCE: "probe", OAS_HOME: join(base, "nope") },
+    env: { PATH: "/usr/bin:/bin", OATS_EVENT: "spawn", OATS_INSTANCE: "probe", OATS_HOME: join(base, "nope") },
   });
   assert.notEqual(r.status, 0, "a missing aw CLI is fatal for a required spawn hook");
   assert.match(r.stdout, /aw CLI not on PATH/);
@@ -3521,9 +3521,9 @@ test("the plugin probe uses the CONTEXT-SELECTED claude executable, not the lite
     capability: "acme.chan",
     requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
-  // oas-claude-config names a wrapper — a separate account with its own plugins.
-  write(join(repo, "oas-claude-config"), "claude-personal\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  // oats-claude-config names a wrapper — a separate account with its own plugins.
+  write(join(repo, "oats-claude-config"), "claude-personal\n");
   const oldPath = process.env.PATH;
   try {
     // Default `claude` HAS the plugin; the selected `claude-personal` does NOT.
@@ -3542,7 +3542,7 @@ test("the plugin probe uses the CONTEXT-SELECTED claude executable, not the lite
     process.env.PATH = fakeClaudeWithPlugins(base2, [{ name: "chan@acme-marketplace" }], { name: "claude-personal" });
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-wrap2", launch: false });
     assert.match(r.command, /claude-personal/, "and the session launches with that same executable");
-    retireInstance(root, "dev-wrap2", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-wrap2", { tmuxSession: "oats-test-nosuch" });
     rmSync(base2, { recursive: true, force: true });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
@@ -3555,7 +3555,7 @@ test("a plugin installed for an UNRELATED project does not satisfy the requireme
     capability: "acme.chan",
     requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", why: "push events" }],
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH;
   try {
     // Enabled and matching, but scoped to someone else's project. Human `plugin
@@ -3571,7 +3571,7 @@ test("a plugin installed for an UNRELATED project does not satisfy the requireme
     // A user-scope install does apply everywhere.
     process.env.PATH = fakeClaudeWithPlugins(base, [{ name: "chan@acme-marketplace", scope: "user" }]);
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-userscope", launch: false });
-    retireInstance(root, "dev-userscope", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-userscope", { tmuxSession: "oats-test-nosuch" });
     assert.ok(r.home);
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
@@ -3581,16 +3581,16 @@ test("an UNTRUSTED capability's required hook fails the spawn instead of being s
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
   // Package-backed capability with no executable approval — the default state
-  // right after `oas install`. Gating requiredHooks on trust made this spawn
+  // right after `oats install`. Gating requiredHooks on trust made this spawn
   // succeed with a warning while the required setup never ran.
   const capDir = capability(repo, "chan", {
     capability: "acme.chan",
     hooks: { spawn: { command: "hook.mjs spawn", required: true } },
   }, { "hook.mjs": "console.log('{}');" });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
-    const resolved = resolveOasConfig(repo, "dev");
+    const resolved = resolveOatsConfig(repo, "dev");
     const cap = resolved.capabilities.find((c) => c.id === "acme.chan");
     assert.deepEqual(cap.requiredHooks, ["spawn"], "the DECLARATION is visible regardless of trust");
     if (!cap.trust?.trusted) {
@@ -3598,19 +3598,19 @@ test("an UNTRUSTED capability's required hook fails the spawn instead of being s
         () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-untrusted", launch: false }),
         (e) => e.code === "E_REQUIRED_HOOK_UNTRUSTED"
           && /acme\.chan declares required hook\(s\) spawn/.test(e.message)
-          && /oas trust acme\.chan/.test(e.message),
+          && /oats trust acme\.chan/.test(e.message),
         "a required hook that cannot execute must fail closed, with the trust remedy",
       );
       assert.equal(existsSync(join(root, "dev", "instances", "dev-untrusted")), false, "and before any scaffold");
     }
     // An ADVISORY executable hook stays disabled-with-warning, not fatal.
-    write(join(capDir, "oas.json"), JSON.stringify({
-      capability: "acme.chan", version: "1.0.0", compatibility: { oas: ">=0.6.2" },
+    write(join(capDir, "oats.json"), JSON.stringify({
+      capability: "acme.chan", version: "1.0.0", compatibility: { oats: ">=0.6.2" },
       description: "Test capability.", hooks: { spawn: "hook.mjs spawn" },
     }, null, 2));
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-advisory", launch: false });
     assert.ok(r.home, "advisory hooks never block a spawn");
-    retireInstance(root, "dev-advisory", { tmuxSession: "oas-test-nosuch" });
+    retireInstance(root, "dev-advisory", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
@@ -3631,22 +3631,22 @@ test("a quarantined home can be cleaned up on retry, and only then removed", () 
   }, {
     "hook.mjs": `import {writeFileSync, existsSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
-const home = process.env.OAS_HOME;
+const home = process.env.OATS_HOME;
 const remote = ${JSON.stringify(remote)};
-if (process.env.OAS_EVENT === 'spawn') {
+if (process.env.OATS_EVENT === 'spawn') {
   writeFileSync(remote, 'joined');
   writeFileSync(join(home, ${JSON.stringify(credential)}), 'key');
   console.log(JSON.stringify({ meta: { alias: 'probe' } }));
   process.exit(1);
 }
-const meta = JSON.parse(process.env.OAS_META || '{}');
+const meta = JSON.parse(process.env.OATS_META || '{}');
 if (!meta.alias) { console.log(JSON.stringify({ meta: { retired: false, reason: 'nothing-to-delete' } })); process.exit(0); }
 if (!existsSync(join(home, ${JSON.stringify(credential)}))) { console.log(JSON.stringify({ meta: { retired: false, reason: 'credential-gone' } })); process.exit(1); }
 if (!existsSync(${JSON.stringify(allowCleanup)})) { console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } })); process.exit(1); }
 rmSync(remote);
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const home = join(root, "dev", "instances", "dev-retry");
   try {
@@ -3657,13 +3657,13 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     assert.equal(existsSync(remote), true, "external state exists and cleanup has not succeeded");
     assert.equal(existsSync(join(home, credential)), true, "its credential is preserved");
     // The marker must carry what a retry NEEDS, not only what went wrong.
-    const marker = JSON.parse(readFileSync(join(home, ".oas-rollback-incomplete.json"), "utf8"));
+    const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.equal(marker.cleanup.repo, repo, "cleanup descriptor records the context");
     assert.equal(marker.cleanup.capabilityMeta["acme.chan"].alias, "probe", "and the failed hook's metadata");
     assert.ok(marker.cleanup.capabilityRuntime.some((c) => c.id === "acme.chan"), "and the capability runtime");
 
     // Retry while the cause persists: cleanup runs, still fails, home SURVIVES.
-    const first = retireInstance(root, "dev-retry", { tmuxSession: "oas-test-nosuch" });
+    const first = retireInstance(root, "dev-retry", { tmuxSession: "oats-test-nosuch" });
     assert.ok(first.rollbackIncomplete, "an unsuccessful retry reports incomplete");
     assert.equal(first.removedDir, false, "and must not delete the credential it still needs");
     assert.equal(existsSync(home), true);
@@ -3671,7 +3671,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
 
     // Operator fixes the cause; retry removes the EXTERNAL state, then the home.
     writeFileSync(allowCleanup, "ok");
-    const second = retireInstance(root, "dev-retry", { tmuxSession: "oas-test-nosuch" });
+    const second = retireInstance(root, "dev-retry", { tmuxSession: "oats-test-nosuch" });
     assert.equal(second.rollbackIncomplete, undefined, "cleanup completed");
     assert.equal(existsSync(remote), false, "the retire hook actually ran and removed the external state");
     assert.equal(existsSync(home), false, "and only then is the home removed");
@@ -3691,11 +3691,11 @@ test("a quarantine retry re-runs and VERIFIES the rollback-owned Git cleanup (re
     hooks: { spawn: { command: "hook.mjs spawn", required: true }, retire: "hook.mjs retire" },
   }, {
     "hook.mjs": `import {existsSync} from 'node:fs';
-if (process.env.OAS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
+if (process.env.OATS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
 if (!existsSync(${JSON.stringify(allow)})) { console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   execFileSync("git", ["-C", repo, "add", "-A"]);
   execFileSync("git", ["-C", repo, "commit", "-qm", "cap"]);
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -3711,7 +3711,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     // still exists. Cleanup is NOT complete until it is gone, and the retry must
     // delete it WITHOUT the normal-retire --delete-branch flag.
     execFileSync("git", ["-C", repo, "branch", "dev-git-leftover"]);
-    const markerPath = join(home, ".oas-rollback-incomplete.json");
+    const markerPath = join(home, ".oats-rollback-incomplete.json");
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
     marker.cleanup.work = "worktree";
     marker.cleanup.branch = "dev-git-leftover";
@@ -3722,7 +3722,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     writeFileSync(markerPath, JSON.stringify(marker, null, 2));
 
     writeFileSync(allow, "ok");                 // hooks will now succeed
-    const r = retireInstance(root, "dev-git", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "dev-git", { tmuxSession: "oats-test-nosuch" });
     const branches = execFileSync("git", ["-C", repo, "branch", "--list"], { encoding: "utf8" });
     assert.doesNotMatch(branches, /dev-git-leftover/, "the rollback-owned branch is deleted and verified on retry");
     // Doing it is not enough: --json consumers read branchDeleted, and this path
@@ -3744,12 +3744,12 @@ test("a home with no instance.json and no cleanup descriptor is not silently del
   mkdirSync(orphan, { recursive: true });
   writeFileSync(join(orphan, "identity.key"), "secret");
   assert.throws(
-    () => retireInstance(root, "dev-orphan", { tmuxSession: "oas-test-nosuch" }),
+    () => retireInstance(root, "dev-orphan", { tmuxSession: "oats-test-nosuch" }),
     (e) => e.code === "E_UNIDENTIFIED_INSTANCE_HOME" && /no cleanup descriptor/.test(e.message),
   );
   assert.equal(existsSync(join(orphan, "identity.key")), true, "nothing was destroyed");
   // force is the deliberate manual-cleanup escape.
-  retireInstance(root, "dev-orphan", { tmuxSession: "oas-test-nosuch", force: true });
+  retireInstance(root, "dev-orphan", { tmuxSession: "oats-test-nosuch", force: true });
   assert.equal(existsSync(orphan), false);
   rmSync(base, { recursive: true, force: true });
 });
@@ -3829,14 +3829,14 @@ test("--force clears a home whose quarantine marker cannot drive a retry (review
     const home = join(root, "dev", "instances", "dev-broken");
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, "identity.key"), "secret");
-    writeFileSync(join(home, ".oas-rollback-incomplete.json"), marker);
+    writeFileSync(join(home, ".oats-rollback-incomplete.json"), marker);
     assert.throws(
-      () => retireInstance(root, "dev-broken", { tmuxSession: "oas-test-nosuch" }),
+      () => retireInstance(root, "dev-broken", { tmuxSession: "oats-test-nosuch" }),
       (e) => e.code === "E_UNIDENTIFIED_INSTANCE_HOME",
       `${label}: an unusable marker is an unidentified home, not a retryable quarantine`,
     );
     assert.equal(existsSync(join(home, "identity.key")), true, `${label}: nothing was destroyed`);
-    const r = retireInstance(root, "dev-broken", { tmuxSession: "oas-test-nosuch", force: true });
+    const r = retireInstance(root, "dev-broken", { tmuxSession: "oats-test-nosuch", force: true });
     assert.equal(r.rollbackIncomplete, undefined, `${label}: force does not report an incompletion it cannot retry`);
     assert.equal(r.removedDir, true, `${label}: removedDir`);
     assert.equal(existsSync(home), false, `${label}: the operator's escape hatch actually removes the home`);
@@ -3853,16 +3853,16 @@ test("a retry that reruns NO outstanding hook fails closed, and --force is the w
     hooks: { spawn: { command: "hook.mjs spawn", required: true }, retire: "hook.mjs retire" },
   }, {
     "hook.mjs": `import {writeFileSync} from 'node:fs';
-if (process.env.OAS_EVENT === 'spawn') { writeFileSync(${JSON.stringify(remote)}, 'joined'); console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
+if (process.env.OATS_EVENT === 'spawn') { writeFileSync(${JSON.stringify(remote)}, 'joined'); console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } })); process.exit(1);`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const home = join(root, "dev", "instances", "dev-nohook");
   try {
     assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-nohook", launch: false }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
-    const markerPath = join(home, ".oas-rollback-incomplete.json");
+    const markerPath = join(home, ".oats-rollback-incomplete.json");
     const marker = JSON.parse(readFileSync(markerPath, "utf8"));
     assert.deepEqual(marker.cleanup.outstanding.hooks, ["acme.chan"], "the marker records WHICH hook still owes cleanup");
 
@@ -3874,7 +3874,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     marker.cleanup.capabilityRuntime = [{ id: "acme.chan" }];
     writeFileSync(markerPath, JSON.stringify(marker, null, 2));
 
-    const r = retireInstance(root, "dev-nohook", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "dev-nohook", { tmuxSession: "oats-test-nosuch" });
     // Either way the retry resolved nothing to run for acme.chan — whether the
     // entry names no retire hook or the capability is gone from config — and a
     // hook that never ran cannot count as cleanup done.
@@ -3887,7 +3887,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     // ...and because that state can persist forever, the operator must still have
     // a way out. --force removes the home and NAMES what it is leaving behind,
     // rather than reporting a clean retirement.
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const cli = spawnSync(process.execPath, [CLI, "retire", "dev-nohook", "--dir", root, "--force", "--json"], { encoding: "utf8", env });
     assert.equal(cli.status, 0, `a forced removal succeeded, so it exits 0: ${cli.stderr}`);
@@ -3907,11 +3907,11 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
 // a contract that merely restates its own strings passes while contradicting the
 // mode it was composed for (reviewer-focus-c6e3680).
 const BOUNDARY_MUST_SAY = [
-  "$OAS_INSTANCE_HOME",                                   // the runtime-neutral name
+  "$OATS_INSTANCE_HOME",                                   // the runtime-neutral name
   "It is not your user home (`~`), not the repository root, and not the work tree",
   "commands from active capabilities, from instance home",   // the shape, not the sentence
   "for example, when the aweb messaging capability is active",  // an optional capability is CITED, never commanded
-  "oas <cmd> --dir <path>",                               // the deliberate alternate scope
+  "oats <cmd> --dir <path>",                               // the deliberate alternate scope
   "The home's `soul` link is not your edit surface",      // not "read-only": it is writable, and that is the point
 ];
 // The instruction that taught the root-placement bug, in any shipped surface.
@@ -3958,15 +3958,15 @@ test("the boundary does not contradict a read-only workspace instance (reviewer-
 test("a REAL spawned packaged reviewer gets the boundary and keeps its own report path (reviewer-focus-c6e3680)", async () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
-  // The SHIPPED oas-review capability, spawned through the real service path —
+  // The SHIPPED oats-review capability, spawned through the real service path —
   // not a synthetic composer call. Its own instructions require writing a report
   // to a temp file before mailing it, so a boundary forbidding output outside
   // work/ would contradict the very agent it ships beside.
-  const src = resolve(new URL("../capabilities/oas-review", import.meta.url).pathname);
-  const dst = join(repo, ".agents", "capabilities", "owned", "oas-review");
+  const src = resolve(new URL("../capabilities/oats-review", import.meta.url).pathname);
+  const dst = join(repo, ".agents", "capabilities", "owned", "oats-review");
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(src, dst, { recursive: true });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    oas.review:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    oats.review:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     // `await` INSIDE the try: returning the promise from the try block restores
@@ -3986,12 +3986,12 @@ test("a REAL spawned packaged reviewer gets the boundary and keeps its own repor
       "the reviewer's own report artifact survives composition — the boundary must not forbid it");
     assert.doesNotMatch(text, /Nothing you produce belongs anywhere else/,
       "and the boundary must not forbid the temp file that instruction requires");
-    core.retireInstance(root, "reviewer-boundary", { tmuxSession: "oas-test-nosuch" });
+    core.retireInstance(root, "reviewer-boundary", { tmuxSession: "oats-test-nosuch" });
   } finally { process.env.PATH = oldPath; }
   rmSync(base, { recursive: true, force: true });
 });
 
-// Notes and `oas okf harvest` come from the oas.okf capability. An instance
+// Notes and `oats okf harvest` come from the oats.okf capability. An instance
 // without it has neither, and a capability service agent has its knowledge layer
 // SUPPRESSED by design — the shipped reviewer is told in its own soul not to
 // write notes/ and not to run any harvest. So the kernel-composed blocks must
@@ -4007,8 +4007,8 @@ test("kernel-composed blocks never prescribe a knowledge protocol they cannot gu
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
   const soulDir = join(root, "dev", "soul");
-  // No oas.okf capability anywhere in this fixture: whatever these blocks say,
-  // no notes/ dir is scaffolded and no `oas okf harvest` exists.
+  // No oats.okf capability anywhere in this fixture: whatever these blocks say,
+  // no notes/ dir is scaffolded and no `oats okf harvest` exists.
   const kernelOnly = (mode, kind) => flat(composeInstanceAgentsMd(soulDir, repo, "dev", mode, kind).text);
   for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
     for (const kind of [undefined, "local", "capability"]) {
@@ -4039,11 +4039,11 @@ test("kernel-composed blocks never prescribe a knowledge protocol they cannot gu
 test("with the knowledge layer active, ONE block owns the protocol (reviewer-focus-b512782)", () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
-  const src = resolve(new URL("../capabilities/oas-okf", import.meta.url).pathname);
-  const dst = join(repo, ".agents", "capabilities", "owned", "oas-okf");
+  const src = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
+  const dst = join(repo, ".agents", "capabilities", "owned", "oats-okf");
   mkdirSync(dirname(dst), { recursive: true });
   cpSync(src, dst, { recursive: true });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oas.okf\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      global: true\n");
   const soulDir = join(root, "dev", "soul");
 
   // Persistent + worktree + OKF: the combination the earlier local-only test
@@ -4057,7 +4057,7 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
     .blocks.filter((b) => KNOWLEDGE_PROTOCOL.test(b.content)).map((b) => b.source);
   for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
     for (const kind of [undefined, "local"]) {
-      assert.deepEqual(owners(mode, kind), ["capability:oas.okf"],
+      assert.deepEqual(owners(mode, kind), ["capability:oats.okf"],
         `${mode}/${kind}: exactly one block may own the knowledge protocol`);
     }
     // Capability service agents suppress the knowledge layer by design, so NO
@@ -4079,10 +4079,10 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
 
 test("every harvest spawn path briefs its own custody-specific finish (reviewer-focus-d357cee)", () => {
   // The harvester's soul and skill accompany ALL THREE spawn paths, so neither
-  // may mandate a finish: oas-okf.mjs briefs a shared-tree commit, a worktree
+  // may mandate a finish: oats-okf.mjs briefs a shared-tree commit, a worktree
   // plus PR, or a direct edit with nothing to commit. Two of three harvesters
   // were reading instructions that did not describe their situation.
-  const okf = resolve(new URL("../capabilities/oas-okf", import.meta.url).pathname);
+  const okf = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
   const soul = readFileSync(join(okf, "agents", "memory-harvest.md"), "utf8");
   const skill = readFileSync(join(okf, "skills", "memory-harvest", "SKILL.md"), "utf8");
   for (const [what, text] of [["soul", soul], ["skill", skill]]) {
@@ -4095,7 +4095,7 @@ test("every harvest spawn path briefs its own custody-specific finish (reviewer-
     assert.ok(skill.includes(delivery), `the skill must describe the "${delivery}" path`);
   }
   // Each briefing the spawner emits states its own finish.
-  const bin = readFileSync(join(okf, "bin", "oas-okf.mjs"), "utf8");
+  const bin = readFileSync(join(okf, "bin", "oats-okf.mjs"), "utf8");
   assert.match(bin, /Do NOT merge it/, "workspace path briefs PR delivery");
   assert.match(bin, /commit your promotions there as a single commit/, "attached path briefs the shared-tree commit");
   rmSync(join(okf, "..", "..", "nonexistent-cleanup-noop"), { recursive: true, force: true });
@@ -4124,15 +4124,15 @@ test("no shipped instructional surface teaches settling in the work tree (mainta
   }
 });
 
-test("the independently targetable oas.review assumes no knowledge or messaging layer", () => {
-  // oas.review may be composed into a deployment that has replaced or disabled
+test("the independently targetable oats.review assumes no knowledge or messaging layer", () => {
+  // oats.review may be composed into a deployment that has replaced or disabled
   // either layer — `requires` is for host commands and runtime packages, never
   // capability dependencies (maintainer ruling). These are BOUNDED, observable
   // properties. Provider neutrality as a whole is not machine-decidable from
   // prose: when these surfaces change, it needs semantic review by the
   // maintainer, which the PR process already provides.
-  const dir = resolve(new URL("../capabilities/oas-review", import.meta.url).pathname);
-  const manifest = JSON.parse(readFileSync(join(dir, "oas.json"), "utf8"));
+  const dir = resolve(new URL("../capabilities/oats-review", import.meta.url).pathname);
+  const manifest = JSON.parse(readFileSync(join(dir, "oats.json"), "utf8"));
   for (const r of manifest.requires || []) {
     assert.ok(!r.capability && !r.layer, `requires must not carry layer dependencies: ${JSON.stringify(r)}`);
   }
@@ -4141,7 +4141,7 @@ test("the independently targetable oas.review assumes no knowledge or messaging 
   for (const f of ["injects/review.md", "agents/reviewer/AGENTS.md"]) {
     const text = readFileSync(join(dir, f), "utf8");
     assert.doesNotMatch(text, /\baw\b/i, `${f} commands the aweb CLI`);
-    assert.doesNotMatch(text, /\boas okf\b/i, `${f} commands the OKF layer`);
+    assert.doesNotMatch(text, /\boats okf\b/i, `${f} commands the OKF layer`);
   }
   // Conditional wording plus the transcript fallback: what an instance actually
   // needs to behave correctly with, and without, a messaging layer.
@@ -4165,7 +4165,7 @@ test("the accepted trust boundary is DOCUMENTED, not left as a code comment (mai
     "must be owned by the operator and not writable by untrusted users or processes",
     "openat",                                    // why the kernel cannot close it
     "E_NO_CANONICAL_ROOT",                       // what failure looks like
-    "OAS_INSTANCE_HOME",                         // how an instance learns its home
+    "OATS_INSTANCE_HOME",                         // how an instance learns its home
     "soul-owning repo's primary checkout",       // where homes actually land
   ]) {
     assert.ok(flatDoc.includes(must.replace(/\s+/g, " ")), `public docs must state ${JSON.stringify(must)}`);
@@ -4253,7 +4253,7 @@ test("a path swapped AFTER validation is caught before anything is written (revi
   // race: mkdirSync then follows the link, and everything after it (scaffolding,
   // the identity hook and its key) would land outside the deployment.
   capability(repo, "chan", { capability: "acme.chan", requires: [{ runtime: "pi", package: "npm:@acme/chan", why: "channel" }] });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   const instances = join(root, "dev", "instances");
   const pkgDir = join(base, "pkg"); mkdirSync(pkgDir, { recursive: true });
@@ -4296,9 +4296,9 @@ test("a rollback AFTER launch quarantines too — every path, not just required 
   capability(repo, "comp", { capability: "acme.comp", hooks: { spawn: "hook.mjs spawn", retire: "hook.mjs retire" } }, {
     "hook.mjs": `import {writeFileSync, existsSync, rmSync} from 'node:fs';
 import {join} from 'node:path';
-if (process.env.OAS_EVENT === 'spawn') {
+if (process.env.OATS_EVENT === 'spawn') {
   writeFileSync(${JSON.stringify(remote)}, 'joined');
-  writeFileSync(join(process.env.OAS_HOME, 'identity.key'), 'key');
+  writeFileSync(join(process.env.OATS_HOME, 'identity.key'), 'key');
   console.log(JSON.stringify({ meta: { alias: 'probe' } }));
   process.exit(0);
 }
@@ -4308,7 +4308,7 @@ if (!existsSync(${JSON.stringify(allow)})) { console.log(JSON.stringify({ meta: 
 rmSync(${JSON.stringify(remote)}, { force: true });
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.comp:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.comp:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const home = join(root, "dev", "instances", "dev-child");
   try {
@@ -4324,7 +4324,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     );
     assert.equal(existsSync(join(home, "identity.key")), true, "the credential the retry needs survives");
     assert.equal(existsSync(remote), true, "and the external state nobody cleaned up is still there");
-    const marker = JSON.parse(readFileSync(join(home, ".oas-rollback-incomplete.json"), "utf8"));
+    const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.equal(marker.cleanup.version, 1, "the quarantine carries the same cleanup contract");
     assert.deepEqual(marker.cleanup.outstanding.hooks, ["acme.comp"], "naming the hook that still owes cleanup");
 
@@ -4337,19 +4337,19 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
       "the descriptor keeps the SPAWN metadata a retry needs, not the failed compensation's report");
 
     // FIRST retry, cause unfixed: must retain everything and not claim success.
-    const first = retireInstance(root, "dev-child", { tmuxSession: "oas-test-nosuch" });
+    const first = retireInstance(root, "dev-child", { tmuxSession: "oats-test-nosuch" });
     assert.ok(first.rollbackIncomplete?.length, "a failing retry reports incomplete");
     assert.equal(first.removedDir, false);
     assert.equal(existsSync(join(home, "identity.key")), true, "the credential survives the failed retry");
-    assert.equal(existsSync(join(home, ".oas-rollback-incomplete.json")), true, "and so does the marker");
+    assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), true, "and so does the marker");
     assert.equal(existsSync(remote), true, "and the external state it exists to undo");
-    const after = JSON.parse(readFileSync(join(home, ".oas-rollback-incomplete.json"), "utf8"));
+    const after = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.equal(after.cleanup.capabilityMeta["acme.comp"]?.alias, "probe",
       "the spawn metadata is not displaced by the retry's own failure report");
 
     // SECOND retry, cause fixed: external cleanup verified, then removal.
     writeFileSync(allow, "ok");
-    const r = retireInstance(root, "dev-child", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "dev-child", { tmuxSession: "oats-test-nosuch" });
     assert.equal(r.rollbackIncomplete, undefined, `the retry completes: ${JSON.stringify(r.rollbackIncomplete)}`);
     assert.equal(existsSync(remote), false, "the remote state is actually gone");
     assert.equal(existsSync(home), false, "and only then is the home removed");
@@ -4363,24 +4363,24 @@ test("a marker beside a live instance.json is authoritative, usable or not (revi
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     // An UNUSABLE marker next to instance.json is evidence that cleanup was
-    // interrupted, not noise to skip: OAS cannot tell what remains, so it fails
+    // interrupted, not noise to skip: OATS cannot tell what remains, so it fails
     // closed and `--force` is the deliberate escape.
     const a = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-broke", launch: false });
     writeFileSync(join(a.home, "identity.key"), "secret");
-    writeFileSync(join(a.home, ".oas-rollback-incomplete.json"), '{"cleanup": {"repo":');
+    writeFileSync(join(a.home, ".oats-rollback-incomplete.json"), '{"cleanup": {"repo":');
     assert.throws(
-      () => retireInstance(root, "dev-broke", { tmuxSession: "oas-test-nosuch" }),
+      () => retireInstance(root, "dev-broke", { tmuxSession: "oats-test-nosuch" }),
       (e) => e.code === "E_UNIDENTIFIED_INSTANCE_HOME",
       "an unusable marker must not be ignored just because instance.json exists",
     );
     assert.equal(existsSync(join(a.home, "identity.key")), true, "nothing destroyed");
-    retireInstance(root, "dev-broke", { tmuxSession: "oas-test-nosuch", force: true });
+    retireInstance(root, "dev-broke", { tmuxSession: "oats-test-nosuch", force: true });
     assert.equal(existsSync(a.home), false, "and --force still clears it");
 
     // An ordinary live instance with NO marker retires normally — the guard must
     // not turn every retire into a quarantine.
     const b = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-plain", launch: false });
-    const r = retireInstance(root, "dev-plain", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "dev-plain", { tmuxSession: "oats-test-nosuch" });
     assert.equal(r.rollbackIncomplete, undefined, "no marker, no quarantine");
     assert.equal(r.removedDir, true);
     assert.equal(existsSync(b.home), false);
@@ -4405,11 +4405,11 @@ test("a required spawn hook with NO retire hook quarantines instead of deleting 
     "hook.mjs": `import {writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 writeFileSync(${JSON.stringify(remote)}, 'joined');
-writeFileSync(join(process.env.OAS_HOME, 'identity.key'), 'key');
+writeFileSync(join(process.env.OATS_HOME, 'identity.key'), 'key');
 console.log(JSON.stringify({ meta: { alias: 'probe' } }));
 process.exit(1);`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const home = join(root, "dev", "instances", "dev-nocomp");
   try {
@@ -4420,17 +4420,17 @@ process.exit(1);`,
     );
     assert.equal(existsSync(join(home, "identity.key")), true, "the key the hook wrote survives");
     assert.equal(existsSync(remote), true, "and so does the remote state it created");
-    const marker = JSON.parse(readFileSync(join(home, ".oas-rollback-incomplete.json"), "utf8"));
+    const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.deepEqual(marker.cleanup.outstanding.hooks, ["acme.chan"], "which is recorded as outstanding");
 
     // A retry cannot fix this — there is no hook to run — so it must keep saying
     // so, and point at the only exit rather than quietly clearing.
-    const r = retireInstance(root, "dev-nocomp", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "dev-nocomp", { tmuxSession: "oats-test-nosuch" });
     assert.ok(r.rollbackIncomplete?.some((f) => /declares no retire hook/.test(f)),
       `the reason must name the real situation, got ${JSON.stringify(r.rollbackIncomplete)}`);
     assert.equal(existsSync(join(home, "identity.key")), true, "nothing was destroyed on the retry either");
 
-    const f = retireInstance(root, "dev-nocomp", { tmuxSession: "oas-test-nosuch", force: true });
+    const f = retireInstance(root, "dev-nocomp", { tmuxSession: "oats-test-nosuch", force: true });
     assert.ok(f.forcedIncomplete?.length, "and --force reports what the operator now owns");
     assert.equal(existsSync(home), false);
     assert.equal(existsSync(remote), true, "the remote state is still theirs to clean up");
@@ -4452,10 +4452,10 @@ test("an incomplete cleanup names the home's REAL path, including local-agents/ 
   }, {
     "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Fresh reviewer.\n",
     "agents/reviewer/AGENTS.md": "# Reviewer\n",
-    "hook.mjs": `if (process.env.OAS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
+    "hook.mjs": `if (process.env.OATS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     const core = await import("../lib/core.mjs");
@@ -4465,11 +4465,11 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
     const home = findInstanceHomes(root, "reviewer-q")[0].home;
     assert.ok(home.includes(join("local-agents", "reviewer", "instances")), "precondition: it homes under local-agents/");
 
-    const r = retireInstance(root, "reviewer-q", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "reviewer-q", { tmuxSession: "oats-test-nosuch" });
     assert.ok(r.rollbackIncomplete, "cleanup is incomplete");
     assert.equal(realpathSync(r.retainedHome), realpathSync(home), "the result names the home that actually survived");
 
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const cli = spawnSync(process.execPath, [CLI, "retire", "reviewer-q", "--dir", root], { encoding: "utf8", env });
     assert.notEqual(cli.status, 0);
@@ -4479,7 +4479,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
   rmSync(base, { recursive: true, force: true });
 });
 
-test("`oas retire` reports an incomplete cleanup and exits nonzero, not 'Retired'", () => {
+test("`oats retire` reports an incomplete cleanup and exits nonzero, not 'Retired'", () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
   // Compensation keeps failing, so the home and its external state remain. A
@@ -4488,15 +4488,15 @@ test("`oas retire` reports an incomplete cleanup and exits nonzero, not 'Retired
     capability: "acme.chan",
     hooks: { spawn: { command: "hook.mjs spawn", required: true }, retire: "hook.mjs retire" },
   }, {
-    "hook.mjs": `if (process.env.OAS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
+    "hook.mjs": `if (process.env.OATS_EVENT === 'spawn') { console.log(JSON.stringify({ meta: { alias: 'probe' } })); process.exit(1); }
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
     assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-cli", launch: false }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");
-    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oas-test-nosuch" };
+    const env = { ...process.env, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
     delete env.PI_AGENTS_ROOT;
     const r = spawnSync(process.execPath, [CLI, "retire", "dev-cli", "--dir", root], { encoding: "utf8", env });
     assert.notEqual(r.status, 0, `an incomplete cleanup must exit nonzero, got ${r.status}: ${r.stdout}`);
@@ -4523,7 +4523,7 @@ test("ORDINARY retirement blocks and preserves evidence when a retire hook repor
   }, {
     "hook.mjs": `import {writeFileSync, existsSync} from 'node:fs';
 const remote = ${JSON.stringify(remote)};
-if (process.env.OAS_EVENT === 'spawn') {
+if (process.env.OATS_EVENT === 'spawn') {
   writeFileSync(remote, 'joined');
   console.log(JSON.stringify({ meta: { alias: 'probe' } }));
   process.exit(0);
@@ -4534,30 +4534,30 @@ if (!existsSync(${JSON.stringify(allowCleanup)})) {
 }
 console.log(JSON.stringify({ meta: { retired: true } }));`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const home = join(root, "dev", "instances", "dev-ord");
   try {
     spawnInstance(root, findAgent(root, "dev"), { instance: "dev-ord", launch: false });
     assert.equal(existsSync(home), true, "ordinary spawn succeeded — no quarantine");
-    assert.equal(existsSync(join(home, ".oas-rollback-incomplete.json")), false, "and no marker yet");
+    assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), false, "and no marker yet");
     assert.equal(existsSync(remote), true, "external state exists");
 
     // FIRST failure on the ordinary path must retain, not delete.
-    const r = retireInstance(root, "dev-ord", { tmuxSession: "oas-test-nosuch" });
+    const r = retireInstance(root, "dev-ord", { tmuxSession: "oats-test-nosuch" });
     assert.ok(r.rollbackIncomplete, "incomplete cleanup is reported, not discarded");
     assert.equal(r.removedDir, false, "the home is NOT removed");
     assert.equal(existsSync(home), true, "the home and its credentials survive");
     assert.equal(existsSync(remote), true, "the external state it still owes cleanup for is untouched");
     // The evidence a retry needs: capabilities named as IDs, not only prose.
-    const marker = JSON.parse(readFileSync(join(home, ".oas-rollback-incomplete.json"), "utf8"));
+    const marker = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.ok(marker.cleanup.capabilityRuntime.some((c) => c.id === "acme.chan"),
       "the retained descriptor names the owing capability as an ID a retry can verify");
 
     // MIRROR: a hook that completes must still delete exactly as before, or the
     // fix has broken ordinary retirement in order to fix a corner of it.
     writeFileSync(allowCleanup, "ok");
-    const done = retireInstance(root, "dev-ord", { tmuxSession: "oas-test-nosuch" });
+    const done = retireInstance(root, "dev-ord", { tmuxSession: "oats-test-nosuch" });
     assert.equal(done.rollbackIncomplete, undefined, "a completing hook reports clean");
     assert.equal(existsSync(home), false, "and the home is removed as usual");
   } finally { process.env.PATH = oldPath; }
@@ -4574,7 +4574,7 @@ test("self-retire refuses before hooks because its calling runtime cannot be qui
     hooks: { spawn: "hook.mjs spawn", retire: "hook.mjs retire" },
   }, {
     "hook.mjs": `import {writeFileSync} from 'node:fs';
-if (process.env.OAS_EVENT === 'spawn') {
+if (process.env.OATS_EVENT === 'spawn') {
   writeFileSync(${JSON.stringify(remote)}, 'joined');
   console.log(JSON.stringify({ meta: { alias: 'probe' } }));
   process.exit(0);
@@ -4583,13 +4583,13 @@ writeFileSync(${JSON.stringify(retireRan)}, 'ran');
 console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed' } }));
 process.exit(1);`,
   });
-  write(join(repo, "oas-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   const home = join(root, "dev", "instances", "dev-self");
   try {
     spawnInstance(root, findAgent(root, "dev"), { instance: "dev-self", launch: false });
     assert.throws(
-      () => retireInstance(root, "dev-self", { tmuxSession: "oas-test-nosuch", self: true }),
+      () => retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true }),
       (e) => e.code === "E_SELF_RETIRE_NOT_QUIESCED" && /external operator/.test(e.message),
     );
     assert.equal(existsSync(retireRan), false, "the retire hook did not run before refusal");

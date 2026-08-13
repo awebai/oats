@@ -18,7 +18,7 @@ PR covering all three manifests. Instead of executing the workflow, a static
 - `ref: ${{ github.sha }}` present and no `ref: main`;
 - `yml.indexOf("npm publish") > yml.indexOf("publish:\n")` and
   `needs: [build-and-test, desktop-build]` — publication gated on builds;
-- ordering via successive indexOf: publish oas → publish pi →
+- ordering via successive indexOf: publish oats → publish pi →
   `gh release create`;
 - unsigned posture (`CSC_IDENTITY_AUTO_DISCOVERY: "false"`, no windows jobs).
 

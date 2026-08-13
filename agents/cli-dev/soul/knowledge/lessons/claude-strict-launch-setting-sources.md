@@ -56,7 +56,7 @@ is preserved.
 - `--safe-mode` isolates equivalently but also kills the plugins that selected
   capabilities must keep.
 - `--settings <file>` **is** honored under `--setting-sources ""`
-  (`Applying permission update … destination 'flagSettings'`), so OAS-owned
+  (`Applying permission update … destination 'flagSettings'`), so OATS-owned
   settings survive.
 - `--append-system-prompt-file <path>` exists and validates its argument, but is
   **absent from `--help`**. Probe it by invocation, not by help-string match.

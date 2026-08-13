@@ -1,4 +1,4 @@
-/* oas desktop — sidebar roster tree keyboard policy (pure).
+/* oats desktop — sidebar roster tree keyboard policy (pure).
    The persistent instance roster is a tree: Up/Down walk the VISIBLE rows,
    Right expands (or moves down when already open/leaf), Left collapses (or
    jumps to the parent row), Home/End jump, Enter is the row button's native

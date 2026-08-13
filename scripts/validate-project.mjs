@@ -24,9 +24,9 @@ function walk(dir, accept = () => true) {
 // Schemas + current clean-contract artifacts.
 const ajv = new Ajv2020({ allErrors: true, strict: false, allowUnionTypes: true });
 const manifestSchemaPath = join(root, "docs", "capability-manifest.schema.json");
-const configSchemaPath = join(root, "docs", "oas-config.schema.json");
-const packageSchemaPath = join(root, "docs", "oas-package.schema.json");
-const lockSchemaPath = join(root, "docs", "oas-lock.schema.json");
+const configSchemaPath = join(root, "docs", "oats-config.schema.json");
+const packageSchemaPath = join(root, "docs", "oats-package.schema.json");
+const lockSchemaPath = join(root, "docs", "oats-lock.schema.json");
 const manifestSchema = json(manifestSchemaPath);
 const configSchema = json(configSchemaPath);
 for (const [path, schema] of [[manifestSchemaPath, manifestSchema], [configSchemaPath, configSchema], [packageSchemaPath, json(packageSchemaPath)], [lockSchemaPath, json(lockSchemaPath)]]) {
@@ -35,14 +35,14 @@ for (const [path, schema] of [[manifestSchemaPath, manifestSchema], [configSchem
 const validateManifest = ajv.compile(manifestSchema);
 const validateConfig = ajv.compile(configSchema);
 let manifests = 0;
-for (const path of walk(join(root, "capabilities"), (p) => basename(p) === "oas.json")) {
+for (const path of walk(join(root, "capabilities"), (p) => basename(p) === "oats.json")) {
   manifests++;
   if (!validateManifest(json(path))) fail(`${relative(root, path)}: ${ajv.errorsText(validateManifest.errors)}`);
 }
-const repoConfig = parseYamlNested(readFileSync(join(root, "oas-config.yaml"), "utf8"));
-if (!validateConfig(repoConfig)) fail(`oas-config.yaml: ${ajv.errorsText(validateConfig.errors)}`);
+const repoConfig = parseYamlNested(readFileSync(join(root, "oats-config.yaml"), "utf8"));
+if (!validateConfig(repoConfig)) fail(`oats-config.yaml: ${ajv.errorsText(validateConfig.errors)}`);
 
-// Public Markdown set: local links/anchors and OAS-config YAML examples.
+// Public Markdown set: local links/anchors and OATS-config YAML examples.
 const markdown = [join(root, "README.md"), ...walk(join(root, "docs"), (p) => extname(p) === ".md")];
 for (const dir of walk(join(root, "capabilities"), (p) => basename(p) === "README.md")) markdown.push(dir);
 markdown.push(join(root, "packages", "pi", "README.md"));
@@ -100,7 +100,7 @@ for (const file of exampleMarkdown) {
   const text = readFileSync(file, "utf8");
   for (const match of text.matchAll(/```ya?ml\s*\n([\s\S]*?)```/g)) {
     const block = match[1];
-    if (!/^(?:\s*)(?:capabilities|groups|layers|skill-overrides|agents-md-injection|oas|work-modes):/m.test(block)) continue;
+    if (!/^(?:\s*)(?:capabilities|groups|layers|skill-overrides|agents-md-injection|oats|work-modes):/m.test(block)) continue;
     examples++;
     const parsed = parseYamlNested(block);
     if (!validateConfig(parsed)) fail(`${relative(root, file)} YAML example #${examples}: ${ajv.errorsText(validateConfig.errors)}`);

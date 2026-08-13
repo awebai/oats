@@ -2,7 +2,7 @@
 type: Lesson
 title: Batch residue removal before acquiring packages during migration
 description: When multiple legacy capabilities convert to one package, deleting only the current residue before acquiring collides with sibling entries the package also exports.
-tags: [packages, migration, oas-lock, residue, transactions]
+tags: [packages, migration, oats-lock, residue, transactions]
 timestamp: 2026-07-28
 ---
 
@@ -14,7 +14,7 @@ a package that exports a capability id still present in the lock's residue map
 with `duplicate-capability-id`.
 
 With two legacy capabilities aliased onto one package — the shape
-`oas.review` → `oas.dev` invites — the first acquire saw the second capability
+`oats.review` → `oats.dev` invites — the first acquire saw the second capability
 still in residue and failed. The scope rolled back correctly, so the symptom was
 "this deployment cannot migrate at all", not corruption.
 

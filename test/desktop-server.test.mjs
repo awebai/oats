@@ -9,7 +9,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SRV = join(ROOT, "packages", "desktop", "server", "oas-web.mjs");
+const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
 async function freePort() {
   const server = createServer();
@@ -23,18 +23,18 @@ async function freePort() {
 }
 
 function desktopCapabilityFixture() {
-  const scope = mkdtempSync(join(tmpdir(), "oasweb-capability-"));
+  const scope = mkdtempSync(join(tmpdir(), "oatsweb-capability-"));
   const soul = join(scope, "agents", "dev", "soul");
   mkdirSync(soul, { recursive: true });
   writeFileSync(join(soul, "soul.yaml"), "name: dev\ndescription: Test developer.\nruntime: pi\nwork: checkout\n");
   writeFileSync(join(soul, "AGENTS.md"), "# Test developer\n");
-  const capability = join(scope, ".agents", "capabilities", "owned", "oas-review");
-  cpSync(join(ROOT, "capabilities", "oas-review"), capability, { recursive: true });
-  writeFileSync(join(scope, "oas-config.yaml"), [
+  const capability = join(scope, ".agents", "capabilities", "owned", "oats-review");
+  cpSync(join(ROOT, "capabilities", "oats-review"), capability, { recursive: true });
+  writeFileSync(join(scope, "oats-config.yaml"), [
     "name: desktop-test",
     "capabilities:",
     "  additive:",
-    "    oas.review:",
+    "    oats.review:",
     "      from: owned",
     "      global: true",
     "",
@@ -45,7 +45,7 @@ function desktopCapabilityFixture() {
 // ---- registry cache + attach sequencing (extracted marked blocks) ----
 function extractBlock(file, marker) {
   const src = readFileSync(file, "utf8");
-  const re = new RegExp(`\\/\\* OASWEB_${marker}_BEGIN[^*]*\\*\\/([\\s\\S]*?)\\/\\* OASWEB_${marker}_END \\*\\/`);
+  const re = new RegExp(`\\/\\* OATSWEB_${marker}_BEGIN[^*]*\\*\\/([\\s\\S]*?)\\/\\* OATSWEB_${marker}_END \\*\\/`);
   const m = src.match(re);
   assert.ok(m, marker + " block markers present");
   return m[1];
@@ -247,13 +247,13 @@ test("desktop server: harvestHome rejects out-of-layout homes independently of r
   const { tmpdir } = await import("node:os");
   const { dirname, basename } = await import("node:path");
   const src = extractBlock(SRV, "HARVESTHOME");
-  const scope = mkdtempSync(join(tmpdir(), "oasweb-hh-"));
+  const scope = mkdtempSync(join(tmpdir(), "oatsweb-hh-"));
   const root = join(scope, "agents");
   const goodHome = join(root, "dev", "instances", "dev-1");
   mkdirSync(goodHome, { recursive: true });
   const localHome = join(scope, "local-agents", "loc", "instances", "loc-1");
   mkdirSync(localHome, { recursive: true });
-  const outside = mkdtempSync(join(tmpdir(), "oasweb-hh-outside-"));
+  const outside = mkdtempSync(join(tmpdir(), "oatsweb-hh-outside-"));
   mkdirSync(join(outside, "instances", "evil-1"), { recursive: true });
   const harvestHome = new Function("realpathSync", "basename", "dirname", "join", "workspaces", "reader",
     `${src}; return harvestHome;`)(
@@ -281,13 +281,13 @@ test("desktop server: /api/brain never returns skills from symlinks escaping a c
   // skills tree where one SKILL.md is a symlink OUT of the package — the
   // exact escape reviewer-ae3e199 reproduced against brainData's
   // soulDir/skills walk (TOP-SECRET frontmatter leaked into soul.skills).
-  const scope = mkdtempSync(join(tmpdir(), "oasweb-brainesc-"));
+  const scope = mkdtempSync(join(tmpdir(), "oatsweb-brainesc-"));
   writeFileSync(join(scope, "outside-skill.md"), "---\nname: leaked-skill\ndescription: TOP-SECRET-SOUL-SKILL\n---\n# s\n");
   const capDir = join(scope, ".agents", "capabilities", "owned", "esc");
   mkdirSync(join(capDir, "agents", "helper", "skills", "good"), { recursive: true });
   mkdirSync(join(capDir, "agents", "helper", "skills", "sneaky"), { recursive: true });
-  writeFileSync(join(scope, "oas-config.yaml"), "name: t\ncapabilities:\n  additive:\n    esc.cap: {}\n");
-  writeFileSync(join(capDir, "oas.json"), JSON.stringify({
+  writeFileSync(join(scope, "oats-config.yaml"), "name: t\ncapabilities:\n  additive:\n    esc.cap: {}\n");
+  writeFileSync(join(capDir, "oats.json"), JSON.stringify({
     capability: "esc.cap", version: "1.0.0", description: "x", agents: ["agents/helper"],
   }));
   writeFileSync(join(capDir, "agents", "helper", "soul.yaml"), "name: helper\ndescription: h\n");
@@ -318,14 +318,14 @@ test("desktop server: /api/agents lists persistent AND capability-defined agents
   const scope = desktopCapabilityFixture();
   const port = await freePort();
   // The 503 assertion below requires the server to find NO compatible CLI.
-  // On dev machines a real `oas` is often on PATH (the probe settles ok and
+  // On dev machines a real `oats` is often on PATH (the probe settles ok and
   // the spawn attempt answers 409 instead) — strip every locator source so
   // the test is deterministic in CI and locally alike. PATH must be empty of
   // ANY toolchain: even /usr/bin/npm lets the npm-global source rediscover a
-  // real oas (review b2a1564).
+  // real oats (review b2a1564).
   const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope], {
     stdio: "ignore",
-    env: { ...process.env, PATH: "/nonexistent", OAS_DESKTOP_OAS_BIN: "", SHELL: "/bin/false" },
+    env: { ...process.env, PATH: "/nonexistent", OATS_DESKTOP_OATS_BIN: "", SHELL: "/bin/false" },
   });
   try {
     let up = false;
@@ -340,12 +340,12 @@ test("desktop server: /api/agents lists persistent AND capability-defined agents
       assert.ok(a.name && a.agentsRoot, "each agent has name and agentsRoot");
       assert.ok(["persistent", "local", "capability"].includes(a.kind), `known kind (${a.kind})`);
     }
-    // capability-defined agents (e.g. oas.review's reviewer) must appear — the
+    // capability-defined agents (e.g. oats.review's reviewer) must appear — the
     // CLI can spawn them via findCapabilityAgent, so the panel must offer them.
     const reviewer = d.agents.find((a) => a.name === "reviewer");
     assert.ok(reviewer, "capability-defined 'reviewer' is listed");
     assert.equal(reviewer.kind, "capability");
-    assert.equal(reviewer.capability, "oas.review");
+    assert.equal(reviewer.capability, "oats.review");
     // /api/spawn input validation (no real spawn: bad root / unknown agent / bad body)
     const post = (body) => fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
       headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -356,7 +356,7 @@ test("desktop server: /api/agents lists persistent AND capability-defined agents
     // capability agent RESOLVES through the spawn path: validation passes
     // (not "unknown agent") and the mutation boundary answers with the
     // stable cli-unavailable degradation (503) — the app never bundles a
-    // kernel; spawning requires a compatible installed oas CLI.
+    // kernel; spawning requires a compatible installed oats CLI.
     const r = await post({ agent: "reviewer", agentsRoot: root });
     assert.equal(r.status, 503, "mutation without a CLI adapter degrades, not crashes");
     const body = await r.json();
@@ -387,7 +387,7 @@ test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces
   // Fake `pi` on PATH: a deterministic catalog that COUNTS its invocations
   // (append-per-run marker) — the coalescing assertion reads it back. node
   // must stay reachable for the server itself, so prepend to the REAL PATH.
-  const bindir = mkdtempSync(join(tmpdir(), "oas-models-"));
+  const bindir = mkdtempSync(join(tmpdir(), "oats-models-"));
   const fakePi = join(bindir, "pi");
   const countFile = join(bindir, "runs");
   writeFileSync(fakePi, `#!/bin/sh\necho x >> ${countFile}\nsleep 0.3\ncat <<'EOF'\nprovider        model                       context\nanthropic       claude-opus-4-5             200K\nanthropic       claude-sonnet-4-5           200K\nopenai          gpt-5.2                     400K\nEOF\n`);
@@ -464,7 +464,7 @@ test("desktop server: file guard: traversal, prefix-sneak, and symlink escapes f
   const src = extractBlock(SRV, "FILEGUARD");
   const resolveGuardedFile = new Function("realpathSync", "resolve", "sep",
     `${src}; return resolveGuardedFile;`)(realpathSync, resolve, sep);
-  const base = mkdtempSync(join(tmpdir(), "oasweb-guard-"));
+  const base = mkdtempSync(join(tmpdir(), "oatsweb-guard-"));
   const root = join(base, "root"); mkdirSync(root);
   const evil = join(base, "root-evil"); mkdirSync(evil);
   writeFileSync(join(root, "ok.md"), "# hi");
@@ -494,8 +494,8 @@ test("desktop server: file guard never re-resolves roots — a dir→symlink swa
   // run the guard. Because the guard consults only the captured canonical
   // string, the request (which now resolves into the secret dir) falls
   // outside it and must 403.
-  const base = mkdtempSync(join(tmpdir(), "oasweb-swap-"));
-  const secret = mkdtempSync(join(tmpdir(), "oasweb-swap-secret-"));
+  const base = mkdtempSync(join(tmpdir(), "oatsweb-swap-"));
+  const secret = mkdtempSync(join(tmpdir(), "oatsweb-swap-secret-"));
   writeFileSync(join(secret, "secret.md"), "TOCTOU-SECRET");
   const la = join(base, "local-agents"); mkdirSync(la);
   writeFileSync(join(la, "real.md"), "legit");
@@ -582,9 +582,9 @@ test("desktop server: a symlinked local-agents sibling never becomes an /api/fil
   // A valid-looking workspace whose local-agents is a SYMLINK to a secret
   // directory outside it — realpath-based guards would canonicalize the
   // link and authorize its TARGET (review 4e2667b blocker).
-  const secret = mkdtempSync(join(tmpdir(), "oasweb-secret-"));
+  const secret = mkdtempSync(join(tmpdir(), "oatsweb-secret-"));
   writeFileSync(join(secret, "secret.md"), "# TOP-SECRET-LOCAL-AGENTS");
-  const scope = mkdtempSync(join(tmpdir(), "oasweb-symlink-ws-"));
+  const scope = mkdtempSync(join(tmpdir(), "oatsweb-symlink-ws-"));
   mkdirSync(join(scope, "agents", "dev", "soul"), { recursive: true });
   writeFileSync(join(scope, "agents", "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
   writeFileSync(join(scope, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
@@ -609,7 +609,7 @@ test("desktop server: a symlinked local-agents sibling never becomes an /api/fil
     const okR = await get(`/api/file?path=${encodeURIComponent(join(scope, "agents", "dev", "soul", "AGENTS.md"))}`);
     assert.equal(okR.status, 200, "real agents-root files still serve");
     // and a REAL (non-symlink) local-agents sibling still works end to end
-    const scope2 = mkdtempSync(join(tmpdir(), "oasweb-real-local-"));
+    const scope2 = mkdtempSync(join(tmpdir(), "oatsweb-real-local-"));
     mkdirSync(join(scope2, "agents"), { recursive: true });
     mkdirSync(join(scope2, "local-agents", "loc", "soul"), { recursive: true });
     writeFileSync(join(scope2, "local-agents", "loc", "soul", "soul.yaml"), "name: loc\n");
@@ -636,9 +636,9 @@ test("desktop server: dir→symlink swap after admission cannot re-resolve the l
   // it for a symlink to a secret dir. Because fileRoots pushes the
   // IMMUTABLE realpath captured at admission (review ac366f9), the later
   // resolveGuardedFile canonicalization must not follow the swapped link.
-  const secret = mkdtempSync(join(tmpdir(), "oasweb-toctou-secret-"));
+  const secret = mkdtempSync(join(tmpdir(), "oatsweb-toctou-secret-"));
   writeFileSync(join(secret, "secret.md"), "# TOCTOU-SECRET");
-  const scope = mkdtempSync(join(tmpdir(), "oasweb-toctou-ws-"));
+  const scope = mkdtempSync(join(tmpdir(), "oatsweb-toctou-ws-"));
   mkdirSync(join(scope, "agents", "dev", "soul"), { recursive: true });
   writeFileSync(join(scope, "agents", "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
   mkdirSync(join(scope, "local-agents", "loc", "soul"), { recursive: true });
@@ -678,7 +678,7 @@ test("desktop server: tmux targets: exact-match anchoring fails closed for reads
   }
   // live half: reviewer-1 ABSENT, reviewer-15abc PRESENT — the unanchored
   // target would prefix-match the live window; the anchored one must error.
-  const session = `oaswebtgt${process.pid}`;
+  const session = `oatswebtgt${process.pid}`;
   try {
     execFileSync("tmux", ["new-session", "-d", "-s", session, "-n", "reviewer-15abc"], { timeout: 4000 });
   } catch { t.skip("tmux unavailable"); return; }
@@ -718,7 +718,7 @@ test("desktop server: paneInfo: geometry comes from the ACTIVE pane, same pane c
   const tgtSrc = extractBlock(SRV, "TMUXTGT");
   const piSrc = extractBlock(SRV, "PANEINFO");
   const paneInfo = new Function("execFileSync", `${tgtSrc}${piSrc}; return paneInfo;`)(execFileSync);
-  const session = `oaswebpane${process.pid}`;
+  const session = `oatswebpane${process.pid}`;
   try {
     execFileSync("tmux", ["new-session", "-d", "-s", session, "-n", "w1", "-x", "101", "-y", "30"], { timeout: 4000 });
   } catch { t.skip("tmux unavailable"); return; }

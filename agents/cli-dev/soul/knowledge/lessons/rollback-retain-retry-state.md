@@ -14,7 +14,7 @@ remain`, and the very next statement was `rmSync(home)`. For aweb that home cont
 diagnosed a recoverable situation and then made it unrecoverable.
 
 **If cleanup did not finish, the state cleanup needs must survive.** Quarantine rather than
-delete: keep the home, mark it (`.oas-rollback-incomplete.json`) with what failed and what
+delete: keep the home, mark it (`.oats-rollback-incomplete.json`) with what failed and what
 is outstanding, remove the parts that are independently safe (worktree, branch), launch
 nothing, and name the retained path plus the retry command in the error. Delete only once
 compensation reports complete — or reports there was nothing to undo.
@@ -42,7 +42,7 @@ succeeds *because* the state was still there, and only then is the home gone.
 
 # A recovery path must be executable, not just advertised
 
-The first version of the quarantine told the operator to run `oas retire <instance>` — a
+The first version of the quarantine told the operator to run `oats retire <instance>` — a
 retry that could not possibly work. The required-hook failure happens BEFORE
 `instance.json` is written, so retire found no metadata, skipped every hook, and deleted
 the home. Preserving the credential bought nothing because nothing could use it.
@@ -186,7 +186,7 @@ required-hook failure without a retire hook turns the ordinary case — a hook t
 having created nothing — into litter only `--force` can clear. The discriminator was already
 in the protocol: metadata is how a hook says "I created this, here is what you need to undo
 it", and the failure path already parses it. So a failed hook that REPORTED state, with no
-retire hook behind it, has handed OAS a receipt it cannot act on → quarantine; one that
+retire hook behind it, has handed OATS a receipt it cannot act on → quarantine; one that
 reported nothing gets the clean rollback. Those four tests were not obstacles to route
 around — they were the specification of the common case.
 

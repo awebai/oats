@@ -3,8 +3,8 @@
 Specialization is accumulated judgment. A specialist remembers what worked,
 what failed, what was decided, and which procedures are worth repeating.
 
-OAS treats knowledge as a pluggable layer. The kernel does not choose a
-memory format. The default integration, `oas-okf`, uses markdown OKF bundles
+OATS treats knowledge as a pluggable layer. The kernel does not choose a
+memory format. The default integration, `oats-okf`, uses markdown OKF bundles
 for soul knowledge and simple files for instance state.
 
 ## What the kernel does not own
@@ -23,7 +23,7 @@ The ideas behind any of this — what belongs in a soul vs an instance,
 capture vs judgment, consolidation stages — are format-independent and live
 in [knowledge theory](knowledge-theory.md).
 
-## The default: oas-okf
+## The default: oats-okf
 
 With `knowledge: okf`, the integration creates two memory spaces.
 
@@ -33,7 +33,7 @@ With `knowledge: okf`, the integration creates two memory spaces.
 | Instance memory | `STATE.md`, `log.md`, `notes/` | Current task state, dated history, and captured insights. |
 
 The instance does not promote its own notes. It captures them, and after
-committing with pending notes it runs `oas okf harvest` (its okf injection
+committing with pending notes it runs `oats okf harvest` (its okf injection
 carries this instruction), which spawns a **memory-harvest** agent. That
 harvester judges the notes and updates the soul; the delivery matches the
 soul's custody — a commit on the instance's branch for repo-resident souls,
@@ -43,7 +43,7 @@ uncommitted by contract). Then it retires.
 
 ## Capture and judgment
 
-OAS splits memory work into two roles.
+OATS splits memory work into two roles.
 
 **The working instance captures.** It keeps `STATE.md` current, appends
 milestones to `log.md`, and writes every non-obvious insight to `notes/`.
@@ -83,7 +83,7 @@ whether that conversion succeeded.
 
 ## OKF concept types
 
-OKF itself does not prescribe one vocabulary. OAS conventions use these
+OKF itself does not prescribe one vocabulary. OATS conventions use these
 common types:
 
 | Type | Usual home | Meaning |
@@ -115,13 +115,13 @@ As you work:
 2. Append dated milestones and decisions to `log.md`.
 3. Write non-obvious insights to `notes/` as one concept per file.
 4. Before every commit, bring memory up to date.
-5. Commit, then run `oas okf harvest` to send your notes to the soul.
+5. Commit, then run `oats okf harvest` to send your notes to the soul.
 
 Do not hold back a note because you are unsure it is soul-grade. Capture
 first. The harvester judges.
 
 ## Without a knowledge integration
 
-`knowledge: none` is valid. The agent gets no OAS memory files, no memory
+`knowledge: none` is valid. The agent gets no OATS memory files, no memory
 briefing, no harvest agent, and no OKF skills. It may still use whatever
 memory conventions the repo or harness already provides.

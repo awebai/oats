@@ -1,8 +1,0 @@
-name: oas-desktop-engineer
-kind: persistent
-description: OAS Desktop full-stack engineer — owns packages/desktop (Electron app, bundled server backend, release automation)
-type: developers
-repo: .
-work: worktree
-runtime: claude
-model: opus

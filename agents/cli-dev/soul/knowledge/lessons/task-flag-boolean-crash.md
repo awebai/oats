@@ -1,7 +1,7 @@
 ---
 type: Lesson
 title: flag() returns true when a flag's value is missing — --task crashed spawn
-description: bin/oas.mjs flag() yields boolean true when the next argv token starts with "--"; oas spawn dev --task --purpose x passed task=true into spawnInstance and crashed mid-scaffold at task.trim(), while task delivery itself was never broken.
+description: bin/oats.mjs flag() yields boolean true when the next argv token starts with "--"; oats spawn dev --task --purpose x passed task=true into spawnInstance and crashed mid-scaffold at task.trim(), while task delivery itself was never broken.
 tags: [cli, bug, task-delivery, flags]
 timestamp: 2026-07-24
 ---

@@ -1,4 +1,4 @@
-// oas desktop — keyboard shortcuts editor (shell-owned dialog).
+// oats desktop — keyboard shortcuts editor (shell-owned dialog).
 //
 // Like the palette overlay: plain DOM, semantic tokens from theme.css /
 // shell.css, keyboard-first, ARIA dialog. Lists every registered action

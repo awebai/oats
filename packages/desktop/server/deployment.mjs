@@ -1,16 +1,16 @@
-// OAS desktop — app-owned READ-ONLY deployment reader.
+// OATS desktop — app-owned READ-ONLY deployment reader.
 //
 // The packaged desktop app must not import the framework checkout's
 // kernel module, accept a framework-root environment override, or
-// bundle a hidden OAS kernel (desktop-dist contract, packaged boundary).
-// This module is the replacement: it reads an OAS deployment from disk —
+// bundle a hidden OATS kernel (desktop-dist contract, packaged boundary).
+// This module is the replacement: it reads an OATS deployment from disk —
 // enough for roster/hierarchy, brain/markdown/task/state/git reads and
 // attaching to existing tmux sessions — and NOTHING more. Every lifecycle
-// mutation (spawn, harvest) goes through the installed `oas` CLI's JSON API.
+// mutation (spawn, harvest) goes through the installed `oats` CLI's JSON API.
 //
 // Design rules (deliberate differences from the kernel):
 //   * READ-ONLY: no ensureRoot side effects, no scaffolding, no writes.
-//   * FAULT-TOLERANT: a malformed oas-config.yaml, soul.yaml, manifest, or
+//   * FAULT-TOLERANT: a malformed oats-config.yaml, soul.yaml, manifest, or
 //     lock file must degrade to "not visible", never crash the server —
 //     the app observes deployments it does not own.
 //   * NO KERNEL AUTHORITY: this reader never decides what a spawn/harvest
@@ -70,7 +70,7 @@ function yamlScalar(raw) {
   return val.replace(/^["']|["']$/g, "");
 }
 
-/** Nested-map YAML subset (oas-config.yaml). */
+/** Nested-map YAML subset (oats-config.yaml). */
 export function parseYamlNested(text) {
   const root = {};
   const stack = [{ indent: -1, node: root }];
@@ -101,14 +101,14 @@ export function parseFrontmatter(text) {
 
 // ---- config chain + team scope (read-only, tolerant) -----------------------
 
-/** All oas-config.yaml levels from startDir upward, closest first. Unlike the
+/** All oats-config.yaml levels from startDir upward, closest first. Unlike the
  * kernel, an unreadable/invalid level is SKIPPED (observation must survive
  * foreign deployments with configs a newer/older kernel wrote). */
 export function configChain(startDir) {
   const chain = [];
   let d = resolve(startDir);
   while (true) {
-    const file = join(d, "oas-config.yaml");
+    const file = join(d, "oats-config.yaml");
     if (existsSync(file)) {
       try {
         const cfg = parseYamlNested(readFileSync(file, "utf8"));
@@ -230,7 +230,7 @@ export function findAgent(root, name) {
 // ---- capability manifests (read-only subset) -------------------------------
 
 function loadManifestAt(idir, origin, level) {
-  const mf = join(idir, "oas.json");
+  const mf = join(idir, "oats.json");
   try {
     if (!existsSync(mf)) return undefined;
     const m = JSON.parse(readFileSync(mf, "utf8"));
@@ -320,7 +320,7 @@ function capabilityIntegrity(dir) {
   const hash = createHash("sha256");
   const walk = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (e.name === ".git" || e.name === "oas-lock.json") continue;
+      if (e.name === ".git" || e.name === "oats-lock.json") continue;
       const p = join(d, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.isFile()) { hash.update(relative(dir, p)); hash.update("\0file\0"); hash.update(readFileSync(p)); hash.update("\0"); }
@@ -374,7 +374,7 @@ function validatedLockCapabilities(file) {
 function capabilityLocks(startDir) {
   const out = {};
   for (const cfg of [...configChain(startDir)].reverse()) {
-    const capabilities = validatedLockCapabilities(join(cfg._level, "oas-lock.json"));
+    const capabilities = validatedLockCapabilities(join(cfg._level, "oats-lock.json"));
     if (!capabilities) continue;
     for (const [id, lock] of Object.entries(capabilities)) out[id] = lock;
   }

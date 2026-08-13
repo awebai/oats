@@ -39,7 +39,7 @@ The dependency-closure dedupe key is therefore `source#path`. Comparing only
 resolved twice, silently dropping one instead of raising
 `duplicate-package-identity`.
 
-During `oas update`, that ownership difference becomes visible when an upstream
+During `oats update`, that ownership difference becomes visible when an upstream
 root is renamed:
 
 - Git update rebuilds `<url>[@<ref>]#<locked path>` and fails `invalid-source` if
@@ -63,12 +63,12 @@ a lock recording `"./sub"` is `invalid-lock`, not silently repaired on read.
 Normalizing on read would make lock round trips untestable and would let two
 byte-different locks claim the same pin.
 
-Path changes are lock advancement. A plain `oas install` that resolves a
+Path changes are lock advancement. A plain `oats install` that resolves a
 payload path different from the lock's `path` fails with `integrity-drift` before
 integrity comparison, because two different roots can contain byte-identical
 trees. The acquire-time path-mismatch diagnostic must branch on the **locked**
-source kind because that is the source `oas update` re-resolves from: catalog
-locks may recommend `oas update <pkg>` because the catalog entry owns `path`,
+source kind because that is the source `oats update` re-resolves from: catalog
+locks may recommend `oats update <pkg>` because the catalog entry owns `path`,
 Git locks must not recommend update because the operator's `#<path>` fragment is
 sticky across updates and must instead be repaired by remove-then-install with
 the intended fragment, and local path locks always select `.` so this mismatch is
@@ -83,8 +83,8 @@ deployment.
 
 # Test fixture facts
 
-- `DEFAULT_PACKAGE_PATH` is `"oas-package"`; a bare Git source looks for
-  `oas-package/oas-package.json`, and `#.` selects the repository root.
+- `DEFAULT_PACKAGE_PATH` is `"oats-package"`; a bare Git source looks for
+  `oats-package/oats-package.json`, and `#.` selects the repository root.
 - `file://<dir>` is the network-free Git spelling. The `git:` shorthand demands
   `host/org/repo`, and a `path:` source forces `packagePath: "."` and rejects any
   `#<path>` fragment.
@@ -92,7 +92,7 @@ deployment.
   `pathOverride ?? entryPath ?? DEFAULT_PACKAGE_PATH` and
   `entryPath ?? pathOverride ?? DEFAULT_PACKAGE_PATH` are equivalent for that
   code path; a mutant swapping them can survive legitimately. Pair this fixture
-  with the [CLI spawned-process hermeticity lesson](/lessons/cli-tests-scrub-oas-pi-env.md)
+  with the [CLI spawned-process hermeticity lesson](/lessons/cli-tests-scrub-oats-pi-env.md)
   when testing `test/cli-lifecycle.test.mjs` cases.
 
 See [payload root subtree extraction](/lessons/payload-root-subtree-extraction.md)

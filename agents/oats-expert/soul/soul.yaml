@@ -1,0 +1,8 @@
+name: oats-expert
+kind: persistent
+description: The OATS framework expert — holds the what/why, the architecture, the roadmap, and how OATS is deployed in real workspaces
+repo: .
+work: checkout
+runtime: pi
+model: github-copilot/gpt-5.6-sol:high, openai/gpt-5.6-sol:high
+type: framework-authors

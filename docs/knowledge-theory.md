@@ -1,6 +1,6 @@
 # What belongs in a soul, and what belongs in an instance
 
-The knowledge layer's *format* is pluggable in OAS. The ideas below are not.
+The knowledge layer's *format* is pluggable in OATS. The ideas below are not.
 They come from asking what memory means for an agent that outlives its
 sessions, and they apply whatever format or tooling you bind — OKF, plain
 markdown, or something else entirely.
@@ -88,7 +88,7 @@ The test for growing a section is the promotion bar, one level up. Would
 future instances of *this* soul need to navigate this kind of knowledge? If
 yes, grow it and record why. If no, it is one concept, not a section.
 
-## Where OAS encodes these ideas
+## Where OATS encodes these ideas
 
 In the reference implementation the ideas surface as: the okf integration's
 capture protocol (instances write, no judging), the memory-harvest agent

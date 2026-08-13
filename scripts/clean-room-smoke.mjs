@@ -8,8 +8,8 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const room = mkdtempSync(join(tmpdir(), "oas-packed-smoke-"));
-const keep = process.env.OAS_KEEP_SMOKE === "1";
+const room = mkdtempSync(join(tmpdir(), "oats-packed-smoke-"));
+const keep = process.env.OATS_KEEP_SMOKE === "1";
 const run = (command, args, options = {}) => execFileSync(command, args, {
   encoding: "utf8", stdio: options.capture ? ["ignore", "pipe", "pipe"] : "ignore", ...options,
 });
@@ -24,7 +24,7 @@ function pack(cwd, destination) {
 function gitRepo(path) {
   mkdirSync(path, { recursive: true });
   run("git", ["init", "-q", path]);
-  run("git", ["-C", path, "config", "user.name", "OAS Smoke"]);
+  run("git", ["-C", path, "config", "user.name", "OATS Smoke"]);
   run("git", ["-C", path, "config", "user.email", "smoke@example.invalid"]);
   write(join(path, ".gitignore"), "\n");
   run("git", ["-C", path, "add", "."]);
@@ -37,13 +37,13 @@ try {
   const adapterTgz = pack(join(repo, "packages", "pi"), tarballs);
 
   const app = join(room, "app"); mkdirSync(app);
-  write(join(app, "package.json"), JSON.stringify({ name: "oas-clean-room", private: true, type: "module" }, null, 2));
+  write(join(app, "package.json"), JSON.stringify({ name: "oats-clean-room", private: true, type: "module" }, null, 2));
   run("npm", ["install", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund", kernelTgz, adapterTgz], { cwd: app });
 
-  const kernelRoot = join(app, "node_modules", "@oas-framework", "oas");
-  const adapterRoot = join(app, "node_modules", "@oas-framework", "pi");
-  const oas = join(app, "node_modules", ".bin", "oas");
-  for (const path of [join(kernelRoot, "lib", "core.mjs"), join(kernelRoot, "capabilities", "oas-okf", "oas.json"), join(adapterRoot, "extension", "index.ts"), oas]) {
+  const kernelRoot = join(app, "node_modules", "@awebai", "oats");
+  const adapterRoot = join(app, "node_modules", "@awebai", "oats-pi");
+  const oats = join(app, "node_modules", ".bin", "oats");
+  for (const path of [join(kernelRoot, "lib", "core.mjs"), join(kernelRoot, "capabilities", "oats-okf", "oats.json"), join(adapterRoot, "extension", "index.ts"), oats]) {
     if (!existsSync(path)) throw new Error(`packed install missing ${path}`);
   }
   if (kernelRoot.startsWith(repo) || adapterRoot.startsWith(repo)) throw new Error("smoke install did not leave the checkout");
@@ -51,63 +51,63 @@ try {
   const home = join(room, "home"); const fakeBin = join(room, "bin"); mkdirSync(home); mkdirSync(fakeBin);
   write(join(fakeBin, "pi"), "#!/bin/sh\nexit 0\n"); chmodSync(join(fakeBin, "pi"), 0o755);
 
-  // A CLEAN ROOM has no network. Without a bound catalog, `oas init` resolves
+  // A CLEAN ROOM has no network. Without a bound catalog, `oats init` resolves
   // its official layers through the real published catalog and fetches over
   // the wire: a release machine behind a firewall would fail this smoke and
   // the failure would look like a packaging defect. So the room publishes its
-  // own official package — the PACKED kernel's own bundled oas.okf, wrapped in
+  // own official package — the PACKED kernel's own bundled oats.okf, wrapped in
   // a distribution manifest inside a local Git repository — and a catalog
   // naming it. The materialization route is exercised for real, offline.
-  const officialRepo = join(room, "official", "oas-okf");
-  const payload = join(officialRepo, "oas-package");
-  write(join(payload, "oas-package.json"), JSON.stringify({
-    package: "oas.okf", version: "1.4.1", description: "clean-room official oas.okf",
-    compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/oas-okf"],
+  const officialRepo = join(room, "official", "oats-okf");
+  const payload = join(officialRepo, "oats-package");
+  write(join(payload, "oats-package.json"), JSON.stringify({
+    package: "oats.okf", version: "1.4.1", description: "clean-room official oats.okf",
+    compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/oats-okf"],
   }, null, 2));
-  cpSync(join(kernelRoot, "capabilities", "oas-okf"), join(payload, "capabilities", "oas-okf"), { recursive: true });
+  cpSync(join(kernelRoot, "capabilities", "oats-okf"), join(payload, "capabilities", "oats-okf"), { recursive: true });
   gitRepo(officialRepo);
   const catalog = join(room, "catalog.json");
-  write(catalog, JSON.stringify({ packages: { "oas.okf": { url: `file://${officialRepo}`, path: "oas-package" } }, capabilities: {} }, null, 2));
+  write(catalog, JSON.stringify({ packages: { "oats.okf": { url: `file://${officialRepo}`, path: "oats-package" } }, capabilities: {} }, null, 2));
 
   const env = {
     ...process.env,
     HOME: home,
-    OAS_HOME_DIR: join(home, ".oas"),
-    OAS_PKG_ROOT: kernelRoot,
-    OAS_PACKAGE_CATALOG: catalog,
-    PATH: `${fakeBin}:${dirname(oas)}:${process.env.PATH}`,
+    OATS_HOME_DIR: join(home, ".oats"),
+    OATS_PKG_ROOT: kernelRoot,
+    OATS_PACKAGE_CATALOG: catalog,
+    PATH: `${fakeBin}:${dirname(oats)}:${process.env.PATH}`,
   };
   Object.assign(process.env, env);
 
   const adapterLoader = await import(pathToFileURL(join(adapterRoot, "extension", "core-loader.mjs")).href);
-  if (adapterLoader.OAS_PKG_ROOT !== kernelRoot) throw new Error("packed pi adapter did not resolve packed kernel");
+  if (adapterLoader.OATS_PKG_ROOT !== kernelRoot) throw new Error("packed pi adapter did not resolve packed kernel");
   const kernelPackage = JSON.parse(readFileSync(join(kernelRoot, "package.json"), "utf8"));
   if (adapterLoader.kernelVersion() !== kernelPackage.version) throw new Error("packed adapter/kernel version mismatch");
   const core = await import(pathToFileURL(join(kernelRoot, "lib", "core.mjs")).href);
 
   const workspace = join(room, "workspace"); const agentsRoot = join(workspace, "agents");
   const modernRepo = join(workspace, "modern"); gitRepo(modernRepo); mkdirSync(agentsRoot, { recursive: true });
-  run(oas, ["init", "--raw", "--knowledge", "oas.okf", "--no-tmux-mouse", "--dir", modernRepo], { env });
-  const initConfig = readFileSync(join(modernRepo, "oas-config.yaml"), "utf8");
-  if (!/oas\.okf/.test(initConfig)) throw new Error("packed oas init did not activate declared knowledge package");
+  run(oats, ["init", "--raw", "--knowledge", "oats.okf", "--no-tmux-mouse", "--dir", modernRepo], { env });
+  const initConfig = readFileSync(join(modernRepo, "oats-config.yaml"), "utf8");
+  if (!/oats\.okf/.test(initConfig)) throw new Error("packed oats init did not activate declared knowledge package");
 
   // What a fresh deployment must look like, checked from the PACKED kernel:
   // a capability-materialization lock, a flat artifact, no package store, no
   // v1 residue, and nothing trusted at acquisition.
-  const initLock = JSON.parse(readFileSync(join(modernRepo, "oas-lock.json"), "utf8"));
+  const initLock = JSON.parse(readFileSync(join(modernRepo, "oats-lock.json"), "utf8"));
   if (initLock.lockfileVersion !== 2) throw new Error(`fresh init wrote lockfileVersion ${initLock.lockfileVersion}`);
   if (!initLock.packages || !initLock.capabilities) throw new Error("fresh lock is missing a required top-level map");
-  if (initLock.capabilities["oas.okf"]?.package !== "oas.okf") throw new Error("capability row lost its provider back-reference");
-  if (initLock.capabilities["oas.okf"].trusted !== false) throw new Error("acquisition granted executable trust");
+  if (initLock.capabilities["oats.okf"]?.package !== "oats.okf") throw new Error("capability row lost its provider back-reference");
+  if (initLock.capabilities["oats.okf"].trusted !== false) throw new Error("acquisition granted executable trust");
   for (const retired of ["capabilities", "trustedCapabilities", "depsIntegrity"]) {
-    if (Object.hasOwn(initLock.packages["oas.okf"], retired)) throw new Error(`package row carries retired key "${retired}"`);
+    if (Object.hasOwn(initLock.packages["oats.okf"], retired)) throw new Error(`package row carries retired key "${retired}"`);
   }
-  if (!existsSync(join(modernRepo, ".agents", "capabilities", "installed", "oas.okf", "oas.json"))) throw new Error("capability was not materialized flat");
+  if (!existsSync(join(modernRepo, ".agents", "capabilities", "installed", "oats.okf", "oats.json"))) throw new Error("capability was not materialized flat");
   if (existsSync(join(modernRepo, ".agents", "packages"))) throw new Error("a package store was materialized");
   if (!/installed/.test(readFileSync(join(modernRepo, ".agents", "capabilities", ".gitignore"), "utf8"))) throw new Error("materialized artifacts were not ignored");
   // And the packed doctor must not greet a deployment created seconds ago with
   // a migration: that regression shipped through 0.19.4.
-  const freshDoctor = JSON.parse(run(oas, ["doctor", modernRepo, "--json"], { env, capture: true }));
+  const freshDoctor = JSON.parse(run(oats, ["doctor", modernRepo, "--json"], { env, capture: true }));
   if (freshDoctor.lockError) throw new Error(`fresh scope has a lock the kernel refuses: ${freshDoctor.lockError.message}`);
   if (freshDoctor.legacyLockFiles.length || freshDoctor.officialMigration) throw new Error("packed doctor asked a fresh deployment to migrate");
 
@@ -118,12 +118,12 @@ try {
   const spawned = core.spawnInstance(agentsRoot, agent, { instance: "probe-packed", repo: modernRepo, launch: false });
   const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   const skills = readdirSync(join(spawned.home, ".agents", "skills")).sort();
-  if (JSON.stringify(skills) !== JSON.stringify(["memory-harvest", "oas", "oas-config", "oas-packages", "okf", "private"])) throw new Error(`unexpected packed skills: ${skills.join(", ")}`);
+  if (JSON.stringify(skills) !== JSON.stringify(["memory-harvest", "oats", "oats-config", "oats-packages", "okf", "private"])) throw new Error(`unexpected packed skills: ${skills.join(", ")}`);
   if (lstatSync(join(spawned.home, "AGENTS.md")).isSymbolicLink()) throw new Error("instance AGENTS.md was not generated");
   if (readlinkSync(join(spawned.home, "CLAUDE.md")) !== "AGENTS.md") throw new Error("instance CLAUDE.md is not canonical");
   if (readFileSync(join(agent._dir, "soul", "AGENTS.md"), "utf8") !== canonical) throw new Error("spawn mutated packed canonical soul");
-  if (!meta.capabilities.some((cap) => cap.id === "oas.okf") || !/--skill /.test(meta.command)) throw new Error("packed instance metadata/isolation missing");
-  const doctor = JSON.parse(run(oas, ["doctor", modernRepo, "--soul", "probe", "--json"], { env: { ...env, PI_AGENTS_ROOT: agentsRoot }, capture: true }));
+  if (!meta.capabilities.some((cap) => cap.id === "oats.okf") || !/--skill /.test(meta.command)) throw new Error("packed instance metadata/isolation missing");
+  const doctor = JSON.parse(run(oats, ["doctor", modernRepo, "--soul", "probe", "--json"], { env: { ...env, PI_AGENTS_ROOT: agentsRoot }, capture: true }));
   if (!doctor.composedInstructions.includes("Canonical instructions") || !doctor.composedInstructions.includes("Knowledge: OKF")) throw new Error("packed doctor composition incomplete");
   core.retireInstance(agentsRoot, spawned.instance);
   if (existsSync(spawned.home)) throw new Error("packed probe did not retire cleanly");
@@ -136,6 +136,6 @@ try {
     adapterResolvedPackedKernel: true, cleanContractConfigAndSpawn: true,
   }, null, 2));
 } finally {
-  if (keep) console.error(`OAS_KEEP_SMOKE=1: retained ${room}`);
+  if (keep) console.error(`OATS_KEEP_SMOKE=1: retained ${room}`);
   else rmSync(room, { recursive: true, force: true });
 }

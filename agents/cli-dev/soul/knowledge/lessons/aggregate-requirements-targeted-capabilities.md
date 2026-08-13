@@ -1,14 +1,14 @@
 ---
 type: Lesson
 title: Resolving a scope without a soul hides every type- and soul-targeted capability
-description: aggregateMissingRequirements called resolveOasConfig(scope) with no soul name, so capabilities bound by agent-types or souls contributed no requirements at all — a fail-open that global-targeted tests could never catch.
+description: aggregateMissingRequirements called resolveOatsConfig(scope) with no soul name, so capabilities bound by agent-types or souls contributed no requirements at all — a fail-open that global-targeted tests could never catch.
 tags: [capabilities, requirements, config-cascade, fail-open, testing]
 timestamp: 2026-07-27
 ---
 
 # Lesson
 
-`resolveOasConfig(scope)` and `resolveOasConfig(scope, soulName)` answer **different
+`resolveOatsConfig(scope)` and `resolveOatsConfig(scope, soulName)` answer **different
 questions**. Without a soul name, capabilities bound by `agent-types:` or `souls:` are not
 active, because there is no soul to match. `aggregateMissingRequirements` used the
 soul-less form, so every requirement of a targeted capability — host commands as much as

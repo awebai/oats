@@ -1,4 +1,4 @@
-# OAS Desktop — UX plan (phase 1)
+# OATS Desktop — UX plan (phase 1)
 
 Author: ux-designer-desktop-ux · Branch: `ux-designer/desktop-app`
 Scope: design language + UX for `packages/desktop/` (Electron shell,
@@ -6,7 +6,7 @@ xterm.js terminal, brain viewer, markdown viewer, diff viewer, panel port).
 This is a **decision document**: each section states the chosen option and why.
 It is written against the binding contract in
 `briefs/desktop-app-CONTRACT.md` (view modules `mount(el, ctx)` / `unmount()`;
-data from the oas-web HTTP API; tmux-attach terminals).
+data from the oats-web HTTP API; tmux-attach terminals).
 
 ---
 
@@ -26,7 +26,7 @@ Principles we adopt:
    `mount(el, ctx)` contract — the shell owns chrome, views own their `el`.
 2. **Semantic color tokens.** Components reference roles (`--surface`,
    `--accent`, `--term-bg`), never palette values. Themes are token maps.
-   The existing panel (`capabilities/oas-web/ui/panel.html`) already does
+   The existing panel (`capabilities/oats-web/ui/panel.html`) already does
    this correctly — we extend its token set, we don't replace it (§4).
 3. **Command palette as the universal escape hatch.** Every action reachable
    by mouse is reachable by `⌘K` (see §5). This is the cheapest way to be
@@ -35,13 +35,13 @@ Principles we adopt:
    (a terminal, a diff, a markdown file); the sidebar holds *everything that
    exists* (the roster). Closing a tab never destroys the underlying thing —
    which matches the contract exactly (detach pty, never kill tmux).
-5. **Status bar for ambient truth**: connection to the oas-web server,
+5. **Status bar for ambient truth**: connection to the oats-web server,
    active workspace, running-instance count, theme toggle.
 
 What we deliberately **do not** clone:
 
 - **No activity bar.** VS Code's activity bar exists because it has many
-  coequal top-level domains (explorer, SCM, debug, extensions). OAS desktop
+  coequal top-level domains (explorer, SCM, debug, extensions). OATS desktop
   has *one* primary domain — agents — so a vertical icon rail would be
   ceremony. The sidebar gets a small segmented header instead
   (Agents | Hierarchy) — two modes, not five domains.
@@ -79,7 +79,7 @@ from VS Code, and the reason the app exists.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ titlebar: ● oas  [workspace ▾]        filter/⌘K      ◐ theme │
+│ titlebar: ● oats  [workspace ▾]        filter/⌘K      ◐ theme │
 ├───────────────┬──────────────────────────────────────────────┤
 │ SIDEBAR       │ TAB STRIP  [dev-1 ⬤][dev-1: diff][README.md] │
 │ ┌───────────┐ ├──────────────────────────────────────────────┤
@@ -93,7 +93,7 @@ from VS Code, and the reason the app exists.
 │ ── souls ──   │                                              │
 │  spawnable    │                                              │
 ├───────────────┴──────────────────────────────────────────────┤
-│ status bar: ⬤ server · ws:oas · 4 running · branch · theme   │
+│ status bar: ⬤ server · ws:oats · 4 running · branch · theme   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -115,7 +115,7 @@ from VS Code, and the reason the app exists.
 **Decision: home = the hierarchy view with an overview header**, not an
 empty state and not a dashboard of widgets. On launch (no tabs open) the
 stage shows the agent hierarchy graph (§3) topped by a one-line summary
-("*oas workspace — 4 running, 2 idle, 1 retired today*") and a spawn button.
+("*oats workspace — 4 running, 2 idle, 1 retired today*") and a spawn button.
 Rationale: it makes the app's thesis — *you are orchestrating a team* —
 visible in the first second, and every node is one click from its terminal.
 
@@ -175,7 +175,7 @@ without hover:
 ```
 ┌──────────────────────────┐
 │ ⬤ webpanel-dev-brain     │   ⬤ status dot (see states)
-│ webpanel-dev · repo:oas  │   agent · repo, muted
+│ webpanel-dev · repo:oats  │   agent · repo, muted
 └──────────────────────────┘
 ```
 
@@ -239,7 +239,7 @@ Three tiers, one file:
   compatibility with the web panel is a requirement and the palette already
   passes AA (`--fg` 9.9:1, `--muted` 4.9:1 on surface).
 - Theme = OS-follow by default, manual override persisted
-  (`localStorage`, same keys as the panel: `oasweb.theme`) so panel and
+  (`localStorage`, same keys as the panel: `oatsweb.theme`) so panel and
   desktop feel like one product. Room for future themes = adding one
   `[data-theme="x"]` block; no component changes.
 

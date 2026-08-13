@@ -6,7 +6,7 @@ tags: [packages, kernel, ws2, seams]
 timestamp: 2026-07-28
 ---
 
-`lib/packages.mjs`'s `resolveProfilePackage` path behind `oas config diff
+`lib/packages.mjs`'s `resolveProfilePackage` path behind `oats config diff
 --package <git-url>` fetched package sources itself instead of going through the
 engine acquisition path. It cloned the repository and called
 `loadPackageManifestAt(clone)`, reading the repository root, and classified
@@ -14,7 +14,7 @@ sources with its own `/^(https?:\/\/|git@|ssh:\/\/)/` regex.
 
 That was harmless until contained package roots existed. Afterward the diff
 could read the manifest at the repository root while install locked
-`oas-package/`, so an adopted snapshot compared against a profile from a
+`oats-package/`, so an adopted snapshot compared against a profile from a
 completely different package. Nothing failed loudly; it compared the wrong
 thing.
 

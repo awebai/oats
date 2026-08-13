@@ -17,7 +17,7 @@ invalid or conflicting plans, no shell/sudo/auth, doctor warning when declined).
 **not** transfer was every place the old design assumed "a command on PATH":
 
 1. **Detection and post-install verification** — `commandOnPath()` can never prove a Pi
-   package is installed. OAS asks the selected runtime through `pi list --no-approve`,
+   package is installed. OATS asks the selected runtime through `pi list --no-approve`,
    requires a matching package row with a real install location, and uses the same probe
    after installation. A settings row records configuration intent only; when Pi cannot be
    run it may support diagnostics, but remains unverified and never satisfies presence.
@@ -45,7 +45,7 @@ Adding Claude beside pi was not a copy-paste of the Pi package shape:
 - **Installed is not enabled.** `claude plugin list` reports a Status line; a disabled plugin
   is installed but inert, so it must not satisfy a requirement.
 
-The founder's ruling that OAS must not exclude the operator's Claude configuration is not
+The founder's ruling that OATS must not exclude the operator's Claude configuration is not
 permission to silently add to it. Verified-not-installed at spawn is the boundary.
 
 Requirements are **runtime-scoped**, so a deployment is only prompted for packages or plugins
@@ -67,7 +67,7 @@ to a `oneOf` of the host-command and runtime-package forms, and every deployment
 validates manifests is affected. Flagged to the maintainer rather than slipped in.
 
 Pi's final launch posture deliberately keeps globally configured extensions enabled while
-curtailing ambient skills, context files, and prompt templates. OAS therefore does **not**
+curtailing ambient skills, context files, and prompt templates. OATS therefore does **not**
 add `--no-extensions`, explicit `-e` paths, or a private copy of Pi's extension-resolution
 algorithm. It verifies the required package through Pi and records runtime discovery
 honestly in provenance.

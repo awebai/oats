@@ -9,7 +9,7 @@ import {
   ACCEPT_RANGE, ACCEPT_RANGE_TEXT,
 } from "../cli-locator.mjs";
 
-const PROBE = (v = "0.18.0") => ({ schemaVersion: 1, name: "@oas-framework/oas", version: v, desktopApi: 1 });
+const PROBE = (v = "0.18.0") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
 
 test("acceptProbe: exact v1 payload accepted; every deviation rejected with a reason", () => {
   assert.equal(acceptProbe(PROBE()).ok, true);
@@ -21,7 +21,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
   const cases = [
     [null, /no probe/],
     [{ ...PROBE(), schemaVersion: 2 }, /schemaVersion/],
-    [{ ...PROBE(), name: "@other/pkg" }, /not the oas CLI/],
+    [{ ...PROBE(), name: "@other/pkg" }, /not the oats CLI/],
     [{ ...PROBE(), desktopApi: 2 }, /desktopApi 2/],
     [{ ...PROBE(), desktopApi: undefined }, /desktopApi missing/],
     [PROBE("0.17.9"), /outside/],
@@ -38,7 +38,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
 
 test("acceptProbe: API version is authoritative — a 0.18.x CLI without desktopApi is rejected", () => {
   // Source adjacency / same version number is NOT enough: the probe field decides.
-  const r = acceptProbe({ schemaVersion: 1, name: "@oas-framework/oas", version: "0.18.0" });
+  const r = acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: "0.18.0" });
   assert.equal(r.ok, false);
   assert.match(r.reason, /desktopApi/);
 });
@@ -68,7 +68,7 @@ test("acceptProbe: prereleases are rejected — 0.18.0-rc.1 precedes 0.18.0 (rev
 test("the accepted band admits the kernel version this Desktop ships with", () => {
   const version = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
   const r = acceptProbe(PROBE(version));
-  assert.equal(r.ok, true, `Desktop ${version} rejects the same-version oas CLI: ${r.reason} — widen ACCEPT_RANGE for this kernel minor`);
+  assert.equal(r.ok, true, `Desktop ${version} rejects the same-version oats CLI: ${r.reason} — widen ACCEPT_RANGE for this kernel minor`);
 });
 
 test("the human-readable band is derived from the enforced numbers", () => {
@@ -102,32 +102,32 @@ test("band edges: released 0.20.x is accepted, 0.21.0 and the pre-0.18 floor are
 
 test("parseProbeStdout: only a single JSON object passes", () => {
   assert.deepEqual(parseProbeStdout(JSON.stringify(PROBE())), PROBE());
-  assert.equal(parseProbeStdout("oas 0.18.0\n"), null);
+  assert.equal(parseProbeStdout("oats 0.18.0\n"), null);
   assert.equal(parseProbeStdout('{"a":1}\n{"b":2}'), null);
   assert.equal(parseProbeStdout('"just-a-string"'), null);
 });
 
 test("candidates: contract discovery order — persisted, env, PATH, npm-global, login-shell", async () => {
   const io = {
-    persisted: () => "/chosen/oas",
-    env: { OAS_DESKTOP_OAS_BIN: "/env/oas", PATH: ["/p1", "/p2"].join(delimiter) },
+    persisted: () => "/chosen/oats",
+    env: { OATS_DESKTOP_OATS_BIN: "/env/oats", PATH: ["/p1", "/p2"].join(delimiter) },
     npmGlobalBin: () => "/npmg/bin",
-    loginShellWhich: () => "/login/oas",
+    loginShellWhich: () => "/login/oats",
   };
   assert.deepEqual(await candidates(io), [
-    { path: "/chosen/oas", source: "persisted" },
-    { path: "/env/oas", source: "env" },
-    { path: "/p1/oas", source: "path" },
-    { path: "/p2/oas", source: "path" },
-    { path: "/npmg/bin/oas", source: "npm-global" },
-    { path: "/login/oas", source: "login-shell" },
+    { path: "/chosen/oats", source: "persisted" },
+    { path: "/env/oats", source: "env" },
+    { path: "/p1/oats", source: "path" },
+    { path: "/p2/oats", source: "path" },
+    { path: "/npmg/bin/oats", source: "npm-global" },
+    { path: "/login/oats", source: "login-shell" },
   ]);
 });
 
 test("candidates: relative and empty entries are dropped (absolute executables only)", async () => {
   const io = {
-    persisted: () => "relative/oas",
-    env: { OAS_DESKTOP_OAS_BIN: "", PATH: "" },
+    persisted: () => "relative/oats",
+    env: { OATS_DESKTOP_OATS_BIN: "", PATH: "" },
     npmGlobalBin: () => null,
     loginShellWhich: () => undefined,
   };
@@ -137,16 +137,16 @@ test("candidates: relative and empty entries are dropped (absolute executables o
 test("discover: expensive sources are LAZY and at-most-once — never invoked when an earlier candidate wins (review 53a20c7)", async () => {
   let npmCalls = 0, shellCalls = 0;
   const io = {
-    persisted: () => "/chosen/oas",
+    persisted: () => "/chosen/oats",
     env: { PATH: "" },
     isExecutableFile: () => true,
     canonicalize: (p) => p,
     npmGlobalBin: () => { npmCalls++; return "/npmg/bin"; },
-    loginShellWhich: () => { shellCalls++; return "/login/oas"; },
+    loginShellWhich: () => { shellCalls++; return "/login/oats"; },
   };
   const r = await discover(io, async () => ({ stdout: JSON.stringify(PROBE()) }));
   assert.equal(r.ok, true);
-  assert.equal(r.bin, "/chosen/oas");
+  assert.equal(r.bin, "/chosen/oats");
   assert.equal(npmCalls, 0, "npm helper never runs when the persisted candidate wins");
   assert.equal(shellCalls, 0, "login-shell helper never runs when the persisted candidate wins");
   // full-failure sweep: each expensive source runs exactly once
@@ -154,7 +154,7 @@ test("discover: expensive sources are LAZY and at-most-once — never invoked wh
     env: { PATH: "" },
     isExecutableFile: () => false,
     npmGlobalBin: () => { npmCalls++; return "/npmg/bin"; },
-    loginShellWhich: () => { shellCalls++; return "/login/oas"; },
+    loginShellWhich: () => { shellCalls++; return "/login/oats"; },
   };
   await discover(io2, async () => ({ stdout: "" }));
   assert.equal(npmCalls, 1, "npm helper invoked exactly once on a full sweep");
@@ -165,7 +165,7 @@ test("discover: a probe that REJECTS is never accepted, even with plausible stdo
   // The server's probeBin rejects on ANY execFile error (nonzero exit,
   // timeout) — discover must record the rejection, not accept the payload.
   const io = {
-    persisted: () => "/liar/oas",
+    persisted: () => "/liar/oats",
     env: { PATH: "" },
     isExecutableFile: () => true,
     canonicalize: (p) => p,
@@ -178,30 +178,30 @@ test("discover: a probe that REJECTS is never accepted, even with plausible stdo
 
 test("discover: first ACCEPTABLE candidate wins — earlier rejects are recorded diagnostics", async () => {
   const io = {
-    persisted: () => "/old/oas",                       // probes as 0.17 → rejected
-    env: { PATH: "/good" },                            // /good/oas → accepted
+    persisted: () => "/old/oats",                       // probes as 0.17 → rejected
+    env: { PATH: "/good" },                            // /good/oats → accepted
     isExecutableFile: () => true,
     canonicalize: (p) => p,
   };
   const probe = async (path) => ({
-    stdout: JSON.stringify(path === "/old/oas" ? PROBE("0.17.0") : PROBE("0.18.2")),
+    stdout: JSON.stringify(path === "/old/oats" ? PROBE("0.17.0") : PROBE("0.18.2")),
   });
   const r = await discover(io, probe);
   assert.equal(r.ok, true);
-  assert.equal(r.bin, "/good/oas");
+  assert.equal(r.bin, "/good/oats");
   assert.equal(r.source, "path");
   assert.equal(r.version, "0.18.2");
 });
 
 test("discover: full failure returns per-candidate stable diagnostics", async () => {
   const io = {
-    persisted: () => "/gone/oas",
-    env: { OAS_DESKTOP_OAS_BIN: "/broken/oas", PATH: "/incompat" },
-    isExecutableFile: (p) => p !== "/gone/oas",        // persisted: not executable
+    persisted: () => "/gone/oats",
+    env: { OATS_DESKTOP_OATS_BIN: "/broken/oats", PATH: "/incompat" },
+    isExecutableFile: (p) => p !== "/gone/oats",        // persisted: not executable
     canonicalize: (p) => p,
   };
   const probe = async (path) => {
-    if (path === "/broken/oas") throw new Error("ENOENT spawn");
+    if (path === "/broken/oats") throw new Error("ENOENT spawn");
     return { stdout: JSON.stringify(PROBE("0.17.5")) }; // incompatible
   };
   const r = await discover(io, probe);
@@ -216,15 +216,15 @@ test("discover: full failure returns per-candidate stable diagnostics", async ()
 test("discover: symlinked duplicates canonicalize and probe once", async () => {
   let probes = 0;
   const io = {
-    persisted: () => "/usr/local/bin/oas",             // symlink → /real/oas
+    persisted: () => "/usr/local/bin/oats",             // symlink → /real/oats
     env: { PATH: "/real" },
     isExecutableFile: () => true,
-    canonicalize: () => "/real/oas",
+    canonicalize: () => "/real/oats",
   };
   const probe = async () => { probes++; return { stdout: JSON.stringify(PROBE()) }; };
   const r = await discover(io, probe);
   assert.equal(r.ok, true);
-  assert.equal(r.bin, "/real/oas", "canonical absolute path is what the adapter execs");
+  assert.equal(r.bin, "/real/oats", "canonical absolute path is what the adapter execs");
   assert.equal(probes, 1, "identical realpath probed once");
 });
 

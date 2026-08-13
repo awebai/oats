@@ -12,7 +12,7 @@ Executing the gate-2 teardown as a coordinator-authorized direct merge of the
 package engine head confirmed and extended the
 [package-engine seam teardown decision](/decisions/package-engine-seam-teardown.md):
 
-- **Conflict hunks can be the teardown map.** Each `bin/oas.mjs` conflict hunk
+- **Conflict hunks can be the teardown map.** Each `bin/oats.mjs` conflict hunk
   matched one prewritten inventory disposition: doctor merged engine diagnostics
   with the WS2 payload, restore kept engine `restorePackages` plus the
   reconcile envelope, trust kept the engine block wholesale, and help took the
@@ -42,7 +42,7 @@ package engine head confirmed and extended the
   non-`ok` status as a reconciliation failure made real deployments fail.
 - **Fixture strictness ratchets during seam consumption.** The engine schema
   requires `compatibility` and rejects unknown keys, so fixtures needed
-  `compatibility.oas`. Same-scope duplicate capability exports now throw during
+  `compatibility.oats`. Same-scope duplicate capability exports now throw during
   acquisition, so package fixtures needed distinct capability ids.
 - **Consumption surfaced upstream engine gaps.** JSON `null` manifests crashed
   `loadPackageManifestAt` uncoded, relative dependency paths resolved against

@@ -1,0 +1,25 @@
+{
+  "name": "@awebai/oats-jira",
+  "version": "0.1.0",
+  "description": "OATS tasks provider: Jira via acli — epic/story/task protocol, agent roster, label-based agent identity, and agents-md injection",
+  "keywords": [
+    "pi-package",
+    "oats",
+    "jira"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awebai/oats",
+    "directory": "capabilities/oats-jira"
+  },
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "oats-jira": "./bin/oats-jira.mjs"
+  },
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}

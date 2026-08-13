@@ -26,13 +26,13 @@ changes, nothing private is importable by construction, and it extends the
 already-proven Desktop CLI API v1 envelope discipline instead of creating a
 second public JS surface that must be kept in semver lockstep with the CLI
 forever. The rejected alternative (a blessed `lib/runtime.mjs` import resolved
-via `oas root`) preserves exactly the dynamic-import coupling the maintainer
+via `oats root`) preserves exactly the dynamic-import coupling the maintainer
 ruled out.
 
 **Rule: independently released packages MUST NOT import kernel-private
-`lib/core.mjs` (including via `oas root` + dynamic import).** Package
+`lib/core.mjs` (including via `oats root` + dynamic import).** Package
 commands/hooks execute the CLI at the exact absolute path the dispatcher
-provides in `OAS_CLI_BIN` (§1 item 4) — never by resolving `oas` from PATH,
+provides in `OATS_CLI_BIN` (§1 item 4) — never by resolving `oats` from PATH,
 which is untrusted inside worktrees.
 
 ### Envelope and versioning
@@ -50,35 +50,35 @@ on failure; progress prose only on stderr.
   the floor for packages that rely on the new manifest surface
   (`configTemplates`, dedicated capability roots), which
   declare the materialization release's floor instead. Official packages declare
-  their floor as `compatibility.oas: ">=<floor>"` in `oas-package.json` (and
-  capability `compatibility.oas` likewise), and each consumer repo pins the kernel
+  their floor as `compatibility.oats: ">=<floor>"` in `oats-package.json` (and
+  capability `compatibility.oats` likewise), and each consumer repo pins the kernel
   consumer-fixture version its CI probes against. The exact Desktop
-  `oas version --json` probe payload is NOT extended (no `packageRuntimeApi`
+  `oats version --json` probe payload is NOT extended (no `packageRuntimeApi`
   field) — Desktop API compatibility is a separate contract.
 - Kernels below the floor are rejected by the consumer's normal
-  compatibility check (`incompatible-oas` at acquire; the consumer fixture
+  compatibility check (`incompatible-oats` at acquire; the consumer fixture
   asserts the rejection).
 
 ### Commands (exact surface, boundary v1 — maintainer-ruled minimal)
 
 The public boundary is HIGHER-LEVEL than the private core calls it replaces:
-private `findAgent`/`upsertLocalAgent`/`spawnInstance`/`resolveOasConfig`
-usage maps onto capability-defined agents, `oas spawn`, and dispatch-provided
+private `findAgent`/`upsertLocalAgent`/`spawnInstance`/`resolveOatsConfig`
+usage maps onto capability-defined agents, `oats spawn`, and dispatch-provided
 settings — not onto one-for-one public equivalents. File-of-record for the
-consumer inventory: `packaging/oas-okf/KERNEL-API-NEEDS.md` on kernel branch
+consumer inventory: `packaging/oats-okf/KERNEL-API-NEEDS.md` on kernel branch
 `integrations-expert/official-packages-staging` @ `60d5eb6` (design input;
 this contract remains authoritative).
 
 1. **Capability-defined agents own lookup/registration/ephemerality.** A
    package capability declares its service agents in its manifest `agents:`
-   (package-relative soul dirs, e.g. oas.okf ships
-   `agents/memory-harvest/{soul.yaml,AGENTS.md}`). `oas spawn <agent>`
+   (package-relative soul dirs, e.g. oats.okf ships
+   `agents/memory-harvest/{soul.yaml,AGENTS.md}`). `oats spawn <agent>`
    resolves capability-defined agents for the active context, scaffolds a
    fresh soul homed locally, and applies ephemeral (`kind: "capability"`)
-   semantics automatically. There is NO public `oas agent show`,
-   `oas agent upsert`, or generic `--ephemeral` flag — add such a surface
+   semantics automatically. There is NO public `oats agent show`,
+   `oats agent upsert`, or generic `--ephemeral` flag — add such a surface
    only when a reusable use case proves it.
-2. **Spawn** — `oas spawn <agent> ... --json` with the EXISTING flags:
+2. **Spawn** — `oats spawn <agent> ... --json` with the EXISTING flags:
    `--purpose <slug>` (deterministic derived naming
    `<agent>-<purpose>`; no raw instance-name authority), `--parent`,
    `--repo`, `--work attached|worktree|checkout|workspace`, `--work-dir`,
@@ -89,20 +89,20 @@ this contract remains authoritative).
    (`{ instance, agent, home, work, tmux, ... }`). If an accepted consumer
    mode cannot be expressed by an existing flag, ONE narrow flag is added
    with JSON tests — never a general override.
-3. **Settings via dispatch** — `oas <namespace> <command>` passes the active
+3. **Settings via dispatch** — `oats <namespace> <command>` passes the active
    capability's EFFECTIVE settings to the dispatched process as
-   `OAS_SETTINGS` (JSON; from the instance metadata snapshot or the resolved
+   `OATS_SETTINGS` (JSON; from the instance metadata snapshot or the resolved
    context), the same contract lifecycle hooks already have. Capabilities
-   read their settings (e.g. oas.okf's `harvest-model`) from `OAS_SETTINGS`;
+   read their settings (e.g. oats.okf's `harvest-model`) from `OATS_SETTINGS`;
    there is NO public resolved-config read command.
 4. **Consumer rules**: a package command executes the CLI at the exact
-   absolute path the dispatcher provides in the **`OAS_CLI_BIN`** environment
-   variable (part of the dispatch env contract, beside `OAS_SETTINGS`), via
-   `execFile` on that path — **never** by resolving `oas` from `PATH` and
+   absolute path the dispatcher provides in the **`OATS_CLI_BIN`** environment
+   variable (part of the dispatch env contract, beside `OATS_SETTINGS`), via
+   `execFile` on that path — **never** by resolving `oats` from `PATH` and
    never through a shell: PATH is not a trusted runtime boundary, and package
    commands run in worktrees where it can be shadowed. The consumer parses
    the one schema-v1 envelope, emits its own envelope, and never imports
-   `lib/core.mjs` or calls `oas root` for kernel-file resolution.
+   `lib/core.mjs` or calls `oats root` for kernel-file resolution.
 
 Error codes are part of the contract: `E_USAGE`, `E_BAD_ARGS`,
 `E_UNKNOWN_COMMAND`, `E_SPAWN_FAILED`, `E_PARENT_NOT_FOUND`,
@@ -111,16 +111,16 @@ Error codes are part of the contract: `E_USAGE`, `E_BAD_ARGS`,
 
 ### Consumer fixture
 
-The engine ships a consumer fixture driving the full oas.okf pattern
+The engine ships a consumer fixture driving the full oats.okf pattern
 exclusively through this surface: a capability-defined `memory-harvest`
-agent resolved and spawned via `oas spawn --json` in all three source modes
+agent resolved and spawned via `oats spawn --json` in all three source modes
 (local-soul / workspace-mode / repo-resident), parent relation,
-purpose-derived naming + debounce, model via `OAS_SETTINGS` dispatch,
+purpose-derived naming + debounce, model via `OATS_SETTINGS` dispatch,
 task-file privacy/cleanup, clean JSON success/failure, no private
-import/`oas root` lookup, Pi + Claude scaffold parity, and sub-floor kernel
+import/`oats root` lookup, Pi + Claude scaffold parity, and sub-floor kernel
 rejection. WS3 reuses the fixture shape as each official repo's per-repo CI
 probe, combined with the acquire → lock → trust → activate → spawn probe
-from `test/packages.test.mjs`. (The oas.okf tree changes themselves —
+from `test/packages.test.mjs`. (The oats.okf tree changes themselves —
 `agents/memory-harvest`, dropping the core import — are WS3 deliverables.)
 
 ## 2. Capability-local npm runtime closure
@@ -129,8 +129,8 @@ from `test/packages.test.mjs`. (The oas.okf tree changes themselves —
   CAPABILITY roots — each one carrying BOTH `package.json` AND
   `package-lock.json` is materialized independently, and the resulting
   `node_modules` becomes part of that capability's materialized artifact. This
-  is what lets an inner `oas.json` resolve resources via `node_modules/...`
-  relative to its own manifest (e.g. oas-aweb's
+  is what lets an inner `oats.json` resolve resources via `node_modules/...`
+  relative to its own manifest (e.g. oats-aweb's
   `node_modules/@awebai/pi/skills/...`) inside a self-contained artifact.
   A **package-root-only** closure has no durable home and is NOT
   materialized: it is package tooling. If a capability actually depends on it,
@@ -159,13 +159,13 @@ from `test/packages.test.mjs`. (The oas.okf tree changes themselves —
 - **Integrity coverage**: the lock has TWO digests at two levels, and the
   closure sits inside one of them.
   - The package row's `integrity` covers the staged package PAYLOAD only —
-    every `node_modules` (at any depth) and a root `oas-lock.json` are excluded,
+    every `node_modules` (at any depth) and a root `oats-lock.json` are excluded,
     so it is stable whether or not materialization has run. Root source-control
     metadata (`.git`) is stripped before staging; if it later appears in a
     managed artifact it is ordinary drift, not an integrity exclusion.
   - The capability row's `integrity` covers the MATERIALIZED ARTIFACT with **no
     exclusions at all**: capability source bytes, the materialized
-    `node_modules`, and the generated `.oas-installation.json` provenance file.
+    `node_modules`, and the generated `.oats-installation.json` provenance file.
   - There is consequently NO separate dependency digest anywhere in the model —
     tampering with a materialized dependency changes the capability artifact
     integrity directly, which invalidates `trusted` exactly like source drift and
@@ -245,7 +245,7 @@ JSON Schema cannot express these in the current shapes, so they are normative
 SEMANTIC validation rules with tests; validators of the schemas alone are not
 complete:
 
-- `oas-package.json`:
+- `oats-package.json`:
   - `capabilities` is REQUIRED and non-empty — config-only and empty packages
     are `invalid-package-manifest`;
   - `configTemplates` is OPTIONAL and is the canonical spelling; `configs` is a
@@ -257,14 +257,14 @@ complete:
     authoring never emits it;
   - at most one `configTemplates.*.default === true` (equivalently
     `configs.*.default`) per manifest → `invalid-package-manifest`;
-  - `compatibility.oas` is REQUIRED with exactly the grammar `>=x.y.z`,
+  - `compatibility.oats` is REQUIRED with exactly the grammar `>=x.y.z`,
     `^x.y.z`, or `x.y.z` — schema and runtime agree; malformed/missing →
-    `invalid-package-manifest`, valid-but-unsatisfied → `incompatible-oas`;
+    `invalid-package-manifest`, valid-but-unsatisfied → `incompatible-oats`;
   - every declared capability must be projectable self-contained — each declared
     resource exists and realpath-resolves inside its own capability root →
     `capability-not-self-contained` / `path-escape`. JSON Schema cannot see this
     at all: it is a filesystem property of the staged payload.
-- `oas-lock.json`, validated BEFORE restore, trust/approval, update/remove
+- `oats-lock.json`, validated BEFORE restore, trust/approval, update/remove
   planning, migration planning, the locked-template reader, and doctor/list
   consumption → `invalid-lock` (fail closed before executable approval or
   artifact replacement; no normalization, no auto-repair, NO side effects;
@@ -287,7 +287,7 @@ complete:
     package-level approval anywhere in the model;
   - `integrity` digests are well-formed sha256 on both row kinds;
   - arrays retain schema uniqueness (no duplicates);
-  - `.oas-installation.json` inside a materialized artifact must AGREE with the
+  - `.oats-installation.json` inside a materialized artifact must AGREE with the
     capability and package rows it was projected from (§3.1 of the contract);
     disagreement is `invalid-lock`, modification is `integrity-drift`;
   - the unsupported transitional v2 shape is rejected centrally by the exact
@@ -324,9 +324,9 @@ lock, and it never uses the invalid data.
 ## 5. Flat single-capability packages (`capabilities: ["."]`)
 
 **Read compatibility only.** A capability directory may BE the package root —
-`oas-package.json` and `oas.json` side by side with `capabilities: ["."]` — in
+`oats-package.json` and `oats.json` side by side with `capabilities: ["."]` — in
 an already-published manifest. The discriminator is `configTemplates`, NOT
-`configs`: `oas.authoring@1.0.0` is `capabilities: ["."]` and ships no template
+`configs`: `oats.authoring@1.0.0` is `capabilities: ["."]` and ships no template
 map at all, so keying acceptance on the deprecated spelling would strand a
 package the kernel is required to keep reading. A manifest carrying
 `configTemplates` is unambiguously new and its `"."` is
@@ -336,7 +336,7 @@ Semantics for the layouts that still exist:
 - **The projection is still a capability artifact.** The capability root equals
   the package root, so the materialized artifact under
   `.agents/capabilities/installed/<id>/` contains the whole package root
-  including `oas-package.json` and any config templates. That is a superset, not
+  including `oats-package.json` and any config templates. That is a superset, not
   a leak: everything in it is validated payload from one exact locked source,
   and the artifact remains self-contained, independently hashable and
   independently trustable. Its `integrity` is the artifact hash like any other.
@@ -344,10 +344,10 @@ Semantics for the layouts that still exist:
   the capability row's artifact `integrity` cover overlapping bytes on purpose:
   one proves the distribution, the other proves the installation. Trust binds to
   the capability digest only.
-- **Resource indexing**: only the manifest-declared `.` is indexed; `oas.json`
-  loads from the root with normal capability validation. `oas-package.json`
+- **Resource indexing**: only the manifest-declared `.` is indexed; `oats.json`
+  loads from the root with normal capability validation. `oats-package.json`
   living inside the capability's file set is harmless — each file has exactly
-  one loader (`oas-package.json` → package manifest, `oas.json` → capability
+  one loader (`oats-package.json` → package manifest, `oats.json` → capability
   manifest), so no manifest-kind ambiguity can arise.
 - **Constraint**: `.` implies a SINGLE-capability package. Listing `.` together
   with any other capability path would nest one capability inside another and is
@@ -380,7 +380,7 @@ There is exactly one legacy format to support, and it is v1.
 3. **Conversion is explicit, transactional and all-or-nothing per scope.** The
    lock has no residue container, so a v1 scope with even one unmappable entry
    stays v1 in full — reported as `hold`/`manual` — and keeps working.
-   Re-running `oas migrate` retries it once the catalog can map it. Guided
+   Re-running `oats migrate` retries it once the catalog can map it. Guided
    official migration converts directly into flat capability materialization.
 4. **Trust is never carried over from v1.** A v1 capability artifact and a
    materialized artifact are different bytes, so every executable surface is
@@ -410,5 +410,5 @@ failure, unsupported transitional v2 rejected with no side effects (both
 predicate arms, including empty transitional arrays and a dependency-free old
 row), state-free empty transitional v2 normalization, prototype-named package
 and capability IDs across central read / graph / provider / trust lookups, and
-`.oas-installation.json` determinism, field agreement, tamper failure and
+`.oats-installation.json` determinism, field agreement, tamper failure and
 future-kernel restore.

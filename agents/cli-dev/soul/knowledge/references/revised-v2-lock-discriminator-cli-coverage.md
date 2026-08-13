@@ -45,7 +45,7 @@ Normalization boundaries:
 * Pin dependency-free old rows in tests (a row without `dependencies` must not
   accidentally read as revised v2 or as transitional).
 * Pin lock-only-scope output in both JSON and human modes — a scope with a lock
-  and no `oas-config.yaml` must still report correctly.
+  and no `oats-config.yaml` must still report correctly.
 * Ensure the legacy `writeCapabilityLock` path can **never downgrade** a revised
   v2 lock. This is the dangerous one: a v1-era writer silently rewriting a
   revised-v2 lock would destroy the `capabilities` map that the discriminator

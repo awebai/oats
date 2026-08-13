@@ -1,7 +1,7 @@
 ---
 type: Lesson
 title: Tightening a reader means testing it against everything the writer can emit
-description: Making parseLockSource strict rejected catalog:oas.okf@release@candidate — a source acquisition really writes — because the reader split at the last @ while the public parser splits at the first.
+description: Making parseLockSource strict rejected catalog:oats.okf@release@candidate — a source acquisition really writes — because the reader split at the last @ while the public parser splits at the first.
 tags: [packages, kernel, lock-v2, review, testing]
 timestamp: 2026-07-28
 ---
@@ -14,9 +14,9 @@ rejecting a source the writer legitimately produces.
 `/^([a-z0-9][a-z0-9._-]*)(?:@(.+))?$/` — the id charset excludes `@`, so the
 split is at the **first** `@` and the selector keeps the rest.
 `parseLockSource` split at the **last** `@`. For a one-`@` selector the two
-agree, which is why every existing test passed. For `oas.okf@release@candidate`
+agree, which is why every existing test passed. For `oats.okf@release@candidate`
 — a perfectly ordinary git ref spelling — the reader saw the id
-`oas.okf@release` and failed the whole lock as `invalid-lock`.
+`oats.okf@release` and failed the whole lock as `invalid-lock`.
 
 # Two rules that would have caught it
 

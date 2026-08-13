@@ -1,0 +1,90 @@
+---
+type: Decision
+title: Config authorship completeness and ambient skill coexistence
+status: partially-superseded
+description: Config-shape amendments for injection overrides and complete CLI authorship; its ambient-skill coexistence section is superseded by strict curated runtime composition at soul instantiation.
+tags: [config, cli, injections, skills, adoption]
+timestamp: 2026-07-14
+---
+
+Decided with the founder, 2026-07-14, as follow-ups to
+[config shape v2](config-shape-agent-types-and-injections.md).
+
+**Amended 2026-07-26:** sections 1, 2, and 4 remain accepted. Section 3's
+ambient-skill coexistence behavior is superseded by [strict instance
+curriculum](strict-instance-curriculum.md): instantiated souls receive only
+the selected OATS skill/instruction curriculum while provider-native tools and
+workflows remain available.
+
+# 1. `injection:` → `injection-override:`
+
+The per-entry key on capability entries, work modes, and the `oats:` kernel
+block is renamed to `injection-override:` (values `<path>|none|default`
+unchanged). Rationale: the old name read as "where the injection lives"; the
+mechanism is an override of a packaged default, and the name should say so.
+
+It is **rejected on `from: owned` and `from: path:` entries** with a pointed
+error: the scope owns the package source, so the injection is edited directly
+at `.agents/capabilities/owned/<id>/injects/<file>.md`. An override there
+would be a second place to edit the same text — the drift trap this design
+avoids. Scaffolding (`oats init` / `oats use`) emits the commented override
+line only for `bundled`/`installed` entries; owned entries get a pointer
+comment to their own `injects/` directory instead.
+
+Rejected alternative: `oats install` auto-copying packaged injections into
+`.agents/injections/capabilities/<id>.md` — it silently converts defaults
+into pins, so package updates stop reaching deployments that never
+consciously customized anything.
+
+# 2. CLI verbs for the remaining mainstream config operations
+
+Audit outcome: `init`/`use`/`install`/`trust`/`create --type` covered the
+capabilities block, but two mainstream operations still required hand-edits.
+Added:
+
+- **`oats type add <name> [--description ...] [--dir ...]`** and
+  **`oats type list`** — structural authorship of the `agent-types:` block
+  (previously: `create --type` set soul membership but nothing declared the
+  type, leaving a doctor warning whose fix was manual).
+- **`oats inject eject <capability-id|work-mode|oats> [--dir ...]`** — copies
+  the packaged default injection to the conventional
+  `.agents/injections/...` path and sets `injection-override:` on the entry.
+  Explicit intent; un-ejected deployments keep tracking packaged defaults
+  through updates.
+- **`oats use ... --settings key=value`** (repeatable) — binding settings
+  without hand-edits.
+
+Deliberately left as documented hand-edits (rare/expert surface):
+`skill-overrides:`, the top-level `agents-md-injection:` map, `templates:`.
+
+# 3. Ambient skills coexist (restriction flags dropped)
+
+Previously spawn launched pi with `--no-skills --skill <home>/.agents/skills`
+and Claude with an instance-local `CLAUDE_CONFIG_DIR` + `--setting-sources
+user`, making the OATS-composed set the *only* skill surface. The founder
+judged this an adoption barrier: users migrating to OATS lose their existing
+personal/workspace skills inside instances.
+
+Now: pi keeps the explicit `--skill <home>/.agents/skills` but drops
+`--no-skills`; Claude drops the config-dir override entirely (the instance's
+`.claude/skills → ../.agents/skills` symlink surfaces the OATS set as project
+skills). Harnesses discover ambient skills (user-level, packages, work tree)
+*in addition to* the materialized set.
+
+**Consciously traded away**: strict determinism of the instance skill
+surface. The same soul on different machines may see different ambient
+skills, and an ambient skill can shadow or duplicate an OATS-composed one
+without failing spawn (the duplicate-skill error only arbitrates within the
+OATS set). `instance.json` still records exactly what OATS composed; it no
+longer describes everything the harness can see. Revisit if ambient
+collisions cause real support burden — a per-scope `strict-skills: true`
+config switch is the natural escape hatch.
+
+# 4. Skill split
+
+`skills/oats` was approaching the point where operating knowledge and
+configuration craft crowd each other. Split: **oats** keeps
+instance-operating content (layout, lifecycle, status/spawn/retire, memory,
+canonical-vs-generated); **oats-config** takes configuration craft (scopes,
+capabilities/layers, agent types, targeting, injections, acquisition/trust,
+CLI verbs). Both ship in the kernel skill set.

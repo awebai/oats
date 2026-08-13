@@ -1,0 +1,29 @@
+{
+  "name": "@awebai/oats-linear",
+  "version": "0.1.0",
+  "description": "OATS tasks provider: Linear via its GraphQL API, with JSON-first commands and label-based agent identity",
+  "keywords": [
+    "pi-package",
+    "oats",
+    "linear",
+    "tasks"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awebai/oats",
+    "directory": "capabilities/oats-linear"
+  },
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "bin": {
+    "oats-linear": "./bin/oats-linear.mjs"
+  },
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}

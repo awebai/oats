@@ -11,7 +11,7 @@ timestamp: 2026-07-21
 Push tag `vX.Y.Z` on a commit reachable from `main` → CI verifies the tag is
 on main, runs `npm version X.Y.Z` in the root and `packages/pi`,
 syntax-checks all shipped `.mjs`, runs tests/pack checks, publishes
-`@oas-framework/oas` and `@oas-framework/pi`, and pushes a
+`@awebai/oats` and `@awebai/oats-pi`, and pushes a
 `release: vX.Y.Z [skip ci]` bump commit back to main. Requires the
 `NPM_TOKEN` repo secret; `v*` tags are admin-restricted ("Bypassed rule
 violations" on push is expected).
@@ -39,6 +39,6 @@ violations" on push is expected).
    a clean external dir, run the installed CLI).
 4. Release promptly after breaking config-shape changes: once live configs
    are migrated, the previously installed global kernel can no longer read
-   them, and every `oas` command outside the checkout errors.
+   them, and every `oats` command outside the checkout errors.
 
-Fuller procedure: the `git-tag-release` skill in oas-expert's soul.
+Fuller procedure: the `git-tag-release` skill in oats-expert's soul.

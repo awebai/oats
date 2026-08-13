@@ -5,17 +5,17 @@
 // scanning: (a) workspaces the app already knows, (b) team-scope siblings of
 // known workspaces (via the same core seams the server's workspaceEntry uses),
 // (c) a persisted recently-added list. Every candidate must resolve to a
-// real OAS config/team scope AT SUGGESTION TIME; `reason` says why it is
+// real OATS config/team scope AT SUGGESTION TIME; `reason` says why it is
 // offered. workspace:add canonicalizes, re-validates, persists to a recents
 // store (path-validated on read-back — never trusted blindly), and the
 // caller replaces only an app-OWNED backend server.
 
 /**
- * Validate a directory as an OAS workspace and resolve its identity.
+ * Validate a directory as an OATS workspace and resolve its identity.
  * @param {string} path       canonicalized absolute path
  * @param {object} io
  * @param {(p: string) => { team?: { name: string, scope: string } } | null} io.resolveConfig
- *        core.resolveOasConfig wrapper; null/throw = not a workspace
+ *        core.resolveOatsConfig wrapper; null/throw = not a workspace
  * @param {(p: string) => boolean} io.hasAgentsRoot   agents/ dir present (ensureRoot-style)
  * @returns {{ id: string, name: string, team: { name: string } | null, path: string } | null}
  */
@@ -107,7 +107,7 @@ export function decideAdd(requestedPath, io) {
     return { ok: false, code: "not-suggested", reason: "path is not in the suggestion set (use the directory picker)" };
   }
   const ws = io.validate(canonical);
-  if (!ws) return { ok: false, code: "not-a-workspace", reason: "not an OAS workspace (no team scope or agents root)" };
+  if (!ws) return { ok: false, code: "not-a-workspace", reason: "not an OATS workspace (no team scope or agents root)" };
   if (io.advertised.has(ws.id)) return { ok: true, workspace: ws, action: "already-advertised" };
   if (!io.serverOwned) {
     // Never mutate or kill a foreign server — fail closed with a reason.
@@ -140,7 +140,7 @@ export function createGenerations() {
  *    failure the previous server configuration is RESTORED (respawn with
  *    the old dirs).
  *  - Readiness = identity match (isCompatible on /api/version response,
- *    i.e. serverCompatible against the local oas.json — any 2xx is NOT
+ *    i.e. serverCompatible against the local oats.json — any 2xx is NOT
  *    enough during a same-port race) AND the new workspace id advertised.
  *
  * @param {object} io

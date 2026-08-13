@@ -2,7 +2,7 @@
 type: Decision
 title: The generated-artifact ignore is ensured before staging opens, not at commit
 description: Staging lives under installed/, so fetched and materialized bytes must be ignored before the operation runs rather than only when the transaction commits.
-tags: [oas-kernel, transactions, git, capability-materialization]
+tags: [oats-kernel, transactions, git, capability-materialization]
 timestamp: 2026-07-29
 ---
 

@@ -1,15 +1,15 @@
 ---
 type: Lesson
 title: Init acquires before the config exists — bypass chain discovery mid-init
-description: During oas init the scope's oas-config.yaml does not exist yet, so capabilityManifests cannot discover a just-acquired capability through the config chain; init must use the acquisition result (destination dir/manifest) directly.
+description: During oats init the scope's oats-config.yaml does not exist yet, so capabilityManifests cannot discover a just-acquired capability through the config chain; init must use the acquisition result (destination dir/manifest) directly.
 tags: [cli, init, acquireCapability, capabilityManifests, gotcha]
 timestamp: 2026-07-29
 ---
 
 # The gotcha
 
-`oas init --knowledge oas.okf` acquires the capability into
-`.agents/capabilities/installed/` **before writing** `oas-config.yaml`. But
+`oats init --knowledge oats.okf` acquires the capability into
+`.agents/capabilities/installed/` **before writing** `oats-config.yaml`. But
 `capabilityManifests(startDir)` only surfaces installed stores at levels
 where a config file exists in the chain — so a manifest lookup right after
 acquisition returns `undefined`, even though the copy is on disk. This bit
@@ -29,7 +29,7 @@ capability store: installed/ and owned/ artifacts at the scope are invisible
 until the config exists, so classic init must read them directly before falling
 back to chain discovery. See [classic init own-scope store visibility](/lessons/classic-init-own-scope-capability-store.md).
 
-The lock-side twin follows the same rule: the target scope's `oas-lock.json` is
+The lock-side twin follows the same rule: the target scope's `oats-lock.json` is
 invisible to config-chain package lock readers until the config exists, so
 init-adjacent package resolution must read that level directly. See
 [init-time package lock visibility](/lessons/init-lock-visibility-package-twin.md).
@@ -37,5 +37,5 @@ init-adjacent package resolution must read that level directly. See
 # Corollary for tests
 
 A lock file without a config is not a discoverable scope: tests exercising
-"present" checks must write a minimal `oas-config.yaml` at the level, matching
+"present" checks must write a minimal `oats-config.yaml` at the level, matching
 real deployments where discovery is scoped to config-bearing directories.

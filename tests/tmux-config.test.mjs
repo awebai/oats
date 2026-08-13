@@ -12,7 +12,7 @@ test("detects active mouse settings but ignores comments and mouse off", () => {
 });
 
 test("uses an existing XDG config when the legacy config is absent", () => {
-  const home = mkdtempSync(join(tmpdir(), "oas-tmux-home-"));
+  const home = mkdtempSync(join(tmpdir(), "oats-tmux-home-"));
   const xdg = join(home, "xdg");
   const config = join(xdg, "tmux", "tmux.conf");
   mkdirSync(join(xdg, "tmux"), { recursive: true });
@@ -21,7 +21,7 @@ test("uses an existing XDG config when the legacy config is absent", () => {
 });
 
 test("appends mouse support once without replacing existing config", () => {
-  const home = mkdtempSync(join(tmpdir(), "oas-tmux-home-"));
+  const home = mkdtempSync(join(tmpdir(), "oats-tmux-home-"));
   const config = join(home, ".tmux.conf");
   writeFileSync(config, "set -g history-limit 100000\n");
 

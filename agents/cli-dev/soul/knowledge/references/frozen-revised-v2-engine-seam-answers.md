@@ -29,7 +29,7 @@ Returns exact locked bytes plus provenance:
 
 The ENGINE validates: revised-v2 lock, exact source/commit/path, package payload
 integrity, manifest/resource containment, selected template existence, and the
-content digest. The CLI validates and adopts the template as an OAS config and
+content digest. The CLI validates and adopts the template as an OATS config and
 owns every policy/portability check.
 
 # 2. Digest
@@ -51,7 +51,7 @@ The acquire result supplies post-install follow-up listing. Later adopt/sync
 calls the locked reader with `template` omitted to get all exact current
 templates. Canonical `configTemplates` and legacy `configs` normalize to one
 descriptor shape; optional `legacySpelling` exists only for diagnosis.
-`oas list` must not hit the network merely to enumerate templates.
+`oats list` must not hit the network merely to enumerate templates.
 
 # 5. Run-level transaction — CLI-owned
 

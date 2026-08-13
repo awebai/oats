@@ -1,4 +1,4 @@
-// oas desktop — keybinding engine (pure logic; unit-tested without a DOM).
+// oats desktop — keybinding engine (pure logic; unit-tested without a DOM).
 //
 // One shared registry: the shell/wiring code registers actions
 // ({ id, label, context, run }); this module owns chord parsing, the default
@@ -11,7 +11,7 @@
 // key, so only an explicit allowlist of action ids (palette, tab next/prev/
 // close) may fire inside the terminal; every other Ctrl chord passes through.
 
-const STORAGE_KEY = "oas-desktop-keymap";
+const STORAGE_KEY = "oats-desktop-keymap";
 
 // ---------------------------------------------------------------- chords
 

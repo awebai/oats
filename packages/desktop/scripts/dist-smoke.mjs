@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// OAS Desktop — installed-artifact smoke (CI: `npm run dist:smoke`).
+// OATS Desktop — installed-artifact smoke (CI: `npm run dist:smoke`).
 //
 // Proves the PACKAGED app (not the source tree) is runnable on this
 // platform/arch:
-//   1. inventory: dist/ contains exactly the expected oas-desktop-*
+//   1. inventory: dist/ contains exactly the expected oats-desktop-*
 //      distributables for this platform (DMG+ZIP on mac, AppImage+DEB on
 //      linux) and they are non-trivially sized;
 //   2. (macOS, unconditional) the packaged .app bundle passes strict deep
@@ -54,7 +54,7 @@ watchdog.unref?.();
 
 // ---- 1. artifact inventory -------------------------------------------------
 if (!existsSync(DIST)) fail(`no dist/ — run npm run dist first`);
-const files = readdirSync(DIST).filter((f) => f.startsWith("oas-desktop-"));
+const files = readdirSync(DIST).filter((f) => f.startsWith("oats-desktop-"));
 const need = process.platform === "darwin" ? ["dmg", "zip"] : ["AppImage", "deb"];
 for (const ext of need) {
   const hit = files.find((f) => f.endsWith(`.${ext}`));
@@ -71,14 +71,14 @@ for (const ext of need) {
 function unpackedAppPath() {
   if (process.platform === "darwin") {
     for (const d of readdirSync(DIST)) {
-      const app = join(DIST, d, "OAS Desktop.app");
+      const app = join(DIST, d, "OATS Desktop.app");
       if (d.startsWith("mac") && existsSync(app)) {
-        return { app, exe: join(app, "Contents", "MacOS", "OAS Desktop"), resources: join(app, "Contents", "Resources") };
+        return { app, exe: join(app, "Contents", "MacOS", "OATS Desktop"), resources: join(app, "Contents", "Resources") };
       }
     }
   } else {
     const d = join(DIST, "linux-unpacked");
-    if (existsSync(d)) return { exe: join(d, "oas-desktop"), resources: join(d, "resources") };
+    if (existsSync(d)) return { exe: join(d, "oats-desktop"), resources: join(d, "resources") };
   }
   return null;
 }
@@ -91,8 +91,8 @@ if (!existsSync(app.exe)) fail(`packaged executable missing: ${app.exe}`);
 // every nested helper/framework signed, resources sealed. v0.18.2 shipped
 // with only the linker-generated partial ad-hoc signature (arm64) / no
 // signature (x64) and Gatekeeper reported the app as damaged. This phase
-// runs UNCONDITIONALLY on darwin: no env flag (OAS_SMOKE_SKIP_LAUNCH,
-// OAS_SMOKE_BUILD_VERIFY, or anything else) can skip it — the launch-skip
+// runs UNCONDITIONALLY on darwin: no env flag (OATS_SMOKE_SKIP_LAUNCH,
+// OATS_SMOKE_BUILD_VERIFY, or anything else) can skip it — the launch-skip
 // guards below apply only to the GUI launch phase.
 if (process.platform === "darwin") {
   const r = await verifyAppSignature(reaper, app.app, { existsSync });
@@ -125,7 +125,7 @@ if (process.platform === "darwin") {
   // group-tracked; reintroducing synchronous execution fails its tests.
   const r = await runAbiProbe(reaper, app.exe, join(app.resources, "app.asar", "main.mjs"), {
     timeout: PHASE_BUDGET_MS.abiProbe,
-    targetArch: process.env.OAS_SMOKE_TARGET_ARCH || process.arch,
+    targetArch: process.env.OATS_SMOKE_TARGET_ARCH || process.arch,
   });
   if (!r.ok) fail(r.detail);
   ok(r.detail);
@@ -133,19 +133,19 @@ if (process.platform === "darwin") {
 
 // ---- 4. packaged app launches and the renderer reaches the shell ------------
 // (CI-oriented phase: on operator machines run only the static phases — see
-// the soul's no-GUI-launches policy; OAS_SMOKE_SKIP_LAUNCH=1 skips this.)
-if (process.env.OAS_SMOKE_SKIP_LAUNCH === "1") {
+// the soul's no-GUI-launches policy; OATS_SMOKE_SKIP_LAUNCH=1 skips this.)
+if (process.env.OATS_SMOKE_SKIP_LAUNCH === "1") {
   // The guard (review ee04a44-r2) stops a RELEASE CI run from silently
   // degrading the smoke by skipping the launch. But the packaged GUI launch
   // is unreliable in CI (no interactive windowserver for an app without Developer ID trust on
   // mac runners → DevToolsActivePort never written), and the meaningful
   // installer evidence is BUILD + inventory + node-pty ABI. A dedicated
   // build-verify CI (build-installers.yml) opts out explicitly with
-  // OAS_SMOKE_BUILD_VERIFY=1; only an UNMARKED skip under GITHUB_ACTIONS is
+  // OATS_SMOKE_BUILD_VERIFY=1; only an UNMARKED skip under GITHUB_ACTIONS is
   // rejected (the accidental-release-degradation case the guard exists for).
-  if (process.env.GITHUB_ACTIONS === "true" && process.env.OAS_SMOKE_BUILD_VERIFY !== "1")
-    fail("OAS_SMOKE_SKIP_LAUNCH must not be set in a release CI run — set OAS_SMOKE_BUILD_VERIFY=1 for the build-only installer workflow");
-  ok("launch phase skipped (OAS_SMOKE_SKIP_LAUNCH=1) — build + inventory + node-pty ABI verified; GUI launch needs a display");
+  if (process.env.GITHUB_ACTIONS === "true" && process.env.OATS_SMOKE_BUILD_VERIFY !== "1")
+    fail("OATS_SMOKE_SKIP_LAUNCH must not be set in a release CI run — set OATS_SMOKE_BUILD_VERIFY=1 for the build-only installer workflow");
+  ok("launch phase skipped (OATS_SMOKE_SKIP_LAUNCH=1) — build + inventory + node-pty ABI verified; GUI launch needs a display");
 } else {
   // Readiness probing (review ee04a44 + r2). The port is obtained race-free
   // and IDENTITY-BOUND: launch with --remote-debugging-port=0 and read the
@@ -153,29 +153,29 @@ if (process.env.OAS_SMOKE_SKIP_LAUNCH === "1") {
   // is definitionally OUR child's, so no stale/foreign listener can be
   // mistaken for the app (no check-then-use free-port race). The backend
   // port is app-selected: main.mjs's ensureServer runs its own freePort
-  // from OAS_DESKTOP_PORT, so a random start value cannot collide fatally.
+  // from OATS_DESKTOP_PORT, so a random start value cannot collide fatally.
   // stdio is captured (bounded rolling tail) and drained on 'close' before
   // any crash tail is reported; startup exit fails fast; one launch, one
   // bounded wait — never a blind retry.
-  const userData = mkdtempSync(join(tmpdir(), "oas-desktop-smoke-"));
+  const userData = mkdtempSync(join(tmpdir(), "oats-desktop-smoke-"));
   const args = [`--remote-debugging-port=0`, `--user-data-dir=${userData}`,
     "--no-sandbox", "--disable-gpu", "--dir", userData /* empty workspace: picker path, no deployment needed */];
-  const child = spawnTracked(app.exe, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, OAS_DESKTOP_PORT: String(10000 + Math.floor(Math.random() * 1500)) } });
+  const child = spawnTracked(app.exe, args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, OATS_DESKTOP_PORT: String(10000 + Math.floor(Math.random() * 1500)) } });
   let childLog = "", childExit = null;
   child.stdout?.on("data", (d) => { childLog = boundedTail(childLog, d); });
   child.stderr?.on("data", (d) => { childLog = boundedTail(childLog, d); });
   child.on("exit", (code, sig) => { childExit = { code, sig }; });
-  // Slice G resource-containment baseline: capture the `oasdesk-*` tmux
+  // Slice G resource-containment baseline: capture the `oatsdesk-*` tmux
   // viewer count before launch and assert it is RESTORED after the app is
   // reaped — on BOTH the success and the forced-failure/timeout paths.
   // Proves the app's shutdown + orphan sweep leave no viewer residue.
   // (async count — the smoke bans synchronous child execution.)
-  async function oasdeskViewerCount() {
+  async function oatsdeskViewerCount() {
     const r = await runTracked("tmux", ["list-sessions", "-F", "#{session_name}"], { timeout: 5000 });
     if (r.timedOut) return null;                     // tmux wedged — skip (unusual)
-    return String(r.stdout).split("\n").filter((s) => s.startsWith("oasdesk-")).length;
+    return String(r.stdout).split("\n").filter((s) => s.startsWith("oatsdesk-")).length;
   }
-  const viewerBaseline = await oasdeskViewerCount(); // 0 when tmux is absent/no-server (ENOENT/nonzero → empty stdout → 0); null only on a tmux timeout
+  const viewerBaseline = await oatsdeskViewerCount(); // 0 when tmux is absent/no-server (ENOENT/nonzero → empty stdout → 0); null only on a tmux timeout
   let launchError = null;
   // drainTail: return the current bounded output tail. Only wait for a
   // final flush when the child has ALREADY EXITED (a live child's tail is
@@ -248,7 +248,7 @@ if (process.env.OAS_SMOKE_SKIP_LAUNCH === "1") {
       let restored = false;
       for (let i = 0; i < 10 && !restored; i++) {
         await new Promise((r) => setTimeout(r, 500));
-        const now = await oasdeskViewerCount();
+        const now = await oatsdeskViewerCount();
         if (now !== null && now <= viewerBaseline) restored = true;
       }
       if (!restored) fail(`tmux viewer baseline not restored after ${launchError ? "forced failure" : "success"} (baseline ${viewerBaseline}, still elevated)`);

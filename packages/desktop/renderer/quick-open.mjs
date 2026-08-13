@@ -1,4 +1,4 @@
-// oas desktop — Quick Open for souls (Mod+P): a VS Code Quick Open-style
+// oats desktop — Quick Open for souls (Mod+P): a VS Code Quick Open-style
 // overlay to find a SOUL and instantiate it. Data source is the Spawn
 // view's roster (GET /api/agents); selecting a soul hands off to the Spawn
 // view's own form flow (no second spawn form here — CLI degradation is the

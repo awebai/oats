@@ -106,16 +106,16 @@ jobs:
       # + plausible sizes) + strict deep codesign verification of the packaged
       # .app bundle (macOS legs — unconditional, rejects the v0.18.2
       # partial/absent-signature class) + node-pty under the packaged Electron
-      # ABI. The packaged GUI LAUNCH is skipped (OAS_SMOKE_BUILD_VERIFY
+      # ABI. The packaged GUI LAUNCH is skipped (OATS_SMOKE_BUILD_VERIFY
       # authorizes the skip under CI) — it needs a display ad-hoc-signed apps
       # don't get on CI runners; the installer BUILD + signature +
       # native-module ABI are the meaningful evidence here.
       - name: Installed-artifact smoke (build-verify)
         working-directory: packages/desktop
         env:
-          OAS_SMOKE_SKIP_LAUNCH: "1"
-          OAS_SMOKE_BUILD_VERIFY: "1"
-          OAS_SMOKE_TARGET_ARCH: ${{ matrix.arch }}
+          OATS_SMOKE_SKIP_LAUNCH: "1"
+          OATS_SMOKE_BUILD_VERIFY: "1"
+          OATS_SMOKE_TARGET_ARCH: ${{ matrix.arch }}
         run: npm run dist:smoke
 
       # Upload the distributables so the produced AppImage/DEB/DMG/ZIP names
@@ -123,5 +123,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}-${{ matrix.arch }}
-          path: packages/desktop/dist/oas-desktop-*
+          path: packages/desktop/dist/oats-desktop-*
           if-no-files-found: error

@@ -10,10 +10,10 @@ timestamp: 2026-07-27
 
 `findRoot()` (`lib/core.mjs:132`) returns the first `agents/` directory found
 walking up from CWD, and `spawnCmd` uses `ensureRoot(dirFlag())` where
-`dirFlag()` defaults to `process.cwd()` (`bin/oas.mjs:49-61`, `:1574`). Verified:
+`dirFlag()` defaults to `process.cwd()` (`bin/oats.mjs:49-61`, `:1574`). Verified:
 
 ```text
-findRoot("/tmp/oas-strict-curriculum-spike")  ->  /tmp/oas-strict-curriculum-spike/agents
+findRoot("/tmp/oats-strict-curriculum-spike")  ->  /tmp/oats-strict-curriculum-spike/agents
 ```
 
 A human spawning from a linked worktree, or **any agent that ran `cd ./work`
@@ -46,19 +46,19 @@ such as `E_NO_CANONICAL_ROOT`; guessing reproduces the bug.
 
 ## Env contract
 
-The launcher exports only `OAS_INSTANCE`, `PI_AGENT_INSTANCE`, and
+The launcher exports only `OATS_INSTANCE`, `PI_AGENT_INSTANCE`, and
 `PI_AGENT_HOME` (`lib/core.mjs:3110`) — pi-branded names even for Claude
-instances. Lifecycle hooks get a different, hook-only `OAS_HOME` (`:2207`). A
-runtime-neutral absolute `OAS_INSTANCE_HOME` should be exported to both surfaces.
+instances. Lifecycle hooks get a different, hook-only `OATS_HOME` (`:2207`). A
+runtime-neutral absolute `OATS_INSTANCE_HOME` should be exported to both surfaces.
 
 Do not drop the aliases yet:
 
 - `PI_AGENT_HOME` is read by `packages/pi/extension/index.ts:15` and
-  `bin/oas.mjs:1754`;
-- `OAS_HOME` is read by `capabilities/oas-aweb/bin/oas-aweb.mjs:40` and
-  `capabilities/oas-okf/bin/oas-okf.mjs:54`.
+  `bin/oats.mjs:1754`;
+- `OATS_HOME` is read by `capabilities/oats-aweb/bin/oats-aweb.mjs:40` and
+  `capabilities/oats-okf/bin/oats-okf.mjs:54`.
 
-`OAS_HOME_DIR` (`:478`) is the package-store root and must not be overloaded.
+`OATS_HOME_DIR` (`:478`) is the package-store root and must not be overloaded.
 
 # Related
 

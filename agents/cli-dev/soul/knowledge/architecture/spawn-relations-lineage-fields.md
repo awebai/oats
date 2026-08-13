@@ -1,14 +1,14 @@
 ---
 type: Concept
 title: Spawn relations map to sparse lineage fields
-description: oas spawn relations use sparse parentInstance/siblingInstance fields, attached work mode forces child-of-work-owner, and retireInstance splices complete surviving lineage for links that point at a retiree.
+description: oats spawn relations use sparse parentInstance/siblingInstance fields, attached work mode forces child-of-work-owner, and retireInstance splices complete surviving lineage for links that point at a retiree.
 tags: [spawn, lineage, relations, kernel, cli]
 timestamp: 2026-07-26
 ---
 
 # Shape
 
-`oas spawn --relation child|sibling|parent|unrelated --relative-to <instance>`
+`oats spawn --relation child|sibling|parent|unrelated --relative-to <instance>`
 records only the lineage fields that consumers need. `--parent <instance>` is
 sugar for the child relation.
 

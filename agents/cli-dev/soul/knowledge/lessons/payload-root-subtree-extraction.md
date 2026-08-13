@@ -49,8 +49,8 @@ capability fallback. Keeping the root fields under their original names let
 `acquireCapability` remain untouched.
 
 The legacy standalone-capability fallback must fire only when no path was
-explicitly selected and the repository root has no `oas-package.json`. Without
-that guard, a root-flat package (`oas-package.json` and `oas.json` side by side)
+explicitly selected and the repository root has no `oats-package.json`. Without
+that guard, a root-flat package (`oats-package.json` and `oats.json` side by side)
 that is no longer found by the new default silently downgrades to capability
 acquisition. The useful user-facing outcome is the pointed package error telling
 the operator to select the root explicitly with `#.`.

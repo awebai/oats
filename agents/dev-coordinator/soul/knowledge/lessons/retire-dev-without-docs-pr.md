@@ -8,7 +8,7 @@ timestamp: 2026-07-22
 
 # Lesson
 
-During the oas.web terminal-fidelity delivery (PR #8), review left two
+During the oats.web terminal-fidelity delivery (PR #8), review left two
 non-blocking doc nits fixed in a docs-only follow-up (PR #10). Holding the
 developer instance alive just to await a docs-only merge wastes an instance:
 once the feature is merged, the dev's memory protocol is complete (notes

@@ -13,15 +13,15 @@ timestamp: 2026-07-28
 **manifest's own directory**. In the marketplace, that declaring directory is
 `<PKG_ROOT>/capabilities/<slug>`, not `PKG_ROOT`.
 
-`oas.authoring` declares `../../skills/{integration-authoring,skill-craft,
+`oats.authoring` declares `../../skills/{integration-authoring,skill-craft,
 soul-craft}`. PKG_ROOT-anchored fallback resolved those as
 `<PKG_ROOT>/../../skills/...`, outside the kernel, so the authoring skills never
 resolved and strict composition raised `E_CAPABILITY_RESOURCE_MISSING` for every
 framework-author spawn.
 
-`oas-aweb` masked the bug because its `node_modules/@awebai/pi/skills/...`
+`oats-aweb` masked the bug because its `node_modules/@awebai/pi/skills/...`
 declaration happened to resolve under `PKG_ROOT` when the kernel's own
-`node_modules` was populated. Its `capabilities/oas-aweb/package.json`
+`node_modules` was populated. Its `capabilities/oats-aweb/package.json`
 declaration still shows the intended base: per-capability npm materialization,
 so the path is capability-dir-relative rather than PKG_ROOT-relative.
 
@@ -35,11 +35,11 @@ meaning of the declaration's path spelling.
   source and version), not just a boolean `_marketplace` marker.
 - Find the canonical shipped source by **capability identity** through
   `marketplaceCapabilities()`, never by the directory slug inside the lock
-  selector. `marketplace:oas-web@0.9.6` for capability `oas.web` is a real
+  selector. `marketplace:oats-web@0.9.6` for capability `oats.web` is a real
   historical spelling, so the selector is not an addressable path.
 - Require shipped version, installed version, and locked version to match before
   using the shipped source. Version drift throws `E_MARKETPLACE_SOURCE_DRIFT`
-  naming `oas install <id> --dir <scope>`; a kernel that no longer ships the
+  naming `oats install <id> --dir <scope>`; a kernel that no longer ships the
   capability returns undefined and lets the missing-resource preflight fail
   closed with rollback.
 - Keep package-exported manifests (`m._package`) out of marketplace annotation,
@@ -54,7 +54,7 @@ meaning of the declaration's path spelling.
 A path-arithmetic bug can be invisible from the source checkout when the wrong
 anchor lands on an absent directory either way. `test/marketplace-hoisted.test.mjs`
 copies the published `files` into a node_modules-shaped root
-(`.../node_modules/@oas-framework/oas`) and imports that installed kernel's
+(`.../node_modules/@awebai/oats`) and imports that installed kernel's
 `lib/core.mjs`, so `PKG_ROOT` is a real installed root and the pre-fix anchor
 lands inside the temp tree where its absence is provable.
 

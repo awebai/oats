@@ -1,20 +1,20 @@
 # Desktop CLI API v1
 
-The contract between the OAS Desktop app and the `oas` CLI. Desktop never
+The contract between the OATS Desktop app and the `oats` CLI. Desktop never
 imports kernel code; it shells out (via `execFile`, argv, absolute binary — no
-shell) to a discovered `oas` and speaks this JSON protocol. **API version, not
+shell) to a discovered `oats` and speaks this JSON protocol. **API version, not
 source adjacency, is authoritative.**
 
 ## Probe
 
 ```
-oas version --json
+oats version --json
 ```
 
 prints exactly one JSON object on stdout:
 
 ```json
-{"schemaVersion":1,"name":"@oas-framework/oas","version":"<installed version>","desktopApi":1}
+{"schemaVersion":1,"name":"@awebai/oats","version":"<installed version>","desktopApi":1}
 ```
 
 `version` is the installed package's exact semver (e.g. `0.20.0`).
@@ -38,7 +38,7 @@ no progress prose (progress goes to stderr):
 
 Only two:
 
-### `oas spawn <agent> … --json`
+### `oats spawn <agent> … --json`
 
 `result` fields (always present):
 
@@ -72,7 +72,7 @@ subcommand), `E_CAPABILITY_INACTIVE`, `E_CAPABILITY_BLOCKED` (untrusted),
 `E_CAPABILITY_BROKEN`, `E_DUPLICATE_NAMESPACE`, `E_CONFIG_BROKEN` — all still
 exactly one stdout envelope with a nonzero exit.
 
-### `oas okf harvest --json`
+### `oats okf harvest --json`
 
 Run with cwd fixed to the resolved instance home. `result` is one of:
 

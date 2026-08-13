@@ -1,6 +1,6 @@
 ---
 type: Lesson
-title: Package engine implementation gotchas in the OAS kernel
+title: Package engine implementation gotchas in the OATS kernel
 description: Concrete pitfalls hit while implementing distribution packages — YAML subset config shape in tests, path-vs-git source disambiguation via file://, spawnInstance needs an agent object, hook meta lands in instance.json capabilityMeta, depsIntegrity closes the node_modules trust gap, synthetic scanner locks must not reach npm ci, empty npm closures create no node_modules, and restore preflight must parse the full visible lock chain.
 tags: [packages, kernel, testing, trust]
 timestamp: 2026-07-27
@@ -15,8 +15,8 @@ timestamp: 2026-07-27
 - A pinned local git dependency spec can't be `path@commit` (parses as a
   path); use `file://<dir>@<commit>` so it takes the git branch of
   parsePackageSource. I added `file://` to the raw-git-URL regex for this.
-- Remote Git roots may be distribution packages (`oas-package.json`) or legacy
-  standalone capabilities (`oas.json`); package probing must be transactional
+- Remote Git roots may be distribution packages (`oats-package.json`) or legacy
+  standalone capabilities (`oats.json`); package probing must be transactional
   and fallback only on a missing package manifest. See the
   [capability-agent trust/source routing lesson](/lessons/capability-agent-trust-and-source-routing.md).
 - Local dependency policy checks must classify the spelling before

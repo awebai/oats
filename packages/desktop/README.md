@@ -1,6 +1,6 @@
-# @oas-framework/desktop
+# @awebai/oats-desktop
 
-The OAS desktop app — a VS Code-style Electron shell around the OAS control
+The OATS desktop app — a VS Code-style Electron shell around the OATS control
 panel, with a **real integrated terminal** (xterm.js + node-pty attaching
 straight to the agents' tmux sessions).
 
@@ -17,9 +17,9 @@ npm start            # launches the app; connects to the backend server on 127.0
 ```
 
 Flags/env:
-- `--dir <workspace>` / `OAS_DESKTOP_DIR` — the OAS workspace the panel shows
+- `--dir <workspace>` / `OATS_DESKTOP_DIR` — the OATS workspace the panel shows
   (default: this repo's root).
-- `OAS_DESKTOP_PORT` — backend server port (default 4820).
+- `OATS_DESKTOP_PORT` — backend server port (default 4820).
 
 ## UX and architecture
 
@@ -39,14 +39,14 @@ The shell has three navigation contexts:
   IPC `api` proxy, node-pty terminals (`tmux attach-session -t <target>`).
   Closing a terminal tab kills the pty ONLY — tmux sessions are the durable
   hosts and always survive.
-- `server/oas-web.mjs` — the bundled zero-dependency backend: a loopback-only
+- `server/oats-web.mjs` — the bundled zero-dependency backend: a loopback-only
   `node:http` server exposing the `/api/*` surface (roster, spawn, brain,
   session capture, keys, file). `server/model.mjs` is the roster
   collector; `server/deployment.mjs` is the app-owned READ-ONLY deployment
   reader (the app never imports the framework kernel — lifecycle mutations
-  require a compatible installed `oas` CLI). Binds 127.0.0.1 only — it can
+  require a compatible installed `oats` CLI). Binds 127.0.0.1 only — it can
   type into your terminals.
-- `preload.cjs` — contextBridge surface (`window.oasDesktop`); renderer runs
+- `preload.cjs` — contextBridge surface (`window.oatsDesktop`); renderer runs
   with contextIsolation on, nodeIntegration off.
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab
   host, command palette, recursive instance roster, and integrated terminals.

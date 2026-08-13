@@ -1,6 +1,6 @@
 # Souls and instances
 
-Souls and instances are the two layers the OAS kernel owns. A soul is the
+Souls and instances are the two layers the OATS kernel owns. A soul is the
 expert. An instance is a named incarnation of that expert, with its own ID,
 home, worktree, and lifecycle. It is not the same thing as one chat session.
 
@@ -26,7 +26,7 @@ A soul is durable and committed. It is the part you review, improve, and keep.
 | `description` | Short role description. |
 | `repo` | Target repo, absolute or relative to the agents root's parent. |
 | `work` | `worktree` or `checkout`. |
-| `runtime` | `pi` or `claude` — the harness new instances launch on; a spawn can override with `--runtime`. For `claude`, the binary is `claude` unless a local-only `oas-claude-config` file (closest one walking up from the repo; one line naming the binary, e.g. `claude-personal`) selects another — a personal machine preference for account selection, never committed. With the aweb messaging integration active, claude sessions get the `aweb-channel` plugin wired at spawn for real-time push events. |
+| `runtime` | `pi` or `claude` — the harness new instances launch on; a spawn can override with `--runtime`. For `claude`, the binary is `claude` unless a local-only `oats-claude-config` file (closest one walking up from the repo; one line naming the binary, e.g. `claude-personal`) selects another — a personal machine preference for account selection, never committed. With the aweb messaging integration active, claude sessions get the `aweb-channel` plugin wired at spawn for real-time push events. |
 | `model` | Optional default model — a `provider/id[:thinking]` pattern or a comma-separated preference list (`github-copilot/x:high, anthropic/x:high`); at spawn the first entry whose provider/model is available wins (pi models probed via `pi --list-models`). For the `claude` runtime the value is translated to what the claude CLI accepts: `anthropic/<id>[:thinking]` becomes the bare `<id>`, aliases and bare `claude-*` ids pass through, other providers' entries are dropped, and nothing usable falls back to claude's own default. A spawn can override it. |
 
 A soul is model-agnostic as an artifact. Its files are plain operating docs,
@@ -93,29 +93,29 @@ own home and tools.
 
 Examples of spawn hooks:
 
-- `oas-okf` creates episodic memory files.
-- `oas-aweb` mints a messaging identity.
+- `oats-okf` creates episodic memory files.
+- `oats-aweb` mints a messaging identity.
 
 ### Work
 
-The instance works in `./work`. With oas-okf it also keeps `STATE.md` current,
+The instance works in `./work`. With oats-okf it also keeps `STATE.md` current,
 appends milestones to `log.md`, and captures non-obvious insights in
 `notes/`.
 
-After committing with pending notes, the instance runs `oas okf harvest`
-(its okf briefing says so). oas-okf spawns a memory-harvest agent attached to
+After committing with pending notes, the instance runs `oats okf harvest`
+(its okf briefing says so). oats-okf spawns a memory-harvest agent attached to
 the same work tree. The harvester promotes, merges, or drops notes, commits a
 `memory-harvest:` change, deletes processed notes, and retires itself. This is
 how long-lived instances feed their souls while still alive.
 
 ### Spawning and coordinating with other agents
 
-OAS agents can run `oas spawn` when their instructions or the
+OATS agents can run `oats spawn` when their instructions or the
 human ask them to create another expert instance. The spawned agent is another
-full OAS instance, with its own soul, home, worktree, and lifecycle.
+full OATS instance, with its own soul, home, worktree, and lifecycle.
 
 Spawn lineage is **explicit** and relation-based:
-`oas spawn --relation child|sibling|parent|unrelated --relative-to <instance>`
+`oats spawn --relation child|sibling|parent|unrelated --relative-to <instance>`
 declares what the new instance IS to an existing one (`--parent <instance>` is
 sugar for `--relative-to <instance> --relation child`):
 
@@ -134,7 +134,7 @@ sugar for `--relative-to <instance> --relation child`):
 - **sibling** — a peer in the anchor's cluster: it shares the anchor's parent
   when one exists; when the anchor is a root, the new instance records an
   explicit `siblingInstance` link so the cluster is still derivable from
-  `oas status --json` (`parentInstance` + `siblingInstance` edges).
+  `oats status --json` (`parentInstance` + `siblingInstance` edges).
 - **unrelated** (default) — no link, operator-origin, top-level.
 
 Attached-mode spawns are ALWAYS children of the owner of the shared work tree
@@ -142,7 +142,7 @@ Attached-mode spawns are ALWAYS children of the owner of the shared work tree
 than a redundant child-of-owner are rejected. Any other spawn — including one
 from a shell that inherited
 an agent's environment variables — is operator-origin and appears top-level.
-Agents spawning sub-agents should pass `--parent "$OAS_INSTANCE"` (or the
+Agents spawning sub-agents should pass `--parent "$OATS_INSTANCE"` (or the
 relation that fits).
 
 If the workspace has a messaging integration such as aweb, spawned instances
@@ -152,10 +152,10 @@ task layer can provide shared work state while messaging provides conversation.
 ### Retire
 
 Retirement runs active capability retire hooks in reverse spawn order before the home disappears. The aweb
-integration self-deletes the instance identity here. For oas-okf, retirement
+integration self-deletes the instance identity here. For oats-okf, retirement
 is a knowledge no-op because harvest already happens after commits.
 
-`oas retire <instance> --self` lets an instance retire itself when the human
+`oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. It runs hooks and removes the home first, then
 delays the tmux window kill for a few seconds so the instance can report
 final status.
@@ -166,10 +166,10 @@ A work mode decides what `./work` points at and what discipline the agent must
 follow. Every mode sits inside the same home/work boundary, which the generated
 instructions state first (`injects/instance-boundary.md`):
 
-- `<instance-home>` — the gitignored instance directory, `$OAS_INSTANCE_HOME` —
+- `<instance-home>` — the gitignored instance directory, `$OATS_INSTANCE_HOME` —
   holds the brain (`AGENTS.md`, `soul/`), the task, the provenance
   (`instance.json`) and the episodic state (`STATE.md`, `log.md`, `notes/`), and
-  is where OAS operational/lifecycle commands — and the commands of whatever
+  is where OATS operational/lifecycle commands — and the commands of whatever
   capabilities are active, `aw` among them when aweb messaging is — are run,
   because they resolve scope from the working directory (`--dir <path>` to
   target another one deliberately).
@@ -260,7 +260,7 @@ The agents root is the nearest `agents/` directory walking upward from the
 current directory. `PI_AGENTS_ROOT` overrides the search.
 
 **Where instances are stored is a separate question from where you invoked
-OAS.** Discovery finds the root from your current directory, but instance homes
+OATS.** Discovery finds the root from your current directory, but instance homes
 always live in the **soul-owning repo's primary checkout**: when the root you
 discovered is inside a *linked git worktree*, storage maps to the equivalent
 path in that repository's primary checkout, so homes survive the worktree, stay
@@ -279,18 +279,18 @@ Three things stay independent, and are meant to:
 Roots that Git does not own are unaffected: a non-Git agents root stores
 instances exactly where it sits.
 
-Every instance is told its own home as **`OAS_INSTANCE_HOME`** (absolute), and
+Every instance is told its own home as **`OATS_INSTANCE_HOME`** (absolute), and
 instructions refer to it as `<instance-home>`. The two environments differ, so
 they are stated separately:
 
-- **Runtime session**: `OAS_INSTANCE_HOME` and `PI_AGENT_HOME` (plus
-  `OAS_INSTANCE`/`PI_AGENT_INSTANCE`). The `PI_`-prefixed names are
+- **Runtime session**: `OATS_INSTANCE_HOME` and `PI_AGENT_HOME` (plus
+  `OATS_INSTANCE`/`PI_AGENT_INSTANCE`). The `PI_`-prefixed names are
   compatibility aliases for the separately published pi extension.
-- **Lifecycle hooks**: `OAS_INSTANCE_HOME` and `OAS_HOME`, alongside the rest of
-  the hook contract. `OAS_HOME` predates `OAS_INSTANCE_HOME` and is kept because
+- **Lifecycle hooks**: `OATS_INSTANCE_HOME` and `OATS_HOME`, alongside the rest of
+  the hook contract. `OATS_HOME` predates `OATS_INSTANCE_HOME` and is kept because
   shipped capability hooks read it; it is **not** exported to runtime sessions.
 
-Neither is `OAS_HOME_DIR`, which is the package store root — do not conflate
+Neither is `OATS_HOME_DIR`, which is the package store root — do not conflate
 them.
 
 When placement cannot be established — Git owns the location but the repository
@@ -302,7 +302,7 @@ with **`E_NO_CANONICAL_ROOT`** and creates nothing.
 
 The canonical deployment (the agents root, `local-agents/`, and the instance
 homes under them) **must be owned by the operator and not writable by untrusted
-users or processes.** OAS validates resolved destinations and re-checks the home
+users or processes.** OATS validates resolved destinations and re-checks the home
 immediately before creating anything in it, but it cannot defeat a concurrent
 local attacker who already has write access there: Node offers no
 `openat`/`O_NOFOLLOW`-relative directory creation, so a path can in principle be
@@ -327,11 +327,11 @@ Default layout:
 
 `local-agents/` sits BESIDE `agents/` at the scope level and holds **full local
 souls**: complete souls (memory, skills, knowledge, instances) that are not
-committed to the repo. `oas create <name> --local` creates one — the directory
+committed to the repo. `oats create <name> --local` creates one — the directory
 is created on first use, and when the scope is a git repo the kernel adds
 `local-agents/` to its `.gitignore` automatically. A scope with only
-`local-agents/` is fully operable: people can use OAS with local agents alone.
-Ad hoc agents from `oas spawn --instructions-file`/`--def-file` land here too.
+`local-agents/` is fully operable: people can use OATS with local agents alone.
+Ad hoc agents from `oats spawn --instructions-file`/`--def-file` land here too.
 Legacy nested `agents/local-agents/` and `agents/tmp-agents/` are still read
 for compatibility.
 

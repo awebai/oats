@@ -1,4 +1,4 @@
-// OAS desktop — application menu policy (pure; unit-tested).
+// OATS desktop — application menu policy (pure; unit-tested).
 //
 // macOS: without an Edit role menu, Cmd+C/V/X/A are dead in the renderer —
 // transcript text could be selected but never copied. Cmd-based accelerators

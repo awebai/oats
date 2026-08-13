@@ -7,6 +7,6 @@ tags: [planning, scoping, desktop, coordination]
 
 # Scope a coordinator feature to one developer when ownership scan collapses
 
-During the split-panels + hideable-sidebar feature, repo scouting showed the work lived entirely in `packages/desktop/renderer` (`shell.mjs`, `shell.css`, `terminal-tab.mjs`, keybindings), all owned by the **oas-desktop-engineer** soul. The README, `oas status` soul roster, and grep for sidebar/terminal code showed no kernel, CLI, or webpanel surface.
+During the split-panels + hideable-sidebar feature, repo scouting showed the work lived entirely in `packages/desktop/renderer` (`shell.mjs`, `shell.css`, `terminal-tab.mjs`, keybindings), all owned by the **oats-desktop-engineer** soul. The README, `oats status` soul roster, and grep for sidebar/terminal code showed no kernel, CLI, or webpanel surface.
 
 The right coordinator plan collapsed to: feature branch, one developer, then the same integration/review/PR delivery path. Run the ownership scan before spawning; do not split work across developers just because the coordinator role expects multiple.

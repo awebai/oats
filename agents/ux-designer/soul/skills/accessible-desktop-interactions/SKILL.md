@@ -1,7 +1,7 @@
 ---
 name: accessible-desktop-interactions
 description: >-
-  Use when designing, implementing, or reviewing OAS desktop interactions that
+  Use when designing, implementing, or reviewing OATS desktop interactions that
   involve tabbed artifact surfaces, asynchronous modal mutations, native
   directory pickers, roving listbox/radio selection, focus restoration, or
   cases where disabled actions could strand keyboard focus behind a modal.

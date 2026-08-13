@@ -22,7 +22,7 @@ What that means concretely, and why each part is load-bearing:
   or ignore mutation.** Not one official artifact is partially acquired. The
   message names every retained entry with its source, states that the whole v1
   scope stays usable, and — when every retained source is package-mappable —
-  names plain `oas migrate` as the command that *can* convert the scope
+  names plain `oats migrate` as the command that *can* convert the scope
   completely. A refusal that does not tell you the way forward is a dead end.
 - **No official work at all stays a truthful no-op**: `skipped`, with the
   untouched ids under `retained`.

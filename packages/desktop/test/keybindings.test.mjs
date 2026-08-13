@@ -75,14 +75,14 @@ test("overrides persist to localStorage and reset cleanly", () => {
   assert.equal(getBinding("app.palette"), "Mod+K");
   setBinding("app.palette", "Mod+P");
   assert.equal(getBinding("app.palette"), "Mod+P");
-  assert.match(store.get("oas-desktop-keymap"), /Mod\+P/);
+  assert.match(store.get("oats-desktop-keymap"), /Mod\+P/);
   setBinding("tabs.close", null); // explicit unbind
   assert.equal(getBinding("tabs.close"), null);
   resetBinding("app.palette");
   assert.equal(getBinding("app.palette"), "Mod+K");
   resetAllBindings();
   assert.equal(getBinding("tabs.close"), "Mod+W");
-  assert.equal(store.has("oas-desktop-keymap"), false, "empty overrides remove the key");
+  assert.equal(store.has("oats-desktop-keymap"), false, "empty overrides remove the key");
 });
 
 test("storage-less environments do not throw", () => {
@@ -296,7 +296,7 @@ test("registerAction defaultChord: folds into the effective keymap (addendum 3)"
   assert.equal(matchEvent(ev("f"), { isMac: true, insideTerminal: false, editableTarget: false }), null);
 
   // …and the unbind survives a storage reload (persisted null round-trips)
-  const raw = localStorage.getItem("oas-desktop-keymap");
+  const raw = localStorage.getItem("oats-desktop-keymap");
   assert.match(raw, /"hier\.fit":null/);
 
   // static DEFAULT_KEYMAP wins over a registration default for the same id
@@ -312,7 +312,7 @@ test("registerAction defaultChord: folds into the effective keymap (addendum 3)"
 
 test("registerAction defaultChord: unbind persisted across module reload; conflicts seen", async (t) => {
   installStorage(); resetAllBindings();
-  localStorage.setItem("oas-desktop-keymap", JSON.stringify({ "hier.fit": null }));
+  localStorage.setItem("oats-desktop-keymap", JSON.stringify({ "hier.fit": null }));
   const fresh = await import("../renderer/keybindings.mjs?fresh=" + Math.random());
   const off = fresh.registerAction({ id: "hier.fit", label: "Fit", context: "stage:hierarchy", run: () => {}, defaultChord: "F" });
   t.after(() => { off(); fresh.resetAllBindings(); });

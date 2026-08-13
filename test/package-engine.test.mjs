@@ -17,13 +17,13 @@ import {
   copyTreeSafe, ensureInstalledGitignore, installedCapabilityDir, listInstalledPackages,
   loadPackageManifestAt, materializeCapabilityDeps, migrateLegacyLock, normalizePackagePath,
   isCanonicalTemplatePath, packageIntegrity, parseLockFileStrict, parsePackageSource, platformVariantLockPackages,
-  readLockedConfigTemplates, readPackageLocks, removePackage, resolveOasConfig, restorePackages,
+  readLockedConfigTemplates, readPackageLocks, removePackage, resolveOatsConfig, restorePackages,
   updatePackage, validateCapabilityLockEntry, validateLockEntry, writeCapabilityLock,
   writeCapabilityLockEntry, writePackageLock,
-  CAPABILITY_INSTALLATION_FILE, DEFAULT_PACKAGE_PATH, LOCKFILE_VERSION, OAS_LOCK_FILE,
+  CAPABILITY_INSTALLATION_FILE, DEFAULT_PACKAGE_PATH, LOCKFILE_VERSION, OATS_LOCK_FILE,
 } from "../lib/core.mjs";
 
-function temp() { return mkdtempSync(join(tmpdir(), "oas-pkg-test-")); }
+function temp() { return mkdtempSync(join(tmpdir(), "oats-pkg-test-")); }
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 function gitify(dir) {
   execFileSync("git", ["init", "-q", dir]);
@@ -38,18 +38,18 @@ function gitCommit(dir, msg = "next") {
   execFileSync("git", ["-C", dir, "commit", "-qm", msg]);
   return execFileSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
 }
-/** Author a package source tree: oas-package.json + capability dirs. */
+/** Author a package source tree: oats-package.json + capability dirs. */
 function pkgSource(dir, manifest, capabilities = {}) {
   const caps = [];
   for (const [rel, cm] of Object.entries(capabilities)) {
     caps.push(rel);
-    write(join(dir, rel, "oas.json"), JSON.stringify({ version: "1.0.0", description: "cap", ...cm }, null, 2));
+    write(join(dir, rel, "oats.json"), JSON.stringify({ version: "1.0.0", description: "cap", ...cm }, null, 2));
   }
-  write(join(dir, "oas-package.json"), JSON.stringify({ package: `x.${dir.split("/").pop().toLowerCase().replace(/[^a-z0-9._-]/g, "")}`, version: "1.0.0", description: "pkg", compatibility: { oas: ">=0.1.0" }, capabilities: caps, ...manifest }, null, 2));
+  write(join(dir, "oats-package.json"), JSON.stringify({ package: `x.${dir.split("/").pop().toLowerCase().replace(/[^a-z0-9._-]/g, "")}`, version: "1.0.0", description: "pkg", compatibility: { oats: ">=0.1.0" }, capabilities: caps, ...manifest }, null, 2));
   return dir;
 }
 /** Activation of the resolved chain, as plain capability IDs. */
-function activeIds(dir) { return resolveOasConfig(dir, "any").capabilities.map((c) => c.id).sort(); }
+function activeIds(dir) { return resolveOatsConfig(dir, "any").capabilities.map((c) => c.id).sort(); }
 /** EVERY path under `dir` — directories included — with file digests. Compared
  * whole, so a stray empty directory is as visible as a changed byte. */
 function treeFingerprint(dir) {
@@ -67,13 +67,13 @@ function treeFingerprint(dir) {
   walk(dir, "");
   return out;
 }
-/** A scope with an oas-config.yaml so the config chain sees it. */
+/** A scope with an oats-config.yaml so the config chain sees it. */
 function scope(base, name = "scope", config = "name: test\n") {
   const dir = join(base, name);
-  write(join(dir, "oas-config.yaml"), config);
+  write(join(dir, "oats-config.yaml"), config);
   return dir;
 }
-function lockOf(dir) { return JSON.parse(readFileSync(join(dir, OAS_LOCK_FILE), "utf8")); }
+function lockOf(dir) { return JSON.parse(readFileSync(join(dir, OATS_LOCK_FILE), "utf8")); }
 function artifact(dir, id) { return installedCapabilityDir(dir, id); }
 function throwsCode(fn, code, label = code) {
   try { fn(); assert.fail(`expected ${label} but nothing was thrown`); }
@@ -87,17 +87,17 @@ test("parsePackageSource: git shorthand, raw URLs, paths, catalog ids, invalids"
   assert.equal(parsePackageSource("git:github.com/o/r@v1#sub/dir").packagePath, "sub/dir");
   assert.equal(parsePackageSource("git:github.com/o/r@v1#./.").packagePath, ".");
   assert.equal(parsePackageSource("https://h/o/r.git@ref").normalized, "git:https://h/o/r.git@ref");
-  assert.equal(parsePackageSource("oas.okf").normalized, "catalog:oas.okf");
-  assert.equal(parsePackageSource("oas.okf@v1.4.0").normalized, "catalog:oas.okf@v1.4.0");
+  assert.equal(parsePackageSource("oats.okf").normalized, "catalog:oats.okf");
+  assert.equal(parsePackageSource("oats.okf@v1.4.0").normalized, "catalog:oats.okf@v1.4.0");
   // Local sources are EXACT directories: no fragment, always path "."
   assert.equal(parsePackageSource("/abs/dir").packagePath, ".");
   throwsCode(() => parsePackageSource("/abs/dir#sub"), "invalid-source", "local path with fragment");
-  throwsCode(() => parsePackageSource("oas.okf#sub"), "invalid-source", "catalog with fragment");
+  throwsCode(() => parsePackageSource("oats.okf#sub"), "invalid-source", "catalog with fragment");
   throwsCode(() => parsePackageSource("git:github.com/o/r#a#b"), "invalid-source", "double fragment");
   throwsCode(() => parsePackageSource("git:only/two"), "invalid-source", "bad shorthand");
   throwsCode(() => parsePackageSource(""), "invalid-source", "empty");
   // The default contained root is read, never hardcoded at a use site.
-  assert.equal(DEFAULT_PACKAGE_PATH, "oas-package");
+  assert.equal(DEFAULT_PACKAGE_PATH, "oats-package");
 });
 
 test("normalizePackagePath: canonical form, and fail-closed on ambient/absolute/traversal spellings", () => {
@@ -123,61 +123,61 @@ test("loadPackageManifestAt: capabilities are REQUIRED and non-empty — config-
   assert.equal(m._legacySpelling, false);
 
   const empty = join(t, "empty");
-  write(join(empty, "oas-package.json"), JSON.stringify({ package: "x.empty", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: [] }));
+  write(join(empty, "oats-package.json"), JSON.stringify({ package: "x.empty", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: [] }));
   throwsCode(() => loadPackageManifestAt(empty), "invalid-package-manifest", "empty capabilities");
 
   const none = join(t, "none");
-  write(join(none, "oas-package.json"), JSON.stringify({ package: "x.none", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" } }));
+  write(join(none, "oats-package.json"), JSON.stringify({ package: "x.none", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" } }));
   throwsCode(() => loadPackageManifestAt(none), "invalid-package-manifest", "absent capabilities");
 
   const cfgOnly = join(t, "cfgonly");
-  write(join(cfgOnly, "config-templates/d/oas-config.yaml"), "name: x\n");
-  write(join(cfgOnly, "oas-package.json"), JSON.stringify({ package: "x.cfg", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: [], configTemplates: { d: { path: "config-templates/d/oas-config.yaml" } } }));
+  write(join(cfgOnly, "config-templates/d/oats-config.yaml"), "name: x\n");
+  write(join(cfgOnly, "oats-package.json"), JSON.stringify({ package: "x.cfg", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: [], configTemplates: { d: { path: "config-templates/d/oats-config.yaml" } } }));
   throwsCode(() => loadPackageManifestAt(cfgOnly), "invalid-package-manifest", "config-only package");
 });
 
 test('legacy "." capability roots are discriminated by configTemplates, NEVER by configs', () => {
   const t = temp();
-  // The published shape this compatibility exists for: oas.authoring@1.0.0 is
+  // The published shape this compatibility exists for: oats.authoring@1.0.0 is
   // capabilities:["."] and ships NO template map in either spelling. Keying
   // acceptance on `configs` would strand it.
   const authoring = join(t, "authoring");
-  write(join(authoring, "oas.json"), JSON.stringify({ capability: "oas.authoring", version: "1.0.0", description: "authoring" }));
-  write(join(authoring, "oas-package.json"), JSON.stringify({ package: "oas.authoring", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["."] }));
+  write(join(authoring, "oats.json"), JSON.stringify({ capability: "oats.authoring", version: "1.0.0", description: "authoring" }));
+  write(join(authoring, "oats-package.json"), JSON.stringify({ package: "oats.authoring", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["."] }));
   const m = loadPackageManifestAt(authoring);
   assert.deepEqual(m._capabilities.map((c) => c.rel), ["."]);
   assert.equal(m._legacySpelling, false, "no template map at all — the legacy spelling is not what makes it legacy");
 
   // Deprecated `configs` spelling with "." also reads.
   const withConfigs = join(t, "withconfigs");
-  write(join(withConfigs, "oas.json"), JSON.stringify({ capability: "x.flat", version: "1.0.0", description: "d" }));
-  write(join(withConfigs, "configs/d/oas-config.yaml"), "name: x\n");
-  write(join(withConfigs, "oas-package.json"), JSON.stringify({ package: "x.flat", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["."], configs: { d: { path: "configs/d/oas-config.yaml" } } }));
+  write(join(withConfigs, "oats.json"), JSON.stringify({ capability: "x.flat", version: "1.0.0", description: "d" }));
+  write(join(withConfigs, "configs/d/oats-config.yaml"), "name: x\n");
+  write(join(withConfigs, "oats-package.json"), JSON.stringify({ package: "x.flat", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["."], configs: { d: { path: "configs/d/oats-config.yaml" } } }));
   const legacy = loadPackageManifestAt(withConfigs);
   assert.equal(legacy._legacySpelling, true);
   assert.deepEqual(Object.keys(legacy._configTemplates), ["d"]);
 
   // A manifest carrying configTemplates is unambiguously new: "." is rejected.
   const modern = join(t, "modern");
-  write(join(modern, "oas.json"), JSON.stringify({ capability: "x.new", version: "1.0.0", description: "d" }));
-  write(join(modern, "config-templates/d/oas-config.yaml"), "name: x\n");
-  write(join(modern, "oas-package.json"), JSON.stringify({ package: "x.new", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["."], configTemplates: { d: { path: "config-templates/d/oas-config.yaml" } } }));
+  write(join(modern, "oats.json"), JSON.stringify({ capability: "x.new", version: "1.0.0", description: "d" }));
+  write(join(modern, "config-templates/d/oats-config.yaml"), "name: x\n");
+  write(join(modern, "oats-package.json"), JSON.stringify({ package: "x.new", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["."], configTemplates: { d: { path: "config-templates/d/oats-config.yaml" } } }));
   throwsCode(() => loadPackageManifestAt(modern), "invalid-package-manifest", 'new-format "."');
 
   // Both spellings at once is invalid.
   const both = join(t, "both");
-  write(join(both, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d" }));
-  write(join(both, "config-templates/oas-config.yaml"), "name: x\n");
-  write(join(both, "oas-package.json"), JSON.stringify({ package: "x.both", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { d: { path: "config-templates/oas-config.yaml" } }, configTemplates: { d: { path: "config-templates/oas-config.yaml" } } }));
+  write(join(both, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d" }));
+  write(join(both, "config-templates/oats-config.yaml"), "name: x\n");
+  write(join(both, "oats-package.json"), JSON.stringify({ package: "x.both", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { d: { path: "config-templates/oats-config.yaml" } }, configTemplates: { d: { path: "config-templates/oats-config.yaml" } } }));
   throwsCode(() => loadPackageManifestAt(both), "invalid-package-manifest", "both spellings");
 });
 
 test('"." remains exclusive with any other capability path', () => {
   const t = temp();
   const d = join(t, "p");
-  write(join(d, "oas.json"), JSON.stringify({ capability: "x.root", version: "1.0.0", description: "d" }));
-  write(join(d, "sub/oas.json"), JSON.stringify({ capability: "x.sub", version: "1.0.0", description: "d" }));
-  write(join(d, "oas-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: [".", "sub"] }));
+  write(join(d, "oats.json"), JSON.stringify({ capability: "x.root", version: "1.0.0", description: "d" }));
+  write(join(d, "sub/oats.json"), JSON.stringify({ capability: "x.sub", version: "1.0.0", description: "d" }));
+  write(join(d, "oats-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: [".", "sub"] }));
   throwsCode(() => loadPackageManifestAt(d), "invalid-package-manifest", '"." with siblings');
 });
 
@@ -190,21 +190,21 @@ test("loadPackageManifestAt: identity, unknown keys, missing paths, duplicate ca
   throwsCode(() => loadPackageManifestAt(mk({ dependencies: ["a", "a"] })), "invalid-package-manifest", "duplicate dependencies");
   // Two capability paths exporting one ID.
   throwsCode(() => loadPackageManifestAt(mk({}, { "capabilities/a": { capability: "x.dup" }, "capabilities/b": { capability: "x.dup" } })), "duplicate-capability-id", "same id twice");
-  // compatibility.oas: required, exact grammar.
-  for (const oas of [">=0.1.0", "^0.1.0", "0.1.0"]) loadPackageManifestAt(mk({ compatibility: { oas } }));
-  for (const oas of ["banana", ">=1.2", "~1.2.3", ">= 1.2.3", 1]) {
-    throwsCode(() => loadPackageManifestAt(mk({ compatibility: { oas } })), "invalid-package-manifest", `compat ${JSON.stringify(oas)}`);
+  // compatibility.oats: required, exact grammar.
+  for (const oats of [">=0.1.0", "^0.1.0", "0.1.0"]) loadPackageManifestAt(mk({ compatibility: { oats } }));
+  for (const oats of ["banana", ">=1.2", "~1.2.3", ">= 1.2.3", 1]) {
+    throwsCode(() => loadPackageManifestAt(mk({ compatibility: { oats } })), "invalid-package-manifest", `compat ${JSON.stringify(oats)}`);
   }
   const noCompat = mk({});
-  const doc = JSON.parse(readFileSync(join(noCompat, "oas-package.json"), "utf8"));
+  const doc = JSON.parse(readFileSync(join(noCompat, "oats-package.json"), "utf8"));
   delete doc.compatibility;
-  writeFileSync(join(noCompat, "oas-package.json"), JSON.stringify(doc));
+  writeFileSync(join(noCompat, "oats-package.json"), JSON.stringify(doc));
   throwsCode(() => loadPackageManifestAt(noCompat), "invalid-package-manifest", "missing compatibility");
   // At most one default template.
   const multi = join(t, "multi");
-  write(join(multi, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
+  write(join(multi, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
   write(join(multi, "config-templates/a.yaml"), "a: 1\n"); write(join(multi, "config-templates/b.yaml"), "b: 1\n");
-  write(join(multi, "oas-package.json"), JSON.stringify({ package: "x.multi", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"], configTemplates: { a: { path: "config-templates/a.yaml", default: true }, b: { path: "config-templates/b.yaml", default: true } } }));
+  write(join(multi, "oats-package.json"), JSON.stringify({ package: "x.multi", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"], configTemplates: { a: { path: "config-templates/a.yaml", default: true }, b: { path: "config-templates/b.yaml", default: true } } }));
   throwsCode(() => loadPackageManifestAt(multi), "invalid-package-manifest", "two defaults");
 });
 
@@ -212,20 +212,20 @@ test("loadPackageManifestAt: hostile roots are typed, never a TypeError", () => 
   const t = temp();
   for (const raw of ["null", '"str"', "[]", "3", "{"]) {
     const d = join(t, `h${Math.random().toString(36).slice(2)}`);
-    write(join(d, "oas-package.json"), raw);
+    write(join(d, "oats-package.json"), raw);
     throwsCode(() => loadPackageManifestAt(d), "invalid-package-manifest", `root ${raw}`);
   }
 });
 
 test("loadPackageManifestAt: declared paths cannot escape the package root, lexically or through a symlink", () => {
   const t = temp();
-  const outside = join(t, "outside"); write(join(outside, "oas.json"), JSON.stringify({ capability: "x.out", version: "1.0.0", description: "d" }));
+  const outside = join(t, "outside"); write(join(outside, "oats.json"), JSON.stringify({ capability: "x.out", version: "1.0.0", description: "d" }));
   const d = join(t, "p");
-  write(join(d, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
-  write(join(d, "oas-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["../outside"] }));
+  write(join(d, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
+  write(join(d, "oats-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["../outside"] }));
   throwsCode(() => loadPackageManifestAt(d), "path-escape", "lexical ..");
   symlinkSync(outside, join(d, "linked"));
-  writeFileSync(join(d, "oas-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["linked"] }));
+  writeFileSync(join(d, "oats-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["linked"] }));
   throwsCode(() => loadPackageManifestAt(d), "path-escape", "symlinked escape");
 });
 
@@ -260,11 +260,11 @@ test("acquire rejects a package whose capability is not self-contained instead o
   const t = temp();
   const src = join(t, "src");
   write(join(src, "shared/SKILL.md"), "# shared\n");
-  write(join(src, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d", skills: ["../../shared"] }));
-  write(join(src, "oas-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
+  write(join(src, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d", skills: ["../../shared"] }));
+  write(join(src, "oats-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
   const s = scope(t);
   throwsCode(() => acquirePackage(s, src), "path-escape", "package-only skill path");
-  assert.equal(existsSync(join(s, OAS_LOCK_FILE)), false, "nothing locked");
+  assert.equal(existsSync(join(s, OATS_LOCK_FILE)), false, "nothing locked");
   assert.equal(existsSync(artifact(s, "x.a")), false, "nothing installed");
 });
 
@@ -307,7 +307,7 @@ test("capability rows must reference a locked provider package", () => {
 });
 
 test("validateLockEntry: source/commit pairing, canonical path, self-dependency, locked-graph cycle, duplicates", () => {
-  const good = { source: "git:https://h/r.git@v1", path: "oas-package", version: "1", commit: "0".repeat(40), integrity: `sha256-${"a".repeat(64)}`, dependencies: [] };
+  const good = { source: "git:https://h/r.git@v1", path: "oats-package", version: "1", commit: "0".repeat(40), integrity: `sha256-${"a".repeat(64)}`, dependencies: [] };
   assert.equal(validateLockEntry("x.p", good, { "x.p": good }), true);
   throwsCode(() => validateLockEntry("x.p", { ...good, commit: "abc" }, { "x.p": good }), "invalid-lock", "short git commit");
   throwsCode(() => validateLockEntry("x.p", { ...good, source: "path:/d", commit: "0".repeat(40) }, {}), "invalid-lock", "path source needs commit local");
@@ -330,45 +330,45 @@ test("unsupported transitional package-root v2 is rejected centrally, with NO si
   const row = { source: "path:/tmp/x", path: ".", version: "1", commit: "local", integrity: `sha256-${"a".repeat(64)}` };
   // Arm 1: nonempty, no top-level capability map.
   const a = scope(t, "a");
-  write(join(a, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, dependencies: [] } } }));
-  const e1 = throwsCode(() => parseLockFileStrict(join(a, OAS_LOCK_FILE)), "invalid-lock", "no capability map");
+  write(join(a, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, dependencies: [] } } }));
+  const e1 = throwsCode(() => parseLockFileStrict(join(a, OATS_LOCK_FILE)), "invalid-lock", "no capability map");
   assert.match(e1.message, /unsupported transitional/i);
-  assert.match(e1.message, /oas install/, "the message names the recovery");
+  assert.match(e1.message, /oats install/, "the message names the recovery");
   // Arm 2: a package row carrying a transitional field — own-property PRESENCE,
   // never truthiness, so EMPTY arrays still classify.
   for (const tell of [{ capabilities: [] }, { trustedCapabilities: [] }, { depsIntegrity: `sha256-${"c".repeat(64)}` }, { capabilities: ["x.a"], trustedCapabilities: [] }]) {
     const d = scope(t, `t${Math.random().toString(36).slice(2)}`);
-    write(join(d, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, dependencies: [], ...tell } }, capabilities: {} }));
-    const e = throwsCode(() => parseLockFileStrict(join(d, OAS_LOCK_FILE)), "invalid-lock", `tell ${Object.keys(tell)}`);
+    write(join(d, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, dependencies: [], ...tell } }, capabilities: {} }));
+    const e = throwsCode(() => parseLockFileStrict(join(d, OATS_LOCK_FILE)), "invalid-lock", `tell ${Object.keys(tell)}`);
     assert.match(e.message, /unsupported transitional/i);
   }
   // A dependency-free OLD row (capabilities/trustedCapabilities, no depsIntegrity).
   const dep = scope(t, "depfree");
-  write(join(dep, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, capabilities: ["x.a"], trustedCapabilities: ["x.a"] } }, capabilities: {} }));
-  throwsCode(() => parseLockFileStrict(join(dep, OAS_LOCK_FILE)), "invalid-lock", "dependency-free old row");
+  write(join(dep, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, capabilities: ["x.a"], trustedCapabilities: ["x.a"] } }, capabilities: {} }));
+  throwsCode(() => parseLockFileStrict(join(dep, OATS_LOCK_FILE)), "invalid-lock", "dependency-free old row");
   // path/dependencies are NEVER tells — the current shape retains both.
   const fine = scope(t, "fine");
-  write(join(fine, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, dependencies: [] } }, capabilities: {} }));
-  assert.ok(parseLockFileStrict(join(fine, OAS_LOCK_FILE)), "path + dependencies are current-shape fields");
+  write(join(fine, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: { "x.p": { ...row, dependencies: [] } }, capabilities: {} }));
+  assert.ok(parseLockFileStrict(join(fine, OATS_LOCK_FILE)), "path + dependencies are current-shape fields");
   // Rejection has no side effects: the bytes are untouched.
-  const before = readFileSync(join(a, OAS_LOCK_FILE), "utf8");
+  const before = readFileSync(join(a, OATS_LOCK_FILE), "utf8");
   throwsCode(() => readPackageLocks(a), "invalid-lock", "read");
   throwsCode(() => listInstalledPackages(a), "invalid-lock", "list");
   throwsCode(() => restorePackages(a), "invalid-lock", "restore");
-  assert.equal(readFileSync(join(a, OAS_LOCK_FILE), "utf8"), before, "no repair, no rewrite");
+  assert.equal(readFileSync(join(a, OATS_LOCK_FILE), "utf8"), before, "no repair, no rewrite");
 });
 
 test("a STATE-FREE empty transitional document normalizes; an empty v1 stays pending explicit migration", () => {
   const t = temp();
   const e = scope(t, "empty2");
-  write(join(e, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: {} }));
-  const strict = parseLockFileStrict(join(e, OAS_LOCK_FILE));
+  write(join(e, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 2, packages: {} }));
+  const strict = parseLockFileStrict(join(e, OATS_LOCK_FILE));
   assert.equal(strict.version, 2);
   assert.deepEqual(Object.keys(strict.packages), []);
   assert.deepEqual(Object.keys(strict.capabilities), []);
 
   const v1 = scope(t, "empty1");
-  write(join(v1, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
+  write(join(v1, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
   const read = readPackageLocks(v1);
   assert.equal(read.migration[0].kind, "v1-empty", "an empty v1 SURFACES as pending format migration");
   assert.equal(read.legacy.length, 1);
@@ -380,7 +380,7 @@ test("a STATE-FREE empty transitional document normalizes; an empty v1 stays pen
 test("writers refuse any v1 lock; only an ABSENT lock is a fresh document", () => {
   const t = temp();
   const s = scope(t);
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1", version: "1", integrity: `sha256-${"a".repeat(64)}` } } }));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1", version: "1", integrity: `sha256-${"a".repeat(64)}` } } }));
   throwsCode(() => writePackageLock(s, "x.p", { source: "path:/d", path: ".", version: "1", commit: "local", integrity: `sha256-${"a".repeat(64)}`, dependencies: [] }), "legacy-lock", "package row into v1");
   throwsCode(() => writeCapabilityLockEntry(s, "x.a", { version: "1", package: "x.p", path: ".", integrity: `sha256-${"a".repeat(64)}`, trusted: false }), "legacy-lock", "capability row into v1");
   // The legacy v1 writer, conversely, never downgrades or rewrites a current lock.
@@ -395,7 +395,7 @@ test("prototype-named package and capability IDs cannot forge providers, depende
   const s = scope(t);
   const row = { source: "path:/tmp/x", path: ".", version: "1", commit: "local", integrity: `sha256-${"a".repeat(64)}`, dependencies: [] };
   // A raw-JSON __proto__ / constructor key must never read back as a real entry.
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({
     lockfileVersion: 2,
     packages: { "x.p": row },
     capabilities: { "x.a": { version: "1", package: "x.p", path: ".", integrity: `sha256-${"b".repeat(64)}`, trusted: true } },
@@ -411,8 +411,8 @@ test("prototype-named package and capability IDs cannot forge providers, depende
   throwsCode(() => validateCapabilityLockEntry("x.a", { version: "1", package: "constructor", path: ".", integrity: `sha256-${"b".repeat(64)}`, trusted: false }, { "x.p": row }), "invalid-lock", "prototype-named provider");
   // Prototype-named IDs in the raw document are rejected as invalid keys, not accepted.
   const hostile = scope(t, "hostile");
-  write(join(hostile, OAS_LOCK_FILE), `{"lockfileVersion":2,"packages":{"__proto__":${JSON.stringify(row)}},"capabilities":{}}`);
-  throwsCode(() => parseLockFileStrict(join(hostile, OAS_LOCK_FILE)), "invalid-lock", "a JSON __proto__ package key");
+  write(join(hostile, OATS_LOCK_FILE), `{"lockfileVersion":2,"packages":{"__proto__":${JSON.stringify(row)}},"capabilities":{}}`);
+  throwsCode(() => parseLockFileStrict(join(hostile, OATS_LOCK_FILE)), "invalid-lock", "a JSON __proto__ package key");
 });
 
 test("readPackageLocks: closest scope wins, lock-only scopes are visible, invalid locks RAISE", () => {
@@ -420,13 +420,13 @@ test("readPackageLocks: closest scope wins, lock-only scopes are visible, invali
   const outer = scope(t, "outer");
   const row = (v) => ({ source: "path:/tmp/x", path: ".", version: v, commit: "local", integrity: `sha256-${"a".repeat(64)}`, dependencies: [] });
   writePackageLock(outer, "x.p", row("1.0.0"));
-  // A NESTED scope owning only a lock (no oas-config.yaml) must still be seen.
+  // A NESTED scope owning only a lock (no oats-config.yaml) must still be seen.
   const inner = join(outer, "inner");
   mkdirSync(inner, { recursive: true });
   writePackageLock(inner, "x.p", row("2.0.0"));
   assert.equal(readPackageLocks(inner).packages["x.p"].version, "2.0.0", "closest scope wins");
   assert.equal(readPackageLocks(outer).packages["x.p"].version, "1.0.0");
-  write(join(inner, OAS_LOCK_FILE), "{ not json");
+  write(join(inner, OATS_LOCK_FILE), "{ not json");
   throwsCode(() => readPackageLocks(inner), "invalid-lock", "malformed inner lock");
 });
 
@@ -434,13 +434,13 @@ test("readPackageLocks: closest scope wins, lock-only scopes are visible, invali
 
 test("acquirePackage: materializes flat self-contained artifacts, locks both levels, activates and trusts nothing", () => {
   const t = temp();
-  const src = pkgSource(join(t, "src"), { package: "x.p", configTemplates: { default: { path: "config-templates/default/oas-config.yaml", default: true } } }, {
+  const src = pkgSource(join(t, "src"), { package: "x.p", configTemplates: { default: { path: "config-templates/default/oats-config.yaml", default: true } } }, {
     "capabilities/a": { capability: "x.a", version: "2.1.0", skills: ["skills/s"], commands: { go: "bin/go.mjs run" } },
     "capabilities/b": { capability: "x.b", version: "3.0.0" },
   });
   write(join(src, "capabilities/a/skills/s/SKILL.md"), "# s\n");
   write(join(src, "capabilities/a/bin/go.mjs"), "//\n");
-  write(join(src, "config-templates/default/oas-config.yaml"), "name: demo\n");
+  write(join(src, "config-templates/default/oats-config.yaml"), "name: demo\n");
   const s = scope(t);
   const r = acquirePackage(s, src);
 
@@ -452,8 +452,8 @@ test("acquirePackage: materializes flat self-contained artifacts, locks both lev
 
   // Flat artifacts, self-contained, with the capability's own resources.
   assert.ok(existsSync(join(artifact(s, "x.a"), "skills/s/SKILL.md")));
-  assert.ok(existsSync(join(artifact(s, "x.b"), "oas.json")));
-  assert.equal(existsSync(join(artifact(s, "x.a"), "oas-package.json")), false, "a dedicated capability root carries no package manifest");
+  assert.ok(existsSync(join(artifact(s, "x.b"), "oats.json")));
+  assert.equal(existsSync(join(artifact(s, "x.a"), "oats-package.json")), false, "a dedicated capability root carries no package manifest");
 
   // No persistent package root anywhere, and no staging left behind.
   assert.equal(existsSync(join(s, ".agents", "packages")), false, "no package store exists in this model");
@@ -473,7 +473,7 @@ test("acquirePackage: materializes flat self-contained artifacts, locks both lev
   assert.equal(r.configTemplates[0].content, "name: demo\n");
   assert.match(r.configTemplates[0].contentIntegrity, /^sha256-[0-9a-f]{64}$/);
   assert.equal(r.configTemplates[0].default, true);
-  assert.equal(readFileSync(join(s, "oas-config.yaml"), "utf8"), "name: test\n", "install applies no template");
+  assert.equal(readFileSync(join(s, "oats-config.yaml"), "utf8"), "name: test\n", "install applies no template");
 
   // Acquired is not active.
   assert.deepEqual(activeIds(s), [], "nothing activated");
@@ -528,10 +528,10 @@ test("acquirePackage: a locked source never advances on acquire — integrity an
   const src = pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
   const s = scope(t);
   acquirePackage(s, src);
-  const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   write(join(src, "capabilities/a/extra.md"), "drifted\n");
   throwsCode(() => acquirePackage(s, src), "integrity-drift", "changed source on re-acquire");
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before, "lock unchanged");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before, "lock unchanged");
 });
 
 test("an injected failure between the two renames restores the PRE-EXISTING artifact byte for byte", () => {
@@ -543,7 +543,7 @@ test("an injected failure between the two renames restores the PRE-EXISTING arti
   acquirePackage(s, v1);
   const dir = artifact(s, "x.a");
   const beforeTree = treeFingerprint(dir);
-  const beforeLock = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  const beforeLock = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
 
   // Re-acquire a DIFFERENT payload and fail INSIDE the swap boundary: the
   // pre-commit gate makes the capability store read-only, so the very first
@@ -559,7 +559,7 @@ test("an injected failure between the two renames restores the PRE-EXISTING arti
 
   assert.deepEqual(treeFingerprint(dir), beforeTree, "the pre-existing artifact was not restored byte for byte");
   assert.equal(readFileSync(join(dir, "marker.txt"), "utf8"), "ORIGINAL\n");
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), beforeLock, "the lock changed");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), beforeLock, "the lock changed");
 });
 
 test("a dropped export retires INSIDE the update transaction — a failure keeps artifact and lock together", () => {
@@ -569,12 +569,12 @@ test("a dropped export retires INSIDE the update transaction — a failure keeps
   pkgSource(src, { package: "x.p" }, { "capabilities/a": { capability: "x.a" }, "capabilities/b": { capability: "x.b" } });
   acquirePackage(s, src);
   assert.ok(existsSync(artifact(s, "x.b")));
-  const beforeLock = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  const beforeLock = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const beforeB = treeFingerprint(artifact(s, "x.b"));
 
   // The package stops exporting x.b.
-  write(join(src, "oas-package.json"), JSON.stringify({
-    package: "x.p", version: "2.0.0", description: "p", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"],
+  write(join(src, "oats-package.json"), JSON.stringify({
+    package: "x.p", version: "2.0.0", description: "p", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"],
   }, null, 2));
   rmSync(join(src, "capabilities/b"), { recursive: true, force: true });
 
@@ -584,7 +584,7 @@ test("a dropped export retires INSIDE the update transaction — a failure keeps
     replace: true,
     assertCommittable: () => { const e = new Error("injected"); e.code = "injected"; throw e; },
   }));
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), beforeLock, "the lock advanced despite the failure");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), beforeLock, "the lock advanced despite the failure");
   assert.deepEqual(treeFingerprint(artifact(s, "x.b")), beforeB, "the dropped export's artifact was lost on a FAILED update");
 
   // (b) on success the row and the artifact go together.
@@ -648,7 +648,7 @@ test("a scope that ALREADY ignores installed/ keeps its exact bytes through a re
   const s = scope(t);
   gitify(s);
   // A hand-written ignore with its own unrelated content and no trailing rule
-  // ordering OAS would choose.
+  // ordering OATS would choose.
   const file = join(s, ".agents", "capabilities", ".gitignore");
   const original = "# ours\nscratch/\ninstalled/\n";
   write(file, original);
@@ -670,22 +670,22 @@ test("the CANONICAL template location is enforced, and the deprecated spelling s
     const d = join(t, name);
     pkgSource(d, { package: `x.${name}` }, { "capabilities/a": { capability: `x.${name}cap` } });
     for (const tpl of Object.values(templates)) write(join(d, tpl.path), "name: x\n");
-    const m = JSON.parse(readFileSync(join(d, "oas-package.json"), "utf8"));
+    const m = JSON.parse(readFileSync(join(d, "oats-package.json"), "utf8"));
     delete m.configTemplates;
     m[key] = templates;
-    write(join(d, "oas-package.json"), JSON.stringify(m, null, 2));
+    write(join(d, "oats-package.json"), JSON.stringify(m, null, 2));
     return d;
   };
 
   // Canonical: accepted.
-  const ok = mk("okpkg", { default: { path: "config-templates/default/oas-config.yaml", default: true } });
-  assert.equal(loadPackageManifestAt(ok)._configTemplates.default.path, "config-templates/default/oas-config.yaml");
+  const ok = mk("okpkg", { default: { path: "config-templates/default/oats-config.yaml", default: true } });
+  assert.equal(loadPackageManifestAt(ok)._configTemplates.default.path, "config-templates/default/oats-config.yaml");
 
   // Outside the canonical prefix, and near-misses that only look like it.
   for (const path of [
     "c/d.yaml",
-    "oas-config.yaml",
-    "capabilities/a/oas-config.yaml",   // a file a capability root already owns
+    "oats-config.yaml",
+    "capabilities/a/oats-config.yaml",   // a file a capability root already owns
     "config-templates",                 // the root itself, no file
     "config-templates/",                // empty remainder
     "config-templatesx/d.yaml",         // prefix look-alike
@@ -695,32 +695,32 @@ test("the CANONICAL template location is enforced, and the deprecated spelling s
   ]) {
     const d = join(t, `bad-${path.replace(/\W+/g, "_")}`);
     pkgSource(d, { package: "x.bad" }, { "capabilities/a": { capability: "x.badcap" } });
-    write(join(d, "config-templates/default/oas-config.yaml"), "name: x\n");
-    const m = JSON.parse(readFileSync(join(d, "oas-package.json"), "utf8"));
+    write(join(d, "config-templates/default/oats-config.yaml"), "name: x\n");
+    const m = JSON.parse(readFileSync(join(d, "oats-package.json"), "utf8"));
     m.configTemplates = { default: { path } };
-    write(join(d, "oas-package.json"), JSON.stringify(m, null, 2));
+    write(join(d, "oats-package.json"), JSON.stringify(m, null, 2));
     throwsCode(() => loadPackageManifestAt(d), "invalid-package-manifest", `non-canonical template path ${JSON.stringify(path)}`);
   }
 
   // The DEPRECATED spelling keeps read compatibility: published 0.19 tags are
   // immutable and cannot be re-cut to satisfy a rule added after they shipped.
-  const legacy = mk("legacypkg", { default: { path: "configs/default/oas-config.yaml", default: true } }, "configs");
+  const legacy = mk("legacypkg", { default: { path: "configs/default/oats-config.yaml", default: true } }, "configs");
   const lm = loadPackageManifestAt(legacy);
-  assert.equal(lm._configTemplates.default.path, "configs/default/oas-config.yaml");
+  assert.equal(lm._configTemplates.default.path, "configs/default/oats-config.yaml");
   assert.equal(lm._legacySpelling, true);
 });
 
 test("schema and runtime agree on the canonical template path — no drift between the two rules", () => {
-  const schema = JSON.parse(readFileSync(resolve(new URL("../docs/oas-package.schema.json", import.meta.url).pathname), "utf8"));
+  const schema = JSON.parse(readFileSync(resolve(new URL("../docs/oats-package.schema.json", import.meta.url).pathname), "utf8"));
   const pattern = new RegExp(schema.properties.configTemplates.additionalProperties.properties.path.pattern);
   // Both rules are hand-written in different languages; the only thing keeping
   // them honest is checking them against the same inputs.
   const cases = [
-    ["config-templates/default/oas-config.yaml", true],
+    ["config-templates/default/oats-config.yaml", true],
     ["config-templates/a.yaml", true],
     ["config-templates/nested/deep/a.yaml", true],
     ["c/d.yaml", false],
-    ["oas-config.yaml", false],
+    ["oats-config.yaml", false],
     ["config-templates", false],
     ["config-templates/", false],
     ["config-templatesx/d.yaml", false],
@@ -751,7 +751,7 @@ test("installedCapabilityDir is a containment PROOF, not a join — the last lin
     assert.match(e.message, /capability artifact path refused/);
   }
   // Valid ids resolve to an immediate child, and nothing else.
-  for (const id of ["oas.okf", "x.constructor", "a", "a-b_c.d"]) {
+  for (const id of ["oats.okf", "x.constructor", "a", "a-b_c.d"]) {
     assert.equal(installedCapabilityDir(s, id), join(root, id));
     assert.equal(dirname(resolve(installedCapabilityDir(s, id))), resolve(root));
   }
@@ -767,43 +767,43 @@ test("acquirePackage: a path mismatch names the route that can actually resolve 
   rmSync(join(repoRoot, "pkgs"), { recursive: true, force: true });
   const moved = gitify(repoRoot);
 
-  // A GIT spec's "#<path>" is the operator's own selection, so `oas update`
+  // A GIT spec's "#<path>" is the operator's own selection, so `oats update`
   // would keep the old root: the message must not name it.
   const g = scope(t, "git");
   acquirePackage(g, `file://${repoRoot}@${first}#pkgs/x`);
   const gitErr = throwsCode(() => acquirePackage(g, `file://${repoRoot}@${moved}#packages/x`), "integrity-drift", "git path drift");
   assert.match(gitErr.message, /package path "packages\/x" but the existing lock records "pkgs\/x"/);
-  assert.match(gitErr.message, /oas remove x\.moved/);
+  assert.match(gitErr.message, /oats remove x\.moved/);
   assert.match(gitErr.message, /config or dependent packages/, "removal blockers are stated, not implied");
-  assert.doesNotMatch(gitErr.message, /use `oas update/, "update cannot move a sticky git selection");
+  assert.doesNotMatch(gitErr.message, /use `oats update/, "update cannot move a sticky git selection");
 
   // A CATALOG entry owns its path, so an update genuinely adopts the new root.
   const c = scope(t, "cat");
   const catalog = (ref, path) => (id) => (id === "x.moved" ? { url: `file://${repoRoot}`, ref, path } : undefined);
   acquirePackage(c, "x.moved", { catalog: catalog(first, "pkgs/x") });
   const catErr = throwsCode(() => acquirePackage(c, "x.moved", { catalog: catalog(moved, "packages/x") }), "integrity-drift", "catalog path drift");
-  assert.match(catErr.message, /use `oas update x\.moved`/);
-  assert.doesNotMatch(catErr.message, /oas remove/);
+  assert.match(catErr.message, /use `oats update x\.moved`/);
+  assert.doesNotMatch(catErr.message, /oats remove/);
 });
 
-test("acquirePackage: incompatible compatibility.oas floor is rejected before anything is written", () => {
+test("acquirePackage: incompatible compatibility.oats floor is rejected before anything is written", () => {
   const t = temp();
-  const src = pkgSource(join(t, "src"), { package: "x.p", compatibility: { oas: ">=999.0.0" } }, { "capabilities/a": { capability: "x.a" } });
+  const src = pkgSource(join(t, "src"), { package: "x.p", compatibility: { oats: ">=999.0.0" } }, { "capabilities/a": { capability: "x.a" } });
   const s = scope(t);
-  throwsCode(() => acquirePackage(s, src), "incompatible-oas", "floor");
-  assert.equal(existsSync(join(s, OAS_LOCK_FILE)), false);
+  throwsCode(() => acquirePackage(s, src), "incompatible-oats", "floor");
+  assert.equal(existsSync(join(s, OATS_LOCK_FILE)), false);
 });
 
 test("acquirePackage: a v1 lock at the scope blocks package install with legacy-lock and changes nothing", () => {
   const t = temp();
   const s = scope(t);
   const v1 = { lockfileVersion: 1, capabilities: { "old.cap": { source: "marketplace:old.cap@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } };
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
+  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const src = pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
   const e = throwsCode(() => acquirePackage(s, src), "legacy-lock", "v1 scope");
-  assert.match(e.message, /oas migrate/);
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before);
+  assert.match(e.message, /oats migrate/);
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before);
   assert.equal(existsSync(artifact(s, "x.a")), false);
 });
 
@@ -811,45 +811,45 @@ test("an EMPTY v1 scope is refused too, and refused BEFORE the source is ever fe
   const t = temp();
   const s = scope(t);
   gitify(s);
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }, null, 2));
-  const lockBefore = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }, null, 2));
+  const lockBefore = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   // A source that CANNOT be fetched: reaching the fetch would raise
   // invalid-source, so `legacy-lock` proves the preflight ran first.
   const missing = join(t, "no-such-source");
   assert.equal(existsSync(missing), false);
   const e = throwsCode(() => acquirePackage(s, missing), "legacy-lock", "empty v1 scope");
-  assert.match(e.message, /oas migrate/);
+  assert.match(e.message, /oats migrate/);
   // An empty v1 is an UNCONVERTED scope, not an absent lock: install must never
   // convert it as a side effect, and `lockDraft` refuses it identically.
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), lockBefore, "lock bytes untouched — never converted implicitly");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), lockBefore, "lock bytes untouched — never converted implicitly");
   assert.equal(existsSync(join(s, ".agents/capabilities/installed")), false, "no store, no staging");
   assert.equal(existsSync(join(s, ".agents/capabilities/.gitignore")), false, "no ignore file was written");
   // And a fetchable source is refused identically — the refusal is about the
   // scope, not about the spec.
-  const repo = pkgSource(join(t, "repo", "oas-package"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
+  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
   const commit = gitify(join(t, "repo"));
-  throwsCode(() => acquirePackage(s, `file://${join(t, "repo")}@${commit}#oas-package`), "legacy-lock", "empty v1, valid source");
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), lockBefore);
+  throwsCode(() => acquirePackage(s, `file://${join(t, "repo")}@${commit}#oats-package`), "legacy-lock", "empty v1, valid source");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), lockBefore);
   assert.equal(existsSync(join(s, ".agents/capabilities/installed")), false);
-  assert.ok(existsSync(join(repo, "oas-package.json")), "the source itself is untouched");
+  assert.ok(existsSync(join(repo, "oats-package.json")), "the source itself is untouched");
   // The whole point of refusing: explicit migration is still the only way in.
   applyLegacyLockMigration(s);
   assert.equal(lockOf(s).lockfileVersion, 2);
-  acquirePackage(s, `file://${join(t, "repo")}@${commit}#oas-package`);
+  acquirePackage(s, `file://${join(t, "repo")}@${commit}#oats-package`);
   assert.ok(existsSync(artifact(s, "x.a")));
 });
 
 test("acquirePackage: catalog is identity/discovery only — resolution grants no trust and advances no lock", () => {
   const t = temp();
-  const repo = pkgSource(join(t, "repo", "oas-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
+  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
   write(join(repo, "capabilities/a/bin/go.mjs"), "//\n");
   const commit = gitify(join(t, "repo"));
-  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oas-package" } : undefined);
+  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oats-package" } : undefined);
   const s = scope(t);
   const r = acquirePackage(s, "x.official", { catalog });
   assert.equal(lockOf(s).packages["x.official"].source, "catalog:x.official", "a bare request locks the bare form");
   assert.equal(lockOf(s).packages["x.official"].commit, commit, "the resolved commit is pinned separately");
-  assert.equal(lockOf(s).packages["x.official"].path, "oas-package", "the catalog entry's path is honoured");
+  assert.equal(lockOf(s).packages["x.official"].path, "oats-package", "the catalog entry's path is honoured");
   assert.equal(r.capabilities[0].trusted, false, "official identity is not executable approval");
   // An explicit selector round-trips distinguishably.
   const s2 = scope(t, "scope2");
@@ -861,19 +861,19 @@ test("acquirePackage: the selected package root is what gets staged and hashed �
   const t = temp();
   const repoRoot = join(t, "repo");
   write(join(repoRoot, "README.md"), "repo docs — must never install\n");
-  write(join(repoRoot, "other-package/oas-package.json"), "{}");
-  pkgSource(join(repoRoot, "dist/oas"), { package: "x.contained" }, { "capabilities/a": { capability: "x.a" } });
+  write(join(repoRoot, "other-package/oats-package.json"), "{}");
+  pkgSource(join(repoRoot, "dist/oats"), { package: "x.contained" }, { "capabilities/a": { capability: "x.a" } });
   const commit = gitify(repoRoot);
   const s = scope(t);
-  acquirePackage(s, `file://${repoRoot}@${commit}#dist/oas`);
-  assert.equal(lockOf(s).packages["x.contained"].path, "dist/oas");
+  acquirePackage(s, `file://${repoRoot}@${commit}#dist/oats`);
+  assert.equal(lockOf(s).packages["x.contained"].path, "dist/oats");
   assert.equal(existsSync(join(artifact(s, "x.a"), "README.md")), false);
-  assert.ok(existsSync(join(artifact(s, "x.a"), "oas.json")));
+  assert.ok(existsSync(join(artifact(s, "x.a"), "oats.json")));
 });
 
 // ---------- artifact provenance ----------
 
-test(".oas-installation.json is deterministic, lock-derived, and reproducible under a different kernel", () => {
+test(".oats-installation.json is deterministic, lock-derived, and reproducible under a different kernel", () => {
   const t = temp();
   const src = pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a", version: "2.1.0" } });
   const s = scope(t);
@@ -923,17 +923,17 @@ test("tampering with provenance is integrity drift and revokes trust", () => {
 
 test("restorePackages: ok when present, reprojects when missing, refuses drift, never advances", () => {
   const t = temp();
-  const repo = pkgSource(join(t, "repo", "oas-package"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
+  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
   const commit = gitify(join(t, "repo"));
   const s = scope(t);
-  acquirePackage(s, `file://${join(t, "repo")}@${commit}#oas-package`);
-  const locked = JSON.parse(readFileSync(join(s, OAS_LOCK_FILE), "utf8"));
+  acquirePackage(s, `file://${join(t, "repo")}@${commit}#oats-package`);
+  const locked = JSON.parse(readFileSync(join(s, OATS_LOCK_FILE), "utf8"));
 
   assert.equal(restorePackages(s)[0].status, "ok", "present + matching = ok");
 
   rmSync(artifact(s, "x.a"), { recursive: true, force: true });
   assert.equal(restorePackages(s).find((r) => r.capability === "x.a").status, "restored");
-  assert.deepEqual(JSON.parse(readFileSync(join(s, OAS_LOCK_FILE), "utf8")), locked, "restore never advances the lock");
+  assert.deepEqual(JSON.parse(readFileSync(join(s, OATS_LOCK_FILE), "utf8")), locked, "restore never advances the lock");
 
   // The upstream moves on: bare restore stays at the locked commit.
   write(join(repo, "capabilities/a/new.md"), "moved on\n");
@@ -962,7 +962,7 @@ test("restorePackages: a provider that no longer exports the locked capability a
   // Forge a capability row pointing at a path the package does not export.
   const doc = lockOf(s);
   doc.capabilities["x.a"].path = "capabilities/moved";
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(doc, null, 2));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(doc, null, 2));
   rmSync(artifact(s, "x.a"), { recursive: true, force: true });
   const r = restorePackages(s).find((x) => x.capability === "x.a");
   assert.equal(r.status, "failed");
@@ -977,7 +977,7 @@ test("restore preflight covers the COMPLETE visible chain before any mutation", 
   // A malformed INNER lock-only scope must fail before the outer artifact is touched.
   const inner = join(outer, "inner");
   mkdirSync(inner, { recursive: true });
-  write(join(inner, OAS_LOCK_FILE), "{ not json");
+  write(join(inner, OATS_LOCK_FILE), "{ not json");
   throwsCode(() => restorePackages(inner), "invalid-lock", "malformed inner lock");
   assert.equal(existsSync(artifact(outer, "x.a")), false, "the outer artifact was never restored");
 });
@@ -985,11 +985,11 @@ test("restore preflight covers the COMPLETE visible chain before any mutation", 
 test("restorePackages reports an unconverted v1 scope as legacy with its migration action", () => {
   const t = temp();
   const s = scope(t);
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
   const r = restorePackages(s);
   assert.equal(r[0].status, "legacy");
   assert.equal(r[0].lockfileVersion, 1);
-  assert.match(r[0].reason, /oas migrate/);
+  assert.match(r[0].reason, /oats migrate/);
 });
 
 // ---------- discovery, activation, trust ----------
@@ -1005,7 +1005,7 @@ test("discovery: materialized capabilities are addressable with from: installed;
   assert.deepEqual(activeIds(s), ["x.a"], "explicit activation works");
 
   // owned/ wins over installed at the same scope.
-  write(join(s, ".agents/capabilities/owned/x.a/oas.json"), JSON.stringify({ capability: "x.a", version: "9.9.9", description: "owned" }));
+  write(join(s, ".agents/capabilities/owned/x.a/oats.json"), JSON.stringify({ capability: "x.a", version: "9.9.9", description: "owned" }));
   assert.equal(capabilityManifest("x.a", s).version, "9.9.9");
 });
 
@@ -1015,7 +1015,7 @@ test("discovery skips transaction staging directories", () => {
   acquirePackage(s, pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } }));
   // Simulate a staging directory left by a crashed process.
   const stale = join(s, ".agents/capabilities/installed/.staging-abc");
-  write(join(stale, "oas.json"), JSON.stringify({ capability: "ghost.cap", version: "1.0.0", description: "d" }));
+  write(join(stale, "oats.json"), JSON.stringify({ capability: "ghost.cap", version: "1.0.0", description: "d" }));
   assert.deepEqual(Object.keys(capabilityManifests(s)), ["x.a"], "dot-prefixed entries are never installed content");
 });
 
@@ -1035,7 +1035,7 @@ test("trust binds to the capability ARTIFACT integrity: approval, drift invalida
   // Executable surfaces do.
   const untrusted = capabilityTrust(s, "x.exec");
   assert.equal(untrusted.trusted, false);
-  assert.match(untrusted.reason, /oas trust x\.exec/);
+  assert.match(untrusted.reason, /oats trust x\.exec/);
   assert.deepEqual(untrusted.executableSurface, { commands: ["go"], hooks: ["spawn"], environment: [] });
 
   const approved = approveCapability(s, "x.exec");
@@ -1074,7 +1074,7 @@ test("a declared launch environment is trust-gated and materialized as part of t
   assert.equal(capabilityTrust(s, "x.environment").trusted, true);
 });
 
-test("approval verifies PROVENANCE, not just integrity: a re-hashed .oas-installation.json cannot be trusted, and a bulk approval commits none", () => {
+test("approval verifies PROVENANCE, not just integrity: a re-hashed .oats-installation.json cannot be trusted, and a bulk approval commits none", () => {
   const t = temp();
   const src = pkgSource(join(t, "src"), { package: "x.p" }, {
     "capabilities/a": { capability: "x.exec", commands: { go: "bin/go.mjs run" } },
@@ -1091,7 +1091,7 @@ test("approval verifies PROVENANCE, not just integrity: a re-hashed .oas-install
     write(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), ...patch }, null, 2) + "\n");
     const doc = lockOf(s);
     doc.capabilities[cid].integrity = capabilityArtifactIntegrity(artifact(s, cid));
-    write(join(s, OAS_LOCK_FILE), JSON.stringify(doc, null, 2));
+    write(join(s, OATS_LOCK_FILE), JSON.stringify(doc, null, 2));
     return doc;
   };
 
@@ -1123,7 +1123,7 @@ test("approval verifies PROVENANCE, not just integrity: a re-hashed .oas-install
   acquirePackage(s3, src);
   const doc = lockOf(s3);
   delete doc.packages["x.p"];
-  write(join(s3, OAS_LOCK_FILE), JSON.stringify(doc, null, 2));
+  write(join(s3, OATS_LOCK_FILE), JSON.stringify(doc, null, 2));
   const orphan = throwsCode(() => approveCapability(s3, "x.exec"), "invalid-lock", "provider package not locked");
   assert.match(orphan.message, /provider package "x\.p" is not locked in the same packages map/);
   assert.equal(lockOf(s3).capabilities["x.exec"].trusted, false);
@@ -1143,7 +1143,7 @@ test("trust queries RAISE on an invalid lock — a bad lock is never served as u
   acquirePackage(s, src);
   const doc = lockOf(s);
   doc.capabilities["x.a"].trusted = "yes";
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(doc, null, 2));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(doc, null, 2));
   throwsCode(() => capabilityTrust(s, "x.a"), "invalid-lock", "malformed trusted flag");
 });
 
@@ -1179,20 +1179,20 @@ test("updatePackage: a removed export is retired only when no config references 
   const src = pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.keep" }, "capabilities/b": { capability: "x.going" } });
   const s = scope(t, "scope", "name: t\ncapabilities:\n  additive:\n    x.going:\n      global: true\n");
   acquirePackage(s, src);
-  const lockBefore = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  const lockBefore = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const goingBefore = capabilityArtifactIntegrity(artifact(s, "x.going"));
   // Drop the export while config still references it.
   rmSync(join(src, "capabilities/b"), { recursive: true, force: true });
-  write(join(src, "oas-package.json"), JSON.stringify({ package: "x.p", version: "2.0.0", description: "pkg", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }, null, 2));
+  write(join(src, "oats-package.json"), JSON.stringify({ package: "x.p", version: "2.0.0", description: "pkg", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }, null, 2));
   throwsCode(() => updatePackage(s, "x.p"), "remove-blocked", "config still references the dropped export");
   // The refusal is a PRE-COMMIT gate, so the pre-operation state is not
   // "restored" — it was never touched. Re-acquiring the old version could not
   // achieve this: the source it would re-acquire from has itself moved on.
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), lockBefore, "lock bytes untouched");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), lockBefore, "lock bytes untouched");
   assert.equal(capabilityArtifactIntegrity(artifact(s, "x.going")), goingBefore, "the dropped export's artifact is neither orphaned nor removed");
 
   // Once the reference is gone, the artifact is retired.
-  write(join(s, "oas-config.yaml"), "name: t\n");
+  write(join(s, "oats-config.yaml"), "name: t\n");
   const r = updatePackage(s, "x.p");
   assert.deepEqual(r.removedCapabilities, ["x.going"]);
   assert.equal(existsSync(artifact(s, "x.going")), false);
@@ -1205,7 +1205,7 @@ test("updatePackage: an identity change fails PRE-COMMIT — nothing lands under
   const src = pkgSource(join(t, "src"), { package: "x.p" }, { "capabilities/a": { capability: "x.a" } });
   const s = scope(t);
   acquirePackage(s, src);
-  write(join(src, "oas-package.json"), JSON.stringify({ package: "x.renamed", version: "2.0.0", description: "pkg", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }, null, 2));
+  write(join(src, "oats-package.json"), JSON.stringify({ package: "x.renamed", version: "2.0.0", description: "pkg", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }, null, 2));
   throwsCode(() => updatePackage(s, "x.p"), "duplicate-package-identity", "renamed source");
   assert.deepEqual(Object.keys(lockOf(s).packages), ["x.p"]);
   assert.equal(existsSync(join(s, ".agents/capabilities/installed/x.renamed")), false);
@@ -1223,7 +1223,7 @@ test("removePackage: refuses while a dependent package or a config reference exi
   const blockedByConfig = throwsCode(() => removePackage(s, "x.root"), "remove-blocked", "config reference");
   assert.match(blockedByConfig.message, /x\.r/);
 
-  write(join(s, "oas-config.yaml"), "name: t\n");
+  write(join(s, "oats-config.yaml"), "name: t\n");
   const r = removePackage(s, "x.root");
   assert.deepEqual(r.capabilities, ["x.r"]);
   assert.equal(existsSync(artifact(s, "x.r")), false);
@@ -1292,9 +1292,9 @@ test("both template readers produce ONE descriptor shape — legacySpelling sits
 
   // Legacy spelling: same shape, flag flipped, on every item.
   const d = join(t, "legacy");
-  write(join(d, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.l", version: "1.0.0", description: "d" }));
-  write(join(d, "configs/default/oas-config.yaml"), "name: legacy\n");
-  write(join(d, "oas-package.json"), JSON.stringify({ package: "x.legacy", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { default: { path: "configs/default/oas-config.yaml", default: true } } }));
+  write(join(d, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.l", version: "1.0.0", description: "d" }));
+  write(join(d, "configs/default/oats-config.yaml"), "name: legacy\n");
+  write(join(d, "oats-package.json"), JSON.stringify({ package: "x.legacy", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { default: { path: "configs/default/oats-config.yaml", default: true } } }));
   const s2 = scope(t, "scope2");
   const acq2 = acquirePackage(s2, d);
   const locked2 = readLockedConfigTemplates(s2, "x.legacy");
@@ -1328,16 +1328,16 @@ test("contentIntegrity digests the EXACT file bytes, and undecodable template by
   const s2 = scope(t, "scope2");
   const e = throwsCode(() => acquirePackage(s2, bad), "invalid-package-manifest", "invalid UTF-8 template");
   assert.match(e.message, /UTF-8/);
-  assert.equal(existsSync(join(s2, OAS_LOCK_FILE)), false, "the package never installed");
+  assert.equal(existsSync(join(s2, OATS_LOCK_FILE)), false, "the package never installed");
   assert.equal(existsSync(artifact(s2, "x.badcap")), false);
 });
 
 test("readLockedConfigTemplates normalizes the deprecated configs spelling and flags it", () => {
   const t = temp();
   const d = join(t, "legacy");
-  write(join(d, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
-  write(join(d, "configs/default/oas-config.yaml"), "name: legacy\n");
-  write(join(d, "oas-package.json"), JSON.stringify({ package: "x.legacy", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { default: { path: "configs/default/oas-config.yaml", default: true } } }));
+  write(join(d, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
+  write(join(d, "configs/default/oats-config.yaml"), "name: legacy\n");
+  write(join(d, "oats-package.json"), JSON.stringify({ package: "x.legacy", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"], configs: { default: { path: "configs/default/oats-config.yaml", default: true } } }));
   const s = scope(t);
   acquirePackage(s, d);
   const r = readLockedConfigTemplates(s, "x.legacy");
@@ -1357,11 +1357,11 @@ test("the installed-store gitignore is ensured transactionally, ignores installe
   assert.ok(!/owned/.test(ignore), "authored capabilities are meant to be committed");
   assert.ok(!/config-templates/.test(ignore), "adopted template bases are meant to be committed");
   // Git agrees: the artifact is ignored, owned/ and adopted data are not.
-  write(join(s, ".agents/capabilities/owned/y/oas.json"), "{}");
+  write(join(s, ".agents/capabilities/owned/y/oats.json"), "{}");
   write(join(s, ".agents/config-templates/adopted/x.p/default/adoption.json"), "{}");
   const status = execFileSync("git", ["-C", s, "status", "--porcelain", "--untracked-files=all"], { encoding: "utf8" });
   assert.ok(!status.includes("installed/x.a"), "generated artifacts cannot enter a commit");
-  assert.ok(status.includes("owned/y/oas.json"));
+  assert.ok(status.includes("owned/y/oats.json"));
   assert.ok(status.includes("adopted/x.p/default/adoption.json"));
 
   // A non-Git scope works without any fake Git state.
@@ -1380,17 +1380,17 @@ test("a failed transaction leaves store, lock and ignore bytes byte-identical", 
   gitify(s);
   const good = pkgSource(join(t, "good"), { package: "x.good" }, { "capabilities/a": { capability: "x.a" } });
   acquirePackage(s, good);
-  const lockBefore = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  const lockBefore = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const ignoreBefore = readFileSync(join(s, ".agents/capabilities/.gitignore"), "utf8");
   const artifactBefore = capabilityArtifactIntegrity(artifact(s, "x.a"));
 
   // A closure whose second package is broken: everything must roll back.
   const brokenDep = join(t, "broken");
-  write(join(brokenDep, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d", skills: ["missing-skill"] }));
-  write(join(brokenDep, "oas-package.json"), JSON.stringify({ package: "x.broken", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
+  write(join(brokenDep, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d", skills: ["missing-skill"] }));
+  write(join(brokenDep, "oats-package.json"), JSON.stringify({ package: "x.broken", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
   throwsCode(() => acquirePackage(s, brokenDep), "capability-not-self-contained", "missing declared skill");
 
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), lockBefore);
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), lockBefore);
   assert.equal(readFileSync(join(s, ".agents/capabilities/.gitignore"), "utf8"), ignoreBefore);
   assert.equal(capabilityArtifactIntegrity(artifact(s, "x.a")), artifactBefore);
   assert.equal(existsSync(artifact(s, "x.b")), false);
@@ -1408,12 +1408,12 @@ test("assertCommittable sees the COMPLETE staged plan — template bytes include
   const s = scope(t);
   gitify(s);
 
-  // 1. A refusing gate: the CLI's guided `oas init --package` decides against
+  // 1. A refusing gate: the CLI's guided `oats init --package` decides against
   //    the plan it was shown. NOTHING may have moved.
   let seen;
   const refuse = () => acquirePackage(s, src, { assertCommittable: (p) => { seen = p; throw new Error("operator declined the plan"); } });
   assert.throws(refuse, /operator declined the plan/);
-  assert.equal(existsSync(join(s, OAS_LOCK_FILE)), false, "no lock byte");
+  assert.equal(existsSync(join(s, OATS_LOCK_FILE)), false, "no lock byte");
   assert.equal(existsSync(join(s, ".agents/capabilities/installed")), false, "no artifact, no staging residue, not even the store root it had to create");
   assert.equal(existsSync(join(s, ".agents/capabilities/.gitignore")), false, "the ignore preflight had not run yet");
 
@@ -1442,12 +1442,12 @@ test("assertCommittable sees the COMPLETE staged plan — template bytes include
   assert.equal(lockOf(s).capabilities["x.a"].integrity, declined.capabilities.find((c) => c.capability === "x.a").integrity);
 
   // 3. Refusing an UPDATE is byte-exact for the same reason.
-  const lockBefore = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  const lockBefore = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const artifactBefore = capabilityArtifactIntegrity(artifact(s, "x.a"));
   const ignoreBefore = readFileSync(join(s, ".agents/capabilities/.gitignore"), "utf8");
   write(join(src, "capabilities/a/new.md"), "changed\n");
   assert.throws(() => acquirePackage(s, src, { replace: true, expectPackage: "x.p", assertCommittable: () => { throw new Error("nope"); } }), /nope/);
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), lockBefore);
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), lockBefore);
   assert.equal(capabilityArtifactIntegrity(artifact(s, "x.a")), artifactBefore);
   assert.equal(readFileSync(join(s, ".agents/capabilities/.gitignore"), "utf8"), ignoreBefore);
   assert.deepEqual(readdirSync(join(s, ".agents/capabilities/installed")).sort(), ["x.a", "x.d"]);
@@ -1461,8 +1461,8 @@ test("a failed acquisition on a CLEAN scope leaves no .agents anchor behind — 
   for (const [name, run] of [
     ["manifest failure", (s) => {
       const bad = join(t, "bad-manifest");
-      write(join(bad, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d", skills: ["missing"] }));
-      write(join(bad, "oas-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
+      write(join(bad, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d", skills: ["missing"] }));
+      write(join(bad, "oats-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
       throwsCode(() => acquirePackage(s, bad), "capability-not-self-contained", "manifest failure");
     }],
     ["gate refusal", (s) => {
@@ -1473,7 +1473,7 @@ test("a failed acquisition on a CLEAN scope leaves no .agents anchor behind — 
     const s = scope(t, `clean-${name.replace(/\s+/g, "-")}`);
     const before = treeFingerprint(s);
     assert.equal(before.length, 1, `${name}: the fixture really is a clean scope`);
-    assert.match(before[0], /^oas-config\.yaml /);
+    assert.match(before[0], /^oats-config\.yaml /);
     run(s);
     assert.deepEqual(treeFingerprint(s), before, `${name}: no .agents/, no capabilities/, no installed/, nothing`);
   }
@@ -1482,21 +1482,21 @@ test("a failed acquisition on a CLEAN scope leaves no .agents anchor behind — 
 test("anchor pruning removes only what the operation created — pre-existing empty parents and unrelated state survive", () => {
   const t = temp();
   const bad = join(t, "bad");
-  write(join(bad, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d", skills: ["missing"] }));
-  write(join(bad, "oas-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
+  write(join(bad, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d", skills: ["missing"] }));
+  write(join(bad, "oats-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
 
   // A PRE-EXISTING empty `.agents/` and `.agents/capabilities/` belong to the
   // scope. The operation created only `installed/`, so only that may go.
   const pre = scope(t, "pre-existing-empty");
   mkdirSync(join(pre, ".agents/capabilities"), { recursive: true });
   const preBefore = treeFingerprint(pre);
-  assert.deepEqual(preBefore.map((x) => x.split(" ")[0]), [".agents/", ".agents/capabilities/", "oas-config.yaml"]);
+  assert.deepEqual(preBefore.map((x) => x.split(" ")[0]), [".agents/", ".agents/capabilities/", "oats-config.yaml"]);
   throwsCode(() => acquirePackage(pre, bad), "capability-not-self-contained", "pre-existing empty parents");
   assert.deepEqual(treeFingerprint(pre), preBefore, "a pre-existing empty parent is never removed");
 
   // Unrelated state under the parents is a hard stop, not something to reason about.
   const owned = scope(t, "owned-state");
-  write(join(owned, ".agents/capabilities/owned/y/oas.json"), JSON.stringify({ capability: "y.own", version: "1.0.0", description: "d" }));
+  write(join(owned, ".agents/capabilities/owned/y/oats.json"), JSON.stringify({ capability: "y.own", version: "1.0.0", description: "d" }));
   write(join(owned, ".agents/config-templates/adopted/x.p/default/adoption.json"), "{}");
   const ownedBefore = treeFingerprint(owned);
   throwsCode(() => acquirePackage(owned, bad), "capability-not-self-contained", "owned/adopted state");
@@ -1572,7 +1572,7 @@ test("assertCommittable exposes the declared fundamental layer, so a template bi
 });
 
 /** Minimal `capabilities.layers.<slot>.capability` reader for the fixtures above
- * — the CLI lane owns real oas-config parsing; this only has to see bindings. */
+ * — the CLI lane owns real oats-config parsing; this only has to see bindings. */
 function bindingsOf(yaml) {
   const out = {};
   let slot = null;
@@ -1606,7 +1606,7 @@ test("acquire is incremental: packages outside the closure keep their artifacts,
 test("materializeCapabilityDeps: npm ci --ignore-scripts only; lifecycle scripts never run", { skip: !hasNpm() }, () => {
   const t = temp();
   const capDir = join(t, "cap");
-  write(join(capDir, "oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
+  write(join(capDir, "oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
   write(join(capDir, "package.json"), JSON.stringify({ name: "x", version: "1.0.0", private: true, scripts: { preinstall: `node -e "require('fs').writeFileSync('${join(t, "SCRIPT-RAN")}','x')"` }, dependencies: {} }));
   write(join(capDir, "package-lock.json"), JSON.stringify({ name: "x", version: "1.0.0", lockfileVersion: 3, requires: true, packages: { "": { name: "x", version: "1.0.0" } } }));
   const r = materializeCapabilityDeps(capDir);
@@ -1642,7 +1642,7 @@ test("a platform-variant closure is rejected transaction-wide, before any npm ci
   write(join(src, "capabilities/b/package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": { name: "b" }, "node_modules/n": { os: ["darwin"] } } }));
   const s = scope(t);
   throwsCode(() => acquirePackage(s, src), "invalid-package-manifest", "variant closure");
-  assert.equal(existsSync(join(s, OAS_LOCK_FILE)), false);
+  assert.equal(existsSync(join(s, OATS_LOCK_FILE)), false);
   assert.equal(existsSync(artifact(s, "x.a")), false, "the clean capability never materialized ahead of the rejected one");
 });
 
@@ -1654,7 +1654,7 @@ test("materialized dependency symlinks must resolve inside the CAPABILITY artifa
   symlinkSync(outside, join(src, "capabilities/a/node_modules/escape"));
   const s = scope(t);
   throwsCode(() => acquirePackage(s, src), "path-escape", "escaping node_modules link");
-  assert.equal(existsSync(join(s, OAS_LOCK_FILE)), false);
+  assert.equal(existsSync(join(s, OATS_LOCK_FILE)), false);
   // A broken link fails too.
   rmSync(join(src, "capabilities/a/node_modules/escape"));
   symlinkSync(join(t, "nothing-here"), join(src, "capabilities/a/node_modules/broken"));
@@ -1698,11 +1698,11 @@ const base = process.argv[2];
 const src = join(base, "src");
 mkdirSync(join(src, "capabilities/a/locked"), { recursive: true });
 writeFileSync(join(src, "capabilities/a/locked/secret.txt"), "x");
-writeFileSync(join(src, "capabilities/a/oas.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
-writeFileSync(join(src, "oas-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
+writeFileSync(join(src, "capabilities/a/oats.json"), JSON.stringify({ capability: "x.a", version: "1.0.0", description: "d" }));
+writeFileSync(join(src, "oats-package.json"), JSON.stringify({ package: "x.p", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"] }));
 const scope = join(base, "scope");
 mkdirSync(scope, { recursive: true });
-writeFileSync(join(scope, "oas-config.yaml"), "name: t\\n");
+writeFileSync(join(scope, "oats-config.yaml"), "name: t\\n");
 chmodSync(join(src, "capabilities/a/locked"), 0o000);
 let code = "NO-THROW";
 try { acquirePackage(scope, src); } catch (e) { code = e.code || e.constructor.name; }
@@ -1710,7 +1710,7 @@ chmodSync(join(src, "capabilities/a/locked"), 0o700);
 const installed = join(scope, ".agents/capabilities/installed");
 console.log(JSON.stringify({
   code,
-  lock: existsSync(join(scope, "oas-lock.json")),
+  lock: existsSync(join(scope, "oats-lock.json")),
   installed: existsSync(installed) ? readdirSync(installed) : [],
 }));
 `);
@@ -1752,7 +1752,7 @@ function hasNpm() {
 test("migrate: an empty v1 lock reports a FORMAT conversion and converts only when applied", () => {
   const t = temp();
   const s = scope(t);
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
   const plan = migrateLegacyLock(s);
   assert.equal(plan.from, 1);
   assert.equal(plan.convertible, true);
@@ -1765,13 +1765,13 @@ test("migrate: an empty v1 lock reports a FORMAT conversion and converts only wh
 
 test("migrate: a v1 scope converts wholly into materialized capabilities, and trust is re-earned", () => {
   const t = temp();
-  const repo = pkgSource(join(t, "repo", "oas-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
+  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
   write(join(repo, "capabilities/a/bin/go.mjs"), "//\n");
   const commit = gitify(join(t, "repo"));
-  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oas-package" } : undefined);
+  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oats-package" } : undefined);
   const s = scope(t, "scope", "name: t\ncapabilities:\n  additive:\n    x.a:\n      global: true\n      from: installed\n");
   // A v1 lock with an approved marketplace capability.
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}`, trustedExecutables: true } } }, null, 2));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}`, trustedExecutables: true } } }, null, 2));
 
   const r = applyLegacyLockMigration(s, { catalog, aliases: { "x.a": "x.official" }, official: true });
   assert.deepEqual(r.migrated.map((m) => m.capability), ["x.a"]);
@@ -1787,8 +1787,8 @@ test("migrate: one unmappable entry keeps the WHOLE scope on v1, byte-identical,
   const t = temp();
   const s = scope(t);
   const v1 = { lockfileVersion: 1, capabilities: { "x.mappable": { source: "marketplace:x.mappable@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` }, "x.orphan": { source: "marketplace:x.orphan@1.0.0", version: "1.0.0", integrity: `sha256-${"b".repeat(64)}` } } };
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
+  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const catalog = (id) => (id === "x.mappable" ? { url: "file:///nowhere", ref: "0".repeat(40) } : undefined);
 
   const plan = migrateLegacyLock(s, { catalog });
@@ -1796,15 +1796,15 @@ test("migrate: one unmappable entry keeps the WHOLE scope on v1, byte-identical,
   assert.ok(plan.plan.some((p) => p.capabilityId === "x.orphan" && p.action === "manual"));
 
   throwsCode(() => applyLegacyLockMigration(s, { catalog }), "legacy-lock", "unmappable entry");
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before, "the scope stays v1, byte-identical");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before, "the scope stays v1, byte-identical");
 });
 
 test("migrate: guided official mode refuses a MIXED scope — `retain` clears convertible and blocks the whole conversion", () => {
   const t = temp();
-  const repo = pkgSource(join(t, "repo", "oas-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
+  const repo = pkgSource(join(t, "repo", "oats-package"), { package: "x.official" }, { "capabilities/a": { capability: "x.a", commands: { go: "bin/go.mjs run" } } });
   write(join(repo, "capabilities/a/bin/go.mjs"), "//\n");
   const commit = gitify(join(t, "repo"));
-  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oas-package" } : undefined);
+  const catalog = (id) => (id === "x.official" ? { url: `file://${join(t, "repo")}`, ref: commit, path: "oats-package" } : undefined);
   const aliases = { "x.a": "x.official" };
 
   // One official capability the catalog CAN map, beside a git: and a path:
@@ -1819,7 +1819,7 @@ test("migrate: guided official mode refuses a MIXED scope — `retain` clears co
       "x.frompath": { source: `path:${join(t, "vendor")}`, version: "0.2.0", integrity: `sha256-${"c".repeat(64)}` },
     },
   };
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(v1, null, 2));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
   const before = treeFingerprint(s);
 
   // PLAN: retain clears convertible exactly like hold and manual do. Without
@@ -1843,7 +1843,7 @@ test("migrate: guided official mode refuses a MIXED scope — `retain` clears co
 
   // No official work at all: a truthful no-op that REPORTS what it retained.
   const s2 = scope(t, "scope2");
-  write(join(s2, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.fromgit": v1.capabilities["x.fromgit"] } }, null, 2));
+  write(join(s2, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.fromgit": v1.capabilities["x.fromgit"] } }, null, 2));
   const skipped = applyLegacyLockMigration(s2, { catalog, aliases, official: true });
   assert.equal(skipped.skipped, true);
   assert.deepEqual(skipped.retained, ["x.fromgit"]);
@@ -1852,7 +1852,7 @@ test("migrate: guided official mode refuses a MIXED scope — `retain` clears co
 
   // And no result shape anywhere claims residue.
   const s3 = scope(t, "scope3");
-  write(join(s3, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
+  write(join(s3, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
   assert.equal(Object.hasOwn(applyLegacyLockMigration(s3), "residue"), false);
   rmSync(t, { recursive: true, force: true });
 });
@@ -1860,33 +1860,33 @@ test("migrate: guided official mode refuses a MIXED scope — `retain` clears co
 test("migrate: guided official mode holds an unmappable official capability and leaves the scope untouched", () => {
   const t = temp();
   const s = scope(t);
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } }, null, 2));
-  const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } }, null, 2));
+  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   throwsCode(() => applyLegacyLockMigration(s, { catalog: () => undefined, official: true }), "official-mapping-unavailable", "no catalog mapping");
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before);
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before);
 });
 
 test("migrate: a failed conversion restores the original v1 lock byte-identically and removes what it created", () => {
   const t = temp();
   // Two capabilities from two packages; the second package is broken.
-  const goodRepo = pkgSource(join(t, "good", "oas-package"), { package: "x.good" }, { "capabilities/a": { capability: "x.a" } });
+  const goodRepo = pkgSource(join(t, "good", "oats-package"), { package: "x.good" }, { "capabilities/a": { capability: "x.a" } });
   const goodCommit = gitify(join(t, "good"));
-  const badRepo = join(t, "bad", "oas-package");
-  write(join(badRepo, "capabilities/b/oas.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d", skills: ["missing"] }));
-  write(join(badRepo, "oas-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/b"] }));
+  const badRepo = join(t, "bad", "oats-package");
+  write(join(badRepo, "capabilities/b/oats.json"), JSON.stringify({ capability: "x.b", version: "1.0.0", description: "d", skills: ["missing"] }));
+  write(join(badRepo, "oats-package.json"), JSON.stringify({ package: "x.bad", version: "1.0.0", description: "d", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/b"] }));
   const badCommit = gitify(join(t, "bad"));
   const catalog = (id) => ({
-    "x.good": { url: `file://${join(t, "good")}`, ref: goodCommit, path: "oas-package" },
-    "x.bad": { url: `file://${join(t, "bad")}`, ref: badCommit, path: "oas-package" },
+    "x.good": { url: `file://${join(t, "good")}`, ref: goodCommit, path: "oats-package" },
+    "x.bad": { url: `file://${join(t, "bad")}`, ref: badCommit, path: "oats-package" },
   }[id]);
   const aliases = { "x.a": "x.good", "x.b": "x.bad" };
   const s = scope(t);
   const v1 = { lockfileVersion: 1, capabilities: { "x.a": { source: "marketplace:x.a@1.0.0", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` }, "x.b": { source: "marketplace:x.b@1.0.0", version: "1.0.0", integrity: `sha256-${"b".repeat(64)}` } } };
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
+  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
 
   assert.throws(() => applyLegacyLockMigration(s, { catalog, aliases, official: true }));
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before, "original v1 lock restored byte-identically");
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before, "original v1 lock restored byte-identically");
   const installed = join(s, ".agents/capabilities/installed");
   assert.deepEqual(existsSync(installed) ? readdirSync(installed) : [], [], "every artifact the conversion created was removed");
 });
@@ -1895,9 +1895,9 @@ test("migrate: a v1 lock with only custom sources is left exactly as it is by th
   const t = temp();
   const s = scope(t);
   const v1 = { lockfileVersion: 1, capabilities: { "x.custom": { source: "git:https://example.invalid/x.git", version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } };
-  write(join(s, OAS_LOCK_FILE), JSON.stringify(v1, null, 2));
-  const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+  write(join(s, OATS_LOCK_FILE), JSON.stringify(v1, null, 2));
+  const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
   const r = applyLegacyLockMigration(s, { catalog: () => undefined, official: true });
   assert.equal(r.skipped, true);
-  assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before);
+  assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before);
 });

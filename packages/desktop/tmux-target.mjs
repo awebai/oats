@@ -50,7 +50,7 @@ export function tmuxAttachTarget(session, window) {
 /** Viewer-session name prefix: unique per app process so the orphan sweep
  * (app start/quit) is exact and can never touch foreign sessions. */
 export function viewerPrefix(pid) {
-  return `oasdesk-${pid}-`;
+  return `oatsdesk-${pid}-`;
 }
 
 /**
@@ -65,7 +65,7 @@ export function viewerPrefix(pid) {
  * both silently steer the tab to ANOTHER AGENT under a stale label. The
  * viewer is therefore an independent ephemeral session containing ONLY a
  * link to the exact requested window:
- *   1. create placeholder session (unique unpredictable oasdesk- name);
+ *   1. create placeholder session (unique unpredictable oatsdesk- name);
  *   2. link-window the =-anchored exact source window in;
  *   3. kill the placeholder window — the link is the sole window;
  *   4. lock the viewer: prefix/prefix2 None + a dedicated key-table —
@@ -107,7 +107,7 @@ let viewerSeq = 0;
  * (next/last/new/select-window...) exist here — that is the lock.
  * Exported so tests can assert the exact provisioned set. */
 export const LOCKED_TABLE_BINDINGS = [
-  // argv tail for: tmux bind-key -T oasdesk-locked <key> <command...>
+  // argv tail for: tmux bind-key -T oatsdesk-locked <key> <command...>
   ["WheelUpPane", "if-shell", "-F", "#{||:#{pane_in_mode},#{mouse_any_flag}}", "send-keys -M", "copy-mode -e; send-keys -M"],
 ];
 
@@ -140,14 +140,14 @@ export function openTerm(spec, io) {
     //    unique random name cannot prefix-collide.)
     io.tmux(["set-option", "-t", viewer, "prefix", "None"]);
     io.tmux(["set-option", "-t", viewer, "prefix2", "None"]);
-    io.tmux(["set-option", "-t", viewer, "key-table", "oasdesk-locked"]);
+    io.tmux(["set-option", "-t", viewer, "key-table", "oatsdesk-locked"]);
     // key tables are SERVER-GLOBAL and bind-key only replaces its own key —
-    // a stale/custom binding in oasdesk-locked (from an older app run or a
+    // a stale/custom binding in oatsdesk-locked (from an older app run or a
     // user's config) would survive into every viewer. Clear the app-owned
     // table first, then install exactly the allow-list.
-    io.tmux(["unbind-key", "-a", "-q", "-T", "oasdesk-locked"]);
+    io.tmux(["unbind-key", "-a", "-q", "-T", "oatsdesk-locked"]);
     for (const binding of LOCKED_TABLE_BINDINGS) {
-      io.tmux(["bind-key", "-T", "oasdesk-locked", ...binding]);
+      io.tmux(["bind-key", "-T", "oatsdesk-locked", ...binding]);
     }
     // wheel needs tmux mouse handling in the viewer
     io.tmux(["set-option", "-t", viewer, "mouse", "on"]);
@@ -162,8 +162,8 @@ export function openTerm(spec, io) {
 
 /**
  * Sweep orphaned viewer sessions (crashed app instances). Safe and exact:
- * only sessions whose name starts with the oasdesk- prefix are killed —
- * optionally scoped to a specific pid's prefix, else any oasdesk- session
+ * only sessions whose name starts with the oatsdesk- prefix are killed —
+ * optionally scoped to a specific pid's prefix, else any oatsdesk- session
  * whose pid is no longer alive.
  *
  * @param {object} io
@@ -175,7 +175,7 @@ export function openTerm(spec, io) {
 export function sweepViewers(io) {
   const swept = [];
   for (const name of io.listSessions()) {
-    const m = name.match(/^oasdesk-(\d+)-/);
+    const m = name.match(/^oatsdesk-(\d+)-/);
     if (!m) continue;
     const pid = Number(m[1]);
     if (pid === process.pid) continue;      // our own live viewers

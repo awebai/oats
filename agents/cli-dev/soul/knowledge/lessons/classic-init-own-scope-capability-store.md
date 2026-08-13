@@ -1,15 +1,15 @@
 ---
 type: Lesson
 title: Classic init must read its own capability store directly
-description: During oas init no config exists at the target scope yet, so config-chain capability discovery cannot see that scope's installed or owned capability stores; init must consult its own store before the chain.
+description: During oats init no config exists at the target scope yet, so config-chain capability discovery cannot see that scope's installed or owned capability stores; init must consult its own store before the chain.
 tags: [cli, init, capabilities, config-chain, capability-materialization]
 timestamp: 2026-07-29
 ---
 
 # The blind spot
 
-`capabilityManifests(startDir)` walks the **config chain**. During `oas init`,
-the target scope has no `oas-config.yaml` yet, so that scope is not a chain
+`capabilityManifests(startDir)` walks the **config chain**. During `oats init`,
+the target scope has no `oats-config.yaml` yet, so that scope is not a chain
 level. Its own `.agents/capabilities/installed/` and
 `.agents/capabilities/owned/` trees are invisible to chain discovery.
 

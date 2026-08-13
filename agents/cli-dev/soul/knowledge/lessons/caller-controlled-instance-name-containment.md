@@ -8,9 +8,9 @@ timestamp: 2026-07-24
 
 # Lesson
 
-Maintainer reproduced that `oas retire ../../dev/soul` existence-matched via
+Maintainer reproduced that `oats retire ../../dev/soul` existence-matched via
 `join(agentDir, "instances", name)` and recursively deleted the canonical
-soul; `oas spawn --parent ../../dev/soul` also recorded malformed lineage.
+soul; `oats spawn --parent ../../dev/soul` also recorded malformed lineage.
 `existsSync` on a joined caller-controlled path is not a containment check.
 
 The hardening pattern lives in `findInstanceHome`, the shared by-name instance

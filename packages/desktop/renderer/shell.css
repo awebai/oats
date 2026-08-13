@@ -1,5 +1,5 @@
-/* OAS desktop — shell chrome. View surfaces style themselves via theme.css
-   design tokens (scoped under .oas-view); the chrome uses the same tokens. */
+/* OATS desktop — shell chrome. View surfaces style themselves via theme.css
+   design tokens (scoped under .oats-view); the chrome uses the same tokens. */
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; margin: 0; }
 body {

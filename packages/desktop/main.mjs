@@ -1,10 +1,10 @@
-// OAS desktop — Electron main process.
+// OATS desktop — Electron main process.
 //
 // Responsibilities (per the desktop-app contract):
 //   * window + security posture: contextIsolation ON, nodeIntegration OFF,
 //     all privileged work behind explicit IPC channels.
 //   * server management: connect to a running desktop backend server (default
-//     127.0.0.1:4820) or spawn the bundled `server/oas-web.mjs start`
+//     127.0.0.1:4820) or spawn the bundled `server/oats-web.mjs start`
 //     as a child; the renderer's ctx.api() proxies to it over IPC.
 //   * integrated terminal: node-pty running `tmux attach-session` per
 //     terminal tab, bytes streamed to xterm.js over IPC. Closing a tab kills
@@ -29,16 +29,16 @@ const pty = require("node-pty");
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-let port = Number(process.env.OAS_DESKTOP_PORT || 4820);
+let port = Number(process.env.OATS_DESKTOP_PORT || 4820);
 const base = () => `http://127.0.0.1:${port}`;
-// Workspace the panel shows: --dir <path> or OAS_DESKTOP_DIR or the cwd the
+// Workspace the panel shows: --dir <path> or OATS_DESKTOP_DIR or the cwd the
 // app was launched from. The packaged app never infers a framework repo root
-// — with no OAS deployment in view the renderer shows the workspace picker.
+// — with no OATS deployment in view the renderer shows the workspace picker.
 const argDir = (() => {
   const i = process.argv.indexOf("--dir");
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : undefined;
 })();
-const WORKSPACE = resolve(argDir || process.env.OAS_DESKTOP_DIR || process.cwd());
+const WORKSPACE = resolve(argDir || process.env.OATS_DESKTOP_DIR || process.cwd());
 // Mutable workspace set: startup workspace plus runtime-added ones — the
 // repeated --dir list an app-owned server is (re)started with.
 const workspaceDirs = [WORKSPACE];
@@ -48,19 +48,19 @@ const workspaceDirs = [WORKSPACE];
 // through-transition invariant, and trust-state invalidation on replace.
 const serverHost = createServerHost({
   spawnChild: (dirs, onPort) => {
-    const bin = join(HERE, "server", "oas-web.mjs");
+    const bin = join(HERE, "server", "oats-web.mjs");
     if (!existsSync(bin)) throw new Error(`desktop backend server not found at ${bin} and no usable server on port ${onPort}`);
-    // The persisted user-chosen oas binary (if any) rides along as the
+    // The persisted user-chosen oats binary (if any) rides along as the
     // server's top-priority discovery candidate; the server re-probes it.
     const chosen = readCliChoice();
     const child = spawn(process.execPath, [bin, "start", "--port", String(onPort),
-      ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oas-bin", chosen] : [])], {
+      ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : [])], {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: WORKSPACE,
       env: { ...process.env },
     });
-    child.stdout.on("data", (d) => process.stdout.write(`[oas-desktop-server] ${d}`));
-    child.stderr.on("data", (d) => process.stderr.write(`[oas-desktop-server] ${d}`));
+    child.stdout.on("data", (d) => process.stdout.write(`[oats-desktop-server] ${d}`));
+    child.stderr.on("data", (d) => process.stderr.write(`[oats-desktop-server] ${d}`));
     return child;
   },
   // trust state belongs to the outgoing server — stale entries must never
@@ -133,7 +133,7 @@ async function ensureServer() {
   const r = await ensureServerOnPort({
     panelWorkspaces, probeVersion, matchWorkspace, local: localServerIdentity(),
     port, freePort: (from) => freePort(from), spawnServer: (p) => spawnServer(p),
-    log: (m) => console.log(`oas-desktop: ${m}`),
+    log: (m) => console.log(`oats-desktop: ${m}`),
   });
   port = r.port;
   if (!r.spawned) { wsId = r.wsId; return { spawned: false }; }
@@ -173,7 +173,7 @@ const RECENTS_FILE = () => join(app.getPath("userData"), "workspace-recents.json
 
 const wsValidate = (p) => validateWorkspace(p, {
   resolveConfig: (path) => resolveDeployment(path),
-  // agents/ OR local-agents/ qualifies — OAS is fully usable with local souls alone.
+  // agents/ OR local-agents/ qualifies — OATS is fully usable with local souls alone.
   hasAgentsRoot: (path) => ["agents", "local-agents"].some((d) => {
     try { return existsSync(join(path, d)) && lstatSync(join(path, d)).isDirectory(); } catch { return false; }
   }),
@@ -264,12 +264,12 @@ ipcMain.handle("workspace:pick", async (e) => {
   return performAdd(r.filePaths[0], true);
 });
 
-// ---- IPC: CLI binary picker (Choose oas…) --------------------------------
+// ---- IPC: CLI binary picker (Choose oats…) --------------------------------
 // Native file picker for the degradation card. Persistence lives here (the
 // main process owns userData); the picked path goes to the server via the
 // renderer's POST /api/cli/reprobe {bin} — the server re-validates with the
 // full probe, so a bad pick degrades with diagnostics, never trusts a path.
-const CLI_CHOICE_FILE = () => join(app.getPath("userData"), "oas-cli-choice.json");
+const CLI_CHOICE_FILE = () => join(app.getPath("userData"), "oats-cli-choice.json");
 function readCliChoice() {
   try { const p = JSON.parse(readFileSync(CLI_CHOICE_FILE(), "utf8")).bin; return typeof p === "string" && p.startsWith("/") ? p : null; }
   catch { return null; }
@@ -281,9 +281,9 @@ ipcMain.handle("cli:pick", async (e) => {
   guard(e);
   const win = BrowserWindow.fromWebContents(e.sender);
   const r = await dialog.showOpenDialog(win, {
-    title: "Choose the oas CLI binary",
+    title: "Choose the oats CLI binary",
     properties: ["openFile", "showHiddenFiles"],
-    message: "Select the oas executable (e.g. from `command -v oas`)",
+    message: "Select the oats executable (e.g. from `command -v oats`)",
   });
   if (r.canceled || !r.filePaths?.[0]) return { path: null };
   writeCliChoice(r.filePaths[0]);           // persisted — top discovery priority next launch
@@ -312,7 +312,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
 const ptys = new Map(); // id -> { pty, killViewer, wc }
 let nextPtyId = 1;
 // Resource registry (terminal-registry.mjs): DEDUPE by target + HARD CAP.
-// The main process owns the ptys and oasdesk viewer sessions, so the ceiling
+// The main process owns the ptys and oatsdesk viewer sessions, so the ceiling
 // lives here — the renderer cannot be trusted to bound it.
 const termRegistry = createTerminalRegistry({ max: MAX_TERMINALS });
 
@@ -337,7 +337,7 @@ const wcWired = new WeakSet(); // wire each renderer's lifecycle listeners once
 const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 4000 });
 
 /** Sweep viewer sessions leaked by CRASHED desktop instances (exact: only
- * oasdesk-<pid>- names whose pid is dead). Run at app start and quit. */
+ * oatsdesk-<pid>- names whose pid is dead). Run at app start and quit. */
 function sweepOrphanViewers() {
   try {
     const names = execFileSync("tmux", ["list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 4000 })
@@ -347,7 +347,7 @@ function sweepOrphanViewers() {
       killSession: (name) => tmuxRun(["kill-session", "-t", `=${name}`]),
       pidAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
     });
-    if (swept.length) console.log(`oas-desktop: swept ${swept.length} orphaned viewer session(s): ${swept.join(", ")}`);
+    if (swept.length) console.log(`oats-desktop: swept ${swept.length} orphaned viewer session(s): ${swept.join(", ")}`);
   } catch { /* no tmux server — nothing to sweep */ }
 }
 
@@ -441,7 +441,7 @@ async function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    title: "OAS Desktop",
+    title: "OATS Desktop",
     backgroundColor: "#16161e",
     webPreferences: {
       preload: join(HERE, "preload.cjs"),
@@ -484,7 +484,7 @@ app.whenReady().then(async () => {
   installAppMenu();
   sweepOrphanViewers(); // a previously crashed desktop must not leak viewer sessions
   try { await ensureServer(); }
-  catch (e) { console.error(`oas-desktop: ${e.message}`); }
+  catch (e) { console.error(`oats-desktop: ${e.message}`); }
   await createWindow();
   // Contract re-probe trigger "app focus": notify the renderer, which calls
   // POST /api/cli/reprobe (the server owns probe state and rate semantics).

@@ -1,0 +1,20 @@
+{
+  "capability": "oats.okf",
+  "command": "okf",
+  "version": "1.4.1",
+  "compatibility": { "oats": ">=0.6.2" },
+  "layer": "knowledge",
+  "description": "Knowledge layer via OKF: soul bundles, instance memory (STATE.md/log.md/notes/), continuous post-commit harvest into the soul (commit, PR, or direct-edit for local souls), craft + memory skills, validator.",
+  "requires": [],
+  "skills": [
+    "skills"
+  ],
+  "commands": {
+    "harvest": "bin/oats-okf.mjs harvest"
+  },
+  "inject": "injects/okf.md",
+  "hooks": {
+    "soul-scaffold": "bin/oats-okf.mjs soul-scaffold",
+    "spawn": "bin/oats-okf.mjs spawn"
+  }
+}

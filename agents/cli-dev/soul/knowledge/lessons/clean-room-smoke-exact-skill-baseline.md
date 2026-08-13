@@ -10,10 +10,10 @@ timestamp: 2026-07-27
 
 `scripts/clean-room-smoke.mjs` compares a spawned instance's `.agents/skills`
 directory against an exact sorted list. As of PR #51, that list is
-`["memory-harvest", "oas", "oas-config", "oas-packages", "okf", "private"]`.
+`["memory-harvest", "oats", "oats-config", "oats-packages", "okf", "private"]`.
 
 Any intentional change to which kernel skills are injected at spawn — adding a
-skill like `oas-packages`, renaming a skill, or changing injection defaults —
+skill like `oats-packages`, renaming a skill, or changing injection defaults —
 must update this list in the same commit, or `npm run smoke:tarball` can fail
 on a green product. The assertion is intentionally exact so it catches
 accidental skill leakage into packed spawns; extend the list, do not loosen it

@@ -7,7 +7,7 @@ tags: [desktop, keybindings, design]
 
 # Desktop keybindings — editable keymap architecture
 
-For "shortcuts for every mouse action, user-editable" in `packages/desktop`, the chosen architecture is a central `renderer/keybindings.mjs` action registry (`id`, `label`, `context`, `run`), a chord engine with `DEFAULT_KEYMAP` and localStorage overrides (`oas-desktop-keymap`, overrides-only JSON, storage-less-safe like `theme.mjs`), one window keydown dispatcher in `shell.mjs`, and a shell-owned editor dialog. It deliberately does not add a new nav-rail stage.
+For "shortcuts for every mouse action, user-editable" in `packages/desktop`, the chosen architecture is a central `renderer/keybindings.mjs` action registry (`id`, `label`, `context`, `run`), a chord engine with `DEFAULT_KEYMAP` and localStorage overrides (`oats-desktop-keymap`, overrides-only JSON, storage-less-safe like `theme.mjs`), one window keydown dispatcher in `shell.mjs`, and a shell-owned editor dialog. It deliberately does not add a new nav-rail stage.
 
 Key constraints that shaped it:
 

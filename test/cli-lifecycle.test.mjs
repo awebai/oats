@@ -21,10 +21,10 @@ import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
-import { OAS_LOCK_FILE, capabilityIntegrity, installedCapabilitiesDir, writeCapabilityLock } from "../lib/core.mjs";
+import { OATS_LOCK_FILE, capabilityIntegrity, installedCapabilitiesDir, writeCapabilityLock } from "../lib/core.mjs";
 
-const CLI = resolve(new URL("../bin/oas.mjs", import.meta.url).pathname);
-const temp = () => mkdtempSync(join(tmpdir(), "oas-cli-lifecycle-"));
+const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
+const temp = () => mkdtempSync(join(tmpdir(), "oats-cli-lifecycle-"));
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
 function gitify(dir) {
@@ -38,22 +38,22 @@ function gitify(dir) {
 
 /** Run the CLI. `catalog` binds a fixture catalog; `null` binds an EMPTY one so
  * no case can silently reach the real one — or the network. */
-const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oas-cli-lifecycle-home-"));
+const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-cli-lifecycle-home-"));
 function cli(argv, { catalog, cwd, env: extra } = {}) {
   // Hermetic environment. Two distinct leaks have to be closed, and neither is
   // hypothetical — both were observed:
   //   - HOME: the config/lock walk climbs to `/` and unions the laptop level,
-  //     so a developer's own ~/oas-config.yaml or ~/oas-lock.json would decide
+  //     so a developer's own ~/oats-config.yaml or ~/oats-lock.json would decide
   //     what a test sees.
-  //   - OAS_HOME / PI_AGENT_HOME (and every other OAS_*/PI_* variable): when
-  //     the suite runs inside an OAS instance, the command dispatcher finds
+  //   - OATS_HOME / PI_AGENT_HOME (and every other OATS_*/PI_* variable): when
+  //     the suite runs inside an OATS instance, the command dispatcher finds
   //     that instance's `instance.json` and re-points its whole context at the
   //     REAL repository instead of the fixture scope.
   const env = {};
-  for (const [k, v] of Object.entries(process.env)) if (!/^(OAS|PI)_/.test(k)) env[k] = v;
-  Object.assign(env, { HOME: HERMETIC_HOME, OAS_HOME_DIR: join(HERMETIC_HOME, ".oas") }, extra);
-  if (catalog) env.OAS_PACKAGE_CATALOG = catalog;
-  else delete env.OAS_PACKAGE_CATALOG;
+  for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
+  Object.assign(env, { HOME: HERMETIC_HOME, OATS_HOME_DIR: join(HERMETIC_HOME, ".oats") }, extra);
+  if (catalog) env.OATS_PACKAGE_CATALOG = catalog;
+  else delete env.OATS_PACKAGE_CATALOG;
   return spawnSync(process.execPath, [CLI, ...argv], { cwd: cwd || tmpdir(), env, encoding: "utf8" });
 }
 
@@ -97,11 +97,11 @@ function pkgSource(dir, pkgId, capabilities, extra = {}) {
     rels.push(rel);
     for (const [file, body] of Object.entries(cm._files || {})) write(join(dir, rel, file), body);
     const { _files, ...manifest } = cm;
-    write(join(dir, rel, "oas.json"), JSON.stringify({ version: "1.0.0", description: "cap", ...manifest }, null, 2));
+    write(join(dir, rel, "oats.json"), JSON.stringify({ version: "1.0.0", description: "cap", ...manifest }, null, 2));
   }
-  write(join(dir, "oas-package.json"), JSON.stringify({
+  write(join(dir, "oats-package.json"), JSON.stringify({
     package: pkgId, version: "1.0.0", description: `package ${pkgId}`,
-    compatibility: { oas: ">=0.1.0" }, capabilities: rels, ...extra,
+    compatibility: { oats: ">=0.1.0" }, capabilities: rels, ...extra,
   }, null, 2));
   return dir;
 }
@@ -114,13 +114,13 @@ function fixture(base) {
   });
 }
 
-const lockOf = (dir) => JSON.parse(readFileSync(join(dir, OAS_LOCK_FILE), "utf8"));
+const lockOf = (dir) => JSON.parse(readFileSync(join(dir, OATS_LOCK_FILE), "utf8"));
 const artifact = (dir, id) => join(dir, ".agents", "capabilities", "installed", id);
 
 /** A scope with a config, so the config chain reaches it. */
 function scope(base, name = "scope", config = "name: t\n") {
   const dir = join(base, name);
-  write(join(dir, "oas-config.yaml"), config);
+  write(join(dir, "oats-config.yaml"), config);
   return dir;
 }
 
@@ -158,7 +158,7 @@ test("bare restore JSON keeps its frozen failure envelope: unrestorable and reti
   const base = temp();
   const s = scope(base);
   // A locked package whose source no longer exists cannot be restored.
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({
     lockfileVersion: 2,
     packages: { "x.p": { source: `path:${join(base, "gone")}`, path: ".", version: "1.0.0", commit: "local", integrity: `sha256-${"a".repeat(64)}`, dependencies: [] } },
     capabilities: { "x.a": { version: "1.0.0", package: "x.p", path: "capabilities/a", integrity: `sha256-${"b".repeat(64)}`, trusted: false } },
@@ -276,7 +276,7 @@ test("a lock the reader refuses is never served as usable-but-empty: list, docto
   const base = temp();
   for (const [label, body] of REFUSED_LOCKS) {
     const s = scope(base, `s-${label.replace(/\W+/g, "-")}`);
-    write(join(s, OAS_LOCK_FILE), body);
+    write(join(s, OATS_LOCK_FILE), body);
     const before = snapshot(s);
 
     // Read paths AND write paths: a lock the central parser refuses must stop
@@ -305,13 +305,13 @@ test("migrate never rewrites a lock it does not understand, and says so with a t
   const base = temp();
   for (const [label, body] of REFUSED_LOCKS) {
     const s = scope(base, `m-${label.replace(/\W+/g, "-")}`);
-    write(join(s, OAS_LOCK_FILE), body);
-    const before = readFileSync(join(s, OAS_LOCK_FILE), "utf8");
+    write(join(s, OATS_LOCK_FILE), body);
+    const before = readFileSync(join(s, OATS_LOCK_FILE), "utf8");
     for (const argv of [["migrate", "--dry-run"], ["migrate"]]) {
       const r = cli([...argv, "--dir", s, "--json"], { cwd: s });
       assert.notEqual(r.status, 0, `${argv.join(" ")} on ${label} exited 0`);
       failEnvelope(r);
-      assert.equal(readFileSync(join(s, OAS_LOCK_FILE), "utf8"), before, `${label}: ${argv.join(" ")} rewrote the lock`);
+      assert.equal(readFileSync(join(s, OATS_LOCK_FILE), "utf8"), before, `${label}: ${argv.join(" ")} rewrote the lock`);
     }
   }
   rmSync(base, { recursive: true, force: true });
@@ -322,8 +322,8 @@ test("a retired capability keeps its typed code through install, restore and doc
   const s = scope(base);
   // A v1 lock naming a retired capability: it can never be restored, and the
   // user must be told to remove the entry rather than to reacquire it.
-  const retired = "oas.web"; // the only retired id the kernel knows
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { [retired]: { source: `marketplace:${retired}@1.0.0`, version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } }, null, 2));
+  const retired = "oats.web"; // the only retired id the kernel knows
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { [retired]: { source: `marketplace:${retired}@1.0.0`, version: "1.0.0", integrity: `sha256-${"a".repeat(64)}` } } }, null, 2));
 
   const r = cli(["install", "--no-requirements", "--dir", s, "--json"], { cwd: s });
   assert.notEqual(r.status, 0, r.stdout);
@@ -344,18 +344,18 @@ test("a retired capability keeps its typed code through install, restore and doc
 test("doctor reports a malformed v1 lock at a CONFIGLESS scope — human and JSON agree", () => {
   const base = temp();
   const ws = scope(base, "ws", "name: ws\nteam:\n  name: t\n");
-  // A lock-only scope: no oas-config.yaml, so the config chain never reaches it
+  // A lock-only scope: no oats-config.yaml, so the config chain never reaches it
   // and only the raw lock walk can see it.
   const member = join(ws, "member");
   mkdirSync(member, { recursive: true });
-  write(join(member, OAS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "a.cap": { source: "marketplace:a.cap@1", version: 1 } } }, null, 2));
+  write(join(member, OATS_LOCK_FILE), JSON.stringify({ lockfileVersion: 1, capabilities: { "a.cap": { source: "marketplace:a.cap@1", version: 1 } } }, null, 2));
 
   // Doctor is the ONE consumer that catches the fail-closed read: it still
   // reports, and it reports the fault as a single top-level `lockError` naming
   // the offending file — never as partially parsed entries.
   const dj = JSON.parse(cli(["doctor", member, "--json"], { cwd: ws }).stdout);
   assert.equal(dj.lockError?.code, "invalid-lock", JSON.stringify(dj).slice(0, 300));
-  assert.equal(dj.lockError.file, join(member, OAS_LOCK_FILE));
+  assert.equal(dj.lockError.file, join(member, OATS_LOCK_FILE));
   assert.match(dj.lockError.message, /legacy entry "a\.cap" is malformed/);
   assert.deepEqual(dj.packages, [], "a refused lock yields NO package rows");
   assert.deepEqual(dj.capabilities, [], "and no capability rows");
@@ -370,38 +370,38 @@ test("doctor reports a malformed v1 lock at a CONFIGLESS scope — human and JSO
 
 test("a capability command runs through the CLI that dispatched it: a hostile PATH cannot intercept it", () => {
   const base = temp();
-  // A capability whose command prints the oas binary its own environment names.
+  // A capability whose command prints the oats binary its own environment names.
   const src = pkgSource(join(base, "src"), "x.cmd", {
     "capabilities/c": {
       capability: "x.cmd", command: "demo",
       commands: { show: "show.mjs" },
-      _files: { "show.mjs": "console.log(JSON.stringify({ cli: process.env.OAS_CLI_BIN || null }));\n" },
+      _files: { "show.mjs": "console.log(JSON.stringify({ cli: process.env.OATS_CLI_BIN || null }));\n" },
     },
   });
   const s = scope(base, "scope", "name: t\ncapabilities:\n  additive:\n    x.cmd:\n      from: installed\n      global: true\n");
   assert.equal(cli(["install", src, "--dir", s]).status, 0);
   assert.equal(cli(["trust", "x.cmd", "--dir", s]).status, 0);
 
-  // An impostor `oas` earlier on PATH than anything else.
+  // An impostor `oats` earlier on PATH than anything else.
   const evil = join(base, "evil");
   mkdirSync(evil, { recursive: true });
-  write(join(evil, "oas"), "#!/bin/sh\necho INTERCEPTED\nexit 0\n");
-  chmodSync(join(evil, "oas"), 0o755);
+  write(join(evil, "oats"), "#!/bin/sh\necho INTERCEPTED\nexit 0\n");
+  chmodSync(join(evil, "oats"), 0o755);
 
   const r = cli(["demo", "show", "--dir", s], { cwd: s, env: { PATH: `${evil}:${process.env.PATH}` } });
   assert.equal(r.status, 0, r.stderr);
   assert.doesNotMatch(r.stdout, /INTERCEPTED/, "the impostor on PATH must never be reached");
   const seen = JSON.parse(r.stdout.trim().split("\n").at(-1));
-  assert.equal(seen.cli, CLI, "OAS_CLI_BIN names the dispatching CLI, by absolute path");
+  assert.equal(seen.cli, CLI, "OATS_CLI_BIN names the dispatching CLI, by absolute path");
   rmSync(base, { recursive: true, force: true });
 });
 
-test("the Desktop version probe is unchanged: `oas version --json` still answers without any deployment state", () => {
+test("the Desktop version probe is unchanged: `oats version --json` still answers without any deployment state", () => {
   const base = temp();
   const s = scope(base);
   // Even a scope whose lock the kernel refuses must not break the probe — it is
   // how the Desktop decides whether a kernel is usable at all.
-  write(join(s, OAS_LOCK_FILE), "{ not json");
+  write(join(s, OATS_LOCK_FILE), "{ not json");
   const r = cli(["version", "--json"], { cwd: s });
   assert.equal(r.status, 0, r.stderr);
   const doc = JSON.parse(r.stdout);
@@ -417,7 +417,7 @@ test("a dispatched command receives its capability identity and EFFECTIVE settin
   const src = pkgSource(join(base, "src"), "s.p", {
     "capabilities/c": {
       capability: "s.cap", command: "svc", commands: { env: "env.mjs" },
-      _files: { "env.mjs": "console.log(JSON.stringify({ cap: process.env.OAS_CAPABILITY, settings: process.env.OAS_SETTINGS, team: process.env.OAS_TEAM_NAME }));\n" },
+      _files: { "env.mjs": "console.log(JSON.stringify({ cap: process.env.OATS_CAPABILITY, settings: process.env.OATS_SETTINGS, team: process.env.OATS_TEAM_NAME }));\n" },
     },
   });
   // Two scopes declare the SAME capability with different settings: the value
@@ -431,7 +431,7 @@ test("a dispatched command receives its capability identity and EFFECTIVE settin
     const r = cli(["svc", "env", "--dir", dir], { cwd: dir });
     assert.equal(r.status, 0, r.stderr);
     const seen = JSON.parse(r.stdout.trim().split("\n").at(-1));
-    assert.equal(seen.cap, "s.cap", "OAS_CAPABILITY names the dispatching capability");
+    assert.equal(seen.cap, "s.cap", "OATS_CAPABILITY names the dispatching capability");
     assert.deepEqual(JSON.parse(seen.settings), { level }, `${name}: settings came from the wrong scope`);
     assert.equal(seen.team, "crew", "the team context travels with the dispatch");
   }
@@ -484,7 +484,7 @@ test("after conversion the scope holds ZERO v1 locks and no package store anywhe
   const s = scope(base);
   // Start from a real 0.18 scope: a v1 capability lock whose source is a tree
   // that DOES export a distribution package, which is what makes it convertible.
-  write(join(s, OAS_LOCK_FILE), JSON.stringify({
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({
     lockfileVersion: 1,
     capabilities: { "x.plain": { source: `path:${src}`, version: "1.0.0", commit: "local", integrity: `sha256-${"0".repeat(64)}`, trustedExecutables: false } },
   }, null, 2));
@@ -579,7 +579,7 @@ test("the Git package probe precedes the standalone route: it falls back only wh
   // (a) No package manifest anywhere, but a capability root: the CLI falls back
   // to the standalone route and locks it the v1 way, transactionally.
   const plainRepo = join(base, "plain");
-  write(join(plainRepo, "oas.json"), JSON.stringify({ capability: "s.cap", version: "1.0.0", description: "standalone" }, null, 2));
+  write(join(plainRepo, "oats.json"), JSON.stringify({ capability: "s.cap", version: "1.0.0", description: "standalone" }, null, 2));
   const a = scope(base, "a");
   assert.equal(cli(["install", gitRepo(plainRepo), "--dir", a]).status, 0);
   const v1 = lockOf(a);
@@ -595,34 +595,34 @@ test("the Git package probe precedes the standalone route: it falls back only wh
   const none = cli(["install", gitRepo(emptyRepo), "--dir", b, "--json"]);
   assert.notEqual(none.status, 0);
   const err = failEnvelope(none);
-  assert.match(err.message, /no oas-package\.json at package path "oas-package"/);
-  assert.match(err.message, /no oas\.json at its root/);
-  assert.equal(existsSync(join(b, OAS_LOCK_FILE)), false, "a refused probe left a lock behind");
+  assert.match(err.message, /no oats-package\.json at package path "oats-package"/);
+  assert.match(err.message, /no oats\.json at its root/);
+  assert.equal(existsSync(join(b, OATS_LOCK_FILE)), false, "a refused probe left a lock behind");
 
   // (c) A BROKEN package manifest is a package error, never a silent demotion
-  // to the standalone route — even when a usable oas.json sits at the root.
+  // to the standalone route — even when a usable oats.json sits at the root.
   const brokenRepo = join(base, "broken");
-  write(join(brokenRepo, "oas-package", "oas-package.json"), "{ not json");
-  write(join(brokenRepo, "oas.json"), JSON.stringify({ capability: "decoy.cap", version: "1.0.0", description: "decoy" }, null, 2));
+  write(join(brokenRepo, "oats-package", "oats-package.json"), "{ not json");
+  write(join(brokenRepo, "oats.json"), JSON.stringify({ capability: "decoy.cap", version: "1.0.0", description: "decoy" }, null, 2));
   const c = scope(base, "c");
   const broken = cli(["install", gitRepo(brokenRepo), "--dir", c, "--json"]);
   assert.notEqual(broken.status, 0, "a broken package manifest was silently demoted to the standalone route");
   assert.doesNotMatch(JSON.stringify(failEnvelope(broken)), /decoy\.cap/, "the decoy capability must never be reached");
-  assert.equal(existsSync(join(c, OAS_LOCK_FILE)), false, "a failed package probe left a lock behind");
+  assert.equal(existsSync(join(c, OATS_LOCK_FILE)), false, "a failed package probe left a lock behind");
 
   // (d) A repository that DOES carry a package at its root, but nothing at the
   // default package path, must not downgrade to the standalone route either —
   // it is told exactly how to select the root instead.
   const rootPkgRepo = join(base, "rootpkg");
   pkgSource(rootPkgRepo, "r.p", { "capabilities/c": { capability: "r.cap" } });
-  write(join(rootPkgRepo, "oas.json"), JSON.stringify({ capability: "decoy2.cap", version: "1.0.0", description: "decoy" }, null, 2));
+  write(join(rootPkgRepo, "oats.json"), JSON.stringify({ capability: "decoy2.cap", version: "1.0.0", description: "decoy" }, null, 2));
   const d = scope(base, "d");
   const rooted = cli(["install", gitRepo(rootPkgRepo), "--dir", d, "--json"]);
   assert.notEqual(rooted.status, 0, "a root package was skipped in favour of the standalone route");
   const rootedErr = failEnvelope(rooted, "invalid-package-manifest");
-  assert.match(rootedErr.message, /oas-package\.json at the repository ROOT/);
+  assert.match(rootedErr.message, /oats-package\.json at the repository ROOT/);
   assert.match(rootedErr.message, /#\./, "the message names the exact spelling that selects the root");
-  assert.equal(existsSync(join(d, OAS_LOCK_FILE)), false);
+  assert.equal(existsSync(join(d, OATS_LOCK_FILE)), false);
   // And that spelling actually works.
   assert.equal(cli(["install", `${gitRepo(rootPkgRepo)}#.`, "--dir", d]).status, 0);
   assert.equal(lockOf(d).packages["r.p"].path, ".");
@@ -673,13 +673,13 @@ test("an upstream package-root move: restore stays exact, a git selection is sti
   assert.equal(lockOf(git).packages["g.p"].path, "pkgs/x", "a failed update moved the lock");
   // And acquisition never advances a locked source, whatever path you name.
   // The refusal must name the route that can ACTUALLY resolve it: for a git
-  // spec that is remove + re-install, never `oas update` (which would keep the
+  // spec that is remove + re-install, never `oats update` (which would keep the
   // sticky selection and fail on the stale path).
   const reacquire = cli(["install", `${url}#packages/x`, "--dir", git, "--json"], { cwd: git });
   const gitErr = failEnvelope(reacquire, "integrity-drift");
-  assert.match(gitErr.message, /oas remove g\.p/);
+  assert.match(gitErr.message, /oats remove g\.p/);
   assert.match(gitErr.message, /config or dependent packages/, "removal blockers are stated up front");
-  assert.doesNotMatch(gitErr.message, /use `oas update/, "update cannot move a sticky git selection");
+  assert.doesNotMatch(gitErr.message, /use `oats update/, "update cannot move a sticky git selection");
 
   // A CATALOG entry owns its path, so an explicit update adopts the moved root
   // — and says so, even though the payload bytes are unchanged.
@@ -695,10 +695,10 @@ test("an upstream package-root move: restore stays exact, a git selection is sti
   assert.doesNotMatch(human.stdout, /MOVED/, "a second update has nothing left to move");
 
   // The catalog branch of the same refusal: re-acquiring a catalog package whose
-  // root has moved DOES point at `oas update`, because the catalog owns the path.
+  // root has moved DOES point at `oats update`, because the catalog owns the path.
   const catErr = failEnvelope(cli(["install", "g.p", "--dir", cat2, "--json"], { cwd: cat2, catalog: catalogFile }), "integrity-drift");
-  assert.match(catErr.message, /use `oas update g\.p`/);
-  assert.doesNotMatch(catErr.message, /oas remove/);
+  assert.match(catErr.message, /use `oats update g\.p`/);
+  assert.doesNotMatch(catErr.message, /oats remove/);
   rmSync(base, { recursive: true, force: true });
 });
 
@@ -732,7 +732,7 @@ test("a hostile capability id in a raw lock is refused by the READER — every c
   for (const [i, id] of HOSTILE_CAPABILITY_IDS.entries()) {
     const s = scope(base, `raw-${i}`);
     // Hand-written lock: the key never passed through any writer.
-    write(join(s, OAS_LOCK_FILE), `{
+    write(join(s, OATS_LOCK_FILE), `{
       "lockfileVersion": 2,
       "packages": { "a.p": { "source": "path:/x", "path": ".", "version": "1.0.0", "commit": "local", "integrity": "sha256-${"0".repeat(64)}", "dependencies": [] } },
       "capabilities": { ${JSON.stringify(id)}: { "version": "1.0.0", "package": "a.p", "path": "capabilities/a", "integrity": "sha256-${"1".repeat(64)}", "trusted": false } }
@@ -786,7 +786,7 @@ test("prototype-shaped ids that DO satisfy the grammar are ordinary data, and fo
   // the artifact path are the real ones, and both artifacts exist side by side.
   for (const c of listed) {
     assert.equal(c.package, "p.p", `${c.capability} lost its provider`);
-    assert.equal(existsSync(join(artifact(s, c.capability), "oas.json")), true, `${c.capability} was not materialized`);
+    assert.equal(existsSync(join(artifact(s, c.capability), "oats.json")), true, `${c.capability} was not materialized`);
   }
   rmSync(base, { recursive: true, force: true });
 });
@@ -805,9 +805,9 @@ test("a package exporting a hostile capability id cannot be acquired — nothing
   const MANIFEST_FAULTS = ["../evil", "sub/child", "/etc/passwd", "x@1.0.0"];
   for (const [i, id] of [...MANIFEST_FAULTS, "__proto__", "constructor"].entries()) {
     const src = join(base, `src-${i}`);
-    write(join(src, "capabilities/a/oas.json"), JSON.stringify({ capability: id, version: "1.0.0", description: "hostile" }, null, 2));
-    write(join(src, "oas-package.json"), JSON.stringify({
-      package: "h.p", version: "1.0.0", description: "hostile", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"],
+    write(join(src, "capabilities/a/oats.json"), JSON.stringify({ capability: id, version: "1.0.0", description: "hostile" }, null, 2));
+    write(join(src, "oats-package.json"), JSON.stringify({
+      package: "h.p", version: "1.0.0", description: "hostile", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"],
     }, null, 2));
     const s = scope(base, `acq-${i}`);
     const before = snapshot(s);
@@ -817,7 +817,7 @@ test("a package exporting a hostile capability id cannot be acquired — nothing
     assert.equal(code, MANIFEST_FAULTS.includes(id) ? "invalid-package-manifest" : "invalid-source",
       `${JSON.stringify(id)} was refused with an unexpected code`);
     assert.deepEqual(snapshot(s), before, `a refused export mutated the scope: ${JSON.stringify(id)}`);
-    assert.equal(existsSync(join(s, OAS_LOCK_FILE)), false, "a refused acquisition wrote a lock");
+    assert.equal(existsSync(join(s, OATS_LOCK_FILE)), false, "a refused acquisition wrote a lock");
     assert.equal(existsSync(join(base, "evil")), false);
   }
   rmSync(base, { recursive: true, force: true });
@@ -832,17 +832,17 @@ test("nested scopes locking the same package id at different versions keep their
   // so the inner x.p@2 row is what `locks.packages["x.p"]` returns even for the
   // outer scope's x.b. Provenance must not come from there.
   const outerSrc = pkgSource(join(base, "outer-src"), "x.p", { "capabilities/b": { capability: "x.b" } }, { version: "1.0.0" });
-  write(join(outerSrc, "oas-package.json"), JSON.stringify({
-    package: "x.p", version: "1.0.0", description: "outer", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/b"],
+  write(join(outerSrc, "oats-package.json"), JSON.stringify({
+    package: "x.p", version: "1.0.0", description: "outer", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/b"],
   }, null, 2));
   const innerSrc = pkgSource(join(base, "inner-src"), "x.p", { "capabilities/a": { capability: "x.a", commands: { go: "go.mjs" }, _files: { "go.mjs": "//\n" } } });
-  write(join(innerSrc, "oas-package.json"), JSON.stringify({
-    package: "x.p", version: "2.0.0", description: "inner", compatibility: { oas: ">=0.1.0" }, capabilities: ["capabilities/a"],
+  write(join(innerSrc, "oats-package.json"), JSON.stringify({
+    package: "x.p", version: "2.0.0", description: "inner", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/a"],
   }, null, 2));
 
   const outer = scope(base, "outer");
   const inner = join(outer, "inner");
-  write(join(inner, "oas-config.yaml"), "name: inner\n");
+  write(join(inner, "oats-config.yaml"), "name: inner\n");
   assert.equal(cli(["install", outerSrc, "--dir", outer]).status, 0);
   assert.equal(cli(["install", innerSrc, "--dir", inner]).status, 0);
   assert.equal(lockOf(outer).packages["x.p"].version, "1.0.0");
@@ -868,11 +868,11 @@ test("nested scopes locking the same package id at different versions keep their
 
   // Trusting the package from the inner scope writes ONLY inner rows: the outer
   // lock is not this command's to rewrite.
-  const outerBefore = readFileSync(join(outer, OAS_LOCK_FILE), "utf8");
+  const outerBefore = readFileSync(join(outer, OATS_LOCK_FILE), "utf8");
   const t = cli(["trust", "x.p", "--all-capabilities", "--dir", inner, "--json"], { cwd: inner });
   assert.equal(t.status, 0, t.stdout);
   assert.deepEqual(okEnvelope(t).approved, ["x.a"], "a bulk approval crossed a lock level");
-  assert.equal(readFileSync(join(outer, OAS_LOCK_FILE), "utf8"), outerBefore, "the outer lock was rewritten");
+  assert.equal(readFileSync(join(outer, OATS_LOCK_FILE), "utf8"), outerBefore, "the outer lock was rewritten");
   assert.equal(lockOf(inner).capabilities["x.a"].trusted, true);
   assert.equal(lockOf(outer).capabilities["x.b"].trusted, false, "an outer capability was silently trusted");
   rmSync(base, { recursive: true, force: true });

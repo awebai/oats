@@ -2,7 +2,7 @@
 // so the reuse decision is unit-testable (and mutation-checkable).
 //
 // Reusing ANY server that answers /api/panel is not enough: an OLDER
-// installed backend (e.g. an old oas-web panel on the default port) passes the
+// installed backend (e.g. an old oats-web panel on the default port) passes the
 // workspace probe while lacking the desktop endpoints (/api/version,
 // /api/brain, /api/file) — Brain then 404s and looks broken.
 // Reuse requires the server to identify itself as THIS checkout's bundled server:

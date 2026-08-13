@@ -108,7 +108,7 @@ test("decideAdd: non-workspace paths rejected even from the picker", () => {
   const r = decideAdd("/w/junk", addIo({ fromPicker: true, realpath: (p) => p }));
   assert.equal(r.ok, false);
   assert.equal(r.code, "not-a-workspace");
-  assert.match(r.reason, /not an OAS workspace/);
+  assert.match(r.reason, /not an OATS workspace/);
 });
 
 test("generations: reverse completion — a stale request's completion is not current", () => {
@@ -143,8 +143,8 @@ function execHarness(over = {}) {
     commitRecent: (p) => state.recents.push(p),
     replaceServer: async (d) => { state.serverDirs = d; state.replacements.push([...d]); state.advertisedValid = false; },
     refreshAdvertised: async () => { state.advertisedValid = true; state.refreshes = (state.refreshes || 0) + 1; return true; },
-    probeVersion: async () => { state.probes++; return over.version ?? { ok: true, body: { capability: "@oas-framework/desktop", version: "1" } }; },
-    isCompatible: over.isCompatible ?? ((v) => v?.body?.capability === "@oas-framework/desktop"),
+    probeVersion: async () => { state.probes++; return over.version ?? { ok: true, body: { capability: "@awebai/oats-desktop", version: "1" } }; },
+    isCompatible: over.isCompatible ?? ((v) => v?.body?.capability === "@awebai/oats-desktop"),
     advertises: over.advertises ?? (async () => true),
     delay: async () => {},
     attempts: 3,
@@ -251,7 +251,7 @@ test("executor: a THROWING readiness callback still restores and reports server-
       commitRecent: (p) => state.recents.push(p),
       replaceServer: async (d) => { state.serverDirs = d; state.replacements.push([...d]); state.advertisedValid = false; },
       refreshAdvertised: async () => { state.advertisedValid = true; return true; },
-      probeVersion: broken.probeVersion ?? (async () => ({ ok: true, body: { capability: "@oas-framework/desktop", version: "1" } })),
+      probeVersion: broken.probeVersion ?? (async () => ({ ok: true, body: { capability: "@awebai/oats-desktop", version: "1" } })),
       isCompatible: broken.isCompatible ?? ((v) => true),
       advertises: broken.advertises ?? (async () => true),
       delay: async () => {},

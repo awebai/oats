@@ -1,8 +1,8 @@
 ---
 name: integration-craft
 description: >-
-  Shared procedure for building OAS capability packages and fundamental-layer
-  integrations: namespaced oas.json manifests, skills/instructions, external
+  Shared procedure for building OATS capability packages and fundamental-layer
+  integrations: namespaced oats.json manifests, skills/instructions, external
   requirements, commands/hooks, acquisition/trust, targeting tests, and probe
   verification. Use before layer-specific authoring or when a package fails to
   resolve, activate, compose, or execute.
@@ -21,7 +21,7 @@ layer. General packages omit `layer` and compose additively.
   "capability": "vendor.team-chat",
   "command": "team-chat",
   "version": "1.0.0",
-  "compatibility": { "oas": ">=0.6.2" },
+  "compatibility": { "oats": ">=0.6.2" },
   "description": "Messaging through Team Chat.",
   "layer": "messaging",
   "requires": [{ "command": "team-chat", "why": "send messages" }],
@@ -54,10 +54,10 @@ order.
 
 1. Framework contribution: `capabilities/<name>/`.
 2. Config-owned local package: `<level>/.agents/capabilities/<name>/`.
-3. External package: own git repo, acquired with `oas install`.
+3. External package: own git repo, acquired with `oats install`.
 
 External artifacts require source + exact version/commit + integrity in
-`oas-lock.json`. Commands/hooks require `oas trust` for that integrity.
+`oats-lock.json`. Commands/hooks require `oats trust` for that integrity.
 Skill/instruction-only packages still require lock integrity. Acquisition does
 not activate; activation never silently downloads or updates.
 
@@ -86,8 +86,8 @@ provider for the same target errors.
 
 ## Hooks and commands
 
-Hooks receive `OAS_CAPABILITY`, `OAS_LAYER`, standard lifecycle/context vars,
-`OAS_SETTINGS`, and prior `OAS_META`. Emit final JSON `{meta, brief, warning}`.
+Hooks receive `OATS_CAPABILITY`, `OATS_LAYER`, standard lifecycle/context vars,
+`OATS_SETTINGS`, and prior `OATS_META`. Emit final JSON `{meta, brief, warning}`.
 Design hooks idempotently and degrade external outages to clear warnings.
 Scaffold hooks must not overwrite canonical or another package's files.
 
@@ -97,7 +97,7 @@ denied dispatch.
 
 ## Verification checklist
 
-1. Resolve a temp config with `resolveOasConfig(repo, soulName)`; inspect
+1. Resolve a temp config with `resolveOatsConfig(repo, soulName)`; inspect
    capabilities, layer, provenance, settings, and trust.
 2. Spawn pi and Claude scaffold-only probes. Both must contain the same exact
    `.agents/skills`. An unrelated ancestor skill must be absent. Use matching
@@ -113,7 +113,7 @@ denied dispatch.
 6. For external packages, test unlocked, untrusted executable, trusted exact
    integrity, tampered integrity paths, and manifest paths or symlinks that
    escape the locked artifact.
-7. Run `oas doctor <repo> --soul <name>` and retire the probe.
+7. Run `oats doctor <repo> --soul <name>` and retire the probe.
 
 Gotcha: `spawnInstance` takes the agent object returned by `findAgent`, not a
 name string.
@@ -123,8 +123,8 @@ name string.
 Leave explicit commands; do not activate without approval:
 
 ```bash
-oas install <source> --dir <level>
-oas trust <id> --dir <level>          # executable packages only
-oas use <id> --group <group> --dir <level>
-oas doctor <repo> --soul <name>
+oats install <source> --dir <level>
+oats trust <id> --dir <level>          # executable packages only
+oats use <id> --group <group> --dir <level>
+oats doctor <repo> --soul <name>
 ```

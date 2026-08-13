@@ -57,7 +57,7 @@ or thin-reporting policy rather than resolver truth:
 
 Check these call sites when deleting the seam:
 
-- `bin/oas.mjs` `dependencyClosureCapabilities` should use the engine lock
+- `bin/oats.mjs` `dependencyClosureCapabilities` should use the engine lock
   graph. Dependencies are recorded by identity, so drop source-string parsing.
 - `initPackage`'s acquisition branch should call engine `acquirePackage` for
   all source kinds, not only local sources.
@@ -66,5 +66,5 @@ Check these call sites when deleting the seam:
 - Error codes already align; keep engine `legacy-lock` and `integrity-drift`
   errors intact instead of catching and converting them to prose.
 - `installFixturePackage` should stop writing test locks directly and use
-  engine `acquirePackage` calls. Keep the `oas.dev` fixture shapes centralized
-  in `oasDevFixture` for alignment with the amended engine head and WS3 plan.
+  engine `acquirePackage` calls. Keep the `oats.dev` fixture shapes centralized
+  in `oatsDevFixture` for alignment with the amended engine head and WS3 plan.

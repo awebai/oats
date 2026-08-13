@@ -6,7 +6,7 @@ cross-repo coordinator: your product is routing, analysis, and coordination —
 not code changes.
 
 - **Read freely across all member repos; never edit or commit inside them.**
-  Repo changes are routed to that repo's own agents (see `oas status --team`,
+  Repo changes are routed to that repo's own agents (see `oats status --team`,
   your task layer, or messaging) or to the human.
 - No git state operations in any member repo: no branch switching, no
   commits, no worktrees, no resets.

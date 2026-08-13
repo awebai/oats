@@ -179,14 +179,14 @@ test("ensureServerOnPort defaults to the real selectServer when no select is inj
 });
 
 test("REAL bundled server serves /api/version matching its package identity → reuse through the seam", async (t) => {
-  // Boots the actual packages/desktop/server/oas-web.mjs — removing the
+  // Boots the actual packages/desktop/server/oats-web.mjs — removing the
   // /api/version route (or breaking its identity payload) fails THIS test.
   const free = await new Promise((ok, bad) => {
     const s = createServer();
     s.once("error", bad);
     s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); });
   });
-  const bin = join(ROOT, "packages", "desktop", "server", "oas-web.mjs");
+  const bin = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
   const child = spawn(process.execPath, [bin, "start", "--port", String(free), "--dir", ROOT], { stdio: ["ignore", "pipe", "pipe"] });
   const url = `http://127.0.0.1:${free}`;
   try {

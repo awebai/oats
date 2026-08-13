@@ -1,7 +1,7 @@
 ---
 type: Lesson
 title: Team scope and cross-repo spawn are CLI root resolution, not kernel changes
-description: The team block declares the deployment boundary and teamAgentRoots scans it, but cross-repo spawn/retire landed almost entirely in bin/oas.mjs as a resolution-layer fallback because spawnInstance already homes under the agent's own dir — and instance names are only unique per agent dir, so instance lookups must stay local-first.
+description: The team block declares the deployment boundary and teamAgentRoots scans it, but cross-repo spawn/retire landed almost entirely in bin/oats.mjs as a resolution-layer fallback because spawnInstance already homes under the agent's own dir — and instance names are only unique per agent dir, so instance lookups must stay local-first.
 tags: [team, cross-repo, spawn, teamAgentRoots, findTeamAgent, cli]
 timestamp: 2026-07-25
 ---
@@ -25,9 +25,9 @@ the discovery mechanism.
 Key insight: `spawnInstance(root, agent, o)` already homes the instance under
 `agent._dir` and resolves config from the work repo's absolute path — so
 cross-repo spawn needed **no kernel spawn changes**, only resolution in
-`spawnCmd`/`retireCmd` (bin/oas.mjs):
+`spawnCmd`/`retireCmd` (bin/oats.mjs):
 
-- `oas spawn <soul>`: local agent first; if not found and a `team:` resolves,
+- `oats spawn <soul>`: local agent first; if not found and a `team:` resolves,
   `findTeamAgent` searches team roots — a **unique** remote match redirects
   the root (with a printed notice), multiple matches error with `--dir`
   guidance, local souls always shadow remote ones.
@@ -40,8 +40,8 @@ cross-repo spawn needed **no kernel spawn changes**, only resolution in
 # The instance-name lesson
 
 **Instance names are only unique per agent dir** (they're `<agent>-N` under
-`<agent>/instances/`). So `oas retire <instance>` and instance lookups must
+`<agent>/instances/`). So `oats retire <instance>` and instance lookups must
 be **local-first**, with team-wide fallback (`findTeamInstance`) only when
 nothing matches locally — this was caught by test, not by design.
 
-Reference decision: `agents/oas-expert/soul/knowledge/decisions/team-as-config-entity.md`.
+Reference decision: `agents/oats-expert/soul/knowledge/decisions/team-as-config-entity.md`.

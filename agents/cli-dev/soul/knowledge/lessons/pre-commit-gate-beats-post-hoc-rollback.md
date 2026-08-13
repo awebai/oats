@@ -17,7 +17,7 @@ const removed = before.capabilities.filter((c) => !after.capabilities.includes(c
 if (removed.length && blockers.length) {
   // "put the previous version back"
   try { acquirePackage(level, previousSpec, { replace: true, expectPackage: packageId }); } catch {}
-  throw oasError("remove-blocked", ...);
+  throw oatsError("remove-blocked", ...);
 }
 ```
 
@@ -25,7 +25,7 @@ For a `path:` source — and for any git source whose selected root changed — 
 recovery re-acquires **from the source that just dropped the export**. It cannot
 put the old capability back. The observable result: `remove-blocked` was raised
 correctly, but the lock had already lost the dropped capability's row while its
-artifact directory was still on disk. The *next* `oas update` then saw
+artifact directory was still on disk. The *next* `oats update` then saw
 `before.capabilities` without it, computed `removedCapabilities: []`, and the
 orphaned artifact was never retired.
 

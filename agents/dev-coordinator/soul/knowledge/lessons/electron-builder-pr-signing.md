@@ -13,7 +13,7 @@ tags:
 
 A build-only pull-request workflow can fail to rehearse the real macOS release path even when the electron-builder configuration requests ad-hoc signing. electron-builder detects pull-request environments through variables such as `GITHUB_BASE_REF` and skips Mac signing unless `CSC_FOR_PULL_REQUEST=true` is set.
 
-For OAS's credential-free ad-hoc signing contract, the build-only installer workflow needed:
+For OATS's credential-free ad-hoc signing contract, the build-only installer workflow needed:
 
 ```yaml
 env:

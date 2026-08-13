@@ -33,7 +33,7 @@ digest that does not describe the bytes on disk is worse than no digest.
 const TEMPLATE_DECODER = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 const bytes = readFileSync(file);                       // Buffer
 try { content = TEMPLATE_DECODER.decode(bytes); }
-catch { throw oasError("invalid-package-manifest", `... is not valid UTF-8`); }
+catch { throw oatsError("invalid-package-manifest", `... is not valid UTF-8`); }
 contentIntegrity = `sha256-${createHash("sha256").update(bytes).digest("hex")}`;
 ```
 

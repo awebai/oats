@@ -1,5 +1,5 @@
-/* oas desktop — shared design tokens + view styles.
-   Ported from capabilities/oas-web/ui/panel.html: dark and solarised-light
+/* oats desktop — shared design tokens + view styles.
+   Ported from capabilities/oats-web/ui/panel.html: dark and solarised-light
    palettes both hold WCAG AA (≥4.5:1) for body text; muted text stays ≥4.5:1
    against panel surfaces. Views under renderer/views/ style themselves with
    these semantic tokens only — never raw colors. */
@@ -77,37 +77,37 @@
 ::selection { background: var(--surface-2); color: var(--fg); }
 
 /* ── shared primitives ── */
-.oas-view { display: flex; min-height: 0; height: 100%; background: var(--bg); color: var(--fg);
+.oats-view { display: flex; min-height: 0; height: 100%; background: var(--bg); color: var(--fg);
             font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-font-smoothing: antialiased; }
-.oas-view * { box-sizing: border-box; }
-.oas-view .chip { background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; font-size: 10.5px;
+.oats-view * { box-sizing: border-box; }
+.oats-view .chip { background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; font-size: 10.5px;
                   padding: 1px 8px; font-weight: 550; }
-.oas-view .chip.dirty { color: var(--warn); }
-.oas-view .chip.rt { color: var(--accent); }
-.oas-view .empty { color: var(--muted); text-align: center; padding: 60px 30px; font-size: 13.5px; white-space: normal; }
-.oas-view .empty .big { font-size: 32px; display: block; margin-bottom: 12px; color: var(--faint); }
-.oas-view .empty code { background: var(--chip-bg); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
-.oas-view button.act { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
+.oats-view .chip.dirty { color: var(--warn); }
+.oats-view .chip.rt { color: var(--accent); }
+.oats-view .empty { color: var(--muted); text-align: center; padding: 60px 30px; font-size: 13.5px; white-space: normal; }
+.oats-view .empty .big { font-size: 32px; display: block; margin-bottom: 12px; color: var(--faint); }
+.oats-view .empty code { background: var(--chip-bg); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
+.oats-view button.act { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
                        padding: 6px 13px; cursor: pointer; font-size: 12.5px; font-weight: 550; font-family: inherit; }
-.oas-view button.act:hover { border-color: var(--accent); color: var(--accent); }
-.oas-view button.act.danger:hover { border-color: var(--danger); color: var(--danger); }
-.oas-view button.act:disabled { color: var(--faint); border-color: var(--border); cursor: default; }
-.oas-view input.field, .oas-view textarea.field, .oas-view select.field {
+.oats-view button.act:hover { border-color: var(--accent); color: var(--accent); }
+.oats-view button.act.danger:hover { border-color: var(--danger); color: var(--danger); }
+.oats-view button.act:disabled { color: var(--faint); border-color: var(--border); cursor: default; }
+.oats-view input.field, .oats-view textarea.field, .oats-view select.field {
   background: var(--bg); border: 1px solid var(--border); color: var(--fg);
   border-radius: 8px; padding: 7px 11px; font: 13px/1.5 inherit; outline: none; }
-.oas-view input.field:focus, .oas-view textarea.field:focus, .oas-view select.field:focus { border-color: var(--accent); }
-.oas-view input.field::placeholder, .oas-view textarea.field::placeholder { color: var(--faint); }
+.oats-view input.field:focus, .oats-view textarea.field:focus, .oats-view select.field:focus { border-color: var(--accent); }
+.oats-view input.field::placeholder, .oats-view textarea.field::placeholder { color: var(--faint); }
 
-@keyframes oas-spin { to { transform: rotate(360deg); } }
-.oas-view .spinner { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--fg) 25%, transparent);
-                     border-top-color: var(--accent); border-radius: 50%; animation: oas-spin .7s linear infinite;
+@keyframes oats-spin { to { transform: rotate(360deg); } }
+.oats-view .spinner { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--fg) 25%, transparent);
+                     border-top-color: var(--accent); border-radius: 50%; animation: oats-spin .7s linear infinite;
                      display: inline-block; vertical-align: -2px; }
-.oas-view .loading-block { display: flex; align-items: center; gap: 10px; justify-content: center;
+.oats-view .loading-block { display: flex; align-items: center; gap: 10px; justify-content: center;
                            padding: 48px 0; color: var(--muted); font-size: 13px; }
 
-/* ── cli degradation card (Spawn/Harvest without a compatible oas CLI) ── */
-.oas-view .cli-card, .cli-card { background: var(--surface); border: 1px solid var(--warn); border-radius: 12px;
+/* ── cli degradation card (Spawn/Harvest without a compatible oats CLI) ── */
+.oats-view .cli-card, .cli-card { background: var(--surface); border: 1px solid var(--warn); border-radius: 12px;
             padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px;
             max-width: 640px; font-size: 13px; color: var(--fg); }
 .cli-card .cli-head { font-weight: 650; display: flex; align-items: center; gap: 8px; }
@@ -125,12 +125,12 @@
 .cli-card .cli-status { color: var(--muted); font-size: 12.5px; }
 
 /* ── cards (summary, spawn) ── */
-.oas-view .cards { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-.oas-view .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+.oats-view .cards { padding: 14px 18px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.oats-view .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
                   padding: 12px 14px; box-shadow: var(--shadow); }
-.oas-view .card h3 { margin: 0 0 8px; font-size: 12px; font-weight: 650; color: var(--muted);
+.oats-view .card h3 { margin: 0 0 8px; font-size: 12px; font-weight: 650; color: var(--muted);
                      text-transform: uppercase; letter-spacing: .06em; }
-.oas-view .card .body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
-.oas-view .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }
-.oas-view .kv .k { color: var(--muted); }
-.oas-view .kv .v { color: var(--fg); word-break: break-all; }
+.oats-view .card .body { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.oats-view .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }
+.oats-view .kv .k { color: var(--muted); }
+.oats-view .kv .v { color: var(--fg); word-break: break-all; }

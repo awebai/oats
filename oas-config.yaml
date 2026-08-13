@@ -1,9 +1,0 @@
-# Repository-specific OAS policy for the framework checkout.
-# Team-wide layers, families, authoring, and review come from the adopted
-# oas.dev profile at the non-Git workspace root.
-name: oas-framework-repo
-
-# This instruction is specific to the framework repository and must not apply
-# to sibling package maintainers.
-agents-md-injection:
-  framework: injects/framework-workspace.md

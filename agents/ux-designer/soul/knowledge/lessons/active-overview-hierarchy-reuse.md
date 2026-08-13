@@ -12,7 +12,7 @@ timestamp: 2026-07-25T12:30:00Z
 
 # Lesson
 
-When asked to build a new Active overview tab, first confirm whether the existing navigation surface already owns the destination. In the OAS desktop, `packages/desktop/renderer/views/hierarchy.mjs` is the nav item labeled "Active overview" and already implements the hard mechanics: deterministic tidy-tree forest from `parentInstance`, cycle-safe root promotion, pan/zoom/fit, per-node drag with live edges, lineage highlight, popover actions, keyboard tree-walk, and a 4s `/api/panel` poll gated by `workspaceGeneration()`.
+When asked to build a new Active overview tab, first confirm whether the existing navigation surface already owns the destination. In the OATS desktop, `packages/desktop/renderer/views/hierarchy.mjs` is the nav item labeled "Active overview" and already implements the hard mechanics: deterministic tidy-tree forest from `parentInstance`, cycle-safe root promotion, pan/zoom/fit, per-node drag with live edges, lineage highlight, popover actions, keyboard tree-walk, and a 4s `/api/panel` poll gated by `workspaceGeneration()`.
 
 # Design implication
 

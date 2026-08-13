@@ -1,4 +1,4 @@
-// OAS desktop — renderer shell: nav rail + tabbed view host.
+// OATS desktop — renderer shell: nav rail + tabbed view host.
 //
 // View contract (binding, from the desktop-app contract): each view is an ES
 // module in ./views/ exporting mount(el, ctx) / unmount(), where
@@ -42,7 +42,7 @@ import {
 import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
 
-const desk = window.oasDesktop;
+const desk = window.oatsDesktop;
 initTheme();
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
@@ -149,7 +149,7 @@ let contextFilter = "";
 let contextInstances = [];
 let contextWorkspace = "";
 const collapsedInstances = new Set();
-const desktopBridge = window.oasDesktop;
+const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
 const workspaceLabel = createWorkspaceSwitcher({
   document,
@@ -936,7 +936,7 @@ function focusRoster() {
 // Class-driven (display:flex on #sidebar beats the hidden attribute) and
 // persisted like the other shell prefs. Terminal refits ride each tab's
 // ResizeObserver — the panes change width when the sidebar goes away.
-const SIDEBAR_HIDDEN_KEY = "oas-desktop-sidebar-hidden";
+const SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";
 function sidebarHidden() {
   return document.getElementById("app").classList.contains("sidebar-hidden");
 }
