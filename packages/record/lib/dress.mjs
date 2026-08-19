@@ -131,11 +131,38 @@ function entryLine(e) {
 // Deterministic budgeted selection over the KEPT-turns share of the budget.
 // Returns { kept, omitted } preserving chronological order in both, plus the
 // per-entry char cap applied to the opener.
-export function selectEntries(entries, { budgetChars }) {
+//
+// `pinned` refs (turn id, or id@loc for session entries) are always kept —
+// they are the author-marked conclusions of the role-based selection model
+// (goal + conclusions + frontier). Pins are explicit user intent: they are
+// charged to the budget first, shrinking the newest-fill share; a pin set
+// larger than the budget is honored anyway (loudly the caller's choice).
+export function selectEntries(entries, { budgetChars, pinned = [] }) {
   if (!Number.isInteger(budgetChars) || budgetChars <= 0) {
     throw new DressError(`budgetChars must be a positive integer, got ${budgetChars}`);
   }
-  if (entries.length === 0) return { kept: [], omitted: [], openerCap: Infinity };
+  if (entries.length === 0) {
+    if (pinned.length > 0) throw new DressError(`pinned refs not found: ${pinned.join(", ")}`);
+    return { kept: [], omitted: [], openerCap: Infinity };
+  }
+
+  const pinSet = new Set(pinned);
+  const matched = new Set();
+  // Session-thread entries share one turn id across many @loc entries, so a
+  // bare id would pin them all; the bare-id form only matches loc-less
+  // entries (mail/chat/notes). Session pins use the id@loc form.
+  const isPinned = (e) => {
+    const ref = entryRef(e);
+    if (pinSet.has(ref)) {
+      matched.add(ref);
+      return true;
+    }
+    if (!e.loc && pinSet.has(e.id)) {
+      matched.add(e.id);
+      return true;
+    }
+    return false;
+  };
 
   const keptBudget = Math.max(
     budgetChars * (1 - OMITTED_FRACTION) - PREAMBLE_RESERVE,
@@ -149,7 +176,19 @@ export function selectEntries(entries, { budgetChars }) {
   const opener = entries[0];
   let remaining = keptBudget - cost(opener, openerCap);
   const keptSet = new Set([0]);
+  isPinned(opener); // the opener may itself be a pinned ref; mark it matched
+  for (let i = 1; i < entries.length; i++) {
+    if (isPinned(entries[i])) {
+      keptSet.add(i);
+      remaining -= cost(entries[i]);
+    }
+  }
+  const unmatched = pinned.filter((p) => !matched.has(p));
+  if (unmatched.length > 0) {
+    throw new DressError(`pinned refs not found in thread: ${unmatched.join(", ")}`);
+  }
   for (let i = entries.length - 1; i >= 1; i--) {
+    if (keptSet.has(i)) continue;
     const c = cost(entries[i]);
     if (c > remaining) break;
     keptSet.add(i);
@@ -211,7 +250,7 @@ export function renderBriefing({ thread, kept, omitted, sinceApplied, budgetChar
 
 // Compose a briefing for one thread. Returns { briefing, manifest } and,
 // when a store owner is set, appends the manifest turn to `<owner>~dress`.
-export function dress(store, { thread, budgetChars = 40000, since = null, log = true }) {
+export function dress(store, { thread, budgetChars = 40000, since = null, log = true, pin = [] }) {
   if (!Number.isInteger(budgetChars) || budgetChars <= 0) {
     throw new DressError(`budgetChars must be a positive integer, got ${budgetChars}`);
   }
@@ -227,7 +266,7 @@ export function dress(store, { thread, budgetChars = 40000, since = null, log = 
     entries = entries.filter((e, i) => i === 0 || tsMs(e.ts) >= sinceMs);
   }
   const sinceApplied = entries.length < before;
-  const { kept, omitted, openerCap } = selectEntries(entries, { budgetChars });
+  const { kept, omitted, openerCap } = selectEntries(entries, { budgetChars, pinned: pin });
   const briefing = renderBriefing({ thread, kept, omitted, sinceApplied, budgetChars, openerCap });
 
   // The manifest names the thread only in provenance — a top-level `thread`
@@ -243,6 +282,7 @@ export function dress(store, { thread, budgetChars = 40000, since = null, log = 
       dress: {
         budget_chars: budgetChars,
         since: since ?? null,
+        ...(pin.length > 0 ? { pin } : {}),
         included: kept.map((e) => entryRef(e)),
         omitted: omitted.length,
         briefing_sha256: sha256Hex(Buffer.from(briefing, "utf8")),

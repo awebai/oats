@@ -20,10 +20,12 @@ import { RecordStore } from "../lib/store.mjs";
 import { dress, DressError } from "../lib/dress.mjs";
 
 function parseArgs(argv) {
-  const args = {};
+  const args = { pin: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--root", "--owner", "--thread", "--budget-chars", "--since", "--out"].includes(a)) {
+    if (a === "--pin") {
+      args.pin.push(argv[++i]);
+    } else if (["--root", "--owner", "--thread", "--budget-chars", "--since", "--out"].includes(a)) {
       args[a.slice(2)] = argv[++i];
     } else if (a.startsWith("--")) args[a.slice(2)] = true;
     else {
@@ -37,7 +39,7 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 if (!args.thread) {
   console.error(
-    "usage: dress --thread <thread> [--budget-chars N] [--since <iso-ts>] [--out file] [--no-log]",
+    "usage: dress --thread <thread> [--budget-chars N] [--since <iso-ts>] [--pin <ref>]... [--out file] [--no-log]",
   );
   process.exit(2);
 }
@@ -53,6 +55,7 @@ try {
     budgetChars: args["budget-chars"] ? Number(args["budget-chars"]) : undefined,
     since: args.since ?? null,
     log: !args["no-log"],
+    pin: args.pin,
   });
 } catch (err) {
   if (err instanceof DressError) {

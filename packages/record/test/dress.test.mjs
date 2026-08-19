@@ -119,6 +119,40 @@ test("empty thread yields zero kept and no crash", (t) => {
   assert.equal(r.kept, 0);
 });
 
+test("pinned turns are always kept and charged to the budget", (t) => {
+  const { store } = setup(t);
+  seedThread(store, 10);
+  const entries = threadEntries(store, "aweb:conv:c1");
+  const midRef = entries[3].id; // "msg 3", deep in the middle
+
+  const withoutPin = selectEntries(entries, { budgetChars: 2500 });
+  assert.ok(
+    withoutPin.omitted.some((e) => e.id === midRef),
+    "precondition: msg 3 is omitted without a pin",
+  );
+
+  const withPin = selectEntries(entries, { budgetChars: 2500, pinned: [midRef] });
+  assert.ok(withPin.kept.some((e) => e.id === midRef), "pinned turn kept");
+  assert.ok(
+    withPin.kept.length <= withoutPin.kept.length,
+    "pin cost shrinks the newest-fill share, not the budget",
+  );
+  // Chronological order still holds with a pin in the middle.
+  const nums = withPin.kept.map((e) => Number(e.subject.slice(4)));
+  assert.deepEqual([...nums].sort((a, b) => a - b), nums);
+
+  // Unknown pins fail loudly, not silently.
+  assert.throws(
+    () => selectEntries(entries, { budgetChars: 2500, pinned: ["t1:" + "0".repeat(64)] }),
+    /pinned refs not found/,
+  );
+
+  // End-to-end through dress(), recorded in the manifest.
+  const r = dress(store, { thread: "aweb:conv:c1", budgetChars: 2500, pin: [midRef], log: false });
+  assert.match(r.briefing, /msg 3/);
+  assert.deepEqual(r.manifest.body.dress.pin, [midRef]);
+});
+
 test("mixed timestamp precision orders by time, not by string", (t) => {
   const { store } = setup(t);
   const mk = (ts, text) => ({
