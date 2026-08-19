@@ -26,7 +26,8 @@
     "./project-aweb": "./lib/project-aweb.mjs",
     "./capture-cc": "./lib/capture-cc.mjs",
     "./capture-aw": "./lib/capture-aw.mjs",
-    "./index-db": "./lib/index-db.mjs"
+    "./index-db": "./lib/index-db.mjs",
+    "./ignore": "./lib/ignore.mjs"
   },
   "bin": {
     "turn-record": "./bin/turn-record.mjs"

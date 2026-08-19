@@ -59,6 +59,48 @@ turn-record recall --reindex                    # full rebuild of the derived in
 Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
 Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
+## Ignoring sessions and paths (privacy)
+
+`<root>/ignore` is a plain text file of glob patterns, one per line (blank
+lines and `#` comments skipped). Any capture source file that matches is
+**never captured at all** — it is skipped before being opened, so no blob
+is stored, no turn is appended, and the seen cache never learns about it.
+This is a capture-time control, stronger than not indexing: the bytes never
+enter the record.
+
+```
+# never capture this session (any format), by session id
+7fe2a1b4-9c3d-4e21-b0aa-1f2e3d4c5b6a
+
+# never capture anything from this project's transcripts
+**/-Users-juanre-private-project/**
+
+# never capture one aw account's comm log
+acme-secret
+```
+
+Matching rules (deliberately minimal; no negation, no escapes):
+
+- a pattern containing `/` matches against the source file's absolute path;
+- a pattern without `/` matches against the file's basename and against its
+  session id (transcripts) or account name (aw comm logs);
+- `*` matches within a path segment, `**` across segments, `?` one
+  character; the whole candidate must match.
+
+Name-only patterns apply across every capture source: a short or generic
+pattern meant for one aw account can also catch a session file's basename
+or id in any format. Prefer path patterns for anything short or generic.
+
+Ignored files are counted in each pass (`N ignored` in capture output;
+`capture --status` shows the active pattern count), never skipped silently.
+The file is per record root and is local policy, not record truth — the
+sync guidance below replicates only `streams/` and `objects/`, so each
+machine decides what its own capture refuses to read; sync the `ignore`
+file yourself if you want one policy everywhere. Two honest limits: an
+ignore file that exists but cannot be read fails the pass loudly (a privacy
+control must not fail open), and ignoring is **forward-looking only** —
+turns already captured stay in the record; hide those with a tombstone.
+
 ## Multi-machine
 
 Replicate `streams/` and `objects/` with any dumb file sync (syncthing,

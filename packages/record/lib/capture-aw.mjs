@@ -19,6 +19,7 @@ import {
   projectCommLogEntry,
   projectInteractionLogEntry,
 } from "./project-aweb.mjs";
+import { loadIgnore } from "./ignore.mjs";
 
 export function defaultCommLogDir(home = homedir()) {
   return join(home, ".config", "aw", "logs");
@@ -72,6 +73,11 @@ function projectFile(entries, project) {
 
 // Capture one comm-log file into `<owner>~aw`. The account name is the
 // filename stem. `knownIds` carries the stream's ids across files in a pass.
+//
+// Deliberately does NOT consult the ignore list: this is an explicit
+// "capture this file" command, and the caller has named the file. The
+// `<root>/ignore` policy is enforced at the pass level (captureAwLogs),
+// which is the only entry point the capture bin uses.
 export function captureCommLog(store, { owner, path, knownIds = null }) {
   const account = basename(path, ".jsonl");
   const streamId = awStream(owner);
@@ -97,7 +103,9 @@ export function captureCommLog(store, { owner, path, knownIds = null }) {
   };
 }
 
-// Capture one workspace interaction log into `<owner>~aw`.
+// Capture one workspace interaction log into `<owner>~aw`. Like
+// captureCommLog, this deliberately bypasses the ignore list: it is an
+// explicit per-file command; pass-level entry points enforce the policy.
 export function captureInteractionLog(store, { owner, path, selfName, workspace, knownIds = null }) {
   const streamId = awStream(owner);
   const ids = knownIds ?? new Set(store.readStream(streamId).map((t) => t.id));
@@ -137,12 +145,23 @@ function saveSeenCache(store, cache) {
 
 // One reconciliation pass over every default comm log. The stream's known
 // ids are read once and shared across files; unchanged files are skipped.
-export function captureAwLogs(store, { owner, commLogDir } = {}) {
+//
+// Files matching the record's ignore list (`<root>/ignore`, see ignore.mjs)
+// are skipped before being opened — no turns, no seen-cache entry — and
+// reported as `{ account, path, ignored: true }` so a pass stays visible
+// about what it refused to read.
+export function captureAwLogs(store, { owner, commLogDir, ignore = null } = {}) {
   const streamId = awStream(owner);
+  const ign = ignore ?? loadIgnore(store.root);
   let knownIds = null; // lazy: only read the journal if some file changed
   const seen = loadSeenCache(store);
   const results = [];
   for (const path of listCommLogs(commLogDir ?? defaultCommLogDir())) {
+    const account = basename(path, ".jsonl");
+    if (ign.ignores(path, [basename(path), account])) {
+      results.push({ account, path, ignored: true });
+      continue; // never opened: nothing stored, nothing remembered
+    }
     let stat;
     try {
       stat = statSync(path);

@@ -14,10 +14,11 @@
 // killed watcher is recovered by the next scan.
 
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 
 import { finishTurn } from "./canonical.mjs";
 import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
+import { loadIgnore } from "./ignore.mjs";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
@@ -99,9 +100,14 @@ function saveSeenCache(store, cache) {
 // `roots` into `store`, appending to stream `<owner>~<source>`. Idempotent;
 // unchanged files (same size + mtime as the last pass) are skipped without
 // reading. Appends are batched with one fsync per pass. Returns counters.
-export function captureSessions(store, { owner, roots, format = "cc" }) {
+//
+// Files matching the record's ignore list (`<root>/ignore`, see ignore.mjs)
+// are skipped before being opened: no blob, no turn, no seen-cache entry —
+// so un-ignoring a file later makes the next pass capture it normally.
+export function captureSessions(store, { owner, roots, format = "cc", ignore = null }) {
   const fmt = SESSION_FORMATS[format];
   if (!fmt) throw new Error(`unknown session format ${format}`);
+  const ign = ignore ?? loadIgnore(store.root);
   const streamId = `${owner}~${fmt.source}`;
   const knownIds = new Set(store.readStream(streamId).map((t) => t.id));
   const seen = loadSeenCache(store);
@@ -109,9 +115,14 @@ export function captureSessions(store, { owner, roots, format = "cc" }) {
   let appended = 0;
   let skippedNoTs = 0;
   let unchanged = 0;
+  let ignored = 0;
   const fresh = [];
   for (const path of fmt.listFiles(roots)) {
     sessions++;
+    if (ign.ignores(path, [basename(path), fmt.sessionId(path)])) {
+      ignored++;
+      continue; // never opened: nothing stored, nothing remembered
+    }
     let stat;
     try {
       stat = statSync(path);
@@ -156,16 +167,18 @@ export function captureSessions(store, { owner, roots, format = "cc" }) {
   store.appendBatch(streamId, fresh);
   appended = fresh.length;
   saveSeenCache(store, seen);
-  return { sessions, appended, skippedNoTs, unchanged, stream: streamId };
+  return { sessions, appended, skippedNoTs, unchanged, ignored, stream: streamId };
 }
 
-// One pass over every known format at its default roots.
-export function captureAllSessions(store, { owner }) {
+// One pass over every known format at its default roots. The ignore list is
+// loaded once and shared across formats.
+export function captureAllSessions(store, { owner, ignore = null }) {
+  const ign = ignore ?? loadIgnore(store.root);
   const results = [];
   for (const format of Object.keys(SESSION_FORMATS)) {
     const roots = SESSION_FORMATS[format].defaultRoots();
     if (roots.length === 0) continue;
-    results.push(captureSessions(store, { owner, roots, format }));
+    results.push(captureSessions(store, { owner, roots, format, ignore: ign }));
   }
   return results;
 }

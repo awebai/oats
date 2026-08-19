@@ -11,6 +11,8 @@
 //
 // Store root: --root, else $TURN_RECORD_ROOT, else ~/.turn-record
 // Stream owner: --owner, else $TURN_RECORD_OWNER, else short hostname.
+// Privacy: `<root>/ignore` lists glob patterns (paths, session ids,
+// accounts) whose sources are never captured — see lib/ignore.mjs.
 // Reconciliation is the capture; hooks and watch only decide when to run it.
 
 import { watch } from "node:fs";
@@ -23,6 +25,18 @@ import { captureAllSessions } from "../lib/capture-cc.mjs";
 import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
+import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
+
+// Fail closed but actionably: an unreadable ignore file must stop capture,
+// as one clear line naming the file — never an uncaught stack trace.
+function loadIgnoreOrExit(recordRoot) {
+  try {
+    return loadIgnore(recordRoot);
+  } catch (err) {
+    console.error(err instanceof IgnoreError ? err.message : String(err));
+    process.exit(1);
+  }
+}
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -47,10 +61,12 @@ function log(...parts) {
 
 function pass() {
   const out = { appended: 0 };
+  const ignore = loadIgnoreOrExit(root);
   if (!args["aw-only"]) {
-    for (const r of captureAllSessions(store, { owner })) {
+    for (const r of captureAllSessions(store, { owner, ignore })) {
       out.appended += r.appended;
-      log(`sessions: ${r.sessions} scanned, ${r.appended} new snapshots -> ${r.stream}`);
+      const ignored = r.ignored ? `, ${r.ignored} ignored` : "";
+      log(`sessions: ${r.sessions} scanned, ${r.appended} new snapshots${ignored} -> ${r.stream}`);
     }
   }
   if (!args["sessions-only"]) {
@@ -58,7 +74,12 @@ function pass() {
     let awAppended = 0;
     let awFailed = 0;
     let awFiles = 0;
-    for (const r of captureAwLogs(store, { owner })) {
+    let awIgnored = 0;
+    for (const r of captureAwLogs(store, { owner, ignore })) {
+      if (r.ignored) {
+        awIgnored++;
+        continue;
+      }
       awFiles++;
       awEntries += r.entries;
       awAppended += r.appended;
@@ -66,7 +87,8 @@ function pass() {
       out.appended += r.appended;
       if (r.failed) console.error(`aw-log ${r.account}: ${r.failed} entries failed to project`);
     }
-    log(`aw-logs: ${awFiles} files, ${awEntries} entries, ${awAppended} new, ${awFailed} failed`);
+    const ignored = awIgnored ? `, ${awIgnored} ignored` : "";
+    log(`aw-logs: ${awFiles} files, ${awEntries} entries, ${awAppended} new, ${awFailed} failed${ignored}`);
   }
   if (out.appended > 0 && !args["no-index"]) {
     const index = new RecordIndex(store);
@@ -97,6 +119,10 @@ A dropped hook is recovered by any later pass (capture, or capture --watch).`);
 
 if (args.status) {
   console.log(`root:  ${root}\nowner: ${owner}`);
+  const ignore = loadIgnoreOrExit(root);
+  if (ignore.size > 0) {
+    console.log(`ignore: ${ignore.size} pattern${ignore.size === 1 ? "" : "s"} (${ignoreFilePath(root)})`);
+  }
   for (const streamId of store.listStreams()) {
     console.log(`  ${streamId}: ${store.readStream(streamId).length} turns`);
   }
