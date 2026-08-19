@@ -31,7 +31,7 @@
 // context did this agent spawn with" is a recallable fact.
 
 import { finishTurn, sha256Hex } from "./canonical.mjs";
-import { extractSessionText } from "./index-db.mjs";
+import { extractSessionTextFor } from "./formats.mjs";
 
 export class DressError extends Error {}
 
@@ -86,7 +86,7 @@ export function threadEntries(store, thread) {
         },
       ];
     }
-    return extractSessionText(bytes).map((d) => ({
+    return extractSessionTextFor(latest.provenance?.source, bytes).map((d) => ({
       id: latest.id,
       loc: d.loc,
       ts: latest.ts,

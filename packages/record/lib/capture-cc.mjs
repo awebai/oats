@@ -1,4 +1,6 @@
-// Capture of Claude Code session transcripts into the record.
+// Capture of session transcripts into the record — Claude Code, pi, and
+// Codex (the format registry in formats.mjs says where transcripts live
+// and how to name sessions; the storage contract here is format-agnostic).
 //
 // Verbatim fidelity: the transcript bytes go into the object store
 // untouched (unknown or unparseable JSONL records are preserved by
@@ -11,55 +13,37 @@
 // Hooks and watchers only decide when to run it, so a dropped hook or a
 // killed watcher is recovered by the next scan.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 import { finishTurn } from "./canonical.mjs";
+import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
-// Default transcript roots: every ~/.claude*/projects directory.
-export function defaultSessionRoots(home = homedir()) {
-  const roots = [];
-  for (const name of readdirSync(home).sort()) {
-    if (!name.startsWith(".claude")) continue;
-    const projects = join(home, name, "projects");
-    if (existsSync(projects)) roots.push(projects);
-  }
-  return roots;
+// Default transcript roots for Claude Code (kept for compatibility; the
+// per-format defaults live in formats.mjs).
+export function defaultSessionRoots(home = undefined) {
+  return SESSION_FORMATS.cc.defaultRoots(home);
 }
 
 export function listSessionFiles(roots) {
-  const files = [];
-  for (const root of roots) {
-    if (!existsSync(root)) continue;
-    for (const project of readdirSync(root).sort()) {
-      const dir = join(root, project);
-      let names;
-      try {
-        names = readdirSync(dir);
-      } catch {
-        continue; // not a directory
-      }
-      for (const name of names.sort()) {
-        if (name.endsWith(".jsonl")) files.push(join(dir, name));
-      }
-    }
-  }
-  return files;
+  return SESSION_FORMATS.cc.listFiles(roots);
 }
 
 // Extract the last event timestamp and the event count from transcript
-// bytes. Unparseable lines still count as events (they are in the blob).
+// bytes. Every supported format stamps records with a top-level
+// `timestamp`; unparseable lines still count as events (they are in the
+// blob).
 export function scanTranscript(bytes) {
   let ts = null;
   let events = 0;
-  for (const line of bytes.toString("utf8").split("\n")) {
-    if (line.trim() === "") continue;
+  for (const { text } of jsonlLines(bytes)) {
+    if (text !== null && text.trim() === "") continue;
     events++;
+    if (text === null) continue; // over-limit line: an event, nothing to extract
     try {
-      const d = JSON.parse(line);
+      const d = JSON.parse(text);
       if (typeof d.timestamp === "string") ts = d.timestamp;
     } catch {
       // preserved verbatim in the blob; nothing to extract
@@ -69,12 +53,12 @@ export function scanTranscript(bytes) {
 }
 
 // Build the session turn core for one transcript snapshot.
-export function sessionTurnCore({ owner, sessionId, blobRef, bytes, ts, events }) {
-  const core = {
+export function sessionTurnCore({ owner, source, sessionId, blobRef, bytes, ts, events }) {
+  return {
     v: 1,
     ts,
     from: owner,
-    thread: `cc:session:${sessionId}`,
+    thread: `${source}:session:${sessionId}`,
     kind: "session",
     body: {
       ref: blobRef,
@@ -83,12 +67,11 @@ export function sessionTurnCore({ owner, sessionId, blobRef, bytes, ts, events }
       events,
     },
     provenance: {
-      source: SESSION_STREAM_SOURCE,
+      source,
       fidelity: "verbatim",
       origin: { session_id: sessionId },
     },
   };
-  return core;
 }
 
 // The seen-files cache lives under index/ because it is derived state:
@@ -112,12 +95,14 @@ function saveSeenCache(store, cache) {
   writeFileSync(path, JSON.stringify(cache));
 }
 
-// One reconciliation pass: snapshot every session file under `roots` into
-// `store`, appending to stream `<owner>~cc`. Idempotent; unchanged files
-// (same size + mtime as the last pass) are skipped without reading.
-// Appends are batched with one fsync per pass. Returns counters.
-export function captureSessions(store, { owner, roots }) {
-  const streamId = `${owner}~${SESSION_STREAM_SOURCE}`;
+// One reconciliation pass for one format: snapshot every session file under
+// `roots` into `store`, appending to stream `<owner>~<source>`. Idempotent;
+// unchanged files (same size + mtime as the last pass) are skipped without
+// reading. Appends are batched with one fsync per pass. Returns counters.
+export function captureSessions(store, { owner, roots, format = "cc" }) {
+  const fmt = SESSION_FORMATS[format];
+  if (!fmt) throw new Error(`unknown session format ${format}`);
+  const streamId = `${owner}~${fmt.source}`;
   const knownIds = new Set(store.readStream(streamId).map((t) => t.id));
   const seen = loadSeenCache(store);
   let sessions = 0;
@@ -125,7 +110,7 @@ export function captureSessions(store, { owner, roots }) {
   let skippedNoTs = 0;
   let unchanged = 0;
   const fresh = [];
-  for (const path of listSessionFiles(roots)) {
+  for (const path of fmt.listFiles(roots)) {
     sessions++;
     let stat;
     try {
@@ -155,7 +140,8 @@ export function captureSessions(store, { owner, roots }) {
     const blobRef = store.putObject(bytes);
     const core = sessionTurnCore({
       owner,
-      sessionId: basename(path, ".jsonl"),
+      source: fmt.source,
+      sessionId: fmt.sessionId(path),
       blobRef,
       bytes: bytes.length,
       ts,
@@ -171,4 +157,15 @@ export function captureSessions(store, { owner, roots }) {
   appended = fresh.length;
   saveSeenCache(store, seen);
   return { sessions, appended, skippedNoTs, unchanged, stream: streamId };
+}
+
+// One pass over every known format at its default roots.
+export function captureAllSessions(store, { owner }) {
+  const results = [];
+  for (const format of Object.keys(SESSION_FORMATS)) {
+    const roots = SESSION_FORMATS[format].defaultRoots();
+    if (roots.length === 0) continue;
+    results.push(captureSessions(store, { owner, roots, format }));
+  }
+  return results;
 }

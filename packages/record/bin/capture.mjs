@@ -19,7 +19,8 @@ import { join } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
-import { captureSessions, defaultSessionRoots } from "../lib/capture-cc.mjs";
+import { captureAllSessions } from "../lib/capture-cc.mjs";
+import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 
@@ -47,9 +48,10 @@ function log(...parts) {
 function pass() {
   const out = { appended: 0 };
   if (!args["aw-only"]) {
-    const r = captureSessions(store, { owner, roots: defaultSessionRoots() });
-    out.appended += r.appended;
-    log(`sessions: ${r.sessions} scanned, ${r.appended} new snapshots -> ${r.stream}`);
+    for (const r of captureAllSessions(store, { owner })) {
+      out.appended += r.appended;
+      log(`sessions: ${r.sessions} scanned, ${r.appended} new snapshots -> ${r.stream}`);
+    }
   }
   if (!args["sessions-only"]) {
     let awEntries = 0;
@@ -104,7 +106,10 @@ if (args.status) {
 pass();
 
 if (args.watch) {
-  const roots = [...defaultSessionRoots(), defaultCommLogDir()];
+  const roots = [
+    ...Object.values(SESSION_FORMATS).flatMap((f) => f.defaultRoots()),
+    defaultCommLogDir(),
+  ];
   let timer = null;
   const schedule = () => {
     if (timer) clearTimeout(timer);

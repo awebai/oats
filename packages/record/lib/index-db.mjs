@@ -16,6 +16,8 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { extractCcText, extractSessionTextFor } from "./formats.mjs";
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS turns (
   id TEXT PRIMARY KEY,
@@ -226,7 +228,7 @@ export class RecordIndex {
       } catch {
         return []; // blob not replicated here; metadata still indexed
       }
-      return extractSessionText(bytes);
+      return extractSessionTextFor(turn.provenance?.source, bytes);
     }
     return [];
   }
@@ -300,37 +302,9 @@ export class RecordIndex {
   }
 }
 
-// Pull searchable text out of a Claude Code transcript blob: user and
-// assistant message text parts. Everything else (tool results, snapshots,
-// attachments) stays in the blob, findable via `capture` but not indexed —
-// indexing tool output would bury conversational hits in noise.
-export function extractSessionText(bytes) {
-  const docs = [];
-  const lines = bytes.toString("utf8").split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.trim() === "") continue;
-    let d;
-    try {
-      d = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (d.type !== "user" && d.type !== "assistant") continue;
-    const content = d.message?.content;
-    let text = "";
-    if (typeof content === "string") {
-      text = content;
-    } else if (Array.isArray(content)) {
-      text = content
-        .filter((part) => part?.type === "text" && typeof part.text === "string")
-        .map((part) => part.text)
-        .join("\n");
-    }
-    if (text.trim()) docs.push({ loc: `line:${i + 1}`, role: d.type, text });
-  }
-  return docs;
-}
+// Claude Code text extraction, re-exported for compatibility; the
+// per-format extractors live in formats.mjs.
+export const extractSessionText = extractCcText;
 
 export function dropIndex(store) {
   rmSync(join(store.root, "index"), { recursive: true, force: true });
