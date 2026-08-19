@@ -63,16 +63,17 @@ test("reader segments a session across windows with continuity", (t) => {
   assert.equal(map[0].type, "exploration");
   assert.equal(map[0].outcome, "fruitful");
   assert.equal(map[1].type, "design");
-  assert.equal(map[2].type, "wrong-track", "WRONG! marker produced a wrong track");
+  assert.equal(map[2].type, "implementation", "activity type survives wrongness");
   assert.equal(map[2].outcome, "dead-end");
+  assert.equal(map[2].lesson, "the stub lesson", "dead ends carry their lesson");
   assert.equal(map[3].type, "implementation");
   assert.equal(map[3].outcome, "ongoing", "last segment still open at end of thread");
-  // Spans are contiguous in order.
+  // Half-open spans: adjacent segments meet at equality.
   for (let i = 1; i < map.length; i++) {
-    const prevEnd = Number(/line:(\d+)/.exec(map[i - 1].end)[1]);
-    const start = Number(/line:(\d+)/.exec(map[i].start)[1]);
-    assert.ok(start > prevEnd, "segments in order without overlap");
+    assert.equal(map[i - 1].end, map[i].start, "adjacent segments share the boundary");
   }
+  // And every segment pins the snapshot it was judged over.
+  assert.ok(map.every((s) => typeof s.snapshot === "string" && s.snapshot.startsWith("t1:")));
 });
 
 test("reader resumes from the last closed annotation when the thread grows", (t) => {

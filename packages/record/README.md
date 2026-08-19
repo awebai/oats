@@ -121,6 +121,14 @@ note that on macOS `fsync(2)` does not guarantee media durability (that
 would need `F_FULLFSYNC`, which Node's fs API does not expose) — the
 guarantee is OS-crash-level, not power-loss-level.
 
+## Upgrading
+
+The derived index self-heals across schema changes by wiping and
+rebuilding (it is cache; there is no in-place migration). After upgrading
+this package, restart any long-running `capture --watch` process — a
+daemon holding the old database file open would otherwise keep indexing
+into an orphaned inode until it restarts.
+
 ## Known costs, accepted for v1
 
 - Each session snapshot stores the full transcript blob (append-only

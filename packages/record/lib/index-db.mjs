@@ -12,12 +12,18 @@
 // turns is extracted from the referenced transcript blob: one FTS row per
 // conversational event, so a hit names the turn AND the event line.
 
-import { mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+// Bump whenever the derived schema changes shape. The index is cache:
+// a version mismatch self-heals by deleting the database and rebuilding
+// from the record — never by in-place migration.
+const SCHEMA_VERSION = 1;
+
 import { extractCcText, extractSessionTextFor } from "./formats.mjs";
 import { parseOutfit, parseTag } from "./tags.mjs";
+import { parseSegment, parseSpawn } from "./segments.mjs";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS turns (
@@ -66,6 +72,31 @@ CREATE TABLE IF NOT EXISTS outfits (
   status TEXT NOT NULL,
   members TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS segments (
+  note_id TEXT PRIMARY KEY,
+  thread TEXT NOT NULL,
+  start_n INTEGER NOT NULL,
+  end_n INTEGER,
+  type TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  about TEXT NOT NULL,
+  established TEXT NOT NULL,
+  lesson TEXT,
+  snapshot TEXT,
+  ts TEXT NOT NULL,
+  ts_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS segments_thread ON segments(thread, start_n);
+CREATE TABLE IF NOT EXISTS spawns (
+  note_id TEXT PRIMARY KEY,
+  agent_thread TEXT NOT NULL,
+  outfit_id TEXT NOT NULL,
+  task TEXT,
+  harness TEXT,
+  grant_ref TEXT,
+  ts TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS spawns_agent ON spawns(agent_thread);
 CREATE VIRTUAL TABLE IF NOT EXISTS turn_text USING fts5(
   turn_id UNINDEXED, loc UNINDEXED, role UNINDEXED, text
 );
@@ -76,11 +107,36 @@ export class RecordIndex {
     this.store = store;
     const dir = join(store.root, "index");
     mkdirSync(dir, { recursive: true });
-    this.db = new DatabaseSync(join(dir, "turns.db"));
-    // Concurrent index users (watcher pass, manual reindex, recall) wait
-    // for each other instead of dying on "database is locked".
-    this.db.exec("PRAGMA busy_timeout = 60000");
+    const path = join(dir, "turns.db");
+    const open = () => {
+      const db = new DatabaseSync(path);
+      // Concurrent index users (watcher pass, manual reindex, recall)
+      // wait for each other instead of dying on "database is locked".
+      db.exec("PRAGMA busy_timeout = 60000");
+      return db;
+    };
+    this.db = open();
+    const version = this.db.prepare("PRAGMA user_version").get().user_version;
+    const isNew = !this.db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'turns'")
+      .get();
+    if (!isNew && version !== SCHEMA_VERSION) {
+      // Old-schema index: self-heal by starting over. Deleting the cache
+      // loses nothing; an in-place ALTER would just be a second way to
+      // get this wrong.
+      this.db.close();
+      for (const suffix of ["", "-wal", "-shm"]) {
+        try {
+          if (existsSync(path + suffix)) unlinkSync(path + suffix);
+        } catch {
+          // Two processes self-healing at the same instant: the loser's
+          // unlink races the winner's; either way the schema ends fixed.
+        }
+      }
+      this.db = open();
+    }
     this.db.exec(SCHEMA);
+    this.db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
 
   close() {
@@ -132,6 +188,8 @@ export class RecordIndex {
       this.db.exec("DELETE FROM tombstones");
       this.db.exec("DELETE FROM tags");
       this.db.exec("DELETE FROM outfits");
+      this.db.exec("DELETE FROM segments");
+      this.db.exec("DELETE FROM spawns");
       this.db.exec("DELETE FROM index_state");
       this.db.exec("COMMIT");
     } catch (err) {
@@ -221,6 +279,8 @@ export class RecordIndex {
         if (target && (target.from_name === fromName || (owner && fromName === owner))) {
           this.db.prepare("UPDATE turns SET hidden = 1 WHERE id = ?").run(target.id);
           this.db.prepare("DELETE FROM turn_text WHERE turn_id = ?").run(target.id);
+          this.db.prepare("DELETE FROM segments WHERE note_id = ?").run(target.id);
+          this.db.prepare("DELETE FROM spawns WHERE note_id = ?").run(target.id);
         }
       }
     }
@@ -234,20 +294,26 @@ export class RecordIndex {
       }
     }
 
-    // Selection map: tags and outfits are note turns with structured
-    // bodies (see lib/tags.mjs); the index makes them queryable. A
-    // malformed note turn must never break indexing — the rebuild
-    // invariant (one bad turn anywhere cannot make the index
-    // unrecoverable) outranks completeness of the selection map.
+    // Selection map: tags, outfits, segments, and spawns are note turns
+    // with structured bodies; the index makes them queryable. A malformed
+    // note turn must never break indexing — the rebuild invariant (one
+    // bad turn anywhere cannot make the index unrecoverable) outranks
+    // completeness of the selection map.
     let tag = null;
     let outfitParsed = null;
+    let segParsed = null;
+    let spawnParsed = null;
     if (turn.kind === "note") {
       try {
         tag = parseTag(turn);
         outfitParsed = parseOutfit(turn);
+        segParsed = parseSegment(turn);
+        spawnParsed = parseSpawn(turn);
       } catch {
         tag = null;
         outfitParsed = null;
+        segParsed = null;
+        spawnParsed = null;
       }
     }
     if (tag) {
@@ -263,6 +329,75 @@ export class RecordIndex {
         .prepare("INSERT OR IGNORE INTO outfits (outfit_id, task, status, members) VALUES (?, ?, ?, ?)")
         .run(turn.id, outfit.task, outfit.status, JSON.stringify(outfit.members));
     }
+    if (segParsed && !hidden) {
+      const locN = (r) => Number(/line:(\d+)/.exec(r ?? "")?.[1] ?? null);
+      const tsMs = Date.parse(String(turn.ts ?? ""));
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO segments (note_id, thread, start_n, end_n, type, outcome, about, established, lesson, snapshot, ts, ts_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          turn.id,
+          segParsed.thread,
+          locN(segParsed.start) ?? 0,
+          segParsed.end ? locN(segParsed.end) : null,
+          segParsed.type,
+          segParsed.outcome,
+          JSON.stringify(segParsed.about),
+          segParsed.established,
+          segParsed.lesson,
+          segParsed.snapshot,
+          String(turn.ts ?? ""),
+          Number.isFinite(tsMs) ? tsMs : 0,
+        );
+      // Full established+lesson searchable under role "segment".
+      this.db
+        .prepare("INSERT INTO turn_text (turn_id, loc, role, text) VALUES (?, ?, ?, ?)")
+        .run(turn.id, "", "segment", segParsed.established + (segParsed.lesson ? "\n" + segParsed.lesson : ""));
+    }
+    if (spawnParsed && !hidden) {
+      this.db
+        .prepare(
+          "INSERT OR IGNORE INTO spawns (note_id, agent_thread, outfit_id, task, harness, grant_ref, ts) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(turn.id, spawnParsed.agent, spawnParsed.outfit, spawnParsed.task, spawnParsed.harness, spawnParsed.grant, String(turn.ts ?? ""));
+    }
+  }
+
+  // The segment catalog: latest revision per (thread, start), structural
+  // filters + optional FTS over established/lesson. Dead ends and
+  // superseded judgments are excluded unless asked for.
+  segmentCatalog({ thread, type, outcome, about, q, includeDead = false, limit = 50 } = {}) {
+    let rows = this.db
+      .prepare(
+        `SELECT * FROM segments s WHERE NOT EXISTS (
+           SELECT 1 FROM segments s2 WHERE s2.thread = s.thread AND s2.start_n = s.start_n
+             AND (s2.ts_ms > s.ts_ms OR (s2.ts_ms = s.ts_ms AND s2.note_id > s.note_id)))`,
+      )
+      .all();
+    if (q) {
+      const hits = new Set(this.search(q, { role: "segment", limit: 500 }).map((h) => h.id));
+      rows = rows.filter((r) => hits.has(r.note_id));
+    }
+    rows = rows.filter((r) => {
+      if (thread && r.thread !== thread) return false;
+      if (type && r.type !== type) return false;
+      if (outcome && r.outcome !== outcome) return false;
+      if (!outcome && !includeDead && (r.outcome === "dead-end" || r.outcome === "superseded")) return false;
+      if (about && !JSON.parse(r.about).includes(about)) return false;
+      return true;
+    });
+    rows.sort((a, b) => a.thread.localeCompare(b.thread) || a.start_n - b.start_n);
+    return rows.slice(0, limit).map((r) => ({ ...r, about: JSON.parse(r.about) }));
+  }
+
+  // Creation mapping lookups for quality assessment.
+  spawnsFor({ agent, outfit } = {}) {
+    const rows = this.db.prepare("SELECT * FROM spawns").all();
+    return rows.filter(
+      (r) => (!agent || r.agent_thread === agent) && (!outfit || r.outfit_id === outfit),
+    );
   }
 
   // Turn refs tagged with a case or topic slug (exact slug match).
@@ -300,6 +435,7 @@ export class RecordIndex {
   // Text documents for one turn. Mail/chat: one doc. Session: one doc per
   // conversational event extracted from the transcript blob.
   extractText(turn) {
+    if (turn.kind === "note" && turn.body?.segment) return []; // dedicated role "segment" row
     if (turn.kind === "mail" || turn.kind === "chat" || turn.kind === "note") {
       const subject = turn.body?.subject ?? "";
       const text = turn.body?.text ?? "";

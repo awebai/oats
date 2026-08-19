@@ -22,7 +22,7 @@ import { RecordIndex } from "../lib/index-db.mjs";
 import { LibrarianError, renderClothes, selectClothes, selectionEntries } from "../lib/librarian.mjs";
 
 function parseArgs(argv) {
-  const args = { pin: [], threads: [] };
+  const args = { pin: [], threads: [], segments: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--pin") {
@@ -30,6 +30,8 @@ function parseArgs(argv) {
     } else if (a === "--thread") {
       args.threads.push(argv[++i]);
       args.thread = args.threads[0];
+    } else if (a === "--segment") {
+      args.segments.push(argv[++i]);
     } else if (["--root", "--owner", "--thread", "--budget-chars", "--since", "--out", "--task", "--engine"].includes(a)) {
       args[a.slice(2)] = argv[++i];
     } else if (a.startsWith("--")) args[a.slice(2)] = true;
@@ -42,17 +44,55 @@ function parseArgs(argv) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (!args.thread && !args.task) {
-  console.error(
-    "usage: dress --thread <thread> [--budget-chars N] [--since <iso-ts>] [--pin <ref>]... [--out file] [--no-log]\n" +
-      "       dress --task \"<task>\" [--thread <t>]... [--pin <ref>]... [--engine <cmd>] [--out file]",
-  );
-  process.exit(2);
-}
-
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
 const store = new RecordStore(root, { owner });
+
+if (args.segments.length > 0) {
+  // Compose an outfit from an explicit set of segments: judgment already
+  // happened (the segments exist); this freezes the selection under a
+  // content-addressed name. Members are segment NOTE ids — the exact
+  // judgment versions worn, immune to later revisions.
+  const { outfitTurnCore } = await import("../lib/tags.mjs");
+  const { finishTurn } = await import("../lib/canonical.mjs");
+  const byId = store.readAll();
+  const missing = args.segments.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    console.error(`unknown segment note ids: ${missing.join(", ")}`);
+    process.exit(2);
+  }
+  const notes = args.segments.map((id) => byId.get(id).turn);
+  const bad = notes.filter((t) => !t.body?.segment);
+  if (bad.length > 0) {
+    console.error(`not segment notes: ${bad.map((t) => t.id).join(", ")}`);
+    process.exit(2);
+  }
+  const ts = notes.map((t) => t.ts).sort().at(-1);
+  const outfit = finishTurn(
+    outfitTurnCore({
+      owner,
+      task: args.task ?? "explicit segment selection",
+      members: args.segments,
+      status: "proposed",
+      ts,
+    }),
+  );
+  const streamId = `${owner}~mind`;
+  const known = new Set(store.readStream(streamId).map((t) => t.id));
+  if (!known.has(outfit.id)) store.append(streamId, outfit);
+  console.log(outfit.id);
+  console.error(`outfit: ${args.segments.length} segments, task "${args.task ?? "explicit segment selection"}"`);
+  process.exit(0);
+}
+
+if (!args.thread && !args.task) {
+  console.error(
+    "usage: dress --thread <thread> [--budget-chars N] [--since <iso-ts>] [--pin <ref>]... [--out file] [--no-log]\n" +
+      "       dress --task \"<task>\" [--thread <t>]... [--pin <ref>]... [--engine <cmd>] [--out file]\n" +
+      "       dress --segment <note-id> [--segment <note-id>]... [--task \"label\"]",
+  );
+  process.exit(2);
+}
 
 if (args.task) {
   // Librarian mode: intelligent task-scoped selection over the whole
@@ -65,7 +105,7 @@ if (args.task) {
       threads: args.threads,
       pins: args.pin,
       engine,
-      engineLabel: engine ? engine.split(/\s+/)[0] : undefined,
+      engineLabel: engine,
     });
     if (r.dropped > 0) console.error(`note: candidate cap dropped ${r.dropped} mechanical candidates`);
     if (r.selection.length === 0) {

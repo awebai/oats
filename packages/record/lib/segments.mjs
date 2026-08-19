@@ -3,23 +3,29 @@
 // A piece of clothing is never a single turn: it is a segment, a
 // contiguous stretch of conversation (tool calls and results included)
 // that does one thing — an exploration, a design argument, an
-// implementation, a wrong track. Segments are worn whole or not at all;
-// wrong tracks are never worn.
+// implementation. Segments are worn whole or not at all; dead-end
+// outcomes are never worn (their lesson may be).
 //
 // A segment is recorded as a note turn. Its identity is (thread, start):
 // a later note with the same identity revises it — extends the span,
 // closes the outcome — and the latest (by the revising turn's ts, then
 // id) wins, exactly like session snapshots.
+//
+// Spans are HALF-OPEN: start <= line < end. Adjacent segments meet at
+// equality (seg1.end === seg2.start); endpoints are line numbers and need
+// not land on entry-bearing lines. provenance.origin.snapshot pins the
+// session-turn id whose bytes the judgment was made over.
 
 import { finishTurn } from "./canonical.mjs";
 
+// Type = ACTIVITY only (Juan's ruling): a misconceived implementation is
+// still an implementation. Wrongness lives in outcome, never in type.
 export const SEGMENT_TYPES = new Set([
   "exploration",
   "design",
   "implementation",
   "review",
   "handoff",
-  "wrong-track",
   "admin",
 ]);
 
@@ -34,8 +40,10 @@ export function segmentTurnCore({
   about = [],
   established,
   outcome,
+  lesson,
   ts,
   model,
+  snapshot,
 }) {
   if (!SEGMENT_TYPES.has(type)) throw new Error(`bad segment type ${type}`);
   if (!SEGMENT_OUTCOMES.has(outcome)) throw new Error(`bad segment outcome ${outcome}`);
@@ -53,12 +61,13 @@ export function segmentTurnCore({
         ...(about.length > 0 ? { about } : {}),
         established: String(established ?? ""),
         outcome,
+        ...(lesson ? { lesson: String(lesson).slice(0, 500) } : {}),
       },
     },
     provenance: {
       source: "mind",
       fidelity: "summary",
-      origin: { thread, ...(model ? { model } : {}) },
+      origin: { thread, ...(model ? { model } : {}), ...(snapshot ? { snapshot } : {}) },
     },
   };
 }
@@ -79,6 +88,8 @@ export function parseSegment(turn) {
     about: Array.isArray(seg.about) ? seg.about : [],
     established: String(seg.established ?? ""),
     outcome: String(seg.outcome ?? "ongoing"),
+    lesson: typeof seg.lesson === "string" ? seg.lesson : null,
+    snapshot: turn.provenance?.origin?.snapshot ?? null,
     ts: turn.ts,
     turnId: turn.id,
   };
@@ -125,4 +136,52 @@ export function segmentsFor(store, thread) {
     return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
   };
   return [...latest.values()].sort((a, b) => locNum(a.start) - locNum(b.start));
+}
+
+// ---------------------------------------------------------------- spawns
+
+// The creation mapping (Juan's requirement): when a new agent is dressed
+// into existence, one note records agent id -> outfit -> segments, at the
+// moment of creation. Quality assessment later is a join: the agent's own
+// captured life and task outcomes attach to the same agent thread id.
+export function spawnTurnCore({ owner, agentThread, outfit, task, harness, grant, ts, model }) {
+  return {
+    v: 1,
+    ts,
+    from: owner,
+    kind: "note",
+    links: [
+      { rel: "spawned", ref: agentThread },
+      { rel: "wore", ref: outfit },
+    ],
+    body: {
+      text: `spawned ${agentThread} wearing ${outfit.slice(0, 24)}…`,
+      spawn: {
+        agent: agentThread,
+        outfit,
+        ...(task ? { task: String(task) } : {}),
+        ...(harness ? { harness } : {}),
+        ...(grant ? { grant } : {}),
+      },
+    },
+    provenance: {
+      source: "mind",
+      fidelity: "projected",
+      origin: { ...(model ? { model } : {}) },
+    },
+  };
+}
+
+export function parseSpawn(turn) {
+  const spawn = turn?.body?.spawn;
+  if (!spawn || typeof spawn !== "object" || !spawn.agent || !spawn.outfit) return null;
+  return {
+    agent: String(spawn.agent),
+    outfit: String(spawn.outfit),
+    task: spawn.task ? String(spawn.task) : null,
+    harness: spawn.harness ? String(spawn.harness) : null,
+    grant: spawn.grant ? String(spawn.grant) : null,
+    ts: turn.ts,
+    turnId: turn.id,
+  };
 }

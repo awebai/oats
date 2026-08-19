@@ -23,20 +23,14 @@ process.stdin.on("end", () => {
     n: Number(m[2]),
   }));
   const lastLoc = windowLocs.length ? windowLocs[windowLocs.length - 1].ref : null;
-  const before = (ref) => {
-    const n = Number(/line:(\d+)/.exec(ref)[1]);
-    const prior = windowLocs.filter((l) => l.n < n);
-    return prior.length ? prior[prior.length - 1].ref : ref;
-  };
-
   const segments = [];
-  // Close carried-open segments at the line before the first new phase,
-  // or keep them open if no new phase arrived.
+  // Half-open spans: a carried-open segment closes AT the first new
+  // phase's line (its end === the next segment's start).
   for (const o of openIn) {
     if (events.length > 0) {
       segments.push({
         start: o.start,
-        end: before(events[0].loc),
+        end: events[0].loc,
         type: o.type,
         about: ["stub"],
         established: o.established,
@@ -59,11 +53,12 @@ process.stdin.on("end", () => {
     const wrong = e.gist.includes("WRONG!");
     segments.push({
       start: e.loc,
-      end: isLast ? null : before(events[i + 1].loc),
-      type: wrong ? "wrong-track" : e.type,
+      end: isLast ? null : events[i + 1].loc,
+      type: e.type,
       about: ["stub"],
       established: e.gist,
       outcome: isLast ? "ongoing" : wrong ? "dead-end" : "fruitful",
+      ...(wrong ? { lesson: "the stub lesson" } : {}),
     });
   }
   // A window with no phases and no carried segments: cover it as admin.

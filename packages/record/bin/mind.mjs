@@ -21,7 +21,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--backfill", "--map", "--engine", "--window-chars", "--note", "--root", "--owner"].includes(a)) {
+    if (["--backfill", "--map", "--engine", "--engine-label", "--window-chars", "--note", "--root", "--owner"].includes(a)) {
       args[a.slice(2)] = argv[++i];
     } else if (a.startsWith("--")) args[a.slice(2)] = true;
     else {
@@ -64,12 +64,12 @@ try {
   const r = readThread(store, {
     thread: args.backfill,
     engine,
-    engineLabel: engine ? engine.split(/\s+/)[0] : undefined,
+    engineLabel: args["engine-label"] ?? engine,
     windowChars: args["window-chars"] ? Number(args["window-chars"]) : undefined,
     threadNote: args.note,
     onWindow: (p) =>
       console.error(
-        `[mind] window ${p.windows}: ${p.cursor}/${p.total} entries read, ${p.written} segment notes, ${p.open} open`,
+        `[mind] window ${p.windows}: ${p.cursor}/${p.total} entries read, ${p.written} segment notes, ${p.open} open, ${p.engineMs}ms engine`,
       ),
   });
   console.error(

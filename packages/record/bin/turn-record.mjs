@@ -26,6 +26,10 @@ switch (sub) {
     rest();
     await import("./dress.mjs");
     break;
+  case "segments":
+    rest();
+    await import("./segments.mjs");
+    break;
   case "mind":
     rest();
     await import("./mind.mjs");
@@ -36,10 +40,11 @@ switch (sub) {
     break;
   default:
     console.error(
-      "usage: turn-record <capture|recall|dress|mind|setup> [options]\n" +
+      "usage: turn-record <capture|recall|dress|segments|mind|setup> [options]\n" +
         "  capture [--watch|--status|--owner <name>|--root <dir>]\n" +
         "  recall  [--kind k] [--thread t] [--from f] [--show id] <query>\n" +
         "  dress   --thread <t> [--budget-chars N] [--since <ts>] [--out f]\n" +
+        "  segments [query] [--thread t] [--type t] [--about s] [--include-dead]\n" +
         "  mind    --backfill <thread> [--engine cmd] | --map <thread>\n" +
         "  setup   [--owner <name>] [--no-service] [--no-hooks] [--dry-run]",
     );
