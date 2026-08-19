@@ -66,6 +66,12 @@ turn-record spawn --outfit t1:<hex>             # compile an outfit into a nativ
                                                 # starts the dressed agent
 turn-record spawn --outfit t1:<hex> --dry-run   # compile only, no spawn note
 
+turn-record mind --follow --engine <cmd>        # the consciousness, live: watch this
+                                                # owner's session streams and run the
+                                                # reader on every thread whose journal
+                                                # grew (resumes from the last closed
+                                                # annotation; --once for cron-style)
+
 turn-record recall "sqlite fts"                 # search mail + chat + sessions together
 turn-record recall --kind mail --from acme/x q  # filters
 turn-record recall --thread aweb:conv:<id>      # list a thread chronologically
