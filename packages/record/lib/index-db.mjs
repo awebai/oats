@@ -17,6 +17,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { extractCcText, extractSessionTextFor } from "./formats.mjs";
+import { parseOutfit, parseTag } from "./tags.mjs";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS turns (
@@ -47,6 +48,23 @@ CREATE TABLE IF NOT EXISTS index_state (
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tags (
+  tag_id TEXT NOT NULL,
+  target_ref TEXT NOT NULL,
+  about TEXT NOT NULL,
+  acts TEXT NOT NULL,
+  case_slug TEXT,
+  note TEXT NOT NULL,
+  PRIMARY KEY (tag_id)
+);
+CREATE INDEX IF NOT EXISTS tags_target ON tags(target_ref);
+CREATE INDEX IF NOT EXISTS tags_case ON tags(case_slug);
+CREATE TABLE IF NOT EXISTS outfits (
+  outfit_id TEXT PRIMARY KEY,
+  task TEXT NOT NULL,
+  status TEXT NOT NULL,
+  members TEXT NOT NULL
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS turn_text USING fts5(
   turn_id UNINDEXED, loc UNINDEXED, role UNINDEXED, text
@@ -109,6 +127,8 @@ export class RecordIndex {
       this.db.exec("DELETE FROM turns");
       this.db.exec("DELETE FROM turn_text");
       this.db.exec("DELETE FROM tombstones");
+      this.db.exec("DELETE FROM tags");
+      this.db.exec("DELETE FROM outfits");
       this.db.exec("DELETE FROM index_state");
       this.db.exec("COMMIT");
     } catch (err) {
@@ -210,6 +230,68 @@ export class RecordIndex {
         insText.run(turn.id, doc.loc, doc.role, doc.text);
       }
     }
+
+    // Selection map: tags and outfits are note turns with structured
+    // bodies (see lib/tags.mjs); the index makes them queryable. A
+    // malformed note turn must never break indexing — the rebuild
+    // invariant (one bad turn anywhere cannot make the index
+    // unrecoverable) outranks completeness of the selection map.
+    let tag = null;
+    let outfitParsed = null;
+    if (turn.kind === "note") {
+      try {
+        tag = parseTag(turn);
+        outfitParsed = parseOutfit(turn);
+      } catch {
+        tag = null;
+        outfitParsed = null;
+      }
+    }
+    if (tag) {
+      this.db
+        .prepare(
+          "INSERT OR IGNORE INTO tags (tag_id, target_ref, about, acts, case_slug, note) VALUES (?, ?, ?, ?, ?, ?)",
+        )
+        .run(turn.id, tag.target, JSON.stringify(tag.about), JSON.stringify(tag.acts), tag.caseSlug, tag.note);
+    }
+    const outfit = outfitParsed;
+    if (outfit) {
+      this.db
+        .prepare("INSERT OR IGNORE INTO outfits (outfit_id, task, status, members) VALUES (?, ?, ?, ?)")
+        .run(turn.id, outfit.task, outfit.status, JSON.stringify(outfit.members));
+    }
+  }
+
+  // Turn refs tagged with a case or topic slug (exact slug match).
+  // The unfiltered scan is v1 debt: fine while the mind stream is small,
+  // needs paging when tags accumulate over the record's lifetime.
+  taggedRefs({ caseSlug, about } = {}) {
+    const rows = caseSlug
+      ? this.db
+          .prepare("SELECT target_ref, about, acts, case_slug, note FROM tags WHERE case_slug = ?")
+          .all(caseSlug)
+      : this.db.prepare("SELECT target_ref, about, acts, case_slug, note FROM tags").all();
+    return rows
+      .filter((r) => {
+        if (caseSlug && r.case_slug !== caseSlug) return false;
+        if (about && !JSON.parse(r.about).includes(about)) return false;
+        return true;
+      })
+      .map((r) => ({
+        ref: r.target_ref,
+        about: JSON.parse(r.about),
+        acts: JSON.parse(r.acts),
+        caseSlug: r.case_slug,
+        note: r.note,
+      }));
+  }
+
+  outfitsFor(taskWords) {
+    const rows = this.db.prepare("SELECT outfit_id, task, status, members FROM outfits").all();
+    const words = taskWords.toLowerCase().split(/\s+/).filter(Boolean);
+    return rows
+      .filter((r) => words.some((w) => r.task.toLowerCase().includes(w)))
+      .map((r) => ({ id: r.outfit_id, task: r.task, status: r.status, members: JSON.parse(r.members) }));
   }
 
   // Text documents for one turn. Mail/chat: one doc. Session: one doc per
