@@ -202,21 +202,19 @@ test("duplicate ids across streams attribute to the alphabetically first stream"
   assert.equal(row.stream, "mac~aaa", "matches RecordStore.readAll attribution");
 });
 
-test("extractSessionText takes user/assistant text and skips the rest", () => {
+test("extractSessionText keeps the full conversation, drops only bookkeeping", () => {
   const bytes = Buffer.from(
     sessionLine("user", "question", "t") +
       '{"type":"file-history-snapshot","snapshot":{}}\n' +
-      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}\n' +
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}}]}}\n' +
       sessionLine("assistant", "answer", "t") +
       '{"type":"user","message":{"content":"plain string content"}}\n',
   );
   const docs = extractSessionText(bytes);
   assert.deepEqual(
-    docs.map((d) => d.text),
-    ["question", "answer", "plain string content"],
-  );
-  assert.deepEqual(
     docs.map((d) => d.role),
-    ["user", "assistant", "user"],
+    ["user", "tool_use", "assistant", "user"],
+    "tool calls are conversation; snapshots are bookkeeping",
   );
+  assert.match(docs[1].text, /Bash.*"command":"ls"/);
 });

@@ -43,6 +43,21 @@ const PI_LINES = [
   },
   {
     type: "message",
+    timestamp: "2026-08-03T07:18:09.500Z",
+    message: {
+      role: "assistant",
+      content: [
+        {
+          type: "toolCall",
+          id: "call_x|fc_y",
+          name: "read",
+          arguments: "{'path': '/w/file.txt'}",
+        },
+      ],
+    },
+  },
+  {
+    type: "message",
     timestamp: "2026-08-03T07:18:10.000Z",
     message: { role: "toolResult", content: [{ type: "text", text: "tool noise not indexed" }] },
   },
@@ -91,14 +106,19 @@ test("pi sessions capture into <owner>~pi with pi:session threads", (t) => {
   assert.equal(turn.provenance.source, "pi");
   assert.equal(turn.ts, "2026-08-03T07:18:10.000Z", "last event timestamp");
   assert.equal(turn.body.events, PI_LINES.length);
+  void 0;
 
   const index = new RecordIndex(store);
   t.after(() => index.close());
   index.rebuild();
   assert.equal(index.search("identity registry").length, 1, "user text searchable");
   assert.equal(index.search("schema split").length, 1, "assistant text searchable");
-  assert.equal(index.search("planning the migration quietly").length, 0, "thinking not indexed");
-  assert.equal(index.search("tool noise").length, 0, "toolResult not indexed");
+  // Never strip anything model-visible: thinking and tool results are
+  // indexed with roles, filterable but present.
+  assert.equal(index.search("planning the migration quietly").length, 1, "thinking indexed");
+  assert.equal(index.search("planning the migration quietly", { role: "thinking" }).length, 1);
+  assert.equal(index.search("tool noise").length, 1, "tool_result indexed");
+  assert.equal(index.search("tool noise", { role: "user" }).length, 0, "role filter works");
 
   const d = dress(store, { thread: `pi:session:${PI_UUID}`, budgetChars: 5000, log: false });
   assert.match(d.briefing, /migrate the identity registry/);
@@ -143,18 +163,44 @@ test("session ids parse from real filename shapes", () => {
   assert.equal(SESSION_FORMATS.cc.sessionId("/x/abcd-ef.jsonl"), "abcd-ef");
 });
 
-test("extractors take only user/assistant text", () => {
+test("extractors surface the full conversation with roles", () => {
   const pi = extractPiText(Buffer.from(jsonl(PI_LINES)));
   assert.deepEqual(
     pi.map((d) => [d.role, d.text]),
     [
       ["user", "migrate the identity registry"],
+      ["thinking", "planning the migration quietly"],
       ["assistant", "starting with the schema split"],
+      ["tool_use", "read {'path': '/w/file.txt'}"],
+      ["tool_result", "tool noise not indexed"],
     ],
+    "nothing model-visible is stripped; pi toolCall normalizes to tool_use",
   );
   const cx = extractCodexText(Buffer.from(jsonl(CODEX_LINES)));
   assert.deepEqual(
     cx.map((d) => d.role),
     ["user", "assistant"],
   );
+});
+
+test("binary payloads index as placeholders; unknown parts are capped", async () => {
+  const { extractCcText } = await import("../lib/formats.mjs");
+  const doc64 = "A".repeat(400000);
+  const line = JSON.stringify({
+    type: "user",
+    timestamp: "2026-02-22T10:00:00Z",
+    message: {
+      content: [
+        { type: "document", source: { media_type: "application/pdf", data: doc64 } },
+        { type: "mystery_part", payload: { deep: "x".repeat(10000) } },
+      ],
+    },
+  });
+  const docs = extractCcText(Buffer.from(line + "\n"));
+  assert.equal(docs.length, 2);
+  assert.match(docs[0].text, /^\[document: application\/pdf, 400000 base64 chars/);
+  assert.ok(docs[0].text.length < 200, "placeholder, not payload");
+  assert.equal(docs[1].role, "mystery_part");
+  assert.ok(docs[1].text.length < 2100, "fallback capped");
+  assert.match(docs[1].text, /full content in session blob/);
 });

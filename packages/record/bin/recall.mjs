@@ -22,7 +22,7 @@ function parseArgs(argv) {
   const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--root", "--kind", "--thread", "--from", "--limit", "--show"].includes(a)) {
+    if (["--root", "--kind", "--thread", "--from", "--role", "--limit", "--show"].includes(a)) {
       args[a.slice(2)] = argv[++i];
     } else if (a.startsWith("--")) args[a.slice(2)] = true;
     else args._.push(a);
@@ -60,7 +60,7 @@ try {
 
   const query = args._.join(" ").trim();
   if (!query && !args.thread) {
-    console.error("usage: recall [--kind k] [--thread t] [--from f] [--limit n] <query>");
+    console.error("usage: recall [--kind k] [--thread t] [--from f] [--role r] [--limit n] <query>");
     process.exit(2);
   }
 
@@ -71,6 +71,7 @@ try {
       kind: args.kind,
       thread: args.thread,
       from: args.from,
+      role: args.role,
       limit,
     });
   } else {

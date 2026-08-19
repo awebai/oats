@@ -77,6 +77,9 @@ export class RecordIndex {
     const dir = join(store.root, "index");
     mkdirSync(dir, { recursive: true });
     this.db = new DatabaseSync(join(dir, "turns.db"));
+    // Concurrent index users (watcher pass, manual reindex, recall) wait
+    // for each other instead of dying on "database is locked".
+    this.db.exec("PRAGMA busy_timeout = 60000");
     this.db.exec(SCHEMA);
   }
 
@@ -340,7 +343,7 @@ export class RecordIndex {
     }
   }
 
-  searchRaw(query, { kind, thread, from, limit = 20 } = {}) {
+  searchRaw(query, { kind, thread, from, role, limit = 20 } = {}) {
     let sql = `
       SELECT t.id, t.ts, t.from_name, t.to_name, t.thread, t.kind, t.source, t.stream,
              x.loc, x.role, snippet(turn_text, 3, '', '', ' … ', 24) AS snip
@@ -359,6 +362,10 @@ export class RecordIndex {
     if (from) {
       sql += " AND t.from_name = ?";
       params.push(from);
+    }
+    if (role) {
+      sql += " AND x.role = ?";
+      params.push(role);
     }
     sql += " ORDER BY rank LIMIT ?";
     params.push(limit);
