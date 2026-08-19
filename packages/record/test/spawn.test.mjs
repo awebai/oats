@@ -14,8 +14,7 @@ import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
 import { segmentTurnCore } from "../lib/segments.mjs";
 import { outfitTurnCore } from "../lib/tags.mjs";
-import { finishTurn } from "../lib/canonical.mjs";
-import { CompileError, compileOutfit, outfitChunks, piProjectDir } from "../lib/compile-pi.mjs";
+import { assembleEntries, CompileError, compileOutfit, outfitChunks, piProjectDir } from "../lib/compile-pi.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -202,6 +201,85 @@ test("a tombstoned event stays redacted in the dress", (t) => {
   const all = JSON.stringify(chunks);
   assert.ok(!all.includes("please list the files"), "tombstoned event absent from the dress");
   assert.ok(all.includes("Two files"), "other events intact");
+});
+
+test("out-of-order and duplicate tool pairs degrade to text, never dangle", () => {
+  const opts = { sessionId: "22222222-3333-4444-8555-666666666666", cwd: "/x", now: "2026-03-01T12:00:00.000Z" };
+
+  // A result BEFORE its call: neither side replays natively.
+  const early = assembleEntries(
+    [{
+      marker: null,
+      items: [
+        { kind: "tool_result", callId: "c1", name: "bash", text: "out", isError: false },
+        { kind: "assistant", parts: [{ type: "toolCall", id: "c1", name: "bash", arguments: {} }] },
+      ],
+    }],
+    opts,
+  );
+  const earlyMsgs = early.filter((e) => e.type === "message").map((e) => e.message);
+  assert.ok(!earlyMsgs.some((m) => m.role === "toolResult"), "no native result");
+  assert.ok(
+    !earlyMsgs.some((m) => m.content?.some?.((p) => p.type === "toolCall")),
+    "a call whose result already passed never replays natively (it would dangle)",
+  );
+
+  // Duplicate call ids: only the first occurrence pairs with the result.
+  const dup = assembleEntries(
+    [{
+      marker: null,
+      items: [
+        { kind: "assistant", parts: [{ type: "toolCall", id: "d1", name: "bash", arguments: { n: 1 } }] },
+        { kind: "assistant", parts: [{ type: "toolCall", id: "d1", name: "bash", arguments: { n: 2 } }] },
+        { kind: "tool_result", callId: "d1", name: "bash", text: "out", isError: false },
+      ],
+    }],
+    opts,
+  );
+  const dupMsgs = dup.filter((e) => e.type === "message").map((e) => e.message);
+  const nativeCalls = dupMsgs.flatMap((m) => m.content ?? []).filter((p) => p.type === "toolCall");
+  assert.equal(nativeCalls.length, 1, "exactly one native call");
+  assert.deepEqual(nativeCalls[0].arguments, { n: 1 }, "the FIRST occurrence");
+  assert.equal(dupMsgs.filter((m) => m.role === "toolResult").length, 1, "exactly one native result");
+
+  // Two results for one call: the first pairs, the second orphans.
+  const twice = assembleEntries(
+    [{
+      marker: null,
+      items: [
+        { kind: "assistant", parts: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }] },
+        { kind: "tool_result", callId: "t1", name: "bash", text: "first", isError: false },
+        { kind: "tool_result", callId: "t1", name: "bash", text: "second", isError: false },
+      ],
+    }],
+    opts,
+  );
+  const twiceMsgs = twice.filter((e) => e.type === "message").map((e) => e.message);
+  assert.equal(twiceMsgs.filter((m) => m.role === "toolResult").length, 1);
+  assert.ok(
+    twice.some((e) => e.type === "custom_message" && String(e.content).includes("second")),
+    "the surplus result rides as injected context",
+  );
+});
+
+test("diverging owner streams for one session fail loudly", (t) => {
+  const { base, store } = setup(t);
+  const thread = seedCcSession(base, store);
+  const outfitId = freeze(store, thread, [[1, 3, "the listing"]]);
+  // A second owner claims the same session but with different bytes at
+  // line 1 — corruption or tampering, never a silent pick.
+  const other = new RecordStore(store.root, { owner: "otherbox" });
+  const evil = store.readStream("mac~cc.sess-A")[0];
+  other.appendCore("otherbox~cc.sess-A", {
+    v: 1,
+    ts: evil.ts,
+    from: "otherbox",
+    thread: evil.thread,
+    kind: "session",
+    body: { line: '{"type":"user","message":{"content":[{"type":"text","text":"TAMPERED"}]}}' },
+    provenance: { source: "cc", fidelity: "verbatim", origin: { session_id: "sess-A", line: 1 } },
+  });
+  assert.throws(() => outfitChunks(store, outfitId), /diverge at line 1/);
 });
 
 test("pi session path follows pi's directory convention", () => {

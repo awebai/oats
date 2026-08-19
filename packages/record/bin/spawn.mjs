@@ -14,6 +14,7 @@
 // Store root: --root, else $TURN_RECORD_ROOT, else ~/.turn-record
 // Spawn-note owner: --owner, else $TURN_RECORD_OWNER, else short hostname.
 
+import { mkdtempSync } from "node:fs";
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
@@ -54,7 +55,7 @@ try {
     owner,
     task: args.task,
     cwd: args.cwd ?? process.cwd(),
-    sessionDir: args.dryRun ? join(tmpdir(), "turn-record-spawn-dry") : args.sessionDir,
+    sessionDir: args.dryRun ? mkdtempSync(join(tmpdir(), "turn-record-spawn-dry-")) : args.sessionDir,
     log: !args.dryRun,
   });
   console.error(

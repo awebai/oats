@@ -24,7 +24,7 @@
 //   the record keeps the real bytes, the dress does not carry them.
 
 import { createHash } from "node:crypto";
-import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -287,10 +287,32 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
     if (marker) {
       push({ type: "custom_message", customType: CUSTOM_TYPE, content: marker, display: true });
     }
-    // A toolCall may only be replayed when its result is in the same chunk.
-    const resultIds = new Set(items.filter((i) => i.kind === "tool_result").map((i) => i.callId));
-    const emittedCalls = new Map(); // callId -> name
-    for (const item of items) {
+    // Pairing plan: a toolCall replays natively only when it is the FIRST
+    // occurrence of its id AND a result for that id appears strictly
+    // LATER in the same chunk. Anything else — duplicate call ids, a
+    // result arriving before its call, a pair split across segments —
+    // degrades to text, never to a dangling native tool-use. Honest
+    // captures always order call-before-result; this guards hand-crafted
+    // or malformed transcripts and future formats.
+    const firstCall = new Map(); // callId -> { index, name }
+    const pairedResult = new Map(); // callId -> result item index
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it.kind === "assistant") {
+        for (const p of it.parts) {
+          if (p.type === "toolCall" && p.id && !firstCall.has(p.id)) {
+            firstCall.set(p.id, { index: i, name: p.name });
+          }
+        }
+      } else if (it.kind === "tool_result" && it.callId) {
+        const call = firstCall.get(it.callId);
+        if (call && call.index < i && !pairedResult.has(it.callId)) {
+          pairedResult.set(it.callId, i);
+        }
+      }
+    }
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
       if (item.kind === "user") {
         push({ type: "message", message: { role: "user", content: item.parts, timestamp: nowMs } });
       } else if (item.kind === "context") {
@@ -300,9 +322,9 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
         let calls = 0;
         for (const part of item.parts) {
           if (part.type === "toolCall") {
-            if (part.id && resultIds.has(part.id)) {
+            const call = part.id ? firstCall.get(part.id) : undefined;
+            if (call && call.index === i && pairedResult.has(part.id)) {
               parts.push(part);
-              emittedCalls.set(part.id, part.name);
               calls++;
             } else {
               parts.push({ type: "text", text: `[tool call — ${part.name}]\n${safeJson(part.arguments)}` });
@@ -316,22 +338,21 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
           message: { role: "assistant", content: parts, stopReason: calls > 0 ? "toolUse" : "stop", ...assistantBase },
         });
       } else if (item.kind === "tool_result") {
-        const name = emittedCalls.get(item.callId);
-        if (name) {
+        if (pairedResult.get(item.callId) === i) {
           push({
             type: "message",
             message: {
               role: "toolResult",
               toolCallId: item.callId,
-              toolName: item.name ?? name,
+              toolName: item.name ?? firstCall.get(item.callId).name,
               content: [{ type: "text", text: item.text }],
               isError: item.isError === true,
               timestamp: nowMs,
             },
           });
-          emittedCalls.delete(item.callId);
         } else {
-          // Orphan result (its call was outside the chunk or folded).
+          // Orphan result: its call is outside the chunk, folded, or a
+          // duplicate — the pair was never replayed natively.
           push({
             type: "custom_message",
             customType: CUSTOM_TYPE,
@@ -384,9 +405,18 @@ export function outfitChunks(store, outfitRef) {
         if (store.claimHides(claims, t)) continue;
         if (t.thread !== seg.thread || typeof t.body?.line !== "string") continue;
         const line = t.provenance?.origin?.line ?? 0;
-        if (line >= start && line < end && !events.some((e) => e.line === line)) {
-          events.push({ line, source: t.provenance?.source, text: t.body.line });
+        if (line < start || line >= end) continue;
+        const prior = events.find((e) => e.line === line);
+        if (prior) {
+          // Two owners captured the same session: same line must mean the
+          // same bytes. Divergence is corruption or tampering — fail loud,
+          // never silently pick a winner (mergeStreamCopy's philosophy).
+          if (prior.text !== t.body.line) {
+            throw new CompileError(`streams for ${seg.thread} diverge at line ${line}`);
+          }
+          continue;
         }
+        events.push({ line, source: t.provenance?.source, text: t.body.line });
       }
     }
     events.sort((a, b) => a.line - b.line);
@@ -417,14 +447,22 @@ export function compileOutfit(
 ) {
   if (!outfitRef) throw new CompileError("an outfit ref is required");
   if (!owner) throw new CompileError("an owner is required for the spawn note");
-  const realCwd = realpathSync(cwd);
+  let realCwd;
+  try {
+    realCwd = realpathSync(cwd);
+  } catch {
+    throw new CompileError(`cwd ${cwd} does not exist`);
+  }
   const id = sessionId ?? cryptoRandomUuid();
   const stamp = now ?? new Date().toISOString();
   const { outfit, chunks } = outfitChunks(store, outfitRef);
   const entries = assembleEntries(chunks, { sessionId: id, cwd: realCwd, now: stamp });
   const path = piSessionPath(realCwd, id, stamp, sessionDir);
   mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  // Write-then-rename: pi must never see a half-written session file.
+  const tmp = path + ".tmp-" + process.pid;
+  writeFileSync(tmp, entries.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  renameSync(tmp, path);
 
   const agentThread = `pi:session:${id}`;
   let spawn = null;
