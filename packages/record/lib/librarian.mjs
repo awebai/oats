@@ -178,9 +178,6 @@ export function runEngine(engineCmd, prompt, { timeoutMs = 120000 } = {}) {
   } catch (err) {
     throw new LibrarianError(`engine JSON did not parse: ${err.message}`);
   }
-  if (!Array.isArray(parsed.selected)) {
-    throw new LibrarianError("engine JSON missing selected[]");
-  }
   return parsed;
 }
 
@@ -199,6 +196,9 @@ export function selectClothes(
     return { selection: [], outfit: null, tags: [], judged: 0, dropped };
   }
   const verdict = runEngine(engine, buildJudgePrompt(task, candidates));
+  if (!Array.isArray(verdict.selected)) {
+    throw new LibrarianError("engine JSON missing selected[]");
+  }
 
   const byId = store.readAll();
   const selection = [];

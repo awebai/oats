@@ -195,5 +195,8 @@ test("engine failures are loud, typed errors", (t) => {
   );
   assert.throws(() => runEngine("false", "prompt"), /engine exited/);
   assert.throws(() => runEngine("echo no json here", "prompt"), /no JSON object/);
-  assert.throws(() => runEngine('echo "{\\"nope\\": 1}"', "prompt"), /missing selected/);
+  assert.throws(
+    () => selectClothes(store, index, { task: "widget", engine: 'echo "{\\"nope\\": 1}"' }),
+    /missing selected/,
+  );
 });

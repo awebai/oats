@@ -103,19 +103,19 @@ function binaryPlaceholder(part) {
   return null;
 }
 
-function pushPart(docs, lineNo, baseRole, part) {
+function pushPart(docs, lineNo, baseRole, part, ts = "") {
   if (typeof part !== "object" || part === null) return;
   if (part.type === "text" && typeof part.text === "string") {
-    if (part.text.trim()) docs.push({ loc: `line:${lineNo}`, role: baseRole, text: part.text });
+    if (part.text.trim()) docs.push({ loc: `line:${lineNo}`, role: baseRole, text: part.text, ts });
   } else if (part.type === "thinking") {
     const t = typeof part.thinking === "string" ? part.thinking : "";
-    if (t.trim()) docs.push({ loc: `line:${lineNo}`, role: "thinking", text: t });
+    if (t.trim()) docs.push({ loc: `line:${lineNo}`, role: "thinking", text: t, ts });
   } else if (part.type === "tool_use" || part.type === "toolCall") {
     // pi spells it toolCall with pre-encoded string arguments; cc spells it
     // tool_use with an input object. One normalized role either way.
     const args =
       typeof part.arguments === "string" ? part.arguments : safeJson(part.input ?? part.arguments);
-    docs.push({ loc: `line:${lineNo}`, role: "tool_use", text: `${part.name ?? "tool"} ${args}` });
+    docs.push({ loc: `line:${lineNo}`, role: "tool_use", text: `${part.name ?? "tool"} ${args}`, ts });
   } else if (part.type === "tool_result") {
     const c = part.content;
     const text =
@@ -124,23 +124,23 @@ function pushPart(docs, lineNo, baseRole, part) {
         : Array.isArray(c)
           ? c.map((p) => (typeof p?.text === "string" ? p.text : safeJson(p))).join("\n")
           : safeJson(c);
-    if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "tool_result", text: String(text) });
+    if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "tool_result", text: String(text), ts });
   } else if (typeof part.text === "string" && part.text.trim()) {
-    docs.push({ loc: `line:${lineNo}`, role: baseRole, text: part.text });
+    docs.push({ loc: `line:${lineNo}`, role: baseRole, text: part.text, ts });
   } else {
     // Unknown model-visible part: keep it, but bounded — binary payloads
     // become descriptive placeholders, anything else is capped with the
     // full bytes always in the blob.
     const placeholder = binaryPlaceholder(part);
     if (placeholder) {
-      docs.push({ loc: `line:${lineNo}`, role: part.type ?? baseRole, text: placeholder });
+      docs.push({ loc: `line:${lineNo}`, role: part.type ?? baseRole, text: placeholder, ts });
       return;
     }
     let text = safeJson(part);
     if (text.length > FALLBACK_CAP) {
       text = text.slice(0, FALLBACK_CAP) + ` [+${text.length - FALLBACK_CAP} chars; full content in session blob]`;
     }
-    docs.push({ loc: `line:${lineNo}`, role: part.type ?? baseRole, text });
+    docs.push({ loc: `line:${lineNo}`, role: part.type ?? baseRole, text, ts });
   }
 }
 
@@ -155,19 +155,20 @@ function safeJson(v) {
 export function extractCcText(bytes) {
   const docs = [];
   for (const { d, lineNo } of parsedLines(bytes)) {
+    const ts = typeof d.timestamp === "string" ? d.timestamp : "";
     if (d.type === "user" || d.type === "assistant") {
       const content = d.message?.content;
       if (typeof content === "string") {
-        if (content.trim()) docs.push({ loc: `line:${lineNo}`, role: d.type, text: content });
+        if (content.trim()) docs.push({ loc: `line:${lineNo}`, role: d.type, text: content, ts });
       } else if (Array.isArray(content)) {
-        for (const part of content) pushPart(docs, lineNo, d.type, part);
+        for (const part of content) pushPart(docs, lineNo, d.type, part, ts);
       }
     } else if (d.type === "attachment") {
       const text = safeJson(d.attachment);
-      if (text && text !== "null") docs.push({ loc: `line:${lineNo}`, role: "attachment", text });
+      if (text && text !== "null") docs.push({ loc: `line:${lineNo}`, role: "attachment", text, ts });
     } else if (d.type === "system") {
       const text = typeof d.content === "string" ? d.content : safeJson(d.content);
-      if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "system", text: String(text) });
+      if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "system", text: String(text), ts });
     }
     // Everything else (mode, file-history-*, queue-operation, ...) is
     // harness bookkeeping: not conversation, preserved verbatim in the blob.
@@ -185,19 +186,20 @@ function piRoots(home = homedir()) {
 export function extractPiText(bytes) {
   const docs = [];
   for (const { d, lineNo } of parsedLines(bytes)) {
+    const ts = typeof d.timestamp === "string" ? d.timestamp : "";
     if (d.type === "message") {
       const rawRole = d.message?.role;
       const role = rawRole === "toolResult" ? "tool_result" : rawRole;
       if (!role) continue;
       const content = d.message?.content;
       if (typeof content === "string") {
-        if (content.trim()) docs.push({ loc: `line:${lineNo}`, role, text: content });
+        if (content.trim()) docs.push({ loc: `line:${lineNo}`, role, text: content, ts });
       } else if (Array.isArray(content)) {
-        for (const part of content) pushPart(docs, lineNo, role, part);
+        for (const part of content) pushPart(docs, lineNo, role, part, ts);
       }
     } else if (d.type === "custom_message") {
       const text = typeof d.content === "string" ? d.content : safeJson(d.content ?? d);
-      if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "system", text: String(text) });
+      if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "system", text: String(text), ts });
     }
   }
   return docs;
@@ -223,6 +225,7 @@ export function extractCodexText(bytes) {
     if (d.type !== "response_item") continue;
     const p = d.payload;
     if (!p || typeof p !== "object") continue;
+    const ts = typeof d.timestamp === "string" ? d.timestamp : "";
     if (p.type === "message" && (p.role === "user" || p.role === "assistant")) {
       const text = Array.isArray(p.content)
         ? p.content
@@ -230,19 +233,19 @@ export function extractCodexText(bytes) {
             .map((x) => x.text)
             .join("\n")
         : "";
-      if (text.trim()) docs.push({ loc: `line:${lineNo}`, role: p.role, text });
+      if (text.trim()) docs.push({ loc: `line:${lineNo}`, role: p.role, text, ts });
     } else if (p.type === "reasoning") {
       const text = Array.isArray(p.summary)
         ? p.summary.map((x) => (typeof x?.text === "string" ? x.text : "")).join("\n")
         : "";
-      if (text.trim()) docs.push({ loc: `line:${lineNo}`, role: "thinking", text });
+      if (text.trim()) docs.push({ loc: `line:${lineNo}`, role: "thinking", text, ts });
     } else if (p.type === "function_call" || p.type === "custom_tool_call") {
       const text = `${p.name ?? "tool"} ${typeof p.arguments === "string" ? p.arguments : safeJson(p.arguments ?? p.input)}`;
-      docs.push({ loc: `line:${lineNo}`, role: "tool_use", text });
+      docs.push({ loc: `line:${lineNo}`, role: "tool_use", text, ts });
     } else if (p.type === "function_call_output" || p.type === "custom_tool_call_output") {
       const out = p.output;
       const text = typeof out === "string" ? out : safeJson(out);
-      if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "tool_result", text: String(text) });
+      if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "tool_result", text: String(text), ts });
     }
     // ghost_snapshot and other non-conversation payloads: blob-only.
   }

@@ -1,0 +1,233 @@
+// The reader (Jiminy): follows an agent's life sequentially and segments
+// it — the consciousness's core competence, per the selection-subsystem
+// design. It reads FULL conversation (tool calls and results included;
+// per-entry display is bounded for window size, with explicit truncation
+// markers — the blob always holds every byte), holds the running open
+// segments across windows, and records its conclusions as segment turns.
+//
+// Backfill (read a historical thread) and follow (read as capture lands
+// new events) are the same operation: read from the last annotated
+// position. State is authoritative in the record — the open segments are
+// the ones recorded as `ongoing` — so a crashed or restarted reader
+// resumes by reading its own prior conclusions.
+
+import { extractSessionTextFor } from "./formats.mjs";
+import { runEngine, LibrarianError } from "./librarian.mjs";
+import { segmentTurnCore, segmentsFor, SEGMENT_OUTCOMES, SEGMENT_TYPES } from "./segments.mjs";
+import { finishTurn } from "./canonical.mjs";
+
+export class ReaderError extends Error {}
+
+// Per-entry display cap inside a reader window. Bounded presentation,
+// not stripping: the marker names the cut and the blob keeps the bytes.
+const ENTRY_CAP = 4000;
+const DEFAULT_WINDOW_CHARS = 80000;
+
+export const READER_CHARTER = `You are the consciousness (a reader) following another agent's working life, one conversation read in order. Your only job: segment it into the pieces that carry meaning — the units a future agent could wear as context.
+
+A segment is a contiguous stretch of the conversation that does ONE thing:
+- exploration: learning (reading code/docs, gathering facts). What matters is what it established.
+- design: an argument or discussion that produced a decision or direction.
+- implementation: building one thing, across many turns of edits/tests/tool runs.
+- review: a review round and the fixes it drove.
+- handoff: transitions, summaries written for others, compaction.
+- wrong-track: work later revealed as misconceived, reverted, or ruled wrong. Be alert for these: an implementation that gets discarded, an experiment whose premise is later rejected. Their lesson may survive; the work itself must be marked dead-end.
+- admin: setup, bookkeeping, idle coordination noise.
+
+Rules:
+- Boundaries sit where the PURPOSE shifts, not where topics drift. Tool calls and results belong to the segment whose purpose they serve.
+- "established" must be concrete: what was produced, learned, or decided — names, decisions, artifacts. Never vague ("worked on X").
+- outcome: fruitful | dead-end | superseded (later work replaced it) | ongoing (still open at the end of what you have seen).
+- You will receive the conversation in windows. OPEN SEGMENTS from earlier windows are given back to you; extend them, close them, or revise them as new evidence arrives. Evidence later in the conversation may retroactively reveal an earlier segment as a wrong track — say so by revising it.
+- Segments must cover the conversation without large gaps; small glue (a one-line ack) may attach to a neighbor.
+
+Respond with ONLY one JSON object:
+{"segments": [{"start": "line:N", "end": "line:M" or null if still open, "type": "...", "about": ["slug", ...], "established": "...", "outcome": "..."}]}
+Include every open segment you were given (revised as needed) plus new ones. Use the line refs shown in the window.`;
+
+function renderEntry(e) {
+  let text = e.text;
+  if (text.length > ENTRY_CAP) {
+    text =
+      text.slice(0, ENTRY_CAP) +
+      ` [+${text.length - ENTRY_CAP} chars truncated for window; full content in record]`;
+  }
+  return `[${e.loc}] ${e.role}${e.ts ? ` (${e.ts})` : ""}: ${text}`;
+}
+
+// Load the thread's full-fidelity entries (all roles) from the latest
+// session snapshot, or from mail/chat turns for conversation threads.
+export function readerEntries(store, thread) {
+  const byId = store.readAll();
+  const turns = [...byId.values()]
+    .map(({ turn }) => turn)
+    .filter((t) => t.thread === thread && t.provenance?.source !== "mind");
+  const sessions = turns.filter((t) => t.kind === "session");
+  if (sessions.length > 0) {
+    const latest = sessions.reduce((a, b) =>
+      (b.body?.events ?? 0) > (a.body?.events ?? 0) ? b : a,
+    );
+    const bytes = store.getObject(latest.body.ref);
+    return extractSessionTextFor(latest.provenance?.source, bytes).map((d) => ({
+      loc: d.loc,
+      role: d.role,
+      ts: d.ts ?? "",
+      text: d.text,
+      turnId: latest.id,
+    }));
+  }
+  return turns
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts) || a.id.localeCompare(b.id))
+    .map((t, i) => ({
+      loc: `line:${i + 1}`,
+      role: t.kind,
+      ts: t.ts,
+      text: (t.body?.subject ? t.body.subject + "\n" : "") + (t.body?.text ?? ""),
+      turnId: t.id,
+    }));
+}
+
+export function buildReaderPrompt({ openSegments, windowEntries, threadNote }) {
+  const parts = [READER_CHARTER, ""];
+  if (threadNote) parts.push(`CONTEXT: ${threadNote}\n`);
+  if (openSegments.length > 0) {
+    parts.push("OPEN SEGMENTS (from your earlier reading; extend, close, or revise):");
+    for (const s of openSegments) {
+      parts.push(
+        `- start=${s.start} type=${s.type} about=${(s.about ?? []).join(",")} established="${s.established}"`,
+      );
+    }
+    parts.push("");
+  }
+  parts.push("WINDOW:");
+  for (const e of windowEntries) parts.push(renderEntry(e));
+  return parts.join("\n");
+}
+
+// Shape AND referential validity: a segment's refs must name real
+// entries of this thread and end must not precede start. A hostile or
+// confused engine response with fabricated refs would otherwise be
+// persisted and — worse — corrupt the resume cursor into perpetual
+// expensive re-reads (reviewer-demonstrated).
+function validSegment(raw, knownLocs, locNum) {
+  if (
+    !raw ||
+    typeof raw.start !== "string" ||
+    !SEGMENT_TYPES.has(raw.type) ||
+    !(raw.end === null || raw.end === undefined || typeof raw.end === "string") ||
+    typeof raw.established !== "string" ||
+    raw.established.trim().length === 0
+  ) {
+    return false;
+  }
+  if (!knownLocs.has(raw.start)) return false;
+  if (raw.end !== null && raw.end !== undefined) {
+    if (!knownLocs.has(raw.end)) return false;
+    if (locNum(raw.end) < locNum(raw.start)) return false;
+  }
+  return true;
+}
+
+// Cap for carried-forward open-segment summaries and the thread note in
+// reader prompts: what is re-fed matches what is persisted, and prompt
+// size stays bounded by windowChars plus a constant.
+const CARRY_CAP = 300;
+const NOTE_CAP = 2000;
+
+// Read one thread from its last annotated position to the end, in windows,
+// writing segment turns after each window. Returns a summary.
+export function readThread(
+  store,
+  { thread, engine, engineLabel, windowChars = DEFAULT_WINDOW_CHARS, threadNote, onWindow },
+) {
+  if (!engine) throw new ReaderError("an engine command is required (--engine or TURN_RECORD_ENGINE)");
+  const entries = readerEntries(store, thread);
+  if (entries.length === 0) return { windows: 0, segments: 0, entries: 0 };
+
+  const locNum = (ref) => Number(/line:(\d+)/.exec(ref)?.[1] ?? 0);
+  const knownLocs = new Set(entries.map((e) => e.loc));
+  const streamId = `${store.owner}~mind`;
+
+  // Resume point: everything at or before the highest CLOSED annotation is
+  // done; open (ongoing) segments are carried into the next window.
+  const existing = segmentsFor(store, thread);
+  const doneUpTo = existing.filter((s) => s.end).reduce((m, s) => Math.max(m, locNum(s.end)), 0);
+  let open = existing.filter((s) => !s.end || s.outcome === "ongoing");
+  let cursor = entries.findIndex((e) => locNum(e.loc) > doneUpTo);
+  if (cursor === -1) return { windows: 0, segments: existing.length, entries: entries.length };
+
+  let windows = 0;
+  let written = 0;
+  while (cursor < entries.length) {
+    const windowEntries = [];
+    let size = 0;
+    while (cursor < entries.length && (size < windowChars || windowEntries.length === 0)) {
+      const e = entries[cursor];
+      windowEntries.push(e);
+      size += Math.min(e.text.length, ENTRY_CAP) + 40;
+      cursor++;
+    }
+    windows++;
+
+    const prompt = buildReaderPrompt({ openSegments: open, windowEntries, threadNote: threadNote?.slice(0, NOTE_CAP) });
+    const verdict = runEngine(engine, prompt, { timeoutMs: 600000 });
+    if (!Array.isArray(verdict.segments)) {
+      throw new ReaderError("reader engine returned no segments[]");
+    }
+    const accepted = verdict.segments.filter((raw) => validSegment(raw, knownLocs, locNum));
+    if (accepted.length === 0 && windowEntries.length > 3) {
+      throw new ReaderError(
+        `reader returned no valid segments for a ${windowEntries.length}-entry window; refusing to advance silently`,
+      );
+    }
+
+    const endTs = new Date(0).toISOString();
+    const fresh = [];
+    const known = new Set(store.readStream(streamId).map((t) => t.id));
+    for (const raw of accepted) {
+      const outcome =
+        raw.end === null || raw.end === undefined
+          ? "ongoing"
+          : SEGMENT_OUTCOMES.has(raw.outcome)
+            ? raw.outcome
+            : "fruitful";
+      const core = segmentTurnCore({
+        owner: store.owner,
+        thread,
+        start: raw.start,
+        end: raw.end ?? null,
+        type: raw.type,
+        about: Array.isArray(raw.about) ? raw.about.map(String).slice(0, 5) : [],
+        established: raw.established,
+        outcome,
+        ts: windowEntries[windowEntries.length - 1].ts || endTs,
+        model: engineLabel,
+      });
+      const turn = finishTurn(core);
+      if (!known.has(turn.id)) {
+        fresh.push(turn);
+        known.add(turn.id);
+      }
+    }
+    store.appendBatch(streamId, fresh);
+    written += fresh.length;
+    // Accepted limitation, on the record: an open segment carried across
+    // windows is represented by its compact summary only — its earlier
+    // turns are never re-shown (re-showing full history would defeat
+    // windowing). A later revision is only as good as this summary.
+    open = accepted
+      .filter((s) => s.end === null || s.end === undefined)
+      .map((s) => ({
+        start: s.start,
+        type: s.type,
+        about: s.about ?? [],
+        established: s.established.slice(0, CARRY_CAP),
+        outcome: "ongoing",
+      }));
+    if (onWindow) onWindow({ windows, written, cursor, total: entries.length, open: open.length });
+  }
+
+  return { windows, segments: written, entries: entries.length, open: open.length };
+}
+
+export { LibrarianError };
