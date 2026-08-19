@@ -1,0 +1,152 @@
+{
+  "schema": "aweb.turn-record.turn-id.v1",
+  "notes": "canonical core = turn minus id/sig, canonical JSON per awid; id = t1:sha256hex(core)",
+  "cases": [
+    {
+      "name": "minimal",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:00Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "text": "hello"
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "id": "t1:378ceaf74adfab01e341b95e9e0f251971e4e7897d77d8f4483078ba4fc4e4d4"
+      },
+      "expected_canonical_core": "{\"body\":{\"text\":\"hello\"},\"from\":\"mycompany/researcher\",\"kind\":\"note\",\"provenance\":{\"fidelity\":\"verbatim\",\"source\":\"test\"},\"ts\":\"2026-02-22T10:00:00Z\",\"v\":1}",
+      "expected_id": "t1:378ceaf74adfab01e341b95e9e0f251971e4e7897d77d8f4483078ba4fc4e4d4"
+    },
+    {
+      "name": "unicode_html_chars",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:01Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "text": "café <b>&amp;</b> 中文 — a<b>c"
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "id": "t1:2cf9ce430714eb475ab1910bf88785e57cb1fa3cf31b3e0eed37d4f2b55fab14"
+      },
+      "expected_canonical_core": "{\"body\":{\"text\":\"café <b>&amp;</b> 中文 — a<b>c\"},\"from\":\"mycompany/researcher\",\"kind\":\"note\",\"provenance\":{\"fidelity\":\"verbatim\",\"source\":\"test\"},\"ts\":\"2026-02-22T10:00:01Z\",\"v\":1}",
+      "expected_id": "t1:2cf9ce430714eb475ab1910bf88785e57cb1fa3cf31b3e0eed37d4f2b55fab14"
+    },
+    {
+      "name": "unknown_field_covered_by_id",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:02Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "text": "forward compat"
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "x_future_extension": {
+          "nested": [
+            "a",
+            1
+          ]
+        },
+        "id": "t1:d6675155ea55bd61ad9a7a71d5ccdd47fbbd7fde5b6c3ddaabf89b874aa5e8f6"
+      },
+      "expected_canonical_core": "{\"body\":{\"text\":\"forward compat\"},\"from\":\"mycompany/researcher\",\"kind\":\"note\",\"provenance\":{\"fidelity\":\"verbatim\",\"source\":\"test\"},\"ts\":\"2026-02-22T10:00:02Z\",\"v\":1,\"x_future_extension\":{\"nested\":[\"a\",1]}}",
+      "expected_id": "t1:d6675155ea55bd61ad9a7a71d5ccdd47fbbd7fde5b6c3ddaabf89b874aa5e8f6"
+    },
+    {
+      "name": "envelope_signed",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:03Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "text": "signed at source"
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "id": "t1:93f7555829a247c6d5f737239a74591dd4c611f30eb1db6512bbc7c82dbda9a6",
+        "sig": {
+          "by": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+          "sig": "limZ04qVcxPIvEI7lTpGcr+Ap/+Vp3qy+xsUWxNWTnErnytaJSvMFTrynTIbF/pzS1mO61Uyu5HVJ6siJSGzAw"
+        }
+      },
+      "expected_canonical_core": "{\"body\":{\"text\":\"signed at source\"},\"from\":\"mycompany/researcher\",\"kind\":\"note\",\"provenance\":{\"fidelity\":\"verbatim\",\"source\":\"test\"},\"ts\":\"2026-02-22T10:00:03Z\",\"v\":1}",
+      "expected_id": "t1:93f7555829a247c6d5f737239a74591dd4c611f30eb1db6512bbc7c82dbda9a6"
+    }
+  ],
+  "negatives": [
+    {
+      "name": "id_mismatch",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:00Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "text": "hello"
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "id": "t1:0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "reject": "id"
+    },
+    {
+      "name": "invalid_envelope_signature",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:03Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "text": "signed at source"
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "id": "t1:93f7555829a247c6d5f737239a74591dd4c611f30eb1db6512bbc7c82dbda9a6",
+        "sig": {
+          "by": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+          "sig": "limZ04qVcxPIvEI7lTpGcr+Ap/+Vp3qy+xsUWxNWTnErnytaJSvMFTrynTIbF/pzS1mO61Uyu5HVJ6siJSAAAA"
+        }
+      },
+      "reject": "sig"
+    },
+    {
+      "name": "float_in_core",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:04Z",
+        "from": "mycompany/researcher",
+        "kind": "note",
+        "body": {
+          "score": 0.5
+        },
+        "provenance": {
+          "source": "test",
+          "fidelity": "verbatim"
+        },
+        "id": "t1:ad2bf2d873054efaa0b4ed1891725a111d17960c6e9ee95d1a6357e559eb8e85"
+      },
+      "reject": "number"
+    }
+  ]
+}

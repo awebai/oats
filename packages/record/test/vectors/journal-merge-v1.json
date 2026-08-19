@@ -1,0 +1,261 @@
+{
+  "schema": "aweb.turn-record.journal-merge.v1",
+  "record_owner": "acme/owner",
+  "replicas": {
+    "machine_a": {
+      "streams": {
+        "acme-alpha~notes": [
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:00:00Z",
+            "from": "acme/alpha",
+            "kind": "note",
+            "body": {
+              "text": "first"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "verbatim"
+            },
+            "id": "t1:5e64b8a2213a4cce01b7c97281ccaf27b2093894112220415141376eda75d3ba"
+          },
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:01:00Z",
+            "from": "acme/alpha",
+            "kind": "note",
+            "body": {
+              "text": "second"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "verbatim"
+            },
+            "id": "t1:c962d01358f22ddf32f61b00a53931e83000f6d016a28b5ba76d16c9b7019468"
+          },
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:03:00Z",
+            "from": "acme/alpha",
+            "kind": "mail",
+            "body": {
+              "subject": "dup",
+              "text": "projected on two machines"
+            },
+            "provenance": {
+              "source": "aweb-mail",
+              "fidelity": "projected",
+              "origin": {
+                "message_id": "11111111-2222-4333-8444-555555555555",
+                "conversation_id": "66666666-7777-4888-9999-aaaaaaaaaaaa"
+              }
+            },
+            "id": "t1:2033cc7ca605fe1b6f8321b52aa8bd75f797589a247720a94383dd79e028b064"
+          },
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:05:00Z",
+            "from": "acme/alpha",
+            "kind": "tombstone",
+            "links": [
+              {
+                "rel": "tombstones",
+                "ref": "t1:c962d01358f22ddf32f61b00a53931e83000f6d016a28b5ba76d16c9b7019468"
+              }
+            ],
+            "body": {
+              "reason": "superseded"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "projected"
+            },
+            "id": "t1:72f36ebbeecf441a8379f19c9a3674f6b4a3b3ed65dac489b1c139a66055e4a1"
+          },
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:06:00Z",
+            "from": "acme/alpha",
+            "kind": "tombstone",
+            "links": [
+              {
+                "rel": "tombstones",
+                "ref": "t1:867264e75476c623a9eadf5c50de5de8f72661901b1d30db52472f00ca87fdf7"
+              }
+            ],
+            "body": {
+              "reason": "not mine to delete"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "projected"
+            },
+            "id": "t1:585b720c3d2fd07ba847634d0b022a39eef5157ccd51de699cb5a6dcefcfe08b"
+          }
+        ]
+      }
+    },
+    "machine_b": {
+      "streams": {
+        "acme-alpha~notes": [
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:00:00Z",
+            "from": "acme/alpha",
+            "kind": "note",
+            "body": {
+              "text": "first"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "verbatim"
+            },
+            "id": "t1:5e64b8a2213a4cce01b7c97281ccaf27b2093894112220415141376eda75d3ba"
+          },
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:01:00Z",
+            "from": "acme/alpha",
+            "kind": "note",
+            "body": {
+              "text": "second"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "verbatim"
+            },
+            "id": "t1:c962d01358f22ddf32f61b00a53931e83000f6d016a28b5ba76d16c9b7019468"
+          }
+        ],
+        "acme-beta~notes": [
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:02:00Z",
+            "from": "acme/beta",
+            "kind": "note",
+            "body": {
+              "text": "from beta"
+            },
+            "provenance": {
+              "source": "test",
+              "fidelity": "verbatim"
+            },
+            "id": "t1:867264e75476c623a9eadf5c50de5de8f72661901b1d30db52472f00ca87fdf7"
+          },
+          {
+            "v": 1,
+            "ts": "2026-02-22T10:03:00Z",
+            "from": "acme/alpha",
+            "kind": "mail",
+            "body": {
+              "subject": "dup",
+              "text": "projected on two machines"
+            },
+            "provenance": {
+              "source": "aweb-mail",
+              "fidelity": "projected",
+              "origin": {
+                "message_id": "11111111-2222-4333-8444-555555555555",
+                "conversation_id": "66666666-7777-4888-9999-aaaaaaaaaaaa"
+              }
+            },
+            "id": "t1:2033cc7ca605fe1b6f8321b52aa8bd75f797589a247720a94383dd79e028b064"
+          }
+        ]
+      }
+    }
+  },
+  "expected": {
+    "merged_stream_lengths": {
+      "acme-alpha~notes": 5,
+      "acme-beta~notes": 2
+    },
+    "union_ids": [
+      "t1:2033cc7ca605fe1b6f8321b52aa8bd75f797589a247720a94383dd79e028b064",
+      "t1:585b720c3d2fd07ba847634d0b022a39eef5157ccd51de699cb5a6dcefcfe08b",
+      "t1:5e64b8a2213a4cce01b7c97281ccaf27b2093894112220415141376eda75d3ba",
+      "t1:72f36ebbeecf441a8379f19c9a3674f6b4a3b3ed65dac489b1c139a66055e4a1",
+      "t1:867264e75476c623a9eadf5c50de5de8f72661901b1d30db52472f00ca87fdf7",
+      "t1:c962d01358f22ddf32f61b00a53931e83000f6d016a28b5ba76d16c9b7019468"
+    ],
+    "hidden_ids": [
+      "t1:c962d01358f22ddf32f61b00a53931e83000f6d016a28b5ba76d16c9b7019468"
+    ],
+    "visible_ids": [
+      "t1:2033cc7ca605fe1b6f8321b52aa8bd75f797589a247720a94383dd79e028b064",
+      "t1:585b720c3d2fd07ba847634d0b022a39eef5157ccd51de699cb5a6dcefcfe08b",
+      "t1:5e64b8a2213a4cce01b7c97281ccaf27b2093894112220415141376eda75d3ba",
+      "t1:72f36ebbeecf441a8379f19c9a3674f6b4a3b3ed65dac489b1c139a66055e4a1",
+      "t1:867264e75476c623a9eadf5c50de5de8f72661901b1d30db52472f00ca87fdf7"
+    ],
+    "notes": "tomb hides tA2 (same from); tomb_bad must not hide tB1 (different from, not record owner); dup appears in two streams but once in the union"
+  },
+  "negatives": [
+    {
+      "name": "non_prefix_stream_copies",
+      "stream": "acme-alpha~notes",
+      "copy_a": [
+        {
+          "v": 1,
+          "ts": "2026-02-22T10:00:00Z",
+          "from": "acme/alpha",
+          "kind": "note",
+          "body": {
+            "text": "first"
+          },
+          "provenance": {
+            "source": "test",
+            "fidelity": "verbatim"
+          },
+          "id": "t1:5e64b8a2213a4cce01b7c97281ccaf27b2093894112220415141376eda75d3ba"
+        },
+        {
+          "v": 1,
+          "ts": "2026-02-22T10:01:00Z",
+          "from": "acme/alpha",
+          "kind": "note",
+          "body": {
+            "text": "second"
+          },
+          "provenance": {
+            "source": "test",
+            "fidelity": "verbatim"
+          },
+          "id": "t1:c962d01358f22ddf32f61b00a53931e83000f6d016a28b5ba76d16c9b7019468"
+        }
+      ],
+      "copy_b": [
+        {
+          "v": 1,
+          "ts": "2026-02-22T10:00:00Z",
+          "from": "acme/alpha",
+          "kind": "note",
+          "body": {
+            "text": "first"
+          },
+          "provenance": {
+            "source": "test",
+            "fidelity": "verbatim"
+          },
+          "id": "t1:5e64b8a2213a4cce01b7c97281ccaf27b2093894112220415141376eda75d3ba"
+        },
+        {
+          "v": 1,
+          "ts": "2026-02-22T10:02:00Z",
+          "from": "acme/beta",
+          "kind": "note",
+          "body": {
+            "text": "from beta"
+          },
+          "provenance": {
+            "source": "test",
+            "fidelity": "verbatim"
+          },
+          "id": "t1:867264e75476c623a9eadf5c50de5de8f72661901b1d30db52472f00ca87fdf7"
+        }
+      ],
+      "reject": "prefix",
+      "detail": "neither copy is a prefix of the other: quarantine, never merge"
+    }
+  ]
+}

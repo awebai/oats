@@ -1,0 +1,231 @@
+{
+  "schema": "aweb.turn-record.aweb-projection.v1",
+  "notes": "signed rows reuse the docs/vectors/message-signing-v1.json identity (seed 000102...1f)",
+  "cases": [
+    {
+      "name": "projected_mail_basic",
+      "source": "docs/vectors/message-signing-v1.json:mail_basic",
+      "row": {
+        "message_id": "8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0",
+        "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "signature": "OF5hbFcpZi5OsYtUrWgze2K64ZP47PHFFTbXCWhKD8yjRkNUB6SQZ226M9h2tIUvoTlzmNZtMRWVUPpfT/kfDg",
+        "signed_payload": "{\"body\":\"task complete\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"message_id\":\"8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0\",\"subject\":\"status update\",\"timestamp\":\"2026-02-22T10:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"type\":\"mail\"}"
+      },
+      "expected_turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:00Z",
+        "from": "mycompany/researcher",
+        "to": "acme/monitor",
+        "thread": "aweb:conv:5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "kind": "mail",
+        "body": {
+          "subject": "status update",
+          "text": "task complete"
+        },
+        "signature": "OF5hbFcpZi5OsYtUrWgze2K64ZP47PHFFTbXCWhKD8yjRkNUB6SQZ226M9h2tIUvoTlzmNZtMRWVUPpfT/kfDg",
+        "signed_payload": "{\"body\":\"task complete\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"message_id\":\"8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0\",\"subject\":\"status update\",\"timestamp\":\"2026-02-22T10:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"type\":\"mail\"}",
+        "provenance": {
+          "source": "aweb-mail",
+          "fidelity": "projected",
+          "origin": {
+            "message_id": "8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0",
+            "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7"
+          }
+        },
+        "id": "t1:3255ad39ea15cadc71d1a68c84e5e8b961e7692fbab59c45d409cdba96ec4288"
+      },
+      "round_trip_fields": [
+        "body",
+        "conversation_id",
+        "from",
+        "from_did",
+        "message_id",
+        "signature",
+        "signed_payload",
+        "subject",
+        "timestamp",
+        "to",
+        "to_did",
+        "type"
+      ]
+    },
+    {
+      "name": "projected_mail_with_stable_ids_unicode",
+      "source": "docs/vectors/message-signing-v1.json:mail_with_stable_ids_unicode",
+      "row": {
+        "message_id": "8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0",
+        "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "signature": "dHpwIJ7jhPz+o8fwUIrAyOqeGhsT96QLQjNHi5/MWe/JkDxdSibCfkB4qFg/upmTSIXe+/bXlO4pB8ZK0hS/CQ",
+        "signed_payload": "{\"body\":\"task complete\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"from_stable_id\":\"did:aw:2CiZ88hVF4JuQim8nnSuyeiV2HF2\",\"message_id\":\"8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0\",\"subject\":\"café\",\"timestamp\":\"2026-02-22T10:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"to_stable_id\":\"did:aw:WsPUbr9PzoJKNvBcQ5xRys6wJS7\",\"type\":\"mail\"}"
+      },
+      "expected_turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:00Z",
+        "from": "mycompany/researcher",
+        "to": "acme/monitor",
+        "thread": "aweb:conv:5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "kind": "mail",
+        "body": {
+          "subject": "café",
+          "text": "task complete"
+        },
+        "signature": "dHpwIJ7jhPz+o8fwUIrAyOqeGhsT96QLQjNHi5/MWe/JkDxdSibCfkB4qFg/upmTSIXe+/bXlO4pB8ZK0hS/CQ",
+        "signed_payload": "{\"body\":\"task complete\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"from_stable_id\":\"did:aw:2CiZ88hVF4JuQim8nnSuyeiV2HF2\",\"message_id\":\"8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0\",\"subject\":\"café\",\"timestamp\":\"2026-02-22T10:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"to_stable_id\":\"did:aw:WsPUbr9PzoJKNvBcQ5xRys6wJS7\",\"type\":\"mail\"}",
+        "provenance": {
+          "source": "aweb-mail",
+          "fidelity": "projected",
+          "origin": {
+            "message_id": "8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0",
+            "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7"
+          }
+        },
+        "id": "t1:823f59a0aee4e055ae63aa618ad1776e16869833930b10e1cb40298f1c13b0c6"
+      },
+      "round_trip_fields": [
+        "body",
+        "conversation_id",
+        "from",
+        "from_did",
+        "from_stable_id",
+        "message_id",
+        "signature",
+        "signed_payload",
+        "subject",
+        "timestamp",
+        "to",
+        "to_did",
+        "to_stable_id",
+        "type"
+      ]
+    },
+    {
+      "name": "projected_chat_signed",
+      "signing_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "signing_did_key": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+      "row": {
+        "message_id": "0b6f2f66-1b2f-4b57-9f2e-6f0f3f9f2ad1",
+        "conversation_id": "9a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+        "signature": "V5G9VgkORR08LhgC+coozTiHOmabWjMmQ7gmpdgB7wXSuuvwQlirn/jVOaatzHhuJf9PMbQ6XSHdNMYB1OxkAg",
+        "signed_payload": "{\"body\":\"are you there? <ping>\",\"conversation_id\":\"9a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"hang_on\":true,\"message_id\":\"0b6f2f66-1b2f-4b57-9f2e-6f0f3f9f2ad1\",\"subject\":\"\",\"timestamp\":\"2026-02-22T11:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"type\":\"chat\",\"wait_seconds\":300}"
+      },
+      "expected_turn": {
+        "v": 1,
+        "ts": "2026-02-22T11:00:00Z",
+        "from": "mycompany/researcher",
+        "to": "acme/monitor",
+        "thread": "aweb:conv:9a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0",
+        "kind": "chat",
+        "body": {
+          "subject": "",
+          "text": "are you there? <ping>"
+        },
+        "signature": "V5G9VgkORR08LhgC+coozTiHOmabWjMmQ7gmpdgB7wXSuuvwQlirn/jVOaatzHhuJf9PMbQ6XSHdNMYB1OxkAg",
+        "signed_payload": "{\"body\":\"are you there? <ping>\",\"conversation_id\":\"9a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"hang_on\":true,\"message_id\":\"0b6f2f66-1b2f-4b57-9f2e-6f0f3f9f2ad1\",\"subject\":\"\",\"timestamp\":\"2026-02-22T11:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"type\":\"chat\",\"wait_seconds\":300}",
+        "provenance": {
+          "source": "aweb-chat",
+          "fidelity": "projected",
+          "origin": {
+            "message_id": "0b6f2f66-1b2f-4b57-9f2e-6f0f3f9f2ad1",
+            "conversation_id": "9a1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+          }
+        },
+        "id": "t1:be909aeb1b08c6f53b274d37565b9391075a173fc01bfac36a39cdfcb5cb15ba"
+      },
+      "round_trip_fields": [
+        "body",
+        "conversation_id",
+        "from",
+        "from_did",
+        "hang_on",
+        "message_id",
+        "signature",
+        "signed_payload",
+        "subject",
+        "timestamp",
+        "to",
+        "to_did",
+        "type",
+        "wait_seconds"
+      ]
+    },
+    {
+      "name": "projected_mail_legacy_unsigned",
+      "row": {
+        "message_id": "d4c3b2a1-0f9e-4d7c-8b6a-594837261504",
+        "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "from": "mycompany/researcher",
+        "from_did": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+        "to": "acme/monitor",
+        "subject": "old world",
+        "body": "sent before signing existed",
+        "created_at": "2025-11-03T09:30:00Z",
+        "priority": "normal"
+      },
+      "expected_turn": {
+        "v": 1,
+        "ts": "2025-11-03T09:30:00Z",
+        "from": "mycompany/researcher",
+        "to": "acme/monitor",
+        "thread": "aweb:conv:5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "kind": "mail",
+        "body": {
+          "subject": "old world",
+          "text": "sent before signing existed"
+        },
+        "provenance": {
+          "source": "aweb-mail",
+          "fidelity": "projected",
+          "origin": {
+            "message_id": "d4c3b2a1-0f9e-4d7c-8b6a-594837261504",
+            "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+            "from_did": "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd",
+            "priority": "normal",
+            "timestamp_source": "created_at"
+          }
+        },
+        "id": "t1:79034221236909b10b11aae25c96fa2ee886e03f686cb28f2803b42ec1da79c1"
+      },
+      "round_trip_fields": [
+        "body",
+        "conversation_id",
+        "created_at",
+        "from",
+        "from_did",
+        "message_id",
+        "priority",
+        "subject",
+        "to"
+      ]
+    }
+  ],
+  "negatives": [
+    {
+      "name": "signed_consistency_violation",
+      "turn": {
+        "v": 1,
+        "ts": "2026-02-22T10:00:00Z",
+        "from": "mycompany/researcher",
+        "to": "acme/monitor",
+        "thread": "aweb:conv:5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7",
+        "kind": "mail",
+        "body": {
+          "subject": "status update",
+          "text": "tampered content"
+        },
+        "signature": "OF5hbFcpZi5OsYtUrWgze2K64ZP47PHFFTbXCWhKD8yjRkNUB6SQZ226M9h2tIUvoTlzmNZtMRWVUPpfT/kfDg",
+        "signed_payload": "{\"body\":\"task complete\",\"from\":\"mycompany/researcher\",\"from_did\":\"did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd\",\"message_id\":\"8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0\",\"subject\":\"status update\",\"timestamp\":\"2026-02-22T10:00:00Z\",\"to\":\"acme/monitor\",\"to_did\":\"did:key:z6MkhFwXNFWosLeugvSf4wcL9t3uuRXueGSFTRgSvHhWj5G2\",\"type\":\"mail\"}",
+        "provenance": {
+          "source": "aweb-mail",
+          "fidelity": "projected",
+          "origin": {
+            "message_id": "8b1c2c69-7c2a-4fbb-9f4a-3dfb7d7a26c0",
+            "conversation_id": "5cf2a20d-5b56-4b02-97a0-6d4d9dbabbd7"
+          }
+        },
+        "id": "t1:a53945568d1c267e270a09f178fa841806035f77f48b01c78000576a9f49c75e"
+      },
+      "reject": "consistency",
+      "detail": "body.text does not equal signed_payload.body; id itself is valid"
+    }
+  ]
+}
