@@ -1,6 +1,6 @@
 // The capture ignore list: `<root>/ignore` patterns prevent capture
-// entirely — the source file is never opened, so no blob is stored, no
-// turn is appended, and the seen cache never learns about it. Ignoring is
+// entirely — the source file is never opened, so no turn is appended and
+// the offset cache never learns about it. Ignoring is
 // per record root and forward-looking only.
 
 import assert from "node:assert/strict";
@@ -117,7 +117,7 @@ test("loadIgnore: missing file means empty matcher; empty matcher ignores nothin
 
 // ---------------------------------------------------------------- sessions
 
-test("ignored session is never captured: no turn, no blob, and it is counted", (t) => {
+test("ignored session is never captured: no turns, and it is counted", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-my-project");
   const secret = writeSession(projects, "secret-session.jsonl", "the private words");
@@ -127,15 +127,17 @@ test("ignored session is never captured: no turn, no blob, and it is counted", (
 
   const r = captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
   assert.equal(r.ignored, 1, "ignored files are visible in the pass result");
-  assert.equal(r.appended, 1);
+  assert.ok(r.appended >= 1);
 
-  const turns = store.readStream("mac~cc");
-  assert.equal(turns.length, 1);
-  assert.equal(turns[0].thread, "cc:session:open-session");
-
-  // Prevention is total: the ignored bytes are nowhere in the object store.
-  assert.ok(store.hasObject("sha256:" + sha256Hex(Buffer.from(open.bytes))));
-  assert.ok(!store.hasObject("sha256:" + sha256Hex(Buffer.from(secret.bytes))), "no blob stored");
+  // Prevention is total: the ignored session has NO stream, no turns.
+  const streams = store.listStreams();
+  assert.ok(streams.some((s) => s.endsWith("~cc.open-session")));
+  assert.ok(!streams.some((s) => s.includes("secret-session")), "no stream for the ignored session");
+  const openTurns = store.readStream("mac~cc.open-session");
+  assert.ok(openTurns.every((t) => !t.body.line.includes("the private words")));
+  void secret;
+  void open;
+  void sha256Hex;
 });
 
 test("path glob ignores a whole project directory, for every session format", (t) => {
@@ -149,11 +151,11 @@ test("path glob ignores a whole project directory, for every session format", (t
     const r = captureSessions(store, { owner: "mac", roots: [join(base, "projects")], format });
     assert.equal(r.ignored, 1, `${format}: secret project ignored`);
   }
-  // The ignore check runs before the shared seen cache, so every format
-  // reports the ignored file; the open one was captured once (by cc, the
-  // first pass — later formats see it unchanged in the seen cache).
-  const turns = store.readStream("mac~cc");
+  // The ignore check runs before anything is read, so every format
+  // reports the ignored file; the open one was captured by the cc pass.
+  const turns = store.readStream("mac~cc.b");
   assert.equal(turns.length, 1);
+  assert.ok(!store.listStreams().some((x) => x.includes("secret")), "no secret stream in any format");
 });
 
 test("ignore is per record root", (t) => {
@@ -169,7 +171,7 @@ test("ignore is per record root", (t) => {
   assert.equal(captureSessions(open, { owner: "mac", roots }).appended, 1);
 });
 
-test("un-ignoring works: the seen cache never swallowed the ignored file", (t) => {
+test("un-ignoring works: the offset cache never swallowed the ignored file", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-p");
   writeSession(projects, "later.jsonl", "captured only after un-ignore");
@@ -186,7 +188,7 @@ test("un-ignoring works: the seen cache never swallowed the ignored file", (t) =
   const r2 = captureSessions(store, { owner: "mac", roots });
   assert.equal(r2.ignored, 0);
   assert.equal(r2.appended, 1, "file untouched since being ignored is still captured");
-  assert.equal(store.readStream("mac~cc")[0].thread, "cc:session:later");
+  assert.equal(store.readStream("mac~cc.later")[0].thread, "cc:session:later");
 });
 
 test("ignoring is forward-looking: already-captured turns stay in the record", (t) => {
@@ -201,8 +203,8 @@ test("ignoring is forward-looking: already-captured turns stay in the record", (
   writeSession(projects, "s1.jsonl", "grown after the rule"); // file changed
   const r = captureSessions(store, { owner: "mac", roots });
   assert.equal(r.ignored, 1);
-  assert.equal(r.appended, 0, "no new snapshot once ignored");
-  assert.equal(store.readStream("mac~cc").length, 1, "existing turn not removed");
+  assert.equal(r.appended, 0, "nothing new captured once ignored");
+  assert.equal(store.readStream("mac~cc.s1").length, 1, "existing turns not removed");
 });
 
 // ----------------------------------------------------------------- aw logs

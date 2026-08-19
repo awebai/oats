@@ -1,5 +1,5 @@
 // Derived index: rebuildable, searches mail + session text together,
-// hides tombstoned turns, dedupes session snapshots to the latest.
+// hides tombstoned turns, indexes each session event exactly once.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
@@ -67,7 +67,7 @@ test("search finds decisions across mail and sessions with provenance", (t) => {
   assert.equal(index.search("nonexistentterm").length, 0);
 });
 
-test("only the latest session snapshot is searchable; the store keeps all", (t) => {
+test("session events index exactly once as the session grows", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-p");
   mkdirSync(projects, { recursive: true });
@@ -76,14 +76,13 @@ test("only the latest session snapshot is searchable; the store keeps all", (t) 
   captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
   appendFileSync(file, sessionLine("user", "charlie delta", "2026-02-22T09:05:00Z"));
   captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
-  assert.equal(store.readStream("mac~cc").length, 2, "both snapshots in the store");
+  assert.equal(store.readStream("mac~cc.sess-2").length, 2, "one turn per event, no snapshots");
 
   const index = new RecordIndex(store);
   t.after(() => index.close());
   index.rebuild();
-  assert.equal(index.counts().superseded, 1);
-  const hits = index.search("bravo");
-  assert.equal(hits.length, 1, "old snapshot text found once, via the latest snapshot");
+  assert.equal(index.counts().superseded, 0, "nothing to supersede in a per-event world");
+  assert.equal(index.search("bravo").length, 1, "each event searchable exactly once");
   assert.equal(index.search("charlie").length, 1);
 });
 
@@ -128,12 +127,12 @@ test("update() is incremental and agrees with rebuild()", (t) => {
   assert.equal(index.search("decision").length, 2);
   assert.equal(index.search("foxtrot").length, 1);
 
-  // Snapshot growth handled incrementally: old snapshot superseded.
+  // Session growth handled incrementally: only the new event indexed.
   appendFileSync(file, sessionLine("user", "golf hotel", "2026-02-22T09:05:00Z"));
   captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
   index.update();
-  assert.equal(index.counts().superseded, 1);
-  assert.equal(index.search("foxtrot").length, 1, "old text reachable via latest snapshot only");
+  assert.equal(index.search("foxtrot").length, 1, "old event indexed exactly once");
+  assert.equal(index.search("golf").length, 1, "new event picked up incrementally");
 
   // Tombstone arriving after its target, applied incrementally.
   const target = store.readStream("mac~aw-test")[0];

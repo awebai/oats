@@ -43,9 +43,10 @@ try {
   }
 
   if (args.show) {
+    const { resolveTurn } = await import("../lib/librarian.mjs");
     const byId = store.readAll();
-    const found = byId.get(args.show);
-    if (!found) {
+    const turn = resolveTurn(store, index, args.show, byId);
+    if (!turn) {
       console.error(`no turn ${args.show}`);
       process.exit(1);
     }
@@ -54,7 +55,7 @@ try {
       console.error(`turn ${args.show} is tombstoned`);
       process.exit(1);
     }
-    console.log(JSON.stringify(found.turn, null, 2));
+    console.log(JSON.stringify(turn, null, 2));
     process.exit(0);
   }
 

@@ -84,6 +84,28 @@ test("interior corruption throws rather than silently dropping turns", (t) => {
   store.append("alice~notes", a);
   writeFileSync(path, "not json\n" + readFileSync(path, "utf8"));
   assert.throws(() => store.readStream("alice~notes"), /corrupt interior/);
+
+  // The WRITE path fails loud too: a fresh instance validates the journal
+  // before its first append instead of appending past the damage.
+  const fresh = new RecordStore(store.root, { owner: "alice" });
+  const b = finishTurn(noteCore("alice", "two"));
+  assert.throws(() => fresh.append("alice~notes", b), /corrupt interior/);
+  // The same instance that wrote the stream earlier trusts its own appends;
+  // only a NEW instance (a new process) re-validates. Both must refuse here.
+  assert.throws(() => fresh.appendBatch("alice~notes", [b]), /corrupt interior/);
+});
+
+test("appendBatch chunked writes produce the same journal as one write", (t) => {
+  const a = tempStore(t, "alice");
+  const b = tempStore(t, "alice");
+  const turns = [];
+  for (let i = 0; i < 20; i++) turns.push(finishTurn(noteCore("alice", `turn ${i} `.repeat(10))));
+  a.appendBatch("alice~notes", turns);
+  // Force many flushes: a chunk cap smaller than a single line still writes
+  // every turn (a line larger than the cap gets its own chunk).
+  b.appendBatch("alice~notes", turns, 64);
+  assert.deepEqual(b.readStream("alice~notes"), a.readStream("alice~notes"));
+  assert.equal(b.readStream("alice~notes").length, 20);
 });
 
 test("appendCore dedupes by content id", (t) => {

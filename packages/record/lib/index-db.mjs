@@ -1,16 +1,15 @@
 // Derived SQLite index over the record: turn metadata + FTS5 text.
 // The index is cache: deleting <root>/index/ loses nothing; rebuild()
-// reconstructs it from streams + objects. It is never replicated.
+// reconstructs it from the streams. It is never replicated.
 //
 // update() is incremental: it indexes only journal lines appended since the
 // last pass (per-stream position in index_state), so a capture pass costs
-// seconds, not a rescan of every blob. rebuild() is reset + update-from-zero
+// seconds, not a rescan of the record. rebuild() is reset + update-from-zero
 // — one code path, identical semantics.
 //
-// Session turns are snapshots; only the latest snapshot per thread is
-// searchable (the store keeps every snapshot as truth). Text for session
-// turns is extracted from the referenced transcript blob: one FTS row per
-// conversational event, so a hit names the turn AND the event line.
+// Session turns are one per native transcript event (body.line holds the
+// verbatim record); text is extracted from that line, so a hit names the
+// turn AND the event's line in the original transcript.
 
 import { existsSync, mkdirSync, rmSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
@@ -82,7 +81,6 @@ CREATE TABLE IF NOT EXISTS segments (
   about TEXT NOT NULL,
   established TEXT NOT NULL,
   lesson TEXT,
-  snapshot TEXT,
   ts TEXT NOT NULL,
   ts_ms INTEGER NOT NULL DEFAULT 0
 );
@@ -199,9 +197,9 @@ export class RecordIndex {
     this.update();
   }
 
-  // Insert one turn, maintaining hidden/superseded invariants in both
-  // arrival orders (tombstone before or after target; snapshots out of
-  // order). Duplicate ids across streams: first seen wins.
+  // Insert one turn, maintaining the hidden invariant in both arrival
+  // orders (tombstone before or after target). Duplicate ids across
+  // streams: first seen wins.
   addTurn(turn, streamId, owner) {
     if (typeof turn.id !== "string") return;
     const existing = this.db.prepare("SELECT stream FROM turns WHERE id = ?").get(turn.id);
@@ -222,24 +220,10 @@ export class RecordIndex {
       ? 1
       : 0;
 
-    const events = turn.kind === "session" ? Number(turn.body?.events ?? 0) : 0;
-    let superseded = 0;
-    let displacedId = null;
-    if (turn.kind === "session" && turn.thread) {
-      const current = this.db
-        .prepare(
-          "SELECT id, ts, events FROM turns WHERE thread = ? AND kind = 'session' AND superseded = 0",
-        )
-        .get(turn.thread);
-      if (current) {
-        const newer =
-          events !== Number(current.events)
-            ? events > Number(current.events)
-            : String(turn.ts) > String(current.ts);
-        if (newer) displacedId = current.id;
-        else superseded = 1;
-      }
-    }
+    // Sessions are one turn per native event (no snapshots, nothing to
+    // supersede); events/superseded columns remain for schema stability.
+    const events = 0;
+    const superseded = 0;
 
     this.db
       .prepare(
@@ -260,11 +244,6 @@ export class RecordIndex {
         hidden,
         superseded,
       );
-
-    if (displacedId) {
-      this.db.prepare("UPDATE turns SET superseded = 1 WHERE id = ?").run(displacedId);
-      this.db.prepare("DELETE FROM turn_text WHERE turn_id = ?").run(displacedId);
-    }
 
     if (turn.kind === "tombstone") {
       for (const link of turn.links ?? []) {
@@ -334,8 +313,8 @@ export class RecordIndex {
       const tsMs = Date.parse(String(turn.ts ?? ""));
       this.db
         .prepare(
-          `INSERT OR IGNORE INTO segments (note_id, thread, start_n, end_n, type, outcome, about, established, lesson, snapshot, ts, ts_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT OR IGNORE INTO segments (note_id, thread, start_n, end_n, type, outcome, about, established, lesson, ts, ts_ms)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           turn.id,
@@ -347,7 +326,6 @@ export class RecordIndex {
           JSON.stringify(segParsed.about),
           segParsed.established,
           segParsed.lesson,
-          segParsed.snapshot,
           String(turn.ts ?? ""),
           Number.isFinite(tsMs) ? tsMs : 0,
         );
@@ -442,14 +420,11 @@ export class RecordIndex {
       const joined = subject ? subject + "\n" + text : text;
       return joined.trim() ? [{ loc: "", role: turn.kind, text: joined }] : [];
     }
-    if (turn.kind === "session" && turn.body?.ref) {
-      let bytes;
-      try {
-        bytes = this.store.getObject(turn.body.ref);
-      } catch {
-        return []; // blob not replicated here; metadata still indexed
-      }
-      return extractSessionTextFor(turn.provenance?.source, bytes);
+    if (turn.kind === "session" && typeof turn.body?.line === "string") {
+      const loc = `line:${turn.provenance?.origin?.line ?? 0}`;
+      return extractSessionTextFor(turn.provenance?.source, Buffer.from(turn.body.line, "utf8")).map(
+        (d) => ({ ...d, loc }),
+      );
     }
     return [];
   }

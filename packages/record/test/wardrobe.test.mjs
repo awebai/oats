@@ -40,7 +40,6 @@ function seg(store, { thread, start, end, type, outcome, established, lesson, ts
       outcome,
       lesson,
       ts,
-      snapshot: "t1:" + "a".repeat(64),
     }),
   );
   store.append("mac~mind", turn);

@@ -181,6 +181,19 @@ export function runEngine(engineCmd, prompt, { timeoutMs = 120000 } = {}) {
   return parsed;
 }
 
+// Resolve a turn id wherever it lives: bulk streams first, then (for
+// session-event turns, whose streams bulk reads exclude) via the index's
+// stream column and a targeted journal read.
+export function resolveTurn(store, index, id, byId = null) {
+  const bulk = byId ?? store.readAll();
+  const hit = bulk.get(id);
+  if (hit) return hit.turn;
+  const row = index.db.prepare("SELECT stream FROM turns WHERE id = ?").get(id);
+  if (!row) return null;
+  for (const t of store.readStream(row.stream)) if (t.id === id) return t;
+  return null;
+}
+
 // ------------------------------------------------------------- select
 
 // Full librarian pass. Returns { selection, outfit, tags, judged } and
@@ -207,11 +220,11 @@ export function selectClothes(
     const c = candidates[pick.i];
     if (!c) continue;
     const bareId = c.ref.split(" ")[0];
-    const found = byId.get(bareId);
+    const turnFound = resolveTurn(store, index, bareId, byId);
+    const found = turnFound ? { turn: turnFound } : null;
     if (!found) continue;
-    // Known granularity limit: session-event candidates carry the
-    // SNAPSHOT's timestamp (the index has no per-event ts column), so
-    // ordering between events of different sessions is snapshot-coarse.
+    // Session-event candidates carry their own turn's ts (one turn per
+    // native event), so cross-session ordering is event-accurate.
     const ts = c.ts || found.turn.ts;
     selection.push({ ref: c.ref, ts, why: String(pick.why ?? ""), turn: found.turn });
     tagCores.push(
@@ -279,25 +292,14 @@ export function selectClothes(
 // event refs (id@loc) extract that one event from the blob; mail/chat/note
 // turns render their body.
 export function selectionEntries(store, selection) {
-  const cache = new Map();
-  return selection.map(({ ref, ts, turn }) => {
-    const loc = ref.includes(" @") ? ref.split(" @")[1] : null;
-    if (turn.kind === "session" && loc) {
-      let docs = cache.get(turn.id);
-      if (!docs) {
-        try {
-          docs = extractSessionTextFor(turn.provenance?.source, store.getObject(turn.body.ref));
-        } catch {
-          docs = [];
-        }
-        cache.set(turn.id, docs);
-      }
-      const doc = docs.find((d) => d.loc === loc);
+  return selection.map(({ ts, turn }) => {
+    if (turn.kind === "session" && typeof turn.body?.line === "string") {
+      const docs = extractSessionTextFor(turn.provenance?.source, Buffer.from(turn.body.line, "utf8"));
       return {
         ts,
-        from: doc?.role === "user" ? "user" : "assistant",
+        from: docs[0]?.role ?? "session",
         subject: "",
-        text: doc?.text ?? `[event ${loc} not extractable; recall --show ${turn.id}]`,
+        text: docs.map((d) => d.text).join("\n") || turn.body.line,
       };
     }
     return {

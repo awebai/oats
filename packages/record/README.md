@@ -19,16 +19,20 @@ Everything is a signed turn in an append-only record. This package holds:
   legacy rows, client comm logs, interaction logs) into turns. Pure
   functions of the source: the same message projected on two machines gets
   the same id, so replicas dedupe by union.
-- **`lib/capture-cc.mjs`** — Claude Code session capture. Verbatim
-  transcript blobs + one `session` turn per snapshot; reconciliation is the
-  capture (hooks/watchers only decide when to run it); unchanged files are
-  skipped by size+mtime.
+- **`lib/capture-cc.mjs`** — session capture (Claude Code, pi, Codex via
+  the format registry in `formats.mjs`). Every native transcript record
+  becomes ONE turn holding the verbatim line (`body.line`), in a
+  per-session stream `<owner>~<source>.<session-id>`; capture is
+  incremental by source byte offset, so a growing session appends only its
+  new events — storage is linear in conversation size by construction, and
+  the original transcript is reconstructible by concatenating `body.line`.
+  Reconciliation is the capture (hooks/watchers only decide when to run
+  it).
 - **`lib/capture-aw.mjs`** — aw client log capture into `<owner>~aw`.
 - **`lib/index-db.mjs`** — derived SQLite FTS5 index (`node:sqlite`, no
   dependencies). `update()` is incremental; `rebuild()` is reset + update
-  from zero (same code path). Session text is indexed per event with exact
-  line provenance; only the latest snapshot per session is searchable;
-  tombstoned turns disappear.
+  from zero (same code path). Session text is extracted per event with
+  exact line provenance; tombstoned turns disappear.
 
 ## Install and run
 
@@ -63,8 +67,8 @@ Stream owner: `--owner`, else `$TURN_RECORD_OWNER`, else the short hostname.
 
 `<root>/ignore` is a plain text file of glob patterns, one per line (blank
 lines and `#` comments skipped). Any capture source file that matches is
-**never captured at all** — it is skipped before being opened, so no blob
-is stored, no turn is appended, and the seen cache never learns about it.
+**never captured at all** — it is skipped before being opened, so no turn
+is appended and the offset cache never learns about it.
 This is a capture-time control, stronger than not indexing: the bytes never
 enter the record.
 
@@ -131,8 +135,5 @@ into an orphaned inode until it restarts.
 
 ## Known costs, accepted for v1
 
-- Each session snapshot stores the full transcript blob (append-only
-  transcripts make snapshots prefix-related; delta/chunk storage is a later
-  optimization, disk is cheap at dogfood scale).
 - Deletion via tombstone is eventual: an offline replica retains bytes until
   it reconnects. The SOT says this plainly; so do we.

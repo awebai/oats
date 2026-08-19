@@ -2,7 +2,7 @@
 // aw client logs (projection, determinism, torn tails).
 
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -28,55 +28,101 @@ function sessionEvent(type, text, ts) {
   });
 }
 
-test("session capture: idempotent, snapshots growth, keeps unknown lines", (t) => {
+test("session capture: one turn per event, incremental, keeps unknown lines", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-my-project");
   mkdirSync(projects, { recursive: true });
   const file = join(projects, "aaaa-bbbb.jsonl");
-  writeFileSync(
-    file,
-    sessionEvent("user", "hello", "2026-02-22T10:00:00Z") +
-      "\n" +
-      "this line is not json but must be preserved\n" +
-      sessionEvent("assistant", "hi there", "2026-02-22T10:00:05Z") +
-      "\n",
-  );
+  const l1 = sessionEvent("user", "hello", "2026-02-22T10:00:00Z");
+  const l2 = "this line is not json but must be preserved";
+  const l3 = sessionEvent("assistant", "hi there", "2026-02-22T10:00:05Z");
+  writeFileSync(file, l1 + "\n" + l2 + "\n" + l3 + "\n");
 
   const roots = [join(base, "projects")];
   const r1 = captureSessions(store, { owner: "mac", roots });
-  assert.equal(r1.appended, 1);
+  assert.equal(r1.appended, 3, "one turn per line, unknown line included");
   const r2 = captureSessions(store, { owner: "mac", roots });
-  assert.equal(r2.appended, 0, "unchanged session is a no-op");
+  assert.equal(r2.appended, 0, "unchanged file is a no-op");
 
-  // Growth produces exactly one new snapshot turn on the same thread.
+  // Growth appends ONLY the new event — linear storage by construction.
   appendFileSync(file, sessionEvent("user", "more", "2026-02-22T10:01:00Z") + "\n");
   const r3 = captureSessions(store, { owner: "mac", roots });
   assert.equal(r3.appended, 1);
 
-  const turns = store.readStream("mac~cc");
-  assert.equal(turns.length, 2);
+  const turns = store.readStream("mac~cc.aaaa-bbbb");
+  assert.equal(turns.length, 4);
   assert.ok(turns.every((x) => x.thread === "cc:session:aaaa-bbbb"));
-  assert.equal(turns[0].body.events, 3, "unparseable line counted and kept");
-  assert.equal(turns[1].body.events, 4);
+  // The unknown line is a verbatim turn with a carried-forward timestamp.
+  assert.equal(turns[1].body.line, l2);
+  assert.equal(turns[1].ts, "2026-02-22T10:00:00Z");
+  assert.deepEqual(turns.map((x) => x.provenance.origin.line), [1, 2, 3, 4]);
+  // Native-form reconstruction: concatenating body.line restores the file.
+  assert.equal(turns.map((x) => x.body.line).join("\n") + "\n", readFileSync(file, "utf8"));
 
-  // The blob is verbatim: the non-JSON line survives byte-for-byte.
-  const blob = store.getObject(turns[0].body.ref).toString();
-  assert.ok(blob.includes("this line is not json but must be preserved"));
-
-  // Turn core is a pure function of bytes: ts comes from the transcript.
-  assert.equal(turns[0].ts, "2026-02-22T10:00:05Z");
-  assert.equal(turns[1].ts, "2026-02-22T10:01:00Z");
+  // Offset cache lost: recapture is a no-op (rebuilt from the journal).
+  rmSync(join(store.root, "index", "capture-offsets.json"));
+  const r4 = captureSessions(store, { owner: "mac", roots });
+  assert.equal(r4.appended, 0, "journal-derived offset prevents re-append");
 });
 
-test("session capture skips empty and never-timestamped files", (t) => {
+test("an offset cache ahead of the journal is distrusted, not obeyed", (t) => {
+  // The migration hazard: a pass raced a stream wipe, its appends landed in
+  // an unlinked inode, but its offsets were saved — claiming lines the new
+  // journal never got. Obeying the cache would skip those lines forever.
+  const { base, store } = setup(t);
+  const projects = join(base, "projects", "-p");
+  mkdirSync(projects, { recursive: true });
+  const file = join(projects, "orphan.jsonl");
+  writeFileSync(file, sessionEvent("user", "line one", "2026-02-22T10:00:00Z") + "\n");
+  const roots = [join(base, "projects")];
+  captureSessions(store, { owner: "mac", roots });
+  // Wipe the stream (as the migration did) but leave the offset cache.
+  rmSync(join(store.root, "streams", "mac~cc.orphan"), { recursive: true });
+  appendFileSync(file, sessionEvent("user", "line two", "2026-02-22T10:01:00Z") + "\n");
+  const r = captureSessions(store, { owner: "mac", roots });
+  assert.equal(r.appended, 2, "journal is truth: both lines recaptured, no gap");
+  const turns = store.readStream("mac~cc.orphan");
+  assert.deepEqual(turns.map((x) => x.provenance.origin.line), [1, 2]);
+});
+
+test("blank lines are turns too: reconstruction is byte-exact", (t) => {
+  const { base, store } = setup(t);
+  const projects = join(base, "projects", "-p");
+  mkdirSync(projects, { recursive: true });
+  const file = join(projects, "gaps.jsonl");
+  const src =
+    sessionEvent("user", "before the gap", "2026-02-22T10:00:00Z") +
+    "\n\n" + // a blank line between records
+    sessionEvent("assistant", "after the gap", "2026-02-22T10:00:05Z") +
+    "\n";
+  writeFileSync(file, src);
+  const r = captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
+  assert.equal(r.appended, 3, "the blank line is a turn (body.line empty)");
+  const turns = store.readStream("mac~cc.gaps");
+  assert.equal(turns[1].body.line, "");
+  assert.equal(turns[1].ts, "2026-02-22T10:00:00Z", "blank line carries the running stamp");
+  assert.equal(turns.map((x) => x.body.line).join("\n") + "\n", src, "byte-exact reconstruction");
+});
+
+test("unstamped leading lines are held, then backfilled from the first stamp", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-p");
   mkdirSync(projects, { recursive: true });
   writeFileSync(join(projects, "empty.jsonl"), "");
-  writeFileSync(join(projects, "no-ts.jsonl"), '{"type":"mode","mode":"normal"}\n');
-  const r = captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
+  const file = join(projects, "no-ts.jsonl");
+  writeFileSync(file, '{"type":"mode","mode":"normal"}\n');
+  const roots = [join(base, "projects")];
+  const r = captureSessions(store, { owner: "mac", roots });
   assert.equal(r.appended, 0);
-  assert.equal(r.skippedNoTs, 1);
+  assert.equal(r.held, 1, "unstamped file held, not dropped");
+
+  // The first stamp arrives; held lines are captured carrying it backward.
+  appendFileSync(file, sessionEvent("user", "now stamped", "2026-02-22T10:00:00Z") + "\n");
+  const r2 = captureSessions(store, { owner: "mac", roots });
+  assert.equal(r2.appended, 2);
+  const turns = store.readStream("mac~cc.no-ts");
+  assert.equal(turns[0].ts, "2026-02-22T10:00:00Z", "leading line backfilled");
+  assert.deepEqual(turns.map((x) => x.provenance.origin.line), [1, 2]);
 });
 
 test("listSessionFiles ignores stray files at the project level", (t) => {

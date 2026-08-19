@@ -39,6 +39,43 @@ function seedSession(base, store, texts) {
   return "cc:session:story";
 }
 
+test("a tombstoned session event is hidden from the reader, not just search", (t) => {
+  const { base, store } = setup(t);
+  const thread = seedSession(base, store, ["fine text", "LEAKED-SECRET-VALUE", "more fine text"]);
+  const before = readerEntries(store, thread);
+  const leaked = before.find((e) => e.text.includes("LEAKED-SECRET-VALUE"));
+  assert.ok(leaked, "precondition: the secret line is an entry");
+
+  // Redact the one event: tombstone by the record owner (v1 authority).
+  store.appendCore("mac~aw-test", {
+    v: 1,
+    ts: "2026-02-23T00:00:00Z",
+    from: "mac",
+    kind: "tombstone",
+    links: [{ rel: "tombstones", ref: leaked.turnId }],
+    body: { reason: "leaked secret" },
+    provenance: { source: "test", fidelity: "projected" },
+  });
+  const after = readerEntries(store, thread);
+  assert.ok(
+    after.every((e) => !e.text.includes("LEAKED-SECRET-VALUE")),
+    "per-line redaction must hold on the reader path, not only in the index",
+  );
+  assert.equal(after.length, before.length - 1, "only the tombstoned event disappears");
+
+  // A stranger's tombstone has no authority and hides nothing.
+  store.appendCore("mac~aw-test", {
+    v: 1,
+    ts: "2026-02-23T00:01:00Z",
+    from: "mallory",
+    kind: "tombstone",
+    links: [{ rel: "tombstones", ref: after[0].turnId }],
+    body: { reason: "hostile" },
+    provenance: { source: "test", fidelity: "projected" },
+  });
+  assert.equal(readerEntries(store, thread).length, after.length);
+});
+
 test("reader segments a session across windows with continuity", (t) => {
   const { base, store } = setup(t);
   const thread = seedSession(base, store, [
@@ -72,8 +109,6 @@ test("reader segments a session across windows with continuity", (t) => {
   for (let i = 1; i < map.length; i++) {
     assert.equal(map[i - 1].end, map[i].start, "adjacent segments share the boundary");
   }
-  // And every segment pins the snapshot it was judged over.
-  assert.ok(map.every((s) => typeof s.snapshot === "string" && s.snapshot.startsWith("t1:")));
 });
 
 test("reader resumes from the last closed annotation when the thread grows", (t) => {
@@ -91,7 +126,7 @@ test("reader resumes from the last closed annotation when the thread grows", (t)
   assert.equal(map1[1].outcome, "ongoing", "trailing segment open");
   void r1;
 
-  // The working agent progresses: new content lands, capture snapshots it.
+  // The working agent progresses: new events land, capture appends them.
   const file = join(base, "projects", "-p", "story.jsonl");
   const line2 = (type, text, i) =>
     JSON.stringify({

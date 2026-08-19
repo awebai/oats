@@ -31,7 +31,7 @@
 // context did this agent spawn with" is a recallable fact.
 
 import { finishTurn, sha256Hex } from "./canonical.mjs";
-import { extractSessionTextFor } from "./formats.mjs";
+import { readerEntries } from "./reader.mjs";
 
 export class DressError extends Error {}
 
@@ -50,53 +50,26 @@ function tsMs(ts) {
 // Collect the conversational entries of one thread, oldest first (by parsed
 // time, never by string comparison — mixed timestamp precision is normal).
 // Mail/chat/note turns contribute themselves; a session thread contributes
-// the events of its LATEST snapshot. A session snapshot whose blob is not
-// replicated here degrades to an explicit metadata entry that says so.
+// its per-event turns, one entry per extracted conversational piece.
 export function threadEntries(store, thread) {
-  const byId = store.readAll();
-  const hidden = store.hiddenIds(byId);
-  const turns = [...byId.values()]
-    .map(({ turn }) => turn)
-    .filter(
-      (t) => t.thread === thread && !hidden.has(t.id) && t.provenance?.source !== "dress",
-    );
-
-  const sessions = turns.filter((t) => t.kind === "session");
-  if (sessions.length > 0) {
-    const latest = sessions.reduce((a, b) =>
-      (b.body?.events ?? 0) > (a.body?.events ?? 0) ||
-      ((b.body?.events ?? 0) === (a.body?.events ?? 0) && tsMs(b.ts) > tsMs(a.ts))
-        ? b
-        : a,
-    );
-    let bytes = null;
-    try {
-      bytes = store.getObject(latest.body.ref);
-    } catch {
-      return [
-        {
-          id: latest.id,
-          loc: "",
-          ts: latest.ts,
-          from: "record",
-          subject: "",
-          text:
-            `[session transcript ${latest.body.ref} is not present in this replica; ` +
-            `sync objects/ from the capturing machine to dress this thread]`,
-        },
-      ];
-    }
-    return extractSessionTextFor(latest.provenance?.source, bytes).map((d) => ({
-      id: latest.id,
-      loc: d.loc,
-      ts: latest.ts,
-      from: d.role === "user" ? "user" : "assistant",
+  // Sessions are per-event turns now; readerEntries assembles them (or a
+  // mail/chat thread) with per-entry turn ids and source line locs.
+  const sessionStreams = store.sessionStreamsFor(thread);
+  if (sessionStreams.length > 0) {
+    return readerEntries(store, thread).map((e) => ({
+      id: e.turnId,
+      loc: e.loc,
+      ts: e.ts,
+      from: e.role,
       subject: "",
-      text: d.text,
+      text: e.text,
     }));
   }
-
-  return turns
+  const byId = store.readAll();
+  const hidden = store.hiddenIds(byId);
+  return [...byId.values()]
+    .map(({ turn }) => turn)
+    .filter((t) => t.thread === thread && !hidden.has(t.id) && t.provenance?.source !== "dress")
     .sort((a, b) => tsMs(a.ts) - tsMs(b.ts) || a.id.localeCompare(b.id))
     .map((t) => ({
       id: t.id,

@@ -9,12 +9,13 @@
 // A segment is recorded as a note turn. Its identity is (thread, start):
 // a later note with the same identity revises it — extends the span,
 // closes the outcome — and the latest (by the revising turn's ts, then
-// id) wins, exactly like session snapshots.
+// id) wins.
 //
 // Spans are HALF-OPEN: start <= line < end. Adjacent segments meet at
 // equality (seg1.end === seg2.start); endpoints are line numbers and need
-// not land on entry-bearing lines. provenance.origin.snapshot pins the
-// session-turn id whose bytes the judgment was made over.
+// not land on entry-bearing lines. Spans reference immutable per-event
+// session turns directly, so nothing needs pinning: line N of a session
+// thread is the same turn forever.
 
 import { finishTurn } from "./canonical.mjs";
 
@@ -43,7 +44,6 @@ export function segmentTurnCore({
   lesson,
   ts,
   model,
-  snapshot,
 }) {
   if (!SEGMENT_TYPES.has(type)) throw new Error(`bad segment type ${type}`);
   if (!SEGMENT_OUTCOMES.has(outcome)) throw new Error(`bad segment outcome ${outcome}`);
@@ -67,7 +67,7 @@ export function segmentTurnCore({
     provenance: {
       source: "mind",
       fidelity: "summary",
-      origin: { thread, ...(model ? { model } : {}), ...(snapshot ? { snapshot } : {}) },
+      origin: { thread, ...(model ? { model } : {}) },
     },
   };
 }
@@ -89,7 +89,6 @@ export function parseSegment(turn) {
     established: String(seg.established ?? ""),
     outcome: String(seg.outcome ?? "ongoing"),
     lesson: typeof seg.lesson === "string" ? seg.lesson : null,
-    snapshot: turn.provenance?.origin?.snapshot ?? null,
     ts: turn.ts,
     turnId: turn.id,
   };

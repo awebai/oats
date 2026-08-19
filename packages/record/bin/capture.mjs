@@ -65,8 +65,12 @@ function pass() {
   if (!args["aw-only"]) {
     for (const r of captureAllSessions(store, { owner, ignore })) {
       out.appended += r.appended;
-      const ignored = r.ignored ? `, ${r.ignored} ignored` : "";
-      log(`sessions: ${r.sessions} scanned, ${r.appended} new snapshots${ignored} -> ${r.stream}`);
+      const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : ""]
+        .filter(Boolean)
+        .join(", ");
+      log(
+        `sessions: ${r.sessions} scanned, ${r.appended} new turns in ${r.streams} sessions${extras ? ` (${extras})` : ""} -> ${r.stream}`,
+      );
     }
   }
   if (!args["sessions-only"]) {

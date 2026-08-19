@@ -59,48 +59,49 @@ function renderEntry(e) {
   return `[${e.loc}] ${e.role}${e.ts ? ` (${e.ts})` : ""}: ${text}`;
 }
 
-// Load the thread's full-fidelity entries (all roles) from the latest
-// session snapshot, or from mail/chat turns for conversation threads.
-// Returns { entries, snapshot } — snapshot is the session-turn id whose
-// bytes were read, pinned into every segment judgment made over them.
-export function readerEntriesWithSnapshot(store, thread) {
-  const byId = store.readAll();
-  const turns = [...byId.values()]
-    .map(({ turn }) => turn)
-    .filter((t) => t.thread === thread && t.provenance?.source !== "mind");
-  const sessions = turns.filter((t) => t.kind === "session");
-  if (sessions.length > 0) {
-    const latest = sessions.reduce((a, b) =>
-      (b.body?.events ?? 0) > (a.body?.events ?? 0) ? b : a,
-    );
-    const bytes = store.getObject(latest.body.ref);
-    return {
-      snapshot: latest.id,
-      entries: extractSessionTextFor(latest.provenance?.source, bytes).map((d) => ({
-        loc: d.loc,
-        role: d.role,
-        ts: d.ts ?? "",
-        text: d.text,
-        turnId: latest.id,
-      })),
-    };
-  }
-  return {
-    snapshot: null,
-    entries: turns
-      .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts) || a.id.localeCompare(b.id))
-      .map((t, i) => ({
-        loc: `line:${i + 1}`,
-        role: t.kind,
-        ts: t.ts,
-        text: (t.body?.subject ? t.body.subject + "\n" : "") + (t.body?.text ?? ""),
-        turnId: t.id,
-      })),
-  };
-}
-
+// Load the thread's full-fidelity entries (all roles). Sessions are one
+// turn per native event, stored in per-session streams; a session entry's
+// turnId is the event turn itself, and loc is its source line number.
 export function readerEntries(store, thread) {
-  return readerEntriesWithSnapshot(store, thread).entries;
+  const sessionStreams = store.sessionStreamsFor(thread);
+  if (sessionStreams.length > 0) {
+    // Tombstones live in ordinary streams but must hide session events
+    // too: a per-line redaction that search respects while the reader and
+    // dress resurrect the line is a redaction that does not work.
+    const claims = store.tombstoneClaims();
+    const byId = new Map();
+    for (const sid of sessionStreams) {
+      for (const t of store.readStream(sid)) {
+        if (store.claimHides(claims, t)) continue;
+        if (t.thread === thread && typeof t.body?.line === "string" && !byId.has(t.id)) {
+          byId.set(t.id, t);
+        }
+      }
+    }
+    const turns = [...byId.values()].sort(
+      (a, b) => (a.provenance?.origin?.line ?? 0) - (b.provenance?.origin?.line ?? 0),
+    );
+    const entries = [];
+    for (const t of turns) {
+      const loc = `line:${t.provenance?.origin?.line ?? 0}`;
+      for (const d of extractSessionTextFor(t.provenance?.source, Buffer.from(t.body.line, "utf8"))) {
+        entries.push({ loc, role: d.role, ts: t.ts, text: d.text, turnId: t.id });
+      }
+    }
+    return entries;
+  }
+  const byId = store.readAll();
+  return [...byId.values()]
+    .map(({ turn }) => turn)
+    .filter((t) => t.thread === thread && t.provenance?.source !== "mind")
+    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts) || a.id.localeCompare(b.id))
+    .map((t, i) => ({
+      loc: `line:${i + 1}`,
+      role: t.kind,
+      ts: t.ts,
+      text: (t.body?.subject ? t.body.subject + "\n" : "") + (t.body?.text ?? ""),
+      turnId: t.id,
+    }));
 }
 
 export function buildReaderPrompt({ openSegments, windowEntries, threadNote }) {
@@ -159,7 +160,7 @@ export function readThread(
   { thread, engine, engineLabel, windowChars = DEFAULT_WINDOW_CHARS, threadNote, onWindow },
 ) {
   if (!engine) throw new ReaderError("an engine command is required (--engine or TURN_RECORD_ENGINE)");
-  const { entries, snapshot } = readerEntriesWithSnapshot(store, thread);
+  const entries = readerEntries(store, thread);
   if (entries.length === 0) return { windows: 0, segments: 0, entries: 0 };
 
   const locNum = (ref) => Number(/line:(\d+)/.exec(ref)?.[1] ?? 0);
@@ -238,7 +239,6 @@ export function readThread(
               ),
             ).toISOString(),
             model: engineLabel,
-            snapshot,
           });
           const supTurn = finishTurn(sup);
           if (!known.has(supTurn.id)) {
@@ -268,7 +268,6 @@ export function readThread(
         lesson: typeof raw.lesson === "string" && raw.lesson.trim() ? raw.lesson : undefined,
         ts: windowEntries[windowEntries.length - 1].ts || endTs,
         model: engineLabel,
-        snapshot,
       });
       const turn = finishTurn(core);
       if (!known.has(turn.id)) {

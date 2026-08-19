@@ -12,9 +12,9 @@
 // conversation: user/assistant text, thinking (where the harness persists
 // it readably), tool calls with their inputs, tool results, attachments.
 // Roles label every piece so consumers can filter; nothing is dropped.
-// Only harness bookkeeping the model never saw as conversation (file
-// snapshots, queue operations, mode flips) stays blob-only — and the blob
-// itself is always verbatim-complete regardless.
+// Harness bookkeeping the model never saw as conversation (file
+// snapshots, queue operations, mode flips) yields no docs — but its
+// native line is still stored verbatim in the turn, so nothing is lost.
 
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -247,7 +247,8 @@ export function extractCodexText(bytes) {
       const text = typeof out === "string" ? out : safeJson(out);
       if (String(text).trim()) docs.push({ loc: `line:${lineNo}`, role: "tool_result", text: String(text), ts });
     }
-    // ghost_snapshot and other non-conversation payloads: blob-only.
+    // ghost_snapshot and other non-conversation payloads: no docs; the
+    // native line survives verbatim in the turn body regardless.
   }
   return docs;
 }

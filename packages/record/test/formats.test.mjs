@@ -99,14 +99,13 @@ test("pi sessions capture into <owner>~pi with pi:session threads", (t) => {
   writeFileSync(join(dir, `2026-08-03T07-18-03-078Z_${PI_UUID}.jsonl`), jsonl(PI_LINES));
 
   const r = captureSessions(store, { owner: "mac", roots: [join(base, "pi-sessions")], format: "pi" });
-  assert.equal(r.appended, 1);
-  assert.equal(r.stream, "mac~pi");
-  const [turn] = store.readStream("mac~pi");
-  assert.equal(turn.thread, `pi:session:${PI_UUID}`);
-  assert.equal(turn.provenance.source, "pi");
-  assert.equal(turn.ts, "2026-08-03T07:18:10.000Z", "last event timestamp");
-  assert.equal(turn.body.events, PI_LINES.length);
-  void 0;
+  assert.equal(r.appended, PI_LINES.length, "one turn per native record");
+  const turns = store.readStream(`mac~pi.${PI_UUID}`);
+  assert.equal(turns.length, PI_LINES.length);
+  assert.ok(turns.every((x) => x.thread === `pi:session:${PI_UUID}` && x.provenance.source === "pi"));
+  assert.equal(turns.at(-1).ts, "2026-08-03T07:18:10.000Z", "event timestamps preserved");
+  // Native form: each body.line is the exact source record.
+  assert.equal(turns.map((x) => x.body.line).join("\n") + "\n", jsonl(PI_LINES));
 
   const index = new RecordIndex(store);
   t.after(() => index.close());
@@ -136,11 +135,10 @@ test("codex rollouts capture into <owner>~codex from nested date dirs", (t) => {
     roots: [join(base, "codex-sessions")],
     format: "codex",
   });
-  assert.equal(r.appended, 1);
-  assert.equal(r.stream, "mac~codex");
-  const [turn] = store.readStream("mac~codex");
-  assert.equal(turn.thread, `codex:session:${CODEX_UUID}`);
-  assert.equal(turn.provenance.source, "codex");
+  assert.equal(r.appended, CODEX_LINES.length, "one turn per native record");
+  const turns = store.readStream(`mac~codex.${CODEX_UUID}`);
+  assert.equal(turns.length, CODEX_LINES.length);
+  assert.ok(turns.every((x) => x.thread === `codex:session:${CODEX_UUID}` && x.provenance.source === "codex"));
 
   const index = new RecordIndex(store);
   t.after(() => index.close());

@@ -94,7 +94,7 @@ test("--since cuts old turns but never the opener", (t) => {
   assert.match(r.briefing, /--since cut/, "briefing says a cut was applied");
 });
 
-test("a session thread renders its latest snapshot's conversation", (t) => {
+test("a session thread renders its conversation from per-event turns", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-p");
   mkdirSync(projects, { recursive: true });
@@ -216,27 +216,6 @@ test("a huge opener is truncated, not allowed to blow the budget", (t) => {
   assert.ok(r.briefing.length <= 2000 + 500, `briefing ${r.briefing.length} chars`);
   assert.match(r.briefing, /\[truncated at \d+ chars; full text: turn-record recall --show /);
   assert.match(r.briefing, /latest work/);
-});
-
-test("missing session blob degrades to an actionable entry, not an empty thread", (t) => {
-  const { base, store } = setup(t);
-  const projects = join(base, "projects", "-p");
-  mkdirSync(projects, { recursive: true });
-  writeFileSync(
-    join(projects, "gone.jsonl"),
-    JSON.stringify({
-      type: "user",
-      timestamp: "2026-02-22T09:00:00Z",
-      message: { content: [{ type: "text", text: "hello" }] },
-    }) + "\n",
-  );
-  captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
-  const [turn] = store.readStream("mac~cc");
-  rmSync(store.objectPath(turn.body.ref.slice("sha256:".length)));
-
-  const r = dress(store, { thread: "cc:session:gone", budgetChars: 5000, log: false });
-  assert.equal(r.kept, 1);
-  assert.match(r.briefing, /not present in this replica; sync objects\//);
 });
 
 test("a forged marker inside turn text cannot carry the briefing's signature", (t) => {
