@@ -1,10 +1,21 @@
 {
   "name": "@awebai/turn-record",
   "version": "0.1.0",
-  "private": true,
   "description": "Turn record v1 — append-only, content-addressed, replicated record of turns, with capture (Claude Code sessions, aw client logs) and recall (FTS search). Implements docs/turn-record-sot.md from aweb-oss.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awebai/oats",
+    "directory": "packages/record"
+  },
+  "keywords": [
+    "agents",
+    "record",
+    "capture",
+    "recall",
+    "aweb"
+  ],
   "engines": {
     "node": ">=22.5.0"
   },
@@ -18,9 +29,13 @@
     "./index-db": "./lib/index-db.mjs"
   },
   "bin": {
-    "capture": "./bin/capture.mjs",
-    "recall": "./bin/recall.mjs"
+    "turn-record": "./bin/turn-record.mjs"
   },
+  "files": [
+    "bin/",
+    "lib/",
+    "README.md"
+  ],
   "scripts": {
     "test": "node --test test/*.test.mjs"
   }

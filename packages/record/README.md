@@ -30,19 +30,30 @@ Everything is a signed turn in an append-only record. This package holds:
   line provenance; only the latest snapshot per session is searchable;
   tombstoned turns disappear.
 
-## CLIs
+## Install and run
+
+One shipped bin, `turn-record`, with three subcommands. From a checkout use
+`node bin/turn-record.mjs ...`; from an npm install (the package has zero
+dependencies and packs clean — `test/packaging.test.mjs` proves the tarball
+runs standalone) just `turn-record ...`.
 
 ```bash
-capture                  # one reconciliation pass (sessions + aw logs), then index update
-capture --watch          # pass now, on filesystem change, and every 15 min
-capture --status         # stream summary
-capture --install-hint   # Claude Code hook snippet (Stop/SessionEnd)
+turn-record setup        # install Stop/SessionEnd hooks into every
+                         # ~/.claude*/settings.json, install the background
+                         # watcher (launchd on macOS, systemd user unit on
+                         # Linux), then run the first capture pass.
+                         # Idempotent; --dry-run previews; --owner overrides
+                         # the machine name.
 
-recall "sqlite fts"                 # search mail + chat + sessions together
-recall --kind mail --from acme/x q  # filters
-recall --thread aweb:conv:<id>      # list a thread chronologically
-recall --show t1:<hex>              # print one turn
-recall --reindex                    # full rebuild of the derived index
+turn-record capture                  # one reconciliation pass, then index update
+turn-record capture --watch          # pass now, on filesystem change, every 15 min
+turn-record capture --status         # stream summary
+
+turn-record recall "sqlite fts"                 # search mail + chat + sessions together
+turn-record recall --kind mail --from acme/x q  # filters
+turn-record recall --thread aweb:conv:<id>      # list a thread chronologically
+turn-record recall --show t1:<hex>              # print one turn
+turn-record recall --reindex                    # full rebuild of the derived index
 ```
 
 Store root: `--root`, else `$TURN_RECORD_ROOT`, else `~/.turn-record`.
