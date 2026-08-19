@@ -29,6 +29,14 @@ Everything is a signed turn in an append-only record. This package holds:
   Reconciliation is the capture (hooks/watchers only decide when to run
   it).
 - **`lib/capture-aw.mjs`** — aw client log capture into `<owner>~aw`.
+- **`lib/compile-pi.mjs`** — the spawn primitive: compile an outfit (a
+  frozen selection of segments) into a native pi session file (v3, per
+  pi's documented session format), so a new agent starts life with the
+  selected conversation turns already in context. Thinking is folded
+  into text (providers reject foreign reasoning), tool call/result
+  pairs replay natively when complete, and a spawn note maps the new
+  agent to the exact segment versions it wears. Tombstoned events stay
+  redacted in the dress.
 - **`lib/index-db.mjs`** — derived SQLite FTS5 index (`node:sqlite`, no
   dependencies). `update()` is incremental; `rebuild()` is reset + update
   from zero (same code path). Session text is extracted per event with
@@ -52,6 +60,11 @@ turn-record setup        # install Stop/SessionEnd hooks into every
 turn-record capture                  # one reconciliation pass, then index update
 turn-record capture --watch          # pass now, on filesystem change, every 15 min
 turn-record capture --status         # stream summary
+
+turn-record spawn --outfit t1:<hex>             # compile an outfit into a native pi
+                                                # session; prints the pi command that
+                                                # starts the dressed agent
+turn-record spawn --outfit t1:<hex> --dry-run   # compile only, no spawn note
 
 turn-record recall "sqlite fts"                 # search mail + chat + sessions together
 turn-record recall --kind mail --from acme/x q  # filters

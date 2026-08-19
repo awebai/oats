@@ -4,6 +4,7 @@
 //   turn-record capture [...]   land sessions and aw logs in the record
 //   turn-record recall  [...]   search the record
 //   turn-record dress   [...]   compose a budgeted spawning context
+//   turn-record spawn   [...]   compile an outfit into a native pi session
 //   turn-record mind    [...]   the reader: segment an agent's life
 //   turn-record setup   [...]   install hooks + background watcher, run first pass
 //
@@ -30,6 +31,10 @@ switch (sub) {
     rest();
     await import("./segments.mjs");
     break;
+  case "spawn":
+    rest();
+    await import("./spawn.mjs");
+    break;
   case "mind":
     rest();
     await import("./mind.mjs");
@@ -40,11 +45,12 @@ switch (sub) {
     break;
   default:
     console.error(
-      "usage: turn-record <capture|recall|dress|segments|mind|setup> [options]\n" +
+      "usage: turn-record <capture|recall|dress|segments|spawn|mind|setup> [options]\n" +
         "  capture [--watch|--status|--owner <name>|--root <dir>]\n" +
         "  recall  [--kind k] [--thread t] [--from f] [--show id] <query>\n" +
         "  dress   --thread <t> [--budget-chars N] [--since <ts>] [--out f]\n" +
         "  segments [query] [--thread t] [--type t] [--about s] [--include-dead]\n" +
+        "  spawn   --outfit <id> [--task s] [--cwd dir] [--dry-run]\n" +
         "  mind    --backfill <thread> [--engine cmd] | --map <thread>\n" +
         "  setup   [--owner <name>] [--no-service] [--no-hooks] [--dry-run]",
     );
