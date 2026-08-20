@@ -32,11 +32,13 @@ Everything is a signed turn in an append-only record. This package holds:
 - **`lib/compile-pi.mjs`** — the spawn primitive: compile an outfit (a
   frozen selection of segments) into a native pi session file (v3, per
   pi's documented session format), so a new agent starts life with the
-  selected conversation turns already in context. Thinking is folded
-  into text (providers reject foreign reasoning), tool call/result
-  pairs replay natively when complete, and a spawn note maps the new
-  agent to the exact segment versions it wears. Tombstoned events stay
-  redacted in the dress.
+  selected conversation turns already in context. The dressed agent is
+  INDISTINGUISHABLE from one that lived those turns: no markers, no
+  labels, no harness bookkeeping; thinking and half tool-exchanges are
+  dropped (the record keeps everything); complete tool call/result
+  pairs replay natively. A spawn note maps the new agent to the exact
+  segment versions it wears. Tombstoned events stay redacted in the
+  dress.
 - **`lib/index-db.mjs`** — derived SQLite FTS5 index (`node:sqlite`, no
   dependencies). `update()` is incremental; `rebuild()` is reset + update
   from zero (same code path). Session text is extracted per event with

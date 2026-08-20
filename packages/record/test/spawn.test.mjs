@@ -1,10 +1,11 @@
 // spawn: compiling an outfit into a native pi session file — mapping
-// fidelity, cross-provider safety rules, chain integrity, the spawn note,
-// determinism, and the shipped binary.
+// fidelity, INDISTINGUISHABILITY (the dressed agent's session contains
+// exactly what a lived session would contain, nothing else), chain
+// integrity, the spawn note, determinism, and the shipped binary.
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -90,9 +91,9 @@ function freeze(store, thread, spans) {
 test("an outfit compiles into a well-formed pi v3 session", (t) => {
   const { base, store } = setup(t);
   const thread = seedCcSession(base, store);
-  // Segment 1: lines [1,6) — paired tool call and the system notice.
-  // Segment 2: line 6 — a tool call whose result never arrives (folds
-  // to text). Half-open spans: line 6 belongs only to segment 2.
+  // Segment 1: lines [1,6) — paired tool call plus a system notice that
+  // must NOT survive into the dress. Segment 2: line 6 — a tool call
+  // whose result never arrives (dropped). Half-open spans.
   const outfitId = freeze(store, thread, [
     [1, 6, "listing established the two files"],
     [6, 7, "started reading a.txt"],
@@ -125,25 +126,30 @@ test("an outfit compiles into a well-formed pi v3 session", (t) => {
   }
 
   const messages = rest.filter((e) => e.type === "message").map((e) => e.message);
-  const customs = rest.filter((e) => e.type === "custom_message");
 
-  // Segment markers introduce each segment with its established text.
-  assert.equal(customs.filter((c) => String(c.content).includes("dressed context")).length, 2);
-  assert.match(customs[0].content, /listing established the two files/);
+  // INDISTINGUISHABILITY: nothing announces the dress. No custom
+  // messages, no markers, no bracketed folds, no harness bookkeeping,
+  // no thinking, no foreign signatures.
+  assert.equal(rest.filter((e) => e.type === "custom_message").length, 0, "no injected entries at all");
+  const whole = readFileSync(r.path, "utf8");
+  assert.ok(!whole.includes("dressed context"), "no segment markers");
+  assert.ok(!whole.includes("[thinking]"), "no thinking folds");
+  assert.ok(!whole.includes("[tool call"), "no folded calls");
+  assert.ok(!whole.includes("budget warning"), "no harness bookkeeping");
+  assert.ok(!whole.includes("an ls will do"), "thinking dropped entirely");
+  assert.ok(!whole.includes("sig-from-another-provider"), "foreign signatures never replayed");
 
-  // Roles in order: user, assistant (thinking folded + paired call),
-  // toolResult, assistant, then segment 2's assistant with folded call.
+  // Roles in order: user, assistant (text + paired call), toolResult,
+  // assistant. Segment 2's assistant had ONLY an unpaired call: absent.
   assert.equal(messages[0].role, "user");
   assert.equal(messages[0].content[0].text, "please list the files");
 
   const asst1 = messages[1];
   assert.equal(asst1.role, "assistant");
   assert.equal(asst1.stopReason, "toolUse");
-  const kinds = asst1.content.map((p) => p.type);
-  assert.deepEqual(kinds, ["text", "text", "toolCall"], "thinking folded into a text part");
-  assert.match(asst1.content[0].text, /^\[thinking\]\nan ls will do$/);
-  assert.ok(!JSON.stringify(asst1).includes("sig-from-another-provider"), "foreign signatures never replayed");
-  assert.deepEqual(asst1.content[2], { type: "toolCall", id: "toolu_1", name: "Bash", arguments: { command: "ls" } });
+  assert.deepEqual(asst1.content.map((p) => p.type), ["text", "toolCall"]);
+  assert.equal(asst1.content[0].text, "Listing now.");
+  assert.deepEqual(asst1.content[1], { type: "toolCall", id: "toolu_1", name: "Bash", arguments: { command: "ls" } });
 
   const result = messages[2];
   assert.equal(result.role, "toolResult");
@@ -152,14 +158,9 @@ test("an outfit compiles into a well-formed pi v3 session", (t) => {
   assert.equal(result.content[0].text, "a.txt\nb.txt");
   assert.equal(result.isError, false);
 
-  // The system notice rides as injected context, not a fabricated turn.
-  assert.ok(customs.some((c) => String(c.content).includes("budget warning")));
-
-  // Segment 2's tool call has no result in the segment: folded to text.
-  const asst3 = messages.at(-1);
-  assert.equal(asst3.stopReason, "stop");
-  assert.match(asst3.content[0].text, /\[tool call — Read\]/);
+  // Segment 2's tool call has no result in the segment: dropped whole.
   assert.ok(!messages.some((m) => m.content?.some?.((p) => p.type === "toolCall" && p.id === "toolu_2")));
+  assert.equal(messages.at(-1).content[0].text, "Two files: a.txt and b.txt.", "the last message is real conversation");
 
   // The spawn note maps the agent to the outfit at birth.
   assert.ok(r.spawn, "spawn note recorded");
@@ -203,13 +204,12 @@ test("a tombstoned event stays redacted in the dress", (t) => {
   assert.ok(all.includes("Two files"), "other events intact");
 });
 
-test("out-of-order and duplicate tool pairs degrade to text, never dangle", () => {
+test("out-of-order and duplicate tool pairs are dropped, never dangle", () => {
   const opts = { sessionId: "22222222-3333-4444-8555-666666666666", cwd: "/x", now: "2026-03-01T12:00:00.000Z" };
 
   // A result BEFORE its call: neither side replays natively.
   const early = assembleEntries(
     [{
-      marker: null,
       items: [
         { kind: "tool_result", callId: "c1", name: "bash", text: "out", isError: false },
         { kind: "assistant", parts: [{ type: "toolCall", id: "c1", name: "bash", arguments: {} }] },
@@ -223,11 +223,11 @@ test("out-of-order and duplicate tool pairs degrade to text, never dangle", () =
     !earlyMsgs.some((m) => m.content?.some?.((p) => p.type === "toolCall")),
     "a call whose result already passed never replays natively (it would dangle)",
   );
+  assert.equal(early.filter((e) => e.type === "custom_message").length, 0, "and nothing announces the drop");
 
   // Duplicate call ids: only the first occurrence pairs with the result.
   const dup = assembleEntries(
     [{
-      marker: null,
       items: [
         { kind: "assistant", parts: [{ type: "toolCall", id: "d1", name: "bash", arguments: { n: 1 } }] },
         { kind: "assistant", parts: [{ type: "toolCall", id: "d1", name: "bash", arguments: { n: 2 } }] },
@@ -245,7 +245,6 @@ test("out-of-order and duplicate tool pairs degrade to text, never dangle", () =
   // Two results for one call: the first pairs, the second orphans.
   const twice = assembleEntries(
     [{
-      marker: null,
       items: [
         { kind: "assistant", parts: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }] },
         { kind: "tool_result", callId: "t1", name: "bash", text: "first", isError: false },
@@ -256,10 +255,7 @@ test("out-of-order and duplicate tool pairs degrade to text, never dangle", () =
   );
   const twiceMsgs = twice.filter((e) => e.type === "message").map((e) => e.message);
   assert.equal(twiceMsgs.filter((m) => m.role === "toolResult").length, 1);
-  assert.ok(
-    twice.some((e) => e.type === "custom_message" && String(e.content).includes("second")),
-    "the surplus result rides as injected context",
-  );
+  assert.ok(!JSON.stringify(twice).includes("second"), "the surplus result is dropped, never announced");
 });
 
 test("diverging owner streams for one session fail loudly", (t) => {
@@ -284,6 +280,22 @@ test("diverging owner streams for one session fail loudly", (t) => {
 
 test("pi session path follows pi's directory convention", () => {
   assert.equal(piProjectDir("/Users/x/proj"), "--Users-x-proj--");
+});
+
+test("an outfit with nothing replayable refuses to spawn", (t) => {
+  // A segment that spans only harness bookkeeping and an unpaired tool
+  // call compiles to zero conversation. Writing a header-only session
+  // with a spawn note would assert clothes the agent does not wear.
+  const { base, store } = setup(t);
+  const thread = seedCcSession(base, store);
+  const outfitId = freeze(store, thread, [[5, 7, "looked busy, left nothing replayable"]]);
+  const mindBefore = store.readStream("mac~mind").length;
+  assert.throws(
+    () => compileOutfit(store, { outfit: outfitId, owner: "mac", cwd: base, sessionDir: join(base, "pi-sessions") }),
+    /compiles to no conversation/,
+  );
+  assert.equal(store.readStream("mac~mind").length, mindBefore, "no spawn note recorded");
+  assert.ok(!existsSync(join(base, "pi-sessions")), "no session file written");
 });
 
 test("unknown outfit fails loudly", (t) => {

@@ -8,20 +8,29 @@
 //
 // Format authority: pi's own docs/session-format.md (v3). Every entry
 // except the header carries { id: 8-hex, parentId, timestamp }. Messages
-// are AgentMessage objects; custom_message entries are the documented
-// mechanism for injected context that participates in the LLM context.
+// are AgentMessage objects.
 //
-// Cross-provider rules, established empirically against openai-codex and
-// consistent with the schema:
-// - thinking content is NEVER replayed as {type:"thinking"} — providers
-//   that sign reasoning reject foreign thinking and pi retries forever.
-//   It is folded into assistant text under a "[thinking]" marker.
-// - toolCall/toolResult pairs replay fine, with their original tool names
-//   and arguments, PROVIDED the pair is complete. A call whose result is
-//   outside the segment is folded into text; an orphan result becomes a
-//   custom_message.
-// - base64 payloads (images, documents) become descriptive placeholders;
-//   the record keeps the real bytes, the dress does not carry them.
+// INDISTINGUISHABILITY (Juan's ruling, 2026-08-19): the dressed agent
+// must be indistinguishable from an agent that actually lived these
+// conversation turns. The dress never announces itself — no segment
+// markers, no injected labels, no bracketed bookkeeping. Whatever a
+// lived session could not contain, the dress does not contain either:
+// - harness bookkeeping (cc system notices, token reminders,
+//   attachments) is dropped — the record keeps it, the dress does not;
+// - thinking is dropped: foreign signed reasoning cannot be replayed
+//   (providers reject it and pi retries forever, established
+//   empirically), and a visible "[thinking]" fold would announce the
+//   dress. The compiled session reads like one lived with thinking not
+//   persisted; the record retains every thought.
+// - toolCall/toolResult pairs replay natively, with original names and
+//   arguments, PROVIDED the pair is complete within the segment. An
+//   unpaired call or orphan result is dropped — a lived session cannot
+//   contain half a tool exchange.
+// - base64 payloads become descriptive placeholders (a rare, accepted
+//   seam); the record keeps the real bytes.
+// - custom_message entries appear ONLY when the source session itself
+//   contained them (pi-to-pi, original customType preserved) — because
+//   then a lived continuation would carry them too.
 
 import { createHash } from "node:crypto";
 import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
@@ -84,8 +93,8 @@ function toolArgs(part) {
 //   { kind: "user",        parts: [{type:"text",text}] }
 //   { kind: "assistant",   parts: [{type:"text"|...}, {type:"toolCall",...}] }
 //   { kind: "tool_result", callId, name, text, isError }
-//   { kind: "context",     text }   (system notices, attachments, custom)
-// Thinking arrives folded into assistant text parts already.
+//   { kind: "custom",      customType, text }   (pi-source custom_message only)
+// Thinking and harness bookkeeping never become items (indistinguishability).
 
 function ccItems(d) {
   const items = [];
@@ -123,8 +132,7 @@ function ccItems(d) {
       if (part?.type === "text" && typeof part.text === "string") {
         if (part.text.trim()) parts.push({ type: "text", text: part.text });
       } else if (part?.type === "thinking") {
-        const t = typeof part.thinking === "string" ? part.thinking : "";
-        if (t.trim()) parts.push({ type: "text", text: `[thinking]\n${t}` });
+        continue; // reasoning is never replayed; the record keeps it
       } else if (part?.type === "tool_use") {
         parts.push({ type: "toolCall", id: String(part.id ?? ""), name: String(part.name ?? "tool"), arguments: toolArgs(part) });
       } else if (part) {
@@ -135,23 +143,18 @@ function ccItems(d) {
     if (parts.length > 0) items.push({ kind: "assistant", parts });
     return items;
   }
-  if (d.type === "system") {
-    const text = typeof d.content === "string" ? d.content : safeJson(d.content);
-    if (String(text).trim()) items.push({ kind: "context", text: `[system]\n${text}` });
-    return items;
-  }
-  if (d.type === "attachment") {
-    const text = safeJson(d.attachment);
-    if (text && text !== "null") items.push({ kind: "context", text: `[attachment]\n${text}` });
-  }
+  // system, attachment, and all other cc records are harness bookkeeping:
+  // a lived pi session could not contain them, so the dress does not.
   return items;
 }
 
 function piItems(d) {
   const items = [];
   if (d.type === "custom_message") {
+    // The source session genuinely contained this injected context, so a
+    // lived continuation would too — preserved with its original type.
     const text = textOf(d.content);
-    if (text.trim()) items.push({ kind: "context", text });
+    if (text.trim()) items.push({ kind: "custom", customType: String(d.customType ?? "context"), text });
     return items;
   }
   if (d.type !== "message") return items;
@@ -176,8 +179,7 @@ function piItems(d) {
       if (part?.type === "text" && typeof part.text === "string") {
         if (part.text.trim()) parts.push({ type: "text", text: part.text });
       } else if (part?.type === "thinking") {
-        const t = typeof part.thinking === "string" ? part.thinking : "";
-        if (t.trim()) parts.push({ type: "text", text: `[thinking]\n${t}` });
+        continue; // reasoning is never replayed; the record keeps it
       } else if (part?.type === "toolCall") {
         parts.push({ type: "toolCall", id: String(part.id ?? ""), name: String(part.name ?? "tool"), arguments: toolArgs(part) });
       } else if (part) {
@@ -219,11 +221,7 @@ function codexItems(d) {
     return items;
   }
   if (p.type === "reasoning") {
-    const text = Array.isArray(p.summary)
-      ? p.summary.map((x) => (typeof x?.text === "string" ? x.text : "")).join("\n")
-      : "";
-    if (text.trim()) items.push({ kind: "assistant", parts: [{ type: "text", text: `[thinking]\n${text}` }] });
-    return items;
+    return items; // reasoning is never replayed; the record keeps it
   }
   if (p.type === "function_call" || p.type === "custom_tool_call") {
     items.push({
@@ -254,17 +252,16 @@ export function conversationItems(source, record) {
 
 // ------------------------------------------------------ session assembly
 
-const CUSTOM_TYPE = "turn-record-dress";
-
 // Deterministic 8-hex entry ids: the same outfit compiled with the same
 // session id yields byte-identical entries.
 function entryId(sessionId, n) {
   return createHash("sha256").update(`${sessionId}:${n}`).digest("hex").slice(0, 8);
 }
 
-// Assemble neutral items (with segment boundaries) into pi v3 entries.
-// `chunks` is [{ marker, items }] — one chunk per segment, marker text
-// introduces it as a custom_message.
+// Assemble neutral items into pi v3 entries. `chunks` is [{ items }] —
+// one chunk per segment. Segments concatenate as plain consecutive
+// conversation: no markers, no labels, nothing a lived session would
+// not contain.
 export function assembleEntries(chunks, { sessionId, cwd, now }) {
   const entries = [{ type: "session", version: 3, id: sessionId, timestamp: now, cwd }];
   let parentId = null;
@@ -283,15 +280,13 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
     timestamp: nowMs,
   };
 
-  for (const { marker, items } of chunks) {
-    if (marker) {
-      push({ type: "custom_message", customType: CUSTOM_TYPE, content: marker, display: true });
-    }
+  for (const { items } of chunks) {
     // Pairing plan: a toolCall replays natively only when it is the FIRST
     // occurrence of its id AND a result for that id appears strictly
     // LATER in the same chunk. Anything else — duplicate call ids, a
-    // result arriving before its call, a pair split across segments —
-    // degrades to text, never to a dangling native tool-use. Honest
+    // result arriving before its call, a pair split across segments — is
+    // DROPPED: a lived session cannot contain half a tool exchange, and
+    // the dress never announces itself with folded substitutes. Honest
     // captures always order call-before-result; this guards hand-crafted
     // or malformed transcripts and future formats.
     const firstCall = new Map(); // callId -> { index, name }
@@ -315,8 +310,9 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
       const item = items[i];
       if (item.kind === "user") {
         push({ type: "message", message: { role: "user", content: item.parts, timestamp: nowMs } });
-      } else if (item.kind === "context") {
-        push({ type: "custom_message", customType: CUSTOM_TYPE, content: item.text, display: true });
+      } else if (item.kind === "custom") {
+        // Only ever from a pi source that genuinely contained it.
+        push({ type: "custom_message", customType: item.customType, content: item.text, display: true });
       } else if (item.kind === "assistant") {
         const parts = [];
         let calls = 0;
@@ -326,17 +322,18 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
             if (call && call.index === i && pairedResult.has(part.id)) {
               parts.push(part);
               calls++;
-            } else {
-              parts.push({ type: "text", text: `[tool call — ${part.name}]\n${safeJson(part.arguments)}` });
             }
+            // else: unpaired or duplicate call — dropped, never folded.
           } else {
             parts.push(part);
           }
         }
-        push({
-          type: "message",
-          message: { role: "assistant", content: parts, stopReason: calls > 0 ? "toolUse" : "stop", ...assistantBase },
-        });
+        if (parts.length > 0) {
+          push({
+            type: "message",
+            message: { role: "assistant", content: parts, stopReason: calls > 0 ? "toolUse" : "stop", ...assistantBase },
+          });
+        }
       } else if (item.kind === "tool_result") {
         if (pairedResult.get(item.callId) === i) {
           push({
@@ -350,16 +347,8 @@ export function assembleEntries(chunks, { sessionId, cwd, now }) {
               timestamp: nowMs,
             },
           });
-        } else {
-          // Orphan result: its call is outside the chunk, folded, or a
-          // duplicate — the pair was never replayed natively.
-          push({
-            type: "custom_message",
-            customType: CUSTOM_TYPE,
-            content: `[tool result${item.name ? ` — ${item.name}` : ""}]\n${item.text}`,
-            display: true,
-          });
         }
+        // else: orphan result — dropped, never announced.
       }
     }
   }
@@ -431,10 +420,7 @@ export function outfitChunks(store, outfitRef) {
       }
       items.push(...conversationItems(e.source, record));
     }
-    const marker =
-      `[dressed context — ${seg.type}, ${seg.outcome}] ${seg.established}` +
-      (seg.lesson ? `\n[lesson] ${seg.lesson}` : "");
-    chunks.push({ marker, items, segment: seg, memberRef });
+    chunks.push({ items, segment: seg, memberRef });
   }
   return { outfit, chunks };
 }
@@ -457,6 +443,15 @@ export function compileOutfit(
   const stamp = now ?? new Date().toISOString();
   const { outfit, chunks } = outfitChunks(store, outfitRef);
   const entries = assembleEntries(chunks, { sessionId: id, cwd: realCwd, now: stamp });
+  // A dress with no conversation is not a dress. Everything replayable in
+  // these segments was dropped (bookkeeping, thinking, half exchanges);
+  // writing a header-only session with a spawn note claiming the agent
+  // wears these segments would put a false assertion in the record.
+  if (entries.length <= 1) {
+    throw new CompileError(
+      `outfit ${outfitRef} compiles to no conversation: nothing in its segments is replayable`,
+    );
+  }
   const path = piSessionPath(realCwd, id, stamp, sessionDir);
   mkdirSync(join(path, ".."), { recursive: true });
   // Write-then-rename: pi must never see a half-written session file.
