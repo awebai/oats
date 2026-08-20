@@ -67,10 +67,11 @@ turn-record spawn --outfit t1:<hex>             # compile an outfit into a nativ
 turn-record spawn --outfit t1:<hex> --dry-run   # compile only, no spawn note
 
 turn-record mind --follow --engine <cmd>        # the consciousness, live: watch this
-                                                # owner's session streams and run the
-                                                # reader on every thread whose journal
-                                                # grew (resumes from the last closed
+                                                # owner's session streams and wake the
+                                                # followed thread's own jiminy on growth
+                                                # (resumes from the last closed
                                                 # annotation; --once for cron-style)
+
 
 turn-record recall "sqlite fts"                 # search mail + chat + sessions together
 turn-record recall --kind mail --from acme/x q  # filters
@@ -123,6 +124,35 @@ file yourself if you want one policy everywhere. Two honest limits: an
 ignore file that exists but cannot be read fails the pass loudly (a privacy
 control must not fail open), and ignoring is **forward-looking only** —
 turns already captured stay in the record; hide those with a tombstone.
+
+## The consciousness (jiminy): one per followed life
+
+The reader is not one daemon that judges everything. Every followed life
+gets its own jiminy — its own identity, memory, and judgment stream —
+because a conscience's value is continuity of attention: only a reader
+that has followed THIS agent the whole way can catch the wrong track that
+looks fine locally but contradicts a decision from days ago.
+
+- **Naming**: derived from the most durable name the principal has. Today
+  every principal is a bare harness session, named
+  `jiminy-<session-id-prefix>`; `<name>-jiminy` for aweb-named agents
+  (following the agent across runtime sessions) is a designed seam, not
+  yet implemented.
+- **Memory**: each jiminy keeps its own long-lived pi session, resumed on
+  every wake — and since that session lives in pi's normal sessions
+  directory, capture records the consciousness's own life like any other
+  agent's. The record stays authoritative: segment notes are the
+  conclusions; a lost pi session rebuilds working state from them.
+- **Streams**: judgments go to `<owner>~mind.<principal>` with
+  `from: <jiminy-name>` — one bounded stream per followed life.
+- **Lifecycle**: born on first wake — a follow note records the birth (a
+  distinct shape from spawn notes, so dressed-agent spawns and jiminy
+  births never mix in the index). Death — the scheduler ceasing to wake a
+  jiminy when its principal stops, after a final wake — is designed but
+  not yet implemented; today a jiminy simply stops being woken when its
+  principal's journal stops growing.
+- **The scheduler is per machine and has no identity**: `mind --follow`
+  only notices journal growth and wakes the right jiminy with the delta.
 
 ## Multi-machine
 

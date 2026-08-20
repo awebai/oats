@@ -14,7 +14,11 @@
 // The reader resumes from its last closed annotation, so re-running after
 // a crash or on a grown thread reads only what is new. Engine:
 // --engine or TURN_RECORD_ENGINE (a shell command reading a prompt on
-// stdin, printing one JSON object).
+// stdin, printing one JSON object). An engine template containing
+// {session} resolves per thread to that jiminy's own deterministic pi
+// session id — the consciousness's long-lived memory, e.g.:
+//   --engine 'pi -p --provider openai-codex --no-extensions --no-skills \
+//             --no-context-files --session-id {session} "$(cat)"'
 
 import { watch } from "node:fs";
 import { homedir, hostname } from "node:os";

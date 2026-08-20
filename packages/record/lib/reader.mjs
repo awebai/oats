@@ -14,6 +14,7 @@
 import { extractSessionTextFor } from "./formats.mjs";
 import { runEngine, LibrarianError } from "./librarian.mjs";
 import { segmentTurnCore, segmentsFor, SEGMENT_OUTCOMES, SEGMENT_TYPES } from "./segments.mjs";
+import { followTurnCore, jiminyNameFor, jiminySessionId, mindStreamFor, parseFollow } from "./jiminy.mjs";
 import { finishTurn } from "./canonical.mjs";
 
 export class ReaderError extends Error {}
@@ -166,7 +167,22 @@ export function readThread(
   const locNum = (ref) => Number(/line:(\d+)/.exec(ref)?.[1] ?? 0);
   const knownLocs = new Set(entries.map((e) => e.loc));
   const maxLoc = Math.max(...entries.map((e) => locNum(e.loc)));
-  const streamId = `${store.owner}~mind`;
+
+  // One jiminy per followed life: judgments are from that life's jiminy,
+  // in that life's mind stream. The engine template may carry {session}:
+  // it resolves to the jiminy's own deterministic pi session id, giving
+  // the reader a long-lived memory it resumes on every wake. Non-session
+  // threads have no jiminy; the owner reads them into its bulk stream.
+  const jiminy = jiminyNameFor(thread) ?? store.owner;
+  const streamId = mindStreamFor(store.owner, thread);
+  let engineCmd = engine;
+  if (engine.includes("{session}")) {
+    const sessionId = jiminySessionId(thread);
+    if (!sessionId) {
+      throw new ReaderError(`engine template has {session} but ${thread} has no jiminy session`);
+    }
+    engineCmd = engine.replaceAll("{session}", sessionId);
+  }
 
   // Resume point: everything at or before the highest CLOSED annotation is
   // done; open (ongoing) segments are carried into the next window.
@@ -175,6 +191,19 @@ export function readThread(
   let open = existing.filter((s) => !s.end || s.outcome === "ongoing");
   let cursor = entries.findIndex((e) => locNum(e.loc) > doneUpTo);
   if (cursor === -1) return { windows: 0, segments: existing.length, entries: entries.length };
+
+  // Birth: the jiminy's first wake records its existence — a follow note,
+  // symmetric with dressed agents' spawn notes. Once per jiminy: its
+  // absence from the mind stream is what marks not-yet-born. The ts is
+  // the first unread entry's (deterministic), so two racing first wakes
+  // build the identical note and the store's id-dedup collapses them.
+  if (jiminy !== store.owner) {
+    const born = store.readStream(streamId).some((t) => parseFollow(t));
+    if (!born) {
+      const ts = entries[cursor].ts || entries[0].ts || new Date(0).toISOString();
+      store.appendCore(streamId, followTurnCore({ jiminy, principalThread: thread, ts }));
+    }
+  }
 
   let windows = 0;
   let written = 0;
@@ -191,7 +220,7 @@ export function readThread(
 
     const prompt = buildReaderPrompt({ openSegments: open, windowEntries, threadNote: threadNote?.slice(0, NOTE_CAP) });
     const engineStart = Date.now();
-    const verdict = runEngine(engine, prompt, { timeoutMs: 600000 });
+    const verdict = runEngine(engineCmd, prompt, { timeoutMs: 600000 });
     const engineMs = Date.now() - engineStart;
     if (!Array.isArray(verdict.segments)) {
       throw new ReaderError("reader engine returned no segments[]");
@@ -221,7 +250,7 @@ export function readThread(
         const aEnd = raw.end ? locNum(raw.end) : Infinity;
         if (aStart < exEnd && exStart < aEnd) {
           const sup = segmentTurnCore({
-            owner: store.owner,
+            owner: jiminy,
             thread,
             start: ex.start,
             end: ex.end,
@@ -257,7 +286,7 @@ export function readThread(
             ? raw.outcome
             : "fruitful";
       const core = segmentTurnCore({
-        owner: store.owner,
+        owner: jiminy,
         thread,
         start: raw.start,
         end: raw.end ?? null,
