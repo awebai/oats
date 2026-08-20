@@ -13,11 +13,18 @@
 
 import { createHash } from "node:crypto";
 
+// The marker that makes a memory session self-identifying, everywhere
+// its id appears: session filename, captured stream id, thread.
+export const JIMINY_MEMORY_PREFIX = "jiminy-";
+
 // `<source>:session:<id>` -> the principal id; null for non-session
-// threads (mail threads are read by the owner directly, not by a jiminy).
+// threads (mail threads are read by the owner directly, not by a jiminy)
+// AND for jiminy memory sessions — a memory has no principal, because a
+// jiminy is never assigned a jiminy.
 export function principalOf(thread) {
   const m = /^(cc|pi|codex):session:(.+)$/.exec(thread ?? "");
-  return m ? m[2] : null;
+  if (!m) return null;
+  return m[2].startsWith(JIMINY_MEMORY_PREFIX) ? null : m[2];
 }
 
 export function jiminyNameFor(thread) {
@@ -35,16 +42,27 @@ export function mindStreamFor(owner, thread) {
 
 // The jiminy's memory: a pi session whose id derives from the principal,
 // so every wake resumes the same session by construction (pi's
-// --session-id creates it if missing). RFC-4122-shaped so pi and its
-// session tooling treat it as an ordinary uuid.
+// --session-id creates it if missing, and accepts non-uuid ids).
+//
+// The id is MARKED — "jiminy-" prefix — so the fact that a session is a
+// consciousness's memory lives in its own name: in the session filename,
+// in the captured stream id, and in the thread. Jiminys must never be
+// assigned a jiminy, and a guarantee that strong cannot depend on
+// cross-referencing birth notes (which can be unsynced, unreadable, or
+// missing); the name itself is sufficient for any follower on any
+// machine, and for the reader itself, to refuse.
 export function jiminySessionId(thread) {
   const p = principalOf(thread);
   if (!p) return null;
   const h = createHash("sha256").update(`jiminy:${p}`).digest("hex");
-  return (
-    `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}` +
-    `-8${h.slice(17, 20)}-${h.slice(20, 32)}`
-  );
+  return `${JIMINY_MEMORY_PREFIX}${h.slice(0, 32)}`;
+}
+
+// Is this thread a jiminy's memory session? True for any session whose
+// id carries the marker, regardless of source harness.
+export function isJiminyMemory(thread) {
+  const m = /^[a-z]+:session:(.+)$/.exec(thread ?? "");
+  return m !== null && m[1].startsWith(JIMINY_MEMORY_PREFIX);
 }
 
 // The birth note: the consciousness's existence is itself recorded,

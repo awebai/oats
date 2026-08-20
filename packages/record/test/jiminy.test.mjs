@@ -11,10 +11,12 @@ import { test } from "node:test";
 
 import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
+import { followPass } from "../lib/follow.mjs";
 import { readThread, ReaderError } from "../lib/reader.mjs";
 import { segmentsFor } from "../lib/segments.mjs";
 import {
   followTurnCore,
+  isJiminyMemory,
   jiminyNameFor,
   jiminySessionId,
   mindStreamFor,
@@ -56,7 +58,52 @@ test("identity is deterministic in the principal", () => {
   const s1 = jiminySessionId("cc:session:abcd1234");
   assert.equal(s1, jiminySessionId("cc:session:abcd1234"), "same life, same memory");
   assert.notEqual(s1, jiminySessionId("cc:session:other"));
-  assert.match(s1, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/, "uuid-shaped");
+  assert.match(s1, /^jiminy-[0-9a-f]{32}$/, "MARKED: the fact is in the name");
+});
+
+test("a jiminy is never assigned a jiminy — every layer refuses", (t) => {
+  const memoryThread = `pi:session:${jiminySessionId("cc:session:some-life")}`;
+  // Layer 0, identity: a memory has no principal, no jiminy name, no
+  // per-life stream — nothing to build a consciousness out of.
+  assert.equal(isJiminyMemory(memoryThread), true);
+  assert.equal(principalOf(memoryThread), null);
+  assert.equal(jiminyNameFor(memoryThread), null);
+  assert.equal(isJiminyMemory("pi:session:8468c508-b045-4dd3"), false, "ordinary sessions unaffected");
+
+  // Layer 2, the reader (where births happen): refuses outright, before
+  // touching the store or the engine.
+  const { store } = setup(t);
+  assert.throws(
+    () => readThread(store, { thread: memoryThread, engine: "true" }),
+    /consciousness does not watch consciousness/,
+  );
+});
+
+test("the follower skips a marked memory with no birth note anywhere", (t) => {
+  // The structural layer alone: a memory session captured on a machine
+  // where NO mind stream names it (unsynced, wiped, or corrupted) is
+  // still refused, because the fact is in its own name.
+  const { base, store } = setup(t);
+  const memoryId = jiminySessionId("cc:session:far-away-life");
+  const dir = join(base, "pi-sessions", "-x-");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `2026-05-01T10-00-00-000Z_${memoryId}.jsonl`),
+    JSON.stringify({ type: "session", version: 3, id: memoryId, timestamp: "2026-05-01T10:00:00.000Z", cwd: "/x" }) +
+      "\n" +
+      JSON.stringify({
+        type: "message", id: "aaaa0001", parentId: null, timestamp: "2026-05-01T10:00:01.000Z",
+        message: { role: "user", content: [{ type: "text", text: "window ".repeat(500) }], timestamp: 1780000000000 },
+      }) + "\n",
+  );
+  captureSessions(store, { owner: "mac", roots: [join(base, "pi-sessions")], format: "pi" });
+  assert.ok(store.readStream(`mac~pi.${memoryId}`).length > 0, "precondition: captured");
+  const run = () => {
+    throw new Error("followed a jiminy's mind");
+  };
+  const r = followPass(store, { owner: "mac", state: new Map(), minNewBytes: 10, catchUp: true, run });
+  assert.ok(r.skippedMinds >= 1, "skipped by the marker alone");
+  assert.equal(r.failed.length, 0, "never woken");
 });
 
 test("judgments carry the jiminy's name in the life's own stream; born once", (t) => {

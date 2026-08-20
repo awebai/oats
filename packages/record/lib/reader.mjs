@@ -14,7 +14,7 @@
 import { extractSessionTextFor } from "./formats.mjs";
 import { runEngine, LibrarianError } from "./librarian.mjs";
 import { segmentTurnCore, segmentsFor, SEGMENT_OUTCOMES, SEGMENT_TYPES } from "./segments.mjs";
-import { followTurnCore, jiminyNameFor, jiminySessionId, mindStreamFor, parseFollow } from "./jiminy.mjs";
+import { followTurnCore, isJiminyMemory, jiminyNameFor, jiminySessionId, mindStreamFor, parseFollow } from "./jiminy.mjs";
 import { finishTurn } from "./canonical.mjs";
 
 export class ReaderError extends Error {}
@@ -161,6 +161,14 @@ export function readThread(
   { thread, engine, engineLabel, windowChars = DEFAULT_WINDOW_CHARS, threadNote, onWindow },
 ) {
   if (!engine) throw new ReaderError("an engine command is required (--engine or TURN_RECORD_ENGINE)");
+  // The deepest layer of the no-jiminy-of-jiminy guarantee: births happen
+  // here, so the refusal lives here — no caller (follower, backfill, or
+  // future code) can create a consciousness for a consciousness's memory.
+  if (isJiminyMemory(thread)) {
+    throw new ReaderError(
+      `consciousness does not watch consciousness: ${thread} is a jiminy's memory`,
+    );
+  }
   const entries = readerEntries(store, thread);
   if (entries.length === 0) return { windows: 0, segments: 0, entries: 0 };
 

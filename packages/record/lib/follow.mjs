@@ -28,7 +28,7 @@
 
 import { statSync } from "node:fs";
 
-import { farewellTurnCore, jiminyNameFor, mindStreamFor, parseFarewell, parseFollow } from "./jiminy.mjs";
+import { farewellTurnCore, isJiminyMemory, jiminyNameFor, mindStreamFor, parseFarewell, parseFollow } from "./jiminy.mjs";
 
 // `<owner>~<source>.<session-id>` -> `<source>:session:<session-id>`,
 // for this owner's session streams only; null for everything else.
@@ -116,7 +116,11 @@ export function followPass(
   for (const streamId of store.listStreams()) {
     const thread = sessionThreadOf(streamId, owner);
     if (!thread) continue;
-    if (memories.has(thread)) {
+    // A jiminy is never assigned a jiminy. Two layers here: the id
+    // marker (structural — no state, no sync, no cross-reference) and
+    // the birth-note set (covers legacy memories from before the
+    // marker). The reader itself refuses too, as the final layer.
+    if (isJiminyMemory(thread) || memories.has(thread)) {
       skippedMinds++;
       continue; // a jiminy's own memory: recorded, never followed
     }

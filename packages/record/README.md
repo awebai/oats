@@ -143,6 +143,15 @@ looks fine locally but contradicts a decision from days ago.
   directory, capture records the consciousness's own life like any other
   agent's. The record stays authoritative: segment notes are the
   conclusions; a lost pi session rebuilds working state from them.
+- **A jiminy is never assigned a jiminy.** Memory sessions are recorded,
+  never followed. The guarantee is layered and does not depend on any
+  lookup that can fail open: memory session ids are MARKED (`jiminy-`
+  prefix — in the session filename, the captured stream id, and the
+  thread), so identity itself refuses (`principalOf` is null for a
+  memory: no name, no stream, nothing to build a consciousness out of);
+  the reader throws at the birth site, whoever the caller is; and the
+  follower skips both marked ids and every memory named by a birth note
+  (the second covering legacy memories from before the marker).
 - **Streams**: judgments go to `<owner>~mind.<principal>` with
   `from: <jiminy-name>` — one bounded stream per followed life.
 - **Lifecycle**: born on first wake — a follow note records the birth (a
