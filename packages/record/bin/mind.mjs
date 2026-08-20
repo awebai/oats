@@ -10,6 +10,11 @@
 //     --interval-secs N          reconcile interval (default 300)
 //     --catch-up                 also read backlog present at startup
 //     --once                     one pass, then exit (cron-style operation)
+//     --stale-hours N            a born jiminy whose principal's journal
+//                                has not grown for N hours gets one final
+//                                wake, then a farewell note; growth after
+//                                the farewell revives it (default 24;
+//                                0 disables death handling)
 //
 // The reader resumes from its last closed annotation, so re-running after
 // a crash or on a grown thread reads only what is new. Engine:
@@ -34,7 +39,7 @@ function parseArgs(argv) {
   const args = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (["--backfill", "--map", "--engine", "--engine-label", "--window-chars", "--note", "--root", "--owner", "--min-new-bytes", "--interval-secs"].includes(a)) {
+    if (["--backfill", "--map", "--engine", "--engine-label", "--window-chars", "--note", "--root", "--owner", "--min-new-bytes", "--interval-secs", "--stale-hours"].includes(a)) {
       args[a.slice(2)] = argv[++i];
     } else if (a.startsWith("--")) args[a.slice(2)] = true;
     else {
@@ -76,20 +81,25 @@ if (args.follow) {
   const state = new Map();
   const minNewBytes = args["min-new-bytes"] ? Number(args["min-new-bytes"]) : undefined;
   let catchUp = Boolean(args["catch-up"]);
-  const run = (thread) =>
+  const run = (thread, streamId, { final = false } = {}) =>
     readThread(store, {
       thread,
       engine,
       engineLabel: args["engine-label"] ?? engine,
       windowChars: args["window-chars"] ? Number(args["window-chars"]) : undefined,
+      threadNote: final
+        ? "The principal has stopped; this is the final window. Close every open segment the evidence lets you close."
+        : undefined,
       onWindow: (p) =>
         console.error(`[mind] ${thread} window ${p.windows}: ${p.cursor}/${p.total} entries, ${p.written} notes`),
     });
+  const staleAfterMs = args["stale-hours"] !== undefined ? Number(args["stale-hours"]) * 3600 * 1000 : undefined;
   const pass = () => {
     try {
-      const r = followPass(store, { owner, state, minNewBytes, catchUp, run });
+      const r = followPass(store, { owner, state, minNewBytes, catchUp, staleAfterMs, run });
       catchUp = false; // backlog is a startup concern; growth from here on
       for (const x of r.ran) console.error(`[mind] read ${x.thread}: ${x.result.segments ?? 0} segment notes`);
+      for (const x of r.died) console.error(`[mind] farewell ${x.thread}`);
       for (const x of r.failed) console.error(`[mind] FAILED ${x.thread}: ${x.error}`);
     } catch (err) {
       console.error(`[mind] follow pass failed: ${err.message}`);

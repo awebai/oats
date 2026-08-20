@@ -70,6 +70,39 @@ export function followTurnCore({ jiminy, principalThread, ts }) {
   };
 }
 
+// The farewell note: the jiminy records its principal's death after the
+// final wake. Death is a point, not a sentence — journal growth after
+// the farewell (a resumed session) revives the jiminy; the follower
+// compares farewell time against journal modification time. The ts is
+// derived from the journal's last modification (deterministic), so
+// racing passes build the identical note and dedupe by id.
+export function farewellTurnCore({ jiminy, principalThread, ts, reason = "stale" }) {
+  return {
+    v: 1,
+    ts,
+    from: jiminy,
+    kind: "note",
+    links: [{ rel: "follows", ref: principalThread }],
+    body: {
+      text: `farewell: ${principalThread} stopped (${reason})`,
+      farewell: { follows: principalThread, reason },
+    },
+    provenance: { source: "mind", fidelity: "projected", origin: {} },
+  };
+}
+
+export function parseFarewell(turn) {
+  const f = turn?.body?.farewell;
+  if (!f || typeof f !== "object" || !f.follows) return null;
+  return {
+    jiminy: String(turn.from ?? ""),
+    follows: String(f.follows),
+    reason: f.reason ? String(f.reason) : null,
+    ts: turn.ts,
+    turnId: turn.id,
+  };
+}
+
 export function parseFollow(turn) {
   const f = turn?.body?.follow;
   if (!f || typeof f !== "object" || !f.agent || !f.follows) return null;

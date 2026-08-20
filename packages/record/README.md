@@ -147,10 +147,14 @@ looks fine locally but contradicts a decision from days ago.
   `from: <jiminy-name>` — one bounded stream per followed life.
 - **Lifecycle**: born on first wake — a follow note records the birth (a
   distinct shape from spawn notes, so dressed-agent spawns and jiminy
-  births never mix in the index). Death — the scheduler ceasing to wake a
-  jiminy when its principal stops, after a final wake — is designed but
-  not yet implemented; today a jiminy simply stops being woken when its
-  principal's journal stops growing.
+  births never mix in the index). Death is by staleness: a born jiminy
+  whose principal's journal has not grown for `--stale-hours` (default
+  24) gets one final wake — the reader sees the remaining tail and is
+  told to close what the evidence closes — then a farewell note. Death
+  is a point, not a sentence: journal growth after the farewell revives
+  the jiminy. A trailing segment the evidence never closed stays
+  honestly `ongoing`. Never-followed sessions do not die; backfill is
+  explicit. Nothing is deleted.
 - **The scheduler is per machine and has no identity**: `mind --follow`
   only notices journal growth and wakes the right jiminy with the delta.
 

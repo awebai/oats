@@ -15,6 +15,8 @@
 
 import { statSync } from "node:fs";
 
+import { farewellTurnCore, jiminyNameFor, mindStreamFor, parseFarewell, parseFollow } from "./jiminy.mjs";
+
 // `<owner>~<source>.<session-id>` -> `<source>:session:<session-id>`,
 // for this owner's session streams only; null for everything else.
 export function sessionThreadOf(streamId, owner) {
@@ -24,40 +26,90 @@ export function sessionThreadOf(streamId, owner) {
   return m ? `${m[1]}:session:${m[2]}` : null;
 }
 
+// Death by staleness. A principal whose journal has not grown for
+// staleAfterMs gets ONE final wake (threshold waived, so the reader sees
+// the remaining tail and can close what the evidence closes), then a
+// farewell note. Only BORN jiminies die — a never-followed historical
+// session is backfill's business, not a corpse. Death is a point, not a
+// sentence: journal growth after the farewell revives the jiminy, since
+// the follower compares farewell time against journal mtime.
+function handleStale(store, { owner, thread, streamId, mtimeMs, run }) {
+  const mindStream = mindStreamFor(owner, thread);
+  let notes;
+  try {
+    notes = store.readStream(mindStream);
+  } catch {
+    return null; // unreadable mind stream: fail toward silence, not a wake
+  }
+  if (!notes.some((t) => parseFollow(t))) return null; // never born
+  const farewells = notes.map(parseFarewell).filter(Boolean);
+  const lastFarewell = farewells.reduce((m, f) => Math.max(m, Date.parse(f.ts) || 0), 0);
+  if (lastFarewell >= mtimeMs) return null; // already mourned this death
+  const result = run(thread, streamId, { final: true });
+  store.appendCore(
+    mindStream,
+    farewellTurnCore({
+      jiminy: jiminyNameFor(thread),
+      principalThread: thread,
+      ts: new Date(mtimeMs).toISOString(),
+      reason: "stale",
+    }),
+  );
+  return result;
+}
+
 // One follow pass: scan this owner's session streams, run the reader on
 // every thread whose journal grew by at least minNewBytes since the last
-// successful run. `run(thread, streamId)` does the actual reading (the
-// bin passes readThread with its engine); a throwing run leaves the
-// stream's state untouched, so the next pass retries it.
-export function followPass(store, { owner, state, minNewBytes = 30000, catchUp = false, run }) {
+// successful run, and mourn the born jiminies whose principals went
+// stale. `run(thread, streamId, {final})` does the actual reading (the
+// bin passes readThread with its engine; final marks a death's last
+// wake); a throwing run leaves the stream's state untouched, so the
+// next pass retries it.
+export function followPass(
+  store,
+  { owner, state, minNewBytes = 30000, catchUp = false, staleAfterMs = 24 * 3600 * 1000, run },
+) {
   if (!owner) throw new Error("followPass requires an owner");
   if (!(state instanceof Map)) throw new Error("followPass requires a state Map");
   if (typeof run !== "function") throw new Error("followPass requires a run function");
   let scanned = 0;
   const ran = [];
   const failed = [];
+  const died = [];
   for (const streamId of store.listStreams()) {
     const thread = sessionThreadOf(streamId, owner);
     if (!thread) continue;
     scanned++;
-    let size;
+    let stat;
     try {
-      size = statSync(store.journalPath(streamId)).size;
+      stat = statSync(store.journalPath(streamId));
     } catch {
       continue; // stream listed but journal missing: nothing to follow
     }
-    if (!state.has(streamId)) {
-      state.set(streamId, catchUp ? 0 : size);
-      if (!catchUp) continue; // baseline only; react to growth from here
-    }
-    if (size - state.get(streamId) < minNewBytes) continue;
+    const size = stat.size;
+    // First sighting baselines at current size (or 0 with catchUp): the
+    // growth gate reacts from here. Staleness is judged from the
+    // journal's own mtime — durable — so a death is noticed on the very
+    // first pass after a follower restart, not one pass later.
+    if (!state.has(streamId)) state.set(streamId, catchUp ? 0 : size);
+    const grown = size - state.get(streamId) >= minNewBytes;
+    const stale = staleAfterMs > 0 && Date.now() - stat.mtimeMs > staleAfterMs;
+    if (!grown && !stale) continue;
     try {
-      const result = run(thread, streamId);
-      state.set(streamId, size);
-      ran.push({ thread, streamId, result });
+      if (grown) {
+        const result = run(thread, streamId, { final: false });
+        state.set(streamId, size);
+        ran.push({ thread, streamId, result });
+      } else {
+        const result = handleStale(store, { owner, thread, streamId, mtimeMs: stat.mtimeMs, run });
+        if (result !== null) {
+          state.set(streamId, size);
+          died.push({ thread, streamId, result });
+        }
+      }
     } catch (err) {
       failed.push({ thread, streamId, error: err?.message ?? String(err) });
     }
   }
-  return { scanned, ran, failed };
+  return { scanned, ran, failed, died };
 }
