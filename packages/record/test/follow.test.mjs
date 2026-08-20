@@ -14,7 +14,7 @@ import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
 import { followPass, sessionThreadOf } from "../lib/follow.mjs";
 import { readThread } from "../lib/reader.mjs";
-import { parseFarewell, parseFollow } from "../lib/jiminy.mjs";
+import { followTurnCore, parseFarewell, parseFollow } from "../lib/jiminy.mjs";
 import { segmentsFor } from "../lib/segments.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -84,7 +84,8 @@ test("follow: baseline first, wake on growth, retry after failure", (t) => {
   const r4 = followPass(store, { owner: "mac", state, minNewBytes: 100, run });
   assert.equal(r4.ran.length, 0, "no growth, no wake");
 
-  // A failing run leaves state untouched, so the next pass retries.
+  // A failing run backs off: no retry at the same size (that burned 551
+  // engine calls in the first live run), retry on the next growth.
   appendFileSync(file, line("user", "more ".repeat(200), "2026-04-01T11:02:00Z"));
   captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
   fail = true;
@@ -93,7 +94,65 @@ test("follow: baseline first, wake on growth, retry after failure", (t) => {
   assert.match(r5.failed[0].error, /engine down/);
   fail = false;
   const r6 = followPass(store, { owner: "mac", state, minNewBytes: 100, run });
-  assert.deepEqual(r6.ran.map((x) => x.thread), ["cc:session:live"], "failed wake retried");
+  assert.equal(r6.ran.length, 0, "no retry without new growth");
+  assert.equal(r6.failed.length, 0, "and no repeated engine call either");
+  appendFileSync(file, line("user", "growth ".repeat(200), "2026-04-01T11:03:00Z"));
+  captureSessions(store, { owner: "mac", roots: [join(base, "projects")] });
+  const r7 = followPass(store, { owner: "mac", state, minNewBytes: 100, run });
+  assert.deepEqual(r7.ran.map((x) => x.thread), ["cc:session:live"], "growth retries the failed wake");
+});
+
+test("consciousness does not watch consciousness: memory sessions are never followed", (t) => {
+  const { base, store } = setup(t);
+  // A working life and, recorded in a mind stream, the birth note naming
+  // a memory session. Then that memory session itself appears as a
+  // captured pi session and grows past every threshold.
+  seed(base, store, "worker", ["real work ".repeat(100)]);
+  const memoryId = "8468c508-b045-4dd3-83be-a15a8b76fa07";
+  store.appendCore(
+    "mac~mind.worker",
+    followTurnCore({
+      jiminy: "jiminy-worker",
+      principalThread: "cc:session:worker",
+      ts: "2026-04-01T10:00:00Z",
+    }),
+  );
+  // followTurnCore derives the memory id; write a second, explicit birth
+  // naming OUR memoryId so the test controls the value under test.
+  store.appendCore("mac~mind.other", {
+    v: 1,
+    ts: "2026-04-01T10:01:00Z",
+    from: "jiminy-other",
+    kind: "note",
+    links: [{ rel: "follows", ref: "cc:session:other" }],
+    body: {
+      text: "born",
+      follow: { agent: `pi:session:${memoryId}`, follows: "cc:session:other", harness: "pi" },
+    },
+    provenance: { source: "mind", fidelity: "projected", origin: {} },
+  });
+  const projects = join(base, "pi-sessions", "-x-");
+  mkdirSync(projects, { recursive: true });
+  writeFileSync(
+    join(projects, `2026-04-01T10-00-00-000Z_${memoryId}.jsonl`),
+    JSON.stringify({ type: "session", version: 3, id: memoryId, timestamp: "2026-04-01T10:00:00.000Z", cwd: "/x" }) +
+      "\n" +
+      JSON.stringify({
+        type: "message", id: "aaaa0001", parentId: null, timestamp: "2026-04-01T10:00:01.000Z",
+        message: { role: "user", content: [{ type: "text", text: "window ".repeat(500) }], timestamp: 1780000000000 },
+      }) + "\n",
+  );
+  captureSessions(store, { owner: "mac", roots: [join(base, "pi-sessions")], format: "pi" });
+  assert.ok(store.readStream(`mac~pi.${memoryId}`).length > 0, "precondition: the memory is captured");
+
+  const run = (thread) => {
+    if (thread === `pi:session:${memoryId}`) throw new Error("followed a jiminy's mind");
+    return { segments: 0 };
+  };
+  const r = followPass(store, { owner: "mac", state: new Map(), minNewBytes: 10, catchUp: true, run });
+  assert.ok(r.skippedMinds >= 1, "the memory session was skipped");
+  assert.ok(!r.failed.some((f) => /jiminy's mind/.test(f.error)), "never woken");
+  assert.ok(r.ran.some((x) => x.thread === "cc:session:worker"), "real lives still followed");
 });
 
 test("catch-up reads backlog present at startup", (t) => {
