@@ -34,7 +34,7 @@ import {
   spawnInstance, retireInstance, upsertLocalAgent, defaultRepo, RELATIONS,
 } from "../lib/core.mjs";
 import {
-  aggregateMissingRequirements, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes,
+  aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
   adoptedTemplateDir, applyConfigMerge, lockedPackageCapabilities, planConfigMerge, readAdoptedTemplate, requirementInstallPlan,
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
@@ -1994,10 +1994,108 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
   }
 }
 
+/** `oats migrate --from-oas` — one transactional conversion per scope: rename
+ * the OAS-named artifacts (breaks 1-3 of docs/migration-from-oas.md), then
+ * chain the guided v1→v2 lock conversion under the SAME journal, so a failure
+ * in either phase restores the original OAS bytes. Break 4 (stale v1
+ * integrity) is resolved by re-acquisition, never by recomputing integrity. */
+function fromOasCmd({ dir, dryRun, recursive }) {
+  const out = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
+  const warnings = [];
+  const teamScope = recursive ? migrationTeamScope(dir, warnings) : undefined;
+  let scopes;
+  if (recursive) scopes = discoverOasScopes(dir, { teamScope }).map((f) => f.dir);
+  else {
+    const chain = detectOasScopes(dir);
+    scopes = chain.filter((f) => f.dir === resolve(dir)).map((f) => f.dir);
+    if (!scopes.length && chain.length) {
+      cmdFail("E_BAD_ARGS", `no OAS scope files at ${resolve(dir)}, but an ancestor has them (${chain.map((f) => shortPath(f.dir)).join(", ")}) — run with --dir <that scope>, or --recursive to convert every visible OAS scope`);
+      return;
+    }
+  }
+  if (!scopes.length) {
+    // Idempotency contract: a second run finds nothing and says so, exit 0.
+    if (JSON_MODE) { jsonOk({ mode: "from-oas", recursive, dryRun, boundary: resolve(dir), scopes: [], trust: [], nextCommands: [], warnings }); return; }
+    console.log("no oas-config.yaml / oas-lock.json found — nothing to migrate from OAS");
+    return;
+  }
+
+  const results = [];
+  const trust = [];
+  let failures = 0;
+  for (const scope of scopes) {
+    const plan = planFromOasScope(scope);
+    const row = { scope, status: null, steps: plan.steps.map((s) => ({ kind: s.kind, from: s.from, to: s.to, note: s.note })), errors: plan.errors, plan: [], migrated: [], warnings: [] };
+    results.push(row);
+    if (plan.errors.length) { row.status = "failed"; failures++; continue; }
+    if (dryRun) {
+      // Phase-2 preview against a temp mirror of the lock alone — guided
+      // planning reads nothing else, so the preview is exact and touch-free.
+      const lockStep = plan.steps.find((s) => s.to.endsWith(OATS_LOCK_FILE));
+      if (lockStep) {
+        const mirror = mkdtempSync(join(tmpdir(), "oats-from-oas-plan-"));
+        try {
+          copyFileSync(lockStep.from, join(mirror, OATS_LOCK_FILE));
+          const { plan: mplan, warnings: mw } = migrateLegacyLock(mirror, { official: true });
+          row.plan = mplan.map(migratePlanRow);
+          row.warnings = mw;
+          row.status = mplan.some((s) => s.action === "hold" || s.action === "manual") ? "held" : "ready";
+          if (row.status === "held") failures++;
+        } catch (e) { row.status = "failed"; row.errors.push(String(e.message || e)); failures++; }
+        finally { rmSync(mirror, { recursive: true, force: true }); }
+      } else row.status = "ready";
+      continue;
+    }
+    let journal;
+    try { journal = applyFromOasScope(scope, plan); }
+    catch (e) { row.status = "failed"; row.errors.push(String(e.message || e)); failures++; continue; }
+    try {
+      const r = applyLegacyLockMigration(scope, { official: true });
+      journal.finalize();
+      row.status = "migrated";
+      row.migrated = r.migrated;
+      // Phase 1 already rewrote the config's capability ids, so the guided
+      // "update references in oats-config.yaml" warnings are satisfied here.
+      row.warnings = r.warnings.filter((w) => !/update references in oats-config\.yaml/.test(w));
+      for (const t of r.trust || []) trust.push({ ...t, command: `oats trust ${t.capability} --dir ${shellQuote(scope)}` });
+    } catch (e) {
+      journal.rollback();
+      row.status = "failed";
+      row.errors.push(`${String(e.message || e)} — scope restored to its original OAS state`);
+      failures++;
+    }
+  }
+
+  out(`oats migrate --from-oas${recursive ? " --recursive" : ""}${dryRun ? " --dry-run" : ""} — ${scopes.length} OAS scope${scopes.length === 1 ? "" : "s"} from ${shortPath(dir)}`);
+  for (const w of warnings) out(`WARNING: ${w}`);
+  for (const row of results) {
+    out(`\n  ${shortPath(row.scope)}  [${row.status}]`);
+    for (const s of row.steps) out(`    ${s.kind === "rewrite" ? "rewrite " : "rename  "}  ${shortPath(s.from)} → ${shortPath(s.to)}  (${s.note})`);
+    for (const p of row.plan) out(`    migrate    ${p.capability} → package ${p.package}${p.migratesTo ? ` (as ${p.migratesTo})` : ""}  [${p.action}]`);
+    for (const m of row.migrated) out(`    migrated   ${m.capability} → package ${m.package}@${m.version}${m.migratedTo ? `  (as ${m.migratedTo})` : ""}`);
+    for (const e of row.errors) out(`    ERROR      ${e}`);
+    for (const w of row.warnings) out(`    WARNING: ${w}`);
+  }
+  const nextCommands = [...trust.map((t) => t.command), ...(results.some((r) => r.status === "migrated") ? [`oats install --dir ${shellQuote(dir)}`] : [])];
+  const result = { mode: "from-oas", recursive, dryRun, boundary: resolve(dir), scopes: results, trust, nextCommands, warnings };
+  if (JSON_MODE) {
+    if (failures) { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_FROM_OAS_FAILED", message: `${failures} scope${failures > 1 ? "s" : ""} not converted (${results.filter((r) => r.status === "migrated" || r.status === "ready").length} ${dryRun ? "ready" : "converted"})`, details: result } })); process.exit(1); }
+    jsonOk(result);
+    return;
+  }
+  if (!dryRun && nextCommands.length) {
+    out("\nNext steps:");
+    for (const c of nextCommands) out(`  ${c}`);
+  }
+  if (dryRun) out(`\nDry run — nothing was changed. Apply with: oats migrate --from-oas${recursive ? " --recursive" : ""} --dir ${shellQuote(dir)}`);
+  if (failures) die(`${failures} scope${failures > 1 ? "s" : ""} not converted`);
+}
+
 /** oats migrate — map this scope's v1 marketplace capability locks to package locks. */
 function migrateCmd() {
   const dir = dirFlag();
   const dryRun = args.includes("--dry-run");
+  if (args.includes("--from-oas")) { fromOasCmd({ dir, dryRun, recursive: args.includes("--recursive") }); return; }
   if (args.includes("--official") || args.includes("--recursive")) {
     guidedMigrateCmd({ dir, dryRun, official: args.includes("--official"), recursive: args.includes("--recursive") });
     return;
@@ -2991,6 +3089,11 @@ Usage:
                                             transactionally, keeps custom/owned entries
                                             untouched, and prints the exact trust/install
                                             follow-up (held when the catalog cannot map yet)
+  oats migrate --from-oas [--recursive]      convert a pre-rename OAS deployment in place:
+      [--dry-run] [--dir <d>] [--json]      renames oas-* files, the oas: config key and
+                                            capability ids, then chains the guided package
+                                            conversion — one transaction per scope, any
+                                            failure restores the original OAS bytes
   oats config diff [--config <template>]     three-way report: your config vs the recorded
       [--dir <d>] [--json]                  adopted base vs the template in the current exact
                                             lock — reports only, never writes; the adopted

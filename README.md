@@ -304,9 +304,9 @@ local, and you may change every copied setting.
 **This section applies to OATS-named scopes only.** If your deployment was
 created by OAS (`@oas-framework/oas` — files named `oas-config.yaml`,
 `oas-lock.json`), the claim below does NOT hold for you: no `oas-*` name is
-recognized by this kernel, and there is no working OAS→OATS migration yet.
-Read [docs/migration-from-oas.md](docs/migration-from-oas.md) and stay on
-OAS until the migration path ships.
+recognized by this kernel. Convert with `oats migrate --from-oas` — one
+transactional command per scope; any failure restores the original OAS
+bytes. Read [docs/migration-from-oas.md](docs/migration-from-oas.md) first.
 
 For OATS-named scopes, existing valid v1 locks and installed capabilities
 continue to work after the kernel upgrade. Preview and apply the guided
