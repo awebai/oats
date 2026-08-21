@@ -9,11 +9,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { RecordStore } from "../lib/store.mjs";
-import { captureSessions } from "../lib/capture-cc.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { captureSessions } from "../../record/lib/capture-cc.mjs";
 import { readThread, readerEntries, ReaderError } from "../lib/reader.mjs";
-import { segmentsFor, segmentTurnCore } from "../lib/segments.mjs";
-import { finishTurn } from "../lib/canonical.mjs";
+import { segmentsFor, segmentTurnCore } from "../../record/lib/segments.mjs";
+import { finishTurn } from "../../record/lib/canonical.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = `node ${join(HERE, "reader-stub-engine.mjs")}`;

@@ -9,11 +9,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { RecordStore } from "../lib/store.mjs";
-import { captureSessions } from "../lib/capture-cc.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { captureSessions } from "../../record/lib/capture-cc.mjs";
 import { followPass } from "../lib/follow.mjs";
 import { readThread, ReaderError } from "../lib/reader.mjs";
-import { segmentsFor } from "../lib/segments.mjs";
+import { segmentsFor } from "../../record/lib/segments.mjs";
 import {
   followTurnCore,
   isJiminyMemory,

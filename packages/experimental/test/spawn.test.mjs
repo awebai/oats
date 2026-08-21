@@ -11,10 +11,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { RecordStore } from "../lib/store.mjs";
-import { captureSessions } from "../lib/capture-cc.mjs";
-import { segmentTurnCore } from "../lib/segments.mjs";
-import { outfitTurnCore } from "../lib/tags.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { captureSessions } from "../../record/lib/capture-cc.mjs";
+import { segmentTurnCore } from "../../record/lib/segments.mjs";
+import { outfitTurnCore } from "../../record/lib/tags.mjs";
 import { assembleEntries, CompileError, compileOutfit, outfitChunks, piProjectDir } from "../lib/compile-pi.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -313,7 +313,7 @@ test("the shipped binary compiles a dry run end to end", (t) => {
   void thread;
   const out = execFileSync(
     process.execPath,
-    [join(HERE, "..", "bin", "turn-record.mjs"), "spawn", "--outfit", outfitId, "--dry-run", "--cwd", base],
+    [join(HERE, "..", "..", "..", "bin", "oats.mjs"), "experimental", "spawn", "--outfit", outfitId, "--dry-run", "--cwd", base],
     { env: { ...process.env, TURN_RECORD_ROOT: store.root, TURN_RECORD_OWNER: "mac" }, encoding: "utf8" },
   );
   assert.match(out, /^pi --session .*\.jsonl\n$/);

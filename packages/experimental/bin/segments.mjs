@@ -13,8 +13,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { RecordStore } from "../lib/store.mjs";
-import { RecordIndex } from "../lib/index-db.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { RecordIndex } from "../../record/lib/index-db.mjs";
 
 function parseArgs(argv) {
   const args = { _: [] };

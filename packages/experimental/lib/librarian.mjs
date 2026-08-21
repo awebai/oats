@@ -18,9 +18,9 @@
 
 import { spawnSync } from "node:child_process";
 
-import { finishTurn, sha256Hex } from "./canonical.mjs";
-import { extractSessionTextFor } from "./formats.mjs";
-import { outfitTurnCore, parseOutfit, parseTag, tagTurnCore } from "./tags.mjs";
+import { finishTurn, sha256Hex } from "../../record/lib/canonical.mjs";
+import { extractSessionTextFor } from "../../record/lib/formats.mjs";
+import { outfitTurnCore, parseOutfit, parseTag, tagTurnCore } from "../../record/lib/tags.mjs";
 
 export class LibrarianError extends Error {}
 
@@ -181,18 +181,8 @@ export function runEngine(engineCmd, prompt, { timeoutMs = 120000 } = {}) {
   return parsed;
 }
 
-// Resolve a turn id wherever it lives: bulk streams first, then (for
-// session-event turns, whose streams bulk reads exclude) via the index's
-// stream column and a targeted journal read.
-export function resolveTurn(store, index, id, byId = null) {
-  const bulk = byId ?? store.readAll();
-  const hit = bulk.get(id);
-  if (hit) return hit.turn;
-  const row = index.db.prepare("SELECT stream FROM turns WHERE id = ?").get(id);
-  if (!row) return null;
-  for (const t of store.readStream(row.stream)) if (t.id === id) return t;
-  return null;
-}
+import { resolveTurn } from "../../record/lib/index-db.mjs";
+export { resolveTurn };
 
 // ------------------------------------------------------------- select
 

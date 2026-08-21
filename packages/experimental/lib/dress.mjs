@@ -30,7 +30,7 @@
 // manifest): thread, budget, included/omitted ids, briefing digest. "What
 // context did this agent spawn with" is a recallable fact.
 
-import { finishTurn, sha256Hex } from "./canonical.mjs";
+import { finishTurn, sha256Hex } from "../../record/lib/canonical.mjs";
 import { readerEntries } from "./reader.mjs";
 
 export class DressError extends Error {}

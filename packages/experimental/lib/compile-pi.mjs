@@ -37,9 +37,9 @@ import { mkdirSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-import { finishTurn } from "./canonical.mjs";
-import { parseOutfit } from "./tags.mjs";
-import { parseSegment, spawnTurnCore } from "./segments.mjs";
+import { finishTurn } from "../../record/lib/canonical.mjs";
+import { parseOutfit } from "../../record/lib/tags.mjs";
+import { parseSegment, spawnTurnCore } from "../../record/lib/segments.mjs";
 
 export class CompileError extends Error {}
 

@@ -43,7 +43,7 @@ try {
   }
 
   if (args.show) {
-    const { resolveTurn } = await import("../lib/librarian.mjs");
+    const { resolveTurn } = await import("../lib/index-db.mjs");
     const byId = store.readAll();
     const turn = resolveTurn(store, index, args.show, byId);
     if (!turn) {

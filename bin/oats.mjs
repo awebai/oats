@@ -2818,6 +2818,39 @@ function versionCmd() {
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
 }
 
+// ---------- the record (core) and experimental tools over it ----------
+// The turn record is the core: capture, recall, setup are kernel-level
+// subcommands, dispatched to packages/record (shipped inside this package —
+// see "files" in package.json). The record bins parse process.argv.slice(2)
+// themselves, so the consumed subcommand words are spliced out first.
+// Everything that selects or synthesizes over the record (dress, spawn,
+// segments, mind) is EXPERIMENTAL and ships only in the oats repo checkout,
+// under packages/experimental — absent from the published tarball on
+// purpose, so its presence is exactly its status.
+const EXPERIMENTAL_CMDS = new Set(["dress", "spawn", "segments", "mind"]);
+async function recordCmd(sub) {
+  process.argv.splice(2, 1);
+  await import(new URL(`../packages/record/bin/${sub}.mjs`, import.meta.url));
+}
+async function experimentalCmd() {
+  const sub = args[1];
+  if (!sub || !EXPERIMENTAL_CMDS.has(sub)) {
+    console.error(
+      "usage: oats experimental <dress|spawn|segments|mind> [options]\n" +
+        "EXPERIMENTAL tools over the turn record — unproven by design; see packages/experimental/README.md",
+    );
+    process.exit(sub === undefined ? 0 : 2);
+  }
+  const url = new URL(`../packages/experimental/bin/${sub}.mjs`, import.meta.url);
+  if (!existsSync(url)) {
+    die(
+      `experimental tools ship only in the oats repo checkout, not in the published package — clone github.com/awebai/oats and run \`oats experimental ${sub}\` from it`,
+    );
+  }
+  process.argv.splice(2, 2);
+  await import(url);
+}
+
 // ---------- main ----------
 if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
@@ -2841,6 +2874,8 @@ else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "create") createCmd();
+else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
+else if (cmd === "experimental") await experimentalCmd();
 // `!HELP_WORDS.has(cmd)`: usage NEVER depends on deployment state. `help` is a
 // word, so without this it reaches the capability dispatch, which resolves the
 // config chain and reads every lock in it — and a scope whose lock the kernel
@@ -2957,6 +2992,21 @@ Usage:
                                             --json = exactly one result envelope, noninteractive.
   oats root                                  print this package's install root
                                             (adapters resolve the kernel from it)
+
+The turn record (core — every conversation captured, searchable, replicated):
+  oats capture [--watch|--status]            land Claude Code/pi/codex sessions and aw
+      [--owner <name>] [--root <dir>]       client logs in the record; reconciliation
+                                            is the capture
+  oats recall [--kind k] [--thread t]        search the whole record — mail, chat,
+      [--from f] [--show id] <query>        sessions — with exact turn provenance
+  oats setup [--owner <name>] [--dry-run]    install capture hooks + background watcher
+      [--no-service] [--no-hooks]           (launchd/systemd), then run the first pass
+
+  oats experimental <dress|spawn|segments|mind>   EXPERIMENTAL tools over the record —
+                                            selection and agent synthesis; unproven by
+                                            design, repo checkout only; see
+                                            packages/experimental/README.md
+
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)
 

@@ -7,9 +7,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { RecordStore } from "../lib/store.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
 import { dress, DressError, selectEntries, threadEntries } from "../lib/dress.mjs";
-import { captureSessions } from "../lib/capture-cc.mjs";
+import { captureSessions } from "../../record/lib/capture-cc.mjs";
 
 function setup(t) {
   const base = mkdtempSync(join(tmpdir(), "turn-record-dress-"));

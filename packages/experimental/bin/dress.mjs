@@ -16,9 +16,9 @@ import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { RecordStore } from "../lib/store.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
 import { dress, DressError } from "../lib/dress.mjs";
-import { RecordIndex } from "../lib/index-db.mjs";
+import { RecordIndex } from "../../record/lib/index-db.mjs";
 import { LibrarianError, renderClothes, selectClothes, selectionEntries } from "../lib/librarian.mjs";
 
 function parseArgs(argv) {
@@ -53,8 +53,8 @@ if (args.segments.length > 0) {
   // happened (the segments exist); this freezes the selection under a
   // content-addressed name. Members are segment NOTE ids — the exact
   // judgment versions worn, immune to later revisions.
-  const { outfitTurnCore } = await import("../lib/tags.mjs");
-  const { finishTurn } = await import("../lib/canonical.mjs");
+  const { outfitTurnCore } = await import("../../record/lib/tags.mjs");
+  const { finishTurn } = await import("../../record/lib/canonical.mjs");
   const byId = store.readAll();
   const missing = args.segments.filter((id) => !byId.has(id));
   if (missing.length > 0) {

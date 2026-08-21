@@ -30,9 +30,9 @@ import { homedir, hostname } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { RecordStore } from "../lib/store.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
 import { readThread, ReaderError } from "../lib/reader.mjs";
-import { segmentsFor } from "../lib/segments.mjs";
+import { segmentsFor } from "../../record/lib/segments.mjs";
 import { followPass } from "../lib/follow.mjs";
 
 function parseArgs(argv) {

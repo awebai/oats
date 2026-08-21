@@ -11,11 +11,11 @@
 // the ones recorded as `ongoing` — so a crashed or restarted reader
 // resumes by reading its own prior conclusions.
 
-import { extractSessionTextFor } from "./formats.mjs";
+import { extractSessionTextFor } from "../../record/lib/formats.mjs";
 import { runEngine, LibrarianError } from "./librarian.mjs";
-import { segmentTurnCore, segmentsFor, SEGMENT_OUTCOMES, SEGMENT_TYPES } from "./segments.mjs";
+import { segmentTurnCore, segmentsFor, SEGMENT_OUTCOMES, SEGMENT_TYPES } from "../../record/lib/segments.mjs";
 import { followTurnCore, isJiminyMemory, jiminyNameFor, jiminySessionId, mindStreamFor, parseFollow } from "./jiminy.mjs";
-import { finishTurn } from "./canonical.mjs";
+import { finishTurn } from "../../record/lib/canonical.mjs";
 
 export class ReaderError extends Error {}
 

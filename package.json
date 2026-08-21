@@ -35,7 +35,12 @@
     "capabilities/",
     "docs/",
     "README.md",
-    "package-catalog.json"
+    "package-catalog.json",
+    "packages/record/bin/",
+    "packages/record/lib/",
+    "packages/record/docs/",
+    "packages/record/README.md",
+    "packages/record/package.json"
   ],
   "dependencies": {
     "@awebai/pi": "^0.2.1"

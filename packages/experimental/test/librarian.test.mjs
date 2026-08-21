@@ -9,8 +9,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { RecordStore } from "../lib/store.mjs";
-import { RecordIndex } from "../lib/index-db.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { RecordIndex } from "../../record/lib/index-db.mjs";
 import {
   gatherCandidates,
   LibrarianError,
@@ -19,7 +19,7 @@ import {
   selectClothes,
   selectionEntries,
 } from "../lib/librarian.mjs";
-import { parseOutfit, parseTag } from "../lib/tags.mjs";
+import { parseOutfit, parseTag } from "../../record/lib/tags.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = `node ${join(HERE, "stub-engine.mjs")}`;

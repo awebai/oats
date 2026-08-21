@@ -19,7 +19,7 @@ import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
-import { RecordStore } from "../lib/store.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
 import { CompileError, compileOutfit } from "../lib/compile-pi.mjs";
 
 function parseArgs(argv) {

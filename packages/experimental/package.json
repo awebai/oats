@@ -1,0 +1,19 @@
+{
+  "name": "@awebai/oats-experimental",
+  "version": "0.0.1",
+  "private": true,
+  "description": "EXPERIMENTAL tools over the turn record — dress, spawn, segments, mind (jiminy). Unproven by design: these exist to run the continuation-of-self experiments, not to be depended on. Run via `oats experimental <cmd>` from an oats repo checkout; never published.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awebai/oats",
+    "directory": "packages/experimental"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  }
+}

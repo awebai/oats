@@ -12,11 +12,11 @@ import { execFileSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { RecordStore } from "../lib/store.mjs";
-import { RecordIndex } from "../lib/index-db.mjs";
-import { finishTurn } from "../lib/canonical.mjs";
-import { segmentTurnCore, spawnTurnCore, parseSpawn } from "../lib/segments.mjs";
-import { outfitTurnCore, parseOutfit } from "../lib/tags.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { RecordIndex } from "../../record/lib/index-db.mjs";
+import { finishTurn } from "../../record/lib/canonical.mjs";
+import { segmentTurnCore, spawnTurnCore, parseSpawn } from "../../record/lib/segments.mjs";
+import { outfitTurnCore, parseOutfit } from "../../record/lib/tags.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -88,7 +88,7 @@ test("mixed-precision timestamps: catalog and segmentsFor agree on latest", asyn
   // that broke dress ordering in an earlier round must not break here.
   seg(store, { thread, start: 1, end: 9, type: "design", outcome: "fruitful", established: "first judgment", ts: "2026-03-01T10:00:00Z" });
   seg(store, { thread, start: 1, end: 9, type: "design", outcome: "fruitful", established: "later judgment", ts: "2026-03-01T10:00:00.500Z" });
-  const { segmentsFor } = await import("../lib/segments.mjs");
+  const { segmentsFor } = await import("../../record/lib/segments.mjs");
   const jsWinner = segmentsFor(store, thread)[0].established;
   const index = new RecordIndex(store);
   t.after(() => index.close());

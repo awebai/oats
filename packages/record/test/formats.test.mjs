@@ -12,7 +12,11 @@ import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
 import { SESSION_FORMATS, extractPiText, extractCodexText } from "../lib/formats.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
-import { dress } from "../lib/dress.mjs";
+// Cross-package on purpose: the multi-format fixtures live here, and the
+// dressed-briefing assertions prove the experimental layer reads every
+// format. The dependency direction is test-only; core lib/bin never
+// import from packages/experimental.
+import { dress } from "../../experimental/lib/dress.mjs";
 
 function setup(t) {
   const base = mkdtempSync(join(tmpdir(), "turn-record-formats-"));

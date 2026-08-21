@@ -10,12 +10,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-import { RecordStore } from "../lib/store.mjs";
-import { captureSessions } from "../lib/capture-cc.mjs";
+import { RecordStore } from "../../record/lib/store.mjs";
+import { captureSessions } from "../../record/lib/capture-cc.mjs";
 import { followPass, sessionThreadOf } from "../lib/follow.mjs";
 import { readThread } from "../lib/reader.mjs";
 import { followTurnCore, parseFarewell, parseFollow } from "../lib/jiminy.mjs";
-import { segmentsFor } from "../lib/segments.mjs";
+import { segmentsFor } from "../../record/lib/segments.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = `node ${join(HERE, "reader-stub-engine.mjs")}`;
@@ -246,7 +246,7 @@ test("the shipped binary runs one follow pass with a stub engine", (t) => {
   const stub = `node ${join(HERE, "reader-stub-engine.mjs")}`;
   const r = spawnSync(
     process.execPath,
-    [join(HERE, "..", "bin", "turn-record.mjs"), "mind", "--follow", "--once", "--catch-up",
+    [join(HERE, "..", "..", "..", "bin", "oats.mjs"), "experimental", "mind", "--follow", "--once", "--catch-up",
       "--min-new-bytes", "100", "--engine", stub],
     { env: { ...process.env, TURN_RECORD_ROOT: store.root, TURN_RECORD_OWNER: "mac" }, encoding: "utf8" },
   );
