@@ -1,6 +1,8 @@
 // pi and Codex capture: fixtures mirror the real on-disk record shapes
 // (verified against ~/.pi/agent/sessions and ~/.codex/sessions), captured
-// end-to-end into streams, indexed, and dressed.
+// end-to-end into streams and indexed. The dress-over-formats assertions
+// live in packages/experimental/test/dress-formats.test.mjs, on the
+// experimental side of the line, sharing ./format-fixtures.mjs.
 
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -12,11 +14,7 @@ import { RecordStore } from "../lib/store.mjs";
 import { captureSessions } from "../lib/capture-cc.mjs";
 import { SESSION_FORMATS, extractPiText, extractCodexText } from "../lib/formats.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
-// Cross-package on purpose: the multi-format fixtures live here, and the
-// dressed-briefing assertions prove the experimental layer reads every
-// format. The dependency direction is test-only; core lib/bin never
-// import from packages/experimental.
-import { dress } from "../../experimental/lib/dress.mjs";
+import { PI_UUID, PI_LINES, CODEX_UUID, CODEX_LINES, jsonl } from "./format-fixtures.mjs";
 
 function setup(t) {
   const base = mkdtempSync(join(tmpdir(), "turn-record-formats-"));
@@ -24,77 +22,6 @@ function setup(t) {
   const store = new RecordStore(join(base, "record"), { owner: "mac" });
   return { base, store };
 }
-
-const PI_UUID = "019fc67c-9c46-73f3-b44a-cbb6c7b02457";
-const PI_LINES = [
-  { type: "session", version: "3", id: PI_UUID, timestamp: "2026-08-03T07:18:03.078Z", cwd: "/w" },
-  { type: "model_change", id: "8ebfd618", timestamp: "2026-08-03T07:18:03.126Z", provider: "openai-codex" },
-  {
-    type: "message",
-    timestamp: "2026-08-03T07:18:05.000Z",
-    message: { role: "user", content: [{ type: "text", text: "migrate the identity registry" }] },
-  },
-  {
-    type: "message",
-    timestamp: "2026-08-03T07:18:09.000Z",
-    message: {
-      role: "assistant",
-      content: [
-        { type: "thinking", thinking: "planning the migration quietly", thinkingSignature: "{}" },
-        { type: "text", text: "starting with the schema split" },
-      ],
-    },
-  },
-  {
-    type: "message",
-    timestamp: "2026-08-03T07:18:09.500Z",
-    message: {
-      role: "assistant",
-      content: [
-        {
-          type: "toolCall",
-          id: "call_x|fc_y",
-          name: "read",
-          arguments: "{'path': '/w/file.txt'}",
-        },
-      ],
-    },
-  },
-  {
-    type: "message",
-    timestamp: "2026-08-03T07:18:10.000Z",
-    message: { role: "toolResult", content: [{ type: "text", text: "tool noise not indexed" }] },
-  },
-];
-
-const CODEX_UUID = "019ac984-519d-75c2-b2f0-a6611c4f063e";
-const CODEX_LINES = [
-  {
-    timestamp: "2025-11-28T08:11:23.460Z",
-    type: "session_meta",
-    payload: { id: CODEX_UUID, timestamp: "2025-11-28T08:11:23.422Z", cwd: "/w" },
-  },
-  {
-    timestamp: "2025-11-28T08:11:23.460Z",
-    type: "response_item",
-    payload: {
-      type: "message",
-      role: "user",
-      content: [{ type: "input_text", text: "study the aweb access model" }],
-    },
-  },
-  {
-    timestamp: "2025-11-28T08:12:00.000Z",
-    type: "response_item",
-    payload: {
-      type: "message",
-      role: "assistant",
-      content: [{ type: "output_text", text: "the access model has three verbs" }],
-    },
-  },
-];
-
-const jsonl = (lines) => lines.map((l) => JSON.stringify(l)).join("\n") + "\n";
 
 test("pi sessions capture into <owner>~pi with pi:session threads", (t) => {
   const { base, store } = setup(t);
@@ -122,10 +49,6 @@ test("pi sessions capture into <owner>~pi with pi:session threads", (t) => {
   assert.equal(index.search("planning the migration quietly", { role: "thinking" }).length, 1);
   assert.equal(index.search("tool noise").length, 1, "tool_result indexed");
   assert.equal(index.search("tool noise", { role: "user" }).length, 0, "role filter works");
-
-  const d = dress(store, { thread: `pi:session:${PI_UUID}`, budgetChars: 5000, log: false });
-  assert.match(d.briefing, /migrate the identity registry/);
-  assert.match(d.briefing, /schema split/);
 });
 
 test("codex rollouts capture into <owner>~codex from nested date dirs", (t) => {
@@ -148,9 +71,6 @@ test("codex rollouts capture into <owner>~codex from nested date dirs", (t) => {
   t.after(() => index.close());
   index.rebuild();
   assert.equal(index.search("access model").length, 2, "both roles searchable");
-
-  const d = dress(store, { thread: `codex:session:${CODEX_UUID}`, budgetChars: 5000, log: false });
-  assert.match(d.briefing, /three verbs/);
 });
 
 test("session ids parse from real filename shapes", () => {

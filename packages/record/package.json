@@ -36,6 +36,7 @@
     "bin/",
     "lib/",
     "docs/",
+    "test/vectors/",
     "README.md"
   ],
   "scripts": {

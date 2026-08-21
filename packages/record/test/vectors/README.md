@@ -7,6 +7,14 @@ Python awid stack (canonicalization and Ed25519 signing from
 Node re-implementation, so a green run is a two-language agreement on every
 byte.
 
+Provenance: these files were first drafted in the aweb-oss working tree
+(2026-08-19, never committed there) and moved here 2026-08-21 as the
+canonical home. The mover verified byte-identity against the drafts before
+removing them, but the drafts left no tracked trace, so that equality is
+not independently re-verifiable — what carries the canonical claim from
+here on is this repo's history plus the cross-language agreement the
+validator proves on every run.
+
 ```bash
 node validate.mjs   # Node >= 18, no dependencies
 ```

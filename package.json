@@ -39,6 +39,7 @@
     "packages/record/bin/",
     "packages/record/lib/",
     "packages/record/docs/",
+    "packages/record/test/vectors/",
     "packages/record/README.md",
     "packages/record/package.json"
   ],
