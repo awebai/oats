@@ -13,7 +13,7 @@ clean break: no compatibility shims, and no code in this repo recognizes
 
 ## Do not migrate by hand yet
 
-The dangerous property of the current state is that it fails **quietly**:
+The dangerous property of the original state was that it failed **quietly**:
 
 - On a scope with `oas-config.yaml`/`oas-lock.json`, `oats status` works
   (the `agents/` layout is unchanged) — everything looks healthy.
@@ -21,8 +21,15 @@ The dangerous property of the current state is that it fails **quietly**:
   produces instances **without the knowledge (`oas.okf`) and messaging
   (`oas.aweb`) injections**. The compounding-memory and team-comms value
   disappears with no error.
-- `oats migrate --official --dry-run` on such a scope reports "nothing to
-  migrate" and exits 0 — false success.
+- `oats migrate --official --dry-run` on such a scope reported "nothing to
+  migrate" and exited 0 — false success.
+
+Since plan step 1 landed (below), the silence is closed: `oats doctor` names
+an un-migrated OAS scope with the remedy, and every `oats migrate` form —
+plain or guided, dry run or apply — exits nonzero when `oas-config.yaml` /
+`oas-lock.json` are visible from the scope (detection is by name only; the
+kernel never parses OAS files). The *migration itself* still does not exist:
+detection tells you to stay on OAS, it does not move you off it.
 
 ## The four breaks
 
@@ -56,9 +63,11 @@ The dangerous property of the current state is that it fails **quietly**:
 
 ## The plan (epic `aweb-abfy`)
 
-1. `oats migrate` / `oats doctor` detect an OAS scope and fail **loud**
-   with the exact remedy (never exit 0 on "nothing to migrate" when
-   `oas-*` siblings exist).
+1. **Done.** `oats migrate` / `oats doctor` detect an OAS scope and fail
+   **loud** with the exact remedy (never exit 0 on "nothing to migrate" when
+   `oas-*` siblings exist). `detectOasScopes` in `lib/core.mjs`,
+   `discoverOasScopes` in `lib/packages.mjs`, wired in `bin/oats.mjs`;
+   tests in `test/oas-scope-detection.test.mjs`.
 2. Catalog aliases `oas.*` → `oats.*` so legacy locks map instead of
    holding.
 3. `oats migrate --from-oas`: one transactional command covering all four

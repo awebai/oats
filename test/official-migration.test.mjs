@@ -603,7 +603,7 @@ test("CLI surface: help documents the guided command and the JSON contract is on
   const env = json(cli(team, catalog, "migrate", "--official", "--recursive", "--dir", team, "--dry-run", "--json"));
   assert.deepEqual(Object.keys(env).sort(), ["ok", "result", "schemaVersion"]);
   assert.equal(env.schemaVersion, 1);
-  assert.deepEqual(Object.keys(env.result).sort(), ["boundary", "dryRun", "mode", "nextCommands", "recursive", "requirements", "scopes", "trust", "warnings"]);
+  assert.deepEqual(Object.keys(env.result).sort(), ["boundary", "dryRun", "mode", "nextCommands", "oasRemedy", "oasScopes", "recursive", "requirements", "scopes", "trust", "warnings"]);
   assert.deepEqual(Object.keys(env.result.scopes[0]).sort(), ["error", "file", "level", "levelKind", "plan", "status", "warnings"]);
   assert.deepEqual(Object.keys(env.result.scopes[0].plan[0]).sort(), ["action", "capability", "note", "package", "reason", "source", "spec", "via"]);
   assert.equal(env.result.mode, "official");

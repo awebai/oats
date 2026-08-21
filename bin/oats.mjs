@@ -20,7 +20,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
 import {
-  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, RETIRED_CAPABILITIES, retiredCapabilityReason, configChain,
+  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath,
   readCapabilityLocks, writeCapabilityLock,
@@ -34,7 +34,7 @@ import {
   spawnInstance, retireInstance, upsertLocalAgent, defaultRepo, RELATIONS,
 } from "../lib/core.mjs";
 import {
-  aggregateMissingRequirements, beginRunJournal, discoverMigrationScopes, discoverWorkspaceScopes,
+  aggregateMissingRequirements, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes,
   adoptedTemplateDir, applyConfigMerge, lockedPackageCapabilities, planConfigMerge, readAdoptedTemplate, requirementInstallPlan,
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
@@ -303,11 +303,14 @@ function doctorJson(dir) {
   const composition = doctorComposition(ctx, soulName);
   const chain = configChain(ctx);
   const pkg = doctorPackagesData(ctx, chain, { teamScope: r.team?.scope });
+  const oasScopes = detectOasScopes(ctx);
   console.log(JSON.stringify({
     schemaVersion: 1,
     context: ctx,
     team: r.team || null,
     chain: r.chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })),
+    oasScopes,
+    oasRemedy: oasScopes.length ? OAS_SCOPE_REMEDY : null,
     layers: Object.fromEntries(LAYERS.map((l) => [l, r.layers[l] ? {
       integration: r.layers[l].id, level: r.layers[l].level, inject: r.layers[l].inject,
       skills: [...(Array.isArray(r.layers[l].skills) ? r.layers[l].skills : (r.layers[l].skills ? [r.layers[l].skills] : []))],
@@ -356,6 +359,15 @@ function doctor(dir) {
   if (chain.length === 0) console.log("  (none — no oats-config.yaml found walking up)");
   for (const c of chain) {
     console.log(`  ${shortPath(c._file)}  [${levelOf(c._level)}]`);
+  }
+
+  // An empty-looking chain over oas-* files is not an empty scope: it is a
+  // pre-rename OAS deployment this kernel cannot read (aweb-abfy.1).
+  const oasScopes = detectOasScopes(ctx);
+  if (oasScopes.length) {
+    console.log("");
+    for (const f of oasScopes) console.log(`UN-MIGRATED OAS SCOPE: ${shortPath(f.dir)}  (${f.files.join(", ")})`);
+    console.log(`  ${OAS_SCOPE_REMEDY}`);
   }
 
   if (r.team) console.log(`\nTeam: ${r.team.name}${r.team.id ? `  (id: ${r.team.id})` : ""}  [scope: ${shortPath(r.team.scope)}]`);
@@ -1787,12 +1799,17 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
   const out = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
   const opts = official ? { official: true } : {};
   const warnings = [];
+  const teamScope = recursive ? migrationTeamScope(dir, warnings) : undefined;
   let scopes;
   try {
     scopes = recursive
-      ? discoverMigrationScopes(dir, { teamScope: migrationTeamScope(dir, warnings) })
+      ? discoverMigrationScopes(dir, { teamScope })
       : (existsSync(join(dir, OATS_LOCK_FILE)) ? [resolve(dir)] : []);
   } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
+  // Un-migrated OAS scopes are invisible to lock discovery (they own no
+  // oats-lock.json), and silence would read as "nothing to migrate" — the
+  // exact false success this probe exists to prevent (aweb-abfy.1).
+  const oasScopes = recursive ? discoverOasScopes(dir, { teamScope }) : detectOasScopes(dir);
 
   // ---- plan every scope BEFORE touching any of them ----
   const planned = [];
@@ -1827,7 +1844,13 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
   const actionable = planned.filter((p) => p.status === "ready" || p.status === "format-only");
   out(`oats migrate${official ? " --official" : ""}${recursive ? " --recursive" : ""} — ${scopes.length} lock-owning scope${scopes.length === 1 ? "" : "s"} from ${shortPath(dir)}`);
   for (const w of warnings) out(`WARNING: ${w}`);
-  if (!scopes.length) out("  (no oats-lock.json found — nothing to migrate)");
+  if (!scopes.length) out(oasScopes.length
+    ? "  (no oats-lock.json found — but this is NOT an empty scope: un-migrated OAS files are present, see below)"
+    : "  (no oats-lock.json found — nothing to migrate)");
+  for (const f of oasScopes) {
+    out(`\n  ${shortPath(f.dir)}  UN-MIGRATED OAS SCOPE  (${f.files.join(", ")})`);
+    out(`    HELD       ${OAS_SCOPE_REMEDY}`);
+  }
   for (const p of planned) {
     out(`\n  ${shortPath(p.scope)}  [${levelOf(p.scope)}]  ${shortPath(p.file)}`);
     if (p.status === "failed") { out(`    ERROR      ${p.error.message} [${p.error.code}]`); continue; }
@@ -1851,7 +1874,8 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
 
   const result = {
     mode: official ? "official" : "generic", recursive, dryRun,
-    boundary: resolve(dir), scopes: planRows, trust: [], requirements: [], nextCommands: [], warnings,
+    boundary: resolve(dir), scopes: planRows, oasScopes, oasRemedy: oasScopes.length ? OAS_SCOPE_REMEDY : null,
+    trust: [], requirements: [], nextCommands: [], warnings,
   };
   if (dryRun) {
     const failed = planned.filter((p) => p.status === "failed");
@@ -1866,6 +1890,7 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
       ...(held.length ? [`${held.length} scope${held.length > 1 ? "s" : ""} held (no official package mapping yet)`] : []),
       ...(mixed.length ? [`${mixed.length} scope${mixed.length > 1 ? "s" : ""} blocked (entries that must stay lockfileVersion 1)`] : []),
       ...(failed.length ? [`${failed.length} scope${failed.length > 1 ? "s" : ""} could not be planned`] : []),
+      ...(oasScopes.length ? [`${oasScopes.length} un-migrated OAS scope${oasScopes.length > 1 ? "s" : ""} detected (${oasScopes.map((f) => shortPath(f.dir)).join(", ")}) — no oas-* name is recognized and there is no automatic path yet; see docs/migration-from-oas.md`] : []),
     ];
     if (JSON_MODE) {
       if (blocked.length) { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_MIGRATE_FAILED", message: `${blocked.join("; ")} (${actionable.length} ready)`, details: result } })); process.exit(1); }
@@ -1882,6 +1907,11 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
 
   // ---- apply, scope by scope (each independently transactional) ----
   const failures = [];
+  // An un-migrated OAS scope is a failure, not an absence: apply must never
+  // report overall success while one sits in the migrated universe.
+  for (const f of oasScopes) {
+    failures.push({ scope: f.dir, code: "oas-scope-unmigrated", message: `un-migrated OAS scope (${f.files.join(", ")}) — ${OAS_SCOPE_REMEDY}` });
+  }
   for (const [i, p] of planned.entries()) {
     const row = planRows[i]; // planRows is built from planned, in order
     if (p.status === "failed") { row.status = "failed"; failures.push({ scope: p.scope, code: p.error.code, message: p.error.message }); continue; }
@@ -1973,6 +2003,12 @@ function migrateCmd() {
     let plan, warnings;
     try { ({ plan, warnings } = migrateLegacyLock(dir)); }
     catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
+    if (!plan.length) {
+      // "Nothing to migrate" on an OAS scope is a false success: the scope is
+      // not empty, it is pre-rename, and this kernel cannot read it (aweb-abfy.1).
+      const oas = detectOasScopes(dir);
+      if (oas.length) { cmdFail("oas-scope-unmigrated", `nothing this command can migrate here, but un-migrated OAS scope files exist (${oas.map((f) => `${shortPath(f.dir)}: ${f.files.join(", ")}`).join("; ")}) — ${OAS_SCOPE_REMEDY}`); return; }
+    }
     if (JSON_MODE) { jsonOk({ dryRun: true, plan, warnings }); return; }
     if (!plan.length) { console.log("Nothing to migrate at this scope."); return; }
     for (const s of plan) console.log(s.action === "convert-format" ? `${s.action.padEnd(14)} ${s.note}` : `${s.action.padEnd(10)} ${s.capabilityId}${s.package ? `  → ${s.package.spec}` : ""}`);
@@ -1980,7 +2016,12 @@ function migrateCmd() {
     return;
   }
   let r;
-  try { r = applyLegacyLockMigration(dir); } catch (e) { cmdFail(e.code || "legacy-lock", e.message || e); return; }
+  try { r = applyLegacyLockMigration(dir); }
+  catch (e) {
+    const oas = detectOasScopes(dir);
+    const oasNote = oas.length ? ` NOTE: un-migrated OAS scope files exist (${oas.map((f) => `${shortPath(f.dir)}: ${f.files.join(", ")}`).join("; ")}) — ${OAS_SCOPE_REMEDY}` : "";
+    cmdFail(e.code || "legacy-lock", `${e.message || e}${oasNote}`); return;
+  }
   if (JSON_MODE) { jsonOk(r); return; }
   for (const m of r.migrated) console.log(`migrated  ${m.capability} → package ${m.package}@${m.version}`);
   for (const w of r.warnings) console.log(`WARNING: ${w}`);
