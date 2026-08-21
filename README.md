@@ -13,6 +13,29 @@ OATS works with both **Pi** and **Claude Code**. A team may mix providers and
 models while sharing the same souls, package/config contracts, instance
 lifecycle, and coordination topology.
 
+## What is core and what is experimental
+
+This repo carries three layers with different maturity, and the `oats`
+runtime is the single entry point to all of them:
+
+- **The turn record (core)** — `packages/record`. Every conversation an
+  agent has (Claude Code, pi, Codex sessions; aw mail and chat) is
+  captured as signed turns in an append-only, content-addressed,
+  replicated record, searchable with exact provenance. `oats
+  capture|recall|setup`. The normative spec and its conformance vectors
+  live in `packages/record/docs/`. This is the load-bearing layer: the
+  record outlives models, harnesses, and this repo's own designs.
+- **The soul/instance runtime (shipped)** — the CLI you see below:
+  souls, instances, capability packages, team topology. Maintained and
+  in production use.
+- **Experimental synthesis (unproven by design)** — `packages/experimental`,
+  run as `oats experimental <dress|spawn|segments|mind>`. Tools that
+  select lived conversation (segments, outfits) and spawn agents wearing
+  it as native session history. Gated on the continuation-of-self
+  experiments; interfaces and judgments there are rewritable clay. Ships
+  only in this repo checkout, never in the published package — its
+  absence from the tarball is exactly its status.
+
 ## Why OATS
 
 ### Specialists are real project assets

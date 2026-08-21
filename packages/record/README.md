@@ -1,11 +1,17 @@
 # @awebai/turn-record
 
 The turn record: an append-only, content-addressed, replicated record of
-turns, with the first two tools over it — `capture` and `recall`. Implements
-`docs/turn-record-sot.md` from aweb-oss (v1 draft); the vendored conformance
-vectors under `test/vectors/` pin the format.
+turns, with the core tools over it — `capture` and `recall`. The normative
+contract is [`docs/turn-record-sot.md`](docs/turn-record-sot.md) in this
+package; the conformance vectors under `test/vectors/` pin the format
+(`node test/vectors/validate.mjs`, dependency-free).
 
-Everything is a signed turn in an append-only record. This package holds:
+Everything is a signed turn in an append-only record. This package is the
+core: gathering every conversation, keeping it durably, and finding it
+again. The experimental tools that select and synthesize over the record
+(dress, spawn, segments, mind) live in `packages/experimental` of the oats
+repo and run as `oats experimental <cmd>`; they are deliberately not part
+of this package.
 
 - **`lib/canonical.mjs`** — canonical JSON (integers only in the core),
   `t1:` content ids, did:key Ed25519 verification. Byte-compatible with awid
@@ -29,27 +35,23 @@ Everything is a signed turn in an append-only record. This package holds:
   Reconciliation is the capture (hooks/watchers only decide when to run
   it).
 - **`lib/capture-aw.mjs`** — aw client log capture into `<owner>~aw`.
-- **`lib/compile-pi.mjs`** — the spawn primitive: compile an outfit (a
-  frozen selection of segments) into a native pi session file (v3, per
-  pi's documented session format), so a new agent starts life with the
-  selected conversation turns already in context. The dressed agent is
-  INDISTINGUISHABLE from one that lived those turns: no markers, no
-  labels, no harness bookkeeping; thinking and half tool-exchanges are
-  dropped (the record keeps everything); complete tool call/result
-  pairs replay natively. A spawn note maps the new agent to the exact
-  segment versions it wears. Tombstoned events stay redacted in the
-  dress.
 - **`lib/index-db.mjs`** — derived SQLite FTS5 index (`node:sqlite`, no
   dependencies). `update()` is incremental; `rebuild()` is reset + update
   from zero (same code path). Session text is extracted per event with
   exact line provenance; tombstoned turns disappear.
+- **`lib/segments.mjs`, `lib/tags.mjs`** — parsers for the note
+  conventions (segments, spawn notes, tags, outfits) that experimental
+  tools write into the record. They live here because the index reads
+  every note in the record; the machinery that writes and uses these
+  notes is experimental.
 
 ## Install and run
 
 One shipped bin, `turn-record`, with three subcommands. From a checkout use
 `node bin/turn-record.mjs ...`; from an npm install (the package has zero
 dependencies and packs clean — `test/packaging.test.mjs` proves the tarball
-runs standalone) just `turn-record ...`.
+runs standalone) just `turn-record ...`. Inside an oats install the same
+commands are `oats capture|recall|setup`.
 
 ```bash
 turn-record setup        # install Stop/SessionEnd hooks into every
@@ -62,18 +64,6 @@ turn-record setup        # install Stop/SessionEnd hooks into every
 turn-record capture                  # one reconciliation pass, then index update
 turn-record capture --watch          # pass now, on filesystem change, every 15 min
 turn-record capture --status         # stream summary
-
-turn-record spawn --outfit t1:<hex>             # compile an outfit into a native pi
-                                                # session; prints the pi command that
-                                                # starts the dressed agent
-turn-record spawn --outfit t1:<hex> --dry-run   # compile only, no spawn note
-
-turn-record mind --follow --engine <cmd>        # the consciousness, live: watch this
-                                                # owner's session streams and wake the
-                                                # followed thread's own jiminy on growth
-                                                # (resumes from the last closed
-                                                # annotation; --once for cron-style)
-
 
 turn-record recall "sqlite fts"                 # search mail + chat + sessions together
 turn-record recall --kind mail --from acme/x q  # filters
@@ -126,48 +116,6 @@ file yourself if you want one policy everywhere. Two honest limits: an
 ignore file that exists but cannot be read fails the pass loudly (a privacy
 control must not fail open), and ignoring is **forward-looking only** —
 turns already captured stay in the record; hide those with a tombstone.
-
-## The consciousness (jiminy): one per followed life
-
-The reader is not one daemon that judges everything. Every followed life
-gets its own jiminy — its own identity, memory, and judgment stream —
-because a conscience's value is continuity of attention: only a reader
-that has followed THIS agent the whole way can catch the wrong track that
-looks fine locally but contradicts a decision from days ago.
-
-- **Naming**: derived from the most durable name the principal has. Today
-  every principal is a bare harness session, named
-  `jiminy-<session-id-prefix>`; `<name>-jiminy` for aweb-named agents
-  (following the agent across runtime sessions) is a designed seam, not
-  yet implemented.
-- **Memory**: each jiminy keeps its own long-lived pi session, resumed on
-  every wake — and since that session lives in pi's normal sessions
-  directory, capture records the consciousness's own life like any other
-  agent's. The record stays authoritative: segment notes are the
-  conclusions; a lost pi session rebuilds working state from them.
-- **A jiminy is never assigned a jiminy.** Memory sessions are recorded,
-  never followed. The guarantee is layered and does not depend on any
-  lookup that can fail open: memory session ids are MARKED (`jiminy-`
-  prefix — in the session filename, the captured stream id, and the
-  thread), so identity itself refuses (`principalOf` is null for a
-  memory: no name, no stream, nothing to build a consciousness out of);
-  the reader throws at the birth site, whoever the caller is; and the
-  follower skips both marked ids and every memory named by a birth note
-  (the second covering legacy memories from before the marker).
-- **Streams**: judgments go to `<owner>~mind.<principal>` with
-  `from: <jiminy-name>` — one bounded stream per followed life.
-- **Lifecycle**: born on first wake — a follow note records the birth (a
-  distinct shape from spawn notes, so dressed-agent spawns and jiminy
-  births never mix in the index). Death is by staleness: a born jiminy
-  whose principal's journal has not grown for `--stale-hours` (default
-  24) gets one final wake — the reader sees the remaining tail and is
-  told to close what the evidence closes — then a farewell note. Death
-  is a point, not a sentence: journal growth after the farewell revives
-  the jiminy. A trailing segment the evidence never closed stays
-  honestly `ongoing`. Never-followed sessions do not die; backfill is
-  explicit. Nothing is deleted.
-- **The scheduler is per machine and has no identity**: `mind --follow`
-  only notices journal growth and wakes the right jiminy with the delta.
 
 ## Multi-machine
 
