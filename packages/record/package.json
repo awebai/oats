@@ -1,7 +1,7 @@
 {
   "name": "@awebai/turn-record",
   "version": "0.1.0",
-  "description": "Turn record v1 — append-only, content-addressed, replicated record of turns, with capture (Claude Code sessions, aw client logs) and recall (FTS search). Implements docs/turn-record-sot.md from aweb-oss.",
+  "description": "Turn record v1 — append-only, content-addressed, replicated record of turns, with capture (Claude Code/pi/codex sessions, aw client logs) and recall (FTS search). The spec (docs/turn-record-sot.md) and its conformance vectors live in this package.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -35,6 +35,7 @@
   "files": [
     "bin/",
     "lib/",
+    "docs/",
     "README.md"
   ],
   "scripts": {

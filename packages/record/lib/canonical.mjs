@@ -1,5 +1,5 @@
 // Canonical JSON, turn ids, and signature verification for turn.jsonl v1.
-// Contract: aweb-oss docs/turn-record-sot.md. The byte rules intentionally
+// Contract: docs/turn-record-sot.md in this package. The byte rules intentionally
 // match awid message signing (sorted keys, minimal separators, no HTML
 // escaping, ensure_ascii=false) so the same canonical form serves both.
 
