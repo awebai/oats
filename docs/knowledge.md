@@ -7,6 +7,18 @@ OATS treats knowledge as a pluggable layer. The kernel does not choose a
 memory format. The default integration, `oats-okf`, uses markdown OKF bundles
 for soul knowledge and simple files for instance state.
 
+> **Status and relationship to the turn record (2026-08-21).** This layer is
+> current and stays. It is the *semantic* memory of an agent team — reviewed,
+> de-indexicalized truths that travel with the soul — and is distinct from the
+> *episodic* memory provided by the turn record (`packages/record`: every
+> session captured verbatim, automatically). Today the harvester's input is
+> `notes/*.md`, the working agent's own in-session notes; the planned upgrade
+> (epic `aweb-abfz`) feeds the harvester from the captured record as well, so
+> lessons reach the soul even when an agent wrote no notes and never ran
+> harvest. The judgment machinery described here — the promotion bar, the
+> capture/judge split, the routing between knowledge and skills — is unchanged
+> by that upgrade; only the input channel widens.
+
 ## What the kernel does not own
 
 The kernel is memory-agnostic. It provides lifecycle events:

@@ -66,7 +66,9 @@ models change. The soul survives. With a knowledge integration, what matters
 feeds back into the soul as the instance works.
 
 The kernel owns this layer: spawn, exact skill/instruction composition,
-resume, retire, work modes, tmux windows, metadata, and lifecycle hook points.
+retire, work modes, tmux windows, metadata, and lifecycle hook points.
+(There is no resume command; a retired instance is gone — its session
+transcript survives in the turn record if capture is running.)
 
 See [Souls and instances](souls-and-instances.md).
 

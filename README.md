@@ -301,8 +301,16 @@ local, and you may change every copied setting.
 
 ## Upgrade from 0.18 official capabilities
 
-Existing valid v1 locks and installed capabilities continue to work after the
-kernel upgrade. Preview and apply the guided migration when ready:
+**This section applies to OATS-named scopes only.** If your deployment was
+created by OAS (`@oas-framework/oas` — files named `oas-config.yaml`,
+`oas-lock.json`), the claim below does NOT hold for you: no `oas-*` name is
+recognized by this kernel, and there is no working OAS→OATS migration yet.
+Read [docs/migration-from-oas.md](docs/migration-from-oas.md) and stay on
+OAS until the migration path ships.
+
+For OATS-named scopes, existing valid v1 locks and installed capabilities
+continue to work after the kernel upgrade. Preview and apply the guided
+migration when ready:
 
 ```bash
 oats migrate --official --recursive --dry-run --dir <team-root>
