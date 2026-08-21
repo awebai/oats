@@ -215,8 +215,8 @@ test("0.18 state still works under the new kernel, and doctor names the exact gu
   // The alias is what makes oats.review resolvable at all.
   process.env.OATS_PACKAGE_CATALOG = catalog;
   try {
-    assert.deepEqual(officialCapabilityPackage("oats.review"), { capability: "oats.review", package: "oats.dev", via: "alias", available: true });
-    assert.deepEqual(officialCapabilityPackage("oats.okf"), { capability: "oats.okf", package: "oats.okf", via: "identity", available: true });
+    assert.deepEqual(officialCapabilityPackage("oats.review"), { capability: "oats.review", package: "oats.dev", migratedCapability: "oats.review", via: "alias", available: true });
+    assert.deepEqual(officialCapabilityPackage("oats.okf"), { capability: "oats.okf", package: "oats.okf", migratedCapability: "oats.okf", via: "identity", available: true });
   } finally { delete process.env.OATS_PACKAGE_CATALOG; }
 
   const doc = JSON.parse(cli(team, catalog, "doctor", team, "--json").stdout);
@@ -484,8 +484,8 @@ test("several legacy capabilities aliased to ONE package migrate together, acqui
   const row = env.result.scopes[0];
   assert.equal(row.status, "migrated");
   assert.deepEqual(row.migrated, [
-    { capability: "oats.a", package: "oats.bundle", version: "2.0.0" },
-    { capability: "oats.b", package: "oats.bundle", version: "2.0.0" },
+    { capability: "oats.a", migratedTo: null, package: "oats.bundle", version: "2.0.0" },
+    { capability: "oats.b", migratedTo: null, package: "oats.bundle", version: "2.0.0" },
   ]);
   const lock = JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"));
   assert.deepEqual(Object.keys(lock.packages), ["oats.bundle"]);
@@ -605,7 +605,7 @@ test("CLI surface: help documents the guided command and the JSON contract is on
   assert.equal(env.schemaVersion, 1);
   assert.deepEqual(Object.keys(env.result).sort(), ["boundary", "dryRun", "mode", "nextCommands", "oasRemedy", "oasScopes", "recursive", "requirements", "scopes", "trust", "warnings"]);
   assert.deepEqual(Object.keys(env.result.scopes[0]).sort(), ["error", "file", "level", "levelKind", "plan", "status", "warnings"]);
-  assert.deepEqual(Object.keys(env.result.scopes[0].plan[0]).sort(), ["action", "capability", "note", "package", "reason", "source", "spec", "via"]);
+  assert.deepEqual(Object.keys(env.result.scopes[0].plan[0]).sort(), ["action", "capability", "migratesTo", "note", "package", "reason", "source", "spec", "via"]);
   assert.equal(env.result.mode, "official");
   // There is no residue container, so no scope row may carry a `residue` key.
   for (const sc of env.result.scopes) assert.equal(Object.hasOwn(sc, "residue"), false);
@@ -618,5 +618,97 @@ test("CLI surface: help documents the guided command and the JSON contract is on
   assert.deepEqual(Object.keys(badEnv).sort(), ["error", "ok", "schemaVersion"], "EXACT failure shape — no extra top-level keys");
   assert.equal(badEnv.error.code, "E_MIGRATE_FAILED");
   assert.ok(badEnv.error.details.scopes.some((s) => s.status === "failed" && s.error.code === "invalid-lock"), JSON.stringify(badEnv.error.details.scopes));
+  rmSync(base, { recursive: true, force: true });
+});
+
+// ---------- renaming aliases: the oas.* → oats.* migration contract (aweb-abfy.2) ----------
+
+test("bundled catalog maps every 0.20 oas.* id onto its oats.* successor", () => {
+  // Against the REAL bundled catalog: the seven ids @oas-framework/oas 0.20
+  // published (six packages + the oas.review alias) all resolve available,
+  // each carrying the successor id the replacement package actually exports.
+  for (const [legacy, pkg, cap] of [
+    ["oas.okf", "oats.okf", "oats.okf"],
+    ["oas.aweb", "oats.aweb", "oats.aweb"],
+    ["oas.jira", "oats.jira", "oats.jira"],
+    ["oas.linear", "oats.linear", "oats.linear"],
+    ["oas.authoring", "oats.authoring", "oats.authoring"],
+    ["oas.dev", "oats.dev", "oats.dev"],
+    ["oas.review", "oats.dev", "oats.review"],
+  ]) {
+    assert.deepEqual(officialCapabilityPackage(legacy), { capability: legacy, package: pkg, migratedCapability: cap, via: "alias", available: true });
+  }
+});
+
+test("renaming aliases: a hand-renamed OAS lock plans ready and apply materializes the oats.* successors", () => {
+  const base = temp();
+  const sources = officialSources(base);
+  const catalog = writeCatalog(join(base, "catalog.json"), sources, ["oats.okf", "oats.aweb", "oats.dev"], {
+    "oats.review": "oats.dev",
+    "oas.okf": { package: "oats.okf", capability: "oats.okf" },
+    "oas.aweb": { package: "oats.aweb", capability: "oats.aweb" },
+  });
+
+  // Break 4 from docs/migration-from-oas.md: files hand-renamed to oats-*,
+  // lock ENTRIES still naming marketplace:oas.*. Before the aliases this held
+  // the whole scope (available:false); now it must convert completely.
+  const scope = join(base, "scope");
+  write(join(scope, "oats-config.yaml"), "name: hand-renamed\n");
+  legacyCap(scope, "oas.okf", { source: "marketplace:oas.okf@1.3.0", version: "1.3.0" });
+  legacyCap(scope, "oas.aweb", { source: "marketplace:oas.aweb@1.8.0", version: "1.8.0" });
+
+  const dry = json(cli(scope, catalog, "migrate", "--official", "--dry-run", "--dir", scope, "--json"));
+  assert.equal(dry.ok, true, JSON.stringify(dry));
+  const scopeRow = dry.result.scopes[0];
+  assert.equal(scopeRow.status, "ready");
+  const okf = scopeRow.plan.find((s) => s.capability === "oas.okf");
+  assert.equal(okf.action, "acquire");
+  assert.equal(okf.package, "oats.okf");
+  assert.equal(okf.via, "alias");
+  assert.equal(okf.migratesTo, "oats.okf");
+
+  const applied = json(cli(scope, catalog, "migrate", "--official", "--dir", scope, "--json"));
+  assert.equal(applied.ok, true, JSON.stringify(applied));
+  const row = applied.result.scopes[0];
+  assert.equal(row.status, "migrated");
+  assert.deepEqual(
+    row.migrated.map((m) => `${m.capability}>${m.migratedTo}`).sort(),
+    ["oas.aweb>oats.aweb", "oas.okf>oats.okf"],
+  );
+  assert.ok(row.warnings.some((w) => /update references in oats-config\.yaml from "oas\.okf" to "oats\.okf"/.test(w)), JSON.stringify(row.warnings));
+
+  // The v2 lock names ONLY successors; the stale legacy artifacts are gone and
+  // the successors are materialized in their place.
+  const lock = JSON.parse(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"));
+  assert.equal(lock.lockfileVersion, 2);
+  assert.deepEqual(Object.keys(lock.capabilities).sort(), ["oats.aweb", "oats.okf"]);
+  assert.ok(existsSync(join(installedCapabilitiesDir(scope), "oats.okf")));
+  assert.ok(!existsSync(join(installedCapabilitiesDir(scope), "oas-okf")));
+  assert.ok(!existsSync(join(installedCapabilitiesDir(scope), "oas-aweb")));
+
+  // Idempotent: a rerun finds a v2 lock and nothing to do.
+  const rerun = json(cli(scope, catalog, "migrate", "--official", "--dry-run", "--dir", scope, "--json"));
+  assert.equal(rerun.ok, true, JSON.stringify(rerun));
+  rmSync(base, { recursive: true, force: true });
+});
+
+test("a renaming alias whose package does not export the successor fails and rolls back", () => {
+  const base = temp();
+  const sources = officialSources(base);
+  // Lie in the catalog: claim oats.dev exports oats.okf (it exports oats.review).
+  const catalog = writeCatalog(join(base, "catalog.json"), sources, ["oats.dev"], {
+    "oas.okf": { package: "oats.dev", capability: "oats.okf" },
+  });
+  const scope = join(base, "scope");
+  write(join(scope, "oats-config.yaml"), "name: lied-to\n");
+  legacyCap(scope, "oas.okf", { source: "marketplace:oas.okf@1.3.0", version: "1.3.0" });
+  const before = readFileSync(join(scope, OATS_LOCK_FILE), "utf8");
+
+  const r = cli(scope, catalog, "migrate", "--official", "--dir", scope, "--json");
+  assert.notEqual(r.status, 0);
+  const env = json(r);
+  assert.equal(env.ok, false);
+  assert.ok(env.error.details.scopes.some((s) => s.status === "failed" && /does not export capability "oats\.okf"/.test(s.error.message)), JSON.stringify(env.error.details.scopes));
+  assert.equal(readFileSync(join(scope, OATS_LOCK_FILE), "utf8"), before, "v1 lock restored byte-identically");
   rmSync(base, { recursive: true, force: true });
 });

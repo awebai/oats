@@ -1785,6 +1785,7 @@ function migrationTeamScope(dir, warnings) {
 const migratePlanRow = (s) => ({
   capability: s.capabilityId, action: s.action,
   package: s.package?.id || null, spec: s.package?.spec || null, via: s.package?.via || null,
+  migratesTo: s.migratesTo || null,
   source: s.v1?.source || null, reason: s.reason || null, note: s.note || null,
 });
 
@@ -1856,7 +1857,7 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
     if (p.status === "failed") { out(`    ERROR      ${p.error.message} [${p.error.code}]`); continue; }
     for (const s of p.plan) {
       if (s.action === "convert-format") out(`    format     ${s.note}`);
-      else if (s.action === "acquire") out(`    migrate    ${s.capabilityId} → package ${s.package.id || s.package.spec}${s.package.via === "alias" ? `  (catalog alias: package ${s.package.id} exports ${s.capabilityId})` : s.package.via === "identity" ? "  (official catalog)" : ""}`);
+      else if (s.action === "acquire") out(`    migrate    ${s.capabilityId} → package ${s.package.id || s.package.spec}${s.migratesTo ? `  (catalog alias: package ${s.package.id} exports ${s.migratesTo}, replacing ${s.capabilityId})` : s.package.via === "alias" ? `  (catalog alias: package ${s.package.id} exports ${s.capabilityId})` : s.package.via === "identity" ? "  (official catalog)" : ""}`);
       else if (s.action === "hold") out(`    HELD       ${s.capabilityId} — ${s.reason}`);
       else out(`    keep       ${s.capabilityId}${s.v1?.source ? `  (${s.v1.source})` : ""} — not converted, entry kept unchanged`);
     }
@@ -1866,7 +1867,9 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
       out("               a capability-materialization lock has no place for them, so converting the rest would drop them — the WHOLE scope stays v1 and keeps working");
     }
     if (p.status === "ready") {
-      out(`    config     ${shortPath(join(p.scope, "oats-config.yaml"))} is NOT rewritten — capability ids, layers, targets, settings, exclusions and overrides stay valid (packages export the same ids)`);
+      const renames = p.plan.filter((s) => s.migratesTo);
+      if (renames.length) out(`    config     ${shortPath(join(p.scope, "oats-config.yaml"))} is NOT rewritten — but renamed ids must be updated by hand after applying: ${renames.map((s) => `${s.capabilityId} → ${s.migratesTo}`).join(", ")}`);
+      else out(`    config     ${shortPath(join(p.scope, "oats-config.yaml"))} is NOT rewritten — capability ids, layers, targets, settings, exclusions and overrides stay valid (packages export the same ids)`);
       out("    trust      executable approvals are NOT carried over — they are re-earned after migrating (exact commands below)");
     }
     for (const w of p.warnings) out(`    WARNING: ${w}`);
@@ -1946,7 +1949,7 @@ function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
     row.warnings = r.warnings;
     for (const t of r.trust || []) result.trust.push({ ...t, command: `oats trust ${t.capability} --dir ${shellQuote(p.scope)}` });
     out(`\n  ${shortPath(p.scope)}:`);
-    for (const m of r.migrated) out(`    migrated   ${m.capability} → package ${m.package}@${m.version}`);
+    for (const m of r.migrated) out(`    migrated   ${m.capability} → package ${m.package}@${m.version}${m.migratedTo ? `  (as ${m.migratedTo})` : ""}`);
     for (const c of r.retained || []) out(`    retained   ${c}  (this scope stays lockfileVersion 1, unchanged)`);
     for (const w of r.warnings) out(`    WARNING: ${w}`);
     if (r.formatConverted) out(`    format     empty lockfileVersion 1 file → canonical v2`);

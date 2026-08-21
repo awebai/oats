@@ -32,6 +32,13 @@
     }
   },
   "capabilities": {
-    "oats.review": "oats.dev"
+    "oats.review": "oats.dev",
+    "oas.okf": { "package": "oats.okf", "capability": "oats.okf" },
+    "oas.aweb": { "package": "oats.aweb", "capability": "oats.aweb" },
+    "oas.jira": { "package": "oats.jira", "capability": "oats.jira" },
+    "oas.linear": { "package": "oats.linear", "capability": "oats.linear" },
+    "oas.authoring": { "package": "oats.authoring", "capability": "oats.authoring" },
+    "oas.dev": { "package": "oats.dev", "capability": "oats.dev" },
+    "oas.review": { "package": "oats.dev", "capability": "oats.review" }
   }
 }
