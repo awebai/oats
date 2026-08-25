@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 // capture — land sessions and aw client logs in the turn record.
 //
-//   capture                      one reconciliation pass (sessions + aw logs)
-//   capture --sessions-only      only Claude Code transcripts
-//   capture --aw-only            only aw client comm logs
-//   capture --watch              pass now, then re-pass on filesystem change
-//                                (debounced) and every 15 minutes regardless
-//   capture --status             show store/stream summary, capture nothing
-//   capture --install-hint       print the Claude Code hook snippet
+// The flag list lives in USAGE below, once, so `--help` and this header
+// cannot drift apart.
 //
-// Store root: --root, else $TURN_RECORD_ROOT, else ~/.turn-record
-// Stream owner: --owner, else $TURN_RECORD_OWNER, else short hostname.
+// An unrecognized flag or a positional argument is a usage error, never a
+// silently ignored option: parsing falls through to pass(), a WRITE, so it
+// must refuse what it does not understand before anything is written.
+//
 // Privacy: `<root>/ignore` lists glob patterns (paths, session ids,
 // accounts) whose sources are never captured — see lib/ignore.mjs.
 // Reconciliation is the capture; hooks and watch only decide when to run it.
@@ -38,22 +35,116 @@ function loadIgnoreOrExit(recordRoot) {
   }
 }
 
+// Every flag this program understands. An unknown flag is rejected rather
+// than ignored, because the fall-through from argument parsing is pass() —
+// a WRITE. `capture --help` was once a full reconciliation pass under a
+// hostname-derived owner, which forked the whole record into a second owner
+// namespace: 571 duplicate journals from one typo. Parsing must refuse what
+// it does not understand before anything can be written.
+const VALUE_FLAGS = new Set(["root", "owner"]);
+const BOOL_FLAGS = new Set([
+  "watch",
+  "status",
+  "install-hint",
+  "help",
+  "quiet",
+  "sessions-only",
+  "aw-only",
+  "no-index",
+]);
+
+const USAGE = `capture — land sessions and aw client logs in the turn record.
+
+  capture                      one reconciliation pass (sessions + aw logs)
+  capture --sessions-only      only session transcripts (Claude Code, pi, codex)
+  capture --aw-only            only aw client comm logs
+  capture --watch              pass now, then re-pass on filesystem change
+                               (debounced) and every 15 minutes regardless
+  capture --status             show store/stream summary, capture nothing
+  capture --install-hint       print the Claude Code hook snippet
+  capture --help               this text
+  capture --quiet              suppress per-pass progress
+  capture --no-index           append turns without updating the derived index
+
+  --root <dir>                 store root (else $TURN_RECORD_ROOT, else ~/.turn-record)
+  --owner <name>               stream owner (else $TURN_RECORD_OWNER, else short hostname)
+
+Every invocation with no explicit subcommand WRITES. Reconciliation is the
+capture; hooks and watch only decide when to run it.`;
+
+class UsageError extends Error {}
+
 function parseArgs(argv) {
-  const args = { _: [] };
+  const args = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--root" || a === "--owner") args[a.slice(2)] = argv[++i];
-    else if (a.startsWith("--")) args[a.slice(2)] = true;
-    else args._.push(a);
+    // capture takes no positional arguments. Accepting one silently is the
+    // same defect as accepting an unknown flag: `capture status`, meaning
+    // `capture --status`, would run a full write pass instead.
+    if (!a.startsWith("--")) throw new UsageError(`unexpected argument "${a}" (capture takes no positional arguments)`);
+    const name = a.slice(2);
+    if (VALUE_FLAGS.has(name)) {
+      const value = argv[++i];
+      if (value === undefined) throw new UsageError(`${a} needs a value`);
+      args[name] = value;
+    } else if (BOOL_FLAGS.has(name)) {
+      args[name] = true;
+    } else {
+      throw new UsageError(`unknown flag ${a}`);
+    }
   }
   return args;
 }
 
-const args = parseArgs(process.argv.slice(2));
+let args;
+try {
+  args = parseArgs(process.argv.slice(2));
+} catch (err) {
+  if (!(err instanceof UsageError)) throw err;
+  console.error(`capture: ${err.message}\n\n${USAGE}`);
+  process.exit(2);
+}
+
+if (args.help) {
+  console.log(USAGE);
+  process.exit(0);
+}
+
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
+const ownerExplicit = args.owner !== undefined || process.env.TURN_RECORD_OWNER !== undefined;
 const owner = args.owner ?? process.env.TURN_RECORD_OWNER ?? hostname().split(".")[0];
 const quiet = Boolean(args.quiet);
 const store = new RecordStore(root, { owner });
+
+// The owner decides the stream namespace, and turn ids hash it into the
+// canonical core — so the same conversation captured under two owners yields
+// two sets of ids for identical content, which the index cannot dedupe. When
+// the derived owner is a stranger to a record that already has streams, say
+// so. A WARNING, never a refusal: capture runs on every agent's session hooks,
+// and a guard that misjudges would stop capture everywhere — strictly worse
+// than the duplication it prevents. First run on a new machine sees an empty
+// root, no other owners, and nothing is printed.
+function warnOnStrangerOwner() {
+  if (ownerExplicit) return;
+  let others;
+  try {
+    others = new Set(
+      store
+        .listStreams()
+        .map((id) => id.slice(0, id.indexOf("~")))
+        .filter(Boolean),
+    );
+  } catch {
+    return; // unreadable or absent root: not this function's business
+  }
+  if (others.size === 0 || others.has(owner)) return;
+  console.error(
+    `capture: writing as owner "${owner}" (from hostname), but this record holds ` +
+      `streams only under ${[...others].sort().map((o) => `"${o}"`).join(", ")}. ` +
+      `Pass --owner or set TURN_RECORD_OWNER if that is not what you meant — ` +
+      `capturing under a second owner duplicates the record rather than extending it.`,
+  );
+}
 
 function log(...parts) {
   if (!quiet) console.log(...parts);
@@ -133,6 +224,7 @@ if (args.status) {
   process.exit(0);
 }
 
+warnOnStrangerOwner();
 pass();
 
 if (args.watch) {
