@@ -21,3 +21,5 @@ node_modules/
 .aw/
 packages/desktop/renderer/vendor/
 packages/desktop/dist/
+/agents/lead/
+/.claude/worktrees/
