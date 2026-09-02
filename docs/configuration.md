@@ -381,6 +381,33 @@ instead of becoming data, which would hide the entry from every key validator.
 The kernel fails closed and reports the offending file; the desktop reader
 degrades that document to "not visible", per its read-only contract.
 
+Text that cannot be written as ONE YAML scalar on one line is refused. The
+policed inputs are exactly: `oats use --settings` keys and values, `oats use
+--soul` and `--type` names, `oats type add --description`, and the scaffolded
+`name:` value that `oats init` (in every form) and the first `oats use` / `oats
+type add` at a fresh scope take from the target directory's basename — a
+basename is filesystem input, so one carrying a newline would otherwise write
+arbitrary top-level blocks into the config.
+
+Refused: a control character (a newline in a `--settings` value used to inject
+whole extra capability entries into the file) or one of the three line breaks
+outside that range (U+0085, U+2028, U+2029 — U+2028/U+2029 made the reader drop
+the written line entirely, so the command reported success for a setting that
+was not there afterwards); leading or trailing whitespace a read would strip; a
+leading YAML structure indicator (`#`, `|`, `>`, `&`, `*`, `!`, `%`, `@`,
+`` ` ``, `,`, a quote, a flow bracket, or `- `/`? `/`: `); for a VALUE, an
+embedded `" #"` (which opens a trailing comment, so the rest would be dropped
+on read) and an empty value (`key:` with nothing after it reads back as an
+empty map, not an empty string); and — for keys and `--soul`/`--type` names —
+the `:` and `#` that end a key token. Those fail with `unsafe-config-value`
+(values, the scaffolded name included) or `unsafe-config-key` (keys and names),
+and nothing is written.
+
+The guarantee is a round trip through the OATS reader, not conformance to an
+external YAML parser: ordinary values are untouched because those characters
+are structural only in first position, so `expr=2 > 1`, `tag=v1.0#build`,
+`list=a,b` and even `mode=a: b` come back exactly as they were written.
+
 ## Worked examples
 
 ### All souls use OKF; only developers use Linear

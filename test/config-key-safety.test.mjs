@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -373,4 +373,147 @@ test("the reported filename is the path itself, even when it contains regex subs
   const r = runCli(["doctor", dir], dir);
   assert.notEqual(r.status, 0, r.stdout);
   assert.ok(r.stderr.includes(file), r.stderr);
+});
+
+test("a config write refuses text that cannot stay one YAML scalar — no injected document, nothing written", () => {
+  const dir = temp();
+  write(join(dir, ".agents", "capabilities", "owned", "acme.x", "oats.json"),
+    JSON.stringify({ capability: "acme.x", version: "1.0.0", description: "cap" }));
+  write(join(dir, "oats-config.yaml"), "name: demo\n");
+  const file = join(dir, "oats-config.yaml");
+  const before = readFileSync(file, "utf8");
+
+  // THE attack: the value is rendered verbatim onto one `key: value` line, so a
+  // newline plus indentation stops being a value and becomes more document —
+  // here a whole second capability entry the operator never wrote (which the
+  // next read then served, and doctor crashed on).
+  const injected = "fast\n    acme.injected:\n      from: owned\n      global: true";
+  const refusals = [
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", `mode=${injected}`], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", `mode=x\rzz`], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "mode=\tindented"], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "mode=| block"], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "mode={a: b}"], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "mode= padded"], "unsafe-config-value"],
+    // A KEY is written as a mapping key, so the same text injects the same way.
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", `${injected}=x`], "unsafe-config-key"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "a:b=x"], "unsafe-config-key"],
+    // …and so does a --soul / --type NAME.
+    [["use", "acme.x", "--dir", dir, "--soul", "alice\n    acme.injected:\n      global: true"], "unsafe-config-key"],
+    [["use", "acme.x", "--dir", dir, "--type", "devs\n    acme.injected:\n      global: true"], "unsafe-config-key"],
+    // `oats type add --description` writes its own line too.
+    [["type", "add", "devs", "--description", "d\nteam:\n  name: Smuggled"], "unsafe-config-value"],
+    // Line breaks OUTSIDE the C0 range. U+2028/U+2029 are excluded by
+    // JavaScript's `.`, so the written line no longer matched the reader's own
+    // `key: value` regex and `parseYamlNested` DROPPED it — the command
+    // reported success for a setting that did not exist afterwards, and the
+    // same silent drop on `--disable --soul` is fail-open. U+0085 survives this
+    // reader but is a line break to a conforming YAML parser.
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", `mode=a\u2028b`], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", `mode=a\u2029b`], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", `mode=a\u0085b`], "unsafe-config-value"],
+    [["use", "acme.x", "--dir", dir, "--soul", `alice\u2028bob`], "unsafe-config-key"],
+    [["type", "add", "devs", "--description", `d\u2028e`], "unsafe-config-value"],
+    // Two values that were WRITTEN but did not come back: a plain scalar ends
+    // at " #" (the rest is a comment the read strips), and `key:` with nothing
+    // after it reads back as an empty MAP, not an empty string.
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "mode=a #c"], "unsafe-config-value"],
+    [["use", "acme.x", "--global", "--dir", dir, "--settings", "mode="], "unsafe-config-value"],
+  ];
+  for (const [argv, code] of refusals) {
+    const r = runCli(argv, dir);
+    assert.notEqual(r.status, 0, `${argv.join(" ")} => ${r.stdout}`);
+    assert.doesNotMatch(r.stderr, NODE_STACK, argv.join(" "));
+    assert.equal(r.stderr.trim().split("\n").length, 1, r.stderr);
+    assert.doesNotMatch(r.stdout, /Activated|Excluded|Declared/, argv.join(" "));
+    assert.equal(readFileSync(file, "utf8"), before, `nothing may be written: ${argv.join(" ")}`);
+
+    const json = runCli([...argv, "--json"], dir);
+    assert.notEqual(json.status, 0, json.stdout);
+    assert.doesNotMatch(json.stderr, NODE_STACK);
+    const doc = JSON.parse(json.stdout);
+    assert.equal(json.stdout.trim(), JSON.stringify(doc), "exactly one envelope on stdout");
+    assert.equal(doc.ok, false);
+    assert.equal(doc.error.code, code, doc.error.message);
+    assert.equal(readFileSync(file, "utf8"), before, `--json must not write either: ${argv.join(" ")}`);
+  }
+
+  // The other direction: ordinary values, including ones with characters that
+  // are only structural in FIRST position, still round-trip.
+  const ok = runCli(["use", "acme.x", "--global", "--dir", dir,
+    "--settings", "mode=fast", "path=/usr/local/bin", "note=a-b_c.d", "expr=2 > 1", "tag=v1.0#build", "list=a,b"], dir);
+  assert.equal(ok.status, 0, ok.stderr);
+  const written = readFileSync(file, "utf8");
+  assert.doesNotMatch(written, /acme\.injected|Smuggled/, "no refusal leaked into the file");
+  const round = parseYamlNested(written).capabilities.additive["acme.x"].settings;
+  assert.deepEqual(round, { mode: "fast", path: "/usr/local/bin", note: "a-b_c.d", expr: "2 > 1", tag: "v1.0#build", list: "a,b" });
+
+  const okSoul = runCli(["use", "acme.x", "--dir", dir, "--soul", "alice"], dir);
+  assert.equal(okSoul.status, 0, okSoul.stderr);
+  assert.equal(parseYamlNested(readFileSync(file, "utf8")).capabilities.additive["acme.x"].souls.alice, true);
+  const okType = runCli(["type", "add", "devs", "--description", "The dev family", "--dir", dir], dir);
+  assert.equal(okType.status, 0, okType.stderr);
+  assert.equal(parseYamlNested(readFileSync(file, "utf8"))["agent-types"].devs.description, "The dev family");
+});
+
+test("a directory basename is DATA on every write path: replacement syntax is stored literally", () => {
+  // `$&`, `$'`, `` $` `` and `$1` are substitution syntax in String.replace, and
+  // all four are legal POSIX filename characters. `oats init --template` seeded
+  // the scaffolded name with a replacement STRING, so a directory named `x$&y`
+  // persisted `name: xname: <template's name>y` — a corrupted config on disk,
+  // not just a corrupted message.
+  const base = temp();
+  const template = join(base, "template.yaml");
+  write(template, "name: template-name\ncapabilities:\n  additive: {}\n");
+  for (const name of ["x$&y", "x$`y", "x$'y", "x$1y", "x$$y", "plain"]) {
+    const dir = join(base, `run-${Buffer.from(name).toString("hex")}`, name);
+    mkdirSync(dir, { recursive: true });
+    const r = runCli(["init", "--template", template, "--dir", dir, "--no-tmux-mouse"], dir);
+    assert.equal(r.status, 0, `${name}: ${r.stderr}`);
+    const written = readFileSync(join(dir, "oats-config.yaml"), "utf8");
+    assert.ok(written.includes(`name: ${name}\n`), `${name} was not written literally: ${JSON.stringify(written.split("\n")[1])}`);
+    assert.equal(parseYamlNested(written).name, name, `${name} did not read back`);
+    assert.doesNotMatch(written, /template-name/, `${name} leaked the template's own name`);
+  }
+});
+
+test("a directory basename that cannot stay one YAML scalar refuses the whole init", () => {
+  const base = temp();
+  // THE attack: the scaffolded `name:` line is the one config value that comes
+  // from the FILESYSTEM rather than from a flag, and it was written verbatim. A
+  // basename carrying a newline plus a top-level block therefore smuggled real
+  // configuration — here a `team:` block — into a config the operator never
+  // wrote. A `#`-leading basename is the quieter half: it writes a value the
+  // next read sees as a comment, i.e. an empty map.
+  // No "/" anywhere: a slash would end the basename and defuse the case by
+  // accident rather than by the guard.
+  const smuggled = "acme\nteam:\n  name: Smuggled";
+  for (const [name, why] of [[smuggled, "newline"], ["#acme", "comment introducer"], ["  padded  ", "surrounding whitespace"], ["{a: b}", "flow mapping"]]) {
+    const dir = join(base, `run-${Buffer.from(name).toString("hex")}`, name);
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, "oats-config.yaml");
+
+    const r = runCli(["init", "--raw", "--dir", dir, "--no-tmux-mouse"], dir);
+    assert.notEqual(r.status, 0, `${why}: init must refuse — ${r.stdout}`);
+    assert.doesNotMatch(r.stderr, NODE_STACK, why);
+    assert.ok(r.stderr.includes(JSON.stringify(name)), `${why}: the refusal must name the offending basename — ${r.stderr}`);
+    assert.equal(existsSync(file), false, `${why}: nothing may be written`);
+
+    const json = runCli(["init", "--raw", "--dir", dir, "--no-tmux-mouse", "--json"], dir);
+    assert.notEqual(json.status, 0, json.stdout);
+    const doc = JSON.parse(json.stdout);
+    assert.equal(doc.ok, false);
+    assert.equal(doc.error.code, "unsafe-config-value", doc.error.message);
+    assert.equal(existsSync(file), false, `${why}: --json must not write either`);
+  }
+
+  // Control: an ordinary basename still scaffolds, and the smuggled text never
+  // reaches disk by any route.
+  const okDir = join(base, "ordinary-scope");
+  mkdirSync(okDir, { recursive: true });
+  const ok = runCli(["init", "--raw", "--dir", okDir, "--no-tmux-mouse"], okDir);
+  assert.equal(ok.status, 0, ok.stderr);
+  const written = readFileSync(join(okDir, "oats-config.yaml"), "utf8");
+  assert.equal(parseYamlNested(written).name, "ordinary-scope");
+  assert.doesNotMatch(written, /Smuggled/);
 });
