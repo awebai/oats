@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { resolveOatsConfig, capabilityIntegrity, capabilityArtifactIntegrity, acquirePackage, loadPackageManifestAt, parsePackageSource, readPackageLocks } from "../lib/core.mjs";
 import {
-  aggregateMissingRequirements, applyConfigMerge, beginRunJournal, capabilityRuntimeTargets, commandOnPath, discoverWorkspaceScopes,
+  aggregateMissingRequirements, applyConfigMerge, beginRunJournal, capabilityRuntimeTargets, commandOnPath, discoverMigrationScopes, discoverWorkspaceScopes,
   planConfigMerge, splitConfigLines,
   lockedPackageCapabilities, normalizeRequirement, packageSpecIdentity, runtimePackageInstalled, runtimePackageStatus,
   requirementInstallPlan,
@@ -1402,6 +1402,73 @@ test("discoverWorkspaceScopes: deterministic path order with pruning of stores, 
 
   const scopes = discoverWorkspaceScopes(ws);
   assert.deepEqual(scopes, [join(ws, "a-repo"), join(ws, "a-repo", "nested"), join(ws, "b-repo")]);
+});
+
+/** A member repo shipping an OATS distribution package: manifest at `root`, and
+ * an exported config TEMPLATE referencing a capability the chain does not
+ * supply. `root` is the package root — every path under it is PAYLOAD. */
+function packagePayload(repo, { id, root = "oats-package", template = "config-templates/default/oats-config.yaml" } = {}) {
+  write(join(repo, root, "oats-package.json"), JSON.stringify({
+    package: id, version: "1.0.0", description: `${id} test package`,
+    compatibility: { oats: ">=0.20.0" },
+    capabilities: [`capabilities/${id.split(".").pop()}`],
+    configTemplates: { default: { path: template, description: "reference profile", default: true } },
+  }, null, 2));
+  write(join(repo, root, template), `name: my-deployment\ncapabilities:\n  layers:\n    tasks:\n      capability: ${id}\n      from: installed\n      global:\n        enabled: true\n`);
+  return join(repo, root);
+}
+
+test("scope discovery: package PAYLOAD config templates are never scopes (default and custom payload roots)", () => {
+  const base = temp();
+  const ws = join(base, "ws");
+  write(join(ws, "oats-config.yaml"), "name: ws\nteam:\n  name: t\n");
+  // Two member repos in the live shape: oats-package/ manifest + exported template.
+  packagePayload(join(ws, "oats-jira"), { id: "oats.jira" });
+  packagePayload(join(ws, "oats-linear"), { id: "oats.linear" });
+  // A CUSTOM payload root (not the literal config-templates/ under oats-package/):
+  // a second package at a non-default path, with a non-default template path.
+  packagePayload(join(ws, "oats-multi"), { id: "oats.extra", root: join("dist", "extra-pkg"), template: join("profiles", "reference", "oats-config.yaml") });
+  // A repo that is a REAL scope AND ships a payload — the framework-repo shape:
+  // its root oats-config.yaml has NO oats-package.json ancestor, so it stays a scope.
+  write(join(ws, "framework-like", "oats-config.yaml"), "name: framework-like\n");
+  packagePayload(join(ws, "framework-like"), { id: "oats.selfhosted" });
+  // An ordinary member scope, unrelated to any payload.
+  write(join(ws, "plain-member", "oats-config.yaml"), "name: plain\n");
+
+  assert.deepEqual(discoverWorkspaceScopes(ws), [join(ws, "framework-like"), join(ws, "plain-member")]);
+
+  // Second consumer of the same walk: guided recursive migration. Even a stray
+  // lock inside a payload (the only thing its ownsLock gate would otherwise
+  // admit) must not become a migration scope.
+  write(join(ws, "oats-jira", "oats-package", "config-templates", "default", "oats-lock.json"), JSON.stringify({ lockfileVersion: 1, capabilities: {} }));
+  const migration = discoverMigrationScopes(ws, { teamScope: ws });
+  assert.equal(migration.filter((s) => s.includes("oats-package")).length, 0, migration.join("\n"));
+});
+
+test("bare oats install at a team boundary: payload templates reconcile cleanly, a genuine member failure still reports", () => {
+  const base = temp();
+  const ws = join(base, "ws");
+  write(join(ws, "oats-config.yaml"), "name: ws\nteam:\n  name: t\n");
+  // The reproduced live shape: two member repos whose exported templates bind a
+  // tasks layer to a capability no visible locked package supplies.
+  packagePayload(join(ws, "oats-jira"), { id: "oats.jira" });
+  packagePayload(join(ws, "oats-linear"), { id: "oats.linear" });
+  packagePayload(join(ws, "oats-multi"), { id: "oats.extra", root: join("dist", "extra-pkg"), template: join("profiles", "reference", "oats-config.yaml") });
+
+  const clean = cli(["install", "--no-requirements", "--dir", ws], { cwd: ws });
+  assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+  assert.doesNotMatch(clean.stdout, /Failures by scope/, clean.stdout);
+  assert.doesNotMatch(clean.stdout, /config-templates|profiles\/reference/, "package payload must never be reconciled as a scope");
+  assert.doesNotMatch(clean.stdout + clean.stderr, /oats\.jira|oats\.linear|oats\.extra/, "template-declared capabilities must never be validated or acquired");
+
+  // Negative control: a GENUINE member scope referencing an unsupplied
+  // capability still fails, by the same validation, with the same message.
+  write(join(ws, "real-member", "oats-config.yaml"), "name: real\ncapabilities:\n  layers:\n    tasks:\n      capability: ghost.cap\n      from: installed\n");
+  const failing = cli(["install", "--no-requirements", "--dir", ws], { cwd: ws });
+  assert.equal(failing.status, 1, failing.stdout + failing.stderr);
+  assert.match(failing.stdout, /Failures by scope/);
+  assert.match(failing.stdout, /real-member: ghost\.cap — referenced by capabilities\.layers\.tasks but supplied by no visible locked package/);
+  assert.doesNotMatch(failing.stdout, /config-templates|profiles\/reference/, "only the genuine scope may be named");
 });
 
 test("bare oats install: non-team scope keeps current-chain behavior and never scans downward", () => {
