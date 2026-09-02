@@ -366,6 +366,88 @@ test("doctor reports a malformed v1 lock at a CONFIGLESS scope — human and JSO
   rmSync(base, { recursive: true, force: true });
 });
 
+// ---------- the orphan check reads BOTH lock shapes ----------
+
+test("doctor's orphan check consults the v2 capabilities map: a locked artifact is not an orphan, an unlocked one still is", () => {
+  const base = temp();
+  const src = fixture(base);
+  const s = scope(base);
+  assert.equal(cli(["install", src, "--dir", s]).status, 0);
+  assert.equal(lockOf(s).lockfileVersion, 2, "the fixture must actually be v2-locked");
+  assert.ok(lockOf(s).capabilities["x.plain"], "and the capability must carry a v2 lock row");
+
+  // The regression: reading only the LEGACY v1 map, doctor called every
+  // correctly materialized v2 capability an orphan and told the operator to
+  // reacquire artifacts that were already exactly locked.
+  const clean = cli(["doctor", s], { cwd: s });
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.doesNotMatch(clean.stdout, /has no lock entry/, "a v2-locked artifact was reported as an orphan");
+
+  // A GENUINE orphan in the same scope still warns, and names only itself.
+  write(join(artifact(s, "x.stray"), "oats.json"), JSON.stringify({ capability: "x.stray", version: "1.0.0", description: "cap" }));
+  const dirty = cli(["doctor", s], { cwd: s });
+  assert.equal(dirty.status, 0, dirty.stderr);
+  assert.match(dirty.stdout, /WARNING: x\.stray at .* is in installed\/ but has no lock entry — reacquire it or move it to owned\//);
+  assert.doesNotMatch(dirty.stdout, /WARNING: x\.plain at .* has no lock entry/, "the locked capability is still not an orphan");
+  rmSync(base, { recursive: true, force: true });
+});
+
+test("a legacy v1 capability lock still answers the orphan check for its own artifact", () => {
+  const base = temp();
+  const s = scope(base);
+  // An unconverted 0.18 scope: the artifact sits in the same flat installed/
+  // store, and only the v1 map locks it.
+  write(join(artifact(s, "x.legacy"), "oats.json"), JSON.stringify({ capability: "x.legacy", version: "1.0.0", description: "cap" }));
+  write(join(s, OATS_LOCK_FILE), JSON.stringify({
+    lockfileVersion: 1,
+    capabilities: { "x.legacy": { source: `path:${join(base, "src")}`, version: "1.0.0", commit: "local", integrity: `sha256-${"0".repeat(64)}`, trustedExecutables: false } },
+  }, null, 2));
+
+  const r = cli(["doctor", s], { cwd: s });
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /has no lock entry/, "the v1 lock stopped answering for its artifact");
+  rmSync(base, { recursive: true, force: true });
+});
+
+test("the v2 orphan check is SCOPE-EXACT: an outer scope's lock does not answer for an unlocked inner copy", () => {
+  const base = temp();
+  const src = fixture(base);
+  const outer = scope(base, "outer");
+  assert.equal(cli(["install", src, "--dir", outer]).status, 0);
+  assert.ok(lockOf(outer).capabilities["x.plain"], "the outer scope must really be v2-locked");
+
+  // An inner config scope holds its OWN unlocked copy of the same id. It wins
+  // discovery precedence (inner beats outer) and is what actually activates,
+  // so the outer scope's lock says nothing about it.
+  const inner = join(outer, "inner");
+  write(join(inner, "oats-config.yaml"), "name: inner\n");
+  write(join(artifact(inner, "x.plain"), "oats.json"), JSON.stringify({ capability: "x.plain", version: "9.9.9", description: "cap" }));
+
+  const r = cli(["doctor", inner], { cwd: inner });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /WARNING: x\.plain at .*inner.* is in installed\/ but has no lock entry/);
+  rmSync(base, { recursive: true, force: true });
+});
+
+test("a lock-only ancestor never answers the orphan check for a config scope below it", () => {
+  const base = temp();
+  // A lock file with NO oats-config.yaml beside it: `readPackageLocks` walks it
+  // (lock levels are not config levels), so the merged chain would have
+  // silenced the orphan below — a strict widening over the legacy behaviour.
+  write(join(base, OATS_LOCK_FILE), JSON.stringify({
+    lockfileVersion: 2,
+    packages: { "x.p": { source: `path:${join(base, "src")}`, path: ".", version: "1.0.0", commit: "local", integrity: `sha256-${"a".repeat(64)}`, dependencies: [] } },
+    capabilities: { "x.plain": { version: "1.0.0", package: "x.p", path: "capabilities/plain", integrity: `sha256-${"b".repeat(64)}`, trusted: false } },
+  }, null, 2));
+  const s = scope(base);
+  write(join(artifact(s, "x.plain"), "oats.json"), JSON.stringify({ capability: "x.plain", version: "1.0.0", description: "cap" }));
+
+  const r = cli(["doctor", s], { cwd: s });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /WARNING: x\.plain at .* is in installed\/ but has no lock entry/);
+  rmSync(base, { recursive: true, force: true });
+});
+
 // ---------- canonical dispatch ----------
 
 test("a capability command runs through the CLI that dispatched it: a hostile PATH cannot intercept it", () => {

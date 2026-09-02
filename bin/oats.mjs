@@ -219,7 +219,17 @@ function doctorPackagesData(ctx, chain, { teamScope } = {}) {
   }
   const packages = [];
   for (const p of installedPkgs) {
-    const lock = pkgLocks.packages[p.package];
+    // SCOPE-EXACT, like `oats list` and `oats trust` above: `p` was derived from
+    // the lock AT `p.level`, and its artifacts live under that scope, so only
+    // that scope's rows can judge them. The MERGED maps resolve each identity
+    // closest-scope-first — right for "which capability is active here", wrong
+    // here — so a chain holding one package id at two scopes (a direct
+    // acquisition outside, the same id pulled in by a dependency closure
+    // inside, each with its own source spelling) would compare an outer
+    // artifact's provenance against the inner row it was never projected from
+    // and report a self-consistent pair as invalid-lock.
+    const rows = levelRows(pkgLocks, p.level);
+    const lock = Object.hasOwn(rows.packages, p.package) ? { ...rows.packages[p.package], _file: join(p.level, OATS_LOCK_FILE), _level: p.level } : undefined;
     const problems = [];
     if (!lock) problems.push({ code: "invalid-lock", detail: "installed but not locked — reacquire it" });
     else {
@@ -228,7 +238,7 @@ function doctorPackagesData(ctx, chain, { teamScope } = {}) {
       // artifacts. So every health check is per capability, against the artifact
       // integrity the engine recorded for it.
       for (const c of p.capabilities) {
-        const h = capabilityHealth(p.level, c, pkgLocks.capabilities[c.id], lock);
+        const h = capabilityHealth(p.level, c, Object.hasOwn(rows.capabilities, c.id) ? rows.capabilities[c.id] : undefined, lock);
         if (h.status !== "ok") problems.push({ code: h.code, detail: h.detail });
       }
     }
@@ -436,7 +446,15 @@ function doctor(dir) {
     if (!mans[id]) console.log(`  WARNING: ${id} is locked in ${shortPath(lock._file)} but not acquired — run \`oats install\``);
   }
   for (const [id, m] of Object.entries(mans)) {
-    if (String(m._origin).startsWith("installed:") && !locks[id]) console.log(`  WARNING: ${id} at ${shortPath(m._dir)} is in installed/ but has no lock entry — reacquire it or move it to owned/`);
+    if (!String(m._origin).startsWith("installed:")) continue;
+    // SCOPE-EXACT on the v2 side. `m._capabilityLock` is the row from the
+    // artifact's OWN scope's lock (capabilityManifests annotates it there), and
+    // that is the only row that can lock this artifact: the merged chain would
+    // let an outer scope's lock — or a lock-only ancestor with no config at all
+    // — silence an unlocked inner copy that WINS discovery precedence and
+    // activates. The legacy arm stays chain-merged: v1 parity is unchanged.
+    if (m._capabilityLock || Object.hasOwn(locks, id)) continue;
+    console.log(`  WARNING: ${id} at ${shortPath(m._dir)} is in installed/ but has no lock entry — reacquire it or move it to owned/`);
   }
   if (existsSync(LEGACY_HOME_CAPABILITIES_DIR)) console.log(`  WARNING: legacy ~/.oats/capabilities exists and is no longer discovered — reinstall its packages at a config scope and remove it`);
 
