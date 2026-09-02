@@ -354,12 +354,24 @@ function readContainedYaml(packageDir, file) {
   try { return parseYamlFlat(readFileSync(file, "utf8")); } catch { return undefined; }
 }
 
-/** Kernel-compatible standalone capability digest (excludes VCS + lock). */
-function capabilityIntegrity(dir) {
+/** Byte-for-byte digest of one directory tree.
+ *
+ * `exclude` is what separates the TWO kernel digests this reader must be able to
+ * reproduce, because a lock row's shape says which one pinned it:
+ *   - legacy v1 capability rows pin the standalone-capability digest, which
+ *     excludes the ARTIFACT-ROOT lock file and nothing else;
+ *   - revised-v2 capability rows pin the MATERIALIZED ARTIFACT digest, with no
+ *     exclusions at all — capability source, the materialized runtime closure
+ *     and the generated provenance file all count, which is precisely what makes
+ *     post-approval tampering with any of them invalidate trust.
+ * Reproducing only the first is why every real v2-locked provider read as
+ * drifted. `exclude` receives the entry AND the directory being walked, because
+ * "the root lock file" is a position, not a name. */
+function treeDigest(dir, exclude = () => false) {
   const hash = createHash("sha256");
   const walk = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      if (e.name === ".git" || e.name === "oats-lock.json") continue;
+      if (exclude(e, d)) continue;
       const p = join(d, e.name);
       if (e.isDirectory()) walk(p);
       else if (e.isFile()) { hash.update(relative(dir, p)); hash.update("\0file\0"); hash.update(readFileSync(p)); hash.update("\0"); }
@@ -368,45 +380,198 @@ function capabilityIntegrity(dir) {
   };
   try { walk(dir); return `sha256-${hash.digest("hex")}`; } catch { return undefined; }
 }
+/** Kernel-compatible standalone capability digest: excludes exactly the
+ * generated lock file at the ARTIFACT ROOT, nothing else.
+ *
+ * `.git` is NOT an exclusion, at any depth. Acquisition strips root VCS
+ * metadata before locking, so a `.git` appearing afterwards is inserted payload
+ * and must change the digest — excluded-but-present bytes are mutable,
+ * approval-invisible input. A nested `oats-lock.json` is ordinary payload for
+ * the same reason. Excluding either by NAME at every depth (as this reader once
+ * did) let a planted `.git` payload or a nested lock read as trusted in the
+ * desktop while the kernel reported drift. */
+const capabilityIntegrity = (dir) => treeDigest(dir, (e, d) => d === dir && e.name === "oats-lock.json");
+/** Kernel-compatible MATERIALIZED capability artifact digest (no exclusions). */
+const capabilityArtifactIntegrity = (dir) => treeDigest(dir);
 
-/** Strict, read-only lock validation. Any invalidity discards the ENTIRE file;
- * the Desktop degrades to invisible but never partially salvages trust data. */
+const LOCK_ID_RE = /^[a-z0-9][a-z0-9._-]*$/;
+const LOCK_SHA256_RE = /^sha256-[0-9a-f]{64}$/;
+/** Revised-v2 package rows lock the TRANSPORT unit only. `capabilities`,
+ * `trustedCapabilities` and `depsIntegrity` are absent from this set on
+ * purpose: their presence is the superseded TRANSITIONAL package-store shape,
+ * which the kernel rejects wholesale, so the unknown-key check below discards
+ * such a document rather than half-reading it. */
+const LOCK_PACKAGE_KEYS = new Set(["source", "path", "version", "commit", "integrity", "dependencies"]);
+/** Revised-v2 capability rows lock the MATERIALIZED entity. */
+const LOCK_CAPABILITY_KEYS = new Set(["version", "package", "path", "integrity", "trusted"]);
+
+/** The kernel's canonical package-path form, as a read-only PREDICATE.
+ *
+ * A lock is never normalized or repaired on read, so the stored spelling must
+ * already BE canonical: `normalizePackagePath(path) === path`. That single test
+ * is what rejects the non-canonical spellings ("sub/", "./sub", ""), and it is
+ * also what rejects an escaping "../x" or an absolute "/etc" — the shapes that
+ * decide which directory an artifact is read from. Mirrors
+ * `normalizePackagePath` exactly, minus the typed errors it raises. */
+function canonicalPackagePath(raw) {
+  if (typeof raw !== "string") return undefined;
+  const s = raw.trim();
+  if (s.includes("\0") || s.startsWith("~") || s.includes("\\")) return undefined;
+  if (/^[A-Za-z]:[/\\]/.test(s) || isAbsolute(s)) return undefined;
+  const segments = s.split("/").filter((seg) => seg !== "" && seg !== ".");
+  if (segments.includes("..")) return undefined;
+  return segments.length ? segments.join("/") : ".";
+}
+const lockPathIsCanonical = (p) => typeof p === "string" && canonicalPackagePath(p) === p;
+
+/** The kernel's `parseLockSource` grammar, as a read-only classifier: returns
+ * "path" | "catalog" | "git", or undefined for anything the kernel would refuse.
+ *
+ * Strictness is the point. A lock source is not decoration — the kernel turns it
+ * back into a source spec on update, so a payload that merely "starts with
+ * catalog:" but is not a valid catalog id gets RECLASSIFIED downstream. Checking
+ * only the commit shape (as this reader did) accepted `gopher://evil` and a
+ * bodiless `path:`, which the kernel calls invalid-lock. A lock also never
+ * carries a `#<path>` fragment: the selected root is the row's own `path`. */
+function lockSourceKind(src) {
+  const s = String(src || "");
+  if (s.includes("#")) return undefined;
+  if (s.startsWith("path:")) {
+    const p = s.slice(5);
+    // The writer always resolves a local source to an absolute directory.
+    return p && isAbsolute(p) ? "path" : undefined;
+  }
+  if (s.startsWith("catalog:")) {
+    // Split at the FIRST "@": the catalog id grammar cannot contain one, so
+    // everything after it is the selector (`oats.okf@release@candidate` is one
+    // id and one ref, not the id `oats.okf@release`).
+    const body = s.slice(8);
+    const at = body.indexOf("@");
+    const id = at > 0 ? body.slice(0, at) : body;
+    if (!LOCK_ID_RE.test(id)) return undefined;
+    if (at > 0 && !body.slice(at + 1)) return undefined;
+    return "catalog";
+  }
+  if (s.startsWith("git:")) {
+    const body = s.slice(4);
+    const at = body.lastIndexOf("@") > body.lastIndexOf("/") ? body.lastIndexOf("@") : -1;
+    const url = at > 0 ? body.slice(0, at) : body;
+    if (!url) return undefined;
+    if (at > 0 && !body.slice(at + 1)) return undefined;
+    if (!/^(https?:\/\/|file:\/\/|git@|ssh:\/\/|git:\/\/)/.test(url)) return undefined;
+    return "git";
+  }
+  return undefined;
+}
+
+/** Strict, read-only lock validation for BOTH supported shapes. Any invalidity
+ * discards the ENTIRE file; the Desktop degrades to invisible but never
+ * partially salvages trust data.
+ *
+ * Returns a null-prototype map of capability id → a REBUILT row
+ * `{ shape, integrity }` — the two things this read-only reader acts on. Rebuilt
+ * and narrowed, never spread: a lock is artifact data, `shape` decides which
+ * digest answers for the artifact and `integrity` is the value trust compares
+ * against, so neither may be something the document chose to put there. The
+ * executable-approval flags are still VALIDATED above (a malformed one discards
+ * the file) and then deliberately dropped: the desktop never runs anything, so
+ * carrying a trust flag it cannot act on would be trust data with no consumer.
+ *
+ * v1 and v2 are read as ALTERNATIVES, not as one shape with extras — the
+ * previous reader required the v1 row fields of every capability row and then
+ * additionally demanded transitional-shaped package rows, so a correct revised-v2
+ * lock (capability rows `{version, package, path, integrity, trusted}`; package
+ * rows carrying no capability or trust lists) failed both halves and the whole
+ * file was discarded. On every real v2 scope that made the deployment's
+ * capability agents invisible.
+ *
+ * The BAR is the kernel's own `validateLockEntry` / `validateCapabilityLockEntry`:
+ * a document those refuse with invalid-lock must be discarded here too, or the
+ * app shows a provider as trusted that the kernel will not serve. That parity
+ * is why the path spelling, the source grammar and dependency uniqueness are
+ * all checked here and not only the field types — each of them decides
+ * something real: which directory an artifact was taken from, and what the
+ * source string turns back into on update. */
 function validatedLockCapabilities(file) {
   let p;
   try { p = JSON.parse(readFileSync(file, "utf8")); } catch { return undefined; }
-  const map = (v) => v && typeof v === "object" && !Array.isArray(v);
+  const map = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+  const str = (v) => typeof v === "string" && !!v;
   if (!map(p)) return undefined;
   if (p.lockfileVersion !== undefined && (typeof p.lockfileVersion !== "number" || ![1, 2].includes(p.lockfileVersion))) return undefined;
+  const version = p.lockfileVersion ?? 1;
   const capabilities = p.capabilities === undefined ? {} : p.capabilities;
   if (!map(capabilities)) return undefined;
-  for (const [id, e] of Object.entries(capabilities)) {
-    if (!/^[a-z0-9][a-z0-9._-]*$/.test(id) || !map(e)) return undefined;
-    if (typeof e.source !== "string" || !e.source || typeof e.version !== "string" || !e.version || typeof e.integrity !== "string" || !/^sha256-[0-9a-f]{64}$/.test(e.integrity)) return undefined;
-    if (e.commit !== undefined && typeof e.commit !== "string") return undefined;
-    if (e.trustedExecutables !== undefined && typeof e.trustedExecutables !== "boolean") return undefined;
-  }
-  if ((p.lockfileVersion ?? 1) === 2) {
-    if (!map(p.packages)) return undefined;
-    const allowed = new Set(["source", "version", "commit", "integrity", "depsIntegrity", "capabilities", "dependencies", "trustedCapabilities"]);
-    for (const [id, e] of Object.entries(p.packages)) {
-      if (!/^[a-z0-9][a-z0-9._-]*$/.test(id) || !map(e) || Object.keys(e).some((k) => !allowed.has(k))) return undefined;
-      if (["source", "version", "commit", "integrity"].some((k) => typeof e[k] !== "string" || !e[k])) return undefined;
-      if (!/^sha256-[0-9a-f]{64}$/.test(e.integrity) || (e.depsIntegrity !== undefined && (typeof e.depsIntegrity !== "string" || !/^sha256-[0-9a-f]{64}$/.test(e.depsIntegrity)))) return undefined;
-      for (const k of ["capabilities", "dependencies", "trustedCapabilities"]) if (!Array.isArray(e[k]) || e[k].some((x) => typeof x !== "string")) return undefined;
-      if (e.trustedCapabilities.some((x) => !e.capabilities.includes(x)) || e.dependencies.some((x) => !Object.hasOwn(p.packages, x))) return undefined;
-      if (e.source.startsWith("path:") ? e.commit !== "local" : !/^[0-9a-f]{40}$/.test(e.commit)) return undefined;
+  // Null-prototype: an id like `constructor` must never be answered by
+  // Object.prototype — `agentProviderTrusted` reads `.integrity` off whatever
+  // this map returns.
+  const out = Object.create(null);
+
+  if (version === 1) {
+    // A v1 document carries no packages map at all.
+    if (p.packages !== undefined) return undefined;
+    for (const [id, e] of Object.entries(capabilities)) {
+      if (!LOCK_ID_RE.test(id) || !map(e)) return undefined;
+      if (!str(e.source) || !str(e.version) || !str(e.integrity) || !LOCK_SHA256_RE.test(e.integrity)) return undefined;
+      if (e.commit !== undefined && typeof e.commit !== "string") return undefined;
+      if (e.trustedExecutables !== undefined && typeof e.trustedExecutables !== "boolean") return undefined;
+      out[id] = { shape: 1, integrity: e.integrity };
     }
-    const visiting = new Set(), done = new Set();
-    const visit = (id) => {
-      if (visiting.has(id)) return false;
-      if (done.has(id)) return true;
-      visiting.add(id);
-      for (const d of p.packages[id].dependencies) if (!visit(d)) return false;
-      visiting.delete(id); done.add(id); return true;
-    };
-    for (const id of Object.keys(p.packages)) if (!visit(id)) return undefined;
+    return out;
   }
-  return capabilities;
+
+  // Revised v2: a packages map is required (an empty one is the canonical empty
+  // lock), package rows lock transport, capability rows lock the artifact.
+  if (!map(p.packages)) return undefined;
+  const packageIds = Object.keys(p.packages);
+  for (const id of packageIds) {
+    const e = p.packages[id];
+    if (!LOCK_ID_RE.test(id) || !map(e)) return undefined;
+    if (Object.keys(e).some((k) => !LOCK_PACKAGE_KEYS.has(k))) return undefined;
+    if (["source", "path", "version", "commit", "integrity"].some((k) => !str(e[k]))) return undefined;
+    if (!LOCK_SHA256_RE.test(e.integrity)) return undefined;
+    // The selected package root is stored in CANONICAL form only — "sub/",
+    // "./sub" and "" are invalid spellings, not shorthand, and the same test
+    // rejects an escaping "../x" or an absolute "/etc".
+    if (!lockPathIsCanonical(e.path)) return undefined;
+    if (!Array.isArray(e.dependencies) || e.dependencies.some((d) => !str(d) || !LOCK_ID_RE.test(d))) return undefined;
+    // `dependencies` is a SET: a repeated id is a malformed row, not a hint.
+    if (new Set(e.dependencies).size !== e.dependencies.length) return undefined;
+    // The source must parse against the exact grammar the writer produces —
+    // checking only the commit shape accepted `gopher://evil` and a bodiless
+    // `path:`, both of which the kernel calls invalid-lock.
+    const kind = lockSourceKind(e.source);
+    if (!kind) return undefined;
+    // Local acquisition is exact-directory: the source names the package root.
+    if (kind === "path" ? (e.commit !== "local" || e.path !== ".") : !/^[0-9a-f]{40}$/.test(e.commit)) return undefined;
+    if (e.dependencies.some((d) => d === id || !Object.hasOwn(p.packages, d))) return undefined;
+  }
+  const visiting = new Set(), done = new Set();
+  const visit = (id) => {
+    if (visiting.has(id)) return false;
+    if (done.has(id)) return true;
+    visiting.add(id);
+    for (const d of p.packages[id].dependencies) if (!visit(d)) return false;
+    visiting.delete(id); done.add(id); return true;
+  };
+  for (const id of packageIds) if (!visit(id)) return undefined;
+
+  for (const [id, e] of Object.entries(capabilities)) {
+    if (!LOCK_ID_RE.test(id) || !map(e)) return undefined;
+    if (Object.keys(e).some((k) => !LOCK_CAPABILITY_KEYS.has(k))) return undefined;
+    if (["version", "package", "path", "integrity"].some((k) => !str(e[k]))) return undefined;
+    // The `package` back-reference is the single provider truth: a dangling one
+    // leaves a materialized artifact with no provenance behind it.
+    if (!LOCK_ID_RE.test(e.package) || !Object.hasOwn(p.packages, e.package)) return undefined;
+    // Canonical form here too: this path is where inside the provider package
+    // the materialized artifact came from, so a non-canonical, escaping or
+    // absolute spelling is a lock the kernel refuses outright.
+    if (!lockPathIsCanonical(e.path)) return undefined;
+    if (!LOCK_SHA256_RE.test(e.integrity)) return undefined;
+    if (typeof e.trusted !== "boolean") return undefined;
+    out[id] = { shape: 2, integrity: e.integrity };
+  }
+  return out;
 }
 
 /** Read-only, fail-quiet strict lock merge (closest scope wins). */
@@ -430,9 +595,12 @@ function agentProviderTrusted(manifest, startDir) {
   if (manifest?._origin === "owned") return true;
   const lock = capabilityLocks(startDir)[manifest?.capability];
   if (!lock) return false;
+  // The DIGEST FOLLOWS THE LOCK SHAPE — a v2 capability row pins every byte of
+  // the materialized artifact, a v1 row pins the standalone-capability digest.
   // An unreadable tree digests to undefined; it must not compare equal to a
-  // missing locked integrity.
-  const integrity = capabilityIntegrity(manifest._dir);
+  // missing locked integrity (which is what a prototype-answered lookup would
+  // hand back).
+  const integrity = lock.shape === 2 ? capabilityArtifactIntegrity(manifest._dir) : capabilityIntegrity(manifest._dir);
   return !!integrity && integrity === lock.integrity;
 }
 
