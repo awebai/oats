@@ -753,6 +753,20 @@ Stable `error.code` values (also the `--json` envelope codes):
 | `unknown-config-template` | the package has no config template by that name |
 | `remove-blocked` | removal target is still referenced by config or by a dependent locked package (provenance: the blockers) |
 | `official-mapping-unavailable` | guided official migration cannot map a legacy official capability yet; the scope was left unchanged |
+| `unsafe-config-key` | a YAML document uses `__proto__` as a mapping key, or a command was asked to write one (`--settings __proto__=x`, `--soul __proto__`) — refused on both sides, because assigning it rewrites the parsed object's prototype instead of becoming data, leaving the entry invisible to every key validator. The reader names the mapping key; whoever holds the path re-raises it naming the file, and the CLI renders it as an ordinary typed failure (one `oats:` line, or one `--json` envelope) — never an uncaught stack |
+| `E_NO_CONFIG` | the command needs an `oats-config.yaml` it cannot find. TWO emitters, with different conditions and different remedies — stated separately below, because no single sentence is true of both |
+
+`E_NO_CONFIG` is shared by two commands that ask different questions. Both are
+diagnosis only: neither writes anything.
+
+| emitter | condition | remedy named |
+|---|---|---|
+| `oats use <capability>` | the capability IS present in this scope's own `installed/`/`owned/` store, **and** there is no `oats-config.yaml` at this scope or at any level above it — the chain is empty, so the chain walk never opens this scope's store and the capability would otherwise be reported as never acquired | `oats init --raw --dir <scope>` — offline, deterministic, writes only the minimal config — then the same `oats use` again |
+| `oats config <diff\|sync\|adopt>` | there is no `oats-config.yaml` **at this exact directory**, whatever the chain above it holds: the three-way template lane compares THIS scope's file against its recorded adopted base, so an outer scope's config is not a substitute and the chain is not consulted | `oats init --package <source> --config <name>` — the adopting form, because this lane needs a config that carries a recorded template base |
+
+Neither is `E_NO_ADOPTED_BASE`, the next check in the same lane: there the file
+exists but was not adopted from a config template, so no recorded base exists to
+compare against (remedy: `oats config adopt <package> --config <name>`).
 
 Fail-closed enforcement points: `parseLockFileStrict`, `readPackageLocks` and
 `listInstalledPackages` RAISE — consumers never see an invalid lock as absent or

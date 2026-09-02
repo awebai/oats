@@ -28,7 +28,7 @@ import {
   officialCapabilityPackage, officialPackageCatalog,
   approveCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
-  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, packagedInject, teamAgentRoots,
+  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigKey, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, retireInstance, upsertLocalAgent, defaultRepo, RELATIONS,
@@ -580,7 +580,7 @@ function replaceCapabilitiesBlock(text, caps) {
 /** Load the parsed capabilities model of a config file ({layers:{}, additive:{}}). */
 function readCapabilitiesModel(file) {
   if (!existsSync(file)) return { layers: {}, additive: {} };
-  const cfg = parseYamlNested(readFileSync(file, "utf8"));
+  const cfg = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8")));
   const caps = cfg.capabilities || {};
   return { layers: { ...(caps.layers || {}) }, additive: { ...(caps.additive || {}) } };
 }
@@ -604,7 +604,25 @@ function use() {
     return;
   }
   const manifest = capabilityManifest(requested, dir);
-  if (!manifest) die(`unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
+  if (!manifest) {
+    // A scope with NO oats-config.yaml anywhere in its chain is not a config
+    // level, so `capabilityManifests` — which walks the chain — never opens this
+    // scope's installed store: a capability acquired and locked right here would
+    // otherwise be reported as never acquired. Diagnose the missing chain
+    // instead. `oats use` still writes nothing: authoring an adopter's first
+    // config is `oats init`'s job, and guessing it here would be policy.
+    if (!configChain(dir).length && ownScopeCapabilityManifest(dir, requested)) {
+      // The remedy is `--raw` on purpose: it is offline, deterministic, and
+      // writes only the minimal config this scope is missing. It never names
+      // `--package <pkg>` — that arm read the provider out of the MERGED lock
+      // chain while this gate reads own-scope only, and it dead-ends whenever
+      // the provider exports no config template. Both scope mentions use the
+      // same rendering, so the printed command is copyable verbatim.
+      cmdFail("E_NO_CONFIG", `capability "${requested}" is present in the capability store at ${shellQuote(dir)}, but there is no oats-config.yaml at this scope or any level above it — \`oats use\` activates into a config file and this scope has none. Create the minimal one with \`oats init --raw --dir ${shellQuote(dir)}\`, then re-run \`oats use ${requested}\`.`);
+      return;
+    }
+    die(`unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
+  }
   if (layer && manifest.layer !== layer) die(`capability "${manifest.capability}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
   const targets = [["agent-types", flag("type")], ["souls", flag("soul")]].filter(([, value]) => value);
   if (args.includes("--global")) targets.push(["global", undefined]);
@@ -639,7 +657,11 @@ function use() {
     for (const kv of settingsArgs) {
       const eq = kv.indexOf("=");
       if (eq <= 0) die(`--settings expects key=value, got "${kv}"`);
-      entry.settings[kv.slice(0, eq)] = kv.slice(eq + 1);
+      // WRITE side of the same refusal the readers enforce: `--settings
+      // __proto__=x` assigned through the inherited setter, which swallowed the
+      // entry, and the command then reported success for a setting it never
+      // wrote. Fail closed instead.
+      entry.settings[assertSafeConfigKey(kv.slice(0, eq))] = kv.slice(eq + 1);
     }
   }
   if (targetKind === "global") entry.global = enabled;
@@ -648,7 +670,9 @@ function use() {
     // before narrowing, so adding a soul/type binding doesn't silently drop everyone else.
     if (manifest.layer && entry.global === undefined && !entry["agent-types"] && !entry.souls) entry.global = true;
     entry[targetKind] = entry[targetKind] && typeof entry[targetKind] === "object" ? entry[targetKind] : {};
-    entry[targetKind][targetName] = enabled;
+    // Same write-side refusal: `--soul __proto__` / `--type __proto__` would be
+    // swallowed by the inherited setter and reported as activated.
+    entry[targetKind][assertSafeConfigKey(targetName)] = enabled;
   }
   writeFileSync(file, replaceCapabilitiesBlock(text, caps));
   console.log(`${enabled ? "Activated" : "Excluded"} ${manifest.capability} for ${targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"} ${targetName}`} at ${level} level (${shortPath(file)})`);
@@ -918,7 +942,7 @@ function reconcile(dir) {
 
 function reconcileInner(dir) {
   const cfgFile = join(dir, "oats-config.yaml");
-  const declaresTeamHere = existsSync(cfgFile) && !!parseYamlNested(readFileSync(cfgFile, "utf8")).team;
+  const declaresTeamHere = existsSync(cfgFile) && !!withConfigFile(cfgFile, () => parseYamlNested(readFileSync(cfgFile, "utf8"))).team;
   const recursive = args.includes("--recursive");
   if (!declaresTeamHere && !recursive) {
     // Current-chain behavior, plus the requirements gate for this chain's active capabilities.
@@ -2269,7 +2293,12 @@ function init() {
   // Own-scope manifests are read DIRECTLY: no oats-config.yaml exists here yet,
   // so the config-chain walk cannot see this scope's own store, and a
   // capability already installed here would look unknown.
-  const mans = { ...market, ...capabilityManifests(dir), ...ownScopeCapabilityManifests(dir) };
+  // Object.assign onto a null prototype, never an object spread: `{ ...map }`
+  // re-plainifies the null-prototype sources, and `mans[v]` is then indexed with
+  // a `--<layer>` value the operator typed — `--knowledge constructor` would
+  // read Object.prototype.constructor as a manifest and report a layer mismatch
+  // for a capability that does not exist.
+  const mans = Object.assign(Object.create(null), market, capabilityManifests(dir), ownScopeCapabilityManifests(dir));
   for (const layer of LAYERS) {
     const v = flag(layer);
     if (v === undefined) continue;
@@ -2482,7 +2511,11 @@ function acquireLayerCapability(dir, capId, layer, acquired, note) {
  * directly instead, which is also what makes a same-run acquisition visible to
  * the rest of the run. */
 function ownScopeCapabilityManifests(dir) {
-  const out = {};
+  // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
+  // braces on the write side (store directory names are identity-validated at
+  // acquisition); it matters on the read side, where `oats init` indexes this
+  // map with a `--<layer>` flag value the operator typed.
+  const out = Object.create(null);
   for (const [sub, origin] of [[installedCapabilitiesDir(dir), "installed"], [ownedCapabilitiesDir(dir), "owned"]]) {
     if (!existsSync(sub)) continue;
     let entries;
@@ -2637,7 +2670,14 @@ function spawnCmd() {
       work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), model: flag("model"), branch: flag("branch"),
       launch: !args.includes("--no-launch"),
     });
-  } catch (e) { bail(e.code === "E_RELATIVE_AMBIGUOUS" ? "E_RELATIVE_AMBIGUOUS" : "E_SPAWN_FAILED", e.message || e); throw e; }
+  } catch (e) {
+    // A typed CLI failure keeps ITS OWN code: re-badging an unsafe-config-key
+    // (raised by the readers spawn walks) as E_SPAWN_FAILED tells an agent
+    // consumer the spawn mechanism broke, when the fixable fact is a poisoned
+    // document the message already names. The shared boundary renders it.
+    if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
+    bail(e.code === "E_RELATIVE_AMBIGUOUS" ? "E_RELATIVE_AMBIGUOUS" : "E_SPAWN_FAILED", e.message || e); throw e;
+  }
   if (JSON_MODE) {
     // Desktop CLI API v1 spawn result — a FIXED shape (see docs/desktop-cli-api.md).
     jsonOk({
@@ -2755,7 +2795,11 @@ function capabilityCommand() {
     let teamCtx;
     const instanceHome = process.env.PI_AGENT_HOME || process.env.OATS_HOME;
     const metaFile = instanceHome && join(instanceHome, "instance.json");
-    let capSettings = {};
+    // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
+    // braces: the ids come from instance.json, which spawn wrote from resolved
+    // manifests. Null-prototype because the dispatcher indexes it with the
+    // namespace the operator typed on the command line.
+    let capSettings = Object.create(null);
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
@@ -2833,8 +2877,11 @@ function typeCmd() {
   if (!/^[a-z][a-z0-9-]*$/.test(name)) die(`agent type "${name}" must be lowercase alphanumeric/hyphens`);
   const description = flag("description");
   let text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${basename(dir)}\n`;
-  const cfg = existsSync(file) ? parseYamlNested(text) : {};
-  if (cfg["agent-types"]?.[name]) die(`agent type "${name}" already declared in ${shortPath(file)}`);
+  const cfg = existsSync(file) ? withConfigFile(file, () => parseYamlNested(text)) : {};
+  // Own-property: `constructor` is a legal agent-type name, and a plain lookup
+  // would report it as already declared in a config that never mentions it.
+  const declaredTypes = cfg["agent-types"];
+  if (declaredTypes && typeof declaredTypes === "object" && Object.hasOwn(declaredTypes, name)) die(`agent type "${name}" already declared in ${shortPath(file)}`);
   const block = [`  ${name}:`, ...(description ? [`    description: ${description}`] : [])];
   const lines = text.replace(/\n*$/, "\n").split("\n");
   // Drop the scaffold comment block once a real agent-types block exists.
@@ -2994,6 +3041,20 @@ async function experimentalCmd() {
 }
 
 // ---------- main ----------
+// Typed config-shape failures are DEPLOYMENT state the operator can fix, not
+// kernel bugs: an unsafe mapping key anywhere in the visible config chain is
+// raised by the readers, which every command walks before it can do anything.
+// Without this boundary `oats doctor`, `oats use` and every --json mode printed a
+// raw Node stack with empty stdout — no code, no envelope, nothing to act on.
+// Deliberately narrow: only codes with a defined rendering are caught here;
+// anything else still crashes loudly.
+//
+// The dispatch chain below is deliberately NOT re-indented into this try block:
+// keeping it at column 0 makes the whole command table one reviewable diff of
+// added lines rather than ~150 lines of pure whitespace churn, and keeps `git
+// blame` pointing at the commit that last changed each command.
+const TYPED_CLI_FAILURES = new Set(["unsafe-config-key"]);
+try {
 if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -3013,7 +3074,9 @@ else if (cmd === "init") init();
 else if (cmd === "status") status();
 else if (cmd === "pane") await paneCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
-else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
+// Same rule as the inner catch: a typed CLI failure surfaces with its own code
+// through the shared boundary, never re-badged as a spawn-mechanism failure.
+else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "create") createCmd();
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
@@ -3159,4 +3222,12 @@ The turn record (core — every conversation captured, searchable, replicated):
 
 Layers: ${LAYERS.join(", ")}. Level detection: ~ → laptop, .git → repo, else workspace.`);
   process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
+}
+} catch (e) {
+  if (!TYPED_CLI_FAILURES.has(e?.code)) throw e;
+  // Same two renderings as every other typed failure: one envelope on stdout in
+  // --json mode, one `oats: <message>` line on stderr otherwise. The message
+  // already names the offending file — the readers re-raise it with one.
+  if (JSON_MODE) jsonFail(e.code, e.message);
+  die(e.message);
 }

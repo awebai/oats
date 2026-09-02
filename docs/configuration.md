@@ -319,6 +319,15 @@ everything else under `capabilities.additive`, regenerating the conventional
 injection comments; custom comments inside the `capabilities:` block are not
 preserved.
 
+`oats use` activates **into a config file**, so it needs one at this scope or an
+outer one. In a scope with no `oats-config.yaml` anywhere in its chain, a
+capability already present in that scope's own `installed/` or `owned/` store
+fails with `E_NO_CONFIG` naming the initialization to run first — exactly
+`oats init --raw --dir <scope>`, which is offline, deterministic and writes only
+the minimal config — and then the same `oats use` command again. It never
+reports the capability as unacquired, and it writes nothing: authoring a
+scope's first config is `oats init`'s job.
+
 ### Templates
 
 `oats init --template <name|path|git-url>` seeds the new config from a template
