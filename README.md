@@ -323,6 +323,7 @@ forms. Do not hand-edit the lock or installed stores.
 - [OATS Desktop](docs/desktop.md)
 - [Migration from OAS](docs/migration-from-oas.md)
 - [Release notes](docs/release-notes/)
+- [Architecture proposal, 2026-09-03](docs/2026-09-03-architecture-proposal.md): components, contracts, and what may be replaced (proposal, not shipped behavior)
 
 ## Contributing
 
