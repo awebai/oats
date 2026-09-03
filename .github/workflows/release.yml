@@ -314,6 +314,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json packages/pi/package.json packages/desktop/package.json packages/desktop/package-lock.json
+          # A release cut from a main that was already aligned to the tag's
+          # version (the v0.22.0 case) has nothing to bump; that is a finished
+          # release, not a failure.
+          if git diff --cached --quiet; then
+            echo "manifests already at ${GITHUB_REF_NAME#v} on the tagged commit — no bump PR needed"
+            exit 0
+          fi
           git commit -m "release: ${GITHUB_REF_NAME} [skip ci]"
           BRANCH="release-bump/${GITHUB_REF_NAME}"
           # Fully-qualify the destination ref: the publish job checks out the
