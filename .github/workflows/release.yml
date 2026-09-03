@@ -8,7 +8,7 @@ name: Release
 # Binding ordering (desktop-dist contract):
 #   1. checkout the EXACT tag SHA (never a branch ref);
 #   2. derive X.Y.Z from the tag into root, packages/pi, and packages/desktop
-#      manifests/locks (`npm version --no-git-tag-version`);
+#      manifests/locks (`npm version --no-git-tag-version --allow-same-version`);
 #   3. run ALL build/test/smoke steps — kernel tests, pack checks, tarball
 #      clean-room smoke, Desktop build + artifact inventory — BEFORE any
 #      publication;
@@ -76,9 +76,9 @@ jobs:
 
       - name: Bump all three packages (root, pi, desktop)
         run: |
-          npm version "${{ steps.v.outputs.version }}" --no-git-tag-version
-          (cd packages/pi && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version)
-          (cd packages/desktop && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version)
+          npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version
+          (cd packages/pi && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version)
+          (cd packages/desktop && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version)
 
       - name: Syntax-check all shipped JS
         run: |
@@ -178,7 +178,7 @@ jobs:
 
       - name: Bump desktop to the tag version
         working-directory: packages/desktop
-        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
 
       # macos-14 is arm64. The x64 leg cross-builds on it to avoid the
       # sunset/deprecating macos-13 runner; Rosetta executes the packaged x64
@@ -249,9 +249,9 @@ jobs:
 
       - name: Bump all three packages (root, pi, desktop)
         run: |
-          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version
-          (cd packages/pi && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version)
-          (cd packages/desktop && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version)
+          npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+          (cd packages/pi && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version)
+          (cd packages/desktop && npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version)
 
       - name: Publish @awebai/oats (idempotent — skip if this exact version is live)
         run: |
