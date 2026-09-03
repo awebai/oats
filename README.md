@@ -1,48 +1,134 @@
 # OATS — Open Agent Team Specification
 
-**Build durable specialist agents that compound expertise across sessions, tools, models, and repositories.**
+**Durable specialist agents that compound expertise across sessions, tools, models, and repositories.**
 
-OATS (Open Agent Team Specification, formerly published as OAS) makes agents
-first-class project artifacts.
-Instead of giving every task the same general assistant, a workspace can own a
-backend expert, UI specialist, maintainer, reviewer, package owner, or any other
-role—with a precise curriculum, durable knowledge, and a full provider-native
+[![npm version](https://img.shields.io/npm/v/@awebai/oats.svg)](https://www.npmjs.com/package/@awebai/oats)
+[![Pull Request CI](https://github.com/awebai/oats/actions/workflows/pull-request.yml/badge.svg)](https://github.com/awebai/oats/actions/workflows/pull-request.yml)
+[![Release](https://img.shields.io/github/v/release/awebai/oats?display_name=tag)](https://github.com/awebai/oats/releases)
+[![Node 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+OATS makes agents first-class project artifacts. Instead of giving every task
+the same general assistant, a workspace owns a backend expert, a UI
+specialist, a maintainer, a reviewer, a package owner, or any other role, each
+with a precise curriculum, durable knowledge, and a full provider-native
 session you can enter and steer.
 
-OATS works with both **Pi** and **Claude Code**. A team may mix providers and
-models while sharing the same souls, package/config contracts, instance
-lifecycle, and coordination topology.
+OATS works with **Pi** and **Claude Code**. A team may mix providers and models
+while sharing the same souls, package and config contracts, instance
+lifecycle, and coordination topology. Every conversation an agent has is
+captured into an append-only, searchable **turn record** that outlives models,
+harnesses, and this repository's own designs.
 
-## What is core and what is experimental
+## Contents
 
-This repo carries three layers with different maturity, and the `oats`
-runtime is the single entry point to all of them:
+- [Highlights](#highlights)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [The turn record](#the-turn-record)
+- [Official packages](#official-packages)
+- [OATS Desktop](#oats-desktop)
+- [Maturity](#maturity)
+- [Upgrading and migration](#upgrading-and-migration)
+- [CLI essentials](#cli-essentials)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Releases and versioning](#releases-and-versioning)
+- [Origins and acknowledgements](#origins-and-acknowledgements)
+- [License](#license)
 
-- **The turn record (core)** — `packages/record`. Every conversation an
-  agent has (Claude Code, pi, Codex sessions; aw mail and chat) is
-  captured as signed turns in an append-only, content-addressed,
-  replicated record, searchable with exact provenance. `oats
-  capture|recall|setup`. The normative spec and its conformance vectors
-  live in `packages/record/docs/`. This is the load-bearing layer: the
-  record outlives models, harnesses, and this repo's own designs.
-- **The soul/instance runtime (shipped)** — the CLI you see below:
-  souls, instances, capability packages, team topology. Maintained and
-  in production use.
-- **Experimental synthesis (unproven by design)** — `packages/experimental`,
-  run as `oats experimental <dress|spawn|segments|mind>`. Tools that
-  select lived conversation (segments, outfits) and spawn agents wearing
-  it as native session history. Gated on the continuation-of-self
-  experiments; interfaces and judgments there are rewritable clay. Ships
-  only in this repo checkout, never in the published package — its
-  absence from the tarball is exactly its status.
+## Highlights
 
-## Why OATS
+- **Specialists are project assets.** A soul is reviewed Markdown, YAML,
+  skills, and knowledge that travel with the repository. It can be
+  instantiated many times without losing its identity or accumulated
+  expertise.
+- **Instances are real sessions, not hidden subagent calls.** Each instance is
+  a disposable incarnation with a full Pi or Claude Code session hosted in
+  tmux, an explicit task, its own home, and a repository or workspace view.
+  You can attach to it, steer it, message it, stop it, and inspect exactly
+  what it received.
+- **An exact curriculum, fail closed.** At spawn, OATS resolves the scoped
+  config for the target soul and materializes only the resources selected for
+  that agent. Missing, duplicate, untrusted, incompatible, or escaping
+  resources stop the launch before an incomplete agent starts.
+- **Expertise compounds.** With the official `oats.okf` knowledge package, an
+  instance keeps resumable working state and captures non-obvious lessons. A
+  memory-harvest agent promotes durable knowledge back into the soul, so
+  future instances begin where earlier ones finished.
+- **Hash-locked distribution.** Capabilities ship in Git-acquired packages
+  with exact locks, integrity, dependency closure, and explicit executable
+  trust. Acquisition never implies activation.
+- **Teams stay steerable.** Instances have explicit `child`, `parent`, and
+  `sibling` relationships, can carry cross-machine identities through a
+  messaging layer such as `oats.aweb`, and are visible together in OATS
+  Desktop.
+- **Everything is on the record.** Claude Code, Pi, and Codex sessions, plus
+  aweb mail and chat, are captured as signed turns with exact provenance and
+  searched locally with `oats recall`.
 
-### Specialists are real project assets
+## Quick start
 
-A specialist is stored as a **soul**: reviewed Markdown, YAML, skills, and
-knowledge that travel with its repository. A soul can be instantiated many
-times without losing its identity or accumulated expertise.
+Requires Node.js 22 or newer and tmux.
+
+```bash
+npm install -g @awebai/oats@latest
+pi install npm:@awebai/oats-pi@latest   # only if you run agents in Pi
+```
+
+Initialize a workspace and check it:
+
+```bash
+cd my-workspace
+oats init
+oats doctor
+```
+
+Create a specialist and put it to work:
+
+```bash
+oats create backend-expert --type developers --repo . --work worktree
+oats spawn backend-expert --purpose implement --task "Add rate limiting to the public API"
+oats status --team
+oats retire <instance>
+```
+
+Or adopt a complete reference configuration from an official package:
+
+```bash
+oats init --package oats.dev --config default
+oats install
+```
+
+`oats init --package` acquires and exact-locks the full closure, validates the
+chosen template against its providers, writes it as your local
+`oats-config.yaml`, and records the adopted base so `oats config diff` and
+`oats config sync` can compare against it later.
+
+Start capturing the turn record on this machine:
+
+```bash
+oats setup
+oats recall "rate limiting"
+```
+
+A Pi agent can also load the `oats-getting-started` skill and guide the setup.
+
+## How it works
+
+> **Package distributes. Capability teaches or enables. Config assigns. Soul specializes. Instance works.**
+
+| Concept | Meaning |
+| --- | --- |
+| **Package** | Git or local acquisition, exact lock, update, integrity, dependency, and review unit. |
+| **Capability** | Independently targetable behavior inside a package: skills, instructions, commands, agents, requirements, or lifecycle hooks. |
+| **Config template** | A complete reference `oats-config.yaml` a package ships. You adopt one explicitly, and it becomes your ordinary local config. |
+| **Adopted base** | The exact template recorded at adoption, kept commit-safe so guided sync can compare against it. |
+| **Config** | Local authority: selects layers, targets capabilities to agent types and souls, applies settings, exclusions, and overrides. |
+| **Soul** | Durable specialist identity, curriculum, and accumulated knowledge. |
+| **Instance** | One disposable incarnation and provider-native working session. |
+
+### Souls and instances
 
 ```text
 agents/backend-expert/soul/
@@ -53,75 +139,10 @@ agents/backend-expert/soul/
   knowledge/
 ```
 
-Each **instance** is a disposable incarnation with a full Pi or Claude Code
-session, an explicit task, its own home, and a repository/workspace view. It is
-not a hidden subagent call: you can attach to it, steer it, message it, stop it,
-and inspect exactly what it received.
-
-### Each instance gets the right curriculum
-
-At spawn, OATS resolves the scoped config for the target soul and materializes
-only the OATS-managed resources selected for that agent:
-
-- the three kernel skills: `oats`, `oats-config`, and `oats-packages`;
-- soul-private skills and instructions; and
-- skills/injections from capabilities active for that soul or agent type.
-
-Missing, duplicate, untrusted, incompatible, or escaping active resources fail
-closed before an incomplete agent launches. `instance.json` records the
-expected and materialized composition with provenance.
-
-Provider-native behavior remains deliberate:
-
-- **Pi** runs with ambient skill/context/template discovery curtailed, while
-  operator-configured extensions remain enabled.
-- **Claude Code** keeps the operator's user/repository settings, skills,
-  plugins, MCP, hooks, and memory; OATS adds its canonical composed resources.
-
-The guarantee is an exact **OATS-managed curriculum**, not a claim that every
-provider exposes identical ambient behavior.
-
-### Expertise compounds
-
-With the official `oats.okf` knowledge package, an instance keeps resumable
-working state and captures non-obvious lessons as it works. A memory-harvest
-agent promotes durable knowledge and procedures back into the soul. Future
-instances begin where earlier ones finished.
-
-### Teams remain steerable
-
-OATS instances are ordinary provider sessions hosted in tmux. They can have
-explicit `child`, `parent`, `sibling`, or unrelated relationships and can use a
-messaging capability such as `oats.aweb` for cross-machine identities and
-real-time mail/chat awakenings.
-
-The CLI is the mutation boundary; **OATS Desktop** is the situational-awareness
-layer. It gives one view of identities, tasks, relationships, specialist
-context, workspaces, real terminals, and lifecycle state when a team has too
-many concurrent sessions for a flat terminal list to remain understandable.
-
-## The mental model
-
-> **Package distributes. Capability teaches or enables. Config assigns. Soul specializes. Instance works.**
-
-| Concept | Meaning |
-| --- | --- |
-| **Package** | Git/local acquisition, exact lock, update, integrity, dependency, and review unit. |
-| **Capability** | Independently targetable behavior inside a package: skills, instructions, commands, agents, requirements, or lifecycle hooks. |
-| **Config template** | A complete reference `oats-config.yaml` a package ships. You adopt one explicitly, and it becomes your ordinary local config. |
-| **Adopted base** | The exact template recorded at adoption, kept commit-safe so guided sync can compare against it. |
-| **Config** | Local authority: selects layers, targets capabilities to agent types/souls, applies settings/exclusions/overrides. |
-| **Soul** | Durable specialist identity, curriculum, and accumulated knowledge. |
-| **Instance** | One disposable incarnation and provider-native working session. |
-
-Acquisition never implies activation, and installing a package never adopts a
-config template. A template is a starting point, not mandatory policy. After you
-adopt one, local config may enable, disable, retarget, replace, or reconfigure
-every capability independently, and you may change every copied setting.
-
-## Instance home versus `work/`
-
-Every instance has two operational surfaces:
+Every instance has two operational surfaces. The **instance home** is the
+brain and operational boundary: instructions, task, soul reference, selected
+skills, provenance, and episodic state. **`work/`** is the repository or
+workspace view where reading, editing, Git, builds, tests, and commits happen.
 
 ```text
 <instance-home>/
@@ -135,191 +156,138 @@ Every instance has two operational surfaces:
   work/
 ```
 
-- **Instance home** is the brain and operational boundary: instructions, task,
-  soul reference, selected skills, provenance, and episodic state. Run OATS
-  lifecycle commands and commands from active capabilities here.
-- **`work/`** is the repository or workspace view. Repository reading, editing,
-  Git, builds, tests, and commits happen there according to the work mode.
+Work modes: `worktree` (isolated branch for implementation), `checkout` (the
+repository's shared checkout), `attached` (another instance's tree, for
+service agents and reviewers), and `workspace` (read-only multi-repository
+context). Placement that cannot be proved fails closed.
 
-`OATS_INSTANCE_HOME` gives the absolute home to both runtimes and lifecycle
-hooks. For Git-backed souls, homes live under the soul-owning repository's
-**primary checkout**, even when spawn is invoked from a linked worktree; the
-assigned `work/` may still be an isolated worktree. Placement that cannot be
-proved fails closed.
+Provider behavior stays deliberate. Pi runs with ambient skill, context, and
+template discovery curtailed while operator-configured extensions remain
+enabled. Claude Code keeps the operator's settings, skills, plugins, MCP,
+hooks, and memory, and OATS adds its canonical composed resources. The
+guarantee is an exact OATS-managed curriculum, not identical ambient behavior
+across providers.
 
-Work modes:
+### Configuration and layers
 
-- `worktree` — isolated branch/worktree for implementation;
-- `checkout` — the repository's current shared checkout;
-- `attached` — another instance's tree, for focused service agents/reviewers;
-- `workspace` — read-only multi-repository team context.
+Config is scoped from laptop to workspace to repository. Closer declarations
+win; within a level, soul beats agent type beats global. Explicit exclusions
+and layer `none` are supported.
 
-See [Souls and instances](docs/souls-and-instances.md).
+OATS has five conceptual layers:
 
-## Distribution packages
+1. **Soul**: durable specialist identity and curriculum (kernel).
+2. **Knowledge**: capture and promotion contract (official option `oats.okf`).
+3. **Instances**: homes, work modes, sessions, lifecycle (kernel).
+4. **Messaging**: reachable agent identities (official option `oats.aweb`).
+5. **Tasks**: durable work queue (optional `oats.jira`, `oats.linear`, or another provider).
 
-A Git repository may contain ordinary development content and one or more OATS
-package payloads. The configured payload path is part of the source contract;
-the official convention/default is `oats-package/`.
+Knowledge, messaging, and tasks are exclusive slots. Additive capabilities
+such as authoring and review compose independently. Inspect the resolved
+result with `oats doctor [context] --soul <name> --json`.
 
-```text
-example-package-repo/
-  agents/example-package-expert/soul/   # development state, not distributed
-  .github/
-  README.md
-  oats-package/                          # the acquired, hash-locked payload
-    oats-package.json
-    capabilities/                       # one dedicated root per capability
-    config-templates/                   # optional reference configs
-```
+### Distribution packages
+
+A Git repository may contain ordinary development content and one or more
+package payloads; the default payload path is `oats-package/`.
 
 ```bash
-# Official short id (from the kernel-bundled catalog)
-oats install oats.okf
-
-# Git source: defaults to oats-package/
-oats install https://github.com/example/project.git@v1.0.0
-
-# Custom contained path, or explicit repository root
-oats install 'https://github.com/example/project.git@v1.0.0#dist/oats'
-oats install 'https://github.com/example/root-package.git@v1.0.0#.'
-
-# Local paths name the exact package root
-oats install ../project/oats-package
+oats install oats.okf                                             # official short id
+oats install https://github.com/example/project.git@v1.0.0         # Git source
+oats install 'https://github.com/example/project.git@v1.0.0#dist'  # contained path
+oats install ../project/oats-package                               # local path
+oats update <package-id>                                           # explicit advance
 ```
 
-Installing a package materializes each capability it declares into
-`.agents/capabilities/installed/<id>/`. There is no persistent package store.
-The `lockfileVersion: 2` lock records two levels. A `packages` map holds source,
-exact commit, selected path, payload integrity, and dependencies. A
-`capabilities` map holds each capability's version, provider package, path,
-artifact integrity, and executable trust. Bare `oats install` restores the exact
-lock and never advances source state. Updating is explicit:
+Installing materializes each capability into
+`.agents/capabilities/installed/<id>/`. The `lockfileVersion: 2` lock records
+packages (source, exact commit, path, payload integrity, dependencies) and
+capabilities (version, provider, path, artifact integrity, executable trust).
+Bare `oats install` restores the exact lock and never advances source state.
+
+## The turn record
+
+`packages/record` is the load-bearing layer. Every conversation an agent has
+is captured as signed turns in an append-only, content-addressed, replicated
+record with exact provenance, and searched locally through a SQLite full-text
+index. It has no runtime dependencies beyond Node.
 
 ```bash
-oats update <package-id>
+oats setup                 # install capture hooks and the background watcher
+oats capture --status      # what is being captured, by whom
+oats recall "<query>"      # search every captured session and message
 ```
+
+The normative specification and its conformance vectors live in
+[`packages/record/docs/`](packages/record/docs/).
 
 ## Official packages
 
-The official packages are independently versioned Git repositories in the
-[`awebai`](https://github.com/awebai) organization:
+Official packages are independently versioned Git repositories in the
+[`awebai`](https://github.com/awebai) organization, referenced from the
+kernel's bundled catalog:
 
 | Package | Provides |
 | --- | --- |
 | [`oats-okf`](https://github.com/awebai/oats-okf) | `oats.okf` knowledge layer and memory harvesting |
-| [`oats-aweb`](https://github.com/awebai/oats-aweb) | `oats.aweb` messaging/identity layer |
+| [`oats-aweb`](https://github.com/awebai/oats-aweb) | `oats.aweb` messaging and identity layer |
 | [`oats-authoring`](https://github.com/awebai/oats-authoring) | capability, skill, soul, and integration authoring craft |
 | [`oats-jira`](https://github.com/awebai/oats-jira) | adopter-selected Jira tasks layer |
 | [`oats-linear`](https://github.com/awebai/oats-linear) | adopter-selected Linear tasks layer |
 | [`oats-dev`](https://github.com/awebai/oats-dev) | OATS development config template plus `oats.review` |
 
 External CLIs and runtime plugins are separate informed-consent requirements.
-For example, aweb vendors its reviewed Markdown skills but declares Pi and
-Claude channel adapters as runtime-specific requirements; spawn verifies them
-and never installs them implicitly.
+Spawn verifies them and never installs them implicitly.
 
-## Configuration and layers
+## OATS Desktop
 
-Config is scoped from laptop → workspace → repository. Closer declarations win;
-within a level, soul > agent type > global specificity. Explicit exclusions and
-layer `none` are supported.
+The CLI is the mutation boundary; OATS Desktop is the situational-awareness
+layer. It shows identities, tasks, relationships, specialist context,
+workspaces, real terminals, and lifecycle state in one view when a team has
+too many concurrent sessions for a flat terminal list to remain readable.
 
-OATS has five conceptual layers:
+Installers for macOS (arm64 and x64) and Linux (x64) are published on the
+[Releases](https://github.com/awebai/oats/releases) page with checksums and
+build provenance. The Desktop can also be run from `packages/desktop/` in a
+framework checkout. See [OATS Desktop](docs/desktop.md).
 
-1. **Soul** — durable specialist identity and curriculum (kernel).
-2. **Knowledge** — capture/promotion contract (official option: `oats.okf`).
-3. **Instances** — homes, work modes, sessions, lifecycle (kernel).
-4. **Messaging** — reachable agent identities (official option: `oats.aweb`).
-5. **Tasks** — durable work queue (optional `oats.jira`, `oats.linear`, or another provider).
+## Maturity
 
-Knowledge, messaging, and tasks are exclusive integration slots. Additive
-capabilities such as authoring/review compose independently.
+This repository carries three layers of different maturity behind one `oats`
+entry point:
 
-Inspect the resolved result with:
+| Layer | Where | Status |
+| --- | --- | --- |
+| Turn record | `packages/record` | **Core.** Stable, specified, conformance-tested. |
+| Soul and instance runtime | `bin/`, `lib/`, `capabilities/` | **Shipped.** Maintained and in production use. |
+| Synthesis tools (`oats experimental <dress\|spawn\|segments\|mind>`) | `packages/experimental` | **Experimental.** Unproven by design, interfaces may change, never included in the published package. |
 
-```bash
-oats doctor [context] --soul <name> --json
-```
+## Upgrading and migration
 
-See [Configuration](docs/configuration.md), [Layers](docs/layers.md), and
-[Distribution packages](docs/packages.md).
-
-## Install
-
-```bash
-npm install -g @awebai/oats@latest
-pi install npm:@awebai/oats-pi@latest
-```
-
-Install matching kernel/Pi adapter versions. Claude Code uses the same generated
-instance files without an OATS Claude adapter.
-
-OATS Desktop is distributed through the
-[GitHub Releases](https://github.com/awebai/oats/releases) page. macOS
-arm64/x64 and Linux x64 installers are published with checksums and provenance.
-The Desktop may also be run from `packages/desktop/` in a framework checkout.
-
-## Start a workspace
-
-### Basic setup
+**From OAS.** If a deployment was created by OAS (`@oas-framework/oas`, files
+named `oas-config.yaml` and `oas-lock.json`), this kernel recognizes none of
+those names. Convert each scope with one transactional command; any failure
+restores the original bytes:
 
 ```bash
-oats init
-oats doctor
+oats migrate --from-oas --dry-run
+oats migrate --from-oas
 ```
 
-Or ask a Pi agent to load `oats-getting-started` and guide the setup.
+Read [Migration from OAS](docs/migration-from-oas.md) first.
 
-### Adopt a package config template
-
-```bash
-mkdir my-workspace
-cd my-workspace
-oats init --package <package-id> --config <template>
-oats install
-```
-
-`oats init --package` acquires and exact-locks the full closure, validates the
-chosen template against its providers, and writes it as your local
-`oats-config.yaml`. It also records the exact template as a commit-safe adopted
-base under `.agents/config-templates/adopted/`, so `oats config diff` and
-`oats config sync` can compare against it later. Bare `oats install` reconciles the
-team boundary and nested repository locks.
-
-For OATS framework and package development itself:
-
-```bash
-oats init --package oats.dev --config default
-```
-
-The template preserves the `oats-framework` team name, defines
-`framework-authors`, `developers`, and `package-maintainers`, enables OKF and
-aweb, keeps tasks optional, and assigns authoring and review appropriately. It
-carries no provider team ID, credentials, account, or machine paths. Those stay
-local, and you may change every copied setting.
-
-## Upgrade from 0.18 official capabilities
-
-**This section applies to OATS-named scopes only.** If your deployment was
-created by OAS (`@oas-framework/oas` — files named `oas-config.yaml`,
-`oas-lock.json`), the claim below does NOT hold for you: no `oas-*` name is
-recognized by this kernel. Convert with `oats migrate --from-oas` — one
-transactional command per scope; any failure restores the original OAS
-bytes. Read [docs/migration-from-oas.md](docs/migration-from-oas.md) first.
-
-For OATS-named scopes, existing valid v1 locks and installed capabilities
-continue to work after the kernel upgrade. Preview and apply the guided
-migration when ready:
+**From 0.18 official capabilities.** For OATS-named scopes, valid v1 locks and
+installed capabilities keep working after the kernel upgrade. Preview and
+apply the guided migration when ready:
 
 ```bash
 oats migrate --official --recursive --dry-run --dir <team-root>
 oats migrate --official --recursive --dir <team-root>
 ```
 
-The command preserves config files and capability IDs, leaves custom/owned/path
-capabilities untouched, does not transfer executable trust silently, and prints
-exact trust/install follow-ups. `oats doctor` reports readiness and cutover state.
+It preserves config files and capability ids, leaves custom, owned, and path
+capabilities untouched, never transfers executable trust silently, and prints
+exact follow-ups. `oats doctor` reports readiness and cutover state.
 
 ## CLI essentials
 
@@ -333,30 +301,78 @@ oats install [<package-source>]
 oats update <package-id>
 oats trust <capability>
 oats init --package <package-id> --config <template>
-oats config diff
-oats config sync
-oats config adopt <package-id> --config <template>
+oats config diff | sync | adopt <package-id> --config <template>
 oats doctor --json
+
+oats setup | capture | recall "<query>"
 ```
 
-Mainstream package/config/lock operations have deterministic CLI and stable JSON
-forms. Do not hand-edit the lock or installed stores, and do not reconstruct
-resolver behavior with ad-hoc shell commands.
+Package, config, and lock operations have deterministic CLI and stable JSON
+forms. Do not hand-edit the lock or installed stores.
 
-## Learn more
+## Documentation
 
 - [Souls and instances](docs/souls-and-instances.md)
 - [Configuration](docs/configuration.md)
+- [Layers](docs/layers.md)
 - [Distribution packages](docs/packages.md)
 - [Capabilities](docs/capabilities.md)
-- [Knowledge](docs/knowledge.md)
-- [Knowledge theory](docs/knowledge-theory.md)
+- [Knowledge](docs/knowledge.md) and [Knowledge theory](docs/knowledge-theory.md)
 - [Integrations](docs/integrations.md)
 - [Implementation](docs/implementation.md)
 - [OATS Desktop](docs/desktop.md)
+- [Migration from OAS](docs/migration-from-oas.md)
+- [Release notes](docs/release-notes/)
 
-## Origins
+## Contributing
+
+Issues and pull requests are welcome at
+[github.com/awebai/oats](https://github.com/awebai/oats).
+
+```bash
+git clone https://github.com/awebai/oats.git
+cd oats
+npm ci
+npm run check
+npm test
+```
+
+`npm test` runs the kernel, record, and experimental suites. The Desktop
+suites need their own dependencies; install them once and the same command
+picks them up:
+
+```bash
+(cd packages/desktop && ELECTRON_SKIP_BINARY_DOWNLOAD=1 npm ci)
+```
+
+Pull requests run the same checks on Node 22 through
+[Pull Request CI](.github/workflows/pull-request.yml): tests, project
+validation, a package dry run, and a clean-room install smoke test. Keep
+changes small and reviewable, add a test with every behavior change, and
+describe the reachable defect in the commit message.
+
+## Releases and versioning
+
+OATS follows [semantic versioning](https://semver.org/). Each release is a
+Git tag `vX.Y.Z` with notes in [`docs/release-notes/`](docs/release-notes/).
+A release publishes `@awebai/oats` and `@awebai/oats-pi` to npm and attaches
+the Desktop installers, `SHA256SUMS`, and build provenance to the matching
+[GitHub Release](https://github.com/awebai/oats/releases). Official packages
+are versioned and tagged in their own repositories and pinned by the kernel's
+catalog.
+
+## Origins and acknowledgements
+
+OATS began as **OAS (Open Agent Specialization)**, designed and written by
+Josep (Pepe) Garcia-Reyero Sais. The architecture, the kernel, the package
+engine, the Desktop, and the official packages are his work; OATS continues
+it under its current name, and his authorship is preserved throughout this
+repository's history.
 
 OATS grew from the a2am team architecture and the LFX engineering vision for
 agent-native engineering. It builds on open formats and conventions including
 AGENTS.md, Agent Skills, and OKF.
+
+## License
+
+[MIT](LICENSE) © 2026 OATS Framework
