@@ -212,6 +212,28 @@ test("death by staleness: one final wake, a farewell, then rest — until reviva
   assert.equal(calls[1].opts.final, false);
 });
 
+test("a death is mourned once even when the journal mtime carries sub-millisecond fractions", (t) => {
+  // Linux filesystems report nanosecond mtimes, so stat.mtimeMs is fractional
+  // there. The farewell records the death at millisecond precision, so an
+  // "already mourned" check that compares the farewell against the raw
+  // fractional mtime finds the farewell strictly earlier and mourns the same
+  // death on every pass (seen on ubuntu-latest, release run 33779449882).
+  const { base, store } = setup(t);
+  seed(base, store, "fractional", ["PHASE:exploration:learned things", "filler ".repeat(60)]);
+  readThread(store, { thread: "cc:session:fractional", engine: STUB, windowChars: 100000 });
+  const journal = store.journalPath("mac~cc.fractional");
+  const oldSeconds = (Date.now() - 48 * 3600 * 1000) / 1000 + 0.0007; // 700 microseconds past a millisecond
+  utimesSync(journal, oldSeconds, oldSeconds);
+  const state = new Map();
+  const run = () => ({ segments: 0 });
+  const r1 = followPass(store, { owner: "mac", state, minNewBytes: 1000000, run });
+  assert.equal(r1.died.length, 1, "one death");
+  const r2 = followPass(store, { owner: "mac", state, minNewBytes: 1000000, run });
+  assert.equal(r2.died.length, 0, "the same death is not mourned twice");
+  const r3 = followPass(store, { owner: "mac", state, minNewBytes: 1000000, run });
+  assert.equal(r3.died.length, 0);
+});
+
 test("never-followed stale sessions do not die; --stale-hours 0 disables death", (t) => {
   const { base, store } = setup(t);
   seed(base, store, "unread", ["quiet content ".repeat(50)]);

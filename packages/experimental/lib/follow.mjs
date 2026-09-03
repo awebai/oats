@@ -78,7 +78,12 @@ function handleStale(store, { owner, thread, streamId, mtimeMs, run }) {
   if (!notes.some((t) => parseFollow(t))) return null; // never born
   const farewells = notes.map(parseFarewell).filter(Boolean);
   const lastFarewell = farewells.reduce((m, f) => Math.max(m, Date.parse(f.ts) || 0), 0);
-  if (lastFarewell >= mtimeMs) return null; // already mourned this death
+  // The farewell below records the death at millisecond precision (ISO
+  // string), while a nanosecond filesystem reports a fractional mtimeMs; the
+  // comparison must use the same precision the note was written at, or a
+  // fractional mtime is always "newer" than its own farewell and the same
+  // death is mourned on every pass.
+  if (lastFarewell >= Math.floor(mtimeMs)) return null; // already mourned this death
   const result = run(thread, streamId, { final: true });
   store.appendCore(
     mindStream,
