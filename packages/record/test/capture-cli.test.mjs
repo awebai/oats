@@ -10,8 +10,9 @@
 
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -53,6 +54,19 @@ function run(root, argv, { home, env } = {}) {
 function streamsIn(root) {
   const dir = join(root, "streams");
   return existsSync(dir) ? readdirSync(dir) : [];
+}
+
+// An owner for the "stranger" tests that no machine can be called. The
+// hostname fallback in capture.mjs is `hostname().split(".")[0]`, so a test
+// that seeds a real machine name asserts a property of the box it runs on:
+// on the host this file was written on, the seeded owner and the fallback
+// were the same string, the guard correctly said nothing, and the test failed.
+// Synthesise the name instead, and check the assumption the test needs rather
+// than assuming it.
+function strangerOwner() {
+  const owner = `seeded-owner-${randomUUID().slice(0, 8)}`;
+  assert.notEqual(owner, hostname().split(".")[0], "the seeded owner must not be this host");
+  return owner;
 }
 
 test("an unknown flag is a usage error, and nothing is captured", (t) => {
@@ -117,21 +131,27 @@ test("a hostname-derived owner that is a stranger to the record warns, but still
   const home = mkdtempSync(join(tmpdir(), "turn-record-home-"));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   seedSession(home);
+  const seeded = strangerOwner();
 
   // First: establish the record under an explicit owner.
-  const first = run(root, ["--owner", "altair", "--sessions-only", "--no-index"], { home });
+  const first = run(root, ["--owner", seeded, "--sessions-only", "--no-index"], { home });
   assert.equal(first.status, 0, first.stderr);
   assert.ok(
-    streamsIn(root).some((s) => s.startsWith("altair~")),
+    streamsIn(root).some((s) => s.startsWith(`${seeded}~`)),
     "the explicit owner captured",
   );
 
-  // Then: no --owner, so the owner falls back to the hostname — a stranger here.
+  // Then: no --owner, so the owner falls back to the hostname — a stranger to
+  // the seeded owner on every host, which is the point of synthesising it.
   const second = run(root, ["--sessions-only", "--no-index"], { home });
 
   assert.equal(second.status, 0, "the guard warns; it must never block capture");
   assert.match(second.stderr, /writing as owner/);
-  assert.match(second.stderr, /"altair"/, "the warning names the owner already in the record");
+  assert.match(
+    second.stderr,
+    new RegExp(`"${seeded}"`),
+    "the warning names the owner already in the record",
+  );
   assert.match(second.stderr, /--owner|TURN_RECORD_OWNER/, "and says how to fix it");
 });
 
