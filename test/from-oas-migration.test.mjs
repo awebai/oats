@@ -50,7 +50,11 @@ function snapshot(dir) {
   const walk = (d) => {
     for (const e of readdirSync(d, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const p = join(d, e.name);
-      if (e.isDirectory()) walk(p);
+      // Git internals are never touched by the migration and are not stable
+      // under byte comparison: a newer git runs background maintenance during
+      // the fixture's own git commands and leaves transient files such as
+      // .git/objects/maintenance.lock (seen on ubuntu-latest, 2026-09-03).
+      if (e.isDirectory()) { if (e.name !== ".git") walk(p); }
       else if (e.isFile()) out[relative(dir, p)] = createHash("sha256").update(readFileSync(p)).digest("hex");
     }
   };

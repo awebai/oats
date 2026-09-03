@@ -19,6 +19,11 @@ const sha256 = (path) => createHash("sha256").update(readFileSync(path)).digest(
 function lane(args, { cwd = tmpdir(), env = {} } = {}) {
   const childEnv = { ...process.env, ...env };
   delete childEnv.NODE_TEST_CONTEXT; // never let a nested node --test think it is recursive
+  // The host's npm auth must not leak into the fake npm: CI's setup-node exports
+  // NPM_CONFIG_USERCONFIG (and NODE_AUTH_TOKEN) for the runner, and the lane
+  // correctly passes an operator's userconfig through. These tests assert what
+  // the LANE adds, so they start from no userconfig at all.
+  for (const k of ["NPM_CONFIG_USERCONFIG", "NODE_AUTH_TOKEN", "NPM_TOKEN"]) if (!(k in env)) delete childEnv[k];
   return spawnSync(process.execPath, [LANE, ...args], { cwd, env: childEnv, encoding: "utf8" });
 }
 function scratch(t, prefix) {
