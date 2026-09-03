@@ -242,7 +242,7 @@ class Lane {
         const seconds = ((Date.now() - started) / 1000).toFixed(1);
         log.end(`\n# exit ${status} after ${seconds}s\n`);
         const result = { status, stdout, stderr, combined, logPath, seconds };
-        if (status === 0 || allowFailure) { say(`ok (${seconds}s) — ${logPath}`); resolvePromise(result); }
+        if (status === 0 || allowFailure) { say(`${status === 0 ? "ok" : `exit ${status} (allowed)`} (${seconds}s) — ${logPath}`); resolvePromise(result); }
         else reject(new LaneError(`${name} failed (exit ${status}) after ${seconds}s — log: ${logPath}`));
       });
     });
@@ -270,10 +270,18 @@ class Lane {
     return dir;
   }
 
-  /** The three-manifest bump the workflow performs in every job (uncommitted, export only). */
+  /**
+   * The three-manifest bump the workflow performs in every job (uncommitted,
+   * export only). A manifest that already reads the tag version is left alone:
+   * `npm version` exits 1 with "Version not changed" there, and the step's
+   * intent — every manifest reads X.Y.Z — is already met.
+   */
   async bumpManifests(exportDir) {
     for (const sub of [".", "packages/pi", "packages/desktop"]) {
-      await this.step(`bump ${sub === "." ? "root" : sub} to ${this.version}`, "npm", ["version", this.version, "--no-git-tag-version"], { cwd: join(exportDir, sub) });
+      const name = sub === "." ? "root" : sub;
+      const current = JSON.parse(readFileSync(join(exportDir, sub, "package.json"), "utf8")).version;
+      if (current === this.version) { say(`${name} package.json already at ${this.version} — no bump needed`); continue; }
+      await this.step(`bump ${name} ${current} -> ${this.version}`, "npm", ["version", this.version, "--no-git-tag-version"], { cwd: join(exportDir, sub) });
     }
   }
 
