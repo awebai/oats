@@ -12,8 +12,8 @@
 //
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
-//   {"schemaVersion":1,"name":"@awebai/oats","version":"0.21.x","desktopApi":1}
-// Desktop accepts desktopApi === 1 and semver >=0.21.0 <0.22.0 (the band is
+//   {"schemaVersion":1,"name":"@awebai/oats","version":"0.22.x","desktopApi":1}
+// Desktop accepts desktopApi === 1 and semver >=0.22.0 <0.23.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
 //
@@ -30,13 +30,13 @@ export const DESKTOP_API = 1;
 // release: Desktop and the kernel are built from one tag, so a band that
 // excluded its own kernel would ship an app that degrades to observation-only
 // against the CLI it was released with (the 0.19.0 readiness blocker).
-// Rebased to >=0.21.0 <0.22.0 for the OATS rename (v0.21.0, first release
+// Rebased to >=0.22.0 <0.23.0 for the OATS rename (v0.22.0, first release
 // under the new name): the CLI binary and probe name changed to `oats` /
 // `@awebai/oats`, so the pre-rename band pointed at versions that will never
 // exist under the new name. The Desktop v1 surface is UNCHANGED across that
 // kernel bump (`version --json`, `spawn --json`, `okf harvest --json` —
 // test/cli-json-contract.test.mjs), so DESKTOP_API stays 1.
-export const ACCEPT_RANGE = { min: [0, 21, 0], maxExclusive: [0, 22, 0] };
+export const ACCEPT_RANGE = { min: [0, 22, 0], maxExclusive: [0, 23, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */

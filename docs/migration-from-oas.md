@@ -3,7 +3,7 @@
 Status: **the migration path exists in the kernel** — `oats migrate
 --from-oas`, one transactional conversion per scope (plan steps 1–3 below,
 all landed 2026-08-21). What remains is distribution: end users get the
-command with the v0.21.0 release (steps 4–6). This document keeps the facts
+command with the v0.22.0 release (steps 4–6). This document keeps the facts
 in one place; the work is tracked as epic `aweb-abfy` in this team's aw
 tasks. Audited 2026-08-21 against a live OAS deployment
 (`@oas-framework/oas@0.20.0-aweb.1`).
@@ -79,15 +79,15 @@ config that mention `oas` paths are left untouched — comments are yours.
 
 ## Why an OAS user cannot even find OATS
 
-- `@awebai/oats` and `@awebai/oats-pi` are **not yet published**; the
-  release is blocked on a missing `docs/release-notes/v0.21.0.md`
-  (`.github/workflows/release.yml` hard-fails without it) and the repo has
-  no tags.
-- `@oas-framework/oas` is still live on npm and **not deprecated**, so the
-  old CLI's `oas update` (which checks that package) reports "Up to date"
-  forever.
+- `@awebai/oats` and `@awebai/oats-pi` are **not yet published**. The
+  v0.22.0 release notes exist and the three manifests are aligned; what
+  remains is the tag and the publish (`.github/workflows/release.yml`, or
+  the runnerless lane in `scripts/release-lane.mjs`).
+- `@oas-framework/oas` is still live on npm (0.21.2 as of 2026-09-03) and
+  **not deprecated**, so the old CLI's `oas update` (which checks that
+  package) never learns OATS exists.
 - The old OAS desktop probes for `@oas-framework/oas`; the new desktop
-  requires `@awebai/oats >=0.21.0 <0.22.0` — old app and new CLI are
+  requires `@awebai/oats >=0.22.0 <0.23.0` — old app and new CLI are
   mutually invisible, so desktop must ship in the same release.
 
 ## The plan (epic `aweb-abfy`)
@@ -107,16 +107,16 @@ config that mention `oas` paths are left untouched — comments are yours.
    shape, idempotent, byte-identical rollback on failure, with a migrated
    scope reaching green `oats doctor` and spawns composing the knowledge and
    messaging injections again (`test/from-oas-migration.test.mjs`).
-4. v0.21.0 release: notes, version alignment (`packages/pi` is still
-   0.20.0), tags, npm publish of `@awebai/oats` + `@awebai/oats-pi`,
+4. v0.22.0 release: notes and version alignment are **done**; remaining are
+   the tag, npm publish of `@awebai/oats` + `@awebai/oats-pi`, and the
    desktop GitHub Release.
 5. `npm deprecate` the `@oas-framework/*` packages with a pointer here.
 6. Close the `oats-okf` / `oats-aweb` publication gates so migrated scopes
    can restore their capabilities under the new ids.
 
 Until 4–6 are done, OAS users (this includes real daily users) should stay
-on `@oas-framework/oas` 0.20.0 — it keeps working and loses nothing by
-waiting. The conversion command exists, but until the v0.21.0 release it is
+on `@oas-framework/oas` — it keeps working and loses nothing by
+waiting. The conversion command exists, but until the v0.22.0 release it is
 only reachable from a repo checkout, and until the satellite publication
 gates close the catalog's package refs are not a supported acquisition
 source for migrated scopes.

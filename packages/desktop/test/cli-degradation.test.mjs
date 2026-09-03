@@ -12,10 +12,10 @@ function dom() {
   return d.window.document;
 }
 const payload = (ok, extra = {}) => ({
-  ok, bin: ok ? "/usr/local/bin/oats" : null, version: ok ? "0.21.0" : null,
-  source: ok ? "path" : null, required: { desktopApi: 1, range: ">=0.21.0 <0.22.0" },
-  install: "npm install -g @awebai/oats@0.21.0",
-  probedAt: 1, tried: ok ? [] : [{ path: "/old/oats", source: "path", reason: "version 0.20.6 outside >=0.21.0 <0.22.0", version: "0.20.6" }],
+  ok, bin: ok ? "/usr/local/bin/oats" : null, version: ok ? "0.22.0" : null,
+  source: ok ? "path" : null, required: { desktopApi: 1, range: ">=0.22.0 <0.23.0" },
+  install: "npm install -g @awebai/oats@0.22.0",
+  probedAt: 1, tried: ok ? [] : [{ path: "/old/oats", source: "path", reason: "version 0.21.6 outside >=0.22.0 <0.23.0", version: "0.21.6" }],
   ...extra,
 });
 const jsonCtx = (state) => ({
@@ -88,11 +88,11 @@ test("cliCard renders the full contract surface: detected, required, Choose, Ret
   doc.body.append(el);
   // detected path + version from diagnostics
   assert.ok(el.textContent.includes("/old/oats"), "detected path shown");
-  assert.ok(el.textContent.includes("0.20.6"), "detected version shown");
+  assert.ok(el.textContent.includes("0.21.6"), "detected version shown");
   // required range + api
-  assert.ok(el.textContent.includes(">=0.21.0 <0.22.0"), "required range shown");
+  assert.ok(el.textContent.includes(">=0.22.0 <0.23.0"), "required range shown");
   // copyable install command — the BACKEND's derived, version-pinned one
-  assert.ok(el.querySelector(".cli-cmd").textContent.includes("npm install -g @awebai/oats@0.21.0"));
+  assert.ok(el.querySelector(".cli-cmd").textContent.includes("npm install -g @awebai/oats@0.22.0"));
   assert.ok(el.querySelector(".cli-copy"), "copy affordance present");
   // actions
   const choose = el.querySelector(".cli-choose");
@@ -137,9 +137,9 @@ test("cliCard states the requirement from the payload and never invents one when
 });
 
 test("cli-status: install/requirement helpers prefer the backend payload, fall back version-lessly", () => {
-  const withPayload = { required: { desktopApi: 1, range: ">=0.21.0 <0.22.0" }, install: "npm install -g @awebai/oats@0.21.0" };
-  assert.equal(cs.cliInstallCommand(withPayload), "npm install -g @awebai/oats@0.21.0");
-  assert.equal(cs.cliRequirementText(withPayload), ">=0.21.0 <0.22.0 with desktop API 1");
+  const withPayload = { required: { desktopApi: 1, range: ">=0.22.0 <0.23.0" }, install: "npm install -g @awebai/oats@0.22.0" };
+  assert.equal(cs.cliInstallCommand(withPayload), "npm install -g @awebai/oats@0.22.0");
+  assert.equal(cs.cliRequirementText(withPayload), ">=0.22.0 <0.23.0 with desktop API 1");
   for (const absent of [null, undefined, {}, { install: "" }, { required: {} }]) {
     assert.equal(cs.cliInstallCommand(absent), cs.GENERIC_INSTALL_COMMAND);
     assert.match(cs.cliRequirementText(absent), /unknown/);
