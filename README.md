@@ -357,8 +357,10 @@ OATS follows [semantic versioning](https://semver.org/). Each release is a
 Git tag `vX.Y.Z` with notes in [`docs/release-notes/`](docs/release-notes/).
 A release publishes `@awebai/oats` and `@awebai/oats-pi` to npm and attaches
 the Desktop installers, `SHA256SUMS`, and build provenance to the matching
-[GitHub Release](https://github.com/awebai/oats/releases). Official packages
-are versioned and tagged in their own repositories and pinned by the kernel's
+[GitHub Release](https://github.com/awebai/oats/releases). The same release
+can be built, staged, and published without GitHub Actions through the
+[runnerless release lane](docs/release-lane.md). Official packages are
+versioned and tagged in their own repositories and pinned by the kernel's
 catalog.
 
 ## Origins and acknowledgements
