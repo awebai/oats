@@ -36,7 +36,9 @@
 //
 // THE MATRIX. runtime × work mode × knowledge slot × messaging slot = 32 cases,
 // named `<runtime>-<work>-k<none|stub>-m<none|stub>` (k = knowledge slot, m =
-// messaging slot). NOTHING IS SKIPPED: every combination is reachable, including
+// messaging slot), plus 4 model-preference cases named with a `-model` /
+// `-modellist` suffix (see MODEL PREFERENCE below) = 36.
+// NOTHING IS SKIPPED: every combination is reachable, including
 // the two that need extra setup —
 //   - `attached` needs `--work-dir`, so each attached case first spawns an owner
 //     instance in worktree mode and attaches to its <home>/work
@@ -47,6 +49,19 @@
 // capabilities under .agents/capabilities/owned/. Nothing here depends on
 // oats-okf, oats-aweb, or any sibling checkout, so a golden cannot move because
 // a package next door moved.
+//
+// MODEL PREFERENCE. The 32 matrix cases set no model, so on their own they would
+// freeze only the "unset ⇒ --model omitted" branch — while step 4 of the plan
+// extracts resolveModelPreference AND the per-runtime flag placement. Four extra
+// cases close that: for each runtime, one with a single preference and one with a
+// two-entry preference list, all four otherwise identical to
+// `<runtime>-worktree-kstub-mstub`, so the diff against that twin is exactly what
+// the model contributed. They freeze all four resolution behaviors —
+// pi passes a single preference through untouched, claude strips the `anthropic/`
+// provider, pi PROBES a list with `pi --list-models` and keeps the winner's
+// `:thinking` suffix, claude drops non-anthropic entries and strips `:thinking`.
+// The probe is answered by the fixture's own `pi` stub (see fixture()), which
+// ships a fixed two-model catalog, so the resolution is machine-independent.
 //
 // OBSTACLES TO DETERMINISM, and what was done about each. All of these are
 // normalization, not omission — the artifact is still compared in full:
@@ -101,6 +116,22 @@ const RUNTIMES = ["pi", "claude"];
 const WORK_MODES = ["worktree", "checkout", "attached", "workspace"];
 const SLOTS = ["none", "stub"];
 
+/** A single model preference, and a two-entry preference LIST. The same two
+ *  strings are used for BOTH runtimes on purpose: resolveModelPreference
+ *  (lib/core.mjs:4913) resolves them differently per runtime, and the goldens are
+ *  where that asymmetry becomes visible instead of merely documented —
+ *
+ *    pi,     one entry   → returned verbatim, no probe: `anthropic/claude-sonnet-4-5`
+ *    claude, one entry   → anthropic provider stripped: `claude-sonnet-4-5`
+ *    pi,     two entries → each probed with `pi --list-models <bare id>`; the
+ *                          fixture catalog does not list gpt-5, so the second
+ *                          entry wins WITH its `:thinking` suffix intact
+ *    claude, two entries → non-anthropic entries dropped, `:thinking` stripped:
+ *                          `claude-sonnet-4-5`
+ */
+const MODEL_ONE = "anthropic/claude-sonnet-4-5";
+const MODEL_LIST = "openai/gpt-5,anthropic/claude-sonnet-4-5:thinking";
+
 /** Every combination. `id` is both the golden directory name and the spawn
  *  --purpose, so the instance is named `dev-<id>` and a golden can be traced to
  *  the command that produced it. */
@@ -113,6 +144,15 @@ for (const runtime of RUNTIMES) {
       }
     }
   }
+}
+// Model preference, one pair per runtime on top of the matrix. Held at
+// worktree/kstub/mstub so the ONLY difference from
+// `<runtime>-worktree-kstub-mstub` is the model, and the diff between the two
+// goldens is exactly what the model contributed.
+for (const runtime of RUNTIMES) {
+  const fixed = { runtime, work: "worktree", knowledge: "stub", messaging: "stub" };
+  CASES.push({ id: `${runtime}-worktree-kstub-mstub-model`, ...fixed, model: MODEL_ONE });
+  CASES.push({ id: `${runtime}-worktree-kstub-mstub-modellist`, ...fixed, model: MODEL_LIST });
 }
 
 // ---------- fixture construction ----------
@@ -218,7 +258,31 @@ function fixture(kase) {
   const base = mkdtempSync(join(tmpdir(), "oats-golden-"));
   BASES.push(base);
   const bin = join(base, "bin");
-  for (const name of ["pi", "claude"]) write(join(bin, name), "#!/bin/sh\nexit 0\n", 0o755);
+  // `claude` is never executed here: under --no-launch spawn only RESOLVES it on
+  // PATH (which(), lib/core.mjs:5646), and claude's model translation is pure.
+  write(join(bin, "claude"), "#!/bin/sh\nexit 0\n", 0o755);
+  // `tmux` is never executed by spawn or retire under --no-launch either, but
+  // `oats status` reads the roster through tmuxWindows() (lib/core.mjs:4880),
+  // which shells out to `tmux has-session`. A stub keeps that read off the
+  // developer's real server: no session, so nothing is ever reported RUNNING.
+  write(join(bin, "tmux"), "#!/bin/sh\nexit 1\n", 0o755);
+  // `pi` IS executed, by exactly one probe. resolveModelPreference runs
+  // `pi --list-models <bare id>` for each entry of a preference LIST of two or
+  // more (lib/core.mjs:4938) and reads whitespace columns, col 1 = provider,
+  // col 2 = model id. A fixed two-model catalog makes that probe answer the same
+  // on every machine — and answer NOTHING for gpt-5, so the first entry of the
+  // list case is genuinely unavailable and the fallthrough to the second is what
+  // the golden freezes. Single-entry preferences never reach the probe.
+  write(join(bin, "pi"), `#!/bin/sh
+if [ "$1" = "--list-models" ]; then
+  case "$2" in
+    claude-sonnet-4-5) echo "anthropic  claude-sonnet-4-5  fixture-catalog" ;;
+    claude-opus-4-1) echo "anthropic  claude-opus-4-1  fixture-catalog" ;;
+  esac
+  exit 0
+fi
+exit 0
+`, 0o755);
 
   const scope = join(base, "scope");
   const repo = join(scope, "repo");
@@ -438,6 +502,16 @@ for (const kase of CASES) {
         "--runtime", "pi", "--task", TASK, "--no-launch", "--json"]).result;
       extra.push("--work-dir", join(owner.home, "work"));
     }
+
+    // The model reaches the kernel through `--model` rather than a `model:` in
+    // soul.yaml. Both feed the SAME call site — resolveModelPreference(o.model ||
+    // agent.model || "", runtime) at lib/core.mjs:5020 — so freezing one freezes
+    // the resolver; `--model` is chosen because it is the path `oats spawn` and
+    // the Desktop take, it exercises the flag's precedence over the soul default,
+    // and it leaves the fixture soul byte-identical across every case, so a
+    // difference between a model golden and its no-model twin can only have come
+    // from the model.
+    if (kase.model) extra.push("--model", kase.model);
 
     const envelope = spawnEnvelope(f, ["spawn", "dev", "--purpose", kase.id, "--work", kase.work,
       "--runtime", kase.runtime, "--task", TASK, "--no-launch", "--json", ...extra]);

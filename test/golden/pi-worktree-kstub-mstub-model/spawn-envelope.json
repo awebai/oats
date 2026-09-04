@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "dev-pi-worktree-kstub-mstub-model",
+    "agent": "dev",
+    "home": "<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model",
+    "work": "worktree",
+    "branch": "agents/dev-pi-worktree-kstub-mstub-model",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "oats-golden",
+      "window": "dev-pi-worktree-kstub-mstub-model"
+    },
+    "repo": "<base>/scope/repo",
+    "runtime": "pi",
+    "model": "anthropic/claude-sonnet-4-5",
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t oats-golden"
+  }
+}
