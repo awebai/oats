@@ -167,12 +167,18 @@ how the code fits together go stale and compete with the code; the write
 side rejects them. Decisions, what was chosen, what was rejected, and why,
 cannot be derived from code and are accepted, as are inspiration genealogy
 ("took this from X, rejected Y because Z"), process lessons, and maintained,
-timestamped, superseded-on-change slow state about an area. Task residue
+timestamped, superseded-on-change slow state about an area. Slow state is
+accepted only with its maintenance discipline: a named owner and an
+update-on-change rule; a slow-state concept nobody maintains is
+indistinguishable from residue and is rejected as such. Task residue
 (pull-request numbers, half-done plans, point-in-time environment facts) dies
-with the instance. One home per decision; split-brain comes from copies. For
-non-coding specialists none of their knowledge is re-derivable from a
-repository, so those souls are almost pure knowledge. See
-[knowledge theory](knowledge-theory.md) for the derivation.
+with the instance. One home per decision; split-brain comes from copies. The
+homing rule: architecture facts that several roles need go in repository-
+visible docs and souls point to them; craft decisions scoped to one role go
+in that role's soul; product direction goes in the steward's bundle,
+consulted and never copied. For non-coding specialists none of their
+knowledge is re-derivable from a repository, so those souls are almost pure
+knowledge. See [knowledge theory](knowledge-theory.md) for the derivation.
 
 **Proposed.** The harvester's input widens from the agent's own notes to the
 capture contract (below), so lessons reach the soul even when an agent wrote
