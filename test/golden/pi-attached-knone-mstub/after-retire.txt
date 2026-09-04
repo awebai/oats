@@ -1,0 +1,45 @@
+# tree of <base>/scope/agents/dev
+instances/
+instances/.oats-retirement/
+instances/.oats-retirement/baselines/
+instances/.oats-retirement/baselines/<retirement-key>.json
+instances/.oats-retirement/baselines/<retirement-key>.json
+instances/dev-owner/
+instances/dev-owner/.agents/
+instances/dev-owner/.agents/skills/
+instances/dev-owner/.agents/skills/golden-messaging/
+instances/dev-owner/.agents/skills/golden-messaging/SKILL.md
+instances/dev-owner/.agents/skills/oats/
+instances/dev-owner/.agents/skills/oats/SKILL.md
+instances/dev-owner/.agents/skills/oats-config/
+instances/dev-owner/.agents/skills/oats-config/SKILL.md
+instances/dev-owner/.agents/skills/oats-packages/
+instances/dev-owner/.agents/skills/oats-packages/SKILL.md
+instances/dev-owner/.claude/
+instances/dev-owner/.claude/skills -> ../.agents/skills
+instances/dev-owner/AGENTS.md
+instances/dev-owner/CLAUDE.md -> AGENTS.md
+instances/dev-owner/TASK.md
+instances/dev-owner/instance.json
+instances/dev-owner/soul -> <base>/scope/agents/dev/soul
+instances/dev-owner/work/
+instances/dev-owner/work/.git
+instances/dev-owner/work/.gitignore
+instances/dev-owner/work/README.md
+soul/
+soul/AGENTS.md
+soul/CLAUDE.md -> AGENTS.md
+soul/soul.yaml
+
+# git worktree list --porcelain
+worktree <base>/scope/repo
+HEAD <sha>
+branch refs/heads/main
+
+worktree <base>/scope/agents/dev/instances/dev-owner/work
+HEAD <sha>
+branch refs/heads/agents/dev-owner
+
+# git branch
+agents/dev-owner
+main

@@ -1,0 +1,231 @@
+{
+  "agent": "dev",
+  "kind": "persistent",
+  "instance": "dev-pi-workspace-kstub-mnone",
+  "home": "<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone",
+  "repo": "<base>/scope/repo",
+  "work": "workspace",
+  "runtime": "pi",
+  "team": {
+    "name": "golden-team",
+    "id": "golden-team-id",
+    "scope": "<base>/scope"
+  },
+  "spawnOrigin": "operator",
+  "capabilityMeta": {
+    "golden.knowledge": {
+      "state": "STATE.md",
+      "notes": "notes/"
+    }
+  },
+  "layers": {
+    "knowledge": "golden.knowledge [global @ <base>/scope]"
+  },
+  "capabilities": [
+    {
+      "id": "golden.knowledge",
+      "layer": "knowledge",
+      "origin": "owned:<base>/scope",
+      "level": "<base>/scope",
+      "settings": {},
+      "provenance": [
+        "global @ <base>/scope"
+      ],
+      "skills": [
+        "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills"
+      ],
+      "hooks": [
+        "soul-scaffold",
+        "spawn"
+      ],
+      "trusted": true
+    }
+  ],
+  "skills": [
+    {
+      "name": "golden-knowledge",
+      "source": "golden.knowledge"
+    },
+    {
+      "name": "oats",
+      "source": "kernel"
+    },
+    {
+      "name": "oats-config",
+      "source": "kernel"
+    },
+    {
+      "name": "oats-packages",
+      "source": "kernel"
+    }
+  ],
+  "instructions": [
+    {
+      "source": "kernel:oats",
+      "file": "<kernel>/injects/oats.md"
+    },
+    {
+      "source": "kernel:instance-boundary",
+      "file": "<kernel>/injects/instance-boundary.md"
+    },
+    {
+      "source": "work-mode:workspace",
+      "file": "<kernel>/injects/work-workspace.md"
+    },
+    {
+      "source": "capability:golden.knowledge",
+      "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+    }
+  ],
+  "composition": {
+    "expected": [
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats",
+        "resolved": "<kernel>/skills/oats"
+      },
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats-config",
+        "resolved": "<kernel>/skills/oats-config"
+      },
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats-packages",
+        "resolved": "<kernel>/skills/oats-packages"
+      },
+      {
+        "type": "skill-tree",
+        "source": "golden.knowledge",
+        "declared": "skills",
+        "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills",
+        "origin": "owned:<base>/scope",
+        "level": "<base>/scope"
+      },
+      {
+        "type": "injection",
+        "source": "golden.knowledge",
+        "declared": "inject.md",
+        "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
+        "origin": "owned:<base>/scope",
+        "level": "<base>/scope"
+      },
+      {
+        "type": "instruction-block",
+        "source": "kernel:oats",
+        "declared": "<kernel>/injects/oats.md",
+        "resolved": "<kernel>/injects/oats.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "kernel:instance-boundary",
+        "declared": "<kernel>/injects/instance-boundary.md",
+        "resolved": "<kernel>/injects/instance-boundary.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "work-mode:workspace",
+        "declared": "<kernel>/injects/work-workspace.md",
+        "resolved": "<kernel>/injects/work-workspace.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "capability:golden.knowledge",
+        "declared": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
+        "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+      }
+    ],
+    "materialized": {
+      "skills": [
+        {
+          "name": "golden-knowledge",
+          "source": "golden.knowledge",
+          "from": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills/golden-knowledge"
+        },
+        {
+          "name": "oats",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats"
+        },
+        {
+          "name": "oats-config",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats-config"
+        },
+        {
+          "name": "oats-packages",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats-packages"
+        }
+      ],
+      "instructions": [
+        {
+          "source": "kernel:oats",
+          "file": "<kernel>/injects/oats.md"
+        },
+        {
+          "source": "kernel:instance-boundary",
+          "file": "<kernel>/injects/instance-boundary.md"
+        },
+        {
+          "source": "work-mode:workspace",
+          "file": "<kernel>/injects/work-workspace.md"
+        },
+        {
+          "source": "capability:golden.knowledge",
+          "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+        }
+      ],
+      "runtimePackages": [],
+      "runtimePosture": {
+        "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
+        "curtailed": [
+          "user skills",
+          "project and ancestor skills",
+          "package skills",
+          "ambient AGENTS.md/CLAUDE.md discovery",
+          "ambient prompt templates"
+        ],
+        "ambient": [
+          "globally configured pi extensions, and any resources they contribute"
+        ],
+        "why": "founder ruling: shared cross-agent pi extensions (web search, output formatting) stay available to every instance."
+      },
+      "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone/.agents/skills",
+      "skillAlias": {
+        "path": "<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone/.claude/skills",
+        "target": "../.agents/skills"
+      }
+    }
+  },
+  "capabilityRuntime": [
+    {
+      "id": "golden.knowledge",
+      "layer": "knowledge",
+      "level": "<base>/scope",
+      "settings": {},
+      "hooks": {
+        "soul-scaffold": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/scaffold.mjs'",
+        "spawn": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/spawn.mjs'"
+      },
+      "requiredHooks": [],
+      "environment": [],
+      "missingRequires": [],
+      "trust": {
+        "trusted": true,
+        "configOwned": true
+      },
+      "executable": true
+    }
+  ],
+  "tmux": {
+    "session": "oats-golden",
+    "window": "dev-pi-workspace-kstub-mnone"
+  },
+  "command": "OATS_INSTANCE='dev-pi-workspace-kstub-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone' PI_AGENT_INSTANCE='dev-pi-workspace-kstub-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mnone/AGENTS.md' --approve --name 'dev-pi-workspace-kstub-mnone' '@TASK.md'",
+  "createdAt": "<createdAt>",
+  "launched": false
+}

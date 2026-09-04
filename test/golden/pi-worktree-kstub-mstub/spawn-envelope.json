@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "dev-pi-worktree-kstub-mstub",
+    "agent": "dev",
+    "home": "<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub",
+    "work": "worktree",
+    "branch": "agents/dev-pi-worktree-kstub-mstub",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "oats-golden",
+      "window": "dev-pi-worktree-kstub-mstub"
+    },
+    "repo": "<base>/scope/repo",
+    "runtime": "pi",
+    "model": null,
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t oats-golden"
+  }
+}

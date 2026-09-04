@@ -1,0 +1,146 @@
+{
+  "agent": "dev",
+  "kind": "persistent",
+  "instance": "dev-pi-checkout-knone-mnone",
+  "home": "<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone",
+  "repo": "<base>/scope/repo",
+  "work": "checkout",
+  "branch": "main",
+  "runtime": "pi",
+  "team": {
+    "name": "golden-team",
+    "id": "golden-team-id",
+    "scope": "<base>/scope"
+  },
+  "spawnOrigin": "operator",
+  "capabilities": [],
+  "skills": [
+    {
+      "name": "oats",
+      "source": "kernel"
+    },
+    {
+      "name": "oats-config",
+      "source": "kernel"
+    },
+    {
+      "name": "oats-packages",
+      "source": "kernel"
+    }
+  ],
+  "instructions": [
+    {
+      "source": "kernel:oats",
+      "file": "<kernel>/injects/oats.md"
+    },
+    {
+      "source": "kernel:instance-boundary",
+      "file": "<kernel>/injects/instance-boundary.md"
+    },
+    {
+      "source": "work-mode:checkout",
+      "file": "<kernel>/injects/work-checkout.md"
+    }
+  ],
+  "composition": {
+    "expected": [
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats",
+        "resolved": "<kernel>/skills/oats"
+      },
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats-config",
+        "resolved": "<kernel>/skills/oats-config"
+      },
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats-packages",
+        "resolved": "<kernel>/skills/oats-packages"
+      },
+      {
+        "type": "instruction-block",
+        "source": "kernel:oats",
+        "declared": "<kernel>/injects/oats.md",
+        "resolved": "<kernel>/injects/oats.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "kernel:instance-boundary",
+        "declared": "<kernel>/injects/instance-boundary.md",
+        "resolved": "<kernel>/injects/instance-boundary.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "work-mode:checkout",
+        "declared": "<kernel>/injects/work-checkout.md",
+        "resolved": "<kernel>/injects/work-checkout.md"
+      }
+    ],
+    "materialized": {
+      "skills": [
+        {
+          "name": "oats",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats"
+        },
+        {
+          "name": "oats-config",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats-config"
+        },
+        {
+          "name": "oats-packages",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats-packages"
+        }
+      ],
+      "instructions": [
+        {
+          "source": "kernel:oats",
+          "file": "<kernel>/injects/oats.md"
+        },
+        {
+          "source": "kernel:instance-boundary",
+          "file": "<kernel>/injects/instance-boundary.md"
+        },
+        {
+          "source": "work-mode:checkout",
+          "file": "<kernel>/injects/work-checkout.md"
+        }
+      ],
+      "runtimePackages": [],
+      "runtimePosture": {
+        "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
+        "curtailed": [
+          "user skills",
+          "project and ancestor skills",
+          "package skills",
+          "ambient AGENTS.md/CLAUDE.md discovery",
+          "ambient prompt templates"
+        ],
+        "ambient": [
+          "globally configured pi extensions, and any resources they contribute"
+        ],
+        "why": "founder ruling: shared cross-agent pi extensions (web search, output formatting) stay available to every instance."
+      },
+      "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone/.agents/skills",
+      "skillAlias": {
+        "path": "<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone/.claude/skills",
+        "target": "../.agents/skills"
+      }
+    }
+  },
+  "capabilityRuntime": [],
+  "tmux": {
+    "session": "oats-golden",
+    "window": "dev-pi-checkout-knone-mnone"
+  },
+  "command": "OATS_INSTANCE='dev-pi-checkout-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone' PI_AGENT_INSTANCE='dev-pi-checkout-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone/AGENTS.md' --approve --name 'dev-pi-checkout-knone-mnone' '@TASK.md'",
+  "createdAt": "<createdAt>",
+  "launched": false
+}

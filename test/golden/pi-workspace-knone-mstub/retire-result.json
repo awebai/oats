@@ -1,0 +1,15 @@
+{
+  "retired": "dev-pi-workspace-knone-mstub",
+  "agent": "dev",
+  "worktreeRemoved": false,
+  "branchDeleted": false,
+  "removedDir": true,
+  "harvested": [],
+  "capabilityMeta": {
+    "golden.messaging": {
+      "retired": true,
+      "ran": "retire",
+      "alias": "dev-pi-workspace-knone-mstub"
+    }
+  }
+}

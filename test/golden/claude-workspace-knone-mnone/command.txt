@@ -1,0 +1,1 @@
+OATS_INSTANCE='dev-claude-workspace-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone' PI_AGENT_INSTANCE='dev-claude-workspace-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-workspace-knone-mnone' '<base>/bin/claude' -- "$(cat TASK.md)"
