@@ -38,6 +38,16 @@ on. Both are behind contracts. A soul could equally be
 instantiated in a provider of autonomous agents that has no
 filesystem at all.
 
+A constraint that holds across every seam (Pepe, 2026-09-04): it
+must remain possible to run everything filesystem-based and
+fully local. The reference deployment runs that way today. What
+OATS or aweb must hold on their own servers, and the traffic that
+must pass through them, is to be minimized; a message between two
+agents on one machine should not need to leave that machine. Each
+contract below is read with that constraint, and the
+organizational-sovereignty strategy makes the same demand from
+the other side.
+
 ## The model
 
 ### Soul
@@ -112,9 +122,16 @@ those rows are the work.
 | Package                | acquisition, version, integrity, trust                 | git-acquired, hash-locked               | local path (exists)               |
 | Lifecycle events       | when capabilities may act                              | scaffold, spawn, retire                 | + harvest                         |
 
-Two seams on this table have one real implementation: runtime provider and
-soul store. They are where expandability is currently a promise rather than a
-property.
+The "Second implementation" column names an implementation that
+would *prove* the contract, not a planned replacement. Today's
+defaults stay the defaults: OKF for knowledge, aweb for
+communication, the git repository for the soul store, the four
+work modes for the work target. `none` is an additional work
+target, not a substitute for any mode.
+
+Two seams on this table have one real implementation: runtime
+provider and soul store. They are where expandability is
+currently a promise rather than a property.
 
 ## The contracts
 
@@ -142,7 +159,42 @@ Consequences:
 
 - a reviewer is a soul type, not a component;
 - a harvester is a soul type permitted to write knowledge;
-- the GUI's natural organizing axis is type.
+- the GUI's natural organizing axis is type;
+- a type carries the soul's communication **reach**: whom its
+  instances may address, and who may address them.
+
+The last point is a requirement from Pepe (2026-09-04). In a
+shared team, every engineer's agents can live in one team, and
+each engineer decides whether their agents may talk to agents
+owned by other engineers or only to their own; a further type may
+talk to agents outside the organization. The type expresses the
+policy; the communication capability enforces it. Spawning into
+the correct team is deployment configuration (today the `team:`
+block that the messaging integration reads), and the flow for
+choosing it must be explicit, never inferred from where a command
+was run.
+
+The policy is one field, `reach`, whose values form a ladder in
+which each level includes everything below it (names proposed by
+the OAS side, 2026-09-04):
+
+```text
+reach: owner     # only agents owned by the same human
+reach: team      # any agent in the deployment's team
+reach: org       # any team in the same organization
+reach: external  # agents outside the organization
+```
+
+The ladder mirrors aweb's addressing tiers: a plain alias reaches
+the team, a team-qualified alias the organization, a namespace
+address the outside. `owner` is the one level aweb has no
+addressing tier for, which is why it is an open question below.
+"No communication at all" is not a fifth level; that is the
+messaging slot set to `none`, a layer selection rather than a
+policy. `reach` governs both directions by default, with the
+inbound side enforced by the communication capability; if a case
+ever needs asymmetric policy it splits into `reach.out` and
+`reach.in` then, not now.
 
 Today this is the config's agent-type targeting. Formalizing it
 means naming the type in the soul, letting packages ship types,
@@ -170,6 +222,26 @@ scoping (soul-shared, workspace overlay, repository overlay)
 belongs to this contract so that repository-specific knowledge
 cannot leak to a cross-repository soul.
 
+What the write side accepts is doctrine, and Pepe's position
+(2026-09-04) sharpens `docs/knowledge-theory.md`. The line is
+decision versus description. A description of how the code fits
+together goes stale and competes with the code; that is the slop
+automatic memory accumulates, and the write side rejects it. A
+decision, what was chosen, what was rejected, and why, cannot be
+derived from code; without the record an agent will refactor
+toward the rejected alternative, so the write side accepts it.
+Also accepted: inspiration genealogy ("took this from X, rejected
+Y because Z", the strongest case for design souls), process
+lessons, and maintained, timestamped, superseded-on-change slow
+state about an area. Rejected: task residue (PR numbers,
+half-done plans, point-in-time environment facts), which dies
+with the instance. One home per decision; split-brain comes from
+copies. For non-coding specialists (reviewers, coordinators,
+domain experts) none of their knowledge is re-derivable from a
+repository: those souls are almost pure knowledge, and the
+code-is-truth critique does not apply to them. The harvester's
+promotion judgment encodes this.
+
 **Task management**: where shared work state lives, and how an
 instance claims, updates, blocks, and completes work. Verdicts
 and review outcomes are task records, which is how verification
@@ -181,7 +253,11 @@ the instance. For a durable specialist the answer should be yes,
 realized however the implementation chooses (aweb: a soul-level
 identity served through per-instance grants). Without this, a
 hosted provider cannot host "the specialist you can always write
-to."
+to." The contract also carries the fully-local constraint: two
+instances on one machine must be able to exchange messages
+without a server, and the implementation enforces the soul type's
+`reach` in both directions (for aweb: addressing tiers outbound,
+inbound mode and contacts inbound).
 
 **Capture**: the format of ephemeral state. Notes are the agent's
 own report of what mattered; a captured session is ground
@@ -215,6 +291,60 @@ actually need today, and keep it that small. The 2026-08-15
 implementation plan failed by abstracting execution targets
 beyond that before a second provider existed.
 
+#### Worked example: today's Pi launch as bundle and handle
+
+Nothing below is new behavior; it is what `spawnInstance` does
+now, named by the contract's parts.
+
+The **bundle** OATS assembles under the instance home:
+
+- instructions: the composed `AGENTS.md` (soul text, kernel
+  block, home/work boundary, work-mode block, capability blocks);
+- skills: the exact materialized tree at `.agents/skills/`,
+  with `.claude/skills` linking to it;
+- capability environment and launch arguments: what the spawn
+  hooks returned, for example `AWEB_IDENTITY_HOME` and the pi or
+  claude launch flags the aweb capability contributes;
+- task: `TASK.md`;
+- a resolved model preference;
+- realization artifacts: none today. This slot is where a
+  provider-specific derivative would live if one existed, for
+  example a compiled native session file (what `oats experimental
+  spawn` produces) or a finetune reference, cached per (soul,
+  runtime). It is empty by default and the contract works with it
+  empty.
+
+The **Pi provider** turns that into a process: it resolves the
+`pi` binary, verifies the runtime packages active capabilities
+require (the aweb pi package, for instance), and builds the
+command `pi --no-skills --skill <home>/.agents/skills
+--no-context-files --no-prompt-templates --append-system-prompt
+<home>/AGENTS.md --approve --name <instance> --model <m> @TASK.md
+<hook args>` with `OATS_INSTANCE` and `OATS_INSTANCE_HOME` in the
+environment. The **Claude Code provider** builds `claude --model
+<m> <hook args> -- "$(cat TASK.md)"` and relies on the
+`CLAUDE.md` and `.claude/skills` links instead of flags. Same
+bundle, two providers.
+
+The **platform** is tmux: create the session if absent, open a
+window named after the instance with the home as its working
+directory, run the command, drop to a shell when it exits.
+
+The **handle** is what comes back and is recorded in
+`instance.json`: today the `tmux` object (session, window,
+socket) and the persisted command line. Read through the
+contract: *observe* is "does the window exist" plus the native
+transcript location capture reads (`~/.pi/agent/sessions/...`);
+*steer* is attaching to the pane or sending keys; *stop* is
+killing the window, which retire does. A hosted provider would
+return a different handle with the same three verbs.
+
+Two things follow. Runtime and platform are separable, which is
+why the migration plan extracts them in two steps and why the
+provider must not be entangled with tmux. And the work-mode
+setup script (`work-modes.worktree.setup`, run inside each fresh
+worktree) belongs to the work target, not to the provider.
+
 ### Soul store and work target
 
 These are separate parameters of instantiation. Today one
@@ -231,7 +361,12 @@ instance = (soul, runtime provider, work target?, task)
 ```
 
 Any of the four may be substituted; the work target may be
-absent.
+absent. The four work modes stay exactly as they are; the
+distinction between an isolated worktree and working directly on
+a checked-out branch matters and is kept. `none` is added for
+instances that operate on nothing, such as a mail-only agent; it
+replaces no mode. The per-mode environment setup script remains
+part of the work-target contract.
 
 ### Package
 
@@ -467,6 +602,13 @@ the package-runtime boundary before they start.
   files or a document.
 - How do config agent types and soul types unify without breaking
   existing configs?
+- How does aweb satisfy the fully-local constraint for two agents
+  on one machine, given that team messaging today routes through
+  the server? This is an aweb-side question and goes to the aweb
+  coordinator.
+- `reach: owner` has no aweb addressing tier. Does the team model
+  need a per-owner scope, or is owner-only reach enforced by
+  contacts and inbound mode alone?
 
 ## Related
 
