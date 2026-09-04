@@ -102,9 +102,9 @@ configuration.
 packages), `environment` (launch variables it may contribute, vendor-prefixed),
 and `hooks`. Accepted events are `soul-scaffold`, `spawn`, and `retire`. Hooks
 receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
-`OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
-`OATS_ROOT`, `OATS_LEVEL`, `OATS_SETTINGS`, `OATS_META`, and the team
-variables, and may return `meta`, `brief`, `warning`, runtime-specific
+`OATS_HOME` (with `OATS_INSTANCE_HOME` as its alias), `OATS_AGENT`,
+`OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_ROOT`, `OATS_LEVEL`,
+`OATS_SETTINGS`, `OATS_META`, and the team variables, and may return `meta`, `brief`, `warning`, runtime-specific
 `launch` arguments, and (spawn only) `env`. Only a spawn hook may be
 `required`. The full contract, including trust and rollback, is in
 [capabilities](capabilities.md) and is not restated here.
@@ -136,11 +136,12 @@ and no harvest.
 
 **Contract.** Two sides.
 
-*Read.* An instance can find and consult organizational knowledge within its
-type's custody scope, index-first and selectively, and is told how by the
-implementation's injected block and skill. Prior decisions, lessons, and
-playbooks in scope are binding context; re-deriving what the soul already
-knows is a bug.
+*Read.* An instance can find and consult organizational knowledge,
+index-first and selectively, and is told how by the implementation's injected
+block and skill. Prior decisions, lessons, and playbooks in scope are binding
+context; re-deriving what the soul already knows is a bug. **Proposed:** the
+scope of what an instance may read is decided by its soul type, which needs
+`OATS_SOUL_TYPE` (step 7) before an implementation can act on it.
 
 *Write.* A permitted soul (a harvester type) can promote into the store. The
 format is the implementation's. Delivery matches the soul's custody: a commit
@@ -148,10 +149,17 @@ on the instance's branch for repository-resident souls, a pull request to
 the soul's home repository for workspace-mode souls, direct edits for local
 souls.
 
-*Custody scoping.* Knowledge has three custody layers, soul-shared, workspace
-overlay, and repository overlay, and the write side routes each promoted item
-to one of them. Repository-specific facts never move into a broader layer by
-default; a cross-repository soul never reads another repository's overlay.
+*Custody, shipped.* Delivery custody is keyed by where the soul resides: a
+commit on the instance's branch for repository-resident souls, a pull request
+to the soul's home repository for workspace-mode souls, direct edits for local
+souls. That is the only custody the kernel and `oats.okf` implement today.
+
+*Custody scoping, proposed.* The requirement is that repository-specific
+facts never move into a broader scope by default and that a cross-repository
+soul never reads another repository's specifics. The design that meets it
+belongs to the knowledge package, not the kernel. Custody layers (soul-shared,
+workspace overlay, repository overlay) are one candidate; scoping by soul
+type plus residency is another. Nothing here is settled or shipped.
 
 *Promotion doctrine.* What the write side accepts is a decision, not a
 format question. The line is decision versus description. Descriptions of
