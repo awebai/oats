@@ -15,6 +15,15 @@
 // asserts properties ("--no-skills is present"), not bytes. This suite asserts
 // bytes.
 //
+// Eight artifacts per case: the instance home tree, the composed AGENTS.md,
+// TASK.md, instance.json, the launch command line on its own, the spawn
+// envelope, `oats status --json`, the retire result, and the post-retire state of
+// the agent directory and the repository's worktree and branch lists. One
+// property is asserted rather than frozen — that every materialized skill is
+// byte- and mode-identical to the source instance.json says it came from — because
+// the kernel's own skills are edited routinely and a golden over their content
+// would churn without proving anything about the copy.
+//
 // It is a CONTRACT, not a specification: a golden that changes is not
 // automatically a bug, it is a change that has to be looked at and re-approved
 // by regenerating with UPDATE_GOLDEN=1 and reading the diff.
@@ -37,7 +46,8 @@
 // THE MATRIX. runtime × work mode × knowledge slot × messaging slot = 32 cases,
 // named `<runtime>-<work>-k<none|stub>-m<none|stub>` (k = knowledge slot, m =
 // messaging slot), plus 4 model-preference cases named with a `-model` /
-// `-modellist` suffix (see MODEL PREFERENCE below) = 36.
+// `-modellist` suffix (see MODEL PREFERENCE below) and one `-deletebranch` case
+// for the branch-deleting retire path = 37.
 // NOTHING IS SKIPPED: every combination is reachable, including
 // the two that need extra setup —
 //   - `attached` needs `--work-dir`, so each attached case first spawns an owner
@@ -93,10 +103,51 @@
 // directory whose path carries a timestamp — a real behavior, but not one that
 // can be frozen byte for byte. Freezing recovery output needs its own fixture
 // with a controlled clock; it is not in this suite.
+//
+// WHAT A GREEN RUN DOES NOT PROVE. Two things above are "absent by construction",
+// and absent by construction means UNTESTED, not correct. Read them as holes:
+//   - the tmux socket and everything else the LAUNCH path writes. Every case is
+//     --no-launch, so meta.launched is always false, meta.tmux.socket is never
+//     written, and the retirement baseline's runtime authority is always the
+//     `{launched:false}` shape. A full pass says nothing about launched-instance
+//     metadata, about tmuxSocket(), or about the quiesce-before-recovery
+//     sequence in retire — all of which step 5 (extract the platform) moves.
+//     test/retire-work-safety.test.mjs drives the launched path with a fake tmux
+//     and is the suite that covers it.
+//   - the recovery directory. Nothing here dirties an instance home or a
+//     worktree after the baseline is stamped, so `workRecovery` is absent in all
+//     of them and the preserve-work path is never exercised.
+//   - runtime-package verification. `composition.materialized.runtimePackages` is
+//     `[]` in every golden, because neither stub capability declares a
+//     `requires:` entry with a `runtime:`. So verifyRuntimePackages
+//     (lib/core.mjs:4966) — which step 4 also extracts, and which can FAIL a
+//     spawn outright — is frozen only in its empty case. Closing this needs a
+//     stub capability requiring a fake runtime package plus a `pi list` stub in
+//     the fixture pi (test/capabilities.test.mjs's fakePiWithPackages shows the
+//     output shape); that is a separate fixture and deliberately not built here.
+//
+// FROZEN AS FOUND, not endorsed: every status.json shows a phantom instance
+// named `.oats-retirement`. The retirement baselines live at
+// `<agent>/instances/.oats-retirement/` (retirementStateRoot is dirname(home),
+// lib/core.mjs:6167) while listInstances treats EVERY directory under
+// `instances/` as an instance (lib/core.mjs:5962), so the state directory is
+// reported as a live-looking roster row with no metadata. That is current
+// behavior, so the goldens record it; if it is fixed, these goldens change and
+// that is the correct signal, not a fixture bug.
+//
+// NOT A DEFECT: the stub capabilities carry no integrity digest. That is the
+// documented trust model, not an oversight — an owned capability is config-owned,
+// trusted by authorship rather than by hash, and manifestTrust returns
+// `{trusted:true, configOwned:true}` for any `owned:` origin before any digest is
+// computed (lib/core.mjs:1314). Provenance outranks location: what makes it
+// trusted is that the operator wrote it into their own scope. Acquired package
+// capabilities are the ones that carry integrity, and they are a different seam.
+// Please do not re-file this as a gap in the fixtures.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -154,6 +205,17 @@ for (const runtime of RUNTIMES) {
   CASES.push({ id: `${runtime}-worktree-kstub-mstub-model`, ...fixed, model: MODEL_ONE });
   CASES.push({ id: `${runtime}-worktree-kstub-mstub-modellist`, ...fixed, model: MODEL_LIST });
 }
+// Branch deletion. Every case above retires WITHOUT --delete-branch, so all of
+// them freeze `branchDeleted: false` and a surviving `agents/dev-…` branch, and
+// the deletion path — which is the one that destroys work if step 10 moves it
+// wrong — was unfrozen. ONE case covers it, on pi only: branch deletion belongs
+// to the work target, not to the runtime provider (retireInstance's git block,
+// lib/core.mjs:6682-6685, never consults meta.runtime), so a claude twin would
+// duplicate the fixture without testing anything the pi one does not.
+CASES.push({
+  id: "pi-worktree-kstub-mstub-deletebranch",
+  runtime: "pi", work: "worktree", knowledge: "stub", messaging: "stub", deleteBranch: true,
+});
 
 // ---------- fixture construction ----------
 
@@ -420,6 +482,47 @@ function treeOf(dir) {
   return `${lines.join("\n")}\n`;
 }
 
+/** A content fingerprint of a tree: every descendant's relative path, permission
+ *  bits, and bytes (or symlink target), in code-point order. Two trees with the
+ *  same fingerprint are the same tree as copyTreeSafe (lib/core.mjs:1055) defines
+ *  copying — which is the comparison the materialization assertion needs, and the
+ *  reason it hashes modes and link targets rather than only file contents. */
+function treeFingerprint(dir) {
+  const parts = [];
+  const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+  const walk = (d, rel) => {
+    for (const e of readdirSync(d, { withFileTypes: true }).sort(byName)) {
+      const path = join(d, e.name);
+      const child = rel ? `${rel}/${e.name}` : e.name;
+      const st = lstatSync(path);
+      parts.push(`${child}\0${(st.mode & 0o7777).toString(8)}`);
+      if (st.isSymbolicLink()) parts.push(`link\0${readlinkSync(path)}`);
+      else if (st.isDirectory()) { parts.push("dir"); walk(path, child); }
+      else parts.push(`file\0${readFileSync(path).toString("base64")}`);
+    }
+  };
+  walk(dir, "");
+  return createHash("sha256").update(parts.join("\0")).digest("hex");
+}
+
+/** `oats status --json` with `agents` and each agent's `instances` put in a
+ *  stable order.
+ *
+ *  This IS a normalization of real nondeterminism, not of a volatile value, so it
+ *  is called out rather than buried: listInstances reads the roster with a bare
+ *  readdirSync and never sorts (lib/core.mjs:5959-5983), so the order of the
+ *  `instances` array is whatever the filesystem hands back — stable on one
+ *  machine, not across APFS and ext4. Ordering it here keeps every other part of
+ *  the status schema frozen; the cost is that a future kernel change which starts
+ *  sorting (or stops) will not show up in these goldens. */
+function orderStatus(stdout) {
+  const doc = JSON.parse(stdout);
+  const byKey = (key) => (a, b) => (a[key] < b[key] ? -1 : a[key] > b[key] ? 1 : 0);
+  doc.agents.sort(byKey("name"));
+  for (const a of doc.agents) (a.instances || []).sort(byKey("instance"));
+  return `${JSON.stringify(doc, null, 2)}\n`;
+}
+
 /** What retirement left behind on the repository side. Frozen because step 10 of
  *  the migration plan moves the per-mode retire branches, and "did the worktree
  *  go, did the branch stay, did somebody else's shared tree survive" is exactly
@@ -534,17 +637,39 @@ for (const kase of CASES) {
     golden(kase.id, "instance.json", normalize(meta, f));
     // 5. the persisted launch command line, on its own so a provider extraction
     //    that changes one flag is a one-line diff and not a needle in metadata
-    golden(kase.id, "command.txt", `${normalize(JSON.parse(meta).command, f)}\n`);
+    const parsedMeta = JSON.parse(meta);
+    golden(kase.id, "command.txt", `${normalize(parsedMeta.command, f)}\n`);
     // 6. the agent-callable spawn envelope
     golden(kase.id, "spawn-envelope.json", normalize(`${JSON.stringify(envelope, null, 2)}\n`, f));
+    // 7. the roster as the Desktop and any script sees it
+    const status = cli(f, ["status", "--json"]);
+    assert.equal(status.status, 0, `status failed (${status.status}):\n${status.stderr}\n${status.stdout}`);
+    golden(kase.id, "status.json", normalize(orderStatus(status.stdout), f));
+
+    // MATERIALIZATION FIDELITY. instance.json claims each composed skill came
+    // from a particular source tree; this proves the bytes in the home ARE that
+    // tree, byte for byte, mode for mode. Asserted as a PROPERTY rather than
+    // frozen as a golden on purpose: the kernel's own skills are edited
+    // routinely, and a golden over their content would churn on every
+    // documentation fix while proving nothing about the copy. What can silently
+    // break in a refactor is the copy — a skipped symlink, a dropped mode, a
+    // source resolved before an override was applied — and that is what this
+    // catches, at every case, without a fixture to re-approve.
+    for (const s of parsedMeta.composition.materialized.skills) {
+      assert.equal(
+        treeFingerprint(join(home, ".agents", "skills", s.name)), treeFingerprint(s.from),
+        `materialized skill "${s.name}" does not match the source instance.json records it came from (${s.from})`);
+    }
 
     // ---- retirement ----
-    const retired = cli(f, ["retire", spawned.instance, "--json"]);
+    const retireArgs = ["retire", spawned.instance, "--json"];
+    if (kase.deleteBranch) retireArgs.push("--delete-branch");
+    const retired = cli(f, retireArgs);
     assert.equal(retired.status, 0, `retire failed (${retired.status}):\n${retired.stderr}\n${retired.stdout}`);
     const retireDoc = JSON.parse(retired.stdout);
     golden(kase.id, "retire-result.json", normalize(`${JSON.stringify(retireDoc, null, 2)}\n`, f));
 
-    // 7. what retirement left: the agent directory, and the repository's
+    // 8. what retirement left: the agent directory, and the repository's
     //    worktree and branch lists.
     golden(kase.id, "after-retire.txt", normalize(
       `# tree of <base>/scope/agents/dev\n${treeOf(join(f.root, "dev"))}\n${gitStateOf(f)}`, f));
