@@ -1,0 +1,9 @@
+{
+  "retired": "dev-claude-worktree-knone-mnone",
+  "agent": "dev",
+  "worktreeRemoved": true,
+  "branchDeleted": false,
+  "removedDir": true,
+  "harvested": [],
+  "capabilityMeta": {}
+}

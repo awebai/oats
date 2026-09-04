@@ -1,0 +1,21 @@
+.agents/
+.agents/skills/
+.agents/skills/golden-knowledge/
+.agents/skills/golden-knowledge/SKILL.md
+.agents/skills/oats/
+.agents/skills/oats/SKILL.md
+.agents/skills/oats-config/
+.agents/skills/oats-config/SKILL.md
+.agents/skills/oats-packages/
+.agents/skills/oats-packages/SKILL.md
+.claude/
+.claude/skills -> ../.agents/skills
+AGENTS.md
+CLAUDE.md -> AGENTS.md
+STATE.md
+TASK.md
+instance.json
+notes/
+notes/.keep
+soul -> <base>/scope/agents/dev/soul
+work -> <base>/scope/agents/dev/instances/dev-owner/work

@@ -1,0 +1,339 @@
+{
+  "root": "<base>/scope/agents",
+  "agents": [
+    {
+      "name": "dev",
+      "kind": "persistent",
+      "description": "Golden fixture developer soul.",
+      "repo": "<base>/scope/repo",
+      "work": "checkout",
+      "runtime": "pi",
+      "dir": "<base>/scope/agents/dev",
+      "instances": [
+        {
+          "instance": ".oats-retirement",
+          "home": "<base>/scope/agents/dev/instances/.oats-retirement",
+          "running": false
+        },
+        {
+          "agent": "dev",
+          "kind": "persistent",
+          "instance": "dev-claude-worktree-kstub-mstub-modellist",
+          "home": "<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist",
+          "repo": "<base>/scope/repo",
+          "work": "worktree",
+          "branch": "agents/dev-claude-worktree-kstub-mstub-modellist",
+          "runtime": "claude",
+          "model": "claude-sonnet-4-5",
+          "team": {
+            "name": "golden-team",
+            "id": "golden-team-id",
+            "scope": "<base>/scope"
+          },
+          "spawnOrigin": "operator",
+          "capabilityMeta": {
+            "golden.knowledge": {
+              "state": "STATE.md",
+              "notes": "notes/"
+            },
+            "golden.messaging": {
+              "alias": "dev-claude-worktree-kstub-mstub-modellist",
+              "endpoint": "stub://broker/dev-claude-worktree-kstub-mstub-modellist"
+            }
+          },
+          "layers": {
+            "knowledge": "golden.knowledge [global @ <base>/scope]",
+            "messaging": "golden.messaging [global @ <base>/scope]"
+          },
+          "capabilities": [
+            {
+              "id": "golden.knowledge",
+              "layer": "knowledge",
+              "origin": "owned:<base>/scope",
+              "level": "<base>/scope",
+              "settings": {},
+              "provenance": [
+                "global @ <base>/scope"
+              ],
+              "skills": [
+                "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills"
+              ],
+              "hooks": [
+                "soul-scaffold",
+                "spawn"
+              ],
+              "trusted": true
+            },
+            {
+              "id": "golden.messaging",
+              "layer": "messaging",
+              "origin": "owned:<base>/scope",
+              "level": "<base>/scope",
+              "settings": {},
+              "provenance": [
+                "global @ <base>/scope"
+              ],
+              "skills": [
+                "<base>/scope/.agents/capabilities/owned/golden-messaging/skills"
+              ],
+              "hooks": [
+                "spawn",
+                "retire"
+              ],
+              "trusted": true,
+              "environment": [
+                "GOLDEN_BROKER_ENDPOINT"
+              ]
+            }
+          ],
+          "skills": [
+            {
+              "name": "golden-knowledge",
+              "source": "golden.knowledge"
+            },
+            {
+              "name": "golden-messaging",
+              "source": "golden.messaging"
+            },
+            {
+              "name": "oats",
+              "source": "kernel"
+            },
+            {
+              "name": "oats-config",
+              "source": "kernel"
+            },
+            {
+              "name": "oats-packages",
+              "source": "kernel"
+            }
+          ],
+          "instructions": [
+            {
+              "source": "kernel:oats",
+              "file": "<kernel>/injects/oats.md"
+            },
+            {
+              "source": "kernel:instance-boundary",
+              "file": "<kernel>/injects/instance-boundary.md"
+            },
+            {
+              "source": "work-mode:worktree",
+              "file": "<kernel>/injects/work-worktree.md"
+            },
+            {
+              "source": "capability:golden.knowledge",
+              "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+            },
+            {
+              "source": "capability:golden.messaging",
+              "file": "<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md"
+            }
+          ],
+          "composition": {
+            "expected": [
+              {
+                "type": "skill-tree",
+                "source": "kernel",
+                "declared": "oats",
+                "resolved": "<kernel>/skills/oats"
+              },
+              {
+                "type": "skill-tree",
+                "source": "kernel",
+                "declared": "oats-config",
+                "resolved": "<kernel>/skills/oats-config"
+              },
+              {
+                "type": "skill-tree",
+                "source": "kernel",
+                "declared": "oats-packages",
+                "resolved": "<kernel>/skills/oats-packages"
+              },
+              {
+                "type": "skill-tree",
+                "source": "golden.knowledge",
+                "declared": "skills",
+                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills",
+                "origin": "owned:<base>/scope",
+                "level": "<base>/scope"
+              },
+              {
+                "type": "injection",
+                "source": "golden.knowledge",
+                "declared": "inject.md",
+                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
+                "origin": "owned:<base>/scope",
+                "level": "<base>/scope"
+              },
+              {
+                "type": "skill-tree",
+                "source": "golden.messaging",
+                "declared": "skills",
+                "resolved": "<base>/scope/.agents/capabilities/owned/golden-messaging/skills",
+                "origin": "owned:<base>/scope",
+                "level": "<base>/scope"
+              },
+              {
+                "type": "injection",
+                "source": "golden.messaging",
+                "declared": "inject.md",
+                "resolved": "<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md",
+                "origin": "owned:<base>/scope",
+                "level": "<base>/scope"
+              },
+              {
+                "type": "instruction-block",
+                "source": "kernel:oats",
+                "declared": "<kernel>/injects/oats.md",
+                "resolved": "<kernel>/injects/oats.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "kernel:instance-boundary",
+                "declared": "<kernel>/injects/instance-boundary.md",
+                "resolved": "<kernel>/injects/instance-boundary.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "work-mode:worktree",
+                "declared": "<kernel>/injects/work-worktree.md",
+                "resolved": "<kernel>/injects/work-worktree.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "capability:golden.knowledge",
+                "declared": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md",
+                "resolved": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "capability:golden.messaging",
+                "declared": "<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md",
+                "resolved": "<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md"
+              }
+            ],
+            "materialized": {
+              "skills": [
+                {
+                  "name": "golden-knowledge",
+                  "source": "golden.knowledge",
+                  "from": "<base>/scope/.agents/capabilities/owned/golden-knowledge/skills/golden-knowledge"
+                },
+                {
+                  "name": "golden-messaging",
+                  "source": "golden.messaging",
+                  "from": "<base>/scope/.agents/capabilities/owned/golden-messaging/skills/golden-messaging"
+                },
+                {
+                  "name": "oats",
+                  "source": "kernel",
+                  "from": "<kernel>/skills/oats"
+                },
+                {
+                  "name": "oats-config",
+                  "source": "kernel",
+                  "from": "<kernel>/skills/oats-config"
+                },
+                {
+                  "name": "oats-packages",
+                  "source": "kernel",
+                  "from": "<kernel>/skills/oats-packages"
+                }
+              ],
+              "instructions": [
+                {
+                  "source": "kernel:oats",
+                  "file": "<kernel>/injects/oats.md"
+                },
+                {
+                  "source": "kernel:instance-boundary",
+                  "file": "<kernel>/injects/instance-boundary.md"
+                },
+                {
+                  "source": "work-mode:worktree",
+                  "file": "<kernel>/injects/work-worktree.md"
+                },
+                {
+                  "source": "capability:golden.knowledge",
+                  "file": "<base>/scope/.agents/capabilities/owned/golden-knowledge/inject.md"
+                },
+                {
+                  "source": "capability:golden.messaging",
+                  "file": "<base>/scope/.agents/capabilities/owned/golden-messaging/inject.md"
+                }
+              ],
+              "runtimePackages": [],
+              "runtimePosture": {
+                "oatsComposed": "skills via .claude/skills -> ../.agents/skills; instructions via CLAUDE.md -> AGENTS.md",
+                "ambient": [
+                  "user skills",
+                  "project and ancestor skills to the repository root",
+                  "user and project plugins",
+                  "user and project settings",
+                  "user and ancestor CLAUDE.md"
+                ],
+                "why": "founder ruling: Claude Code's own global and per-repo configuration stays enabled — it is powerful, and the operator decides. An all-OATS setup is the way to opt out."
+              },
+              "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist/.agents/skills",
+              "skillAlias": {
+                "path": "<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist/.claude/skills",
+                "target": "../.agents/skills"
+              }
+            }
+          },
+          "capabilityRuntime": [
+            {
+              "id": "golden.knowledge",
+              "layer": "knowledge",
+              "level": "<base>/scope",
+              "settings": {},
+              "hooks": {
+                "soul-scaffold": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/scaffold.mjs'",
+                "spawn": "node '<base>/scope/.agents/capabilities/owned/golden-knowledge/hooks/spawn.mjs'"
+              },
+              "requiredHooks": [],
+              "environment": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "configOwned": true
+              },
+              "executable": true
+            },
+            {
+              "id": "golden.messaging",
+              "layer": "messaging",
+              "level": "<base>/scope",
+              "settings": {},
+              "hooks": {
+                "spawn": "node '<base>/scope/.agents/capabilities/owned/golden-messaging/hooks/spawn.mjs'",
+                "retire": "node '<base>/scope/.agents/capabilities/owned/golden-messaging/hooks/retire.mjs'"
+              },
+              "requiredHooks": [
+                "spawn"
+              ],
+              "environment": [
+                "GOLDEN_BROKER_ENDPOINT"
+              ],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "configOwned": true
+              },
+              "executable": true
+            }
+          ],
+          "tmux": {
+            "session": "oats-golden",
+            "window": "dev-claude-worktree-kstub-mstub-modellist"
+          },
+          "command": "OATS_INSTANCE='dev-claude-worktree-kstub-mstub-modellist' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist' PI_AGENT_INSTANCE='dev-claude-worktree-kstub-mstub-modellist' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-modellist' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-claude-worktree-kstub-mstub-modellist' '<base>/bin/claude' --model 'claude-sonnet-4-5' --golden-channel stub -- \"$(cat TASK.md)\"",
+          "createdAt": "<createdAt>",
+          "launched": false,
+          "running": false
+        }
+      ]
+    }
+  ]
+}

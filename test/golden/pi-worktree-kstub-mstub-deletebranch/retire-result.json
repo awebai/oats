@@ -1,0 +1,15 @@
+{
+  "retired": "dev-pi-worktree-kstub-mstub-deletebranch",
+  "agent": "dev",
+  "worktreeRemoved": true,
+  "branchDeleted": true,
+  "removedDir": true,
+  "harvested": [],
+  "capabilityMeta": {
+    "golden.messaging": {
+      "retired": true,
+      "ran": "retire",
+      "alias": "dev-pi-worktree-kstub-mstub-deletebranch"
+    }
+  }
+}

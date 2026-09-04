@@ -1,0 +1,144 @@
+{
+  "agent": "dev",
+  "kind": "persistent",
+  "instance": "dev-claude-attached-knone-mnone",
+  "home": "<base>/scope/agents/dev/instances/dev-claude-attached-knone-mnone",
+  "repo": "<base>/scope/repo",
+  "work": "attached",
+  "branch": "agents/dev-owner",
+  "runtime": "claude",
+  "team": {
+    "name": "golden-team",
+    "id": "golden-team-id",
+    "scope": "<base>/scope"
+  },
+  "parentInstance": "dev-owner",
+  "spawnOrigin": "instance",
+  "capabilities": [],
+  "skills": [
+    {
+      "name": "oats",
+      "source": "kernel"
+    },
+    {
+      "name": "oats-config",
+      "source": "kernel"
+    },
+    {
+      "name": "oats-packages",
+      "source": "kernel"
+    }
+  ],
+  "instructions": [
+    {
+      "source": "kernel:oats",
+      "file": "<kernel>/injects/oats.md"
+    },
+    {
+      "source": "kernel:instance-boundary",
+      "file": "<kernel>/injects/instance-boundary.md"
+    },
+    {
+      "source": "work-mode:attached",
+      "file": "<kernel>/injects/work-attached.md"
+    }
+  ],
+  "composition": {
+    "expected": [
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats",
+        "resolved": "<kernel>/skills/oats"
+      },
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats-config",
+        "resolved": "<kernel>/skills/oats-config"
+      },
+      {
+        "type": "skill-tree",
+        "source": "kernel",
+        "declared": "oats-packages",
+        "resolved": "<kernel>/skills/oats-packages"
+      },
+      {
+        "type": "instruction-block",
+        "source": "kernel:oats",
+        "declared": "<kernel>/injects/oats.md",
+        "resolved": "<kernel>/injects/oats.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "kernel:instance-boundary",
+        "declared": "<kernel>/injects/instance-boundary.md",
+        "resolved": "<kernel>/injects/instance-boundary.md"
+      },
+      {
+        "type": "instruction-block",
+        "source": "work-mode:attached",
+        "declared": "<kernel>/injects/work-attached.md",
+        "resolved": "<kernel>/injects/work-attached.md"
+      }
+    ],
+    "materialized": {
+      "skills": [
+        {
+          "name": "oats",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats"
+        },
+        {
+          "name": "oats-config",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats-config"
+        },
+        {
+          "name": "oats-packages",
+          "source": "kernel",
+          "from": "<kernel>/skills/oats-packages"
+        }
+      ],
+      "instructions": [
+        {
+          "source": "kernel:oats",
+          "file": "<kernel>/injects/oats.md"
+        },
+        {
+          "source": "kernel:instance-boundary",
+          "file": "<kernel>/injects/instance-boundary.md"
+        },
+        {
+          "source": "work-mode:attached",
+          "file": "<kernel>/injects/work-attached.md"
+        }
+      ],
+      "runtimePackages": [],
+      "runtimePosture": {
+        "oatsComposed": "skills via .claude/skills -> ../.agents/skills; instructions via CLAUDE.md -> AGENTS.md",
+        "ambient": [
+          "user skills",
+          "project and ancestor skills to the repository root",
+          "user and project plugins",
+          "user and project settings",
+          "user and ancestor CLAUDE.md"
+        ],
+        "why": "founder ruling: Claude Code's own global and per-repo configuration stays enabled — it is powerful, and the operator decides. An all-OATS setup is the way to opt out."
+      },
+      "canonicalSkillTree": "<base>/scope/agents/dev/instances/dev-claude-attached-knone-mnone/.agents/skills",
+      "skillAlias": {
+        "path": "<base>/scope/agents/dev/instances/dev-claude-attached-knone-mnone/.claude/skills",
+        "target": "../.agents/skills"
+      }
+    }
+  },
+  "capabilityRuntime": [],
+  "tmux": {
+    "session": "oats-golden",
+    "window": "dev-claude-attached-knone-mnone"
+  },
+  "command": "OATS_INSTANCE='dev-claude-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-attached-knone-mnone' PI_AGENT_INSTANCE='dev-claude-attached-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-attached-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
+  "createdAt": "<createdAt>",
+  "launched": false
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "dev-pi-checkout-knone-mstub",
+    "agent": "dev",
+    "home": "<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mstub",
+    "work": "checkout",
+    "branch": "main",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "oats-golden",
+      "window": "dev-pi-checkout-knone-mstub"
+    },
+    "repo": "<base>/scope/repo",
+    "runtime": "pi",
+    "model": null,
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t oats-golden"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "dev-claude-checkout-kstub-mstub",
+    "agent": "dev",
+    "home": "<base>/scope/agents/dev/instances/dev-claude-checkout-kstub-mstub",
+    "work": "checkout",
+    "branch": "main",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "oats-golden",
+      "window": "dev-claude-checkout-kstub-mstub"
+    },
+    "repo": "<base>/scope/repo",
+    "runtime": "claude",
+    "model": null,
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t oats-golden"
+  }
+}

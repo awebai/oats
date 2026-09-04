@@ -1,0 +1,15 @@
+{
+  "retired": "dev-claude-checkout-knone-mstub",
+  "agent": "dev",
+  "worktreeRemoved": false,
+  "branchDeleted": false,
+  "removedDir": true,
+  "harvested": [],
+  "capabilityMeta": {
+    "golden.messaging": {
+      "retired": true,
+      "ran": "retire",
+      "alias": "dev-claude-checkout-knone-mstub"
+    }
+  }
+}

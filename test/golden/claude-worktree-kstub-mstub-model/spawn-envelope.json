@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "instance": "dev-claude-worktree-kstub-mstub-model",
+    "agent": "dev",
+    "home": "<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-model",
+    "work": "worktree",
+    "branch": "agents/dev-claude-worktree-kstub-mstub-model",
+    "launched": false,
+    "warnings": [],
+    "tmux": {
+      "session": "oats-golden",
+      "window": "dev-claude-worktree-kstub-mstub-model"
+    },
+    "repo": "<base>/scope/repo",
+    "runtime": "claude",
+    "model": "claude-sonnet-4-5",
+    "parent": null,
+    "sibling": null,
+    "relation": null,
+    "spawnOrigin": "operator",
+    "attach": "tmux attach -t oats-golden"
+  }
+}
