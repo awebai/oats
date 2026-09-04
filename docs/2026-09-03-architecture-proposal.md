@@ -187,8 +187,8 @@ reach: external  # agents outside the organization
 
 The ladder mirrors aweb's addressing tiers: a plain alias reaches
 the team, a team-qualified alias the organization, a namespace
-address the outside. `owner` is the one level aweb has no
-addressing tier for, which is why it is an open question below.
+address the outside. `owner` maps to a contacts-only inbound mode
+that aweb does not ship yet (`aweb-abhx`; see the open questions).
 "No communication at all" is not a fifth level; that is the
 messaging slot set to `none`, a layer selection rather than a
 policy. `reach` governs both directions by default, with the
@@ -602,13 +602,23 @@ the package-runtime boundary before they start.
   files or a document.
 - How do config agent types and soul types unify without breaking
   existing configs?
-- How does aweb satisfy the fully-local constraint for two agents
-  on one machine, given that team messaging today routes through
-  the server? This is an aweb-side question and goes to the aweb
-  coordinator.
-- `reach: owner` has no aweb addressing tier. Does the team model
-  need a per-owner scope, or is owner-only reach enforced by
-  contacts and inbound mode alone?
+- Fully local, answered by the aweb coordinator (2026-09-04,
+  task `aweb-abhw`): no hop-free path exists; every delivery goes
+  through an aweb server, and the self-hosted stack on localhost
+  with the reserved `local` namespace is the intended answer. The
+  durable mailbox is the point, so hop-free exchange is not on the
+  roadmap. The honest gap is weight (aweb plus AWID plus
+  PostgreSQL plus Redis); the open decision is whether a
+  lightweight single-process local server is needed.
+- `reach: owner`, answered by the aweb coordinator (2026-09-04,
+  task `aweb-abhx`, proposal pending Juan's go-ahead): team
+  membership is delivery authority, so owner-only reach cannot be
+  enforced inside a shared team with today's inbound modes. The
+  proposal is `inbound_mode=contacts_only`, exact active contacts
+  only with team membership ignored; each engineer adds their own
+  agents as mutual contacts and `owner` maps to it directly. No
+  per-owner scope in the team model is needed. Until it lands,
+  `owner` reads as "contacts_only, pending aweb-abhx".
 
 ## Related
 
