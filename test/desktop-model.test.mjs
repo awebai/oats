@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildConstellation, parseGitDiffStat, parseGitStatus, parseTmuxWindows, readMarkdownSection, relativeAge,
+  initModel, collectControlPane, buildConstellation, parseGitDiffStat, parseGitStatus, parseTmuxWindows, readMarkdownSection, relativeAge,
 } from "../packages/desktop/server/model.mjs";
 
 test("readMarkdownSection extracts a top-level section and ignores placeholders", () => {
@@ -48,4 +48,21 @@ test("relativeAge chooses compact stable units", () => {
   const now = new Date("2026-07-11T12:00:00Z").getTime();
   assert.equal(relativeAge("2026-07-11T11:58:00Z", now), "2m");
   assert.equal(relativeAge("2026-07-09T11:00:00Z", now), "2d");
+});
+
+test("panel collection preserves Herdr liveness instead of requiring a tmux window", () => {
+  const target = { backend: "herdr", terminalId: "term_probe" };
+  initModel({ listInstances: () => [{ name: "probe", dir: "/nonexistent-oats-herdr-probe", instances: [
+    { instance: "live", sessionTarget: target, running: true, runtimeState: "done" },
+    { instance: "gone", sessionTarget: target, running: false, runtimeState: "unknown" },
+    { instance: "unreachable", sessionTarget: target, running: null, runtimeState: "unreachable", runtimeError: "socket unavailable" },
+  ] }] });
+  const panel = collectControlPane("/nonexistent-oats-herdr-probe");
+  assert.equal(panel.running, 1);
+  assert.deepEqual(panel.instances.map(i => i.running), [true, false, null]);
+  for (const instance of panel.instances) {
+    assert.equal(instance.tmux, null, "Herdr is not projected as a fabricated tmux target");
+    assert.equal(instance.sessionTarget, target);
+  }
+  assert.equal(panel.instances[2].runtimeError, "socket unavailable");
 });
