@@ -167,3 +167,10 @@ project trust behavior is unchanged. `--no-yolo` removes the OATS bypass flags;
 it leaves the operator's native harness settings in force. Instance metadata
 records an explicitly resolved setting. This choice applies when starting an
 agent, not retroactively to running sessions.
+
+Desktop remote terminal requests contain only the server id and instance name.
+The selected installed CLI resolves the saved route and performs remote
+inspection before attaching over SSH. Pending inspections share the terminal
+resource limit and duplicate requests share one inspection. Remote status and
+instance keys must include the server so identical paths on different hosts
+remain distinct.
