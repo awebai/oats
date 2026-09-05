@@ -41,9 +41,10 @@ Aliases are instance names (e.g. `dev-coordinator-1`). Discovery:
 lists the aweb team across machines.
 
 **Never sleep, poll, or busy-wait for another agent's reply.** Send your
-message, finish your turn, and go idle — the aweb channel awakens your
-session the moment mail or chat arrives (you saw `✓ aweb connected` at
-startup). A `sleep N; aw mail inbox` loop burns tokens, delays the reply,
+message, finish your turn, and go idle when a delivery channel is configured
+(you saw `✓ aweb connected` at startup). Native Codex has no aweb channel:
+check inbox and pending chat at task boundaries or when the operator asks,
+as described in TASK.md; incoming messages alone will not wake that session. A `sleep N; aw mail inbox` loop burns tokens, delays the reply,
 and adds nothing. An empty `aw mail inbox` means no UNREAD mail — not that
 messages were lost.
 

@@ -162,8 +162,10 @@ Codex is available with `--runtime codex`. It starts in the instance home,
 reads `AGENTS.md` and `.agents/skills` natively, and receives `TASK.md` as its
 initial prompt. User configuration, approval policy, ancestor instructions and
 ambient skill sources remain native. Worktrees are already below the instance
-home; checkout/attached paths outside it use Codex's normal approval handling.
-OATS does not pass `--add-dir`, which Codex refuses under some native policies. OpenAI-prefixed model preferences are translated to
+home; checkout/attached paths outside it use Codex's normal approval handling
+and may require approval for writes, depending on the operator's policy.
+OATS does not pass `--add-dir`, which Codex refuses under some native policies.
+OpenAI-prefixed model preferences are translated to
 Codex ids; other provider preferences fall back to its configured default.
 The Desktop model field accepts a native id without using Pi's model catalog.
 This launch support does not supply an aweb channel for Codex: agents can use

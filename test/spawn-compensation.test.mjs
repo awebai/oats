@@ -160,6 +160,7 @@ require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({ar
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
   assert.equal(meta.runtime, "codex");
+  assert.match(readFileSync(join(f.home, "TASK.md"), "utf8"), /No automatic messaging channel is configured/);
   assert.equal(meta.model, "gpt-test");
   execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
   const invocation = JSON.parse(readFileSync(captured, "utf8"));
