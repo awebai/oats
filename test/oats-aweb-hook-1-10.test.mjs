@@ -33,6 +33,7 @@ if (a.startsWith("workspace delete")) process.exit(0);
 if (a.startsWith("workspace connect")) process.exit(0);
 if (a.startsWith("check --online")) process.exit(0);
 if (a.startsWith("heartbeat")) process.exit(0);
+if (a.startsWith("whoami")) { const m = process.env.FAKE_WHOAMI || "ok"; console.log(JSON.stringify(m === "ok" ? { did: "did:aw:WJ5Q2fnu", stable_id: "s", address: "cjr.aweb.ai/merlin" } : { did: "did:aw:OTHER", stable_id: "x", address: "cjr.aweb.ai/merlin" })); process.exit(0); }
 if (a.startsWith("workspace status")) { const mode = process.env.FAKE_STATUS || "ok"; console.log(JSON.stringify({ selected_team: "t:example.test", workspace: mode === "ok" ? { alias: "merlin", workspace_path: process.cwd(), hostname: "Mac.lan" } : { alias: "merlin", workspace_path: "/somewhere/else", hostname: "other" } })); process.exit(0); }
 console.error("fake aw: unexpected " + a); process.exit(2);
 `);
@@ -141,7 +142,7 @@ test("retained identity: authority files copied exactly, coordination reconnecte
     assert.match(log, /^workspace connect --service https:\/\/app\.example\.test --team t:example\.test --role coordinator @/m, "connect with the source's service, the team, and the source's role, nothing else");
     assert.equal(log.includes("team join"), false, "a retained seat is never minted");
     assert.equal(log.includes("SECRET-API-KEY"), false);
-    assert.match(log, /workspace connect[\s\S]*check --online[\s\S]*heartbeat[\s\S]*workspace status/, "connect, check, heartbeat, status, in that order");
+    assert.match(log, /workspace connect[\s\S]*check --online[\s\S]*heartbeat[\s\S]*workspace status[\s\S]*whoami --json/, "connect, check, heartbeat, status, then whoami, in that order");
     const lock = JSON.parse(readFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), "utf8"));
     assert.equal(lock.home, home); assert.equal(lock.alias, "merlin"); assert.equal(lock.team, "t:example.test");
     // A second seat cannot take a holder's identity while the holder's home
@@ -187,5 +188,17 @@ test("retained identity: a status that does not show the new path fails the spaw
     assert.equal(existsSync(join(home, ".aw")), false, "copied material removed after the restore");
     assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
     assert.equal(existsSync(join(src, "signing.key")), true, "source untouched");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("retained identity: a whoami that reports another did fails the seat and restores the binding", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const { src } = legacySeat(base);
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({ identity: { source: src } }), FAKE_WHOAMI: "other" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout, /could not be seated/);
+    assert.equal(existsSync(join(home, ".aw")), false, "copied material removed after the restore");
+    assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

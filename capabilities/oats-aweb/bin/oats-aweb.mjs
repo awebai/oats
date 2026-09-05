@@ -281,8 +281,14 @@ function retainedSeatSpawn(source, takeOver) {
     const identityText = readFileSync(join(dest, "identity.yaml"), "utf8");
     const expectedDid = yamlScalar(identityText, "did");
     const expectedAddress = yamlScalar(identityText, "address");
-    const shownDid = ws.did || st.did || st.identity?.did;
-    if (expectedDid && shownDid && shownDid !== expectedDid) throw new Error(`aw workspace status shows did ${shownDid}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
+    // The same-identity check the contract is for: `aw whoami --json` from the
+    // new home reports the did and address the CLI now acts as (workspace
+    // status carries no did); both must equal the copied identity.yaml.
+    let who; try { who = JSON.parse(String(run(["aw", "whoami", "--json"], home, 60000))); } catch (e) { throw new Error(`aw whoami from ${home} answered no JSON (${e.message || e}); the seat is not verified`); }
+    const shownDid = who.did || who.identity?.did;
+    const shownAddress = who.address || who.identity?.address;
+    if (expectedDid && shownDid !== expectedDid) throw new Error(`aw whoami shows did ${shownDid || "(none)"}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
+    if (expectedAddress && shownAddress !== expectedAddress) throw new Error(`aw whoami shows address ${shownAddress || "(none)"}, not the retained identity's ${expectedAddress}; the seat is not the same identity`);
     const aliasRaw = String(ws.alias || st.alias || (expectedAddress || "").split("/").pop() || instance);
     if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(aliasRaw)) throw new Error(`aw workspace status reports an alias that is not a plausible alias; the seat is not briefed`);
     const alias = aliasRaw;
@@ -411,7 +417,7 @@ if (event === "spawn") {
   if (meta.delivery === "session") { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   if (meta.retained) {
     if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
-    out({ meta: { retired: true, retained: true, identityReleased: true }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched` });
+    out({ meta: { retired: true, retained: true, identityReleased: true, ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}` });
   }
   // No alias means the spawn hook never reported an identity: nothing exists to
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
