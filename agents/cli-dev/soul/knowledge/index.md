@@ -43,6 +43,7 @@ read what the current task needs, not everything.
 
 ## Lessons
 * [lessons/ownership-token-lock-beats-threshold-ordering.md](lessons/ownership-token-lock-beats-threshold-ordering.md) - RecordStore assumed lockTimeoutMs < lockStaleMs prevented lock theft; the two clocks start at different events, so the invariant never held and a late contender stole a live holder's lock.
+* [lessons/every-failed-retry-needs-one-deadline.md](lessons/every-failed-retry-needs-one-deadline.md) - Fixing the record-store lock introduced a bounded-retry regression because the deadline was checked on one branch while unreadable and dangling locks retried through continue paths forever.
 * [lessons/clean-room-smoke-local-official-package.md](lessons/clean-room-smoke-local-official-package.md) - Under catalog-first, oats init in the clean room resolves explicit official ids through the real catalog unless the room publishes and binds its own local official package.
 * [lessons/diagnostic-remedies-are-contracts.md](lessons/diagnostic-remedies-are-contracts.md) - A diagnostic that names a repair path must be tested as a contract; the refused operation can be correct while its advice still sends operators into loops.
 * [lessons/cli-tests-scrub-oats-pi-env.md](lessons/cli-tests-scrub-oats-pi-env.md) - CLI tests spawned inside an OATS instance inherit instance and laptop-level context unless their child environment removes OATS/PI variables and pins HOME to a fixture directory.
