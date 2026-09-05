@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "compatibility": {
     "oats": ">=0.19.0"
   },
@@ -16,15 +16,31 @@
     {
       "runtime": "pi",
       "package": "npm:@awebai/pi",
-      "why": "the aweb channel extension for pi sessions — real-time mail/chat awakenings; without it a pi instance can send with `aw` but is never woken by incoming messages",
-      "install": "https://aweb.ai/docs (installed into pi with `pi install npm:@awebai/pi`)"
+      "why": "the aweb channel extension for pi sessions \u2014 real-time mail/chat awakenings; without it a pi instance can send with `aw` but is never woken by incoming messages",
+      "install": "https://aweb.ai/docs (installed into pi with `pi install npm:@awebai/pi`)",
+      "when": {
+        "delivery": "channel"
+      }
     },
     {
       "runtime": "claude",
       "package": "aweb-channel@awebai-marketplace",
       "marketplace": "awebai/claude-plugins",
-      "why": "the aweb channel plugin for Claude Code sessions — real-time mail/chat awakenings; without it a Claude instance can send with `aw` but is never woken by incoming messages",
-      "install": "https://aweb.ai/docs (installs the awebai marketplace and the aweb-channel plugin into Claude Code)"
+      "why": "the aweb channel plugin for Claude Code sessions \u2014 real-time mail/chat awakenings; without it a Claude instance can send with `aw` but is never woken by incoming messages",
+      "install": "https://aweb.ai/docs (installs the awebai marketplace and the aweb-channel plugin into Claude Code)",
+      "when": {
+        "delivery": "channel"
+      }
+    },
+    {
+      "runtime": "pi",
+      "package": "npm:@awebai/pi",
+      "minVersion": "0.3.10",
+      "when": {
+        "delivery": "session"
+      },
+      "why": "with session delivery the ambient aweb extension must honour AWEB_DELIVERY=session (0.3.10 and later); an older one would open a second event stream beside the wake broker",
+      "install": "pi install npm:@awebai/pi@latest"
     }
   ],
   "skills": [
@@ -43,5 +59,18 @@
       "required": true
     },
     "retire": "bin/oats-aweb.mjs retire"
+  },
+  "environment": [
+    "AWEB_DELIVERY"
+  ],
+  "settings": {
+    "delivery": {
+      "default": "channel",
+      "values": [
+        "channel",
+        "session"
+      ],
+      "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
+    }
   }
 }

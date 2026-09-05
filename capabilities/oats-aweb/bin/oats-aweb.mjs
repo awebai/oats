@@ -66,6 +66,10 @@ const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false } = 
     const why = secretSafe ? "" : (scrub(e.stderr).trim() || (e.status === undefined ? String(e.code || "failed") : ""));
     const err = new Error(`${where} failed${e.status === undefined ? "" : ` (exit ${e.status})`}${why ? `: ${why}` : ""}${secretSafe ? " (output withheld: this command handles credentials)" : ""}`);
     err.status = e.status;
+    // A classification, never the text: the caller may name a KNOWN failure
+    // class (an alias that still holds a certificate) without any output of a
+    // credential-handling command reaching a log.
+    err.aliasConflict = /already|exists|conflict|422|active certificate/i.test(String(e.stderr ?? "") + String(e.stdout ?? ""));
     throw err;
   }
 };
@@ -97,6 +101,17 @@ const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb:
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
 const home = process.env.OATS_HOME || process.cwd();
+// Effective capability settings, injected by kernel dispatch (OATS_SETTINGS).
+// delivery: "channel" (default) keeps the native channel packages waking the
+// instance; "session" hands delivery to the host wake broker (aweb-abil):
+// AWEB_DELIVERY=session goes into the launch environment, the Claude channel
+// flag is omitted, and nothing wakes the instance until the broker exists.
+let settings = {};
+try { settings = JSON.parse(process.env.OATS_SETTINGS || "{}"); } catch { settings = {}; }
+const deliveryMode = (() => {
+  const v = settings.delivery === undefined || settings.delivery === null || settings.delivery === "" ? "channel" : String(settings.delivery);
+  return v === "session" ? "session" : "channel";
+})();
 
 /**
  * The aweb root (minting authority). BOUNDED candidates — the deployment's team
@@ -173,7 +188,18 @@ if (event === "spawn") {
     // so neither their output nor their diagnostics may reach a log.
     const inv = parseSecretJson(run(["aw", "team", "invite", "--team-id", team, "--json"], root, 45000, { secretSafe: true }), "aw team invite");
     if (!inv?.token || typeof inv.token !== "string") fatal("aw team invite returned no usable token, so no identity could be minted");
-    const raw = parseSecretJson(run(["aw", "team", "join", inv.token, "--name", instance, "--json"], home, 45000, { secrets: [inv.token], secretSafe: true }), "aw team join");
+    let raw;
+    try {
+      raw = parseSecretJson(run(["aw", "team", "join", inv.token, "--name", instance, "--json"], home, 45000, { secrets: [inv.token], secretSafe: true }), "aw team join");
+    } catch (e) {
+      // A retired alias keeps its certificate until aweb-abim ships, so a
+      // re-spawn under the same name is refused by AWID. Say that, and the
+      // remedy, instead of relaying a bare join error.
+      if (e.aliasConflict) {
+        fatal(`alias "${instance}" already holds a certificate on ${team} (a retired instance of that name is not reusable until aweb-abim ships), so no identity could be minted — spawn with a fresh --purpose instead`);
+      }
+      throw e;
+    }
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) fatal("aw team join returned no usable result, so no identity could be minted", minted);
     // The RESPONSE is not a safe place to take strings from. Suppressing the
     // failure paths does nothing if a successful reply is copied into meta and
@@ -203,13 +229,20 @@ if (event === "spawn") {
     // spawn, which is exactly the silent host mutation the consent gate exists
     // to prevent. By the time this runs the kernel has already proven the plugin
     // is present and enabled, so contributing the flag is safe.
-    const launch = (process.env.OATS_RUNTIME || "") === "claude"
+    // Session delivery: no channel flag, AWEB_DELIVERY=session in the launch
+    // environment (declared in the manifest), and the truth about waking.
+    const launch = (process.env.OATS_RUNTIME || "") === "claude" && deliveryMode === "channel"
       ? { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" }
       : undefined;
+    const env = deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : undefined;
     const channelWarning = undefined;
+    const deliveryBrief = deliveryMode === "session"
+      ? ` Notification delivery: external (AWEB_DELIVERY=session). The native aweb channel is not running in this session, and until the host wake broker registers this instance NOTHING wakes you when mail or chat arrives: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary and whenever you would otherwise wait.`
+      : "";
     out({
-      meta: { team: joined.team_id, alias },
-      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}.${mismatch} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
+      meta: { team: joined.team_id, alias, delivery: deliveryMode },
+      ...(env ? { env } : {}),
+      brief: `Comms: you have an aweb identity — alias "${alias}" on team ${joined.team_id}.${mismatch}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(mismatch ? { warning: `oats-aweb: team mismatch — joined ${joined.team_id}, expected ${team}` } : channelWarning ? { warning: channelWarning } : {}),
     });
@@ -233,7 +266,11 @@ if (event === "spawn") {
     // Self-delete from inside the home, authenticated by its own key — a remote
     // delete would 409 until the server marks the workspace stale.
     run(["aw", "workspace", "delete", meta.alias], home);
-    out({ meta: { retired: true } });
+    // Honest: the workspace row is deleted, but a hosted local member cannot
+    // revoke its own AWID certificate (aweb-abim), so the alias is NOT
+    // reusable. retired stays true because the cleanup is as complete as the
+    // platform allows; the field and the line carry the truth.
+    out({ meta: { retired: true, aliasReusable: false }, warning: `oats-aweb: workspace "${meta.alias}" deleted; its certificate is not revoked (aweb-abim), so the alias is not reusable — spawn successors with a fresh --purpose` });
   } catch (e) {
     // Exit nonzero: during a required-hook rollback this is the signal that
     // compensation did NOT complete, so the spawn is not reported as cleanly

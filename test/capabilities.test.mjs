@@ -2729,6 +2729,47 @@ test("a SKILL.md that is not a regular file does not count as a skill (reviewer-
 
 // ---------- runtime extensions: strict launch resolves them, or refuses ----------
 
+test("runtime requirements may be conditional on capability settings (when) and carry a version floor (minVersion)", () => {
+  const base = temp();
+  const { repo, root } = fixtureSoul(base, "pi");
+  const pkgDir = (version) => { const d = join(base, `pi-pkg-${version}`); write(join(d, "package.json"), JSON.stringify({ name: "@awebai/pi", version })); return d; };
+  capability(repo, "chan", {
+    capability: "acme.chan",
+    requires: [
+      { runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } },
+      { runtime: "pi", package: "npm:@awebai/pi", minVersion: "0.3.10", why: "must honour the opt-out", when: { delivery: "session" } },
+    ],
+  });
+  const config = (delivery) => write(join(repo, "oats-config.yaml"), `capabilities:\n  additive:\n    acme.chan:\n      global: true\n      settings:\n        delivery: ${delivery}\n`);
+  const oldPath = process.env.PATH; const oldHome = process.env.HOME; process.env.HOME = join(base, "nohome");
+  try {
+    // session + old extension: the floor refuses, naming both versions and the remedy
+    config("session");
+    process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.9") }]);
+    assert.throws(
+      () => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-old", launch: false }),
+      (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /at 0\.3\.10 or later; 0\.3\.9 is installed/.test(e.message) && /--accept-requirement/.test(e.message),
+    );
+    // session + current extension: passes
+    process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.10") }]);
+    const ok = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-new", launch: false });
+    assert.equal(ok.instance, "dev-new");
+    retireInstance(root, "dev-new", { tmuxSession: "oats-test-nosuch" });
+    // channel: the floor row does not apply; the plain row does and is satisfied by any install
+    config("channel");
+    process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: pkgDir("0.3.9") }]);
+    const ch = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-ch", launch: false });
+    assert.equal(ch.instance, "dev-ch");
+    retireInstance(root, "dev-ch", { tmuxSession: "oats-test-nosuch" });
+    // session + a version the runtime cannot report: fails closed
+    config("session");
+    process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: join(base, "pi-pkg-noversion") }]);
+    mkdirSync(join(base, "pi-pkg-noversion"), { recursive: true });
+    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-unk", launch: false }), /installed version cannot be established/);
+  } finally { process.env.PATH = oldPath; process.env.HOME = oldHome; }
+  rmSync(base, { recursive: true, force: true });
+});
+
 test("spawn fails closed when a capability's runtime package is missing, even after a Claude-only reconciliation", () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "claude");   // soul default: claude

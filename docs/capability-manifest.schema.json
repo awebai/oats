@@ -119,6 +119,22 @@
               "marketplace": {
                 "type": "string",
                 "description": "Optional source to register before installing (Claude marketplaces). Shown at the consent prompt, since registering a third-party source is part of what is being agreed to."
+              },
+              "when": {
+                "type": "object",
+                "description": "Applies only when every named capability setting has the given effective value (a requirement conditional on configuration, e.g. delivery: channel).",
+                "additionalProperties": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                }
+              },
+              "minVersion": {
+                "type": "string",
+                "description": "Lowest acceptable installed version of the package as the runtime reports it; an older or unreportable install fails the requirement with the install remedy.",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"
               }
             },
             "additionalProperties": false
@@ -217,6 +233,30 @@
         "type": "string"
       },
       "description": "Package-relative soul directories (soul.yaml + AGENTS.md) \u2014 capability-defined agents; they resolve like local souls where the capability is active, souls stay read-only in the package, instances home under the scope's local-agents/."
+    },
+    "settings": {
+      "type": "object",
+      "description": "Declared capability settings: name to { default, values?, description }. Documentation for `oats use --settings`; undeclared settings are still accepted.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "default": {},
+          "values": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": false
