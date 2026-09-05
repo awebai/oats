@@ -27,21 +27,25 @@ Every continuing seat must have a supported OATS launch, composition,
 status, handover and retirement path. Its outstanding work, knowledge and
 required skills must survive a change of runtime session; identity/address
 continuity follows the explicit policy for that seat.
-Every remembering role must have a tested learning path; reviewers retain
-their explicit exclusion from accumulated memory. Config discovery alone
-establishes none of this.
+Every remembering role must have a tested learning path. Preserve each role's
+explicit policy: Cjr reviewers exclude accumulated memory; Themis uses
+reviewed learning. Config discovery alone establishes none of this.
 
-The installed baseline is OATS 0.22.2, including native Pi/Claude/Codex,
-tmux/Herdr, shared `yolo`, remote CLI launch/terminals and deferred retirement.
-The Mac Desktop app is installed and passed packaged renderer/PTY launch checks.
-Official oats.okf 1.5.0 provides record-fed harvesting. A source candidate for
-0.22.3 adds the retained-authority binding, remote Desktop roster/actions and
-retirement corrections; that candidate is not yet a published release.
+The installed baseline is published OATS 0.22.3 on this Mac and `aweb-agents`,
+including native Pi/Claude/Codex, tmux/Herdr, shared `yolo`, remote Desktop
+roster/actions, retained-authority binding and corrected deferred retirement.
+The downloaded Mac Desktop app passed codesign, packaged renderer and PTY
+launch checks. Official oats.okf 1.5.0 provides record-fed harvesting; each
+deployment must select its authenticated provider. Version 1.5.1, adding
+harvest-runtime selection and detection of unadvanced record plans, remains
+under independent review and is not yet published.
 
 No standing seat has transferred yet. Cjr's worker pilot has landed reviewed
 code and knowledge; ordinary retirement passed using the next-patch candidate.
-A real harvester's automatic deferred completion, successor knowledge use and
-session-broker delivery remain explicit acceptance checks.
+A real harvester's automatic deferred completion and successor knowledge use
+remain explicit acceptance checks. The reviewed aweb broker candidate passed
+real harness delivery; installation of its published release as the normal
+host service remains a prerequisite for standing cutover.
 
 ## Scope inventory
 
@@ -54,10 +58,10 @@ of continuing seats.
 | `~/awebai/oats` | Live Claude coordinator and Codex lead; managed review workers also running | Oats owns coordinator handover; lead owns lead handover; preserve established identities |
 | `~/cjr` | Preparation `5afb3e8b`; developer pilot landed on master `062e2c75`; legacy Merlin and Minerva live | Merlin owns safe handovers; preserve his DID/address; prove automatic harvest completion and successor use |
 | `~/awebai/aweb` | Live Claude coordinator and frontend in legacy homes | Oats owns coordinator handover; lead coordinates frontend with aweb after its current work; preserve identities and cover child repositories |
-| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. No OATS config/souls found | Zeus prepared the five-seat handover plan; begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
+| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. First-seat Themis config/soul packet under owner review | Zeus prepared the five-seat handover plan; begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
 | `~/prj/beadhub-all` | Live Codex session, despite stale offline roster | Beadhub accepted preparation and is at a safe boundary; retain its global identity, native Codex and separate canonical code roots under `~/awebai/beadhub`; billing remains separately gated |
 | `~/prj/docflow` | Live Claude seat identified itself as local `juan.aweb.ai/alice` on `docflow:juan.aweb.ai` | Owner Juan; finish running mail backfill and register checks before transfer; retain identity, memory and Minerva route; accountant-sync remains deliberately unloaded |
-| `ai.aweb` on `aweb-agents` | Athena last seen 53 days ago; remote legacy home exists in inventory | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
+| `ai.aweb` on `aweb-agents` | Aweb confirms Athena intentionally inactive; remote legacy home retained | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
 | `~/awebai/demo-aweb/bob` | Live Pi demo | Aweb owns safe stop and archival disposition; it is not an operating-team migration |
 | `~/.turn-record` | Live Pi capture service under launchd | Retain as infrastructure; qualify record capture separately from standing seats |
 
@@ -101,7 +105,9 @@ uniquely named so no existing address has to be removed for the experiment.
 
 Merlin retains his identity; other continuing seats follow their accepted
 policy. Oats implemented explicit source-authority binding in oats.aweb 1.10.0,
-reviewed and pinned for the next kernel patch. A disposable rehearsal verified
+reviewed and shipped with OATS 0.22.3. Published oats.aweb 1.10.1 additionally
+requires an installed ambient Claude channel to be at least 1.7.9 for session
+delivery, matching the existing Pi extension floor of 0.3.10. A disposable rehearsal verified
 stable identity/address, existing conversations, heartbeat, exclusive holder
 refusal, rollback and authority-preserving retirement. Aweb supplied this
 supported handover:
@@ -249,9 +255,13 @@ the shared rollout record.
   session-local schedules. Production credentials remain solely with the
   authorized production operator. His plan reserves Zeus's final cutover
   for Juan's presence; the other seats can prepare in the meantime.
-- BeadHub supplied its retained-identity and source-root brief through aweb
-  mail. It awaits the reviewed declarative binding and cutover recipe.
-  Its Stripe-account dependency and production cutover gates remain separate.
+- BeadHub configuration/soul commit `3ee13a8` was independently reviewed and
+  landed. Its tracked deployment template is materialized at the canonical
+  parent workspace, with trusted official capabilities and a clean actual
+  doctor result. The soul retains SaaS Git provenance and uses workspace mode
+  as a coordinator across the three canonical repositories. Its legacy holder
+  remains live; authenticated harvest-model configuration and the published
+  broker service precede activation. Stripe and production gates remain separate.
 - Docflow supplied its own identity and handover through its terminal. Its
   backfill and register verification define the safe boundary. Preserve its
   Claude memory and existing credentials in place; verify filesystem/TCC
@@ -264,6 +274,23 @@ the shared rollout record.
   the cross-team coordinator identity/contact policy explicitly before
   relying on those routes; do not silently replace retained identities.
 - Real remote Claude launch, terminal input and detach survival passed.
-  Remote Desktop projection and exact-home lifecycle are under independent
-  review for the next patch. Remote harvester completion remains blocked by
-  provider authentication, and no standing remote seat is declared migrated.
+  Remote Desktop projection and exact-home lifecycle shipped in 0.22.3; the
+  installed remote CLI serves the real registered roster. Remote harvester
+  completion remains blocked by provider authentication, and no standing
+  remote seat is declared migrated.
+- The aweb broker candidate `30469e22` ran as a private launchd service against
+  published OATS 0.22.3. Real Claude and Codex sessions in tmux and Pi
+  in Herdr, with Claude channel 1.7.9 and Pi extension 0.3.10, fetched mail and replied with exact qualification tokens,
+  with all GUI viewers closed. Pi also answered a sender-waiting chat. Mail
+  sent while the broker was stopped was recovered after restart. After the
+  Codex harness stopped, its registration became inactive and a subsequent
+  message remained unread. Pause also survived a daemon restart, keeping mail
+  unread until resume, after which the agent replied. The candidate does not
+  fetch or acknowledge mail.
+  Published aw installation and standing-seat acceptance are still separate.
+- Qualification found that tmux output loses tab separators in a minimal
+  launchd environment without a UTF-8 locale. Independently reviewed kernel
+  fix `a0b0e14` adds tmux UTF-8 mode; until it ships, the host service specifies
+  `LC_ALL=en_US.UTF-8`. Existing Claude plugin 1.7.8 also consumed mail before
+  the broker wake; updating to 1.7.9 eliminated that competing delivery path.
+  The deployed oats.aweb 1.10.1 floor now rejects the incompatible version.
