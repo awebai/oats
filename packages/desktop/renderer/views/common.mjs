@@ -111,7 +111,8 @@ export function wsQuery(prefix = "?") {
 export function instanceApiPath(kind, instance, query = "") {
   const name = typeof instance === "string" ? instance : instance.instance;
   const home = typeof instance === "object" && instance.home ? `home=${encodeURIComponent(instance.home)}` : "";
-  const extra = [query, home].filter(Boolean).join("&");
+  const server = typeof instance === "object" && instance.server ? `server=${encodeURIComponent(instance.server)}` : "";
+  const extra = [query, home, server].filter(Boolean).join("&");
   const q = extra ? `?${extra}${wsQuery("&")}` : wsQuery();
   return `/api/${kind}/${encodeURIComponent(name)}${q}`;
 }

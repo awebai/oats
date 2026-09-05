@@ -312,7 +312,7 @@ function renderContextRoster(instances) {
         row.append(dot, copy);
         // pass the FULL reference: same-named instances in other agents
         // roots must open THEIR tmux session, not the first name match
-        row.addEventListener("click", () => openTerminalTab({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot }));
+        row.addEventListener("click", () => openTerminalTab({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot, server: i.server }));
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";

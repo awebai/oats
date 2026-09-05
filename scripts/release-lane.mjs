@@ -371,10 +371,7 @@ class Lane {
     await this.step("npm run smoke:tarball", "npm", ["run", "smoke:tarball"], { cwd: exportDir });
 
     // "Probe the Desktop CLI API v1 contract from the bumped tree"
-    const probe = await this.step("version --json probe", "node", ["bin/oats.mjs", "version", "--json"], { cwd: exportDir, quiet: true });
-    const expected = JSON.stringify({ schemaVersion: 1, name: KERNEL, version: this.version, desktopApi: 1 });
-    if (probe.stdout.trim() !== expected) throw new LaneError(`version --json probe mismatch: ${probe.stdout.trim()} (expected ${expected})`);
-    say(`version --json probe ok: ${expected}`);
+    await this.step("version --json probe", "node", ["scripts/check-version-probe.mjs", this.version], { cwd: exportDir });
 
     // Pack once; everything downstream publishes these exact bytes.
     for (const [pkg, sub] of [[KERNEL, "."], [ADAPTER, "packages/pi"]]) {

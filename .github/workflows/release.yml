@@ -113,10 +113,7 @@ jobs:
         run: npm run smoke:tarball
 
       - name: Probe the Desktop CLI API v1 contract from the bumped tree
-        run: |
-          OUT="$(node bin/oats.mjs version --json)"
-          EXPECTED='{"schemaVersion":1,"name":"@awebai/oats","version":"${{ steps.v.outputs.version }}","desktopApi":1}'
-          [ "$OUT" = "$EXPECTED" ] || { echo "::error::version --json probe mismatch: $OUT"; exit 1; }
+        run: node scripts/check-version-probe.mjs "${{ steps.v.outputs.version }}"
 
       - name: Upload bumped manifests for the version-bump PR
         uses: actions/upload-artifact@v4
