@@ -224,6 +224,7 @@
               },
               "requiredHooks": [],
               "environment": [],
+              "environmentNamespaces": [],
               "missingRequires": [],
               "trust": {
                 "trusted": true,
@@ -457,6 +458,7 @@
               },
               "requiredHooks": [],
               "environment": [],
+              "environmentNamespaces": [],
               "missingRequires": [],
               "trust": {
                 "trusted": true,
