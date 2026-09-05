@@ -476,6 +476,42 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("routed spawn: a success reply without a home never replaces an existing saved route", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-nohome-"));
+  const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
+  try {
+    const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    const target = { sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    mkdirSync(dirname(snapshotPath("build", "dev-x")), { recursive: true });
+    const prior = { serverId: "build", target, remote: { version: "0.22.3", schemaVersion: 1 }, instance: "dev-x", agent: "dev", home: "/w/agents/dev/instances/dev-x", agentsRoot: "/w/agents", spawnedAt: "2026-09-05T00:00:00.000Z" };
+    writeFileSync(snapshotPath("build", "dev-x"), JSON.stringify(prior));
+    const probe = { schemaVersion: 1, name: "@awebai/oats", version: "0.22.3", desktopApi: 1, runtimes: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home"] };
+    const status = { schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", runtime: "pi", instances: [] }] } };
+    let calls = 0;
+    const exec = (bin, argv) => {
+      calls++;
+      const word = String(argv.at(-1));
+      if (word.includes("version --json")) return JSON.stringify(probe);
+      if (word.includes(" status ")) return JSON.stringify(status);
+      if (word.includes(" spawn ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", agent: "dev", launched: false, warnings: [] } });
+      throw new Error(`unexpected remote call: ${word}`);
+    };
+    const routed = routeCommand("build", "spawn", ["dev", "--purpose", "x", "--no-launch"], { server, execFileSync: exec });
+    assert.equal(calls, 3);
+    assert.equal(routed.envelope.ok, true);
+    assert.equal(routed.envelope.result.snapshot, null, "no route written for a home-less result");
+    assert.deepEqual(routed.envelope.result.routeConflict, { instance: "dev-x", existingHome: prior.home });
+    assert.deepEqual(JSON.parse(readFileSync(snapshotPath("build", "dev-x"), "utf8")), prior, "the existing route survives byte for byte");
+    // The same home in the reply is the same route: replaced, no conflict.
+    const same = (bin, argv) => (String(argv.at(-1)).includes(" spawn ") ? JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", agent: "dev", home: prior.home, launched: false, warnings: [] } }) : exec(bin, argv));
+    const again = routeCommand("build", "spawn", ["dev", "--purpose", "x", "--no-launch"], { server, execFileSync: same });
+    assert.equal(again.envelope.result.routeConflict, undefined); assert.equal(typeof again.envelope.result.snapshot, "string");
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
   try {
