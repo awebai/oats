@@ -1,6 +1,10 @@
 # Knowledge Log
 
 ## 2026-09-05
+* **Creation**: [assert-independent-measurements](/lessons/assert-independent-measurements.md) records that assertions need an independent measurement of the claimed quantity, not the same formula used by the implementation.
+* **Creation**: [instance-home-bare-git-cwd](/lessons/instance-home-bare-git-cwd.md) records that bare git from an OATS instance home can mutate the operator checkout because the home sits inside the main repo; review/development git commands should name the worktree with `-C`.
+* **Creation**: [real-cli-seam-smoke-for-faked-package-tests](/playbooks/real-cli-seam-smoke-for-faked-package-tests.md) records the record-harvest end-to-end seam check for package tests that fake `OATS_CLI_BIN` and direct-bin tests that bypass `bin/oats.mjs`.
+* **Creation**: [review-verify-claimed-path-set](/lessons/review-verify-claimed-path-set.md) records that review ACKs must re-derive the full reviewed path set before trusting a content-unchanged diff supplied by the party being verified.
 * **Creation**: [every-failed-retry-needs-one-deadline](/lessons/every-failed-retry-needs-one-deadline.md) records that every failed lock-acquire branch must pass through the same deadline and sleep, and that directory/dangling-symlink lock shapes reproduce the escaped retry paths deterministically.
 * **Creation**: [pid-liveness-fails-toward-refusing-to-write](/decisions/pid-liveness-fails-toward-refusing-to-write.md) records that RecordStore pid-liveness locking accepts pid-reuse false positives and resolves uncertainty by timing out rather than restoring an age ceiling that can steal live locks.
 * **Creation**: [ownership-token-lock-beats-threshold-ordering](/lessons/ownership-token-lock-beats-threshold-ordering.md) records that comparing lock timeout and stale thresholds cannot prove safety when their clocks start from different events; owner tokens and ownership-checked release carry the guarantee.
