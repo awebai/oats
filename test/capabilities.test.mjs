@@ -812,6 +812,27 @@ test("a capability may declare extra environment namespaces it speaks for, discl
   assert.throws(() => capabilityManifest("acme.aw", mk(["aweb_"])), /uppercase prefix/);
 });
 
+test("a hook may set a variable under a declared extra namespace at spawn, and the runtime refuses one it did not declare", () => {
+  const base = temp();
+  const { repo, root } = fixtureSoul(base, "pi");
+  capability(repo, "aw", {
+    capability: "acme.aw", environment: ["AWEB_DELIVERY"], environmentNamespaces: ["AWEB_"],
+    hooks: { spawn: "hook.mjs" },
+  }, { "hook.mjs": `import { writeFileSync } from "node:fs"; const name = process.env.EMIT_NAME || "AWEB_DELIVERY"; const out = { meta: {}, env: { [name]: "session" } }; writeFileSync(${JSON.stringify(join(base, "hook-out.json"))}, JSON.stringify({ out, emit: process.env.EMIT_NAME || null })); console.log(JSON.stringify(out));` });
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.aw:\n      global: true\n");
+  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  try {
+    // the manifest permits it AND the runtime accepts it: the variable reaches the launch
+    const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-env", launch: false });
+    assert.match(r.command, /AWEB_DELIVERY='?session'?/, "the declared namespace variable is in the launch command");
+    retireInstance(root, "dev-env", { tmuxSession: "oats-test-nosuch" });
+    // an undeclared namespace is refused at spawn even though the manifest loaded
+    process.env.EMIT_NAME = "OTHER_THING";
+    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-env2", launch: false }), /OTHER_THING is outside its ACME_, AWEB_ namespaces/);
+  } finally { process.env.PATH = oldPath; delete process.env.EMIT_NAME; }
+  rmSync(base, { recursive: true, force: true });
+});
+
 test("launch environment authority requires an unambiguous dotted capability ID", () => {
   for (const id of ["aweb@evil", "aweb/evil", "aweb.evil@other", "aweb.evil/other", "Aweb.evil"]) {
     const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);

@@ -180,12 +180,15 @@ const IDENTITY_AUTHORITY = ["signing.key", "identity.yaml", "teams.yaml", "team-
 // [--backend tmux|herdr]`, durable even when the daemon is down). An aw
 // without `aw wake` cannot deliver in session mode: refuse, never silently
 // turn a working channel into a poll-only instance.
-function wakeRegister(instanceHome, identityHome, minted) {
+// Throws, never exits: both callers run it inside a try whose catch performs
+// the rollback (the seat path restores the binding; the mint path hands the
+// minted identity to compensation).
+function wakeRegister(instanceHome, identityHome) {
   const backend = process.env.OATS_BACKEND;
   try {
     run(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
   } catch (e) {
-    fatal(`delivery: session needs an aw with the wake broker CLI (aw wake register), which this aw does not provide (${e.message || e}); install the aweb release that ships aw wake, or use delivery: channel`, minted);
+    throw new Error(`delivery: session needs an aw with the wake broker CLI (aw wake register), which this aw does not provide (${e.message || e}); install the aweb release that ships aw wake, or use delivery: channel`);
   }
 }
 function wakeDeregister(instanceHome) {
@@ -301,7 +304,7 @@ function retainedSeatSpawn(source, takeOver) {
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session); until the host wake broker registers this instance NOTHING wakes you: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary.`
       : "";
-    if (deliveryMode === "session") wakeRegister(home, dest, undefined);
+    if (deliveryMode === "session") wakeRegister(home, dest);
     const warnings = [];
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
@@ -392,7 +395,7 @@ if (event === "spawn") {
       : undefined;
     const env = deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : undefined;
     const channelWarning = undefined;
-    if (deliveryMode === "session") wakeRegister(home, join(home, ".aw"), minted);
+    if (deliveryMode === "session") wakeRegister(home, join(home, ".aw"));
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";

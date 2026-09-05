@@ -202,3 +202,17 @@ test("retained identity: a whoami that reports another did fails the seat and re
     assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("retained identity in session mode: an aw without the wake CLI fails the seat AFTER restoring the binding and removing the copy and the lock", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const { src } = legacySeat(base);
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({ identity: { source: src }, delivery: "session" }), FAKE_NO_WAKE: "1" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout, /could not be seated .*wake broker CLI/);
+    const connects = readFileSync(join(base, "aw.log"), "utf8").split("\n").filter((l) => l.startsWith("workspace connect"));
+    assert.equal(connects.length, 2, "the binding was restored from the legacy home");
+    assert.equal(existsSync(join(home, ".aw")), false, "copied key removed");
+    assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});

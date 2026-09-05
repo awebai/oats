@@ -133,7 +133,7 @@
               },
               "minVersion": {
                 "type": "string",
-                "description": "Lowest acceptable installed version of the package as the runtime reports it; an older or unreportable install fails the requirement with the install remedy.",
+                "description": "Lowest acceptable installed version of the package, read from the package.json under the install directory the runtime's listing names; an older or absent manifest fails the requirement with the install remedy.",
                 "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"
               },
               "ifInstalled": {
