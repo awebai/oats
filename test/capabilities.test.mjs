@@ -780,7 +780,9 @@ test("--settings accepts multiple pairs per flag, repeated flags, and rejects ma
   r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "depth=low", "--settings", "site=umbrella", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const okf = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
-  assert.deepEqual(okf.settings, { site: "umbrella", project: "core", depth: "low" });
+  // The pinned oats.okf (1.5.1) declares a settings default (harvest-runtime:
+  // pi) that the kernel merges into the effective settings beneath the scope's.
+  assert.deepEqual(okf.settings, { site: "umbrella", project: "core", depth: "low", "harvest-runtime": "pi" });
   // Malformed pair (missing '=') dies loudly.
   r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "nonsense", "--dir", repo], { encoding: "utf8" });
   assert.notEqual(r.status, 0);
