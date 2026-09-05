@@ -4083,7 +4083,7 @@ test("every harvest spawn path briefs its own custody-specific finish (reviewer-
   // plus PR, or a direct edit with nothing to commit. Two of three harvesters
   // were reading instructions that did not describe their situation.
   const okf = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
-  const soul = readFileSync(join(okf, "agents", "memory-harvest.md"), "utf8");
+  const soul = readFileSync(join(okf, "agents", "memory-harvest", "AGENTS.md"), "utf8");
   const skill = readFileSync(join(okf, "skills", "memory-harvest", "SKILL.md"), "utf8");
   for (const [what, text] of [["soul", soul], ["skill", skill]]) {
     assert.match(text, /briefing|TASK\.md/i, `the ${what} must defer to the briefing`);
@@ -4099,6 +4099,75 @@ test("every harvest spawn path briefs its own custody-specific finish (reviewer-
   assert.match(bin, /Do NOT merge it/, "workspace path briefs PR delivery");
   assert.match(bin, /commit your promotions there as a single commit/, "attached path briefs the shared-tree commit");
   rmSync(join(okf, "..", "..", "nonexistent-cleanup-noop"), { recursive: true, force: true });
+});
+
+test("no bundled capability imports the kernel (package-runtime boundary)", () => {
+  // docs/design/package-runtime-api.md: "independently released packages MUST
+  // NOT import kernel-private lib/core.mjs (including via `oats root` + dynamic
+  // import)". Everything under capabilities/ is a byte-identical copy of an
+  // independently released package, so the rule applies to every file there.
+  //
+  // This is checked as text over the whole tree rather than by loading modules:
+  // the violation that shipped was a DYNAMIC import built from a path computed
+  // at runtime, which no import graph walked at rest would have shown.
+  const capsDir = resolve(new URL("../capabilities", import.meta.url).pathname);
+  const files = [];
+  const walk = (dir) => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) { if (e.name !== "node_modules") walk(p); }
+      else if (e.isFile()) files.push(p);
+    }
+  };
+  walk(capsDir);
+  assert.ok(files.length > 20, `expected the full bundled capability set, saw ${files.length}`);
+  const code = files.filter((f) => f.endsWith(".mjs") || f.endsWith(".js"));
+  assert.ok(code.length >= 4, `expected the bundled executables, saw ${code.length}`);
+  for (const f of code) {
+    const text = readFileSync(f, "utf8");
+    // Match the FILENAME, not the path: the violation that shipped wrote it as
+    // join(FRAMEWORK_ROOT, "lib", "core.mjs"), which a /lib\/core\.mjs/ pattern
+    // reads straight past.
+    assert.doesNotMatch(text, /core\.mjs/, `${relative(capsDir, f)} names the kernel-private module`);
+    assert.doesNotMatch(text, /@awebai\/oats/, `${relative(capsDir, f)} imports the kernel package`);
+    assert.doesNotMatch(text, /\boats root\b/, `${relative(capsDir, f)} resolves kernel files through \`oats root\``);
+  }
+  // And the one bundled command that does reach the kernel reaches it the only
+  // sanctioned way: the absolute path dispatch supplies in OATS_CLI_BIN.
+  const okfBin = readFileSync(join(capsDir, "oats-okf", "bin", "oats-okf.mjs"), "utf8");
+  assert.match(okfBin, /OATS_CLI_BIN/, "oats.okf executes the CLI through the dispatch-supplied absolute path");
+});
+
+test("bundled capabilities carry the versions package-catalog.json pins", () => {
+  // The bundled trees exist only as copies of the published payloads (the
+  // clean-room smoke wraps capabilities/oats-okf as the "official" oats.okf).
+  //
+  // This checks VERSION drift and nothing more. It does NOT detect a copy that
+  // differs from its payload while claiming the payload's version — the bundled
+  // oats.okf this replaced claimed 1.4.1 and differed, and would have passed
+  // here. Parity was established by comparing the trees byte for byte against
+  // the catalog-pinned payloads at sync time; no assertion in this repo
+  // re-establishes it. The kernel coupling that made the old copy wrong is
+  // caught by the no-private-import test above.
+  const pkgRoot = resolve(new URL("..", import.meta.url).pathname);
+  const catalog = JSON.parse(readFileSync(join(pkgRoot, "package-catalog.json"), "utf8"));
+  // Capability version == package version only where the package says so; the
+  // catalog pins a PACKAGE ref, so compare against the package that supplies
+  // each capability. oats.review is supplied by oats.dev and versions
+  // independently of it, which is exactly why this maps rather than assumes.
+  const expected = { "oats-okf": "oats.okf", "oats-aweb": "oats.aweb", "oats-jira": "oats.jira", "oats-linear": "oats.linear", "oats-authoring": "oats.authoring" };
+  for (const [slug, pkg] of Object.entries(expected)) {
+    const ref = catalog.packages[pkg]?.ref;
+    assert.ok(ref, `package-catalog.json pins no ref for ${pkg}`);
+    const manifest = JSON.parse(readFileSync(join(pkgRoot, "capabilities", slug, "oats.json"), "utf8"));
+    assert.equal(manifest.version, String(ref).replace(/^v/, ""), `capabilities/${slug} must carry the version ${pkg} is pinned at`);
+  }
+  // oats.review ships inside the oats.dev package; the capability manifest is
+  // the authority on ITS version, and the bundled copy must match the payload.
+  const review = JSON.parse(readFileSync(join(pkgRoot, "capabilities", "oats-review", "oats.json"), "utf8"));
+  assert.equal(review.capability, "oats.review");
+  assert.equal(catalog.capabilities["oats.review"], "oats.dev", "oats.review is supplied by the oats.dev package");
+  assert.equal(review.version, "1.2.0", "the oats.dev@v1.0.0 payload ships oats.review at 1.2.0");
 });
 
 test("no shipped instructional surface teaches settling in the work tree (maintainer contract)", () => {

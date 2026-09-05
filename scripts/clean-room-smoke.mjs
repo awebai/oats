@@ -58,10 +58,32 @@ try {
   // own official package — the PACKED kernel's own bundled oats.okf, wrapped in
   // a distribution manifest inside a local Git repository — and a catalog
   // naming it. The materialization route is exercised for real, offline.
+  //
+  // Wrapping the bundled tree is only honest while the bundled tree IS the
+  // published payload. That parity was established by comparing the bundled
+  // trees byte for byte against the catalog-pinned payloads when they were
+  // synced; NOTHING here re-establishes it, and this check must not be read as
+  // doing so. Version equality is a weak signal on its own — the bundled
+  // oats.okf this replaced also claimed 1.4.1 while differing in content.
+  //
+  // What this check catches is exactly VERSION drift: the bundled manifest
+  // claiming a version the catalog does not pin. It is checked HERE, against
+  // the packed artifact, before anything is built on it. The architectural
+  // violation that made the old copy wrong — reaching into the kernel — is
+  // caught by the no-private-import assertion in test/capabilities.test.mjs,
+  // not by this.
   const officialRepo = join(room, "official", "oats-okf");
   const payload = join(officialRepo, "oats-package");
+  const packedCatalog = JSON.parse(readFileSync(join(kernelRoot, "package-catalog.json"), "utf8"));
+  const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
+  if (!pinnedRef) throw new Error("packed package-catalog.json does not pin a ref for oats.okf");
+  const pinnedVersion = String(pinnedRef).replace(/^v/, "");
+  const bundledVersion = JSON.parse(readFileSync(join(kernelRoot, "capabilities", "oats-okf", "oats.json"), "utf8")).version;
+  if (bundledVersion !== pinnedVersion) {
+    throw new Error(`bundled capabilities/oats-okf claims version ${bundledVersion} but package-catalog.json pins oats.okf at ${pinnedRef} — resync the bundled tree from the pinned payload, or move the pin`);
+  }
   write(join(payload, "oats-package.json"), JSON.stringify({
-    package: "oats.okf", version: "1.4.1", description: "clean-room official oats.okf",
+    package: "oats.okf", version: pinnedVersion, description: "clean-room official oats.okf",
     compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/oats-okf"],
   }, null, 2));
   cpSync(join(kernelRoot, "capabilities", "oats-okf"), join(payload, "capabilities", "oats-okf"), { recursive: true });
