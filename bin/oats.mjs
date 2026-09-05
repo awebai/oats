@@ -2804,13 +2804,17 @@ function createCmd() {
   if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude] [--model <m>] [--instructions-file <f>]");
   const local = args.includes("--local");
   const startDir = dirFlag();
-  // --local can BOOTSTRAP a deployment: with no agents/ or local-agents/ yet,
-  // anchor at the enclosing git repo (else the start dir) — people can use OATS
-  // with local agents alone.
+  // `create` BOOTSTRAPS a deployment: with no agents/ or local-agents/ yet,
+  // anchor at the enclosing git repo (else the start dir). It is the command
+  // that populates the roster root, so it must not demand that the root
+  // already exist — that demand was the first thing a new user hit after
+  // `oats init` (a raw stack trace from ensureRoot). Local and committed souls
+  // anchor the same way; writeSoul creates the directories.
   let root = findRoot(startDir);
+  let bootstrapped = false;
   if (!root) {
-    if (!local) root = ensureRoot(startDir); // keeps the pointed error for committed souls
-    else root = join(defaultRepo(startDir) || resolve(startDir), "agents");
+    root = join(defaultRepo(startDir) || resolve(startDir), "agents");
+    bootstrapped = true;
   }
   const instrFile = flag("instructions-file");
   const r = coreCreateAgent(root, {
@@ -2818,7 +2822,8 @@ function createCmd() {
     work: flag("work"), runtime: flag("runtime"), model: flag("model"),
     instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
   });
-  if (args.includes("--json")) { console.log(JSON.stringify(r, null, 2)); return; }
+  if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
+  if (bootstrapped) console.log(`Created deployment root ${shortPath(root)} (this scope had no agents/ yet)`);
   console.log(`Created ${r.kind === "local" ? "LOCAL agent (uncommitted — soul lives in local-agents/, gitignored)" : "agent"} "${r.agent}" — soul at ${shortPath(r.soul)}`);
   console.log(`Edit ${shortPath(join(r.soul, "AGENTS.md"))} to define its role, then: oats spawn ${r.agent} --task "..."`);
 }
