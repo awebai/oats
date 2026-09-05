@@ -33,15 +33,17 @@ Every remembering role must have a tested learning path. Preserve each role's
 explicit policy: Cjr reviewers exclude accumulated memory; Themis uses
 reviewed learning. Config discovery alone establishes none of this.
 
-The installed CLI baseline is published OATS 0.22.4 on this Mac and `aweb-agents`,
+The installed CLI baseline is published OATS 0.22.5 on this Mac and `aweb-agents`,
 including native Pi/Claude/Codex, tmux/Herdr, shared `yolo`, remote Desktop
 roster/actions, retained-authority binding and corrected deferred retirement.
-The installed Mac Desktop 0.22.4 passed published ZIP checksum, strict deep
-codesign, packaged renderer and PTY launch checks; the previous 0.22.3 app
-is preserved for rollback. Official oats.okf 1.5.0 provides record-fed harvesting; each
-deployment must select its authenticated provider. Version 1.5.1, adding
-harvest-runtime selection and detection of unadvanced record plans, remains
-under independent review and is not yet published.
+The installed Mac Desktop 0.22.5 passed published ZIP checksum, strict deep
+codesign, packaged renderer and PTY launch checks; the previous 0.22.4 app
+is preserved for rollback. Official oats.okf 1.5.1 is published after independent
+review, adding harvest-runtime selection and detection of unadvanced record
+plans. Each deployment selects an authenticated harness; without an explicit
+harvest-model, that harness uses its own configured default. Some prepared
+teams still use the compatible 1.5.0 package; preserve the exact versions of
+each earlier qualification.
 
 No standing seat has transferred yet. Cjr's workers have landed reviewed
 code and knowledge. Two ordinary cycles on published 0.22.3 completed automatic
@@ -63,7 +65,7 @@ of continuing seats.
 | `~/awebai/oats` | Live Claude coordinator and Codex lead; managed review workers also running | Oats owns coordinator handover; lead owns lead handover; follow the explicit fresh or retained identity choice |
 | `~/cjr` | Preparation `5afb3e8b`; developer pilot landed on master `062e2c75`; legacy Merlin and Minerva live | Merlin owns safe handovers; preserve his DID/address; automatic harvest completion and successor use are proven; prepare standing seats |
 | `~/awebai/aweb` | Live Claude coordinator and frontend in legacy homes | Oats owns coordinator handover; lead coordinates frontend with aweb after its current work; handover task responsibility and cover child repositories |
-| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. Themis and Argos config/souls integrated, official capabilities installed and trusted | Zeus prepared the five-seat handover plan; begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
+| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. All five souls integrated, official capabilities installed and trusted, owner checkpoints prepared | Begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
 | `~/prj/beadhub-all` | Live Codex session, despite stale offline roster | Beadhub accepted preparation and is at a safe boundary; retain its global identity, native Codex and separate canonical code roots under `~/awebai/beadhub`; billing remains separately gated |
 | `~/prj/docflow` | Live Claude seat identified itself as local `juan.aweb.ai/alice` on `docflow:juan.aweb.ai` | Owner Juan; finish running mail backfill and register checks before transfer; retain identity, memory and Minerva route; accountant-sync remains deliberately unloaded |
 | `ai.aweb` on `aweb-agents` | Aweb confirms Athena intentionally inactive; remote legacy home retained | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
@@ -143,10 +145,11 @@ stops the runtime before releasing capabilities; status remains read-only.
 Cjr archived its local harvester override and uses official oats.okf 1.5.0.
 Its authenticated Pi model is `openai-codex/gpt-5.5`. The remote qualification
 host's equivalent provider login fails refresh with `invalid_refresh_token`;
-spawning that harvester is not successful learning. Both failed test sessions
-were retired normally. Do not copy rotating login tokens from another host.
-An explicit `harvest-runtime` setting is planned in oats.okf 1.5.1 so an
-already authenticated Claude or Codex runtime can do the same work.
+both failed Pi tests were retired normally. No rotating login tokens were copied.
+Official oats.okf 1.5.1 now selects the already authenticated native Claude
+runtime on that host. A real note-fed harvest promoted an operational lesson,
+self-retired, and a fresh successor retrieved and used the lesson. This proves
+that alternative harness path; it does not claim the Pi login was repaired.
 
 ### Finish temporary identity retirement
 
@@ -262,8 +265,10 @@ the shared rollout record.
   authorizes completing the migration while he is away; the earlier
   presence-only pause does not override it. Actual job and production boundaries
   remain. Themis's ten-commit packet landed at `46cf2083`; its installed
-  oats.aweb 1.10.1 and oats.okf 1.5.0 passed the actual doctor. The other three
-  specialist briefs are being prepared at their work checkpoints.
+  oats.aweb 1.10.1 and oats.okf 1.5.0 passed the actual doctor. All five souls
+  are now integrated through Prometeo's `103e534c`, with owner-approved private
+  startup briefs and checkpoints. Those checkpoints must be refreshed at the
+  actual stop; Zeus's deployment and scheduled-job boundaries remain binding.
 - BeadHub configuration/soul commit `3ee13a8` in `awebai/beadhub-saas`
   (`~/awebai/beadhub/beadhub-saas`) was independently ACKed by lead and
   landed on `main`. Its tracked deployment template is materialized at the canonical
@@ -286,9 +291,9 @@ the shared rollout record.
   relying on those routes; do not silently replace retained identities.
 - Real remote Claude launch, terminal input and detach survival passed.
   Remote Desktop projection and exact-home lifecycle shipped in 0.22.3; the
-  installed remote CLI serves the real registered roster. Remote harvester
-  completion remains blocked by provider authentication, and no standing
-  remote seat is declared migrated.
+  installed remote CLI serves the real registered roster. Native Claude
+  harvesting subsequently completed with official oats.okf 1.5.1, as recorded
+  below. No standing remote seat is declared migrated.
 - The aweb broker candidate `30469e22` ran as a private launchd service against
   published OATS 0.22.3. Real Claude and Codex sessions in tmux and Pi
   in Herdr, with Claude channel 1.7.9 and Pi extension 0.3.10, fetched mail and replied with exact qualification tokens,
@@ -325,7 +330,7 @@ the shared rollout record.
   claim a knowledge promotion.
 - Docflow's two-commit preparation at `4458097` is independently ACKed: native
   Claude, retained authority, session delivery and 18 valid curated OKF concepts.
-  Its owner is integrating and acquiring official packages. The running backfill
+  Its role and package preparation is integrated. The running backfill
   and FY2025 register checks still determine its activation boundary.
 - The tracked aweb coordinator soul at `0a3a9a91` is independently ACKed; the
   frontend soul at `b3985edb` is owner-reviewed and landed. They preserve the
@@ -337,8 +342,13 @@ the shared rollout record.
   installers. CI retried once after a disappearing Git maintenance lock in a
   fixture; kernel and Desktop gates then passed. A manual reviewed version-bump
   PR completed the bot's permission-blocked post-publication step. Published
-  npm JavaScript bytes match the tag. Aweb 1.36.1 publication is still pending
-  a gateway build dependency download; the private candidate broker is not
+  npm JavaScript bytes match the tag. OATS 0.22.5 subsequently shipped the
+  package-selector CLI and oats.okf 1.5.1 pin; its manual version-bump PR #5
+  completed at `91ef541`. Aweb 1.36.1 remains unpublished: candidate `bfdb2088`
+  passed targets 1–41, then a Go dependency download failed in target 42.
+  Its coordinator explicitly accepted completing targets 42–46 on that same
+  candidate and environment, preserving both logs and recording the loss of
+  single-run atomicity. The remainder is running; the private broker is not
   being represented as the permanent published service.
 
 - Cjr's retained declaration/runbook packet is independently ACKed through
@@ -350,12 +360,35 @@ the shared rollout record.
 - TSM's Argos packet is integrated at `f20c54bb` after both independent and
   owner ACKs; actual doctor resolves the two retained reviewer seats. BeadHub
   and Themis supplied final private startup briefings and idle checkpoints.
-  Hermes and Prometeo were explicitly woken to read unseen followups and prepare
-  their continuation briefs; their legacy channels had not delivered those
-  requests reliably.
-- A locked-selector update gap found during actual team setup is corrected
-  on main at `d95018e` (two independently reviewed commits). The next kernel
-  patch supports `oats update <package> --to <ref>` or a positional catalog
+  Hermes and Prometeo were explicitly woken to read unseen followups; their
+  legacy channels had not delivered those requests reliably. Both subsequently
+  approved their souls and final handover checkpoints.
+- A locked-selector update gap found during actual team setup was corrected
+  at `d95018e` (two independently reviewed commits) and shipped in 0.22.5.
+  It supports `oats update <package> --to <ref>` or a positional catalog
   spec. A hermetic CLI test exercises the version transition, trust reset and
   invalid arguments, including refusal to enter the kernel self-updater when
-  a package is missing. This change is not yet part of installed 0.22.4.
+  a package is missing. The installed remote 0.22.5 CLI accepted the selector
+  and preserved the already-correct 1.5.1 lock and its trust.
+
+- Herdr 0.8.2 is installed on both hosts. Published OATS 0.22.4 launched a
+  real remote Claude session through the saved server route; a separate
+  session-input request elicited an actual reply. The source and its successor
+  then completed native Claude harvesting and knowledge use with official OKF
+  1.5.1. The harvester consumed its source note, promoted one PATH-resolution
+  lesson, passed strict validation, and self-retired. A fresh instance read the
+  indexed lesson before checking every resolved tool path and comparing runtime
+  and login shells. Both source instances were retired normally with their
+  changed home files preserved. This is local-soul promotion and retrieval,
+  not a repository PR cycle or remote broker-wake acceptance.
+- The remote host now has shared `yolo: true`, updated Pi installations,
+  Claude channel 1.7.9, and the published OATS 0.22.5 capture hooks and enabled
+  user service. Its existing record-owner name was preserved and the initial
+  capture/index pass completed. The Mac capture service was left in place.
+- Coordinator scope is explicit: Oats and Aweb retain their global identities
+  through the rehearsed authority-transfer path. Fresh local lead/frontend
+  identities relay cross-team requests through a verified global coordinator;
+  an alias containing a domain does not itself establish global reach. The
+  final briefs preserve conversations or hand off unresolved threads according
+  to that identity choice, require an actual old-process stop, and distinguish
+  startup context from a separate incoming-message wake check.
