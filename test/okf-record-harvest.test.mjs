@@ -233,7 +233,7 @@ test("okf harvest: the workspace-mode briefing makes commit, push and PR conditi
 test("okf harvest: runtime and model selection reach the spawn boundary in every work mode", () => {
   const base = mkdtempSync(join(tmpdir(), "okf-runtime-"));
   const cases = [
-    { kind: "repo", settings: {}, runtime: "pi", model: "github-copilot/gpt-5.5" },
+    { kind: "repo", settings: {}, runtime: "pi" },
     { kind: "repo", settings: { "harvest-runtime": "pi", "harvest-model": "openai-codex/gpt-5.5" }, runtime: "pi", model: "openai-codex/gpt-5.5" },
     { kind: "local", settings: { "harvest-runtime": "claude" }, runtime: "claude" },
     { kind: "workspace", settings: { "harvest-runtime": "codex" }, runtime: "codex" },
@@ -254,7 +254,7 @@ test("okf harvest: runtime and model selection reach the spawn boundary in every
       const log = JSON.parse(readFileSync(spawnLog, "utf8"));
       assert.equal(log.args[log.args.indexOf("--runtime") + 1], c.runtime);
       if (c.model) assert.equal(log.args[log.args.indexOf("--model") + 1], c.model);
-      else assert.equal(log.args.includes("--model"), false, "native harness chooses its own default");
+      else assert.equal(log.args.includes("--model"), false, "harness chooses its own default");
       if (c.kind === "local") assert.match(log.task, /LOCAL-SOUL/);
       if (c.kind === "workspace") assert.match(log.task, /WORKSPACE-MODE/);
     }

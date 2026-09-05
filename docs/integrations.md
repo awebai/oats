@@ -150,9 +150,9 @@ oats use oats.okf --settings harvest-runtime=claude
 ```
 
 - `harvest-runtime: pi | claude | codex` defaults to `pi`.
-- `harvest-model` is optional. Pi defaults to `github-copilot/gpt-5.5` and
-  accepts Pi provider/model patterns. Claude and Codex use their configured
-  default when omitted; an explicit value must be a native model name
+- `harvest-model` is an optional pin, for example to use a cheaper model.
+  When omitted, each harness uses its configured default. Pi accepts
+  provider/model patterns. Claude and Codex require a native model name
   (for example `sonnet` or `gpt-5.5`), without a Pi provider prefix.
 
 These settings apply to note and record harvests, including deferred retirement

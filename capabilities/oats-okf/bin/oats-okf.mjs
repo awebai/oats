@@ -52,10 +52,6 @@ catch (e) {
   if (JSON_MODE) jsonFail("E_HARVEST_FAILED", `malformed OATS_SETTINGS: ${e.message || e}`);
   process.stderr.write(`oats-okf: malformed OATS_SETTINGS (ignoring): ${e.message || e}\n`);
 }
-/** Model for the memory-harvest agent — promotion judgment is cheap-but-good
- *  work; default gpt-5.5, overridable via okf settings { "harvest-model": ... }. */
-const DEFAULT_HARVEST_MODEL = "github-copilot/gpt-5.5";
-
 function runtimeError(code, message) {
   return Object.assign(new Error(message), { code });
 }
@@ -218,7 +214,7 @@ function harvestRuntime() {
   if (configured != null && (typeof configured !== "string" || !configured.trim())) {
     throw runtimeError("E_HARVEST_SETTINGS", "harvest-model must be a nonempty model name");
   }
-  const model = configured?.trim() || (runtime === "pi" ? DEFAULT_HARVEST_MODEL : undefined);
+  const model = configured?.trim() || undefined;
   if (runtime !== "pi" && model?.includes("/")) {
     throw runtimeError("E_HARVEST_SETTINGS", `harvest-model for ${runtime} must be a native model name, without a Pi provider/ prefix`);
   }
