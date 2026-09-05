@@ -108,6 +108,15 @@ the same work tree. The harvester promotes, merges, or drops notes, commits a
 `memory-harvest:` change, deletes processed notes, and retires itself. This is
 how long-lived instances feed their souls while still alive.
 
+Instances that write few notes still feed their souls. With no notes pending,
+`oats okf harvest` asks the turn record for the instance's own captured
+sessions (the transcripts whose working directory is the instance home), and
+spawns the harvester on the turns captured since the last harvest, bounded by
+exact turn ids. The harvester extracts candidates from them, judges each under
+the same promotion bar as a note, and on delivery writes the watermark
+`.okf-harvest-record.json` in the instance home; a failed harvest leaves the
+watermark alone, so the same window is read again.
+
 ### Spawning and coordinating with other agents
 
 OATS agents can run `oats spawn` when their instructions or the

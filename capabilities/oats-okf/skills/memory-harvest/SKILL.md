@@ -68,6 +68,31 @@ knowledge; if instances should RUN it the same way every time, it wants to
 be a skill instead. Souls also grow role-specific types and sections — list
 new sections in the bundle index and log the growth.
 
+## Record-fed candidates
+
+Your briefing may name **record windows** beside (or instead of) notes: the
+source instance's own captured session turns since the last harvest, each
+window given as an exact `oats recall --thread <t> --json --after <id>
+--until <id>` command. Standing roles that write few notes still learn; this
+is how what they learned reaches the soul.
+
+- Run each command exactly as given, never wider: the ids are the boundary
+  two harvests agree on. Read the `text` parts; `tool_use` and `tool_result`
+  are context, not lessons.
+- Extract **candidates** in the shape of notes: one candidate per insight, a
+  one-line title, the claim, and its provenance as the turn ids it came from.
+  A candidate is something the instance learned or decided, stated in the
+  turns, not something you infer it should have learned.
+- Then judge every candidate exactly as a note: promote, merge, or drop
+  against the same bar. Expect most to drop: session trivia, tool noise,
+  restated repo facts and task-scoped decisions all fail it. Promoted
+  concepts cite the turn ids in their frontmatter or body so the claim can be
+  traced back.
+- **The watermark is written on delivery, never before.** Your briefing gives
+  the path and the exact content; write it after the commit, PR, or direct
+  edit that delivers your promotion. A harvest that fails or is abandoned
+  leaves it untouched, so the next harvester reads the same window again.
+
 ## Bookkeeping (non-negotiable)
 
 1. Every promoted concept: correct frontmatter, listed in its section's
