@@ -19,6 +19,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
+import { readHerdrTarget } from "../herdr-target.mjs";
 
 export const RESERVED = new Set(["bin", "local-agents", "tmp-agents"]);
 /** Local (uncommitted) souls dir: <scope>/local-agents, a SIBLING of agents/
@@ -705,7 +706,12 @@ export function listInstances(root, tmuxSession = DEFAULT_TMUX_SESSION) {
         const pending = join(instancesDir, `.oats-retire-pending-${e.name}.json`);
         if (existsSync(pending)) { try { retirePending = JSON.parse(readFileSync(pending, "utf8")); } catch { retirePending = { reason: "retire pending" }; } }
       } catch { /* unreadable marker: show the bare instance */ }
-      return { ...meta, running: windows.includes(meta.instance), ...(retirePending ? { retirePending } : {}) };
+      if (meta.sessionTarget) {
+        try { const state = readHerdrTarget(meta.sessionTarget); return { ...meta, ...(retirePending ? { retirePending } : {}), running: state.present, runtimeState: state.status }; }
+        catch (e) { return { ...meta, ...(retirePending ? { retirePending } : {}), running: null, runtimeState: "unreachable", runtimeError: e.message }; }
+      }
+      return { ...meta, ...(retirePending ? { retirePending } : {}), running: windows.includes(meta.instance) };
+
     });
   };
   // Parity with the kernel reader: failed deferred self-retirements leave an

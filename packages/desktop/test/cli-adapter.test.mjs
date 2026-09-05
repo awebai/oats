@@ -231,3 +231,9 @@ test("spawnArgv: a registered server routes the spawn and drops --dir (the remot
   assert.deepEqual(argv.slice(argv.indexOf("--server"), argv.indexOf("--server") + 2), ["--server", "build"]);
   assert.throws(() => spawnArgv("dev", "/ws", "/tmp/task.md", { server: "Bad Id" }), /invalid server value/);
 });
+
+test("spawnArgv forwards explicit yolo booleans, including false", () => {
+  assert.ok(spawnArgv("dev", "/ws", "/t", { yolo: true }).includes("--yolo"));
+  assert.ok(spawnArgv("dev", "/ws", "/t", { yolo: false }).includes("--no-yolo"));
+  assert.throws(() => spawnArgv("dev", "/ws", "/t", { yolo: "false" }), /boolean/);
+});

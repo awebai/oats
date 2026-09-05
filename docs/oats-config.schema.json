@@ -72,6 +72,7 @@
   },
   "type": "object",
   "properties": {
+    "yolo": { "type": "boolean", "description": "Skip Codex/Claude permission prompts. Closest scope wins; soul and launch overrides take precedence." },
     "name": { "type": "string" },
     "team": {
       "type": "object",

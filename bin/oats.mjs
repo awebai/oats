@@ -31,7 +31,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, upsertLocalAgent, defaultRepo, RELATIONS,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -49,6 +49,15 @@ const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
 };
+function yoloFlag() {
+  if (args.includes("--yolo") && args.includes("--no-yolo")) cmdFail("E_BAD_ARGS", "choose --yolo or --no-yolo, not both");
+  return args.includes("--yolo") ? true : args.includes("--no-yolo") ? false : undefined;
+}
+function valueFlag(name) {
+  const value = flag(name);
+  if (value === true) cmdFail("E_BAD_ARGS", `--${name} needs a value`);
+  return value;
+}
 const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
 /** Resolve the --dir flag with central validation: a value-taking flag given
  * no value (flag() → true) is E_BAD_ARGS inside the JSON boundary, never an
@@ -2639,8 +2648,11 @@ function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
+  const yolo = yoloFlag();
+  const backend = valueFlag("backend"), herdrSocket = valueFlag("herdr-socket");
+  if (backend !== undefined && !["tmux", "herdr"].includes(backend)) bail("E_BAD_ARGS", "--backend must be tmux or herdr");
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect — including root discovery and local-agent upsert (an
   // --instructions-file spawn must not scaffold/overwrite a local soul before
@@ -2682,7 +2694,7 @@ function spawnCmd() {
     } else if (!agent || agent.kind === "local") {
       agent = upsertLocalAgent(root, {
         name, file: defFile, instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
-        repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model"),
+        repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo: yoloFlag(),
       });
     } else {
       bail("E_BAD_ARGS", `"${name}" is a persistent agent — spawn it without --instructions-file/--def-file`);
@@ -2731,7 +2743,7 @@ function spawnCmd() {
     r = spawnInstance(root, agent, {
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       repo: flag("repo") || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
-      work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), model: flag("model"), branch: flag("branch"),
+      work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch: flag("branch"),
       launch: !args.includes("--no-launch"),
     });
   } catch (e) {
@@ -2751,10 +2763,12 @@ function spawnCmd() {
       model: r.model || null, parent: r.parentInstance || null,
       sibling: r.siblingInstance || null, relation: r.relation || null,
       spawnOrigin: r.spawnOrigin, attach: r.attach,
+      ...(r.sessionTarget ? { sessionTarget: r.sessionTarget } : {}),
+      ...(r.yolo !== undefined ? { yolo: r.yolo } : {}),
     });
     return;
   }
-  console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
+  console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? r.sessionTarget ? ` — Herdr pane "${r.sessionTarget.paneId}"` : ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
   if (!r.launched) console.log(`  launch: (cd ${shortPath(r.home)} && ${r.command})`);
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
@@ -2811,11 +2825,32 @@ function retireCmd() {
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
 
+async function sessionCmd() {
+  try {
+    const home = flag("home");
+    let result;
+    if (args[1] === "attach") {
+      if (JSON_MODE) throw Object.assign(new Error("session attach is interactive; omit --json"), { code: "E_BAD_ARGS" });
+      process.exitCode = await attachInstanceSession(home);
+      return;
+    }
+    if (args[1] === "inspect") result = inspectInstanceSession(home);
+    else if (args[1] === "input") {
+      const file = flag("text-file");
+      if (file === true) throw Object.assign(new Error("--text-file needs a path"), { code: "E_BAD_ARGS" });
+      if (!file && process.stdin.isTTY) throw Object.assign(new Error("provide --text-file or pipe input on stdin"), { code: "E_BAD_ARGS" });
+      result = inputInstanceSession(home, readFileSync(file || 0, "utf8"));
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach --home /absolute/home [--text-file path] [--json]"), { code: "E_BAD_ARGS" });
+    if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+  } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
+}
+
 async function paneCmd() {
   die("`oats pane` has been retired — the OATS Desktop app (packages/desktop) is the control panel now.");
 }
 
 function createCmd() {
+  const yolo = yoloFlag();
   const name = args[1];
   if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude|codex] [--model <m>] [--instructions-file <f>]");
   const local = args.includes("--local");
@@ -2835,7 +2870,7 @@ function createCmd() {
   const instrFile = flag("instructions-file");
   const r = coreCreateAgent(root, {
     name, local, description: flag("description"), type: flag("type"), repo: flag("repo") || defaultRepo(process.cwd()),
-    work: flag("work"), runtime: flag("runtime"), model: flag("model"),
+    work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo,
     instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
   });
   if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
@@ -3083,7 +3118,7 @@ function versionCmd() {
   if (JSON_MODE) {
     // EXACT Desktop API v1 probe payload — one JSON object, nothing else on
     // stdout. Desktop accepts desktopApi === 1 and a compatible semver range.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3306,6 +3341,7 @@ else if (cmd === "pane") await paneCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // Same rule as the inner catch: a typed CLI failure surfaces with its own code
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
+else if (cmd === "session") await sessionCmd();
 else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "create") createCmd();
@@ -3341,14 +3377,15 @@ Usage:
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--instructions-file <f>]
-  oats spawn <agent> [--task <text>]         spawn an instance (tmux; --no-launch
+  oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
+  oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
       [--parent <instance>]                 --def-file creates a local agent;
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--runtime pi|claude|codex] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]
                                             with team: declared, unknown local souls
                                             resolve across the team scope's repos

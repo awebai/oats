@@ -16,10 +16,9 @@
 //      distinct open beyond the cap is REJECTED, visibly and actionably —
 //      never a silent eviction, never a silent extra create.
 //
-// The registry is pure and synchronous; main.mjs's term:open handler is
-// synchronous end to end (openTerm uses execFileSync/pty.spawn), so
-// plan()->create->commit() is atomic on the single main thread and
-// concurrent IPC opens cannot interleave to exceed the cap.
+// The registry is pure and synchronous. main.mjs completes bounded remote
+// preparation before plan()->create->commit(); that final sequence contains
+// no await, so concurrent IPC opens cannot interleave to exceed the cap.
 
 // The cap is the machine-protecting ceiling, not a UX preference: it exists
 // so the app can never fan out enough attached tmux clients + ptys to hang

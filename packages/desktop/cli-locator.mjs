@@ -191,9 +191,20 @@ export async function discover(io, probe) {
         continue;
       }
       const a = acceptProbe(payload);
-      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version };
+      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}) };
       tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
     }
   }
   return { ok: false, tried };
+}
+
+/** Old kernels silently treat unknown runtimes/backends as their defaults. */
+export function requireExecutionSupport(cli, runtime, backend, yolo) {
+  if (yolo !== undefined && !cli.launchOptions?.includes("yolo")) throw Object.assign(new Error(`installed oats ${cli.version} does not support yolo overrides; update the CLI`), { code: "unsupported-launch-option" });
+  if (!(cli.runtimes || ["pi", "claude"]).includes(runtime || "pi")) {
+    throw Object.assign(new Error(`installed oats ${cli.version} does not support runtime ${runtime}; update the CLI`), { code: "unsupported-runtime" });
+  }
+  if (!(cli.sessionBackends || ["tmux"]).includes(backend || "tmux")) {
+    throw Object.assign(new Error(`installed oats ${cli.version} does not support session backend ${backend}; update the CLI`), { code: "unsupported-backend" });
+  }
 }

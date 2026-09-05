@@ -772,7 +772,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   // may have waited across a workspace switch.
   if (!owns()) return;
   const name = inst.instance;
-  if (!inst.running || !inst.tmux?.session) return notify(`"${name}" has no live tmux session`);
+  if (!inst.running || (!inst.server && !inst.tmux?.session && !inst.sessionTarget)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
 
   const wrap = document.createElement("div");
   wrap.className = "term-wrap";
@@ -798,7 +798,9 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const tab = createTerminalTab({
     desk,
     term,
-    tmux: { session: inst.tmux.session, window: inst.tmux.window },
+    tmux: inst.tmux,
+    sessionTarget: inst.sessionTarget,
+    remote: inst.server ? { serverId: inst.server, instance: inst.instance } : undefined,
     wrap,
     isActive: () => made.paneEl.classList.contains("active"),
     fit: () => fit.fit(),
