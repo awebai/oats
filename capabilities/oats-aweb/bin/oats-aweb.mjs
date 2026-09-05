@@ -85,6 +85,17 @@ const parseSecretJson = (text, what) => {
  * `command -v`, which is a SHELL BUILTIN — spawning it as a program depends on
  * a /usr/bin/command binary that many systems do not ship, and its absence
  * would read as "aw is missing" on every such host. */
+/** The installed aw's version from `aw version` ("aw 1.36.1 ..."), or
+ *  undefined when it cannot be read; compared as numeric triples. */
+function awAtLeast(floor) {
+  let v;
+  try { v = /aw\s+v?(\d+)\.(\d+)\.(\d+)/.exec(run(["aw", "version"], undefined, 10000)); } catch { return false; }
+  if (!v) return false;
+  const a = v.slice(1, 4).map(Number), b = floor.split(".").map(Number);
+  for (let i = 0; i < 3; i++) { if (a[i] !== b[i]) return a[i] > b[i]; }
+  return true;
+}
+
 function onPath(cmd) {
   for (const dir of String(process.env.PATH || "").split(delimiter)) {
     if (!dir) continue;
@@ -433,6 +444,19 @@ if (event === "spawn") {
   try {
     // Self-delete from inside the home, authenticated by its own key — a remote
     // delete would 409 until the server marks the workspace stale.
+    // aw 1.36.1 (aweb-abim) revokes the member's certificate on delete and
+    // says so: `--json` prints alias_released true|false with a reason, and
+    // a released alias may be reused by a later spawn. An older aw cannot
+    // revoke, so the alias stays unusable and the report says that instead.
+    if (awAtLeast("1.36.1")) {
+      const raw = run(["aw", "workspace", "delete", meta.alias, "--json"], home);
+      let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
+      const released = doc?.alias_released === true;
+      // aw 1.36.1 prints the cause as alias_released_reason (workspace.go,
+      // workspace_self_retire.go); `reason` is tolerated for a later rename.
+      const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+      out({ meta: { retired: true, aliasReusable: released, aliasReason: reason }, ...(released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a fresh --purpose until it is` }) });
+    }
     run(["aw", "workspace", "delete", meta.alias], home);
     // Honest: the workspace row is deleted, but a hosted local member cannot
     // revoke its own AWID certificate (aweb-abim), so the alias is NOT

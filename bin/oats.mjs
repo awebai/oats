@@ -674,7 +674,8 @@ function use() {
   let entry;
   if (manifest.layer) {
     const existing = caps.layers[manifest.layer];
-    entry = existing && existing !== "none" && existing.capability === manifest.capability ? existing : { capability: manifest.capability };
+    var entryExisted = !!(existing && existing !== "none" && existing.capability === manifest.capability);
+    entry = entryExisted ? existing : { capability: manifest.capability };
     if (existing && existing !== "none" && existing.capability !== manifest.capability && enabled) {
       die(`fundamental layer ${manifest.layer} already binds ${existing.capability} at this level — disable it first`);
     }
@@ -713,9 +714,12 @@ function use() {
   }
   if (targetKind === "global") entry.global = enabled;
   else {
-    // A layer entry with no explicit targets is implicitly global — materialize that
-    // before narrowing, so adding a soul/type binding doesn't silently drop everyone else.
-    if (manifest.layer && entry.global === undefined && !entry["agent-types"] && !entry.souls) entry.global = true;
+    // An EXISTING layer entry with no explicit targets is implicitly global:
+    // materialize that before narrowing, so adding a soul/type binding does not
+    // silently drop everyone else. An entry this command just created (the
+    // layer was `none` or another capability) has no implicit global to keep:
+    // a targeted first binding is written as global: false, explicitly.
+    if (manifest.layer && entry.global === undefined && !entry["agent-types"] && !entry.souls) entry.global = entryExisted;
     entry[targetKind] = entry[targetKind] && typeof entry[targetKind] === "object" ? entry[targetKind] : {};
     // Same write-side refusal, and for the same two reasons: `--soul
     // __proto__` was swallowed by the inherited setter and reported as

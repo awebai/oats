@@ -167,6 +167,17 @@ start a second harvester while the first one's home exists. The check uses the
 existing prepared watermark file and does not treat a successful spawn as
 completed learning.
 
+## oats.aweb retire report (1.10.2)
+
+On a host whose installed `aw` is 1.36.1 or later, the retire hook deletes
+the workspace with `aw workspace delete <alias> --json` and reports what the
+platform answered: `meta.aliasReusable` is true when `alias_released` is
+true (the certificate was revoked and a later spawn may reuse the slug),
+false otherwise with `meta.aliasReason` carrying the platform's reason and a
+warning naming the fresh-purpose remedy. On an older `aw` the pre-1.36.1
+report stands (`aliasReusable: false`, warning naming aweb-abim), because
+that CLI cannot revoke the certificate.
+
 ## oats.aweb settings (1.10.0)
 
 Set with `oats use oats.aweb --settings <key>=<value>` at a scope, or per
