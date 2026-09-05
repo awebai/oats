@@ -367,6 +367,61 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusal on an older one", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-twins-"));
+  try {
+    const { bin, tools } = fakeBin(base);
+    const repo = remoteWorkspace(base);
+    // A second soul whose generated name collides: dev --purpose foo-1 and
+    // dev-foo --purpose 1 both yield dev-foo-1.
+    write(join(repo, "agents", "dev-foo", "soul", "soul.yaml"), "name: dev-foo\nrepo: .\nwork: checkout\nruntime: pi\n");
+    write(join(repo, "agents", "dev-foo", "soul", "AGENTS.md"), "You are dev-foo.\n");
+    execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]);
+    execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "twin soul"]);
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
+    try {
+    // An "old" remote: the real kernel, but its version probe carries no features.
+    const oldOats = join(base, "old-oats");
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":[^}]*//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    chmodSync(oldOats, 0o755);
+    let r = oats(env, ["server", "add", "new", "--ssh", "h", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "add", "old", "--ssh", "h", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "check", "old", "--json"]); assert.deepEqual(r.json().result.remote.features, [], "the old remote advertises no features");
+    // The saved route: dev-foo-1 of agent dev, through "new" and through "old".
+    r = oats(env, ["spawn", "dev", "--server", "new", "--purpose", "foo-1", "--no-launch", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    const devHome = r.json().result.home;
+    // The same route saved through the old registration: the snapshot's own
+    // target (the old binary) is what the route runs with.
+    mkdirSync(dirname(snapshotPath("old", "dev-foo-1")), { recursive: true });
+    const snapNew = JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8"));
+    writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify({ ...snapNew, serverId: "old", target: { ...snapNew.target, oatsPath: oldOats } }));
+    // The twin, spawned on the host itself (no saved route here).
+    r = oats({ ...env, PATH: `${tools}:${env.PATH}` }, ["spawn", "dev-foo", "--purpose", "1", "--dir", repo, "--no-launch", "--json"], { cwd: repo }); assert.equal(r.status, 0, r.stderr + r.stdout);
+    const twinHome = r.json().result.home;
+    assert.notEqual(devHome, twinHome);
+    // Old remote, twins there: refused before any mutation, with the upgrade named.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--json"]);
+    assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE", r.stdout + r.stderr); assert.match(r.json().error.message, /0\.22\.3/);
+    assert.equal(existsSync(devHome), true); assert.equal(existsSync(twinHome), true);
+    // Old remote, explicit --home: never sent where it cannot be honoured.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--home", devHome, "--json"]);
+    assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE");
+    // New remote, an explicit home that is not the saved route: refused.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
+    assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);
+    // New remote: the saved home travels as --home; the twin survives.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(existsSync(devHome), false, "the saved-route instance is retired");
+    assert.equal(existsSync(twinHome), true, "the twin under the other agent is untouched");
+    assert.equal(existsSync(snapshotPath("new", "dev-foo-1")), false);
+    } finally { if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir; }
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
   try {

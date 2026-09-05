@@ -2790,7 +2790,8 @@ function retireCmd() {
   // Cross-repo: the instance may home in a sibling repo of the team scope.
   if (!listAgents(root).some((a) => existsSync(join(a._dir, "instances", name)))) {
     const hit = findTeamInstance(dirFlag(), name);
-    if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; console.log(`(cross-repo: instance homes at ${shortPath(root)})`); }
+    // Stdout carries only the envelope in JSON mode (the Desktop parses it).
+    if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; (args.includes("--json") ? console.error : console.log)(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
   const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
   // Deferred self-retire: nothing has been inspected, run, or removed yet. The
