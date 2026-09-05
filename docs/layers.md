@@ -237,12 +237,14 @@ Communication is only communication. Task coordination lives in the tasks
 slot.
 
 *Fully local.* It must remain possible to run everything filesystem-based and
-fully local. What the implementation must hold on its own servers, and the
-traffic that must pass through them, is minimized. For aweb today every
-delivery passes through an aweb server, hosted or self-hosted on localhost
-with the reserved `local` namespace (`aweb-abhw` records the open decision on
-a lighter local server). `reach: owner` maps to a contacts-only inbound mode
-that aweb does not ship yet (`aweb-abhx`).
+fully local, meaning with no dependency on a hosted service the operator
+cannot replace. Communication needs a server; a self-hosted one on localhost
+satisfies the constraint. What the implementation must hold on *its*
+servers, and the traffic that must pass through them, is minimized. For aweb
+today every delivery passes through an aweb server, hosted or self-hosted on
+localhost with the reserved `local` namespace (`aweb-abhw` records the open
+decision on a lighter local server). `reach: owner` maps to a contacts-only
+inbound mode that aweb does not ship yet (`aweb-abhx`).
 
 **Proposed.** The slot is renamed from `messaging` to `communication` in
 documentation first; the config key stays `messaging` until a release

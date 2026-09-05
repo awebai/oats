@@ -40,13 +40,23 @@ filesystem at all.
 
 A constraint that holds across every seam (Pepe, 2026-09-04): it
 must remain possible to run everything filesystem-based and
-fully local. The reference deployment runs that way today. What
-OATS or aweb must hold on their own servers, and the traffic that
-must pass through them, is to be minimized; a message between two
-agents on one machine should not need to leave that machine. Each
-contract below is read with that constraint, and the
-organizational-sovereignty strategy makes the same demand from
-the other side.
+fully local, meaning with no dependency on a hosted service that
+the operator cannot replace. Real communication needs a server;
+a self-hosted aweb server on localhost satisfies the constraint,
+and that is how the reference deployment runs today. What OATS or
+aweb must hold on *their* servers, and the traffic that must pass
+through them, is to be minimized. Each contract below is read
+with that constraint, and the organizational-sovereignty strategy
+makes the same demand from the other side.
+
+An acceptance criterion follows from it (Juan, 2026-09-05): a
+default installation after the migration produces the same
+composed instructions, launch commands, home layout, instance
+metadata, and retirement results as v0.22.0. Everything the new
+architecture adds is additive and off by default, and the golden
+fixtures (step 1) are the proof: a refactor step lands only if
+they are byte-unchanged, and a deliberate change is a re-approved
+golden.
 
 ## The model
 
@@ -255,9 +265,10 @@ identity served through per-instance grants). Without this, a
 hosted provider cannot host "the specialist you can always write
 to." The contract also carries the fully-local constraint: two
 instances on one machine must be able to exchange messages
-without a server, and the implementation enforces the soul type's
-`reach` in both directions (for aweb: addressing tiers outbound,
-inbound mode and contacts inbound).
+through a server the operator runs, with no hosted dependency.
+The implementation enforces the soul type's `reach` in both
+directions (for aweb: addressing tiers outbound, inbound mode and
+contacts inbound).
 
 **Capture**: the format of ephemeral state. Notes are the agent's
 own report of what mattered; a captured session is ground
