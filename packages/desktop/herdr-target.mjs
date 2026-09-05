@@ -1,10 +1,12 @@
 // Desktop's read/attach-only Herdr adapter. Lifecycle belongs to installed oats.
 import { isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
+// Herdr public numbers use uppercase letters after 9 (workspace.rs),
+// for both workspace and pane suffixes. They are not decimal integers.
 export function herdrTargetKey(target) {
   if (target?.backend !== "herdr" || target.protocol !== 20
     || typeof target.socket !== "string" || !isAbsolute(target.socket)
-    || typeof target.paneId !== "string" || !/^w\d+:p\d+$/.test(target.paneId)
+    || typeof target.paneId !== "string" || !/^w[0-9A-Z]+:p[0-9A-Z]+$/.test(target.paneId)
     || typeof target.terminalId !== "string" || !/^term_[a-zA-Z0-9]+$/.test(target.terminalId)) {
     throw new Error("invalid Herdr terminal target");
   }

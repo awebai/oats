@@ -34,3 +34,14 @@ test("old CLI cannot silently ignore explicit yolo overrides", () => {
   assert.throws(() => requireExecutionSupport({ version: "old" }, "claude", "tmux", false), /yolo overrides/);
   assert.doesNotThrow(() => requireExecutionSupport({ launchOptions: ["yolo"] }, "claude", "tmux", true));
 });
+
+test("Herdr workspace and pane public IDs remain usable after the ninth allocation", () => {
+  for (const paneId of ["wB:p1", "w1:pA", "w11:pZ"]) {
+    const selected = { ...target, paneId };
+    const observed = readHerdrTarget(selected, () => JSON.stringify({ result: { snapshot: {
+      protocol: 20, panes: [{ pane_id: paneId, terminal_id: target.terminalId }],
+    } } }));
+    assert.equal(observed.present, true);
+  }
+  assert.throws(() => herdrTargetKey({ ...target, paneId: "wB:p1;other" }), /invalid Herdr/);
+});
