@@ -4872,7 +4872,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
     const outcome = JSON.parse(readFileSync(r.resultPath, "utf8"));
     assert.equal(outcome.ok, false);
     assert.match(outcome.result.rollbackIncomplete.join("\n"), /self-delete-failed/);
-    assert.equal(outcome.retry, "oats retire dev-self");
+    assert.match(outcome.retry, /^oats retire dev-self --home \S+\/dev\/instances\/dev-self$/, "the retry names the kept home");
     const dev = listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev");
     assert.equal(dev.retireFailures.length, 1, "status surfaces the failed deferred retirement");
     assert.equal(dev.retireFailures[0].instance, "dev-self");

@@ -364,6 +364,8 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     rmSync(home, { recursive: true, force: true });
     r = oats(env, ["server", "roster", "--server", "build", "--json"]);
     assert.equal(r.json().result.groups.find((x) => !x.registrationPresent).instances[0].missingRemotely, true);
+    r = oats(env, ["server", "roster", "--server", "build"]);
+    assert.match(r.stdout, /dev-r1\s+GONE on the host/, "the human roster names a stale route");
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r3", "--no-launch", "--json"]);
     assert.equal(r.json().error?.code, "E_ROUTE_CHANGED");
     r = oats(env, ["server", "forget", "build", "--instance", "nope", "--json"]);
@@ -438,6 +440,17 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     // Old remote, explicit --home: never sent where it cannot be honoured.
     r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--home", devHome, "--json"]);
     assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE");
+    // Old remote, one instance of that name only, but not at the saved home
+    // (the route drifted): refused as a stale route, nothing retired.
+    const driftSnap = JSON.parse(readFileSync(snapshotPath("old", "dev-foo-1"), "utf8"));
+    writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify({ ...driftSnap, home: join(repo, "agents", "dev", "instances", "dev-foo-9") }));
+    rmSync(twinHome, { recursive: true, force: true });
+    r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--json"]);
+    assert.equal(r.json().error?.code, "E_HOME_MISMATCH", r.stdout); assert.match(r.json().error.message, /stale/);
+    assert.equal(existsSync(devHome), true);
+    writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify(driftSnap));
+    r = oats({ ...env, PATH: `${tools}:${env.PATH}` }, ["spawn", "dev-foo", "--purpose", "1", "--dir", repo, "--no-launch", "--json"], { cwd: repo }); assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.json().result.home, twinHome);
     // New remote, an explicit home that is not the saved route: refused.
     r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);

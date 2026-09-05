@@ -122,13 +122,13 @@ under another soul is observed only.
 
 ## Limits
 
-- Routed: `spawn`, `retire`, `status`, `server roster`, `okf harvest`,
-  and, against a 0.22.2 or later server, `session inspect` (the execution
-  host's envelope, relayed; a Desktop preflight before attaching) and
-  `session attach`. Session input runs on the execution host, where the wake
-  broker calls it. The version probe's `remote` list names this kernel's
-  remote-side surface (`roster` and `harvest` from 0.22.3; `roster` is the
-  local command over registrations and saved routes, not a route).
+- Routed: `spawn`, `retire`, `status`, `okf harvest`, and, against a 0.22.2
+  or later server, `session inspect` (the execution host's envelope, relayed;
+  a Desktop preflight before attaching) and `session attach`. Session input
+  runs on the execution host, where the wake broker calls it. `server roster`
+  is local (registrations and saved routes, one status pull per group). The
+  version probe's `remote` list names this kernel's remote-side surface
+  (`roster` and `harvest` from 0.22.3).
 - No Git over SSH: repository operations always run on the server, by its
   kernel, in its workspace.
 - A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`) for spawn,
