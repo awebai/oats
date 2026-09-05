@@ -37,7 +37,8 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter } from "node:path";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
@@ -163,7 +164,89 @@ if (!onPath("aw")) {
   warn(`aw CLI not on PATH — no identity minted; ${AW_INSTALL}`);
 }
 
+// ---------------------------------------------------------------------------
+// Retained identity (explicit per-soul opt-in): a standing seat keeps its
+// did:aw and address when re-seated as an OATS instance. Per aweb's contract
+// (2026-09-05): copy exactly the identity-authority files from the source
+// .aw into the home's .aw, reconnect the coordination binding with
+// `aw workspace connect`, verify online, heartbeat and status show the new
+// path, and hold a lock BESIDE the source so no second seat can take it.
+// Never copy workspace.yaml, caches or locks; never delete the source; never
+// team-join (that is the mint path, which would try to create the alias
+// again). Retire releases the lock and leaves the identity alone.
+const IDENTITY_AUTHORITY = ["signing.key", "identity.yaml", "teams.yaml", "team-certs", "encryption.yaml", "encryption-keys"];
+const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
+const yamlScalar = (text, key) => {
+  const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
+  return m ? m[1].trim() : undefined;
+};
+const pidAlive = (pid) => { try { process.kill(Number(pid), 0); return true; } catch (e) { return e.code === "EPERM"; } };
+function retainedSeatSpawn(source) {
+  if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
+  if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
+  const lockPath = seatLockPath(source);
+  if (existsSync(lockPath)) {
+    let held; try { held = JSON.parse(readFileSync(lockPath, "utf8")); } catch { held = {}; }
+    const holderHome = held.home;
+    const holderLive = holderHome && existsSync(holderHome) && (!held.pid || pidAlive(held.pid));
+    if (holderLive) fatal(`identity at ${source} is already held by ${holderHome} (${lockPath}); a seat is never taken from a live holder — retire that instance first`);
+  }
+  const srcWorkspace = existsSync(join(source, "workspace.yaml")) ? readFileSync(join(source, "workspace.yaml"), "utf8") : "";
+  const service = process.env.OATS_AWEB_URL || yamlScalar(srcWorkspace, "aweb_url");
+  if (!service) fatal(`cannot determine the aweb service for ${source} (no aweb_url in its workspace.yaml)`);
+  const role = yamlScalar(srcWorkspace, "role_name");
+  let team = process.env.OATS_TEAM_ID;
+  if (!team && existsSync(join(source, "teams.yaml"))) team = yamlScalar(readFileSync(join(source, "teams.yaml"), "utf8"), "active_team") || yamlScalar(readFileSync(join(source, "teams.yaml"), "utf8"), "active");
+  if (!team || !team.includes(":")) fatal(`cannot determine the team for the retained identity (set team.id in oats-config.yaml, or an active team in ${join(source, "teams.yaml")})`);
+  const dest = join(home, ".aw");
+  const rollback = () => { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } try { rmSync(lockPath, { force: true }); } catch { /* best effort */ } };
+  try {
+    mkdirSync(dest, { recursive: true, mode: 0o700 });
+    chmodSync(dest, 0o700);
+    for (const name of IDENTITY_AUTHORITY) {
+      const from = join(source, name);
+      if (!existsSync(from)) continue; // encryption material may be absent on an identity that never had it
+      const to = join(dest, name);
+      if (statSync(from).isDirectory()) { cpSync(from, to, { recursive: true }); chmodSync(to, 0o700); }
+      else { copyFileSync(from, to); chmodSync(to, 0o600); }
+    }
+    for (const forbidden of ["workspace.yaml", "context", "interaction-log.jsonl", "channel-delivered-ids.json", "chat-delivered-ids.json"]) {
+      if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
+    }
+    // The lock is taken before connect: a concurrent second spawn must see it.
+    writeFileSync(lockPath, JSON.stringify({ home, instance, team, pid: process.ppid, takenAt: new Date().toISOString(), host: hostname() }, null, 2) + "\n", { mode: 0o600 });
+    run(["aw", "workspace", "connect", "--service", service, "--team", team, ...(role ? ["--role", role] : [])], home, 60000);
+    run(["aw", "check", "--online"], home, 60000);
+    run(["aw", "heartbeat"], home, 60000);
+    const status = run(["aw", "workspace", "status", "--json"], home, 60000);
+    const text = String(status);
+    // Thrown, not fatal: the catch below rolls the copy and the lock back first.
+    if (!text.includes(home)) throw new Error(`aw workspace status from ${home} does not show the new path, so the seat is not connected; nothing is briefed`);
+    if (!text.includes(hostname().split(".")[0])) throw new Error(`aw workspace status from ${home} does not show this host, so the seat is not connected; nothing is briefed`);
+    let alias = instance;
+    try { const st = JSON.parse(text); alias = st.alias || st.workspace?.alias || st.identity?.alias || (yamlScalar(readFileSync(join(dest, "identity.yaml"), "utf8"), "address") || "").split("/").pop() || instance; } catch { alias = (yamlScalar(readFileSync(join(dest, "identity.yaml"), "utf8"), "address") || "").split("/").pop() || instance; }
+    writeFileSync(lockPath, JSON.stringify({ home, instance, alias, team, pid: process.ppid, takenAt: new Date().toISOString(), host: hostname() }, null, 2) + "\n", { mode: 0o600 });
+    const launch = (process.env.OATS_RUNTIME || "") === "claude" && deliveryMode === "channel"
+      ? { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" }
+      : undefined;
+    const env = deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : undefined;
+    const deliveryBrief = deliveryMode === "session"
+      ? ` Notification delivery: external (AWEB_DELIVERY=session); until the host wake broker registers this instance NOTHING wakes you: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary.`
+      : "";
+    out({
+      meta: { team, alias, retained: true, source, lock: lockPath, delivery: deliveryMode },
+      ...(env ? { env } : {}),
+      brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
+      ...(launch ? { launch } : {}),
+    });
+  } catch (e) {
+    rollback();
+    fatal(`retained identity could not be seated from ${source}: ${e.message || e}`);
+  }
+}
+
 if (event === "spawn") {
+  if (settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source));
   let minted;                 // external identity, once `aw team join` succeeds
   const root = awebRoot();
   if (!root) fatal(`no initialized aweb root (.aw) among the bounded candidates (home, its git repo, context repo, workspace ${process.env.OATS_WORKSPACE || "?"}), so no identity could be minted and this instance would have no messaging — run \`oats aweb setup\` for guided onboarding`);
@@ -254,6 +337,13 @@ if (event === "spawn") {
   }
 } else if (event === "retire") {
   const meta = JSON.parse(process.env.OATS_META || "{}");
+  // A retained seat: release the lock and leave the identity alone. Never
+  // aw workspace delete (it would soft-delete the standing identity's row)
+  // and never team retire; the source .aw stays until a human removes it.
+  if (meta.retained) {
+    if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
+    out({ meta: { retired: true, retained: true, identityReleased: true }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched` });
+  }
   // No alias means the spawn hook never reported an identity: nothing exists to
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
   // the remote record exists and its key is gone, so the self-delete cannot be

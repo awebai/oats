@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -29,6 +29,10 @@ if (a.startsWith("team join")) {
 }
 if (a.startsWith("init")) process.exit(0);
 if (a.startsWith("workspace delete")) process.exit(0);
+if (a.startsWith("workspace connect")) process.exit(0);
+if (a.startsWith("check --online")) process.exit(0);
+if (a.startsWith("heartbeat")) process.exit(0);
+if (a.startsWith("workspace status")) { const mode = process.env.FAKE_STATUS || "ok"; console.log(JSON.stringify(mode === "ok" ? { alias: "merlin", workspace_path: process.cwd(), hostname: require("node:os").hostname() } : { alias: "merlin", workspace_path: "/somewhere/else", hostname: "other" })); process.exit(0); }
 console.error("fake aw: unexpected " + a); process.exit(2);
 `);
   chmodSync(join(bin, "aw"), 0o755);
@@ -91,5 +95,71 @@ test("spawn: a join refused because the alias still holds a certificate is fatal
     assert.notEqual(r.status, 0);
     assert.match(r.stdout, /already holds a certificate on t:example.test .*not reusable until aweb-abim.*fresh --purpose/);
     assert.equal(r.stdout.includes("TOK-secret"), false, "the invite token never reaches the log");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+function legacySeat(base) {
+  const legacy = join(base, "legacy-home"); const src = join(legacy, ".aw");
+  write(join(src, "signing.key"), "PRIVATE-KEY-BYTES\n");
+  write(join(src, "identity.yaml"), "did: did:aw:WJ5Q2fnu\naddress: cjr.aweb.ai/merlin\ncustody: self\n");
+  write(join(src, "teams.yaml"), "active_team: t:example.test\nmemberships:\n  - team_id: t:example.test\n");
+  write(join(src, "team-certs", "t-example.test.pem"), "CERT\n");
+  write(join(src, "encryption.yaml"), "assertion: x\n");
+  write(join(src, "encryption-keys", "x25519.key"), "ENC-KEY\n");
+  write(join(src, "workspace.yaml"), "aweb_url: https://app.example.test\napi_key: SECRET-API-KEY\nrole_name: coordinator\nworkspace_path: /legacy\n");
+  write(join(src, "context"), "cache\n");
+  write(join(src, "interaction-log.jsonl"), "{}\n");
+  return { legacy, src };
+}
+
+test("retained identity: authority files copied exactly, coordination reconnected, lock beside the source, brief names the seat; never workspace.yaml or caches", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const { src } = legacySeat(base);
+    const env = { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "claude", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({ identity: { source: src } }) };
+    const r = runHook(base, bin, "spawn", env);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.retained, true); assert.equal(r.doc.meta.alias, "merlin"); assert.equal(r.doc.meta.team, "t:example.test");
+    assert.match(r.doc.brief, /retained seat of the existing aweb identity "merlin" on team t:example.test/);
+    const dest = join(home, ".aw");
+    for (const f of ["signing.key", "identity.yaml", "teams.yaml", "team-certs/t-example.test.pem", "encryption.yaml", "encryption-keys/x25519.key"]) assert.equal(existsSync(join(dest, f)), true, `${f} copied`);
+    assert.equal((statSync(join(dest, "signing.key")).mode & 0o777), 0o600, "key material is 0600");
+    assert.equal((statSync(dest).mode & 0o777), 0o700, ".aw is 0700");
+    for (const f of ["workspace.yaml", "context", "interaction-log.jsonl"]) assert.equal(existsSync(join(dest, f)), false, `${f} never copied`);
+    const log = readFileSync(join(base, "aw.log"), "utf8");
+    assert.match(log, /^workspace connect --service https:\/\/app\.example\.test --team t:example\.test --role coordinator$/m, "connect with the source's service, the team, and the source's role, nothing else");
+    assert.equal(log.includes("team join"), false, "a retained seat is never minted");
+    assert.equal(log.includes("SECRET-API-KEY"), false);
+    assert.match(log, /workspace connect[\s\S]*check --online[\s\S]*heartbeat[\s\S]*workspace status/, "connect, check, heartbeat, status, in that order");
+    const lock = JSON.parse(readFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), "utf8"));
+    assert.equal(lock.home, home); assert.equal(lock.alias, "merlin"); assert.equal(lock.team, "t:example.test");
+    // A second seat cannot take a live holder's identity.
+    writeFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), JSON.stringify({ ...lock, pid: process.pid }));
+    const home2 = join(root, "agents", "dev", "instances", "merlin-seat-2"); mkdirSync(home2, { recursive: true });
+    const second = runHook(base, bin, "spawn", { ...env, OATS_INSTANCE: "merlin-seat-2", OATS_HOME: home2 });
+    assert.notEqual(second.status, 0);
+    assert.match(second.stdout, /already held by /);
+    assert.equal(existsSync(join(home2, ".aw")), false, "nothing copied for the refused seat");
+    // Retire releases the lock and touches nothing else: no workspace delete.
+    const before = readFileSync(join(base, "aw.log"), "utf8");
+    const ret = runHook(base, bin, "retire", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_META: JSON.stringify(r.doc.meta) });
+    assert.equal(ret.status, 0, ret.stdout + ret.stderr);
+    assert.deepEqual(ret.doc.meta, { retired: true, retained: true, identityReleased: true });
+    assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
+    assert.equal(readFileSync(join(base, "aw.log"), "utf8"), before, "retire ran no aw command at all");
+    assert.equal(existsSync(join(src, "signing.key")), true, "the source identity is untouched");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("retained identity: a status that does not show the new path fails the spawn and rolls back the copied material and the lock", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const { src } = legacySeat(base);
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({ identity: { source: src } }), FAKE_STATUS: "elsewhere" });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stdout, /retained identity could not be seated from /);
+    assert.equal(existsSync(join(home, ".aw")), false, "copied material removed");
+    assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
+    assert.equal(existsSync(join(src, "signing.key")), true, "source untouched");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
