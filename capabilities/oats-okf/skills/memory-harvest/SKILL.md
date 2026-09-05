@@ -78,9 +78,11 @@ is how what they learned reaches the soul.
 
 - Run each command exactly as given, never wider: the ids are the boundary
   two harvests agree on, and each window is sized for one full reading (the
-  rest of a long backlog comes in later harvests). Read every window in full;
-  if you could not, this harvest has FAILED: judge nothing from it and leave
-  the watermark files untouched. If a command is rejected because its
+  rest of a long backlog comes in later harvests). Read every window in full.
+  If your tool output truncates, redirect the command's output to a file in
+  your home and read the file in parts; that is a complete reading, not a
+  wider one. If you still could not read a window completely, this harvest
+  has FAILED: judge nothing from it and leave the watermark files untouched. If a command is rejected because its
   `--after` id is no longer in the thread (a pruned or redacted record), run
   it again without `--after` and read from the start; if its `--until` id is
   rejected, this harvest has failed (leave the watermark files alone; the next

@@ -117,9 +117,12 @@ the same promotion bar as a note, and once its judgement is complete writes the
 watermark `.okf-harvest-record.json` in the instance home, whether or not it
 promoted anything; only a failed harvest leaves the watermark alone, so the same
 window is read again. `oats okf harvest --from-record` consults the record even
-when notes are pending. Windows are bounded (turns and bytes, okf settings
-`record-window-turns` and `record-window-bytes`), so a long backlog drains over
-several harvests, each advancing the watermark only over what was read.
+when notes are pending. Windows are sized to one tool-output read (60 turns
+or 96 KB of JSON by default; okf settings `record-window-turns` and
+`record-window-bytes`), so a long backlog drains over several harvests, each
+advancing the watermark only over what was read; the package prepares the next
+watermark as `.okf-harvest-record.next.json` and the harvester's delivery is
+one rename, so an abandoned harvest leaves that file beside the current one.
 oats.okf 1.5.0 requires kernel 0.22.2 (the `capture --home` and `recall --json`
 surfaces); the compatibility floor refuses to activate it on an older kernel.
 

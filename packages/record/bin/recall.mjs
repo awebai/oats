@@ -7,8 +7,10 @@
 //   recall --thread <thread> --json   the thread's turns in journal order,
 //     [--after <id>] [--until <id>]   with extracted text; exact id bounds
 //     [--limit n] [--ids-only]        (after is exclusive, until inclusive);
-//                                     --ids-only lists id, ts and text bytes
-//                                     per turn without materializing text
+//                                     --ids-only lists id, ts and the bytes
+//                                     each turn occupies in the --json output
+//                                     (text extracted but not emitted), so a
+//                                     consumer can size a window it will read
 //   recall --from <name> <query...>   filter by speaker
 //   recall --limit N                  max results (default 20)
 //   recall --show <turn-id>           print one turn as JSON
@@ -111,8 +113,11 @@ try {
     const out = window.map((t) => {
       const docs = index.extractText(t);
       const base = { id: t.id, ts: t.ts, thread: t.thread, kind: t.kind, source: t.provenance?.source ?? null };
-      if (args["ids-only"]) return { ...base, bytes: docs.reduce((n, d) => n + Buffer.byteLength(d.text, "utf8"), 0) };
-      return { ...base, text: docs.map((d) => ({ role: d.role, text: d.text })) };
+      const full = { ...base, text: docs.map((d) => ({ role: d.role, text: d.text })) };
+      // bytes = what this turn occupies in the pretty-printed --json answer,
+      // so a consumer's byte cap bounds what it will actually receive.
+      if (args["ids-only"]) return { ...base, bytes: Buffer.byteLength(JSON.stringify(full, null, 2), "utf8") + 8 };
+      return full;
     });
     console.log(JSON.stringify({ thread: args.thread, total: turns.length, from: start, to: stop, remaining: end - stop, turns: out }, null, 2));
     process.exit(0);

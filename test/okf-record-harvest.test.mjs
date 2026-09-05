@@ -37,7 +37,7 @@ if (cmd === "capture") {
   const after = rest.includes("--after") ? rest[rest.indexOf("--after") + 1] : null;
   const sessions = JSON.parse(readFileSync(${JSON.stringify(join(base, "capture.json"))}, "utf8")).sessions;
   const total = sessions.find((s) => s.thread === thread).turns;
-  const bytesOf = (i) => (thread.startsWith("codex") ? 900_000 : 1000);
+  const bytesOf = (i) => (thread.startsWith("codex") ? 60_000 : 1000);
   const all = Array.from({ length: total }, (_, i) => ({ id: "t" + (i + 1), ts: "", bytes: bytesOf(i) }));
   const start = after ? all.findIndex((t) => t.id === after) + 1 : 0;
   if (after && start === 0) { process.stderr.write("--after: no turn " + after); process.exit(1); }
@@ -80,7 +80,7 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     assert.equal(log.args[0], "memory-harvest");
     assert.match(log.task, /Source notes: none pending/);
     assert.match(log.task, /RECORD-FED CANDIDATES/);
-    assert.match(log.task, new RegExp(`${d.fake} recall --thread cc:session:s1 --json --until t12`), "first harvest has no --after: the whole (small) thread is the window");
+    assert.match(log.task, new RegExp(`${d.fake} recall --thread 'cc:session:s1' --json --until 't12'`), "first harvest has no --after: the whole (small) thread is the window");
     const wmPath = join(d.home, ".okf-harvest-record.json");
     const nextPath = join(d.home, ".okf-harvest-record.next.json");
     assert.ok(log.task.includes(`mv '${nextPath}' '${wmPath}'`), "delivery advances the watermark by one rename, nothing retyped");
@@ -120,8 +120,8 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     const third = harvest(d);
     assert.equal(third.result.harvest, "spawned");
     const log3 = JSON.parse(readFileSync(spawnLog, "utf8"));
-    assert.match(log3.task, /recall --thread cc:session:s1 --json --after t12 --until t15/);
-    assert.match(log3.task, /cc:session:s1 \(3 turns, ~3 KB\)/);
+    assert.match(log3.task, /recall --thread 'cc:session:s1' --json --after 't12' --until 't15'/);
+    assert.match(log3.task, /cc:session:s1 \(3 turns, ~3 KB of JSON\)/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -142,7 +142,7 @@ test("okf harvest: notes take precedence and the record is not consulted unless 
     assert.deepEqual(both.result.record, { threads: ["pi:session:p1"] });
     const log2 = JSON.parse(readFileSync(spawnLog, "utf8"));
     assert.match(log2.task, /Source notes: .*one\.md/);
-    assert.match(log2.task, /recall --thread pi:session:p1 --json --until t4`/);
+    assert.match(log2.task, /recall --thread 'pi:session:p1' --json --until 't4'`/);
 
     // Record unavailable (the fake refuses), no notes: the old answer, unchanged.
     rmSync(join(d.home, "notes", "one.md"));
@@ -164,22 +164,23 @@ test("okf harvest: a long backlog is drained in bounded windows, by turns and by
     const first = harvest(d);
     assert.equal(first.result.harvest, "spawned");
     const log = JSON.parse(readFileSync(spawnLog, "utf8"));
-    // turn cap: 300 of 1000, the rest announced for later harvests
-    assert.match(log.task, /recall --thread cc:session:long --json --until t300`/);
-    assert.match(log.task, /cc:session:long \(300 turns, ~293 KB, 700 more wait for the next harvest\)/);
-    // byte cap: 900 KB per turn, 1.5 MB window → one turn only
-    assert.match(log.task, /recall --thread codex:session:fat --json --until t1`/);
+    // turn cap: 60 of 1000, the rest announced for later harvests
+    assert.match(log.task, /recall --thread 'cc:session:long' --json --until 't60'`/);
+    assert.match(log.task, /cc:session:long \(60 turns, ~59 KB of JSON, 940 more wait for the next harvest\)/);
+    // byte cap: 60 KB per turn, 96 KB window → one turn only
+    assert.match(log.task, /recall --thread 'codex:session:fat' --json --until 't1'`/);
+    assert.match(log.task, /redirect the command's output to a file/);
     const next = JSON.parse(readFileSync(join(d.home, ".okf-harvest-record.next.json"), "utf8"));
-    assert.equal(next.threads["cc:session:long"].untilTurnId, "t300");
-    assert.equal(next.threads["cc:session:long"].turns, 300);
+    assert.equal(next.threads["cc:session:long"].untilTurnId, "t60");
+    assert.equal(next.threads["cc:session:long"].turns, 60);
     assert.equal(next.threads["codex:session:fat"].untilTurnId, "t1");
     // the harvester delivers: rename; the next harvest continues exactly after the boundary
     writeFileSync(join(d.home, ".okf-harvest-record.json"), JSON.stringify(next));
     const second = harvest(d);
     assert.equal(second.result.harvest, "spawned");
     const log2 = JSON.parse(readFileSync(spawnLog, "utf8"));
-    assert.match(log2.task, /recall --thread cc:session:long --json --after t300 --until t600`/);
-    assert.match(log2.task, /recall --thread codex:session:fat --json --after t1 --until t2`/);
+    assert.match(log2.task, /recall --thread 'cc:session:long' --json --after 't60' --until 't120'`/);
+    assert.match(log2.task, /recall --thread 'codex:session:fat' --json --after 't1' --until 't2'`/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -197,7 +198,7 @@ test("okf harvest: a watermark whose boundary turn left the thread replans from 
     assert.match(r.result.record.problems.join("\n"), /boundary gone is no longer in the thread/);
     assert.match(r.stderr, /oats-okf: record: cc:session:s1: the harvested boundary gone is no longer in the thread/, "one stderr line in every mode, not only in the envelope");
     const log = JSON.parse(readFileSync(spawnLog, "utf8"));
-    assert.match(log.task, /recall --thread cc:session:s1 --json --until t20`/, "read from the start again, no --after");
+    assert.match(log.task, /recall --thread 'cc:session:s1' --json --until 't20'`/, "read from the start again, no --after");
     const next = JSON.parse(readFileSync(join(d.home, ".okf-harvest-record.next.json"), "utf8"));
     assert.equal(next.threads["cc:session:s1"].untilTurnId, "t20");
     assert.equal(next.threads["cc:session:s1"].turns, 20, "the count restarts with the read");

@@ -85,8 +85,13 @@ const RECORD_WATERMARK = ".okf-harvest-record.json";
  *  byte cap; the rest drains over later harvests, each with a truthful
  *  watermark. Overridable through okf settings { "record-window-turns",
  *  "record-window-bytes" }. */
-const DEFAULT_WINDOW_TURNS = 300;
-const DEFAULT_WINDOW_BYTES = 1_500_000;
+// Sized to ONE tool-output read: harnesses truncate a command's output well
+// under 100 KB (Claude Code around 30 KB), and the byte cap is measured on
+// the JSON the harvester receives, not on the text inside it. A backlog
+// drains over successive harvests; the caps are settings for operators
+// whose harness reads more.
+const DEFAULT_WINDOW_TURNS = 60;
+const DEFAULT_WINDOW_BYTES = 96_000;
 function sizeWindow(cli, thread, afterTurnId, caps) {
   const list = (after) => {
     const args = ["recall", "--thread", thread, "--json", "--ids-only", "--limit", String(caps.turns)];
@@ -121,7 +126,8 @@ function planRecordHarvest(instanceHome) {
     if (r.status !== 0) return { unavailable: String(r.stderr || r.error?.message || `capture exited ${r.status}`).trim().slice(0, 200) };
     report = JSON.parse(String(r.stdout || "").trim());
   } catch (e) { return { unavailable: String(e.message || e).slice(0, 200) }; }
-  const caps = { turns: Number(settings["record-window-turns"]) || DEFAULT_WINDOW_TURNS, bytes: Number(settings["record-window-bytes"]) || DEFAULT_WINDOW_BYTES };
+  const positive = (v, d) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : d);
+  const caps = { turns: positive(settings["record-window-turns"], DEFAULT_WINDOW_TURNS), bytes: positive(settings["record-window-bytes"], DEFAULT_WINDOW_BYTES) };
   const threads = [];
   const problems = [];
   for (const s of report.sessions || []) {
@@ -132,7 +138,7 @@ function planRecordHarvest(instanceHome) {
     if (seen && seen.untilTurnId === s.lastTurnId) continue;
     const win = sizeWindow(packageRuntimeCli(), s.thread, seen?.untilTurnId || null, caps);
     if (win.error) { problems.push(`${s.thread}: ${win.error}`); continue; }
-    if (win.empty) continue;
+    if (win.empty) { problems.push(`${s.thread}: capture reports new turns after ${seen?.untilTurnId || "the start"} but recall lists none; the two views disagree, nothing planned for it`); continue; }
     if (win.restarted) problems.push(`${s.thread}: the harvested boundary ${seen.untilTurnId} is no longer in the thread (redacted?); reading from the start again`);
     threads.push({ thread: s.thread, source: s.source, afterTurnId: win.restarted ? null : (seen?.untilTurnId || null), untilTurnId: win.untilTurnId, turns: (win.restarted ? 0 : (seen?.turns || 0)) + win.newTurns, newTurns: win.newTurns, bytes: win.bytes, remaining: win.remaining });
   }
@@ -149,8 +155,9 @@ function planRecordHarvest(instanceHome) {
 /** Briefing block for record-fed candidates, appended to the harvest task. */
 function recordBrief(plan, cli) {
   if (!plan?.threads?.length) return "";
-  const lines = plan.threads.map((t) => `  - ${t.thread} (${t.newTurns} turns, ~${Math.round(t.bytes / 1024)} KB${t.remaining ? `, ${t.remaining} more wait for the next harvest` : ""}): \`${cli} recall --thread ${t.thread} --json${t.afterTurnId ? ` --after ${t.afterTurnId}` : ""} --until ${t.untilTurnId}\``);
-  return `\n- RECORD-FED CANDIDATES (the memory-harvest skill, section "Record-fed candidates"): this instance's own captured session turns since the last harvest, in windows sized for one reading. Read each window with the exact command given, never wider, and read it IN FULL: a window you could not read completely is a failed harvest, and a failed harvest leaves the watermark alone.\n${lines.join("\n")}\n  If a window command is rejected because its --after id is no longer in the thread, run it again without --after and read from the start; if its --until id is rejected, this harvest has failed (leave the watermark files alone; the next oats okf harvest replans). Extract candidate lessons from them in the same shape as notes (one candidate per insight, provenance = the turn ids it came from), then judge every candidate under the same promotion bar as a note. Session trivia, tool noise and anything derivable from the repo fail the bar; promoting nothing is a normal outcome.\n- When your judgement of every window is COMPLETE, whether or not anything was promoted, and after any delivery it needed, advance the watermark by renaming the prepared file (it records what you read, not what you promoted; a failed or abandoned harvest must leave both files as they are):\n  mv '${plan.nextPath}' '${plan.watermarkPath}'`;
+  const q = (v) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+  const lines = plan.threads.map((t) => `  - ${t.thread} (${t.newTurns} turns, ~${Math.round(t.bytes / 1024)} KB of JSON${t.remaining ? `, ${t.remaining} more wait for the next harvest` : ""}): \`${cli} recall --thread ${q(t.thread)} --json${t.afterTurnId ? ` --after ${q(t.afterTurnId)}` : ""} --until ${q(t.untilTurnId)}\``);
+  return `\n- RECORD-FED CANDIDATES (the memory-harvest skill, section "Record-fed candidates"): this instance's own captured session turns since the last harvest, in windows sized for one reading (about ${Math.round(DEFAULT_WINDOW_BYTES / 1024)} KB at most). Read each window with the exact command given, never wider, and read it IN FULL. If your tool output truncates, redirect the command's output to a file in your home and read that file in parts: that is a complete reading, not a wider one. A window you could not read completely is a failed harvest, and a failed harvest leaves the watermark alone.\n${lines.join("\n")}\n  If a window command is rejected because its --after id is no longer in the thread, run it again without --after and read from the start; if its --until id is rejected, this harvest has failed (leave the watermark files alone; the next oats okf harvest replans). Extract candidate lessons from them in the same shape as notes (one candidate per insight, provenance = the turn ids it came from), then judge every candidate under the same promotion bar as a note. Session trivia, tool noise and anything derivable from the repo fail the bar; promoting nothing is a normal outcome.\n- When your judgement of every window is COMPLETE, whether or not anything was promoted, and after any delivery it needed, advance the watermark by renaming the prepared file (it records what you read, not what you promoted; a failed or abandoned harvest must leave both files as they are):\n  mv '${plan.nextPath}' '${plan.watermarkPath}'`;
 }
 
 /** Invoke the versioned package-runtime boundary. Task text crosses the
