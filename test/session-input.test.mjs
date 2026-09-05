@@ -7,9 +7,9 @@ function fixture(output = "%12\t0\tcodex\t123\n", processes = "123 1 zsh\n") {
   return { calls, exec(bin, args, opts) {
     if (bin === "ps") return processes;
     assert.equal(bin, "tmux");
-    assert.deepEqual(args.slice(0, 2), ["-S", target.socket]);
-    calls.push({ args: args.slice(2), input: opts.input });
-    return args[2] === "list-panes" ? output : "";
+    assert.deepEqual(args.slice(0, 3), ["-u", "-S", target.socket]);
+    calls.push({ args: args.slice(3), input: opts.input });
+    return args[3] === "list-panes" ? output : "";
   } };
 }
 test("tmux submits literal multiline input using bracketed paste and Enter", () => {
