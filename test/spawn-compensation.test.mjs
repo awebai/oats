@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -164,9 +164,9 @@ require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({ar
   execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
   const invocation = JSON.parse(readFileSync(captured, "utf8"));
   const args = invocation.argv;
-  assert.deepEqual(args.slice(0, 7), ["--cd", f.home, "--add-dir", realpathSync(join(f.home, "work")), "--model", "gpt-test", "--"]);
-  assert.equal(args.length, 8, "task is exactly one prompt and no policy is overridden");
-  assert.ok(args[7].includes(prompt), "task bytes reach the harness without shell evaluation");
+  assert.deepEqual(args.slice(0, 5), ["--cd", f.home, "--model", "gpt-test", "--"]);
+  assert.equal(args.length, 6, "task is exactly one prompt and no policy is overridden");
+  assert.ok(args[5].includes(prompt), "task bytes reach the harness without shell evaluation");
   assert.equal(invocation.home, f.home);
   assert.equal(existsSync(join(f.home, "NEVER_RUN")), false);
   assert.ok(readFileSync(join(f.home, "AGENTS.md"), "utf8").includes("Developer"));
