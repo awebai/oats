@@ -319,3 +319,30 @@ test("clean production retire remains one command and creates no recovery", () =
   assert.equal(result.workRecovery, undefined);
   assert.equal(existsSync(spawned.home), false);
 });
+
+test("recovery copies only staged objects the clone lacks: one batch check, no per-row Git launches", () => {
+  const f = fixture();
+  // A logging git on PATH: every launch is one line, then the real git runs.
+  const log = join(f.base, "git-launches.log");
+  write(join(f.base, "bin", "git"), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(log)}\nexec /usr/bin/git "$@"\n`, 0o755);
+  f.env.GIT_LAUNCH_LOG = log;
+  const spawned = spawn(f, "batch");
+  const work = join(spawned.home, "work");
+  for (let i = 0; i < 40; i++) write(join(work, "src", `file-${i}.txt`), `committed ${i}\n`);
+  execFileSync("git", ["-C", work, "add", "."]);
+  execFileSync("git", ["-C", work, "commit", "-qm", "forty files"]);
+  write(join(work, "staged-only.txt"), "staged, never committed\n");
+  execFileSync("git", ["-C", work, "add", "staged-only.txt"]);
+  write(join(work, "loose.txt"), "untracked human bytes\n");
+  writeFileSync(log, "");
+  const retired = cli(f, ["retire", "dev-batch", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recoveryRepo = join(JSON.parse(retired.stdout).workRecovery.path, "repo");
+  const launches = readFileSync(log, "utf8").split("\n").filter(Boolean);
+  const perRow = launches.filter((l) => / cat-file blob | hash-object -w --stdin$/.test(l));
+  assert.equal(perRow.length, 2, `expected one cat-file + one hash-object for the single staged-only blob, saw:\n${perRow.join("\n")}`);
+  assert.equal(launches.filter((l) => l.includes("cat-file --batch-check")).length, 2, "one existence check before the copy and one proof after it");
+  assert.equal(execFileSync("git", ["-C", recoveryRepo, "diff", "--cached", "--name-only"], { encoding: "utf8" }).trim(), "staged-only.txt");
+  assert.equal(readFileSync(join(recoveryRepo, "staged-only.txt"), "utf8"), "staged, never committed\n");
+  assert.equal(readFileSync(join(recoveryRepo, "loose.txt"), "utf8"), "untracked human bytes\n");
+});
