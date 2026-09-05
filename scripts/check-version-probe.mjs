@@ -10,7 +10,7 @@ export function checkVersionProbe(probe, version) {
   }
   for (const [key, values] of Object.entries({
     runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"],
-    launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session"],
+    launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"],
   })) {
     assert.ok(Array.isArray(probe[key]), `version --json probe mismatch: ${key}`);
     for (const value of values) assert.ok(probe[key].includes(value), `version --json probe mismatch: ${key}.${value}`);

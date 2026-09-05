@@ -246,3 +246,93 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("oats server roster, okf harvest --server, and the changed-registration guard", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-roster-"));
+  try {
+    const { bin, log, tools } = fakeBin(base);
+    const repo = remoteWorkspace(base);
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+
+    let r = oats(env, ["server", "roster", "--json"]);
+    assert.equal(r.status, 0, r.stderr); assert.deepEqual(r.json().result.groups, []);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--label", "Build box", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r1", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const home = r.json().result.home;
+
+    // The roster: one group per (server, route target), one status pull each,
+    // souls from the remote, instances joined with the saved routes.
+    r = oats(env, ["server", "roster", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    let out = r.json().result;
+    assert.equal(out.groups.length, 1);
+    const g = out.groups[0];
+    assert.equal(g.server, "build"); assert.equal(g.label, "Build box"); assert.equal(g.registrationPresent, true);
+    assert.deepEqual(g.probe, { ok: true });
+    assert.equal(typeof g.agentsRoot, "string");
+    assert.deepEqual(g.souls.map((s) => s.name), ["dev"]);
+    assert.equal(g.souls[0].agentsRoot, g.agentsRoot);
+    assert.equal(g.instances.length, 1);
+    assert.equal(g.instances[0].instance, "dev-r1"); assert.equal(g.instances[0].agent, "dev");
+    assert.equal(g.instances[0].savedRoute, true); assert.equal(g.instances[0].running, false);
+    assert.equal(g.instances[0].home, home);
+    assert.equal(typeof out.bounds.perTargetTimeoutMs, "number");
+    assert.match(readFileSync(log, "utf8"), /status --json --dir/, "the roster pulled remote status");
+    r = oats(env, ["server", "roster"]);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /dev-r1\s+idle/);
+
+    // An unreachable target: the group stays, probe carries the error, no
+    // instance is invented. (The fake ssh runs the command locally, so a
+    // workspace that does not exist stands in for a host that fails.)
+    r = oats(env, ["server", "add", "down", "--ssh", "down-host", "--workspace", join(base, "no-such-ws"), "--oats", CLI, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "roster", "--json"]);
+    out = r.json().result;
+    const down = out.groups.find((x) => x.server === "down");
+    assert.equal(down.probe.ok, false); assert.equal(typeof down.probe.error.message, "string");
+    assert.deepEqual(down.instances, []); assert.deepEqual(down.souls, []);
+    assert.equal(out.groups.find((x) => x.server === "build").probe.ok, true);
+    r = oats(env, ["server", "roster", "--server", "down", "--json"]);
+    assert.deepEqual(r.json().result.groups.map((x) => x.server), ["down"]);
+
+    // Harvest routes to the instance's SAVED home on the host: `cd <home> &&`
+    // in the remote command word, never a path from the caller. This remote
+    // workspace has no knowledge layer, so the package's own refusal is relayed.
+    r = oats(env, ["okf", "harvest", "--server", "build", "--instance", "nope", "--json"]);
+    assert.notEqual(r.status, 0); assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
+    r = oats(env, ["okf", "harvest", "--server", "build", "--instance", "dev-r1", "--json"]);
+    assert.notEqual(r.status, 0, r.stdout);
+    assert.equal(r.json().ok, false);
+    const sshLog = readFileSync(log, "utf8");
+    assert.ok(sshLog.includes(`cd ${remoteQuote(home)} && `), "harvest ran in the saved home");
+    assert.match(sshLog, /okf harvest --json/);
+
+    // The guard: a registration edited to another target must not overwrite
+    // the saved routes spawned through the old one.
+    const repo2 = join(base, "remote-ws-2"); mkdirSync(repo2);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo2, "--oats", CLI, "--path", tools, "--replace", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r2", "--no-launch", "--json"]);
+    assert.notEqual(r.status, 0);
+    assert.equal(r.json().error.code, "E_ROUTE_CHANGED");
+    assert.match(r.json().error.message, /dev-r1/);
+    assert.equal(existsSync(snapshotPath("build", "dev-r2")), false);
+    // The roster keeps both: the new target (registration, nothing spawned)
+    // and the old one (saved routes only) with its instance.
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    out = r.json().result;
+    assert.equal(out.groups.length, 2);
+    const fresh = out.groups.find((x) => x.registrationPresent), old = out.groups.find((x) => !x.registrationPresent);
+    assert.equal(fresh.target.workspace, repo2); assert.deepEqual(fresh.instances, []);
+    assert.equal(old.target.workspace, repo); assert.deepEqual(old.instances.map((i) => i.instance), ["dev-r1"]);
+    // Retire still routes from the saved route, and the roster then empties.
+    r = oats(env, ["retire", "dev-r1", "--server", "build", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    assert.deepEqual(r.json().result.groups.map((x) => x.instances.length), [0]);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
