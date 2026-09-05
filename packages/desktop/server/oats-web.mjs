@@ -393,6 +393,7 @@ function cliStatus() {
     runtimes: cliState.runtimes || ["pi", "claude"],
     sessionBackends: cliState.sessionBackends || ["tmux"],
     launchOptions: cliState.launchOptions || [],
+    remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
     probedAt: cliState.probedAt || null,
