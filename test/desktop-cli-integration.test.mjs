@@ -58,7 +58,9 @@ if (argv[0] === "version" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: {
     instance: agent + "-t1", agent, home: "/tmp/h", work: "worktree", branch: "b",
     launched: true, warnings: [], tmux: { session: "pi-agents", window: agent + "-t1" },
-    taskEcho: task, ...(argv.includes("--server") ? { server: argv[argv.indexOf("--server") + 1], target: ${JSON.stringify(groups.find(g=>g.registrationPresent)?.target)} } : {}) } }));
+    taskEcho: task,
+    ...(argv[argv.indexOf("--purpose") + 1] === "route-conflict" ? { routeConflict: { instance: agent + "-t1", existingHome: "/remote/existing" }, snapshot: null } : {}),
+    ...(argv.includes("--server") ? { server: argv[argv.indexOf("--server") + 1], target: ${JSON.stringify(groups.find(g=>g.registrationPresent)?.target)} } : {}) } }));
   process.exit(0);
 } else if (argv[0] === "retire" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ retired: argv[1], removedDir: true }));
@@ -395,6 +397,10 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     const spawnCall = fake.calls().find((c) => c.argv[0] === "spawn");
     assert.equal(spawnCall.argv.includes("--dir"), false, "remote scope remains the registry's authority");
     assert.notEqual(spawnCall.cwd, "/remote/project", "spawn's local process does not enter the remote workspace");
+    const collision = await fetch(`${base}/api/spawn`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agent: "dev", agentsRoot: "/remote/project/agents", serverId: "host", purpose: "route-conflict" }) });
+    assert.equal(collision.status, 200, "the remote launch succeeded even though its route could not be saved");
+    assert.deepEqual((await collision.json()).routeConflict, { instance: "dev-t1", existingHome: "/remote/existing" }, "the real HTTP boundary retains the CLI conflict for renderer feedback");
     assert.equal((await fetch(`${base}/api/chat/dev-one${qualifier}`)).status, 409, "remote transcript never reads a local lookalike path");
     assert.equal((await fetch(`${base}/api/harvest/dev-one?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}`, { method: "POST" })).status, 404, "missing server cannot select a remote instance");
     const retireCalls = fake.calls().filter((c) => c.argv[0] === "retire").length;

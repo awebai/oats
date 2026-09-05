@@ -350,6 +350,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   if (r.server) void refreshRemoteSnapshot();
   const remoteWorkspaceId = remote.spawnedWorkspace(remoteGroups, r);
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
+    ...(r.routeConflict ? { routeConflict: r.routeConflict } : {}),
            branch: r.branch ?? null, launched: !!r.launched, warnings: r.warnings || [],
            tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target,
              ...(remoteWorkspaceId ? { workspaceId: remoteWorkspaceId } : {}) } : {}) };
