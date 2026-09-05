@@ -42,8 +42,10 @@ ownership-checked:
   token (older version, hand-written);
 - release unlinks only while the file still carries the releaser's nonce;
 - a contender re-checks inode+mtime immediately before removing a lock it
-  proved stale, so a reclaim cannot cascade into stealing from whoever
-  reclaimed first.
+  proved stale, which DETECTS a replacement that landed while the old lock
+  was being proven stale. It is a detection, not an exclusion: a replacement
+  landing between that recheck and the unlink is still removed. That window
+  is a documented limit of the design, not something the recheck closes.
 
 The threshold-ordering check was then removed rather than kept: it constrains
 legitimate configurations while providing none of the safety its own error
