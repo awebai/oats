@@ -2206,8 +2206,20 @@ function migrateCmd() {
 /** oats update <package> — transactional package update with diff + trust reset. */
 function updatePackageCmd(id) {
   const dir = dirFlag();
+  // --to <selector>: move a catalog-sourced lock to another catalog ref
+  // (tag) through the same transactional update. A lock with an explicit
+  // selector keeps it on a plain update by design; this is the operator's
+  // way to advance it without remove + reinstall.
+  // Two spellings: `oats update <id> <id>@<selector>` (the engine's own spec
+  // form) or `oats update <id> --to <selector>`.
+  const to = flag("to");
+  if (to === true) { cmdFail("E_BAD_ARGS", "--to needs a catalog selector, e.g. --to v1.10.1"); return; }
+  if (to !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(to)) { cmdFail("E_BAD_ARGS", `--to selector ${JSON.stringify(to)} is not a catalog ref`); return; }
+  const positional = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+  if (positional && to !== undefined) { cmdFail("E_BAD_ARGS", "give either <id>@<selector> or --to <selector>, not both"); return; }
+  const spec = positional || (to !== undefined ? `${id}@${to}` : undefined);
   let r;
-  try { r = updatePackage(dir, id); } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
+  try { r = updatePackage(dir, id, spec ? { spec } : {}); } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
   if (JSON_MODE) { jsonOk(r); return; }
   // A moved package root is reported even when the bytes are identical: the
   // lock now points somewhere else in the repository, and that is exactly the
@@ -3488,9 +3500,10 @@ Usage:
                                             report under error.details)
   oats list [--dir <d>] [--json]             installed packages, exported capabilities,
                                             scopes, trust state
-  oats update <package> [--dir <d>]          transactional package update: temp fetch,
-                                            closure validation, diff, lock replace,
-                                            all capability approvals invalidated
+  oats update <package> [<package>@<ref>]    transactional package update: temp fetch,
+      [--to <ref>] [--dir <d>]              closure validation, diff, lock replace,
+                                            all capability approvals invalidated; a
+                                            spec or --to moves a catalog lock to <ref>
   oats remove <package> [--dir <d>]          remove a package (refuses while config or
                                             dependent packages reference it)
   oats migrate [--dry-run] [--dir <d>]       map this scope's v1 capability locks to

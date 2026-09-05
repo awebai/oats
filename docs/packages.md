@@ -30,7 +30,11 @@ default. Only the selected subtree is installed and hashed, so repository docs,
 CI configuration, owner souls, and sibling packages stay outside the package's
 payload and integrity. One repository may ship several packages at different
 paths. The lock pins the selected root in its own `path` field, and only an
-explicit `oats update <package>` may move it. See
+explicit `oats update <package>` may move it. A catalog lock with an explicit
+selector (`catalog:oats.aweb@v1.8.0`) keeps that selector on a plain update;
+to advance it to another published ref, give the spec or `--to`:
+`oats update oats.aweb oats.aweb@v1.10.1` or `oats update oats.aweb --to v1.10.1`
+(same transactional path, approvals invalidated, then `oats trust`). See
 [`design/package-engine-contract.md` §1.1](design/package-engine-contract.md).
 
 Ground truth for the contract: [`oats-package.schema.json`](oats-package.schema.json),
