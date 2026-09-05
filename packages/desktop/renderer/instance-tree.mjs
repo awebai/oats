@@ -22,9 +22,10 @@ export function instanceLinks(instance) {
  * f7c5769). The canonical home path is unique per instance; agentsRoot+name
  * is the fallback; bare name only when the roster carries neither. */
 export function instanceId(instance) {
-  if (instance.home) return String(instance.home);
-  if (instance.agentsRoot) return `${instance.agentsRoot}\u0000${instance.instance}`;
-  return String(instance.instance);
+  const local = instance.home ? String(instance.home)
+    : instance.agentsRoot ? `${instance.agentsRoot}\u0000${instance.instance}` : String(instance.instance);
+  // Canonical paths are unique only within a host. Preserve existing local keys.
+  return instance.server ? `server:${instance.server}\u0000${local}` : local;
 }
 
 /** Resolve one relation-edge NAME to the id of the instance it means.
@@ -39,7 +40,7 @@ export function instanceId(instance) {
  * maps must use the same semantics rather than re-implementing them.
  * byName: Map<name, instance[]> over the same roster. */
 export function resolveLinkId(fromInstance, name, byName) {
-  const candidates = byName.get(name);
+  const candidates = byName.get(name)?.filter((i) => (i.server || "") === (fromInstance.server || ""));
   if (!candidates || !candidates.length) return null;
   if (candidates.length === 1) return instanceId(candidates[0]);
   const sameRoot = candidates.filter((c) => c.agentsRoot && c.agentsRoot === fromInstance.agentsRoot);
@@ -145,6 +146,9 @@ export function findRosterInstance(instances, ref) {
   const name = typeof ref === "string" ? ref : ref.instance;
   const home = typeof ref === "string" ? undefined : ref.home;
   const root = typeof ref === "string" ? undefined : ref.agentsRoot;
+  // An object reference names a host (absent server means local). A legacy
+  // bare name can still resolve across the roster, but only if unambiguous.
+  if (typeof ref !== "string") instances = instances.filter((i) => (i.server || "") === (ref.server || ""));
   if (home) {
     const byHome = instances.find((i) => i.home === home);
     if (byHome) return byHome;
