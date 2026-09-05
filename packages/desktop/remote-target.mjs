@@ -8,13 +8,14 @@ const exec = promisify(execFile);
 export function remoteTargetKey(remote) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(remote?.serverId || "")
     || !/^[a-z0-9][a-z0-9-]*$/.test(remote?.instance || "")) throw new Error("invalid remote terminal target");
-  return JSON.stringify(["remote", remote.serverId, remote.instance]);
+  if (remote.home !== undefined && (typeof remote.home !== "string" || !remote.home.startsWith("/") || remote.home.includes("\0"))) throw new Error("invalid remote terminal home");
+  return JSON.stringify(["remote", remote.serverId, remote.instance, ...(remote.home ? [remote.home] : [])]);
 }
 export async function prepareRemoteTerm(cli, remote, { run = exec } = {}) {
   requireRemoteSupport(cli, "session");
   const bin = cli.bin;
   remoteTargetKey(remote);
-  const address = ["--server", remote.serverId, "--instance", remote.instance];
+  const address = ["--server", remote.serverId, "--instance", remote.instance, ...(remote.home ? ["--home", remote.home] : [])];
   const { stdout } = await run(bin, ["session", "inspect", ...address, "--json"], {
     encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024,
   });

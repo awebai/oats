@@ -829,7 +829,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     term,
     tmux: inst.tmux,
     sessionTarget: inst.sessionTarget,
-    remote: inst.server ? { serverId: inst.server, instance: inst.instance } : undefined,
+    remote: inst.server ? { serverId: inst.server, instance: inst.instance, home: inst.home } : undefined,
     wrap,
     isActive: () => made.paneEl.classList.contains("active"),
     fit: () => fit.fit(),

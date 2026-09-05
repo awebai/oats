@@ -17,6 +17,17 @@ test("remote viewer refuses stale and failed preflight", async () => {
     await assert.rejects(prepareRemoteTerm(cli, remote, { run: async () => ({ stdout: JSON.stringify(doc) }) }));
   }
 });
+test("remote viewer carries the selected home through preflight, attach and deduplication", async () => {
+  const selected = { ...remote, home: "/remote/selected home" };
+  const address = ["--server", "build", "--instance", "dev-task", "--home", selected.home];
+  const got = await prepareRemoteTerm(cli, selected, { run: async (bin, args) => {
+    assert.deepEqual(args, ["session", "inspect", ...address, "--json"]);
+    return { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }) };
+  } });
+  assert.deepEqual(got.args, ["session", "attach", ...address]);
+  assert.notEqual(remoteTargetKey(selected), remoteTargetKey({ ...selected, home: "/remote/another home" }));
+  assert.throws(() => remoteTargetKey({ ...selected, home: "relative" }), /invalid remote terminal home/);
+});
 test("pending preflights deduplicate and share the active terminal resource cap", async () => {
   let finish, count = 0;
   const gate = createTerminalPrepareGate({ activeCount: () => 1 }, 2);
