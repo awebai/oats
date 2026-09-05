@@ -178,6 +178,41 @@ test("human retire output reports preserved classes and recovery location", () =
   assert.match(retired.stdout, /\.oats-retirement\/recovery\/dev-reported-/);
 });
 
+test("home-only recovery preserves notes without cloning a clean merged worktree", () => {
+  const f = fixture();
+  const spawned = spawn(f, "home-only");
+  write(join(spawned.home, "notes", "lesson.md"), "Keep this lesson.\n");
+  const retired = cli(f, ["retire", "dev-home-only", "--delete-branch", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.deepEqual(recovery.classes, ["changed instance-home bytes"]);
+  assert.equal(readFileSync(join(recovery.path, "home", "notes", "lesson.md"), "utf8"), "Keep this lesson.\n");
+  assert.equal(existsSync(join(recovery.path, "repo")), false);
+  assert.equal(recovery.repoCopy.copied, false);
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.deepEqual(manifest.repoCopy, recovery.repoCopy);
+  assert.equal(readFileSync(join(f.repo, "tracked.txt"), "utf8"), "base\n");
+  assert.equal(existsSync(spawned.home), false);
+});
+
+test("home changes with an in-progress Git operation still retain standalone Git state", () => {
+  const f = fixture();
+  const spawned = spawn(f, "home-merge");
+  const work = join(spawned.home, "work");
+  write(join(spawned.home, "notes.md"), "Merge is unfinished.\n");
+  const gitDir = execFileSync("git", ["-C", work, "rev-parse", "--absolute-git-dir"], { encoding: "utf8" }).trim();
+  const head = execFileSync("git", ["-C", work, "rev-parse", "HEAD"], { encoding: "utf8" });
+  write(join(gitDir, "MERGE_HEAD"), head);
+  write(join(gitDir, "MERGE_MSG"), "Unfinished merge\n");
+  assert.equal(execFileSync("git", ["-C", work, "status", "--porcelain"], { encoding: "utf8" }), "");
+  const retired = cli(f, ["retire", "dev-home-merge", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(readFileSync(join(recovery.path, "repo", ".git", "MERGE_HEAD"), "utf8"), head);
+  assert.equal(readFileSync(join(recovery.path, "repo", ".git", "MERGE_MSG"), "utf8"), "Unfinished merge\n");
+  assert.notEqual(recovery.repoCopy?.copied, false);
+});
+
 test("production recovery reopens staged index state after the original worktree is gone", () => {
   const f = fixture();
   const spawned = spawn(f, "staged");
