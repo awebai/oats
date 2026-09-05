@@ -156,7 +156,10 @@ soul through the binding's `settings:` map.
   qualification only; leave the default otherwise.
 - `identity: { source: "/abs/path/to/legacy/.aw" }`, per soul, explicit and
   never inferred. The spawned instance becomes the retained seat of that
-  existing identity (same did:aw and address): the identity-authority files
+  existing identity (same did:aw and address). The aweb service URL comes
+  from the source's `workspace.yaml` (`aweb_url`); a hosted-init source has
+  none, so set `OATS_AWEB_URL` (for example `https://app.aweb.ai/api`) in
+  the spawn environment when the source lacks it: the identity-authority files
   are copied into the home's `.aw` (never `workspace.yaml` or caches), the
   coordination binding is reconnected with `aw workspace connect`, and the
   seat is verified online before the instance is briefed. A lock beside the
