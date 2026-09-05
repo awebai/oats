@@ -23,8 +23,12 @@ the ACKed diff; never rewrite the teammate's branch. A reviewer's suggestion
 is not pre-approved work: it gets its own round.
 
 Release rules. A release tag points at one reviewed commit reachable from
-main whose full kernel and Desktop suites ran once and were green; the
-kernel version in the tree equals the tag. Official capability payloads are
+main whose full kernel and Desktop suites ran once and were green, unless
+the operator takes the explicit human risk override for an urgent release
+or a runner outage; then report what was bypassed and the risk accepted.
+The kernel version in the tree equals the tag. Two lanes publish a tag: the
+GitHub workflow and the runnerless build-once/stage/publish lane
+(scripts/release-lane.mjs); no release step may depend on GitHub alone. Official capability payloads are
 published from their mirror repositories byte-identical to the bundled copy,
 tagged before the catalog pin moves, and the pin moves in the same tree as a
 manifest version bump. Never publish an unreviewed payload; capability
