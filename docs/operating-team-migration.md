@@ -9,7 +9,9 @@ The cjr runbook is owned by Merlin at
 `~/cjr/agents/docs/2026-09-05-oats-migration.md`. This document records the
 shared framework work and the wider rollout.
 
-Fresh identities are authorized for specialists and reviewers. Merlin retains
+Fresh identities are authorized for continuing seats as well as specialists and
+reviewers. Preserve the accepted retained-identity choice where it is useful.
+Merlin retains
 both `cjr.aweb.ai/merlin` and his existing durable DID. Aweb clarified that
 re-minting the same address changes identity and breaks continuity; the supported
 path is an explicit transfer of his existing authority with one live process.
@@ -31,19 +33,22 @@ Every remembering role must have a tested learning path. Preserve each role's
 explicit policy: Cjr reviewers exclude accumulated memory; Themis uses
 reviewed learning. Config discovery alone establishes none of this.
 
-The installed baseline is published OATS 0.22.3 on this Mac and `aweb-agents`,
+The installed CLI baseline is published OATS 0.22.4 on this Mac and `aweb-agents`,
 including native Pi/Claude/Codex, tmux/Herdr, shared `yolo`, remote Desktop
 roster/actions, retained-authority binding and corrected deferred retirement.
-The downloaded Mac Desktop app passed codesign, packaged renderer and PTY
-launch checks. Official oats.okf 1.5.0 provides record-fed harvesting; each
+The installed Mac Desktop 0.22.3 passed codesign, packaged renderer and PTY
+launch checks; its 0.22.4 replacement is downloading. Official oats.okf 1.5.0
+provides record-fed harvesting; each
 deployment must select its authenticated provider. Version 1.5.1, adding
 harvest-runtime selection and detection of unadvanced record plans, remains
 under independent review and is not yet published.
 
-No standing seat has transferred yet. Cjr's worker pilot has landed reviewed
-code and knowledge; ordinary retirement passed using the next-patch candidate.
-A real harvester's automatic deferred completion and successor knowledge use
-remain explicit acceptance checks. The reviewed aweb broker candidate passed
+No standing seat has transferred yet. Cjr's workers have landed reviewed
+code and knowledge. Two ordinary cycles on published 0.22.3 completed automatic
+harvester retirement, independent knowledge review, integration and home-only
+worker retirement. A successor read promoted indexed knowledge at startup and
+identified how it shaped its implementation; both acceptance checks passed.
+The reviewed aweb broker candidate passed
 real harness delivery; installation of its published release as the normal
 host service remains a prerequisite for standing cutover.
 
@@ -55,10 +60,10 @@ of continuing seats.
 
 | Scope | Starting point | Required disposition |
 | --- | --- | --- |
-| `~/awebai/oats` | Live Claude coordinator and Codex lead; managed review workers also running | Oats owns coordinator handover; lead owns lead handover; preserve established identities |
-| `~/cjr` | Preparation `5afb3e8b`; developer pilot landed on master `062e2c75`; legacy Merlin and Minerva live | Merlin owns safe handovers; preserve his DID/address; prove automatic harvest completion and successor use |
-| `~/awebai/aweb` | Live Claude coordinator and frontend in legacy homes | Oats owns coordinator handover; lead coordinates frontend with aweb after its current work; preserve identities and cover child repositories |
-| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. First-seat Themis config/soul packet under owner review | Zeus prepared the five-seat handover plan; begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
+| `~/awebai/oats` | Live Claude coordinator and Codex lead; managed review workers also running | Oats owns coordinator handover; lead owns lead handover; follow the explicit fresh or retained identity choice |
+| `~/cjr` | Preparation `5afb3e8b`; developer pilot landed on master `062e2c75`; legacy Merlin and Minerva live | Merlin owns safe handovers; preserve his DID/address; automatic harvest completion and successor use are proven; prepare standing seats |
+| `~/awebai/aweb` | Live Claude coordinator and frontend in legacy homes | Oats owns coordinator handover; lead coordinates frontend with aweb after its current work; handover task responsibility and cover child repositories |
+| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. First-seat Themis config/soul integrated, official capabilities installed and trusted | Zeus prepared the five-seat handover plan; begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
 | `~/prj/beadhub-all` | Live Codex session, despite stale offline roster | Beadhub accepted preparation and is at a safe boundary; retain its global identity, native Codex and separate canonical code roots under `~/awebai/beadhub`; billing remains separately gated |
 | `~/prj/docflow` | Live Claude seat identified itself as local `juan.aweb.ai/alice` on `docflow:juan.aweb.ai` | Owner Juan; finish running mail backfill and register checks before transfer; retain identity, memory and Minerva route; accountant-sync remains deliberately unloaded |
 | `ai.aweb` on `aweb-agents` | Aweb confirms Athena intentionally inactive; remote legacy home retained | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
@@ -253,16 +258,21 @@ the shared rollout record.
 - TSM's owner plan is `~/tsm/history/2026-09-06-tsm-oats-handover-plan.md`.
   Preserve the five seats' worktrees, skills and knowledge; re-arm Zeus's
   session-local schedules. Production credentials remain solely with the
-  authorized production operator. His plan reserves Zeus's final cutover
-  for Juan's presence; the other seats can prepare in the meantime.
+  authorized production operator. Zeus remains last. Juan's current direction
+  authorizes completing the migration while he is away; the earlier
+  presence-only pause does not override it. Actual job and production boundaries
+  remain. Themis's ten-commit packet landed at `46cf2083`; its installed
+  oats.aweb 1.10.1 and oats.okf 1.5.0 passed the actual doctor. The other three
+  specialist briefs are being prepared at their work checkpoints.
 - BeadHub configuration/soul commit `3ee13a8` in `awebai/beadhub-saas`
   (`~/awebai/beadhub/beadhub-saas`) was independently ACKed by lead and
   landed on `main`. Its tracked deployment template is materialized at the canonical
   parent workspace, with trusted official capabilities and a clean actual
   doctor result. The soul retains SaaS Git provenance and uses workspace mode
   as a coordinator across the three canonical repositories. Its legacy holder
-  remains live; authenticated harvest-model configuration and the published
-  broker service precede activation. Stripe and production gates remain separate.
+  remains live; authenticated harvest-model configuration is installed and
+  verified. The published broker service precedes activation. Stripe and
+  production gates remain separate.
 - Docflow supplied its own identity and handover through its terminal. Its
   backfill and register verification define the safe boundary. Preserve its
   Claude memory and existing credentials in place; verify filesystem/TCC
@@ -291,7 +301,41 @@ the shared rollout record.
   Published aw installation and standing-seat acceptance are still separate.
 - Qualification found that tmux output loses tab separators in a minimal
   launchd environment without a UTF-8 locale. Independently reviewed kernel
-  fix `a0b0e14` adds tmux UTF-8 mode; until it ships, the host service specifies
+  fixes `a0b0e14` and `0260ea9` shipped in 0.22.4, adding UTF-8 mode to
+  lifecycle/input and viewer calls. The host service also specifies
   `LC_ALL=en_US.UTF-8`. Existing Claude plugin 1.7.8 also consumed mail before
   the broker wake; updating to 1.7.9 eliminated that competing delivery path.
   The deployed oats.aweb 1.10.1 floor now rejects the incompatible version.
+
+- Cjr's second and third worker cycles completed on published 0.22.3. The
+  second promoted three reviewed concepts; the third read them before working,
+  produced the normal host-service health reader (`3dfe3acf`) and completed
+  its own reviewed harvest. Both harvesters self-retired without operator
+  completion. Each worker's ordinary retirement took four seconds and removed
+  its temporary alias. A post-merge fixture mismatch was corrected forward in
+  `e8a87c71`, with 47 tests green on a clean export. The reader's real service
+  check awaits installation of `ai.aweb.wake`.
+- A record-only harvest of the fresh Claude wake-test session completed with
+  official oats.okf 1.5.0. It read its 27-turn source window, found no durable
+  lesson to promote, advanced the completed watermark and self-retired. The
+  first attempt exposed an unnecessary SQLite index write during pure journal
+  reads; reviewed fix `f100320` shipped in 0.22.4. The shared capture service
+  and its large index were preserved. Completion is proven; this run does not
+  claim a knowledge promotion.
+- Docflow's two-commit preparation at `4458097` is independently ACKed: native
+  Claude, retained authority, session delivery and 18 valid curated OKF concepts.
+  Its owner is integrating and acquiring official packages. The running backfill
+  and FY2025 register checks still determine its activation boundary.
+- The tracked aweb coordinator soul at `0a3a9a91` is independently ACKed; the
+  frontend soul at `b3985edb` is owner-reviewed and landed. They preserve the
+  coordinator's workspace and the frontend's managed primary SaaS worktree plus
+  explicitly assigned secondary OSS tree. Lead and Oats coordinator souls are
+  also reviewed and landed. Concrete deployment configuration and final
+  checkpoints precede each launch.
+- OATS 0.22.4 is published at tag `0260ea9`, with npm packages and six Desktop
+  installers. CI retried once after a disappearing Git maintenance lock in a
+  fixture; kernel and Desktop gates then passed. A manual reviewed version-bump
+  PR completed the bot's permission-blocked post-publication step. Published
+  npm JavaScript bytes match the tag. Aweb 1.36.1 publication is still pending
+  a gateway build dependency download; the private candidate broker is not
+  being represented as the permanent published service.
