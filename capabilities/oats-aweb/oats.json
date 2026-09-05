@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "compatibility": {
     "oats": ">=0.22.3"
   },
@@ -41,6 +41,18 @@
       },
       "why": "an ambient aweb pi extension, if one is installed, must honour AWEB_DELIVERY=session (0.3.10 and later); an older one would open a second event stream beside the wake broker; no extension at all is fine",
       "install": "pi install npm:@awebai/pi@latest",
+      "ifInstalled": true
+    },
+    {
+      "runtime": "claude",
+      "package": "aweb-channel@awebai-marketplace",
+      "marketplace": "awebai/claude-plugins",
+      "minVersion": "1.7.9",
+      "when": {
+        "delivery": "session"
+      },
+      "why": "an ambient aweb-channel plugin for Claude Code, if one is installed, must honour AWEB_DELIVERY=session (1.7.9 and later); an older one starts its own channel server beside the wake broker and can fetch and acknowledge a message before the broker delivers it; no plugin at all is fine",
+      "install": "update the aweb-channel plugin from the awebai marketplace in Claude Code",
       "ifInstalled": true
     }
   ],

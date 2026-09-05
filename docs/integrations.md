@@ -148,8 +148,11 @@ soul through the binding's `settings:` map.
 - `delivery: channel | session` (default `channel`). `session` hands
   notification delivery to the host wake broker: `AWEB_DELIVERY=session` in
   the launch environment (declared by the manifest), no Claude channel flag,
-  a pi extension that honours the opt-out (`@awebai/pi` 0.3.10 or later,
-  enforced as a conditional requirement with a version floor), and a briefing
+  a pi extension that honours the opt-out (`@awebai/pi` 0.3.10 or later) and
+  a Claude Code channel plugin that does too (`aweb-channel` 1.7.9 or later),
+  both enforced as conditional requirements with a version floor when
+  installed (an older plugin starts its own channel server beside the broker
+  and can fetch a message before the broker delivers it), and a briefing
   and registration of the home with the host wake broker (`aw wake register`).
   Until an aw that ships `aw wake` exists (aweb-abil), session mode REFUSES
   to spawn rather than leave an instance that nothing wakes: it is for broker
