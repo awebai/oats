@@ -49,9 +49,10 @@ into the source soul and committed it on the worker's branch:
 - [Content-addressed turn IDs do not authenticate native capture](https://github.com/awebai/oats/commit/91993a0b85db132c59c32d43ee2c90ec5569bd50).
 - [Lock ownership and the limits of comparing timeout thresholds](https://github.com/awebai/oats/commit/120e3474b93efc0d37f94c426327f802e27893ea).
 
-After the documentation promotion landed, the predecessor retired: its
-worktree, branch, home, and aweb alias were removed. A new Pi instance of
-the same soul, `docs-expert-capture-contract-check`, then started a real
+After the documentation promotion landed, the predecessor retired locally:
+its worktree, branch, and home were removed. Its aweb alias remained on the
+server despite the hook reporting success. A new Pi instance of the same
+soul with a different name, `docs-expert-capture-contract-check`, started a real
 follow-up task checking the capture contract documentation.
 
 Its first report named the promoted file:
@@ -60,9 +61,10 @@ The worker said the lesson reinforced the distinction between unsigned
 native turns and preserved source signatures, and explicitly said it did
 not change what it was already about to do.
 
-That verifies a concrete lifecycle: useful task, reviewed promotion,
-predecessor retirement, and a successor reading the updated soul. It does
-not establish a measured productivity improvement.
+That verifies useful work, reviewed promotion, local retirement, and a
+successor reading the updated soul. Remote identity retirement remains
+incomplete. The example does not establish a measured productivity
+improvement.
 
 ## What the run exposed
 
@@ -72,10 +74,11 @@ The run found first-use problems that unit tests alone had not resolved:
   the 0.22.1 changes.
 - The default harvester model assumed a provider absent on this machine.
   The workspace now selects an authenticated model explicitly.
-- Early harvester retirements left remote aliases behind. Temporary
-  harvesters are excluded from messaging in this deployment. The later
-  documentation-worker retirement removed its alias successfully; the
-  earlier orphan cleanup remains a separate issue.
+- All four initial worker and harvester retirements reported successful
+  identity deletion but left their aweb aliases on the server. Local
+  cleanup completed; remote cleanup requires a team administrator, and
+  names cannot be reused until it succeeds. Temporary harvesters are now
+  excluded from messaging to avoid adding aliases while this is fixed.
 - A combined workspace roster did not make the workspace a spawn scope for
   every child repository. Commands select the owning repository explicitly.
 

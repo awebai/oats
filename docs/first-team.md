@@ -66,6 +66,7 @@ knowledge:
 messaging:
   capability: oats.aweb
   from: installed
+  global: true
   souls:
     memory-harvest: false
 tasks: none
@@ -75,7 +76,8 @@ The `oats.okf` 1.4.1 default harvester model is
 `github-copilot/gpt-5.5`; it will not work without that provider. The
 messaging exclusion above keeps temporary harvesters from creating aliases
 while an identity-retirement issue is being corrected. Workers still get
-messaging identities.
+messaging identities. With a `souls` exclusion, state `global: true`
+explicitly so scope-level commands such as `oats aweb setup` stay active.
 
 Review and approve the executable capabilities, then check onboarding:
 
