@@ -31,10 +31,17 @@ Every remembering role must have a tested learning path; reviewers retain
 their explicit exclusion from accumulated memory. Config discovery alone
 establishes none of this.
 
-The published 0.22.1 release supports useful Pi/Claude worker work and
-notes-based harvest. Its observed qualifications included operator-assisted
-retirement. Standing-agent adoption, automatic service retirement and
-record-fed learning remain work, not shipped guarantees.
+The installed baseline is OATS 0.22.2, including native Pi/Claude/Codex,
+tmux/Herdr, shared `yolo`, remote CLI launch/terminals and deferred retirement.
+The Mac Desktop app is installed and passed packaged renderer/PTY launch checks.
+Official oats.okf 1.5.0 provides record-fed harvesting. A source candidate for
+0.22.3 adds the retained-authority binding, remote Desktop roster/actions and
+retirement corrections; that candidate is not yet a published release.
+
+No standing seat has transferred yet. Cjr's worker pilot has landed reviewed
+code and knowledge; ordinary retirement passed using the next-patch candidate.
+A real harvester's automatic deferred completion, successor knowledge use and
+session-broker delivery remain explicit acceptance checks.
 
 ## Scope inventory
 
@@ -45,17 +52,21 @@ of continuing seats.
 | Scope | Starting point | Required disposition |
 | --- | --- | --- |
 | `~/awebai/oats` | Live Claude coordinator and Codex lead; managed review workers also running | Oats owns coordinator handover; lead owns lead handover; preserve established identities |
-| `~/cjr` | Knowledge/config preparation landed at `5afb3e8b`; managed developer pilot running; legacy Merlin and Minerva observed live | Merlin owns pilot and safe handovers; preserve his DID and address; harvest acceptance remains pending |
+| `~/cjr` | Preparation `5afb3e8b`; developer pilot landed on master `062e2c75`; legacy Merlin and Minerva live | Merlin owns safe handovers; preserve his DID/address; prove automatic harvest completion and successor use |
 | `~/awebai/aweb` | Live Claude coordinator and frontend in legacy homes | Oats owns coordinator handover; lead coordinates frontend with aweb after its current work; preserve identities and cover child repositories |
-| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. No OATS config/souls found | Lead coordinates with Zeus; cross-team handoff currently rejected by local identity routing; establish a supported route, then prepare souls/knowledge and safe handovers |
-| `~/prj/beadhub-all` | Live Codex session, despite stale offline roster | Lead sent handover request to Beadhub; preserve its established identity and current work; no billing/production changes |
-| `~/prj/docflow` | Live Claude session; credential workspace alias `alice` on `docflow:juan.aweb.ai` | Lead and Merlin establish responsible owner and handover; that alias is not proof of a globally routable address |
+| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. No OATS config/souls found | Zeus prepared the five-seat handover plan; begin with Themis at a safe boundary, Zeus last; preserve session-local schedules and production authority |
+| `~/prj/beadhub-all` | Live Codex session, despite stale offline roster | Beadhub accepted preparation and is at a safe boundary; retain its global identity, native Codex and separate canonical code roots under `~/awebai/beadhub`; billing remains separately gated |
+| `~/prj/docflow` | Live Claude seat identified itself as local `juan.aweb.ai/alice` on `docflow:juan.aweb.ai` | Owner Juan; finish running mail backfill and register checks before transfer; retain identity, memory and Minerva route; accountant-sync remains deliberately unloaded |
 | `ai.aweb` on `aweb-agents` | Athena last seen 53 days ago; remote legacy home exists in inventory | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
 | `~/awebai/demo-aweb/bob` | Live Pi demo | Aweb owns safe stop and archival disposition; it is not an operating-team migration |
 | `~/.turn-record` | Live Pi capture service under launchd | Retain as infrastructure; qualify record capture separately from standing seats |
 
 The live inventory above was checked on 2026-09-05 using harness process
-working directories, without interrupting them. Old aweb presence timestamps
+working directories and exact custom tmux sockets, without interrupting them.
+TSM uses its aweb tmux socket, BeadHub the awebai socket, and Docflow the
+main socket. Lead delivered explicitly attributed coordination messages to
+those identified harnesses and read their replies; no coordination command
+was run as another seat. Old aweb presence timestamps
 are insufficient to decide whether a harness is alive. A migration plan or
 new soul directory does not establish that the corresponding seat moved.
 
@@ -74,8 +85,9 @@ owns cjr's repository changes, task selection and eventual handovers. Other
 teams' owners control their work and handover sequence; oats records those
 owners before scheduling each migration. Oats accepted ownership of
 `aweb-abep` (service self-retirement), followed by `aweb-abfz` (record-fed
-learning). Self-retirement merged at 568eeae; record-fed learning is implemented
-and under independent review, with package publication pending. Lead owns
+learning). Deferred retirement shipped in 0.22.2; record-fed learning shipped
+in oats.okf 1.5.0. Their presence does not replace the end-to-end acceptance
+checks below. Lead owns
 the full-machine plan and runtime/wake qualification, including the Codex
 support requirement. The aweb coordinator owns identity continuity and route
 semantics, with oats coordinating the rehearsal and package changes.
@@ -87,8 +99,12 @@ outstanding work, knowledge, contacts and task responsibility. Old identities
 are retired only after that handover is accepted. Pilot identities remain
 uniquely named so no existing address has to be removed for the experiment.
 
-Merlin is the exception. Oats owns the explicit source-authority binding in the
-messaging capability; aweb supplied this supported handover:
+Merlin retains his identity; other continuing seats follow their accepted
+policy. Oats implemented explicit source-authority binding in oats.aweb 1.10.0,
+reviewed and pinned for the next kernel patch. A disposable rehearsal verified
+stable identity/address, existing conversations, heartbeat, exclusive holder
+refusal, rollback and authority-preserving retirement. Aweb supplied this
+supported handover:
 
 1. Rehearse using a disposable self-custodial global identity and a second-team
    contact, checking DID, address, conversations and write attribution.
@@ -108,26 +124,25 @@ Never put credentials in Git or manufacture instance.json for adoption.
 
 ### Make harvest finish without an operator
 
-Kernel issue `aweb-abep` is real in 0.22.1: bare `retire --self` is refused,
-while the harvester's instructions tell it to use that command. Oats owns
-the supported service-exit path, with lead review. A deferred external
-retirement is a candidate; the live agent must not inspect and delete its
-own working state. Completion requires an actual harvester to finish,
-report and clean up without operator retirement, with visible recoverable
-failure rather than silent loss. Do not release capabilities while the
-runtime can still act, or make the read-only status command delete homes.
+The deferred external retirement mechanism shipped in 0.22.2. Completion
+still requires an actual harvester to finish, report and clean up without
+operator retirement, with visible recoverable failure. The detached worker
+stops the runtime before releasing capabilities; status remains read-only.
 
-Review cjr's local `memory-harvest` override before the pilot: selected
-implementation, required skill, authenticated model, source worktree,
-promotion destination and self-harvest exclusion. The configured model is
-OpenAI via `openai-codex/gpt-5.5`, already used by the local record/mind setup.
-Pi is needed even for Claude workers. A model setting is not proof of a run.
+Cjr archived its local harvester override and uses official oats.okf 1.5.0.
+Its authenticated Pi model is `openai-codex/gpt-5.5`. The remote qualification
+host's equivalent provider login fails refresh with `invalid_refresh_token`;
+spawning that harvester is not successful learning. Both failed test sessions
+were retired normally. Do not copy rotating login tokens from another host.
+An explicit `harvest-runtime` setting is planned in oats.okf 1.5.1 so an
+already authenticated Claude or Codex runtime can do the same work.
 
 ### Finish temporary identity retirement
 
 The aweb owner must resolve the remote lifecycle defect tracked under
-`aweb-aaum.6`; oats coordinates package integration. The five leaked release
-identities are a reproduction. Independently verify coordination cleanup,
+`aweb-aaum.6`; oats coordinates package integration. The leaked release identities are a reproduction; reconcile the exact
+owner-side list before naming or deleting them. Alias-release fixes are in
+aweb source; production same-alias join/delete/rejoin acceptance is pending. Independently verify coordination cleanup,
 claims and certificate state. Admin cleanup is a recovery procedure, not
 proof of automatic retirement. This gates temporary-worker completion;
 adopted standing executions instead must preserve their durable identity.
@@ -139,15 +154,15 @@ ends those executions. Replaying `instance.json.command` manually does not
 refresh OATS's independent session receipt and is not a supported recovery.
 The first planned recovery reuses the tested retained-authority handover:
 preserve the stopped home, knowledge and identity, then create its replacement
-with a new receipt and one active holder. That capability binding is not built
-yet; until qualified, rebooted standing seats remain down. A terminal-only
+with a new receipt and one active holder. The retained-binding rehearsal
+passed, but the installed standing-seat recovery journey remains to qualify. A terminal-only
 restart operation may follow; it must refresh the receipt without rerunning
 resource-provisioning hooks. No automatic supervisor is required for the first
 supported manual recovery.
 
 ### Include noncoding learning and all actual runtimes
 
-`aweb-abfz` is the open record-fed learning epic. Its bounded acceptance is
+`aweb-abfz` tracks record-fed learning; oats.okf 1.5.0 ships its record path. Its bounded acceptance is
 a standing session that wrote no notes and made no code commit producing a
 reviewed knowledge proposal with provenance to exact recorded turns, then a
 successor reading that knowledge. Notes-based harvest must continue working.
@@ -158,11 +173,14 @@ source provenance, correct soul destination and safe repeat processing.
 Storing transcripts or running the mind daemon alone does not satisfy this
 gate.
 
-The inventory includes Codex sessions. Main now includes reviewed native Codex launch (b7d4159), alongside Pi
-and Claude; released Codex launch/status/stop/composition support is required
-unless a seat's owner explicitly chooses a runtime change. No silent fallback
-to Pi. Test channel delivery with the installed runtime and selected config;
-manual polling is not wake-up. Establish any actual machine-policy change
+The inventory includes Codex sessions. Native Codex launch/status/stop shipped
+in 0.22.2 alongside Pi and Claude; preserve each seat's selected runtime.
+The shared `yolo` default is enabled on this machine and maps to the runtime's
+permission flag. Aweb owns the per-host `aw wake` service; OATS supplies
+session inspection/input and capability registration, while Desktop is a
+client. Installing the broker service and proving mail/chat delivery after
+GUI closure is required before channel-free standing-seat adoption. Manual
+polling and successful terminal submission are not consumption evidence. Establish any actual machine-policy change
 needed before making it. Include daemon health and restart/recovery behavior
 in the operating instructions.
 
@@ -215,3 +233,37 @@ commits. Preserve failed-step evidence and outstanding limitations; do not
 substitute a green `doctor`, a roster row or a successful hook report for
 the corresponding live check. Keep credentials and private case data out of
 the shared rollout record.
+
+## Latest operating evidence (2026-09-05)
+
+- Cjr's pilot landed five useful task commits and eleven promoted concepts
+  from four harvests, with independent code and knowledge reviews. Ordinary
+  retirement using candidate `b73918f` exited successfully in four seconds:
+  changed home bytes preserved, no redundant repository clone, worktree/home
+  removed, merged branch retained and temporary aweb alias retired. The
+  prior large-index failure led to the batch restore and home-only fixes.
+  Redundant failed repository copies were removed only after every file and
+  object was proven recoverable elsewhere; all home snapshots remain.
+- TSM's owner plan is `~/tsm/history/2026-09-06-tsm-oats-handover-plan.md`.
+  Preserve the five seats' worktrees, skills and knowledge; re-arm Zeus's
+  session-local schedules. Production credentials remain solely with the
+  authorized production operator. His plan reserves Zeus's final cutover
+  for Juan's presence; the other seats can prepare in the meantime.
+- BeadHub supplied its retained-identity and source-root brief through aweb
+  mail. It awaits the reviewed declarative binding and cutover recipe.
+  Its Stripe-account dependency and production cutover gates remain separate.
+- Docflow supplied its own identity and handover through its terminal. Its
+  backfill and register verification define the safe boundary. Preserve its
+  Claude memory and existing credentials in place; verify filesystem/TCC
+  access and the Minerva conversation before accepting the successor. Stop
+  the old harness before activating retained authority in the successor.
+- Local-scope aweb identities on different teams cannot contact one another
+  directly. Contacts require a globally resolvable target; the failed
+  lead/Zeus and lead/Docflow exchanges expose that intentional boundary.
+  Preparation proceeded through identified terminal coordination. Establish
+  the cross-team coordinator identity/contact policy explicitly before
+  relying on those routes; do not silently replace retained identities.
+- Real remote Claude launch, terminal input and detach survival passed.
+  Remote Desktop projection and exact-home lifecycle are under independent
+  review for the next patch. Remote harvester completion remains blocked by
+  provider authentication, and no standing remote seat is declared migrated.
