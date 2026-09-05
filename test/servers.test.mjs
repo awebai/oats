@@ -364,6 +364,8 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     rmSync(home, { recursive: true, force: true });
     r = oats(env, ["server", "roster", "--server", "build", "--json"]);
     assert.equal(r.json().result.groups.find((x) => !x.registrationPresent).instances[0].missingRemotely, true);
+    r = oats(env, ["server", "roster", "--server", "build"]);
+    assert.match(r.stdout, /dev-r1\s+GONE on the host/, "the human roster names a stale route");
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r3", "--no-launch", "--json"]);
     assert.equal(r.json().error?.code, "E_ROUTE_CHANGED");
     r = oats(env, ["server", "forget", "build", "--instance", "nope", "--json"]);
@@ -438,6 +440,27 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     // Old remote, explicit --home: never sent where it cannot be honoured.
     r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--home", devHome, "--json"]);
     assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE");
+    // A viewer addresses the HOME: the twin (no saved route) is reachable by
+    // its home, the saved instance by name, and a name with the wrong home
+    // is refused; the ssh command word carries the home either way.
+    for (const [addr, wantHome] of [[["--instance", "dev-foo-1"], devHome], [["--home", twinHome], twinHome]]) {
+      const mark = readFileSync(join(base, "ssh.log"), "utf8").length;
+      r = oats(env, ["session", "inspect", "--server", "new", ...addr, "--json"]);
+      assert.ok(readFileSync(join(base, "ssh.log"), "utf8").slice(mark).includes(`session inspect --home ${remoteQuote(wantHome)}`), `viewer route for ${addr.join(" ")}: ${r.stdout}`);
+    }
+    r = oats(env, ["session", "inspect", "--server", "new", "--instance", "dev-foo-1", "--home", twinHome, "--json"]);
+    assert.equal(r.json().error?.code, "E_HOME_MISMATCH");
+    // Old remote, one instance of that name only, but not at the saved home
+    // (the route drifted): refused as a stale route, nothing retired.
+    const driftSnap = JSON.parse(readFileSync(snapshotPath("old", "dev-foo-1"), "utf8"));
+    writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify({ ...driftSnap, home: join(repo, "agents", "dev", "instances", "dev-foo-9") }));
+    rmSync(twinHome, { recursive: true, force: true });
+    r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--json"]);
+    assert.equal(r.json().error?.code, "E_HOME_MISMATCH", r.stdout); assert.match(r.json().error.message, /stale/);
+    assert.equal(existsSync(devHome), true);
+    writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify(driftSnap));
+    r = oats({ ...env, PATH: `${tools}:${env.PATH}` }, ["spawn", "dev-foo", "--purpose", "1", "--dir", repo, "--no-launch", "--json"], { cwd: repo }); assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.json().result.home, twinHome);
     // New remote, an explicit home that is not the saved route: refused.
     r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);
@@ -451,6 +474,42 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     assert.equal(existsSync(snapshotPath("new", "dev-foo-1")), false);
     } finally { if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir; }
   } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("routed spawn: a success reply without a home never replaces an existing saved route", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-nohome-"));
+  const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home"); mkdirSync(process.env.OATS_HOME_DIR);
+  try {
+    const server = { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    const target = { sshHost: "h", workspace: "/w", oatsPath: "oats" };
+    mkdirSync(dirname(snapshotPath("build", "dev-x")), { recursive: true });
+    const prior = { serverId: "build", target, remote: { version: "0.22.3", schemaVersion: 1 }, instance: "dev-x", agent: "dev", home: "/w/agents/dev/instances/dev-x", agentsRoot: "/w/agents", spawnedAt: "2026-09-05T00:00:00.000Z" };
+    writeFileSync(snapshotPath("build", "dev-x"), JSON.stringify(prior));
+    const probe = { schemaVersion: 1, name: "@awebai/oats", version: "0.22.3", desktopApi: 1, runtimes: ["pi"], sessionBackends: ["tmux"], launchOptions: [], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home"] };
+    const status = { schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", runtime: "pi", instances: [] }] } };
+    let calls = 0;
+    const exec = (bin, argv) => {
+      calls++;
+      const word = String(argv.at(-1));
+      if (word.includes("version --json")) return JSON.stringify(probe);
+      if (word.includes(" status ")) return JSON.stringify(status);
+      if (word.includes(" spawn ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", agent: "dev", launched: false, warnings: [] } });
+      throw new Error(`unexpected remote call: ${word}`);
+    };
+    const routed = routeCommand("build", "spawn", ["dev", "--purpose", "x", "--no-launch"], { server, execFileSync: exec });
+    assert.equal(calls, 3);
+    assert.equal(routed.envelope.ok, true);
+    assert.equal(routed.envelope.result.snapshot, null, "no route written for a home-less result");
+    assert.deepEqual(routed.envelope.result.routeConflict, { instance: "dev-x", existingHome: prior.home });
+    assert.deepEqual(JSON.parse(readFileSync(snapshotPath("build", "dev-x"), "utf8")), prior, "the existing route survives byte for byte");
+    // The same home in the reply is the same route: replaced, no conflict.
+    const same = (bin, argv) => (String(argv.at(-1)).includes(" spawn ") ? JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", agent: "dev", home: prior.home, launched: false, warnings: [] } }) : exec(bin, argv));
+    const again = routeCommand("build", "spawn", ["dev", "--purpose", "x", "--no-launch"], { server, execFileSync: same });
+    assert.equal(again.envelope.result.routeConflict, undefined); assert.equal(typeof again.envelope.result.snapshot, "string");
+  } finally {
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+    rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
