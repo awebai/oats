@@ -27,11 +27,11 @@ test("retire adapter preserves incomplete local results and routes remote by sav
   assert.equal(partial.ok, false); assert.equal(partial.error.code, "E_RETIRE_INCOMPLETE");
   assert.equal(parseRetireEnvelope(JSON.stringify({ schemaVersion: 1, ok: true, result: partial.result })).ok, false);
   let call;
-  const env = await cliRetire("/installed/oats", { instance: "dev-one", workspaceDir: "/local", server: "host" }, {
+  const env = await cliRetire("/installed/oats", { instance: "dev-one", home: "/remote/selected", workspaceDir: "/local", server: "host" }, {
     exec: (bin, argv, opts, cb) => { call = { bin, argv, opts }; cb(null, '{"schemaVersion":1,"ok":true,"result":{"retired":"dev-one"}}'); },
   });
   assert.equal(env.ok, true);
-  assert.deepEqual(call.argv, ["retire", "dev-one", "--server", "host", "--json"]);
+  assert.deepEqual(call.argv, ["retire", "dev-one", "--home", "/remote/selected", "--server", "host", "--json"]);
   assert.equal(call.opts.cwd, "/local");
 });
 

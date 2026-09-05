@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { remoteWorkspace, remotePanel, remoteAgents, unavailableGroups } from "../server/remote-roster.mjs";
+import { remoteWorkspace, remotePanel, remoteAgents, unavailableGroups, spawnedWorkspace } from "../server/remote-roster.mjs";
 
 const group = {
   id: "host-abc", server: "host", label: "Build server", registrationPresent: true,
@@ -18,6 +18,14 @@ test("remote roster projects server identity and souls without local path resolu
   assert.equal(panel.running, 1);
   assert.equal(remoteAgents(group)[0].server, "host");
   assert.equal(remoteAgents(group)[0].runtime, "codex");
+});
+
+test("spawn handoff matches the actual remote target, preserving old route groups", () => {
+  const old = { ...group, id: "old", registrationPresent: false, target: { sshHost: "old", workspace: "/old" } };
+  const current = { ...group, id: "current", target: { sshHost: "new", workspace: "/new" } };
+  assert.equal(spawnedWorkspace([old, current], { server: "host", target: current.target }), "remote:current");
+  assert.equal(spawnedWorkspace([old, current], { server: "host", target: old.target }), undefined);
+  assert.equal(spawnedWorkspace([old, current], { server: "host" }), undefined);
 });
 
 test("removed registration keeps saved instances while unreachable means unknown, not stopped", () => {

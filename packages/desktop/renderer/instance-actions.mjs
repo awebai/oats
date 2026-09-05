@@ -23,7 +23,7 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
     pending.add(key);
     select.disabled = true;
     try { const result = await invoke(action, instance); done(result, action); }
-    catch (e) { report(e.message); }
+    catch (e) { report(e.message, e.result); }
     finally { pending.delete(key); select.disabled = unrouted; }
   });
   return select;

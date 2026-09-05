@@ -15,7 +15,7 @@ const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
 /** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
-function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, groups = [] } = {}) {
+function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, groups = [] } = {}) {
   const log = join(dir, "cli-calls.jsonl");
   const js = join(dir, "oats.cjs");
   const bin = join(dir, "oats");
@@ -23,7 +23,7 @@ function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probe
 const argv = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, cwd: process.cwd() }) + "\\n");
 if (argv[0] === "version" && argv.includes("--json")) {
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)} }));
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)}, features: ${JSON.stringify(features)} }));
   // Liar modes (review 0b83988): print a VALID probe, then exit nonzero or
   // REALLY hang past the probe timeout — either must be rejected by
   // discovery. if/else if throughout: fallthrough to the trailing exit(2)
@@ -58,7 +58,7 @@ if (argv[0] === "version" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: {
     instance: agent + "-t1", agent, home: "/tmp/h", work: "worktree", branch: "b",
     launched: true, warnings: [], tmux: { session: "pi-agents", window: agent + "-t1" },
-    taskEcho: task, ...(argv.includes("--server") ? { server: argv[argv.indexOf("--server") + 1] } : {}) } }));
+    taskEcho: task, ...(argv.includes("--server") ? { server: argv[argv.indexOf("--server") + 1], target: ${JSON.stringify(groups.find(g=>g.registrationPresent)?.target)} } : {}) } }));
   process.exit(0);
 } else if (argv[0] === "retire" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ retired: argv[1], removedDir: true }));
@@ -357,9 +357,12 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
   const groups = [{ id: "host-abc", server: "host", label: "Remote host", registrationPresent: true,
     target: { sshHost: "host", workspace: "/remote/project", oatsPath: "oats" }, probe: { ok: true },
     agentsRoot: "/remote/project/agents", souls: [{ name: "dev", runtime: "codex", work: "worktree" }],
-    instances: [{ instance: "dev-one", agent: "dev", home, agentsRoot: "/remote/project/agents", running: true, savedRoute: true, runtime: "codex" }],
+    instances: [
+      { instance: "dev-one", agent: "another", home: "/remote/project/agents/another/instances/dev-one", agentsRoot: "/remote/project/agents", running: true, savedRoute: true, runtime: "codex" },
+      { instance: "dev-one", agent: "dev", home, agentsRoot: "/remote/project/agents", running: true, savedRoute: true, runtime: "codex" },
+    ],
   }];
-  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "harvest"], groups });
+  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "harvest"], features: ["retire-home"], groups });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   const base = `http://127.0.0.1:${port}`;
   try {
@@ -384,7 +387,7 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     assert.notEqual(call.cwd, home, "remote home must never become a local process cwd");
     const retired = await fetch(`${base}/api/retire/dev-one${qualifier}`, { method: "POST" });
     assert.equal(retired.status, 200);
-    assert.deepEqual(fake.calls().find((c) => c.argv[0] === "retire").argv, ["retire", "dev-one", "--server", "host", "--json"]);
+    assert.deepEqual(fake.calls().find((c) => c.argv[0] === "retire").argv, ["retire", "dev-one", "--home", home, "--server", "host", "--json"]);
     const spawned = await fetch(`${base}/api/spawn`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ agent: "dev", agentsRoot: "/remote/project/agents", serverId: "host", runtime: "codex" }) });
     assert.equal(spawned.status, 200);
@@ -394,5 +397,12 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     assert.notEqual(spawnCall.cwd, "/remote/project", "spawn's local process does not enter the remote workspace");
     assert.equal((await fetch(`${base}/api/chat/dev-one${qualifier}`)).status, 409, "remote transcript never reads a local lookalike path");
     assert.equal((await fetch(`${base}/api/harvest/dev-one?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}`, { method: "POST" })).status, 404, "missing server cannot select a remote instance");
+    const retireCalls = fake.calls().filter((c) => c.argv[0] === "retire").length;
+    fakeCli(dir, { remote: ["roster", "retire"], groups }); // downgrade: no exact-home feature
+    await fetch(`${base}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const refused = await fetch(`${base}/api/retire/dev-one${qualifier}`, { method: "POST" });
+    assert.equal(refused.status, 409);
+    assert.equal((await refused.json()).code, "unsupported-retire-option");
+    assert.equal(fake.calls().filter((c) => c.argv[0] === "retire").length, retireCalls, "old CLI cannot silently ignore --home and retire a twin");
   } finally { proc.kill(); }
 });

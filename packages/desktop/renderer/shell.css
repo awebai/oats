@@ -90,6 +90,7 @@ body {
   background: transparent; color: var(--muted); font: inherit; font-size: 18px; cursor: pointer; }
 .ctx-instance-actions:hover, .ctx-instance-actions:focus { background: var(--surface-2); color: var(--fg); }
 .ctx-instance-actions:disabled { color: var(--muted); cursor: default; }
+.ctx-dot.unknown { background: var(--warn); }
 .ctx-inst { min-width: 0; flex: 1; height: 40px; display: flex; align-items: center; gap: 8px;
             padding: 4px 7px 4px 3px; border: 1px solid transparent;
             border-radius: 7px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }

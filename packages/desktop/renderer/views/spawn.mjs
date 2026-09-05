@@ -883,6 +883,7 @@ export async function doSpawn(s, ui) {
       const stillThere = () => remoteGen === workspaceGeneration() && currentWorkspace() === d.workspaceId;
       const visible = await waitForInstanceInPanel(s, ref, stillThere, s.waitOpts);
       if (visible && stillThere()) s.ctx.openTerminal(ref, { quiet: true });
+      else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; its runtime is not visible yet. Check the server roster to open it.`);
       return;
     }
     // Older CLIs can spawn remotely but do not yet expose a remote roster.

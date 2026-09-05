@@ -10,6 +10,7 @@
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
 import { instanceActions } from "./instance-actions.mjs";
+import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
 import {
   initTheme, toggleTheme, xtermTheme, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
@@ -55,6 +56,12 @@ async function api(pathname, opts) {
 
 const ctx = {
   api,
+  notify: (message) => {
+    const area = contextRosterEl?.querySelector(".ctx-list");
+    if (!area) return;
+    const notice = document.createElement("div"); notice.className = "ctx-empty"; notice.setAttribute("role", "status"); notice.textContent = message;
+    area.prepend(notice);
+  },
   openFile: (path) => openViewTab("markdown", `≡ ${String(path).split("/").pop()}`, { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
   openBrain: (agent) => openBrainTab(agent),
@@ -234,7 +241,8 @@ function renderContextRoster(instances) {
   const visible = matching.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, filtering,
   ));
-  contextRosterEl.querySelector(".ctx-count").textContent = `${instances.filter((i) => i.running).length}/${instances.length}`;
+  const unknown = instances.filter((i) => runtimeState(i) === "unknown").length;
+  contextRosterEl.querySelector(".ctx-count").textContent = `${instances.filter((i) => i.running).length}/${instances.length}${unknown ? ` · ${unknown} unknown` : ""}`;
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
     restoreTreeState();
@@ -301,10 +309,11 @@ function renderContextRoster(instances) {
         row.dataset.treeControl = "terminal";
         row.className = "ctx-inst" + (i.running ? "" : " idle") + (isActive ? " active" : "");
         row.disabled = !i.running || (!!i.server && !i.savedRoute);
+        const state = runtimeState(i);
         row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
-          : i.running ? `Open ${i.instance} terminal` : `${i.instance} is stopped`);
+          : i.running ? `Open ${i.instance} terminal` : `${i.instance}: ${state}`);
         const dot = document.createElement("span");
-        dot.className = `ctx-dot ${i.running ? "on" : "off"}`;
+        dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
         copy.className = "ctx-copy";
         const name = document.createElement("span");
@@ -312,7 +321,7 @@ function renderContextRoster(instances) {
         name.textContent = i.instance;
         const meta = document.createElement("span");
         meta.className = "ctx-meta ctx-repo-label";
-        meta.textContent = instanceRepoLabel(i);
+        meta.textContent = `${instanceRepoLabel(i)}${state === "unknown" ? " · state unknown" : ""}`;
         meta.title = `Repository: ${meta.textContent}`;
         copy.append(name, meta);
         row.append(dot, copy);
@@ -334,10 +343,10 @@ function renderContextRoster(instances) {
           confirmRetire: (instance) => confirm(`Retire ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}? This stops its session and preserves outstanding work through OATS retirement.`),
           done: (result, action) => {
             if (action === "harvest") alert(result.reason || `Harvest ${result.harvest || "requested"}`);
-            else if (result.warnings?.length) alert(result.warnings.join("\n"));
+            else { const summary = retirementSummary(result); if (summary) alert(summary); }
             refreshContextRoster();
           },
-          report: (message) => alert(message),
+          report: (message, result) => alert([message, retirementSummary(result)].filter(Boolean).join("\n")),
         }));
         listEl.append(rowWrap);
       }

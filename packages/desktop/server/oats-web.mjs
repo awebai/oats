@@ -348,11 +348,11 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   }
   const r = env.result;
   if (r.server) void refreshRemoteSnapshot();
-  const remoteGroup = r.server && remoteGroups.find((g) => g.server === r.server && g.registrationPresent);
+  const remoteWorkspaceId = remote.spawnedWorkspace(remoteGroups, r);
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
            branch: r.branch ?? null, launched: !!r.launched, warnings: r.warnings || [],
            tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target,
-             ...(remoteGroup ? { workspaceId: remote.remoteWorkspace(remoteGroup).id } : {}) } : {}) };
+             ...(remoteWorkspaceId ? { workspaceId: remoteWorkspaceId } : {}) } : {}) };
 }
 
 /* ── CLI discovery (Desktop CLI API v1) ──
@@ -361,6 +361,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
    process as --oats-bin (main owns persistence in userData); re-probe runs at
    startup, on explicit /api/cli/reprobe (app focus, Retry, choose). */
 let cliState = { ok: false, probedAt: 0, tried: [] };
+let cliProbeGeneration = 0;
 // User-chosen binary: seeded from --oats-bin (main passes the persisted pick
 // at server start) and updated by /api/cli/reprobe {bin} — top candidate on
 // every subsequent probe until replaced.
@@ -393,8 +394,10 @@ const probeBin = (path) => new Promise((ok, bad) => {
     (err, stdout) => (err ? bad(err) : ok({ stdout })));
 });
 async function reprobeCli(chosen) {
+  const generation = ++cliProbeGeneration;
   if (chosen) chosenBin = chosen;
   const r = await locator.discover(cliIo, probeBin);
+  if (generation !== cliProbeGeneration) return cliState;
   cliState = { ...r, probedAt: Date.now() };
   void refreshRemoteSnapshot();
   return cliState;
@@ -420,6 +423,7 @@ function cliStatus() {
     runtimes: cliState.runtimes || ["pi", "claude"],
     sessionBackends: cliState.sessionBackends || ["tmux"],
     launchOptions: cliState.launchOptions || [],
+    features: cliState.features || [],
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -452,19 +456,23 @@ async function refreshRemoteSnapshot() {
     remoteGroups = []; mergeRemotePanels(snapshot.byWs); return;
   }
   remoteCollecting = true;
-  const bin = cliState.bin;
+  const probe = cliState;
   try {
-    const env = await adapter.cliRemoteRoster(bin);
-    if (!cliState.ok || cliState.bin !== bin || !cliState.remote?.includes("roster")) return;
+    const env = await adapter.cliRemoteRoster(probe.bin);
+    if (cliState !== probe) return;
     const incoming = env.ok && Array.isArray(env.result?.groups)
       ? env.result.groups : remote.unavailableGroups(remoteGroups, env.error || { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable" });
     incoming.forEach(remote.remotePanel); // validate before replacing the last readable roster
     remoteGroups = incoming;
     mergeRemotePanels(snapshot.byWs);
   } catch (e) {
+    if (cliState !== probe) return;
     remoteGroups = remote.unavailableGroups(remoteGroups, { code: "E_REMOTE_ROSTER", message: `Remote roster unavailable: ${e.message}` });
     mergeRemotePanels(snapshot.byWs);
-  } finally { remoteCollecting = false; }
+  } finally {
+    remoteCollecting = false;
+    if (cliState !== probe) void refreshRemoteSnapshot();
+  }
 }
 function collectNow() {
   const byWs = new Map();
@@ -1026,11 +1034,12 @@ const server = createServer(async (req, res) => {
       const inst = r.inst;
       if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
       if (hm[1] === "retire") {
+        if (!cliState.features?.includes("retire-home")) return send(res, 409, { error: "Retirement requires an updated OATS CLI with exact-home targeting", code: "unsupported-retire-option" });
         if (inst.server) {
           if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
           locator.requireRemoteSupport(cliState, "retire");
         } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
-        const env = await adapter.cliRetire(cliState.bin, { instance: inst.instance,
+        const env = await adapter.cliRetire(cliState.bin, { instance: inst.instance, home: inst.home,
           workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
         refreshSnapshot(); void refreshRemoteSnapshot();
         return env.ok ? send(res, 200, env.result) : send(res, 502, { error: env.error.message, code: env.error.code, result: env.result });
@@ -1095,6 +1104,7 @@ const server = createServer(async (req, res) => {
     }
     return send(res, 404, { error: "not found" });
   } catch (e) {
+    if (e.code === "unsupported-remote-operation") return send(res, 409, { error: e.message, code: e.code });
     return send(res, 500, { error: String(e.message || e).slice(0, 300) });
   }
 });

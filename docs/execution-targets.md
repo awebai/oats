@@ -196,6 +196,12 @@ for stopped agents. Remote harvest runs in the saved home on the execution host;
 retirement uses the same saved route and work-preservation rules as the CLI.
 Closing a viewer leaves the agent running.
 
+Desktop retirement requires the CLI's `retire-home` feature and always sends
+the exact selected home. The remote kernel must support that feature too;
+older kernels require an upgrade before the GUI can retire an instance.
+This keeps same-named instances distinct. Retirement feedback reports every
+preserved recovery path and its classes, including an incomplete cleanup.
+
 This first projection enables terminal and lifecycle actions only for remote
 instances with a route saved on this machine. Other observed instances are
 listed, but require the execution host's CLI to manage them. Remote brain files

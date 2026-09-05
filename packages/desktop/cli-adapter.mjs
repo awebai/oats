@@ -189,8 +189,8 @@ export function parseRetireEnvelope(stdout) {
   } catch { return null; }
 }
 
-export function cliRetire(bin, { instance, workspaceDir, server }, io = {}) {
-  return runJson(bin, ["retire", instance, ...(server ? ["--server", server] : ["--dir", workspaceDir]), "--json"], {
+export function cliRetire(bin, { instance, home, workspaceDir, server }, io = {}) {
+  return runJson(bin, ["retire", instance, "--home", home, ...(server ? ["--server", server] : ["--dir", workspaceDir]), "--json"], {
     cwd: workspaceDir, exec: io.exec, timeout: io.timeout || 600_000, parse: parseRetireEnvelope,
   });
 }

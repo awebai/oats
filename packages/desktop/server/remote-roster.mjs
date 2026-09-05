@@ -13,7 +13,7 @@ export function remotePanel(group) {
     ...i, server: group.server, savedRoute: i.savedRoute === true,
     home: i.home, agentsRoot: i.agentsRoot || group.agentsRoot,
     workspace: group.target.workspace, repoName: group.label || group.server,
-    runtime: i.runtime || "pi", model: i.model || null,
+    runtime: i.runtime || null, model: i.model || null,
     running: group.probe.ok ? i.running : null,
     runtimeError: group.probe.ok ? i.runtimeError : group.probe.error?.message || "Server is unreachable",
     tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
@@ -39,4 +39,11 @@ export function remoteAgents(group) {
 
 export function unavailableGroups(groups, error) {
   return groups.map((g) => ({ ...g, probe: { ok: false, error }, instances: (g.instances || []).map((i) => ({ ...i, running: null })) }));
+}
+
+export function spawnedWorkspace(groups, result) {
+  if (!result.server || !result.target) return undefined;
+  const group = groups.find((g) => g.server === result.server && g.registrationPresent
+    && g.target.sshHost === result.target.sshHost && g.target.workspace === result.target.workspace);
+  return group ? remoteWorkspace(group).id : undefined;
 }

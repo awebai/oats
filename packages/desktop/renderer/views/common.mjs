@@ -45,6 +45,7 @@ export function httpError(r, pathname) {
   const err = new Error(r.body?.error || `HTTP ${r.status} for ${pathname}`);
   err.status = r.status;
   if (r.body?.code) err.code = r.body.code;
+  if (r.body?.result) err.result = r.body.result;
   return err;
 }
 export function postJson(ctx, pathname, body) {
