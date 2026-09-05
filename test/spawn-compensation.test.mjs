@@ -26,10 +26,19 @@ function fixture({ runtime = true, platform = true, taskDirectory = false, retir
   mkdirSync(repo);
   mkdirSync(bin);
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(OATS|PI)_/.test(key)));
-  Object.assign(env, { HOME: join(base, "home"), PATH: `${bin}:/usr/bin:/bin`, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" });
+  // PATH is the fixture's bin directory ONLY. The "missing platform" case
+  // relies on tmux being absent from PATH, and a system directory defeats
+  // that: on the Ubuntu CI runner /usr/bin (and /bin, which is the same
+  // directory there) carries a real tmux, so the spawn that must refuse
+  // succeeded and the test failed only in CI. Everything the kernel invokes
+  // by name is provided here explicitly: node and git as symlinks to the
+  // real binaries, pi and tmux as the stubs the case asks for. Shells and
+  // hook interpreters run by absolute path and need no PATH entry.
+  Object.assign(env, { HOME: join(base, "home"), PATH: bin, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" });
   mkdirSync(env.HOME);
   delete env.TMUX;
   symlinkSync(process.execPath, join(bin, "node"));
+  symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
   execFileSync("git", ["init", "-q", repo], { env });
   execFileSync("git", ["-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "initial"], { env });
   write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nrepo: ${repo}\nwork: worktree\nruntime: pi\n`);
