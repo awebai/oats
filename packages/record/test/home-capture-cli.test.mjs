@@ -2,6 +2,7 @@
 // OKF harvester uses. Boundaries are turn ids in capture sequence.
 
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
 import { RecordStore } from "../lib/store.mjs";
 import { finishTurn } from "../lib/canonical.mjs";
@@ -81,4 +82,33 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   assert.equal(r3.lastTurnId, s.lastTurnId, "the boundary is the last VISIBLE turn, so a window bounded by it is never refused");
   // --json with a query and no matches is JSON too.
   assert.equal(run(RECALL, ["--json", "zzzznomatch"]).trim(), "[]");
+});
+
+
+test("direct thread recall works while the search index has an exclusive writer", (t) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "turn-record-busy-recall-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, "record");
+  const store = new RecordStore(root, { owner: "mac" });
+  const { turn } = store.appendCore("mac~mail", {
+    v: 1, ts: "2026-09-05T10:00:00Z", from: "mac", thread: "mail:test",
+    kind: "mail", body: { text: "journal remains readable" },
+  });
+  mkdirSync(join(root, "index"), { recursive: true });
+  const writer = new DatabaseSync(join(root, "index", "turns.db"));
+  try {
+    writer.exec("CREATE TABLE writer_lock (id INTEGER); BEGIN EXCLUSIVE; INSERT INTO writer_lock VALUES (1)");
+    for (const extra of [[], ["--ids-only"]]) {
+      const result = JSON.parse(execFileSync(process.execPath,
+        [RECALL, "--root", root, "--thread", "mail:test", "--json", "--until", turn.id, ...extra],
+        { encoding: "utf8", timeout: 5000 }));
+      assert.equal(result.turns.length, 1);
+      assert.equal(result.turns[0].id, turn.id);
+      if (!extra.length) assert.deepEqual(result.turns[0].text, [{ role: "mail", text: "journal remains readable" }]);
+      else assert.ok(result.turns[0].bytes > 0);
+    }
+  } finally {
+    writer.exec("ROLLBACK");
+    writer.close();
+  }
 });

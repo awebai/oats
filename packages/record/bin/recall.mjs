@@ -23,7 +23,7 @@ import { join } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
-import { RecordIndex } from "../lib/index-db.mjs";
+import { extractTurnText, RecordIndex } from "../lib/index-db.mjs";
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -40,16 +40,19 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2));
 const root = args.root ?? process.env.TURN_RECORD_ROOT ?? join(homedir(), ".turn-record");
 const store = new RecordStore(root, {});
-const index = new RecordIndex(store);
+let index;
+const getIndex = () => (index ??= new RecordIndex(store));
 
 try {
   if (args.reindex) {
+    const index = getIndex();
     index.rebuild();
     console.log(JSON.stringify(index.counts()));
     process.exit(0);
   }
 
   if (args.show) {
+    const index = getIndex();
     const { resolveTurn } = await import("../lib/index-db.mjs");
     const byId = store.readAll();
     const turn = resolveTurn(store, index, args.show, byId);
@@ -111,7 +114,7 @@ try {
     // A window is a bounded read: a consumer that plans one (the OKF
     // harvester) sizes it with --ids-only first, then reads exactly that.
     const out = window.map((t) => {
-      const docs = index.extractText(t);
+      const docs = extractTurnText(t);
       const base = { id: t.id, ts: t.ts, thread: t.thread, kind: t.kind, source: t.provenance?.source ?? null };
       const full = { ...base, text: docs.map((d) => ({ role: d.role, text: d.text })) };
       // bytes = what this turn occupies in the pretty-printed --json answer,
@@ -123,6 +126,7 @@ try {
     process.exit(0);
   }
 
+  const index = getIndex();
   const limit = args.limit ? Number(args.limit) : 20;
   let rows;
   if (query) {
@@ -164,5 +168,5 @@ try {
     console.log(`    ${r.id}`);
   }
 } finally {
-  index.close();
+  index?.close();
 }
