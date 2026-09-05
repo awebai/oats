@@ -220,6 +220,7 @@
       "environment": [
         "GOLDEN_BROKER_ENDPOINT"
       ],
+      "environmentNamespaces": [],
       "missingRequires": [],
       "trust": {
         "trusted": true,
