@@ -167,6 +167,14 @@ start a second harvester while the first one's home exists. The check uses the
 existing prepared watermark file and does not treat a successful spawn as
 completed learning.
 
+## oats.okf 1.5.2
+
+`okf harvest` exits non-zero when it reports a failure (the plain and the
+`--json` forms alike). A leftover `memory-harvest/<slug>` branch from a merged
+promotion is deleted before the next workspace-mode harvest; an unmerged one
+refuses the harvest and names the remedy. `oats okf harvest --help` prints
+usage and never spawns.
+
 ## oats.aweb retire report (1.10.2)
 
 On a host whose installed `aw` is 1.36.1 or later, the retire hook deletes

@@ -27,9 +27,12 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdi
 import { join, isAbsolute, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile, spawnSync } from "node:child_process";
+import { reclaimHarvestBranch } from "../lib/harvest-branch.mjs";
 
 const out = (o) => { process.stdout.write(JSON.stringify(o) + "\n"); process.exit(0); };
 const warn = (m) => out({ warning: `oats-okf: ${String(m).slice(0, 300)}` });
+// A reported failure must not exit 0: callers and hooks read the status.
+const warnFail = (m) => { process.stdout.write(JSON.stringify({ warning: `oats-okf: ${String(m).slice(0, 300)}` }) + "\n"); process.exit(1); };
 
 // Desktop CLI API v1: `oats okf harvest --json` emits EXACTLY ONE envelope
 // object on stdout — {schemaVersion:1,ok,result|error} — and a nonzero exit
@@ -38,6 +41,12 @@ const JSON_MODE = process.argv.includes("--json");
 const jsonOk = (result) => { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result }) + "\n"); process.exit(0); };
 const jsonFail = (code, message) => { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message).slice(0, 300) } }) + "\n"); process.exit(1); };
 
+// --help/-h never runs a command here either (the kernel answers it from the
+// manifest since 0.22.6; this keeps an older kernel from spawning a harvester).
+if (process.argv.slice(2).some((a) => a === "--help" || a === "-h")) {
+  process.stdout.write("oats okf harvest [--json] [--from-record] [--force]  promote this instance's pending notes (and record windows) into its soul by spawning a memory-harvest worker; --help never spawns\noats okf status [--json]\n");
+  process.exit(0);
+}
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
 const home = process.env.OATS_HOME || process.cwd();
@@ -421,6 +430,10 @@ _(the single next action — keep this current; a fresh session on any model res
       const soulRepo = gitRootOf(realSoul);
       if (!soulRepo) skip("workspace-mode soul is not inside a git repo — nowhere to deliver a PR");
       const relSoul = realSoul.slice(soulRepo.length + 1);
+      // A leftover memory-harvest/<slug> branch from a merged promotion is
+      // deleted first; an unmerged one refuses the harvest with the remedy.
+      const reclaimed = reclaimHarvestBranch(soulRepo, `memory-harvest/${slug}`);
+      if (reclaimed.action === "deleted") process.stderr.write(`oats-okf: deleted stale harvest branch memory-harvest/${slug} (merged into ${reclaimed.base})\n`);
       const task = `Harvest the pending notes of live WORKSPACE-MODE instance "${inst}" (agent "${agName}") into its soul — delivered as a PR.\n\n- Source notes: ${notes.length ? `${notesDir} (${notes.join(", ")})` : "none pending"}\n- Your ./work is a dedicated worktree of the soul's home repo (${soulRepo}), branch memory-harvest/${slug}.\n- Soul knowledge bundle to update: ./work/${join(relSoul, "knowledge")}\n- Soul skills dir (for procedure-shaped notes): ./work/${join(relSoul, "skills")}\n- Follow your memory-harvest skill: promote/merge/drop each note, knowledge vs skill routing, index + log discipline, validate the bundle, DELETE processed notes from the source notes/ dir, and commit once (prefixed "memory-harvest:") if anything changed.${recordBrief(recordPlan, packageRuntimeCli())}\n- If you changed anything: push the branch and open a PR (\`git push -u origin memory-harvest/${slug}\` then \`gh pr create --fill\`). Do NOT merge it; the humans/owners of ${soulRepo} review soul changes. If gh is unavailable, push the branch and report the compare URL. A harvest that promoted nothing has nothing to commit, push or open; that is a completed harvest, not a failed one.\n- Finally run \`oats retire ${harvName} --self\` (keep the branch: --self only).`;
       r = await spawnHarvester(harvestSpawnArgs({
         slug, parent: inst, repo: soulRepo, work: "worktree",
@@ -458,7 +471,7 @@ _(the single next action — keep this current; a fresh session on any model res
     out({ meta: { harvestSpawn: r.instance, window: r.tmux?.window }, ...warnings });
   } catch (e) {
     if (JSON_MODE) jsonFail(e.code || "E_HARVEST_FAILED", `harvest spawn failed (notes are safe on disk): ${e.message || e}`);
-    warn(`harvest spawn failed (notes are safe on disk): ${e.message || e}`);
+    warnFail(`harvest spawn failed (notes are safe on disk): ${e.message || e}`);
   }
 } else if (event === "retire") {
   // Retirement is intentionally a no-op for knowledge (for now): promotion happens

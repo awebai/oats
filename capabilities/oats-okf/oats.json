@@ -1,15 +1,21 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "1.5.1",
-  "compatibility": { "oats": ">=0.22.3" },
+  "version": "1.5.2",
+  "compatibility": {
+    "oats": ">=0.22.3"
+  },
   "layer": "knowledge",
   "description": "Knowledge layer via OKF: soul bundles, instance memory (STATE.md/log.md/notes/), continuous post-commit harvest into the soul (commit, PR, or direct-edit for local souls), craft + memory skills, validator.",
   "requires": [],
   "settings": {
     "harvest-runtime": {
       "default": "pi",
-      "values": ["pi", "claude", "codex"],
+      "values": [
+        "pi",
+        "claude",
+        "codex"
+      ],
       "description": "Harness for the memory harvester, independent of the source instance's runtime."
     },
     "harvest-model": {
