@@ -4141,9 +4141,14 @@ test("no bundled capability imports the kernel (package-runtime boundary)", () =
 test("bundled capabilities carry the versions package-catalog.json pins", () => {
   // The bundled trees exist only as copies of the published payloads (the
   // clean-room smoke wraps capabilities/oats-okf as the "official" oats.okf).
-  // A copy that claims a published version while differing from it is the
-  // defect this bundle-refresh removed; catch a re-drift in `npm test` too,
-  // not only in the release smoke.
+  //
+  // This checks VERSION drift and nothing more. It does NOT detect a copy that
+  // differs from its payload while claiming the payload's version — the bundled
+  // oats.okf this replaced claimed 1.4.1 and differed, and would have passed
+  // here. Parity was established by comparing the trees byte for byte against
+  // the catalog-pinned payloads at sync time; no assertion in this repo
+  // re-establishes it. The kernel coupling that made the old copy wrong is
+  // caught by the no-private-import test above.
   const pkgRoot = resolve(new URL("..", import.meta.url).pathname);
   const catalog = JSON.parse(readFileSync(join(pkgRoot, "package-catalog.json"), "utf8"));
   // Capability version == package version only where the package says so; the
