@@ -39,7 +39,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, getServer, inspectRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 
 const args = process.argv.slice(2);
@@ -3124,9 +3124,12 @@ function versionCmd() {
   if (JSON_MODE) {
     // EXACT Desktop API v1 probe payload — one JSON object, nothing else on
     // stdout. Desktop accepts desktopApi === 1 and a compatible semver range.
-    // `remote`: the commands this kernel routes to a registered server with
-    // --server; a Desktop gates its remote path on it (an older CLI without
-    // the surface must fail closed with a reason, not an argument error).
+    // `remote`: this kernel's remote-side surface: the commands it routes to
+    // a registered server with --server, plus `roster` (the local command
+    // over registrations and saved routes); a Desktop gates its remote path
+    // on it (an older CLI without the surface must fail closed with a
+    // reason, not an argument error). `features`: kernel abilities a peer
+    // must see before relying on them (retire-home: retire --home).
     console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home"] }));
     return;
   }
@@ -3173,8 +3176,22 @@ async function experimentalCmd() {
 function serverCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>]  [--json]";
-  if (!["add", "list", "remove", "check", "roster"].includes(sub)) bail("E_USAGE", usage);
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
+  if (!["add", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
+  if (sub === "forget") {
+    // A saved route whose remote instance is gone can be dropped only by
+    // the operator: nothing routed can do it, and the changed-registration
+    // guard counts it until then.
+    const id = args[2];
+    const inst = flag("instance");
+    if (!id || id.startsWith("--") || !inst || inst === true) bail("E_USAGE", "usage: oats server forget <id> --instance <name> [--json]");
+    let snap;
+    try { snap = forgetSnapshot(id, inst); } catch (e) { bail(e.code || "E_SNAPSHOT_UNKNOWN", e.message); }
+    if (JSON_MODE) { jsonOk({ server: id, instance: inst, home: snap.home, target: snap.target, forgotten: true }); return; }
+    console.log(`Forgot the saved route of ${inst} through ${id} (${snap.target?.sshHost}:${snap.home}).`);
+    console.log(`  if that home still exists on the host it is no longer managed from here: retire it there with oats retire ${inst} --home ${snap.home}`);
+    return;
+  }
   if (sub === "roster") {
     // The remote roster for the Desktop and operators: grouped by saved route
     // target, one bounded status pull per target, saved routes as the action
@@ -3417,6 +3434,8 @@ Usage:
       [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
       [--json]                              budget (45 s, 20 s per target); saved routes are
                                             the authority for actions
+  oats server forget <id> --instance <name>  drop a saved route whose remote instance is gone
+                                            (the roster shows it as missingRemotely)
   oats retire <instance> --home <path>       retire exactly that home when two agents own an
                                             instance of the same name (else refused)
   oats okf harvest --server <id>             run the knowledge harvest in a remote instance's

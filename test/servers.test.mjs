@@ -359,11 +359,25 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     const fresh = out.groups.find((x) => x.registrationPresent), old = out.groups.find((x) => !x.registrationPresent);
     assert.equal(fresh.target.workspace, repo2); assert.deepEqual(fresh.instances, []);
     assert.equal(old.target.workspace, repo); assert.deepEqual(old.instances.map((i) => i.instance), ["dev-r1"]);
-    // Retire still routes from the saved route, and the roster then empties.
-    r = oats(env, ["retire", "dev-r1", "--server", "build", "--json"]);
-    assert.equal(r.status, 0, r.stderr + r.stdout);
+    // A saved route whose instance is gone on the host: the roster flags it,
+    // the guard still counts it, and only `server forget` drops it.
+    rmSync(home, { recursive: true, force: true });
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    assert.equal(r.json().result.groups.find((x) => !x.registrationPresent).instances[0].missingRemotely, true);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r3", "--no-launch", "--json"]);
+    assert.equal(r.json().error?.code, "E_ROUTE_CHANGED");
+    r = oats(env, ["server", "forget", "build", "--instance", "nope", "--json"]);
+    assert.equal(r.json().error?.code, "E_SNAPSHOT_UNKNOWN");
+    r = oats(env, ["server", "forget", "build", "--instance", "dev-r1", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout); assert.equal(r.json().result.forgotten, true); assert.equal(r.json().result.home, home);
+    assert.equal(existsSync(snapshotPath("build", "dev-r1")), false);
     r = oats(env, ["server", "roster", "--server", "build", "--json"]);
     assert.deepEqual(r.json().result.groups.map((x) => x.instances.length), [0]);
+    // With no saved route left, the registration may point anywhere again.
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--replace", "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r3", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = oats(env, ["retire", "dev-r3", "--server", "build", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -413,8 +427,10 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);
     // New remote: the saved home travels as --home; the twin survives.
+    const logBefore = readFileSync(join(base, "ssh.log"), "utf8").length;
     r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--json"]);
     assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.ok(readFileSync(join(base, "ssh.log"), "utf8").slice(logBefore).includes(`retire dev-foo-1 --home ${remoteQuote(devHome)}`), "the saved home was sent as --home");
     assert.equal(existsSync(devHome), false, "the saved-route instance is retired");
     assert.equal(existsSync(twinHome), true, "the twin under the other agent is untouched");
     assert.equal(existsSync(snapshotPath("new", "dev-foo-1")), false);

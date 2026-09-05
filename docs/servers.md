@@ -109,7 +109,9 @@ A registration edited to a different host or workspace (`server add
 the next `spawn --server` with `E_ROUTE_CHANGED`: a new snapshot under the
 same server id would silently retarget them. Register the new target under a
 new id, or retire the old instances first; the roster shows both targets
-until then.
+until then. A saved route whose instance is gone on the host (the roster
+shows it `missingRemotely`) cannot be retired away: drop it on purpose with
+`oats server forget <id> --instance <name>`.
 
 ## Limits
 
@@ -117,8 +119,9 @@ until then.
   and, against a 0.22.2 or later server, `session inspect` (the execution
   host's envelope, relayed; a Desktop preflight before attaching) and
   `session attach`. Session input runs on the execution host, where the wake
-  broker calls it. The version probe's `remote` list names what this kernel
-  routes (`roster` and `harvest` from 0.22.3).
+  broker calls it. The version probe's `remote` list names this kernel's
+  remote-side surface (`roster` and `harvest` from 0.22.3; `roster` is the
+  local command over registrations and saved routes, not a route).
 - No Git over SSH: repository operations always run on the server, by its
   kernel, in its workspace.
 - A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`) for spawn,
