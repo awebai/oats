@@ -362,3 +362,9 @@ AGENTS.md, Agent Skills, and OKF.
 ## License
 
 [MIT](LICENSE) © 2026 OATS Framework
+
+Session backends and unattended launches are described in
+[execution targets](docs/execution-targets.md). Use `oats spawn <soul> --backend
+herdr --yolo` for a Herdr-hosted unattended Codex/Claude session, or put
+`yolo: true` in the scope's oats-config.yaml. Aweb owns shared event delivery;
+terminal transport alone does not enable a messaging broker.

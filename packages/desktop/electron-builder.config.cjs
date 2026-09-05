@@ -32,6 +32,7 @@ module.exports = {
     "server-compat.mjs",
     "server-host.mjs",
     "tmux-target.mjs",
+    "herdr-target.mjs",
     "terminal-registry.mjs",
     "workspace-registry.mjs",
     "server/**/*",

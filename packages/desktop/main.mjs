@@ -17,6 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit } from "./api-url.mjs";
 import { openTerm, sweepViewers } from "./tmux-target.mjs";
+import { openHerdrTerm, herdrTargetKey } from "./herdr-target.mjs";
 import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "./terminal-registry.mjs";
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
@@ -351,14 +352,14 @@ function sweepOrphanViewers() {
   } catch { /* no tmux server — nothing to sweep */ }
 }
 
-ipcMain.handle("term:open", (e, { session, window: win, cols, rows }) => {
+ipcMain.handle("term:open", (e, { session, window: win, sessionTarget, cols, rows }) => {
   guard(e);
   // Resource containment (Slice G): DEDUPE by target + HARD CAP, enforced
   // atomically here (this handler is synchronous end to end, so concurrent
   // IPC opens cannot interleave to exceed the cap). Repeated opens of the
   // same target REUSE the live terminal; a distinct open beyond the cap is
   // rejected visibly and actionably — never a silent evict or extra create.
-  const targetKey = terminalTargetKey(session, win);
+  const targetKey = sessionTarget ? herdrTargetKey(sessionTarget) : terminalTargetKey(session, win);
   const plan = termRegistry.plan(targetKey);
   if (plan.action === "reuse") return { reused: true, id: plan.id };
   if (plan.action === "cap") return { capped: true, active: plan.active, max: plan.max };
@@ -374,7 +375,9 @@ ipcMain.handle("term:open", (e, { session, window: win, cols, rows }) => {
   // its own partial viewer and nothing is committed to the registry.
   let opened;
   try {
-    opened = openTerm({ session, window: win, cols, rows }, {
+    opened = sessionTarget ? openHerdrTerm({ sessionTarget, cols, rows }, {
+      spawnPty: (argv, c, r, env) => pty.spawn("herdr", argv, { name: "xterm-256color", cols: c, rows: r, cwd: process.env.HOME, env }),
+    }) : openTerm({ session, window: win, cols, rows }, {
       preflight: (target) => tmuxRun(["list-panes", "-t", target]),
       tmux: tmuxRun,
       tmuxOut: (args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 4000 }).trim(),

@@ -130,6 +130,7 @@ function projectPanelInstance(i) {
     siblingInstance: i.siblingInstance || null,
     relation: i.relation || null,
     relativeTo: i.relativeTo || null,
+    ...(i.sessionTarget ? { sessionTarget: i.sessionTarget, runtimeState: i.runtimeState, runtimeError: i.runtimeError } : {}),
     tmux: i.tmux, git: i.git, task: i.task, next: i.next,
     team: i.team || null,
   };
@@ -147,7 +148,7 @@ function agentsData(wsId) {
     const context = dirname(root); // the workspace/repo owning this agents root
     const pushAgent = (a) => agents.push({
       name: a.name, description: a.description || "", kind: a.kind || "persistent",
-      work: a.work || "checkout", runtime: a.runtime || "pi", model: a.model || null,
+      work: a.work || "checkout", backend: a.backend || "tmux", yolo: a.yolo, runtime: a.runtime || "pi", model: a.model || null,
       repo: a.repo || null, capability: a.capability || null, agentsRoot: root,
       workspace: context, repoName: resolve(context, a.repo || ".").split("/").pop(),
     });
@@ -273,7 +274,7 @@ function spawnErrorPayload(e) {
 }
 /* OATSWEB_SPAWNERR_END */
 
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, model }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   // agentsRoot must be one of the workspace roots this server was started for —
@@ -290,6 +291,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     err.code = "cli-unavailable";
     throw err;
   }
+  locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
   // Relation flags are a NEWER v1 surface: older v1 CLIs ignore unknown
   // spawn options and report success, silently creating an UNRELATED
   // instance. Fail closed instead of degrading silently (review f921f7d).
@@ -312,6 +314,8 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     // Runtime/model overrides (spawn-modal options): adapter-allowlisted and
     // shape-validated there; empty means "agent definition default".
     runtime: runtime ? String(runtime) : undefined,
+    backend: backend ? String(backend) : undefined,
+    yolo,
     model: model ? String(model) : undefined,
   });
   if (!env.ok) {
@@ -386,6 +390,9 @@ function cliStatus() {
     // Capability flag for the spawn form: relation UI renders DISABLED
     // (never hidden) with the required version when the accepted CLI
     // predates spawn-time relations.
+    runtimes: cliState.runtimes || ["pi", "claude"],
+    sessionBackends: cliState.sessionBackends || ["tmux"],
+    launchOptions: cliState.launchOptions || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
     probedAt: cliState.probedAt || null,

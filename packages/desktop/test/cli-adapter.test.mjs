@@ -224,3 +224,9 @@ test("spawnArgv: relativeRoot rides with the relation pair as --relative-root; a
   assert.throws(() => spawnArgv("dev", "/ws", "/t/TASK.md",
     { relation: "child", relativeTo: "x", relativeRoot: "--evil" }), /invalid/);
 });
+
+test("spawnArgv forwards explicit yolo booleans, including false", () => {
+  assert.ok(spawnArgv("dev", "/ws", "/t", { yolo: true }).includes("--yolo"));
+  assert.ok(spawnArgv("dev", "/ws", "/t", { yolo: false }).includes("--no-yolo"));
+  assert.throws(() => spawnArgv("dev", "/ws", "/t", { yolo: "false" }), /boolean/);
+});

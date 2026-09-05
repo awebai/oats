@@ -556,6 +556,18 @@ function openSpawnModal(s, a) {
             <option value="claude">claude</option>
             <option value="codex">codex</option>
           </select></label>
+        <label>Session backend
+          <select class="field fbackend">
+            <option value="" selected>agent default (${escapeHtml(a.backend || "tmux")})</option>
+            <option value="tmux">tmux</option>
+            <option value="herdr">Herdr</option>
+          </select></label>
+        <label>Permissions
+          <select class="field fyolo">
+            <option value="">Use soul / scope setting</option>
+            <option value="true">YOLO — skip permission prompts</option>
+            <option value="false">Use native permission policy</option>
+          </select></label>
         <label>Model (optional — defaults to the agent's definition${a.model ? `: ${escapeHtml(a.model)}` : ""})
           <input class="field fmodel" autocomplete="off" list="spawn-model-options"></label>
         <datalist id="spawn-model-options"></datalist>
@@ -681,6 +693,8 @@ function openSpawnModal(s, a) {
     relation: () => f.querySelector(".frelation").value,
     relativeTo: () => f.querySelector(".frelto").value,
     relativeRoot: () => f.querySelector(".frelto").selectedOptions?.[0]?.dataset?.root || "",
+    yolo: () => { const value = f.querySelector(".fyolo").value; return value === "" ? undefined : value === "true"; },
+    backend: () => f.querySelector(".fbackend").value,
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
     clear: () => {
@@ -689,6 +703,7 @@ function openSpawnModal(s, a) {
       f.querySelector(".frelto").value = "";
       syncRelationControls(); // re-disable the picker for "unrelated"
       f.querySelector(".fruntime").value = "";
+      f.querySelector(".fbackend").value = "";
       f.querySelector(".fmodel").value = "";
     },
   }));
@@ -734,7 +749,7 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   const matches = (x) => x.instance === ref.instance
     && (!ref.home || !x.home || x.home === ref.home)
     && (!ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
-    && !!x.running && !!x.tmux?.session;
+    && !!x.running && (!!x.tmux?.session || !!x.sessionTarget);
   for (let i = 0; i < tries; i++) {
     if (!isCurrent()) return false;          // ws switched / superseded: stop
     try {
@@ -807,6 +822,8 @@ export async function doSpawn(s, ui) {
       // anchor root: ALWAYS sent with a related spawn when the picker knows
       // it — disambiguates cross-root name shadowing (E_RELATIVE_AMBIGUOUS)
       relativeRoot: relation !== "unrelated" ? ((ui.relativeRoot ? ui.relativeRoot() : "") || undefined) : undefined,
+      yolo: ui.yolo?.(),
+      backend: (ui.backend ? ui.backend() : "") || undefined,
       runtime: (ui.runtime ? ui.runtime() : "") || undefined,
       model: (ui.model ? ui.model() : "") || undefined,
     });

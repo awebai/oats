@@ -50,6 +50,7 @@ const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace)$/ },
+  backend: { flag: "--backend", re: /^(tmux|herdr)$/ },
   runtime: { flag: "--runtime", re: /^(pi|claude|codex)$/ },
   model:   { flag: "--model",   re: /^[^-][^\0]*$/ },                       // model pattern — not option-shaped
   // Spawn-time agent relations (feature/agent-relations): the kernel links
@@ -89,6 +90,10 @@ export function spawnArgv(agent, workspaceDir, taskFile, opts = {}) {
     const s = String(v);
     if (!rule.re.test(s)) { const e = new Error(`invalid ${key} value`); e.code = "E_BAD_ARGS"; throw e; }
     argv.push(rule.flag, s);
+  }
+  if (opts.yolo !== undefined) {
+    if (typeof opts.yolo !== "boolean") throw Object.assign(new Error("yolo must be a boolean"), { code: "E_BAD_ARGS" });
+    argv.push(opts.yolo ? "--yolo" : "--no-yolo");
   }
   argv.push("--json");
   return argv;
