@@ -9,6 +9,7 @@
  */
 
 let root = null;
+import { runtimeState } from "../instance-presentation.mjs";
 import { wsQuery, onWorkspaceChange } from "./common.mjs";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -158,11 +159,11 @@ function renderBrain(body, d, ctx) {
     c.className = "brain-card";
     const h = document.createElement("h3");
     h.className = "brain-inst-head";
-    h.innerHTML = `<span class="brain-dot${i.running ? " on" : ""}"></span>${esc(i.instance)}<span class="cnt">${i.running ? "running" : "stopped"}</span>`;
+    h.innerHTML = `<span class="brain-dot${i.running ? " on" : ""}"></span>${esc(i.instance)}<span class="cnt">${runtimeState(i)}</span>`;
     if (i.running && typeof ctx.openTerminal === "function") {
       h.style.cursor = "pointer";
       h.title = "open terminal";
-      h.addEventListener("click", () => ctx.openTerminal(i.instance));
+      h.addEventListener("click", () => ctx.openTerminal({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot }));
     }
     c.append(h, box);
     instCol.append(c);

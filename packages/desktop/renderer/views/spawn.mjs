@@ -6,6 +6,7 @@
    instance awaiting instructions; attached-mode agents are not spawnable
    standalone. GET /api/agents, POST /api/spawn.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
+import { runtimeState } from "../instance-presentation.mjs";
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
   currentWorkspace, setWorkspace, onWorkspaceChange, renderWorkspaceSelect, wsQuery, workspaceGeneration,
@@ -502,7 +503,7 @@ function openSpawnModal(s, a) {
       opt.dataset.root = i.agentsRoot || "";
       const dup = (nameCounts.get(i.instance) || 0) > 1 && i.agentsRoot;
       const tag = dup ? ` [${rootTags.get(String(i.agentsRoot)) || i.agentsRoot}]` : "";
-      opt.textContent = `${i.instance}${tag}${i.running ? "" : " (idle)"}`;
+      opt.textContent = `${i.instance}${tag}${i.running === true ? "" : ` (${runtimeState(i)})`}`;
       select.append(opt);
     }
   };
@@ -871,6 +872,10 @@ export async function doSpawn(s, ui) {
     }
     if (!owns()) return;                     // superseded — leave the form alone
     ui.clear();
+    if (d.routeConflict) {
+      ui.status.textContent = `Spawned ${d.instance} on ${d.server}, but its name already has a saved route. Manage the new home ${d.home} from the execution host. ${(d.warnings || []).join(" ")}`;
+      return;
+    }
     ui.status.textContent = `Spawned ${d.instance}${d.launched ? " — session running" : ""}. Waiting for the roster…`;
     // The panel snapshot lags spawns by up to a collector cycle; opening the
     // terminal before the instance is in /api/panel makes the shell resolve

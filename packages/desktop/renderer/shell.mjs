@@ -307,9 +307,9 @@ function renderContextRoster(instances) {
         row.type = "button";
         row.dataset.treeInstance = instanceId(i);
         row.dataset.treeControl = "terminal";
-        row.className = "ctx-inst" + (i.running ? "" : " idle") + (isActive ? " active" : "");
-        row.disabled = !i.running || (!!i.server && !i.savedRoute);
         const state = runtimeState(i);
+        row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
+        row.disabled = !i.running || (!!i.server && !i.savedRoute);
         row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
           : i.running ? `Open ${i.instance} terminal` : `${i.instance}: ${state}`);
         const dot = document.createElement("span");

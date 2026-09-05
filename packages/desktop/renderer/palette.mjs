@@ -3,6 +3,7 @@
    and commands (also matched by name — ">" prefix restricts to commands).
    Overlay chrome + fuzzy machinery live in overlay-picker.mjs (shared with
    Quick Open); this module owns only the palette's row semantics. */
+import { runtimeState } from "./instance-presentation.mjs";
 import { createOverlayPicker, subsequenceScore } from "./overlay-picker.mjs";
 
 export function isPaletteShortcut(e, insideTerminal = false) {
@@ -28,9 +29,9 @@ export function paletteRows(instances, commands, raw, { openTerminal } = {}) {
       rows.push({
         sc,
         label: inst.instance,
-        detail: [inst.agent, inst.branch].filter(Boolean).join(" · "),
-        dot: !!inst.running,
-        run: () => openTerminal(inst.instance),
+        detail: [inst.server, inst.agent, inst.branch, runtimeState(inst)].filter(Boolean).join(" · "),
+        dot: inst.running === true ? true : inst.running === false ? false : null,
+        run: () => openTerminal({ instance: inst.instance, home: inst.home, agentsRoot: inst.agentsRoot, ...(inst.server ? { server: inst.server } : {}) }),
       });
     }
   }

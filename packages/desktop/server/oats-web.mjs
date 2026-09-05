@@ -911,6 +911,7 @@ function fileRoots() {
   }
   for (const d of snapshot.byWs.values()) {
     for (const i of d.instances) {
+      if (i.server) continue; // Remote paths never grant access to local files.
       if (i.home) { admit(i.home); admit(join(i.home, "work")); } // <home>/work = the work tree (i.work is the MODE)
       if (i.repo) admit(i.repo);
     }
@@ -1034,6 +1035,7 @@ const server = createServer(async (req, res) => {
       const inst = r.inst;
       if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
       if (hm[1] === "retire") {
+        if (typeof inst.home !== "string" || !inst.home.startsWith("/")) return send(res, 409, { error: "Instance has no absolute home for retirement", code: "E_HOME_UNKNOWN" });
         if (!cliState.features?.includes("retire-home")) return send(res, 409, { error: "Retirement requires an updated OATS CLI with exact-home targeting", code: "unsupported-retire-option" });
         if (inst.server) {
           if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });

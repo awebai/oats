@@ -366,3 +366,17 @@ test("preselect with the CLI unavailable and a hiding filter reveals + focuses t
   assert.equal(filter.value, "", "filter cleared");
   assert.equal(doc.activeElement?.dataset?.agent, "ux-designer");
 });
+
+test("palette remote terminal actions preserve server and home, and label unknown state", () => {
+  const opened = [];
+  const rows = paletteRows([
+    { instance: "dev", server: "one", home: "/same", running: true },
+    { instance: "dev", server: "two", home: "/same", running: null },
+  ], [], "dev", { openTerminal: (ref) => opened.push(ref) });
+  for (const row of rows) row.run();
+  assert.deepEqual(opened.map((r) => r.server).sort(), ["one", "two"]);
+  assert.ok(opened.every((r) => r.home === "/same"));
+  const unknown = rows.find((r) => r.detail.includes("two"));
+  assert.match(unknown.detail, /unknown/);
+  assert.equal(unknown.dot, null);
+});

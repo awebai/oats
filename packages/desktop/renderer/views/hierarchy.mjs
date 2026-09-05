@@ -20,6 +20,7 @@
    s Spawn view, o action popover, +/- zoom, f fits, Escape clears.
    Contract: mount(el, ctx) / unmount(); data from GET /api/panel only. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
+import { runtimeState, runtimeCounts } from "../instance-presentation.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import {
   escapeHtml, apiJson, ensureTheme,
@@ -73,6 +74,7 @@ const CSS = `
                 text-overflow: ellipsis; white-space: nowrap; }
 .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .hdot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
 .hdot.off { background: transparent; border: 1.5px solid var(--faint); }
 .hier-pop { position: absolute; z-index: 4; width: 232px; background: var(--surface); border: 1px solid var(--border);
             border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; }
@@ -368,9 +370,10 @@ function render(s) {
   if (zoomCtl) canvas.append(zoomCtl);
   s.nodeEls.clear();
   const list = s.panel.instances || [];
-  const running = list.filter((i) => i.running).length;
+  const { running, stopped, unknown } = runtimeCounts(list);
+  const status = `<b>${running}</b> running · <b>${stopped}</b> stopped${unknown ? ` · <b>${unknown}</b> unknown` : ""}`;
   s.q("hier-sum").innerHTML =
-    `<b>${running}</b> running · <b>${list.length - running}</b> idle`;
+    status;
   if (!list.length) {
     const w = document.createElement("div");
     w.className = "hier-empty-wrap";
@@ -388,7 +391,7 @@ function render(s) {
   const { placed, soloBlock, width, height } = layoutClusters(list);
   const nCl = placed.length + (soloBlock ? soloBlock.nodes.length : 0);
   s.q("hier-sum").innerHTML =
-    `<b>${running}</b> running · <b>${list.length - running}</b> idle · <b>${nCl}</b> cluster${nCl === 1 ? "" : "s"}`;
+    `${status} · <b>${nCl}</b> cluster${nCl === 1 ? "" : "s"}`;
   const stage = document.createElement("div");
   stage.className = "hier-stage";
 
@@ -455,11 +458,11 @@ function render(s) {
   // Cluster naming may return later tied to a task-layer integration.
   for (const pc of placed) {
     const c = pc.cluster;
-    const aria = `Cluster of ${c.size} agents, ${c.running} running`;
+    const aria = `Cluster of ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
     const group = groupFor(pc, c.name, aria, "hier-cluster");
     const head = document.createElement("div");
     head.className = "hier-chead";
-    head.innerHTML = `<span class="cct">${c.running}/${c.size} running</span>`;
+    head.innerHTML = `<span class="cct">${c.running}/${c.size} running${c.unknown ? ` · ${c.unknown} unknown` : ""}</span>`;
     group.prepend(head);
     stage.append(group);
   }
@@ -485,16 +488,17 @@ function render(s) {
 function nodeEl(s, n, wsName) {
   const i = n.inst;
   const id = n.id ?? instanceId(i);
+  const state = runtimeState(i);
   const d = document.createElement("div");
-  d.className = "hnode" + (i.running ? "" : " idle");
+  d.className = "hnode" + (state === "stopped" ? " idle" : state === "unknown" ? " unknown" : "");
   d.style.left = `${n.fx}px`; d.style.top = `${n.fy}px`;
   d.setAttribute("role", "treeitem");
-  d.setAttribute("aria-label", `${i.instance}, ${i.running ? "running" : "idle"}`);
+  d.setAttribute("aria-label", `${i.instance}, ${state}`);
   d.dataset.name = i.instance;
   d.dataset.id = id;
   d.innerHTML = `
-    <div class="hname"><span class="hdot ${i.running ? "on" : "off"}" aria-hidden="true"></span><span class="nm">${escapeHtml(i.instance)}</span></div>
-    <div class="hmeta">${escapeHtml(i.agent || "")}${i.repoName ? " · " + escapeHtml(i.repoName) : ""}</div>`;
+    <div class="hname"><span class="hdot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}" aria-hidden="true"></span><span class="nm">${escapeHtml(i.instance)}</span></div>
+    <div class="hmeta">${escapeHtml(i.agent || "")}${i.repoName ? " · " + escapeHtml(i.repoName) : ""}${state === "unknown" ? " · state unknown" : ""}</div>`;
   d.title = i.task ? String(i.task).slice(0, 200) : i.instance;
   // drag-to-move: grabbing a box past the threshold moves THAT BOX (edges
   // follow live); under the threshold it stays a click/dblclick.
@@ -521,7 +525,7 @@ function nodeEl(s, n, wsName) {
 function openTerm(s, id) {
   const i = (s.panel.instances || []).find((x) => instanceId(x) === id);
   if (!i) return;
-  s.ctx.openTerminal({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot });
+  s.ctx.openTerminal({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot, ...(i.server ? { server: i.server } : {}) });
 }
 
 /* Edge between a parent and child node, from their FINAL (fx/fy) positions. */
@@ -680,11 +684,11 @@ function openPop(s, id) {
       ${i.git && i.git.dirty ? `<span class="chip dirty">±${Number(i.git.dirty)}</span>` : ""}
     </div>
     <div class="pacts">
-      <button class="act pterm"${i.running ? "" : " disabled"}>Terminal</button>
-      <button class="act pbrain">Brain</button>
+      <button class="act pterm"${i.running === true && (!i.server || i.savedRoute) ? "" : " disabled"}>Terminal</button>
+      <button class="act pbrain"${i.server ? ' disabled title="Use the remote terminal to read brain files"' : ""}>Brain</button>
     </div>`;
   pop.querySelector(".pterm").addEventListener("click", () => openTerm(s, id));
-  pop.querySelector(".pbrain").addEventListener("click", () => s.ctx.openBrain?.(i.agent));
+  pop.querySelector(".pbrain").addEventListener("click", () => { if (!i.server) s.ctx.openBrain?.(i.agent); });
   if (!s.ctx.openBrain) pop.querySelector(".pbrain").style.display = "none";
   // append inside the node's group so the popover sits by its (dragged) box
   (entry.el.parentElement || s.canvas.querySelector(".hier-stage"))?.append(pop);
@@ -696,7 +700,7 @@ function openPop(s, id) {
    (review 96b037b). */
 function openSelBrain(s) {
   const i = (s.panel.instances || []).find((x) => instanceId(x) === s.sel);
-  if (i) s.ctx.openBrain?.(i.agent);
+  if (i && !i.server) s.ctx.openBrain?.(i.agent);
 }
 
 /* keyboard tree-walk over the laid-out nodes. Escape/Enter/arrows are the

@@ -406,3 +406,36 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     assert.equal(fake.calls().filter((c) => c.argv[0] === "retire").length, retireCalls, "old CLI cannot silently ignore --home and retire a twin");
   } finally { proc.kill(); }
 });
+
+test("remote homes cannot grant local file access, and missing home refuses retirement", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oats-remote-file-guard-"));
+  const secret = join(dir, "local-only.txt");
+  writeFileSync(secret, "local fixture outside every workspace");
+  const groups = [{ id: "guard", server: "host", registrationPresent: true,
+    target: { sshHost: "host", workspace: "/remote" }, probe: { ok: true }, souls: [],
+    instances: [
+      { instance: "remote-root", home: "/", running: true, savedRoute: true },
+      { instance: "remote-collision", home: dir, repo: dir, running: true, savedRoute: true },
+      { instance: "missing-home", running: true, savedRoute: true },
+    ],
+  }];
+  const fake = fakeCli(dir, { remote: ["roster", "retire"], features: ["retire-home"], groups });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await fetch(`${base}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    let panel;
+    for (let n = 0; n < 30; n++) {
+      panel = await (await fetch(`${base}/api/panel?ws=remote%3Aguard`)).json();
+      if (panel.workspace?.remote) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(panel.instances.length, 3, "the remote rows were actually admitted to the roster");
+    assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(secret)}`)).status, 403);
+    assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(join(ROOT, 'agents/cli-dev/soul/knowledge/index.md'))}`)).status, 200, "local knowledge remains readable");
+    const retired = await fetch(`${base}/api/retire/missing-home?ws=remote%3Aguard&server=host`, { method: "POST" });
+    assert.equal(retired.status, 409);
+    assert.equal((await retired.json()).code, "E_HOME_UNKNOWN");
+    assert.equal(fake.calls().filter((c) => c.argv[0] === "retire").length, 0);
+  } finally { proc.kill(); }
+});

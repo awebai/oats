@@ -48,6 +48,7 @@ test("roster rebuilds cannot submit a second lifecycle action while one is pendi
   replacement.value = "retire"; replacement.dispatchEvent(new dom.window.Event("change"));
   assert.equal(calls, 1);
   finish({}); await new Promise((r) => setImmediate(r));
+  assert.equal(replacement.disabled, false, "the currently displayed control re-enables without another poll");
   assert.equal(instanceActions(dom.window.document, instance, options).disabled, false);
   dom.window.close();
 });

@@ -2,6 +2,12 @@ export function runtimeState(instance) {
   return instance.running === true ? "running" : instance.running === false ? "stopped" : "unknown";
 }
 
+export function runtimeCounts(instances) {
+  const counts = { running: 0, stopped: 0, unknown: 0 };
+  for (const instance of instances) counts[runtimeState(instance)]++;
+  return counts;
+}
+
 export function retirementSummary(result) {
   if (!result) return "";
   const lines = [...(result.warnings || [])];

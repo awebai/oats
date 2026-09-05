@@ -1,7 +1,7 @@
 /** Keyboard-accessible lifecycle actions, independent of whether a terminal is running. */
 import { instanceId } from "./instance-tree.mjs";
 
-const pending = new Set(); // survives roster rebuilds while a lifecycle command runs
+const pending = new Map(); // pending key -> controls created during the action
 
 export function instanceActions(doc, instance, { invoke, confirmRetire, done, report }) {
   const key = instanceId(instance);
@@ -15,16 +15,20 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
   }
   const unrouted = !!instance.server && !instance.savedRoute;
   select.disabled = unrouted || pending.has(key);
+  pending.get(key)?.push({ select, unrouted });
   if (unrouted) select.title = "No saved route for this remote instance on this machine";
   select.addEventListener("change", async () => {
     const action = select.value; select.value = "";
     if (!action || select.disabled || pending.has(key)) return;
     if (action === "retire" && !confirmRetire(instance)) return;
-    pending.add(key);
+    pending.set(key, [{ select, unrouted }]);
     select.disabled = true;
     try { const result = await invoke(action, instance); done(result, action); }
     catch (e) { report(e.message, e.result); }
-    finally { pending.delete(key); select.disabled = unrouted; }
+    finally {
+      for (const control of pending.get(key) || []) control.select.disabled = control.unrouted;
+      pending.delete(key);
+    }
   });
   return select;
 }

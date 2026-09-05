@@ -375,3 +375,39 @@ test("keyboard Brain key matches the composite selection id — selecting a node
     g.window = prev.window; g.document = prev.document; g.localStorage = prev.localStorage;
   }
 });
+
+test("remote overview opens the selected server and shows unknown separately from stopped", async () => {
+  const { JSDOM } = await import("jsdom");
+  const dom = new JSDOM('<div id="root"></div>', { pretendToBeVisual: true });
+  const prev = { window: globalThis.window, document: globalThis.document, localStorage: globalThis.localStorage };
+  globalThis.window = dom.window; globalThis.document = dom.window.document;
+  globalThis.localStorage = { getItem: () => null, setItem() {} };
+  let un;
+  try {
+    const panel = { instances: [
+      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "one", savedRoute: true, running: true },
+      { instance: "dev", agent: "dev", home: "/same/home", agentsRoot: "/agents", server: "two", savedRoute: true, running: true },
+      { instance: "unreachable", home: "/unknown", server: "two", running: null },
+      { instance: "ended", home: "/stopped", server: "two", running: false },
+    ], workspaces: [], workspace: null };
+    const opened = [], brains = [];
+    const el = dom.window.document.getElementById("root");
+    un = hier.mount(el, { api: async () => ({ ok: true, json: async () => panel }),
+      openTerminal: (ref) => opened.push(ref), openBrain: (ref) => brains.push(ref) });
+    await new Promise((r) => setTimeout(r, 30));
+    const nodes = [...el.querySelectorAll('.hnode')];
+    const twins = nodes.filter((n) => n.dataset.name === 'dev');
+    for (const node of twins) node.dispatchEvent(new dom.window.Event('dblclick', { bubbles: true }));
+    assert.deepEqual(opened.map((r) => r.server).sort(), ['one', 'two']);
+    assert.ok(opened.every((r) => r.home === '/same/home'));
+    const unknown = nodes.find((n) => n.dataset.name === 'unreachable');
+    assert.match(unknown.getAttribute('aria-label'), /unknown/);
+    assert.match(unknown.textContent, /state unknown/);
+    assert.equal(unknown.classList.contains('idle'), false);
+    assert.match(el.querySelector('.hier-sum').textContent, /2 running.*1 stopped.*1 unknown/);
+    twins[0].dispatchEvent(new dom.window.Event('click', { bubbles: true }));
+    assert.equal(el.querySelector('.pbrain').disabled, true);
+    el.querySelector('.hier-canvas').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'b', bubbles: true }));
+    assert.deepEqual(brains, []);
+  } finally { un?.(); Object.assign(globalThis, prev); dom.window.close(); }
+});
