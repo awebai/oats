@@ -82,7 +82,9 @@ is how what they learned reaches the soul.
   if you could not, this harvest has FAILED: judge nothing from it and leave
   the watermark files untouched. If a command is rejected because its
   `--after` id is no longer in the thread (a pruned or redacted record), run
-  it again without `--after` and read from the start. Read the `text` parts;
+  it again without `--after` and read from the start; if its `--until` id is
+  rejected, this harvest has failed (leave the watermark files alone; the next
+  `oats okf harvest` replans). Read the `text` parts;
   `tool_use` and `tool_result` are context, not lessons.
 - Extract **candidates** in the shape of notes: one candidate per insight, a
   one-line title, the claim, and its provenance as the turn ids it came from.
@@ -127,7 +129,9 @@ what your custody allows:
    `memory-harvest: 2 lessons + 1 skill gotcha from worker-x notes`.
 2. **Worktree of the soul's home repo** (workspace-mode source): the same single
    commit on your own branch, then push it and open a PR. Never merge it, and
-   never push to that repo's main branch — its owners review soul changes.
+   never push to that repo's main branch — its owners review soul changes. A
+   harvest that promoted nothing has no commit, push or PR to make; it is
+   complete, not failed, and still advances the watermark.
 3. **Uncommitted local soul**: nothing to commit. Your edits to the soul ARE the
    delivery; they take effect for the next instance immediately.
 

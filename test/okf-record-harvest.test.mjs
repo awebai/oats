@@ -6,7 +6,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -15,14 +15,15 @@ const OKF_BIN = resolve(new URL("../capabilities/oats-okf/bin/oats-okf.mjs", imp
 
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 
-function deployment(base, { sessions, spawnLog }) {
+function deployment(base, { sessions, spawnLog, work = "worktree", gitRepo = false }) {
   const repo = join(base, "repo"); mkdirSync(repo, { recursive: true });
   const root = join(repo, "agents");
   const home = join(root, "dev", "instances", "dev-1");
   mkdirSync(join(home, "work"), { recursive: true });
   mkdirSync(join(home, "notes"), { recursive: true });
   write(join(root, "dev", "soul", "AGENTS.md"), "soul\n");
-  write(join(home, "instance.json"), JSON.stringify({ instance: "dev-1", agent: "dev", repo, work: "worktree" }));
+  if (gitRepo) { execFileSync("git", ["init", "-q", repo]); execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]); execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "init"]); }
+  write(join(home, "instance.json"), JSON.stringify({ instance: "dev-1", agent: "dev", repo, work }));
   const fake = join(base, "fake-oats.mjs");
   write(fake, `#!/usr/bin/env node
 import { readFileSync, writeFileSync } from "node:fs";
@@ -53,13 +54,15 @@ if (cmd === "capture") {
   return { repo, root, home, fake, soul: join(root, "dev", "soul") };
 }
 
-function harvest(d, extra = []) {
+function harvest(d, extra = [], { work } = {}) {
   const r = spawnSync(process.execPath, [OKF_BIN, "harvest", "--json", ...extra], {
     cwd: d.home, encoding: "utf8",
-    env: { ...process.env, OATS_HOME: d.home, OATS_INSTANCE: "dev-1", OATS_AGENT: "dev", OATS_SOUL: d.soul, OATS_CONTEXT: d.repo, OATS_ROOT: d.root, OATS_CLI_BIN: d.fake, OATS_SETTINGS: JSON.stringify({ "harvest-model": "test/model" }) },
+    env: { ...process.env, OATS_HOME: d.home, OATS_INSTANCE: "dev-1", OATS_AGENT: "dev", OATS_SOUL: d.soul, OATS_CONTEXT: d.repo, OATS_ROOT: d.root, OATS_CLI_BIN: d.fake, OATS_SETTINGS: JSON.stringify({ "harvest-model": "test/model" }), ...(work ? { OATS_WORK: work } : {}) },
   });
   assert.equal(r.status, 0, r.stderr + r.stdout);
-  return JSON.parse(r.stdout.trim());
+  const doc = JSON.parse(r.stdout.trim());
+  doc.stderr = r.stderr;
+  return doc;
 }
 
 test("okf harvest: no notes but new record turns → the harvester is briefed with exact id windows and the watermark to write on delivery; the watermark then suppresses a repeat", () => {
@@ -80,7 +83,7 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     assert.match(log.task, new RegExp(`${d.fake} recall --thread cc:session:s1 --json --until t12`), "first harvest has no --after: the whole (small) thread is the window");
     const wmPath = join(d.home, ".okf-harvest-record.json");
     const nextPath = join(d.home, ".okf-harvest-record.next.json");
-    assert.ok(log.task.includes(`mv ${nextPath} ${wmPath}`), "delivery advances the watermark by one rename, nothing retyped");
+    assert.ok(log.task.includes(`mv '${nextPath}' '${wmPath}'`), "delivery advances the watermark by one rename, nothing retyped");
     const wm = JSON.parse(readFileSync(nextPath, "utf8"));
     assert.equal(wm.threads["cc:session:s1"].untilTurnId, "t12");
     assert.equal(wm.threads["cc:session:s1"].turns, 12);
@@ -177,5 +180,51 @@ test("okf harvest: a long backlog is drained in bounded windows, by turns and by
     const log2 = JSON.parse(readFileSync(spawnLog, "utf8"));
     assert.match(log2.task, /recall --thread cc:session:long --json --after t300 --until t600`/);
     assert.match(log2.task, /recall --thread codex:session:fat --json --after t1 --until t2`/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("okf harvest: a watermark whose boundary turn left the thread replans from the start, audibly, instead of stranding the thread", () => {
+  const base = mkdtempSync(join(tmpdir(), "okf-record-"));
+  const spawnLog = join(base, "spawn.json");
+  const sessions = [{ thread: "cc:session:s1", source: "cc", sessionId: "s1", stream: "mac~cc.s1", turns: 20, firstTurnId: "t1", lastTurnId: "t20", lastTs: "" }];
+  const d = deployment(base, { sessions, spawnLog });
+  try {
+    // The recorded boundary was redacted since: recall no longer knows it.
+    writeFileSync(join(d.home, ".okf-harvest-record.json"), JSON.stringify({ threads: { "cc:session:s1": { untilTurnId: "gone", turns: 12 } } }));
+    const r = harvest(d);
+    assert.equal(r.result.harvest, "spawned", "the thread is not dropped");
+    assert.deepEqual(r.result.record.threads, ["cc:session:s1"]);
+    assert.match(r.result.record.problems.join("\n"), /boundary gone is no longer in the thread/);
+    assert.match(r.stderr, /oats-okf: record: cc:session:s1: the harvested boundary gone is no longer in the thread/, "one stderr line in every mode, not only in the envelope");
+    const log = JSON.parse(readFileSync(spawnLog, "utf8"));
+    assert.match(log.task, /recall --thread cc:session:s1 --json --until t20`/, "read from the start again, no --after");
+    const next = JSON.parse(readFileSync(join(d.home, ".okf-harvest-record.next.json"), "utf8"));
+    assert.equal(next.threads["cc:session:s1"].untilTurnId, "t20");
+    assert.equal(next.threads["cc:session:s1"].turns, 20, "the count restarts with the read");
+    assert.match(log.task, /--until id is rejected, this harvest has failed/);
+    assert.match(log.task, /mv '.*\.okf-harvest-record\.next\.json' '.*\.okf-harvest-record\.json'/, "the rename is quoted");
+    // Redaction inside the harvested prefix lowers the count but not the boundary: nothing new is claimed and nothing is re-read.
+    writeFileSync(join(d.home, ".okf-harvest-record.json"), JSON.stringify(next)); rmSync(join(d.home, ".okf-harvest-record.next.json"));
+    sessions[0].turns = 18; // two old turns hidden, same tail
+    writeFileSync(join(base, "capture.json"), JSON.stringify({ home: d.home, owner: "mac", appended: 0, sessions }));
+    assert.deepEqual(harvest(d).result, { harvest: "skipped", reason: "no pending notes" });
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("okf harvest: the workspace-mode briefing makes commit, push and PR conditional and puts the record windows before delivery", () => {
+  const base = mkdtempSync(join(tmpdir(), "okf-record-"));
+  const spawnLog = join(base, "spawn.json");
+  const sessions = [{ thread: "pi:session:w", source: "pi", sessionId: "w", stream: "mac~pi.w", turns: 3, firstTurnId: "t1", lastTurnId: "t3", lastTs: "" }];
+  const d = deployment(base, { sessions, spawnLog, work: "workspace", gitRepo: true });
+  try {
+    const r = harvest(d, [], { work: "workspace" });
+    assert.equal(r.result.harvest, "spawned", JSON.stringify(r));
+    const log = JSON.parse(readFileSync(spawnLog, "utf8"));
+    assert.match(log.task, /WORKSPACE-MODE/);
+    assert.match(log.task, /commit once \(prefixed "memory-harvest:"\) if anything changed/);
+    assert.match(log.task, /If you changed anything: push the branch and open a PR/);
+    assert.match(log.task, /promoted nothing has nothing to commit, push or open; that is a completed harvest, not a failed one/);
+    assert.ok(log.task.indexOf("RECORD-FED CANDIDATES") < log.task.indexOf("If you changed anything: push"), "windows are read before delivery is described");
+    assert.match(log.task, /Finally run `oats retire memory-harvest-dev-1 --self`/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
