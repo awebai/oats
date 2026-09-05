@@ -31,10 +31,14 @@ while [ "$1" != "--" ]; do shift; done
 shift; shift
 exec sh -c "$1"
 `);
-  for (const rt of ["pi", "claude"]) write(join(bin, rt), "#!/bin/sh\nexit 0\n");
+  // Runtimes live OFF the PATH the fake ssh inherits, like ~/.local/bin on a
+  // real host: only a registration --path makes the remote preflight find them.
+  const tools = join(base, "remote-tools"); mkdirSync(tools, { recursive: true });
+  for (const rt of ["pi", "claude"]) write(join(tools, rt), "#!/bin/sh\nexit 0\n");
   write(join(bin, "tmux"), "#!/bin/sh\ncase \"$1\" in -V) echo 'tmux 3.4';; esac\nexit 0\n");
-  for (const f of ["ssh", "pi", "claude", "tmux"]) chmodSync(join(bin, f), 0o755);
-  return { bin, log };
+  for (const f of ["ssh", "tmux"]) chmodSync(join(bin, f), 0o755);
+  for (const f of ["pi", "claude"]) chmodSync(join(tools, f), 0o755);
+  return { bin, log, tools };
 }
 
 function remoteWorkspace(base) {
@@ -86,9 +90,11 @@ test("validateServer: a registration is where and how, never credentials or ssh 
 test("oats server + --server: registry, check, remote spawn with a hostile task, status, retire from the snapshot after the registration is gone", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-"));
   try {
-    const { bin, log } = fakeBin(base);
+    const { bin, log, tools } = fakeBin(base);
     const repo = remoteWorkspace(base);
-    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    // A minimal PATH, like a non-interactive login shell: the fake ssh, node,
+    // git and the system dirs; no locally installed runtime can leak in.
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
 
@@ -116,6 +122,13 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     // remote spawn: the task travels as text and lands byte for byte
     const hostile = "Review `this` and $(touch NEVER_RUN) 'quotes' \"dq\"\nsecond line % and * and ~\n";
     const taskFile = join(base, "task.md"); writeFileSync(taskFile, hostile);
+    // Without --path the remote preflight cannot find the runtime: a typed
+    // failure from the remote kernel, relayed as its own envelope.
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "probe", "--task-file", taskFile, "--no-launch", "--json"]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.json().error.message, /pi binary not found/);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--replace", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "probe", "--task-file", taskFile, "--no-launch", "--json"]);
     assert.equal(r.status, 0, r.stderr + r.stdout);
     const sp = r.json();
@@ -129,6 +142,8 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(existsSync(join(process.cwd(), "NEVER_RUN")), false);
     const snap = JSON.parse(readFileSync(join(env.OATS_HOME_DIR, "remote", "build", "dev-probe.json"), "utf8"));
     assert.equal(snap.target.workspace, repo); assert.equal(snap.home, home); assert.equal(snap.remote.schemaVersion, 1);
+    assert.equal(snap.target.path, tools, "the PATH prefix is part of the frozen route");
+    assert.match(readFileSync(log, "utf8"), new RegExp(`PATH=${tools.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:"\\$PATH" `), "PATH prefix precedes the remote command, $PATH left for the remote shell");
     // --dir and --server do not mix
     r = oats(env, ["spawn", "dev", "--server", "build", "--dir", repo, "--json"]);
     assert.equal(r.json().error.code, "E_BAD_ARGS");

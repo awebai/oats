@@ -3128,7 +3128,7 @@ async function experimentalCmd() {
 function serverCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--label <text>] | list | remove <id> | check <id>  [--json]";
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id>  [--json]";
   if (!["add", "list", "remove", "check"].includes(sub)) bail("E_USAGE", usage);
   let servers;
   try { servers = readServers(); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
@@ -3144,7 +3144,7 @@ function serverCmd() {
   if (sub === "add") {
     const val = (name) => { const v = flag(name); return v === true ? bail("E_BAD_ARGS", `--${name} needs a value`) : v; };
     const entry = { sshHost: val("ssh"), workspace: val("workspace") };
-    for (const [k, f] of [["oatsPath", "oats"], ["herdrPath", "herdr"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
+    for (const [k, f] of [["oatsPath", "oats"], ["herdrPath", "herdr"], ["path", "path"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
     if (!entry.sshHost || !entry.workspace) bail("E_USAGE", usage);
     try { validateServer(id, entry); } catch (e) { bail(e.code, e.message); }
     if (servers[id] && !args.includes("--replace")) bail("E_SERVER_EXISTS", `server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`);
@@ -3290,7 +3290,8 @@ Usage:
   oats status [--json]                       agents, souls, running instances
   oats status --team [--json]                whole-team roster across the team scope's repos
   oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
-      --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored)
+      --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored;
+      [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
   oats server list|remove <id>|check <id>    registry; check = reachability + version, no mutation
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
                                             (same flags, same envelope; a route snapshot per

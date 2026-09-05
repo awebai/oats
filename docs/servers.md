@@ -21,6 +21,12 @@ oats server list
 - `--workspace` is the absolute path of an OATS workspace on the server: the
   same team repository checked out there, with its own `agents/`.
 - `--oats` is the remote executable (default `oats` on the login shell's PATH).
+- `--path` names directories to prepend to the remote PATH for every routed
+  command (`~/.local/bin:/opt/pi/bin`). A non-interactive ssh command runs in
+  the login shell's minimal PATH, and the remote kernel's spawn preflight looks
+  for the runtime binary (`claude`, `pi`, `codex`) there; without this, a
+  runtime installed under the user's home is "not found" even though it runs
+  fine in an interactive shell on that host.
 - Registrations live in `~/.oats/servers.json` on this machine, never in a
   repository scope.
 
