@@ -39,6 +39,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
+import { checkRemote, getServer, listSnapshots, readServers, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -3120,6 +3121,115 @@ async function experimentalCmd() {
   await import(url);
 }
 
+// ---------- servers: registry and remote routing (docs/execution-targets.md) ----------
+/** `oats server add|list|remove|check`. A registration is where and how:
+ *  an OpenSSH host alias, the remote workspace, the remote oats path. Keys
+ *  and passwords never enter it; ssh owns those. */
+function serverCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const sub = args[1];
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--label <text>] | list | remove <id> | check <id>  [--json]";
+  if (!["add", "list", "remove", "check"].includes(sub)) bail("E_USAGE", usage);
+  let servers;
+  try { servers = readServers(); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
+  if (sub === "list") {
+    const rows = Object.entries(servers).map(([id, s]) => ({ id, ...s, target: targetOf({ id, ...s }), snapshots: listSnapshots(id).length }));
+    if (JSON_MODE) { jsonOk({ file: SERVERS_FILE(), servers: rows }); return; }
+    if (!rows.length) { console.log(`no servers registered (${shortPath(SERVERS_FILE())}) — add one with \`oats server add <id> --ssh <alias> --workspace </path>\``); return; }
+    for (const r of rows) console.log(`  ${r.id}${r.label ? `  ${r.label}` : ""}\n      ssh ${r.sshHost}  workspace ${r.workspace}  oats ${r.target.oatsPath}${r.target.herdrPath ? `  herdr ${r.target.herdrPath}` : ""}${r.snapshots ? `  (${r.snapshots} remote instance${r.snapshots === 1 ? "" : "s"} spawned from here)` : ""}`);
+    return;
+  }
+  const id = args[2];
+  if (!id || id.startsWith("--")) bail("E_USAGE", usage);
+  if (sub === "add") {
+    const val = (name) => { const v = flag(name); return v === true ? bail("E_BAD_ARGS", `--${name} needs a value`) : v; };
+    const entry = { sshHost: val("ssh"), workspace: val("workspace") };
+    for (const [k, f] of [["oatsPath", "oats"], ["herdrPath", "herdr"], ["label", "label"]]) { const v = val(f); if (v !== undefined) entry[k] = v; }
+    if (!entry.sshHost || !entry.workspace) bail("E_USAGE", usage);
+    try { validateServer(id, entry); } catch (e) { bail(e.code, e.message); }
+    if (servers[id] && !args.includes("--replace")) bail("E_SERVER_EXISTS", `server ${id} is already registered (pass --replace to overwrite; existing remote instances keep the route they were spawned with)`);
+    servers[id] = entry;
+    writeServers(servers);
+    if (JSON_MODE) { jsonOk({ id, ...entry, file: SERVERS_FILE() }); return; }
+    console.log(`Registered server ${id} → ssh ${entry.sshHost}, workspace ${entry.workspace} (${shortPath(SERVERS_FILE())}). Verify it with \`oats server check ${id}\`.`);
+    return;
+  }
+  if (sub === "remove") {
+    if (!servers[id]) bail("E_SERVER_UNKNOWN", `no server registered as ${id}`);
+    const snaps = listSnapshots(id);
+    delete servers[id];
+    writeServers(servers);
+    if (JSON_MODE) { jsonOk({ removed: id, remoteInstancesStillTracked: snaps.map((s) => s.instance) }); return; }
+    console.log(`Removed server ${id}${snaps.length ? ` — ${snaps.length} remote instance(s) spawned from it keep their snapshots and can still be retired with --server ${id}` : ""}`);
+    return;
+  }
+  // check: reachability and compatibility, no mutation
+  let server; try { server = getServer(id); } catch (e) { bail(e.code, e.message); }
+  const target = targetOf(server);
+  try {
+    const remote = checkRemote(target);
+    const status = routeCommand(id, "status", [], { server });
+    const agents = status.envelope.ok ? (status.envelope.result.agents || []).length : undefined;
+    if (JSON_MODE) { jsonOk({ id, target, remote, workspaceReachable: !!status.envelope.ok, agents, error: status.envelope.ok ? undefined : status.envelope.error }); return; }
+    console.log(`${id}: ssh ${target.sshHost} ok, remote oats ${remote.version} (envelope v${remote.schemaVersion})`);
+    console.log(status.envelope.ok ? `  workspace ${target.workspace}: ${agents} agent(s)` : `  workspace ${target.workspace}: ${status.envelope.error?.message || "not usable"}`);
+    if (!status.envelope.ok) process.exit(1);
+  } catch (e) { bail(e.code || "E_SSH", e.message); }
+}
+
+/** `oats <spawn|retire|status> --server <id> ...`: run the command on the
+ *  registered server's installed oats, same arguments, same envelope. The
+ *  local side only routes and keeps the route snapshot per remote instance. */
+function serverRouteCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const id = flag("server");
+  if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
+  if (flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  // Everything after the command word travels, minus the routing flags; a
+  // local --task-file is read here and travels as --task text, since the
+  // remote cannot read this machine's files.
+  const rest = [];
+  for (let i = 1; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--server") { i++; continue; }
+    if (a === "--json") continue;
+    if (a === "--task-file") {
+      const f = args[++i];
+      if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--task-file needs a path");
+      if (!existsSync(f)) bail("E_BAD_ARGS", `task file not found: ${f}`);
+      rest.push("--task", readFileSync(f, "utf8"));
+      continue;
+    }
+    rest.push(a);
+  }
+  let routed;
+  try { routed = routeCommand(id, cmd, rest); }
+  catch (e) { bail(e.code || "E_SSH", e.message); }
+  const { envelope, stderr } = routed;
+  if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
+  if (JSON_MODE) { console.log(JSON.stringify(envelope, null, 2)); if (!envelope.ok) process.exit(1); return; }
+  if (!envelope.ok) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
+  const r = envelope.result;
+  if (cmd === "spawn") {
+    console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
+    console.log(`  remote home: ${r.home}`);
+    console.log(`  route snapshot: ${shortPath(r.snapshot)}`);
+    for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
+    console.log(`  attach: ssh -t ${r.target.sshHost} tmux attach -t ${r.tmux?.session || "oats"}`);
+  } else if (cmd === "retire") {
+    console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
+    if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); process.exit(1); }
+  } else {
+    console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);
+    for (const a of r.agents || []) {
+      console.log(`  ${a.name}  [work: ${a.work || "checkout"}, repo: ${a.repo || "?"}]`);
+      for (const i of a.instances || []) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}`);
+    }
+    const snaps = r.snapshots || [];
+    if (snaps.length) console.log(`\n  spawned from this machine: ${snaps.map((s) => s.instance).join(", ")}`);
+  }
+}
+
 // ---------- main ----------
 // Typed config-shape failures are DEPLOYMENT state the operator can fix, not
 // kernel bugs: an unsafe mapping key anywhere in the visible config chain is
@@ -3135,7 +3245,9 @@ async function experimentalCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-if (cmd === "doctor") {
+if (flag("server") !== undefined && ["spawn", "retire", "status"].includes(cmd)) serverRouteCmd();
+else if (cmd === "server") serverCmd();
+else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
 }
@@ -3177,6 +3289,12 @@ Usage:
                                             Desktop CLI API v1 probe payload
   oats status [--json]                       agents, souls, running instances
   oats status --team [--json]                whole-team roster across the team scope's repos
+  oats server add <id> --ssh <alias>         register another machine's OATS (OpenSSH alias,
+      --workspace </abs/path> [--oats <p>]   remote workspace, remote oats path; no keys stored)
+  oats server list|remove <id>|check <id>    registry; check = reachability + version, no mutation
+  oats spawn|retire|status ... --server <id> run that command on the server's installed oats
+                                            (same flags, same envelope; a route snapshot per
+                                            remote instance lives under ~/.oats/remote/)
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)

@@ -677,7 +677,9 @@ export function listInstances(root, tmuxSession = DEFAULT_TMUX_SESSION) {
     const instancesDir = join(agentDir, "instances");
     let entries = [];
     try { entries = existsSync(instancesDir) ? readdirSync(instancesDir, { withFileTypes: true }) : []; } catch { return []; }
-    return entries.filter((e) => e.isDirectory()).map((e) => {
+    // Parity with the kernel: dot-directories under instances/ are kernel
+    // bookkeeping (.oats-retirement), never a home (oats-5xl).
+    return entries.filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => {
       const metaPath = join(instancesDir, e.name, "instance.json");
       const fallback = { instance: e.name, home: join(instancesDir, e.name) };
       let meta = fallback;

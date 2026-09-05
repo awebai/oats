@@ -273,16 +273,22 @@ function spawnErrorPayload(e) {
 }
 /* OATSWEB_SPAWNERR_END */
 
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, model }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, model, serverId }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   // agentsRoot must be one of the workspace roots this server was started for —
   // never spawn into an arbitrary caller-supplied directory.
   const known = workspaces().flatMap((w) => w.roots);
   if (!known.some((r) => resolve(r) === root)) throw new Error(`unknown agents root "${agentsRoot}"`);
-  const def = reader.findAgent(root, name)
-    || reader.findCapabilityAgent(dirname(root), root, name);
-  if (!def) throw new Error(`unknown agent "${name}"`);
+  // A remote route: the agent is validated by the REMOTE kernel against its
+  // own workspace (the same team repo on that host); the local roster only
+  // supplies the name the operator picked.
+  const server = serverId ? String(serverId) : undefined;
+  if (!server) {
+    const def = reader.findAgent(root, name)
+      || reader.findCapabilityAgent(dirname(root), root, name);
+    if (!def) throw new Error(`unknown agent "${name}"`);
+  }
   // Mutation boundary: a compatible installed CLI is required — degradation,
   // not a bundled kernel.
   if (!cliState.ok) {
@@ -313,6 +319,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     // shape-validated there; empty means "agent definition default".
     runtime: runtime ? String(runtime) : undefined,
     model: model ? String(model) : undefined,
+    server,
   });
   if (!env.ok) {
     const err = new Error(env.error.message || "spawn failed");
@@ -322,7 +329,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   const r = env.result;
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
            branch: r.branch ?? null, launched: !!r.launched, warnings: r.warnings || [],
-           tmux: r.tmux ?? null };
+           tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target } : {}) };
 }
 
 /* ── CLI discovery (Desktop CLI API v1) ──
@@ -921,6 +928,15 @@ const server = createServer(async (req, res) => {
       const runtime = typeof body.runtime === "string" && body.runtime ? body.runtime : "pi";
       if (!["pi", "claude", "codex"].includes(runtime)) return send(res, 400, { error: `unknown runtime "${runtime}" (pi|claude|codex)` });
       return send(res, 200, { runtime, models: await modelsData(runtime) });
+    }
+    if (req.method === "GET" && path === "/api/servers") {
+      // Registered execution servers, read through the CLI (the Desktop
+      // holds no registry of its own). Without a compatible CLI there are
+      // no servers to offer, which the renderer renders as "local only".
+      if (!cliState.ok) return send(res, 200, { servers: [], reason: "cli-unavailable" });
+      const env = await adapter.cliServers(cliState.bin);
+      if (!env.ok) return send(res, 200, { servers: [], reason: env.error?.code || "E_SERVERS" });
+      return send(res, 200, { servers: (env.result.servers || []).map((s) => ({ id: s.id, label: s.label || s.id, sshHost: s.sshHost, workspace: s.workspace })) });
     }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, cliStatus());

@@ -224,3 +224,10 @@ test("spawnArgv: relativeRoot rides with the relation pair as --relative-root; a
   assert.throws(() => spawnArgv("dev", "/ws", "/t/TASK.md",
     { relation: "child", relativeTo: "x", relativeRoot: "--evil" }), /invalid/);
 });
+
+test("spawnArgv: a registered server routes the spawn and drops --dir (the remote workspace comes from the registration)", () => {
+  const argv = spawnArgv("dev", "/ws", "/tmp/task.md", { server: "build" });
+  assert.equal(argv.includes("--dir"), false);
+  assert.deepEqual(argv.slice(argv.indexOf("--server"), argv.indexOf("--server") + 2), ["--server", "build"]);
+  assert.throws(() => spawnArgv("dev", "/ws", "/tmp/task.md", { server: "Bad Id" }), /invalid server value/);
+});

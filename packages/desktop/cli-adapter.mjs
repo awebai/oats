@@ -51,6 +51,7 @@ const SPAWN_ARG_RULES = {
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace)$/ },
   runtime: { flag: "--runtime", re: /^(pi|claude|codex)$/ },
+  server:  { flag: "--server",  re: /^[a-z0-9][a-z0-9-]{0,63}$/ },          // registered server id (remote route)
   model:   { flag: "--model",   re: /^[^-][^\0]*$/ },                       // model pattern — not option-shaped
   // Spawn-time agent relations (feature/agent-relations): the kernel links
   // the new instance to an existing one. "unrelated" is the default and is
@@ -82,7 +83,11 @@ export function spawnArgv(agent, workspaceDir, taskFile, opts = {}) {
     const e = new Error("--relative-root requires --relation and --relative-to");
     e.code = "E_BAD_ARGS"; throw e;
   }
-  const argv = ["spawn", agentName, "--dir", String(workspaceDir), "--task-file", String(taskFile)];
+  // A remote route takes its workspace from the server registration; the
+  // kernel refuses --dir with --server, so it is omitted here.
+  const argv = opts.server
+    ? ["spawn", agentName, "--task-file", String(taskFile)]
+    : ["spawn", agentName, "--dir", String(workspaceDir), "--task-file", String(taskFile)];
   for (const [key, rule] of Object.entries(SPAWN_ARG_RULES)) {
     const v = opts[key];
     if (v === undefined || v === null || v === "") continue;
@@ -148,6 +153,11 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
   try {
     return await runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout });
   } finally { cleanup(); }
+}
+
+/** Registered servers, from the CLI's registry (`oats server list --json`). */
+export function cliServers(bin, io = {}) {
+  return runJson(bin, ["server", "list", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
 }
 
 /**

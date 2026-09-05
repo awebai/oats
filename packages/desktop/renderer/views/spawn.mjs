@@ -559,6 +559,11 @@ function openSpawnModal(s, a) {
         <label>Model (optional — defaults to the agent's definition${a.model ? `: ${escapeHtml(a.model)}` : ""})
           <input class="field fmodel" autocomplete="off" list="spawn-model-options"></label>
         <datalist id="spawn-model-options"></datalist>
+        <label>Run on
+          <select class="field fserver" aria-label="Execution server">
+            <option value="" selected>this machine</option>
+          </select></label>
+        <div class="fserverdesc" hidden>The instance is spawned by the server's own installed oats in its registered workspace (the same team repo there); this machine keeps only the route.</div>
         <div class="frow">
           <button class="act fspawn">Spawn</button>
           <button class="act fcancel">Cancel</button>
@@ -574,6 +579,21 @@ function openSpawnModal(s, a) {
   // and run with the privileged bridge. Assign the placeholder as a DOM
   // PROPERTY, never via innerHTML attribute text.
   modal.querySelector(".fmodel").placeholder = a.model || "runtime default";
+  // Registered servers (oats server add …) — offered only when the CLI can
+  // list them; a failure leaves "this machine" as the only choice.
+  (async () => {
+    try {
+      const d = await apiJson(s.ctx, "/api/servers");
+      const sel = modal.querySelector(".fserver");
+      if (!sel || !d?.servers?.length) return;
+      for (const srv of d.servers) {
+        const o = document.createElement("option");
+        o.value = srv.id; o.textContent = `${srv.label} (ssh ${srv.sshHost})`;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => { modal.querySelector(".fserverdesc").hidden = !sel.value; });
+    } catch { /* local only */ }
+  })();
   const f = modal; // field lookups span the whole modal
 
   // Model dropdown (datalist): advisory options from POST /api/models for
@@ -683,6 +703,7 @@ function openSpawnModal(s, a) {
     relativeRoot: () => f.querySelector(".frelto").selectedOptions?.[0]?.dataset?.root || "",
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
+    server: () => f.querySelector(".fserver")?.value || "",
     clear: () => {
       f.querySelector(".fpurpose").value = ""; f.querySelector(".ftask").value = "";
       f.querySelector(".frelation").value = "unrelated";
@@ -802,6 +823,7 @@ export async function doSpawn(s, ui) {
       agentsRoot: a.agentsRoot,
       task: ui.task(),                       // "" = awaiting instructions (panel default)
       purpose: ui.purpose() || undefined,
+      serverId: ui.server?.() || undefined,
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? relativeTo : undefined,
       // anchor root: ALWAYS sent with a related spawn when the picker knows
