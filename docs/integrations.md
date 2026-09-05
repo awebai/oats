@@ -140,6 +140,33 @@ Test an integration as a capability package: acquire, lock, trust, activate,
 spawn, retire, with the golden fixtures as the behavior oracle for the kernel
 side.
 
+## oats.okf harvest settings (1.5.1)
+
+The harvester can use a different harness from the source instance. Select one
+that is installed and authenticated on the host where the harvest runs:
+
+```bash
+oats use oats.okf --settings harvest-runtime=claude
+```
+
+- `harvest-runtime: pi | claude | codex` defaults to `pi`.
+- `harvest-model` is optional. Pi defaults to `github-copilot/gpt-5.5` and
+  accepts Pi provider/model patterns. Claude and Codex use their configured
+  default when omitted; an explicit value must be a native model name
+  (for example `sonnet` or `gpt-5.5`), without a Pi provider prefix.
+
+These settings apply to note and record harvests, including deferred retirement
+and remote harvests. For a remote instance, configure its host's knowledge
+binding; the local viewer does not supply its own provider credentials.
+
+If a record harvester was spawned but did not advance its watermark, planning
+the same windows again warns with that instance and the boundary IDs and skips
+another spawn. Inspect the previous attempt first. `oats okf harvest
+--from-record --force` retries those windows explicitly; it still refuses to
+start a second harvester while the first one's home exists. The check uses the
+existing prepared watermark file and does not treat a successful spawn as
+completed learning.
+
 ## oats.aweb settings (1.10.0)
 
 Set with `oats use oats.aweb --settings <key>=<value>` at a scope, or per

@@ -1,11 +1,21 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "1.5.0",
-  "compatibility": { "oats": ">=0.22.2" },
+  "version": "1.5.1",
+  "compatibility": { "oats": ">=0.22.3" },
   "layer": "knowledge",
   "description": "Knowledge layer via OKF: soul bundles, instance memory (STATE.md/log.md/notes/), continuous post-commit harvest into the soul (commit, PR, or direct-edit for local souls), craft + memory skills, validator.",
   "requires": [],
+  "settings": {
+    "harvest-runtime": {
+      "default": "pi",
+      "values": ["pi", "claude", "codex"],
+      "description": "Harness for the memory harvester, independent of the source instance's runtime."
+    },
+    "harvest-model": {
+      "description": "Optional model for the selected harvest runtime: a Pi provider/model or a native Claude/Codex model. With no setting, Pi uses github-copilot/gpt-5.5 and native harnesses use their configured default."
+    }
+  },
   "agents": [
     "agents/memory-harvest"
   ],

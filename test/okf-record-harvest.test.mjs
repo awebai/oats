@@ -54,12 +54,12 @@ if (cmd === "capture") {
   return { repo, root, home, fake, soul: join(root, "dev", "soul") };
 }
 
-function harvest(d, extra = [], { work } = {}) {
+function harvest(d, extra = [], { work, settings = { "harvest-model": "test/model" }, status = 0 } = {}) {
   const r = spawnSync(process.execPath, [OKF_BIN, "harvest", "--json", ...extra], {
     cwd: d.home, encoding: "utf8",
-    env: { ...process.env, OATS_HOME: d.home, OATS_INSTANCE: "dev-1", OATS_AGENT: "dev", OATS_SOUL: d.soul, OATS_CONTEXT: d.repo, OATS_ROOT: d.root, OATS_CLI_BIN: d.fake, OATS_SETTINGS: JSON.stringify({ "harvest-model": "test/model" }), ...(work ? { OATS_WORK: work } : {}) },
+    env: { ...process.env, OATS_HOME: d.home, OATS_INSTANCE: "dev-1", OATS_AGENT: "dev", OATS_SOUL: d.soul, OATS_CONTEXT: d.repo, OATS_ROOT: d.root, OATS_CLI_BIN: d.fake, OATS_SETTINGS: JSON.stringify(settings), ...(work ? { OATS_WORK: work } : {}) },
   });
-  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(r.status, status, r.stderr + r.stdout);
   const doc = JSON.parse(r.stdout.trim());
   doc.stderr = r.stderr;
   return doc;
@@ -227,5 +227,88 @@ test("okf harvest: the workspace-mode briefing makes commit, push and PR conditi
     assert.match(log.task, /promoted nothing has nothing to commit, push or open; that is a completed harvest, not a failed one/);
     assert.ok(log.task.indexOf("RECORD-FED CANDIDATES") < log.task.indexOf("If you changed anything: push"), "windows are read before delivery is described");
     assert.match(log.task, /Finally run `oats retire memory-harvest-dev-1 --self`/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("okf harvest: runtime and model selection reach the spawn boundary in every work mode", () => {
+  const base = mkdtempSync(join(tmpdir(), "okf-runtime-"));
+  const cases = [
+    { kind: "repo", settings: {}, runtime: "pi", model: "github-copilot/gpt-5.5" },
+    { kind: "repo", settings: { "harvest-runtime": "pi", "harvest-model": "openai-codex/gpt-5.5" }, runtime: "pi", model: "openai-codex/gpt-5.5" },
+    { kind: "local", settings: { "harvest-runtime": "claude" }, runtime: "claude" },
+    { kind: "workspace", settings: { "harvest-runtime": "codex" }, runtime: "codex" },
+    { kind: "repo", settings: { "harvest-runtime": "claude", "harvest-model": "sonnet" }, runtime: "claude", model: "sonnet" },
+    { kind: "repo", settings: { "harvest-runtime": "codex", "harvest-model": "gpt-5.5" }, runtime: "codex", model: "gpt-5.5" },
+  ];
+  try {
+    for (const [i, c] of cases.entries()) {
+      const dir = join(base, String(i));
+      const spawnLog = join(dir, "spawn.json");
+      const work = c.kind === "workspace" ? "workspace" : "worktree";
+      const d = deployment(dir, { sessions: [], spawnLog, work, gitRepo: c.kind === "workspace" });
+      const metaPath = join(d.home, "instance.json");
+      const meta = JSON.parse(readFileSync(metaPath, "utf8"));
+      writeFileSync(metaPath, JSON.stringify({ ...meta, kind: c.kind }));
+      write(join(d.home, "notes", "lesson.md"), "# Durable lesson\n");
+      assert.equal(harvest(d, [], { settings: c.settings, work }).result.harvest, "spawned");
+      const log = JSON.parse(readFileSync(spawnLog, "utf8"));
+      assert.equal(log.args[log.args.indexOf("--runtime") + 1], c.runtime);
+      if (c.model) assert.equal(log.args[log.args.indexOf("--model") + 1], c.model);
+      else assert.equal(log.args.includes("--model"), false, "native harness chooses its own default");
+      if (c.kind === "local") assert.match(log.task, /LOCAL-SOUL/);
+      if (c.kind === "workspace") assert.match(log.task, /WORKSPACE-MODE/);
+    }
+    const spawnLog = join(base, "bad-spawn.json");
+    const d = deployment(join(base, "bad"), { sessions: [], spawnLog });
+    write(join(d.home, "notes", "lesson.md"), "# Durable lesson\n");
+    for (const settings of [
+      { "harvest-runtime": "unsupported" },
+      { "harvest-runtime": "claude", "harvest-model": "github-copilot/gpt-5.5" },
+      { "harvest-runtime": "codex", "harvest-model": 123 },
+    ]) {
+      const result = harvest(d, [], { settings, status: 1 });
+      assert.equal(result.error.code, "E_HARVEST_SETTINGS");
+      assert.equal(existsSync(spawnLog), false);
+      assert.equal(existsSync(join(d.home, "notes", "lesson.md")), true);
+    }
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("okf harvest: an unchanged plan after a spawn warns and preserves evidence until an explicit retry", () => {
+  const base = mkdtempSync(join(tmpdir(), "okf-stalled-"));
+  const spawnLog = join(base, "spawn.json");
+  const sessions = [{ thread: "cc:session:stalled", source: "cc", turns: 3, lastTurnId: "t3" }];
+  const d = deployment(base, { sessions, spawnLog });
+  try {
+    assert.equal(harvest(d).result.harvest, "spawned");
+    const nextPath = join(d.home, ".okf-harvest-record.next.json");
+    const planned = readFileSync(nextPath, "utf8");
+    rmSync(spawnLog);
+    const stalled = harvest(d);
+    assert.equal(stalled.result.harvest, "skipped");
+    assert.match(stalled.result.warnings[0], /memory-harvest-dev-1.*cc:session:stalled \(start -> t3\)/);
+    assert.match(stalled.stderr, /did not advance the watermark/);
+    assert.equal(existsSync(spawnLog), false);
+    assert.equal(readFileSync(nextPath, "utf8"), planned);
+    assert.equal(existsSync(join(d.home, ".okf-harvest-record.json")), false);
+    const retry = harvest(d, ["--force"]);
+    assert.equal(retry.result.harvest, "spawned");
+    assert.equal(retry.result.warnings.length, 1);
+    assert.equal(existsSync(spawnLog), true);
+
+    // Planning alone is not a spawned harvester and must not block a retry.
+    const unstamped = JSON.parse(planned);
+    delete unstamped.pendingHarvest;
+    writeFileSync(nextPath, JSON.stringify(unstamped));
+    assert.equal(harvest(d).result.harvest, "spawned");
+
+    // Delivery consumes the prepared file; subsequent new turns are eligible.
+    writeFileSync(join(d.home, ".okf-harvest-record.json"), readFileSync(nextPath));
+    rmSync(nextPath);
+    sessions[0].turns = 4; sessions[0].lastTurnId = "t4";
+    writeFileSync(join(base, "capture.json"), JSON.stringify({ sessions }));
+    assert.equal(harvest(d).result.harvest, "spawned");
+    const task = JSON.parse(readFileSync(spawnLog, "utf8")).task;
+    assert.match(task, /--after 't3' --until 't4'/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
