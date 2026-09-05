@@ -24,6 +24,7 @@ import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
 import { IgnoreError, ignoreFilePath, loadIgnore } from "../lib/ignore.mjs";
+import { acquireCaptureLock } from "../lib/capture-lock.mjs";
 
 // Fail closed but actionably: an unreadable ignore file must stop capture,
 // as one clear line naming the file — never an uncaught stack trace.
@@ -157,7 +158,20 @@ function log(...parts) {
   if (!quiet) console.log(...parts);
 }
 
+/** Take the root's single-run lock, or say who holds it. A hook-triggered
+ *  pass that finds it held exits 0: the holder's pass, or the next one,
+ *  reconciles the same sessions. */
+function withCaptureLock(fn) {
+  const lock = acquireCaptureLock(root);
+  if (lock.held) {
+    log(`capture: another pass holds ${root} (pid ${lock.held.pid ?? "?"} since ${lock.held.startedAt ?? "?"}); skipping, the next pass catches up`);
+    return { appended: 0, skipped: true };
+  }
+  try { return fn(); } finally { lock.release(); }
+}
+
 function pass() {
+  return withCaptureLock(() => {
   const out = { appended: 0 };
   const ignore = loadIgnoreOrExit(root);
   if (!args["aw-only"]) {
@@ -202,6 +216,7 @@ function pass() {
     }
   }
   return out;
+  });
 }
 
 if (args["install-hint"]) {
@@ -210,12 +225,15 @@ if (args["install-hint"]) {
 
 {
   "hooks": {
-    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --quiet"}]}],
-    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --quiet"}]}]
+    "Stop":       [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet"}]}],
+    "SessionEnd": [{"hooks": [{"type": "command", "command": "node ${self} --sessions-only --no-index --quiet"}]}]
   }
 }
 
-A dropped hook is recovered by any later pass (capture, or capture --watch).`);
+Hook passes append turns only (--no-index); the search index is updated by
+capture --watch (every 15 minutes and on change) or by a plain capture pass.
+One pass runs per record root at a time: a hook pass that finds another
+running exits at once, and a dropped hook is recovered by any later pass.`);
   process.exit(0);
 }
 
@@ -245,17 +263,22 @@ if (args.home) {
   const dirs = new Map(); // one capture pass per (format, directory)
   for (const s of found) dirs.set(`${s.source}\0${dirname(s.path)}`, { format: s.source, dir: dirname(s.path) });
   let appended = 0;
-  for (const { format, dir } of dirs.values()) {
-    appended += captureSessions(store, { owner, roots: [dir], format, ignore }).appended;
-  }
-  if (appended > 0 && !args["no-index"]) {
-    const index = new RecordIndex(store);
-    try {
-      index.update();
-    } finally {
-      index.close();
+  const homePass = withCaptureLock(() => {
+    let n = 0;
+    for (const { format, dir } of dirs.values()) {
+      n += captureSessions(store, { owner, roots: [dir], format, ignore }).appended;
     }
-  }
+    if (n > 0 && !args["no-index"]) {
+      const index = new RecordIndex(store);
+      try {
+        index.update();
+      } finally {
+        index.close();
+      }
+    }
+    return { appended: n };
+  });
+  appended = homePass.appended;
   // A tombstoned turn is hidden everywhere; a boundary naming one would be
   // refused by recall, so boundaries come from the visible turns only.
   const claims = store.tombstoneClaims();
