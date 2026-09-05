@@ -1,12 +1,21 @@
 // Framework-hoisted resources of marketplace-sourced capabilities.
 //
 // An installed marketplace capability may declare resources that live outside
-// its installed copy (`oats.authoring` ships no skills of its own; it selects
-// three kernel skills with `../../skills/<name>`). Those declarations are
-// written against the capability's directory in the kernel marketplace
-// (`<PKG_ROOT>/capabilities/<slug>`), so that is the only correct anchor —
-// anchoring at PKG_ROOT resolves two levels above the kernel and nothing
-// resolves at all.
+// its installed copy — kernel skills selected with `../../skills/<name>`, or an
+// npm dependency hoisted to the kernel root with
+// `node_modules/<pkg>/skills/<name>`. Those declarations are written against the
+// capability's directory in the kernel marketplace (`<PKG_ROOT>/capabilities/
+// <slug>`), so that is the only correct anchor — anchoring at PKG_ROOT resolves
+// two levels above the kernel and nothing resolves at all.
+//
+// The FIXTURES here are synthetic capabilities written into the fixture kernel's
+// marketplace, not shipped ones. Every capability the kernel bundles under
+// capabilities/ is now a byte-identical copy of its published package payload
+// (see package-catalog.json), and those payloads are self-contained: none of
+// them hoists. A kernel mechanism must not be tested through a bundled copy that
+// only exists to exercise it — that is how the bundled trees drifted from the
+// packages they claimed to be. The mechanism is still supported for third-party
+// capabilities, so it is still proved, on fixtures that say so.
 //
 // Every test here runs against a copy of the kernel shaped like an INSTALLED
 // one (package `files` only, nested the way npm installs it) rather than the
@@ -73,26 +82,36 @@ function install(kernel, id, dir) {
   return r;
 }
 const instances = (root) => readdirSync(join(root, "framework-author", "instances"));
+/** A marketplace capability that ships no skills of its own and selects three
+ * kernel skills with `../../skills/<name>` — the hoisting shape, as a fixture in
+ * the fixture kernel rather than as a bundled copy of a real package. */
+const HOISTED = ["../../skills/integration-authoring", "../../skills/skill-craft", "../../skills/soul-craft"];
+function hoistCapability(kernel, { version = "1.0.0" } = {}) {
+  write(join(kernel, "capabilities", "acme-hoist", "oats.json"), JSON.stringify({
+    capability: "acme.hoist", version, compatibility: { oats: ">=0.6.2" },
+    description: "selects framework skills it does not ship", requires: [], skills: HOISTED,
+  }, null, 2));
+}
 
-test("oats.authoring: hoisted skills anchor at the capability's marketplace dir, so a framework-author spawns with all three", async () => {
+test("hoisted skills anchor at the capability's marketplace dir, so a framework-author spawns with all three", async () => {
   const base = temp();
   try {
     const kernel = installedKernel(base);
+    hoistCapability(kernel);
     const { repo, root } = frameworkAuthor(base);
-    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    oats.authoring:\n      souls:\n        framework-author: true\n");
-    install(kernel, "oats.authoring", repo);
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.hoist:\n      souls:\n        framework-author: true\n");
+    install(kernel, "acme.hoist", repo);
     const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8"));
     assert.equal(lock.lockfileVersion, 1, "the acquisition writes the marketplace v1 capability lock");
-    assert.equal(lock.capabilities["oats.authoring"].source, "marketplace:oats.authoring@1.0.0");
+    assert.equal(lock.capabilities["acme.hoist"].source, "marketplace:acme.hoist@1.0.0");
 
     const core = await loadKernel(kernel);
     // The anchor itself: each declared path resolves inside the INSTALLED kernel.
-    const declared = core.capabilityDeclaredSkills("oats.authoring", repo);
-    assert.deepEqual(declared.map((s) => s.declared).sort(),
-      ["../../skills/integration-authoring", "../../skills/skill-craft", "../../skills/soul-craft"]);
+    const declared = core.capabilityDeclaredSkills("acme.hoist", repo);
+    assert.deepEqual(declared.map((s) => s.declared).sort(), [...HOISTED].sort());
     for (const s of declared) {
       assert.equal(realpathSync(s.path), realpathSync(join(kernel, "skills", s.declared.replace("../../skills/", ""))),
-        `${s.declared} resolves against <PKG_ROOT>/capabilities/oats-authoring, not <PKG_ROOT>`);
+        `${s.declared} resolves against <PKG_ROOT>/capabilities/acme-hoist, not <PKG_ROOT>`);
     }
 
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -105,23 +124,29 @@ test("oats.authoring: hoisted skills anchor at the capability's marketplace dir,
       }
       const meta = JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8"));
       assert.deepEqual(meta.skills.map((s) => s.name).sort(), names, "instance.json records the composed set");
-      assert.ok(meta.capabilities.some((c) => c.id === "oats.authoring"));
+      assert.ok(meta.capabilities.some((c) => c.id === "acme.hoist"));
     } finally { process.env.PATH = oldPath; }
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("marketplace dependencies may be npm-hoisted to the kernel root (published oats.aweb layout)", async () => {
+test("marketplace dependencies may be npm-hoisted to the kernel root", async () => {
   const base = temp();
   try {
     const kernel = installedKernel(base);
     const { repo } = frameworkAuthor(base);
+    const skills = ["dep-one", "dep-two", "dep-three"];
+    write(join(kernel, "capabilities", "acme-npm", "oats.json"), JSON.stringify({
+      capability: "acme.npm", version: "1.0.0", compatibility: { oats: ">=0.6.2" },
+      description: "selects skills from a kernel-root npm dependency", requires: [],
+      skills: skills.map((n) => `node_modules/@awebai/pi/skills/${n}`),
+    }, null, 2));
     write(join(repo, "oats-config.yaml"), "name: test\n");
-    for (const name of ["aweb-messaging", "aweb-team-membership", "aweb-identity"]) {
+    for (const name of skills) {
       write(join(kernel, "node_modules", "@awebai", "pi", "skills", name, "SKILL.md"), `---\nname: ${name}\ndescription: test\n---\n`);
     }
-    install(kernel, "oats.aweb", repo);
+    install(kernel, "acme.npm", repo);
     const core = await loadKernel(kernel);
-    const declared = core.capabilityDeclaredSkills("oats.aweb", repo);
+    const declared = core.capabilityDeclaredSkills("acme.npm", repo);
     assert.equal(declared.length, 3);
     for (const s of declared) {
       assert.ok(s.path, `${s.declared} resolves from npm's kernel-root hoist`);
@@ -134,26 +159,27 @@ test("kernel upgrades keep older locked marketplace installs working; installed/
   const base = temp();
   try {
     const kernel = installedKernel(base);
+    hoistCapability(kernel);
     const { repo, root } = frameworkAuthor(base);
-    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    oats.authoring:\n      souls:\n        framework-author: true\n");
-    install(kernel, "oats.authoring", repo);
+    write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.hoist:\n      souls:\n        framework-author: true\n");
+    install(kernel, "acme.hoist", repo);
     const core = await loadKernel(kernel);
 
     // A kernel upgrade intentionally advances framework-hoisted content while
     // the user's valid v1 installed copy and lock remain on their old version.
     // This is the real 0.18.6 → 0.19 state (not drift): the upgraded kernel is
     // itself the trusted source of the hoisted skills.
-    const sourceManifest = join(kernel, "capabilities", "oats-authoring", "oats.json");
+    const sourceManifest = join(kernel, "capabilities", "acme-hoist", "oats.json");
     const shipped = JSON.parse(readFileSync(sourceManifest, "utf8"));
     writeFileSync(sourceManifest, JSON.stringify({ ...shipped, version: "2.0.0" }, null, 2));
-    const installedCopy = join(repo, ".agents", "capabilities", "installed", "oats-authoring");
-    const upgraded = core.capabilityDeclaredSkills("oats.authoring", repo);
+    const installedCopy = join(repo, ".agents", "capabilities", "installed", "acme-hoist");
+    const upgraded = core.capabilityDeclaredSkills("acme.hoist", repo);
     assert.equal(upgraded.filter((s) => s.path).length, 3,
       "a newer kernel keeps the older valid installed+locked marketplace capability usable");
     for (const s of upgraded) {
       assert.equal(realpathSync(s.path), realpathSync(join(kernel, "skills", s.declared.replace("../../skills/", ""))));
     }
-    assert.equal(JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["oats.authoring"].version, "1.0.0",
+    assert.equal(JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["acme.hoist"].version, "1.0.0",
       "using upgraded kernel content does not silently rewrite the legacy lock");
 
     // Real drift is between the installed copy and its lock. The advertised
@@ -161,30 +187,30 @@ test("kernel upgrades keep older locked marketplace installs working; installed/
     // `oats install <id>` alone finds the copy and stops.
     const lockFile = join(repo, "oats-lock.json");
     const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    lock.capabilities["oats.authoring"].version = "0.9.0";
+    lock.capabilities["acme.hoist"].version = "0.9.0";
     writeFileSync(lockFile, JSON.stringify(lock, null, 2));
-    assert.throws(() => core.capabilityDeclaredSkills("oats.authoring", repo), (e) => e.code === "E_MARKETPLACE_SOURCE_DRIFT"
+    assert.throws(() => core.capabilityDeclaredSkills("acme.hoist", repo), (e) => e.code === "E_MARKETPLACE_SOURCE_DRIFT"
       && /lock pins 0\.9\.0, installed copy is 1\.0\.0/.test(e.message)
-      && e.message.includes(installedCopy) && /oats install oats\.authoring --dir /.test(e.message),
+      && e.message.includes(installedCopy) && /oats install acme\.hoist --dir /.test(e.message),
     "lock/copy drift names the drift, copy to delete, and reacquire command");
-    const naive = oatsCli(kernel, "install", "oats.authoring", "--dir", repo);
-    assert.match(naive.stdout, /Already acquired capability oats\.authoring \(1\.0\.0\); not activated or updated/,
+    const naive = oatsCli(kernel, "install", "acme.hoist", "--dir", repo);
+    assert.match(naive.stdout, /Already acquired capability acme\.hoist \(1\.0\.0\); not activated or updated/,
       "an install that keeps the copy is a no-op — which is why the message says to delete it first");
-    assert.throws(() => core.capabilityDeclaredSkills("oats.authoring", repo), (e) => e.code === "E_MARKETPLACE_SOURCE_DRIFT",
+    assert.throws(() => core.capabilityDeclaredSkills("acme.hoist", repo), (e) => e.code === "E_MARKETPLACE_SOURCE_DRIFT",
       "and it leaves the scope exactly as drifted as before");
     rmSync(installedCopy, { recursive: true, force: true });
-    install(kernel, "oats.authoring", repo);
-    assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).capabilities["oats.authoring"].version, "2.0.0",
+    install(kernel, "acme.hoist", repo);
+    assert.equal(JSON.parse(readFileSync(lockFile, "utf8")).capabilities["acme.hoist"].version, "2.0.0",
       "the recovery relocks the scope onto the shipped version");
-    for (const s of core.capabilityDeclaredSkills("oats.authoring", repo)) {
+    for (const s of core.capabilityDeclaredSkills("acme.hoist", repo)) {
       assert.equal(realpathSync(s.path), realpathSync(join(kernel, "skills", s.declared.replace("../../skills/", ""))),
         `${s.declared} resolves again after the documented recovery`);
     }
 
     // And when this kernel does not ship the capability at all, the declared
     // resources simply do not resolve — spawn fails closed with no zombie home.
-    rmSync(join(kernel, "capabilities", "oats-authoring"), { recursive: true });
-    assert.deepEqual(core.capabilityDeclaredSkills("oats.authoring", repo).map((s) => s.path), [undefined, undefined, undefined]);
+    rmSync(join(kernel, "capabilities", "acme-hoist"), { recursive: true });
+    assert.deepEqual(core.capabilityDeclaredSkills("acme.hoist", repo).map((s) => s.path), [undefined, undefined, undefined]);
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
       assert.throws(() => core.spawnInstance(root, core.findAgent(root, "framework-author"), { instance: "fa-gone", launch: false }),
