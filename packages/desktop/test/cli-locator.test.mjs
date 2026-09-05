@@ -289,6 +289,7 @@ test("requireRemoteSupport: fails closed on the probe's advertisement, never on 
   assert.throws(() => requireRemoteSupport({ ...cli, remote: undefined }, "spawn"), (e) => e.code === "unsupported-remote-operation" && /remote spawn/.test(e.message));
   assert.throws(() => requireRemoteSupport({ ...cli, remote: ["spawn"] }, "session"), /remote session/);
   assert.throws(() => requireRemoteSupport(undefined, "spawn"), /unsupported|does not (route|support)/);
+  assert.throws(() => requireRemoteSupport({ ...cli, remote: "spawn" }, "spawn"), /remote spawn/, "a string is not an advertisement");
 });
 
 test("discovery retains remote routing capabilities for terminal preflight", async () => {

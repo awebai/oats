@@ -204,7 +204,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(r.json().ok, true);
     assert.equal(r.json().result.home, home);
     assert.equal(r.json().result.server, "build");
-    assert.match(readFileSync(log, "utf8"), new RegExp(`session inspect --home ${home.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")} --json`), "the inspect ran on the host against the snapshot's home");
+    assert.match(readFileSync(log, "utf8"), new RegExp(`session inspect --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} --json`), "the inspect ran on the host against the snapshot's home");
     r = oats(env, ["session", "inspect", "--server", "build", "--instance", "ghost", "--json"]);
     assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
     r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-probe", "--print"]);
