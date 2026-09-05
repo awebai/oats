@@ -1,5 +1,8 @@
 # Knowledge Log
 
+## 2026-09-05
+* **Creation**: [Content-addressed turn IDs do not authenticate native session capture](/lessons/content-addressed-turn-ids-not-authentication.md) records that native transcript turns are content-addressed, not signed, while aweb projections preserve source signatures verbatim.
+
 ## 2026-07-29
 * **Creation**: [Lead every review handoff with the branch tip, and defer harvest during review](/lessons/review-handoffs-branch-tip-defer-harvest.md) records that review handoffs need the branch name plus current tip SHA, and that memory harvest should wait until review closes.
 * **Creation**: skills/review-handoffs codifies branch-tip handoffs, fix proof, stale-SHA triage, and deferring `oats okf harvest` until review closure.
