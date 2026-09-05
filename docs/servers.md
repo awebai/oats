@@ -111,7 +111,14 @@ same server id would silently retarget them. Register the new target under a
 new id, or retire the old instances first; the roster shows both targets
 until then. A saved route whose instance is gone on the host (the roster
 shows it `missingRemotely`) cannot be retired away: drop it on purpose with
-`oats server forget <id> --instance <name>`.
+`oats server forget <id> --instance <name>`. Saved routes are keyed by name
+under their server id: spawning an explicit `--instance` name that already
+has a route there is refused (`E_ROUTE_EXISTS`), and a generated name that
+collides with another soul's route on the same host leaves the new instance
+without a saved route (`routeConflict` in the result, a warning naming the
+host-side retire), never overwriting the existing one. The roster gives a
+route to the remote row with the same name and home only; a same-named twin
+under another soul is observed only.
 
 ## Limits
 

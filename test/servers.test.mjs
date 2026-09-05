@@ -412,10 +412,25 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     mkdirSync(dirname(snapshotPath("old", "dev-foo-1")), { recursive: true });
     const snapNew = JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8"));
     writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify({ ...snapNew, serverId: "old", target: { ...snapNew.target, oatsPath: oldOats } }));
-    // The twin, spawned on the host itself (no saved route here).
-    r = oats({ ...env, PATH: `${tools}:${env.PATH}` }, ["spawn", "dev-foo", "--purpose", "1", "--dir", repo, "--no-launch", "--json"], { cwd: repo }); assert.equal(r.status, 0, r.stderr + r.stdout);
+    // The twin: a routed spawn whose GENERATED name collides with dev's saved
+    // route. The remote spawn succeeds, the existing route is not overwritten,
+    // and the result says the new instance has no saved route here.
+    r = oats(env, ["spawn", "dev-foo", "--server", "new", "--purpose", "1", "--no-launch", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
     const twinHome = r.json().result.home;
-    assert.notEqual(devHome, twinHome);
+    assert.equal(r.json().result.instance, "dev-foo-1"); assert.notEqual(devHome, twinHome);
+    assert.deepEqual(r.json().result.routeConflict, { instance: "dev-foo-1", existingHome: devHome });
+    assert.equal(r.json().result.snapshot, null); assert.match(r.json().result.warnings.join("\n"), /--home/);
+    assert.equal(JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8")).home, devHome, "the saved route is untouched");
+    // The roster gives the saved route to the row with the saved HOME only;
+    // the twin under dev-foo is observed, never actionable from here.
+    r = oats(env, ["server", "roster", "--server", "new", "--json"]);
+    const rows = r.json().result.groups[0].instances.filter((i) => i.instance === "dev-foo-1");
+    assert.deepEqual(rows.map((i) => [i.agent, i.savedRoute]).sort(), [["dev", true], ["dev-foo", false]]);
+    // An explicit name that already has a saved route here is refused before
+    // the remote spawn; a generated collision never overwrites the route.
+    r = oats(env, ["spawn", "dev-foo", "--server", "new", "--instance", "dev-foo-1", "--no-launch", "--json"]);
+    assert.equal(r.json().error?.code, "E_ROUTE_EXISTS");
+    assert.equal(JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8")).home, devHome, "the saved route is untouched");
     // Old remote, twins there: refused before any mutation, with the upgrade named.
     r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--json"]);
     assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE", r.stdout + r.stderr); assert.match(r.json().error.message, /0\.22\.3/);
