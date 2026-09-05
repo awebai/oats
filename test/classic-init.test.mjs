@@ -587,6 +587,31 @@ function fakeRuntimes(base) {
   return `${bin}:${process.env.PATH}`;
 }
 
+test("create bootstraps agents/ in a fresh scope instead of demanding it exist", () => {
+  // The first command after `oats init` used to die with a raw stack trace
+  // ("no agents/ or local-agents/ directory found") because create asked
+  // ensureRoot for a root that only create itself would ever populate. The
+  // 2026-07-30 product review recorded this against OAS; the 0.22.0
+  // qualification hit it again from the published kernel.
+  const { base, catalog } = published();
+  const scope = gitify(join(base, "scope"));
+  assert.equal(cli(["init", "--knowledge", "none", "--messaging", "none", "--tasks", "none", "--dir", scope], { catalog }).status, 0);
+  assert.equal(existsSync(join(scope, "agents")), false, "precondition: init leaves no roster root");
+
+  const created = cli(["create", "dev", "--repo", scope, "--work", "checkout", "--dir", scope], { catalog });
+  assert.equal(created.status, 0, created.stdout + created.stderr);
+  assert.doesNotMatch(created.stderr, /at ensureRoot|Error:/, "no stack trace");
+  assert.match(created.stdout, /Created deployment root .*agents \(this scope had no agents\/ yet\)/);
+  assert.equal(existsSync(join(scope, "agents", "dev", "soul", "soul.yaml")), true, "the soul lands under <scope>/agents");
+
+  // A second create in the now-populated scope must not claim to bootstrap again.
+  const again = cli(["create", "reviewer", "--repo", scope, "--work", "checkout", "--dir", scope, "--json"], { catalog });
+  assert.equal(again.status, 0, again.stdout + again.stderr);
+  const doc = JSON.parse(again.stdout);
+  assert.equal(doc.agent, "reviewer");
+  assert.equal("agentsRoot" in doc, false, "bootstrap is reported only when it happened");
+});
+
 test("pi and Claude instances of a MATERIALIZED capability scaffold identically — only the runtime posture differs", () => {
   const { base, catalog } = published();
   const scope = gitify(join(base, "scope"));
