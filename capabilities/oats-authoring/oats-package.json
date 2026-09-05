@@ -1,0 +1,11 @@
+{
+  "package": "oats.authoring",
+  "version": "1.0.0",
+  "description": "Official additive OATS guidance for capability, skill, and soul authoring.",
+  "compatibility": {
+    "oats": ">=0.19.0"
+  },
+  "capabilities": [
+    "."
+  ]
+}
