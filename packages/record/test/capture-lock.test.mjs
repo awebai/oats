@@ -20,10 +20,18 @@ test("capture lock: one holder per root; a dead or stale holder is reclaimed; re
       writeFileSync(captureLockPath(root), JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }));
       const b = acquireCaptureLock(root);
       assert.equal(b.held?.pid, child.pid, "a live fresh holder keeps the lock");
-      // Stale start is reclaimed even though the pid is alive.
+      // A LIVE holder keeps the lock however old its start is: a long index
+      // pass must never be doubled.
       writeFileSync(captureLockPath(root), JSON.stringify({ pid: child.pid, startedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString() }));
       const c = acquireCaptureLock(root);
-      assert.ok(c.release, "a stale lock is reclaimed"); c.release();
+      assert.equal(c.held?.pid, child.pid, "a live holder is never reclaimed by age");
+      // Only a holder whose liveness cannot be established falls back to age.
+      const u1 = acquireCaptureLock(root, { alive: () => "unknown" });
+      assert.equal(u1.held?.pid, undefined === u1.held ? undefined : u1.held.pid);
+      assert.ok(u1.release, "an unknowable holder past the stale window is reclaimed"); u1.release();
+      writeFileSync(captureLockPath(root), JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }));
+      const u2 = acquireCaptureLock(root, { alive: () => "unknown" });
+      assert.equal(u2.held?.pid, child.pid, "an unknowable fresh holder keeps the lock");
     } finally { child.kill(); }
     // A dead pid is reclaimed.
     writeFileSync(captureLockPath(root), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
