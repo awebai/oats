@@ -12,7 +12,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { attachArgv, checkRemoteSupport, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
+import { attachArgv, checkRemoteSupport, resolveRoute, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -171,6 +171,14 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(att.home, home);
     assert.match(att.argv.at(-1), new RegExp(`session attach --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
     assert.throws(() => attachArgv("build", { instance: "ghost" }), /no remote instance "ghost"/);
+    assert.deepEqual(resolveRoute("build", { instance: "dev-probe" }).target, snap.target, "inspect and attach share the saved route");
+    // Remote inspect relays the execution host's answer as its envelope; this fake remote (a kernel without session commands) answers no envelope, which is a nonzero typed failure, never a silent ok.
+    r = oats(env, ["session", "inspect", "--server", "build", "--instance", "dev-probe", "--json"]);
+    assert.notEqual(r.status, 0);
+    assert.match(r.json().error.code, /^E_(UNKNOWN_COMMAND|REMOTE_ENVELOPE)$/, "the execution host's own failure envelope is relayed");
+    assert.match(readFileSync(log, "utf8"), new RegExp(`session inspect --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} --json`), "the inspect ran on the host against the snapshot's home");
+    r = oats(env, ["session", "inspect", "--server", "build", "--instance", "ghost", "--json"]);
+    assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
     r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-probe", "--print"]);
     assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /^ssh -t -o 'BatchMode=yes' .* -- build-host /);
     // the snapshot store is read with OATS_HOME_DIR in effect for the in-process calls above

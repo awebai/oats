@@ -39,7 +39,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, getServer, listSnapshots, readServers, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, getServer, inspectRemote, listSnapshots, readServers, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 
 const args = process.argv.slice(2);
@@ -3190,9 +3190,22 @@ function serverRouteCmd() {
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
   if (cmd === "session") {
-    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session attach` only; inspect and input run on the execution host (the wake broker calls them there)");
+    const addr = { instance: flag("instance") === true ? undefined : flag("instance"), home: flag("home") === true ? undefined : flag("home") };
+    if (args[1] === "inspect") {
+      // Desktop preflight before a remote attach: the execution host's own
+      // inspect, relayed as its envelope; a failure is a failure, nonzero.
+      let out;
+      try { out = inspectRemote(id, addr); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
+      if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+      if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "inspect failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
+      const r = out.envelope.result;
+      console.log(`${r.instance || r.home} on ${id}: ${r.present ? `present, ${r.state || "unknown"}` : "not present"}${r.backend ? ` (${r.backend})` : ""}`);
+      return;
+    }
+    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
-    try { route = attachArgv(id, { instance: flag("instance") === true ? undefined : flag("instance"), home: flag("home") === true ? undefined : flag("home") }); }
+    try { route = attachArgv(id, addr); }
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
@@ -3309,8 +3322,8 @@ Usage:
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
                                             (same flags, same envelope; a route snapshot per
                                             remote instance lives under ~/.oats/remote/)
-  oats session attach --server <id>          attach a viewer to a remote instance through an
-      --instance <name> | --home <abs>       ssh PTY, using the saved route (--print shows the command)
+  oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
+      --instance <name> | --home <abs>       remote instance, using the saved route (--print shows attach)
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)

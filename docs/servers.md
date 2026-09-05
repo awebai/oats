@@ -70,8 +70,10 @@ appends this machine's snapshots for that server.
 
 ## Limits
 
-- Routed: `spawn`, `retire`, `status` and `session attach`. Session inspect
-  and input run on the execution host, where the wake broker calls them.
+- Routed: `spawn`, `retire`, `status`, `session inspect` (the execution
+  host's envelope, relayed; a Desktop preflight before attaching) and
+  `session attach`. Session input runs on the execution host, where the wake
+  broker calls it.
   Desktop projection of remote instances and remote viewer attachment are in
   progress on the execution-targets work.
 - No Git over SSH: repository operations always run on the server, by its
