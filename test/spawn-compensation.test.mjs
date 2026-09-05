@@ -13,7 +13,7 @@ const write = (path, text, mode) => {
   writeFileSync(path, text, mode ? { mode } : undefined);
 };
 
-function fixture({ runtime = true, runtimeName = "pi", backend = "tmux", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false } = {}) {
+function fixture({ runtime = true, runtimeName = "pi", backend = "tmux", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false, allocationFailure = false } = {}) {
   const base = mkdtempSync(join(tmpdir(), "oats-spawn-compensation-"));
   directories.push(base);
   const repo = join(base, "repo");
@@ -87,6 +87,7 @@ if (args[0] === 'api') console.log(JSON.stringify({result:{snapshot:{protocol:20
 if (args[1] === 'process-info') console.log(JSON.stringify({result:{process_info:{foreground_processes:[{name:'codex'}]}}}));
 if (args[0] === 'workspace') {
   writeFileSync(state, 'allocated');
+  if (${allocationFailure}) { console.error('lost allocation receipt'); process.exit(1); }
   console.log(JSON.stringify({result:{root_pane:pane}}));
 }
 if (args[1] === 'run' && ${launchFailure}) {console.error('launch failed after creating pane'); process.exit(1);}
@@ -284,6 +285,8 @@ test("invalid or contradictory yolo fails before provisioning", () => {
   const f = fixture();
   let result = f.run(["spawn", "dev", "--yolo", "--no-yolo"]);
   assert.notEqual(result.status, 0);
+  assert.equal(JSON.parse(result.stdout).error.code, "E_BAD_ARGS");
+  assert.match(JSON.parse(result.stdout).error.message, /choose --yolo or --no-yolo/);
   assert.equal(existsSync(f.resource), false);
   const cfg = join(f.base, "oats-config.yaml");
   write(cfg, readFileSync(cfg, "utf8") + "yolo: maybe\n");
@@ -310,4 +313,42 @@ test("session CLI uses original Herdr receipt and rejects metadata drift", () =>
   result = f.run(["session", "input", "--home", f.home, "--text-file", file]);
   assert.notEqual(result.status, 0);
   assert.equal(JSON.parse(result.stdout).error.code, "E_RUNTIME_AUTHORITY_MISMATCH");
+});
+
+test("create persists both yolo choices in the new soul", () => {
+  const f = fixture();
+  for (const [name, flag, value] of [["yes", "--yolo", "true"], ["no", "--no-yolo", "false"]]) {
+    const r = f.run(["create", name, "--local", "--repo", f.repo, flag]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const soul = JSON.parse(r.stdout).soul;
+    assert.match(readFileSync(join(soul, "soul.yaml"), "utf8"), new RegExp(`yolo: ${value}`));
+  }
+});
+test("new spawn flags fail with actionable argument errors before local upsert", () => {
+  const f = fixture();
+  const instructions = join(f.base, "instructions.md"); write(instructions, "probe");
+  for (const flags of [["--yolo", "--no-yolo"], ["--backend"], ["--herdr-socket"]]) {
+    const r = f.run(["spawn", "new-local", "--instructions-file", instructions, ...flags]);
+    assert.notEqual(r.status, 0);
+    assert.equal(JSON.parse(r.stdout).error.code, "E_BAD_ARGS");
+    assert.equal(existsSync(join(f.base, "local-agents", "new-local")), false);
+  }
+});
+test("status uses the host Herdr executable, never the mutable metadata binary", () => {
+  const f = fixture({ backend: "herdr" }); assert.equal(f.spawn().status, 0);
+  const path = join(f.home, "instance.json"), meta = JSON.parse(readFileSync(path, "utf8"));
+  const marker = join(f.base, "unexpected-execution");
+  const executable = join(f.base, "bad-binary");
+  write(executable, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)},'bad');\n`, 0o755);
+  meta.sessionTarget.binary = executable; write(path, JSON.stringify(meta));
+  const result = f.run(["status"]); assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(existsSync(marker), false);
+});
+test("lost Herdr allocation receipt reports the potentially remaining empty workspace", () => {
+  const f = fixture({ backend: "herdr", allocationFailure: true });
+  const result = f.spawn(); assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /allocation may have completed/);
+  assert.equal(existsSync(f.window), true);
+  assert.equal(existsSync(f.resource), false, "harness never launched; external hooks compensated");
+  assert.equal(existsSync(f.home), false);
 });

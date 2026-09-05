@@ -48,8 +48,13 @@ const flag = (name) => {
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
 };
 function yoloFlag() {
-  if (args.includes("--yolo") && args.includes("--no-yolo")) bail("E_BAD_ARGS", "choose --yolo or --no-yolo, not both");
+  if (args.includes("--yolo") && args.includes("--no-yolo")) cmdFail("E_BAD_ARGS", "choose --yolo or --no-yolo, not both");
   return args.includes("--yolo") ? true : args.includes("--no-yolo") ? false : undefined;
+}
+function valueFlag(name) {
+  const value = flag(name);
+  if (value === true) cmdFail("E_BAD_ARGS", `--${name} needs a value`);
+  return value;
 }
 const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
 /** Resolve the --dir flag with central validation: a value-taking flag given
@@ -2641,8 +2646,11 @@ function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
+  const yolo = yoloFlag();
+  const backend = valueFlag("backend"), herdrSocket = valueFlag("herdr-socket");
+  if (backend !== undefined && !["tmux", "herdr"].includes(backend)) bail("E_BAD_ARGS", "--backend must be tmux or herdr");
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect — including root discovery and local-agent upsert (an
   // --instructions-file spawn must not scaffold/overwrite a local soul before
@@ -2733,7 +2741,7 @@ function spawnCmd() {
     r = spawnInstance(root, agent, {
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       repo: flag("repo") || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
-      work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), backend: flag("backend"), herdrSocket: flag("herdr-socket"), yolo: yoloFlag(), model: flag("model"), branch: flag("branch"),
+      work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch: flag("branch"),
       launch: !args.includes("--no-launch"),
     });
   } catch (e) {
@@ -2840,6 +2848,7 @@ async function paneCmd() {
 }
 
 function createCmd() {
+  const yolo = yoloFlag();
   const name = args[1];
   if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude|codex] [--model <m>] [--instructions-file <f>]");
   const local = args.includes("--local");
@@ -2859,7 +2868,7 @@ function createCmd() {
   const instrFile = flag("instructions-file");
   const r = coreCreateAgent(root, {
     name, local, description: flag("description"), type: flag("type"), repo: flag("repo") || defaultRepo(process.cwd()),
-    work: flag("work"), runtime: flag("runtime"), model: flag("model"),
+    work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo,
     instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
   });
   if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
@@ -3209,14 +3218,14 @@ Usage:
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--instructions-file <f>]
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
-  oats spawn <agent> [--task <text>]         spawn an instance (tmux; --no-launch
+  oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
       [--parent <instance>]                 --def-file creates a local agent;
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]
                                             with team: declared, unknown local souls
                                             resolve across the team scope's repos
