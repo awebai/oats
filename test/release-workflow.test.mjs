@@ -50,7 +50,7 @@ test("all build/smoke steps precede npm publication", () => {
   const firstPublish = yml.indexOf("npm publish");
   assert.ok(firstPublish > publishJob, "no npm publish before the gated publish job");
   // smoke steps live in the pre-publish jobs
-  for (const step of ["smoke:tarball", "pack:check", "npm test", "version --json probe mismatch"]) {
+  for (const step of ["smoke:tarball", "pack:check", "npm test", "scripts/check-version-probe.mjs"]) {
     const at = yml.indexOf(step);
     assert.ok(at >= 0 && at < publishJob, `${step} runs before publication`);
   }
