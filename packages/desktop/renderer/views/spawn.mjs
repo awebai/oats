@@ -554,6 +554,7 @@ function openSpawnModal(s, a) {
             <option value="" selected>agent default (${escapeHtml(a.runtime || "pi")})</option>
             <option value="pi">pi</option>
             <option value="claude">claude</option>
+            <option value="codex">codex</option>
           </select></label>
         <label>Model (optional — defaults to the agent's definition${a.model ? `: ${escapeHtml(a.model)}` : ""})
           <input class="field fmodel" autocomplete="off" list="spawn-model-options"></label>

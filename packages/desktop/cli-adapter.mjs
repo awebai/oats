@@ -50,7 +50,7 @@ const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace)$/ },
-  runtime: { flag: "--runtime", re: /^(pi|claude)$/ },
+  runtime: { flag: "--runtime", re: /^(pi|claude|codex)$/ },
   model:   { flag: "--model",   re: /^[^-][^\0]*$/ },                       // model pattern — not option-shaped
   // Spawn-time agent relations (feature/agent-relations): the kernel links
   // the new instance to an existing one. "unrelated" is the default and is

@@ -2634,7 +2634,7 @@ function spawnCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect — including root discovery and local-agent upsert (an
   // --instructions-file spawn must not scaffold/overwrite a local soul before
@@ -2801,7 +2801,7 @@ async function paneCmd() {
 
 function createCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude] [--model <m>] [--instructions-file <f>]");
+  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude|codex] [--model <m>] [--instructions-file <f>]");
   const local = args.includes("--local");
   const startDir = dirFlag();
   // `create` BOOTSTRAPS a deployment: with no agents/ or local-agents/ yet,
@@ -3165,7 +3165,7 @@ Usage:
   oats status --team [--json]                whole-team roster across the team scope's repos
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
-      [--work <mode>] [--runtime pi|claude] gitignored; same memory + lifecycle)
+      [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--instructions-file <f>]
   oats spawn <agent> [--task <text>]         spawn an instance (tmux; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
@@ -3174,7 +3174,7 @@ Usage:
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
       [--work worktree|checkout|attached|workspace]  = sugar for --relative-to X --relation
-      [--work-dir <owner-work>] [--runtime pi|claude] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
+      [--work-dir <owner-work>] [--runtime pi|claude|codex] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]
                                             with team: declared, unknown local souls
                                             resolve across the team scope's repos

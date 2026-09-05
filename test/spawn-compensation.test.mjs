@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,7 +13,7 @@ const write = (path, text, mode) => {
   writeFileSync(path, text, mode ? { mode } : undefined);
 };
 
-function fixture({ runtime = true, platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false } = {}) {
+function fixture({ runtime = true, runtimeName = "pi", platform = true, taskDirectory = false, retireFailure = false, stubbornWindow = false, launchFailure = false } = {}) {
   const base = mkdtempSync(join(tmpdir(), "oats-spawn-compensation-"));
   directories.push(base);
   const repo = join(base, "repo");
@@ -41,7 +41,7 @@ function fixture({ runtime = true, platform = true, taskDirectory = false, retir
   symlinkSync(execFileSync("which", ["git"], { encoding: "utf8" }).trim(), join(bin, "git"));
   execFileSync("git", ["init", "-q", repo], { env });
   execFileSync("git", ["-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "--allow-empty", "-qm", "initial"], { env });
-  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nrepo: ${repo}\nwork: worktree\nruntime: pi\n`);
+  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nrepo: ${repo}\nwork: worktree\nruntime: ${runtimeName}\n`);
   write(join(root, "dev", "soul", "AGENTS.md"), "# Developer\n");
   write(join(base, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging:\n      capability: test.messaging\n      from: owned\n    tasks: none\n");
   const cap = join(base, ".agents", "capabilities", "owned", "test-messaging");
@@ -63,7 +63,7 @@ if (JSON.parse(process.env.OATS_META).alias !== 'test-resource') throw new Error
 if (${retireFailure}) { console.log(JSON.stringify({meta:{retired:false,reason:'test failure'}})); }
 else { rmSync(${JSON.stringify(resource)}); console.log(JSON.stringify({meta:{retired:true}})); }
 `);
-  if (runtime) write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
+  if (runtime) write(join(bin, runtimeName), "#!/bin/sh\nexit 0\n", 0o755);
   if (platform) write(join(bin, "tmux"), `#!${process.execPath}
 const { existsSync, readFileSync, writeFileSync, rmSync } = require('node:fs');
 const args = process.argv.slice(2);
@@ -144,6 +144,42 @@ test("an unquiesced partial launch retains work and credentials for retry", () =
   const marker = JSON.parse(readFileSync(join(f.home, ".oats-rollback-incomplete.json"), "utf8"));
   assert.equal(marker.cleanup.launched, true);
   assert.deepEqual(marker.cleanup.outstanding.git, ["worktree", "branch"]);
+});
+
+test("native Codex launch preserves its prompt, configured policy and assigned work directory", () => {
+  const f = fixture({ runtimeName: "codex" });
+  const taskFile = join(f.base, "task.md");
+  const prompt = "Read the soul. Literal task: $(touch NEVER_RUN) `touch NEVER_RUN` 'quotes'\nsecond line";
+  write(taskFile, prompt);
+  symlinkSync("/bin/cat", join(f.env.PATH, "cat"));
+  const captured = join(f.base, "argv.json");
+  write(join(f.env.PATH, "codex"), `#!${process.execPath}
+require('node:fs').writeFileSync(${JSON.stringify(captured)}, JSON.stringify({argv:process.argv.slice(2),cwd:process.cwd(),home:process.env.OATS_INSTANCE_HOME}));
+`, 0o755);
+  const result = f.run(["spawn", "dev", "--purpose", "probe", "--model", "anthropic/claude-test,openai-codex/gpt-test:high", "--task-file", taskFile, "--no-launch"]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const meta = JSON.parse(readFileSync(join(f.home, "instance.json"), "utf8"));
+  assert.equal(meta.runtime, "codex");
+  assert.equal(meta.model, "gpt-test");
+  execFileSync("/bin/sh", ["-c", meta.command], { cwd: f.home, env: f.env });
+  const invocation = JSON.parse(readFileSync(captured, "utf8"));
+  const args = invocation.argv;
+  assert.deepEqual(args.slice(0, 7), ["--cd", f.home, "--add-dir", realpathSync(join(f.home, "work")), "--model", "gpt-test", "--"]);
+  assert.equal(args.length, 8, "task is exactly one prompt and no policy is overridden");
+  assert.ok(args[7].includes(prompt), "task bytes reach the harness without shell evaluation");
+  assert.equal(invocation.home, f.home);
+  assert.equal(existsSync(join(f.home, "NEVER_RUN")), false);
+  assert.ok(readFileSync(join(f.home, "AGENTS.md"), "utf8").includes("Developer"));
+  assert.ok(existsSync(join(f.home, ".agents", "skills")));
+});
+
+test("unsupported runtime fails before provisioning external state", () => {
+  const f = fixture();
+  const result = f.run(["spawn", "dev", "--purpose", "probe", "--runtime", "unsupported", "--no-launch"]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout, /unknown runtime/);
+  assert.equal(existsSync(f.events), false);
+  assertClean(f);
 });
 
 test.after(() => { for (const dir of directories) rmSync(dir, { recursive: true, force: true }); });

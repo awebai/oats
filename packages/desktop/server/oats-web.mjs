@@ -14,7 +14,7 @@
  *   POST /api/keys/<instance>       { data } → raw key bytes into the session (no Enter)
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
- *   POST /api/models                { runtime: pi|claude } → advisory model catalog for the spawn modal
+ *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
  *   POST /api/harvest/<instance>    `oats okf harvest --json` with cwd fixed to the instance home
@@ -228,6 +228,9 @@ function piModelCatalogOnce() {
 async function modelsData(runtime) {
   const cached = modelsCache.get(runtime);
   if (cached && Date.now() - cached.at < MODELS_TTL_MS) return cached.models;
+  // Codex has its own configured providers; Pi's catalog is not authoritative.
+  // The model field accepts an explicit id or an empty value for native defaults.
+  if (runtime === "codex") return [];
   const catalog = await piModelCatalogOnce();
   const models = runtime === "pi"
     ? catalog.map((id) => ({ id, label: id }))
@@ -916,7 +919,7 @@ const server = createServer(async (req, res) => {
       // command-running route — see the model-catalog SECURITY note.
       const body = await readBody(req);
       const runtime = typeof body.runtime === "string" && body.runtime ? body.runtime : "pi";
-      if (runtime !== "pi" && runtime !== "claude") return send(res, 400, { error: `unknown runtime "${runtime}" (pi|claude)` });
+      if (!["pi", "claude", "codex"].includes(runtime)) return send(res, 400, { error: `unknown runtime "${runtime}" (pi|claude|codex)` });
       return send(res, 200, { runtime, models: await modelsData(runtime) });
     }
     if (req.method === "GET" && path === "/api/cli") {
