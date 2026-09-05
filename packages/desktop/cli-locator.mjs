@@ -211,5 +211,8 @@ export function requireExecutionSupport(cli, runtime, backend, yolo) {
 
 /** Remote routing arrived within API v1; older accepted CLIs lack it. */
 export function requireRemoteSupport(cli, operation) {
-  if (!cli?.remote?.includes(operation)) throw Object.assign(new Error(`installed oats ${cli?.version || "unknown"} does not support remote ${operation}; update the CLI`), { code: "unsupported-remote-operation" });
+  // Array.isArray, not optional chaining alone: String.prototype.includes
+  // would let a probe answering remote: "spawn" (a string) pass a gate that
+  // exists to fail closed (servers review N1).
+  if (!Array.isArray(cli?.remote) || !cli.remote.includes(operation)) throw Object.assign(new Error(`installed oats ${cli?.version || "unknown"} does not support remote ${operation}; update the CLI`), { code: "unsupported-remote-operation" });
 }
