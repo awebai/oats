@@ -29,7 +29,7 @@ version has a supported replacement. When the plan is correct:
 
 ```bash
 oats migrate --from-oas --dir /path/to/scope
-oats doctor --dir /path/to/scope
+oats doctor /path/to/scope
 ```
 
 Run the exact `oats trust <capability> --dir <scope>` commands printed by
