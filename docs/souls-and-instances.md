@@ -156,9 +156,17 @@ integration self-deletes the instance identity here. For oats-okf, retirement
 is a knowledge no-op because harvest already happens after commits.
 
 `oats retire <instance> --self` lets an instance retire itself when the human
-or briefing says it is done. It runs hooks and removes the home first, then
-delays the tmux window kill for a few seconds so the instance can report
-final status.
+or briefing says it is done. A live runtime cannot give a stable final
+inspection of its own work, so the calling process inspects, runs, and removes
+nothing: it records the intent beside its home as
+`.oats-retire-pending-<instance>.json` and starts a detached completion, then returns so the instance can report final
+status before its tmux window dies a few seconds later. The completion then
+retires the instance exactly as an external `oats retire` would: quiesce the
+runtime, preserve uncommitted work, run retire hooks, repair lineage, remove
+the worktree and the home. Its outcome is written beside the home as
+`.oats-retired-<instance>.json`; a failure keeps the home (and the usual
+quarantine marker when hooks reported incomplete cleanup), shows in
+`oats status`, and is retried with `oats retire <instance>`.
 
 ## Work modes
 

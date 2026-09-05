@@ -2602,7 +2602,10 @@ function status() {
     console.log(`  ${a.name}${a.kind === "local" ? " (local)" : ""}  [work: ${a.work || "checkout"}, repo: ${a.repo || "?"}]`);
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
-      console.log(`      • ${i.instance}  ${i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
+      console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
+    }
+    for (const f of a.retireFailures || []) {
+      console.log(`      ! deferred retirement of ${f.instance} FAILED${f.completedAt ? ` at ${f.completedAt}` : ""}: ${f.error || (f.incomplete || []).join("; ") || "see result file"} — retry with \`oats retire ${f.instance}\``);
     }
   }
   const defs = listAgentDefs(process.cwd());
@@ -2624,7 +2627,8 @@ function statusTeam() {
     if (!agents.length) { console.log("    (no agents)"); continue; }
     for (const a of agents) {
       console.log(`    ${a.name}${a.kind === "local" ? " (local)" : ""}${a.description ? `  — ${a.description}` : ""}`);
-      for (const i of a.instances) console.log(`      • ${i.instance}  ${i.running ? "RUNNING" : "idle"}`);
+      for (const i of a.instances) console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}`);
+      for (const f of a.retireFailures || []) console.log(`      ! deferred retirement of ${f.instance} FAILED: ${f.error || (f.incomplete || []).join("; ") || "see result file"} — retry with \`oats retire ${f.instance}\``);
     }
   }
 }
@@ -2768,6 +2772,16 @@ function retireCmd() {
     if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; console.log(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
   const r = retireInstance(root, name, { self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  // Deferred self-retire: nothing has been inspected, run, or removed yet. The
+  // caller's window dies first; a detached process then retires the instance
+  // as an external operator and writes its outcome beside the home.
+  if (r.deferred) {
+    if (args.includes("--json")) { console.log(JSON.stringify(r, null, 2)); return; }
+    console.log(`Retirement of ${r.retired} (agent ${r.agent}) is scheduled — this window dies in ~${r.completesInSec}s, say any goodbyes now.`);
+    console.log(`  hooks, work preservation and removal run afterwards, outside this runtime`);
+    console.log(`  outcome: ${shortPath(r.resultPath)}  (failures also show in \`oats status\`; retry with \`oats retire ${r.retired}\`)`);
+    return;
+  }
   // Forced removal past an incomplete cleanup: the home is gone because the
   // operator said so, but the external state it owed is still out there and
   // nobody else will mention it again.
@@ -3180,7 +3194,8 @@ Usage:
                                             resolve across the team scope's repos
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self] [--delete-branch]            worktree, home); --self = retire the
-      [--keep-dir] [--json]                 CALLING instance (delayed window kill)
+      [--keep-dir] [--json]                 CALLING instance: the window dies, then
+                                            a detached external retirement runs
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and

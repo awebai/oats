@@ -5,7 +5,7 @@ import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, re
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import {
-  capabilityIntegrity, capabilityManifest, composeInstanceAgentsMd, createAgent, findAgent, findInstanceHomes, resolveOatsConfig,
+  capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, createAgent, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
   listInstances, resolveClaudeBinary, resolveWorkMode, retireInstance, runLifecycleHooks, spawnInstance, writeCapabilityLock,
 } from "../lib/core.mjs";
 
@@ -4633,7 +4633,7 @@ console.log(JSON.stringify({ meta: { retired: true } }));`,
   rmSync(base, { recursive: true, force: true });
 });
 
-test("self-retire refuses before hooks because its calling runtime cannot be quiesced for final work inspection", () => {
+test("self-retire defers everything: the caller runs no hooks and removes nothing; the deferred completion retires as an external operator and reports an incomplete hook explicitly", () => {
   const base = temp();
   const { repo, root } = fixtureSoul(base, "pi");
   const remote = join(base, "remote-identity");
@@ -4657,13 +4657,79 @@ process.exit(1);`,
   const home = join(root, "dev", "instances", "dev-self");
   try {
     spawnInstance(root, findAgent(root, "dev"), { instance: "dev-self", launch: false });
-    assert.throws(
-      () => retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true }),
-      (e) => e.code === "E_SELF_RETIRE_NOT_QUIESCED" && /external operator/.test(e.message),
-    );
-    assert.equal(existsSync(retireRan), false, "the retire hook did not run before refusal");
-    assert.equal(existsSync(home), true, "the instance home remains untouched");
-    assert.equal(existsSync(remote), true, "capability-required state remains untouched");
+    // Long delay: the detached child must not race the assertions below; the
+    // completion under test is driven synchronously with delaySec 0.
+    const r = retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true, selfKillDelaySec: 600 });
+    assert.equal(r.deferred, true);
+    assert.equal(r.resultPath, deferredRetireResultPath(home));
+    assert.equal(existsSync(retireRan), false, "the retire hook did not run in the caller");
+    assert.equal(existsSync(home), true, "the instance home remains untouched by the caller");
+    assert.equal(existsSync(join(home, ".oats-retire-pending.json")), false, "and carries no marker of its own");
+    assert.equal(existsSync(remote), true, "capability-required state remains untouched by the caller");
+    const intent = JSON.parse(readFileSync(retirePendingMarkerPath(home), "utf8"));
+    assert.equal(intent.instance, "dev-self");
+    assert.equal(intent.root, resolve(root));
+    // Status reads the owed retirement without completing it.
+    const listed = listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").instances.find((i) => i.instance === "dev-self");
+    assert.equal(listed.retirePending.instance, "dev-self");
+    assert.equal(existsSync(home), true, "status is read-only: the home is still there");
+    try { process.kill(r.completionPid, "SIGKILL"); } catch { /* already gone */ }
+
+    // The completion is an ORDINARY retirement: the hook runs, reports it did
+    // not finish, and the home is retained under quarantine with an explicit
+    // failed outcome beside it — never a silent success.
+    assert.equal(completeDeferredRetirement(retirePendingMarkerPath(home), { delaySec: 0 }), false);
+    assert.equal(existsSync(retireRan), true, "the retire hook ran in the completion");
+    assert.equal(existsSync(home), true, "an incomplete hook retains the home");
+    assert.equal(outcomeHasNoHomeRecovery(r.resultPath), true, "the caller changed no home bytes, so nothing was needlessly preserved");
+    assert.equal(existsSync(join(home, ".oats-rollback-incomplete.json")), true, "under the usual quarantine");
+    const outcome = JSON.parse(readFileSync(r.resultPath, "utf8"));
+    assert.equal(outcome.ok, false);
+    assert.match(outcome.result.rollbackIncomplete.join("\n"), /self-delete-failed/);
+    assert.equal(outcome.retry, "oats retire dev-self");
+    const dev = listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev");
+    assert.equal(dev.retireFailures.length, 1, "status surfaces the failed deferred retirement");
+    assert.equal(dev.retireFailures[0].instance, "dev-self");
   } finally { process.env.PATH = oldPath; }
+  rmSync(base, { recursive: true, force: true });
+});
+
+const outcomeHasNoHomeRecovery = (resultPath) => !JSON.parse(readFileSync(resultPath, "utf8")).result?.workRecovery;
+
+test("self-retire completes without a later operator command: the detached child retires the instance and records success", async () => {
+  const base = temp();
+  const { repo, root } = fixtureSoul(base, "pi");
+  const remote = join(base, "remote-identity");
+  capability(repo, "chan", {
+    capability: "acme.chan",
+    hooks: { spawn: "hook.mjs spawn", retire: "hook.mjs retire" },
+  }, {
+    "hook.mjs": `import {writeFileSync, unlinkSync} from 'node:fs';
+if (process.env.OATS_EVENT === 'spawn') {
+  writeFileSync(${JSON.stringify(remote)}, 'joined');
+  console.log(JSON.stringify({ meta: { alias: 'probe' } }));
+  process.exit(0);
+}
+unlinkSync(${JSON.stringify(remote)});
+console.log(JSON.stringify({ meta: { retired: true } }));`,
+  });
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.chan:\n      global: true\n");
+  const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
+  const oldInst = process.env.OATS_INSTANCE; process.env.OATS_INSTANCE = "dev-self";
+  const home = join(root, "dev", "instances", "dev-self");
+  try {
+    spawnInstance(root, findAgent(root, "dev"), { instance: "dev-self", launch: false });
+    const r = retireInstance(root, "dev-self", { tmuxSession: "oats-test-nosuch", self: true, selfKillDelaySec: 0 });
+    assert.equal(r.deferred, true);
+    const deadline = Date.now() + 20_000;
+    while (!existsSync(r.resultPath) && Date.now() < deadline) await new Promise((res) => setTimeout(res, 100));
+    assert.equal(existsSync(r.resultPath), true, `no outcome within 20s; log:\n${existsSync(r.logPath) ? readFileSync(r.logPath, "utf8") : "(none)"}`);
+    const outcome = JSON.parse(readFileSync(r.resultPath, "utf8"));
+    assert.equal(outcome.ok, true, JSON.stringify(outcome));
+    assert.equal(outcome.result.retired, "dev-self");
+    assert.equal(existsSync(home), false, "the home is gone with no operator command");
+    assert.equal(existsSync(remote), false, "the retire hook ran and released the external state");
+    assert.equal(listInstances(root, "oats-test-nosuch").find((a) => a.name === "dev").retireFailures, undefined, "a success is not a failure to surface");
+  } finally { process.env.PATH = oldPath; if (oldInst === undefined) delete process.env.OATS_INSTANCE; else process.env.OATS_INSTANCE = oldInst; }
   rmSync(base, { recursive: true, force: true });
 });
