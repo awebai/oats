@@ -65,6 +65,35 @@ the remote binary and path come from the snapshot, never from the caller. The
 session routes refuse with `E_REMOTE_INCOMPATIBLE` before connecting a viewer,
 and `ssh -t <host> tmux attach -t oats` remains the way in.
 
+```bash
+oats server roster --json                                  # every remote group, one status pull each
+oats okf harvest --server build --instance dev-fix-123     # the knowledge harvest, run in the saved home
+```
+
+The **roster** is what the Desktop projects: one group per server id and
+route target (host and workspace), each with the registration (present or
+not), the probe (`ok`, or the error that stopped it), the souls the remote
+reports with their `agentsRoot`, the instances joined with this machine's
+saved routes (`savedRoute`; `running` true/false, or `null` when the remote
+could not be asked; `retirePending`; `rollbackIncomplete` for a quarantined
+home; `missingRemotely` when a saved route names an instance the reachable
+remote no longer lists), and `retireFailures` (deferred self-retirements
+that failed there and need `oats retire` again). A registration that was
+removed or edited keeps its group from the saved routes alone, so nothing
+spawned through it disappears from view. Remote state is pulled every time,
+never cached, within a budget: each group gets at most `--per-target` (20 s)
+of a `--budget` (45 s) total, and groups the budget cannot reach are reported
+with `E_ROSTER_BUDGET` rather than dropped or waited for. **Harvest** runs
+the knowledge package's own `okf harvest --json` in the instance's saved home
+on the host (a route that outlives the registration, like retire): the home
+comes from the route saved at spawn, never from the caller, the remote must
+advertise `harvest` in its version probe (0.22.3), and the package's envelope
+is relayed as is. **Retire** through a saved route sends that route's home as
+`--home` when the remote advertises `retire-home` in its probe `features`, so
+a same-named twin under another agent on the host is never the one retired;
+locally, `oats retire <name> --home <path>` does the same and a bare name that
+resolves to several homes is refused.
+
 ## What this machine keeps
 
 A **route snapshot** per remote instance under `~/.oats/remote/<server>/`,
@@ -75,20 +104,38 @@ home; the snapshot is removed only when the remote kernel reports the home
 gone. Remote state is never cached: `status --server` pulls it every time and
 appends this machine's snapshots for that server.
 
+A registration edited to a different host or workspace (`server add
+--replace`) while saved routes still point at the old target is refused at
+the next `spawn --server` with `E_ROUTE_CHANGED`: a new snapshot under the
+same server id would silently retarget them. Register the new target under a
+new id, or retire the old instances first; the roster shows both targets
+until then. A saved route whose instance is gone on the host (the roster
+shows it `missingRemotely`) cannot be retired away: drop it on purpose with
+`oats server forget <id> --instance <name>`. Saved routes are keyed by name
+under their server id: spawning an explicit `--instance` name that already
+has a route there is refused (`E_ROUTE_EXISTS`), and a generated name that
+collides with another soul's route on the same host leaves the new instance
+without a saved route (`routeConflict` in the result, a warning naming the
+host-side retire), never overwriting the existing one. The roster gives a
+route to the remote row with the same name and home only; a same-named twin
+under another soul is observed only.
+
 ## Limits
 
-- Routed: `spawn`, `retire`, `status`, and, against a 0.22.2 or later
-  server, `session inspect` (the execution host's envelope, relayed; a Desktop
-  preflight before attaching) and `session attach`. Session input runs on the
-  execution host, where the wake broker calls it.
-  Desktop projection of remote instances and remote viewer attachment are in
-  progress on the execution-targets work.
+- Routed: `spawn`, `retire`, `status`, `server roster`, `okf harvest`,
+  and, against a 0.22.2 or later server, `session inspect` (the execution
+  host's envelope, relayed; a Desktop preflight before attaching) and
+  `session attach`. Session input runs on the execution host, where the wake
+  broker calls it. The version probe's `remote` list names this kernel's
+  remote-side surface (`roster` and `harvest` from 0.22.3; `roster` is the
+  local command over registrations and saved routes, not a route).
 - No Git over SSH: repository operations always run on the server, by its
   kernel, in its workspace.
 - A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`) for spawn,
-  retire and status, and 0.22.2 for the session routes; the record commands
+  retire and status, 0.22.2 for the session routes, and 0.22.3 for harvest
+  and for the exact-home retire; the record commands
   (`capture`, `recall`) need Node 22.5+ there for `node:sqlite`, which
   lifecycle routing does not.
-- After a remote spawn the Desktop reports the server and remote home; the
-  instance does not appear in the local roster (projection of remote instances
-  is the next step of the execution-targets work).
+- Lifecycle actions on a remote instance need a saved route from this
+  machine; an instance the remote reports that was spawned elsewhere shows in
+  the roster without one (`savedRoute: false`) and is read-only here.

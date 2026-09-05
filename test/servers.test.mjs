@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -72,6 +72,11 @@ test("remoteQuote/sshArgv: every argument survives the remote login shell byte f
   assert.equal(remoteQuote("safe.path/x=1"), "safe.path/x=1");
   assert.equal(remoteQuote(""), "''");
   // A ~/ path prefix expands on the REMOTE shell; a spaced one stays quoted; $PATH is the remote's.
+  // A cwd prefix is quoted like any argument and precedes the PATH prefix.
+  const withCwd = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats" }, ["okf", "harvest"], { cwd: "/w/it's here/$(touch NEVER_RUN)" });
+  assert.equal(withCwd[7], `cd '/w/it'\\''s here/$(touch NEVER_RUN)' && oats okf harvest`);
+  const cwdSeen = execFileSync("/bin/sh", ["-c", withCwd[7].replace(/ && oats okf harvest$/, " 2>/dev/null || printf %s \"$1\"") , "--", "cd-failed-as-expected"], { encoding: "utf8" });
+  assert.equal(cwdSeen, "cd-failed-as-expected"); assert.equal(existsSync("NEVER_RUN"), false);
   const withPath = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats", path: "~/.local/bin:/opt/my tools/bin" }, ["version"]);
   assert.equal(withPath[7], `PATH="$HOME"/.local/bin:'/opt/my tools/bin':"$PATH" oats version`);
   const seen = execFileSync("/bin/sh", ["-c", withPath[7].replace(/ oats version$/, "; printf %s \"$PATH\"")], { encoding: "utf8", env: { HOME: "/home/remote", PATH: "/usr/bin:/bin" } });
@@ -244,5 +249,246 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.notEqual(r.status, 0);
     assert.match(r.json().error.code, /^E_(SSH|REMOTE_ENVELOPE)$/);
     if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("oats server roster, okf harvest --server, and the changed-registration guard", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-roster-"));
+  try {
+    const { bin, log, tools } = fakeBin(base);
+    const repo = remoteWorkspace(base);
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+
+    let r = oats(env, ["server", "roster", "--json"]);
+    assert.equal(r.status, 0, r.stderr); assert.deepEqual(r.json().result.groups, []);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--label", "Build box", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r1", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const home = r.json().result.home;
+
+    // The roster: one group per (server, route target), one status pull each,
+    // souls from the remote, instances joined with the saved routes.
+    r = oats(env, ["server", "roster", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    let out = r.json().result;
+    assert.equal(out.groups.length, 1);
+    const g = out.groups[0];
+    assert.equal(g.server, "build"); assert.equal(g.label, "Build box"); assert.equal(g.registrationPresent, true);
+    assert.deepEqual(g.probe, { ok: true });
+    assert.equal(typeof g.agentsRoot, "string");
+    assert.deepEqual(g.souls.map((s) => s.name), ["dev"]);
+    assert.equal(g.souls[0].agentsRoot, g.agentsRoot);
+    assert.equal(g.instances.length, 1);
+    assert.equal(g.instances[0].instance, "dev-r1"); assert.equal(g.instances[0].agent, "dev");
+    assert.equal(g.instances[0].savedRoute, true); assert.equal(g.instances[0].running, false);
+    assert.equal(g.instances[0].home, home);
+    assert.deepEqual([g.instances[0].retirePending, g.instances[0].rollbackIncomplete, g.instances[0].missingRemotely], [false, false, false]);
+    assert.deepEqual(g.retireFailures, []);
+    assert.equal(typeof out.bounds.perTargetTimeoutMs, "number");
+    assert.match(readFileSync(log, "utf8"), /status --json --dir/, "the roster pulled remote status");
+    r = oats(env, ["server", "roster"]);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /dev-r1\s+idle/);
+
+    // An unreachable target: the group stays, probe carries the error, no
+    // instance is invented. (The fake ssh runs the command locally, so a
+    // workspace that does not exist stands in for a host that fails.)
+    r = oats(env, ["server", "add", "down", "--ssh", "down-host", "--workspace", join(base, "no-such-ws"), "--oats", CLI, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "roster", "--json"]);
+    out = r.json().result;
+    const down = out.groups.find((x) => x.server === "down");
+    assert.equal(down.probe.ok, false); assert.equal(typeof down.probe.error.message, "string");
+    assert.deepEqual(down.instances, []); assert.deepEqual(down.souls, []); assert.deepEqual(down.retireFailures, []);
+    r = oats(env, ["server", "roster", "--server", "nope", "--json"]);
+    assert.equal(r.json().error.code, "E_SERVER_UNKNOWN");
+    assert.equal(out.groups.find((x) => x.server === "build").probe.ok, true);
+    r = oats(env, ["server", "roster", "--server", "down", "--json"]);
+    assert.deepEqual(r.json().result.groups.map((x) => x.server), ["down"]);
+
+    // Harvest routes to the instance's SAVED home on the host: `cd <home> &&`
+    // in the remote command word, never a path from the caller. This remote
+    // workspace has no knowledge layer, so the package's own refusal is relayed.
+    r = oats(env, ["okf", "harvest", "--server", "build", "--instance", "nope", "--json"]);
+    assert.notEqual(r.status, 0); assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
+    r = oats(env, ["okf", "harvest", "--server", "build", "--instance", "dev-r1", "--json"]);
+    assert.notEqual(r.status, 0, r.stdout);
+    assert.equal(r.json().ok, false);
+    const sshLog = readFileSync(log, "utf8");
+    assert.ok(sshLog.includes(`cd ${remoteQuote(home)} && `), "harvest ran in the saved home");
+    assert.match(sshLog, /okf harvest --json/);
+    // Any other okf command with --server is refused, never run locally.
+    r = oats(env, ["okf", "status", "--server", "build", "--json"]);
+    assert.equal(r.json().error.code, "E_USAGE");
+    // The route outlives the registration, like retire: remove it, harvest
+    // still reaches the saved home; a saved route the remote no longer lists
+    // is flagged, not invented as idle.
+    const savedReg = readFileSync(join(env.OATS_HOME_DIR, "servers.json"), "utf8");
+    r = oats(env, ["server", "remove", "build", "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["okf", "harvest", "--server", "build", "--instance", "dev-r1", "--json"]);
+    assert.notEqual(r.json().error?.code, "E_SERVER_UNKNOWN", r.stdout);
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    assert.equal(r.json().result.groups[0].registrationPresent, false);
+    assert.equal(r.json().result.groups[0].instances[0].missingRemotely, false);
+    writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), savedReg);
+    // A --replace that only moves the binary is the same target: no refusal.
+    const movedOats = join(base, "oats-moved"); symlinkSync(CLI, movedOats);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", movedOats, "--path", tools, "--replace", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "moved", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = oats(env, ["retire", "dev-moved", "--server", "build", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+
+    // The guard: a registration edited to another target must not overwrite
+    // the saved routes spawned through the old one.
+    const repo2 = join(base, "remote-ws-2"); mkdirSync(repo2);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo2, "--oats", CLI, "--path", tools, "--replace", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r2", "--no-launch", "--json"]);
+    assert.notEqual(r.status, 0);
+    assert.equal(r.json().error.code, "E_ROUTE_CHANGED");
+    assert.match(r.json().error.message, /dev-r1/);
+    assert.equal(existsSync(snapshotPath("build", "dev-r2")), false);
+    // The roster keeps both: the new target (registration, nothing spawned)
+    // and the old one (saved routes only) with its instance.
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    out = r.json().result;
+    assert.equal(out.groups.length, 2);
+    const fresh = out.groups.find((x) => x.registrationPresent), old = out.groups.find((x) => !x.registrationPresent);
+    assert.equal(fresh.target.workspace, repo2); assert.deepEqual(fresh.instances, []);
+    assert.equal(old.target.workspace, repo); assert.deepEqual(old.instances.map((i) => i.instance), ["dev-r1"]);
+    // A saved route whose instance is gone on the host: the roster flags it,
+    // the guard still counts it, and only `server forget` drops it.
+    rmSync(home, { recursive: true, force: true });
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    assert.equal(r.json().result.groups.find((x) => !x.registrationPresent).instances[0].missingRemotely, true);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r3", "--no-launch", "--json"]);
+    assert.equal(r.json().error?.code, "E_ROUTE_CHANGED");
+    r = oats(env, ["server", "forget", "build", "--instance", "nope", "--json"]);
+    assert.equal(r.json().error?.code, "E_SNAPSHOT_UNKNOWN");
+    r = oats(env, ["server", "forget", "build", "--instance", "dev-r1", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout); assert.equal(r.json().result.forgotten, true); assert.equal(r.json().result.home, home);
+    assert.equal(existsSync(snapshotPath("build", "dev-r1")), false);
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    assert.deepEqual(r.json().result.groups.map((x) => x.instances.length), [0]);
+    // With no saved route left, the registration may point anywhere again.
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--replace", "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "r3", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = oats(env, ["retire", "dev-r3", "--server", "build", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusal on an older one", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-twins-"));
+  try {
+    const { bin, tools } = fakeBin(base);
+    const repo = remoteWorkspace(base);
+    // A second soul whose generated name collides: dev --purpose foo-1 and
+    // dev-foo --purpose 1 both yield dev-foo-1.
+    write(join(repo, "agents", "dev-foo", "soul", "soul.yaml"), "name: dev-foo\nrepo: .\nwork: checkout\nruntime: pi\n");
+    write(join(repo, "agents", "dev-foo", "soul", "AGENTS.md"), "You are dev-foo.\n");
+    execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]);
+    execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "twin soul"]);
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
+    try {
+    // An "old" remote: the real kernel, but its version probe carries no features.
+    const oldOats = join(base, "old-oats");
+    write(oldOats, `#!/bin/sh\nif [ "$1" = version ] && [ "$2" = --json ]; then ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} version --json | sed 's/,"features":[^}]*//'; exit $?; fi\nexec ${remoteQuote(process.execPath)} ${remoteQuote(CLI)} "$@"\n`);
+    chmodSync(oldOats, 0o755);
+    let r = oats(env, ["server", "add", "new", "--ssh", "h", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "add", "old", "--ssh", "h", "--workspace", repo, "--oats", oldOats, "--path", tools, "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["server", "check", "old", "--json"]); assert.deepEqual(r.json().result.remote.features, [], "the old remote advertises no features");
+    // The saved route: dev-foo-1 of agent dev, through "new" and through "old".
+    r = oats(env, ["spawn", "dev", "--server", "new", "--purpose", "foo-1", "--no-launch", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    const devHome = r.json().result.home;
+    // The same route saved through the old registration: the snapshot's own
+    // target (the old binary) is what the route runs with.
+    mkdirSync(dirname(snapshotPath("old", "dev-foo-1")), { recursive: true });
+    const snapNew = JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8"));
+    writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify({ ...snapNew, serverId: "old", target: { ...snapNew.target, oatsPath: oldOats } }));
+    // The twin: a routed spawn whose GENERATED name collides with dev's saved
+    // route. The remote spawn succeeds, the existing route is not overwritten,
+    // and the result says the new instance has no saved route here.
+    r = oats(env, ["spawn", "dev-foo", "--server", "new", "--purpose", "1", "--no-launch", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    const twinHome = r.json().result.home;
+    assert.equal(r.json().result.instance, "dev-foo-1"); assert.notEqual(devHome, twinHome);
+    assert.deepEqual(r.json().result.routeConflict, { instance: "dev-foo-1", existingHome: devHome });
+    assert.equal(r.json().result.snapshot, null); assert.match(r.json().result.warnings.join("\n"), /--home/);
+    assert.equal(JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8")).home, devHome, "the saved route is untouched");
+    // The roster gives the saved route to the row with the saved HOME only;
+    // the twin under dev-foo is observed, never actionable from here.
+    r = oats(env, ["server", "roster", "--server", "new", "--json"]);
+    const rows = r.json().result.groups[0].instances.filter((i) => i.instance === "dev-foo-1");
+    assert.deepEqual(rows.map((i) => [i.agent, i.savedRoute]).sort(), [["dev", true], ["dev-foo", false]]);
+    // An explicit name that already has a saved route here is refused before
+    // the remote spawn; a generated collision never overwrites the route.
+    r = oats(env, ["spawn", "dev-foo", "--server", "new", "--instance", "dev-foo-1", "--no-launch", "--json"]);
+    assert.equal(r.json().error?.code, "E_ROUTE_EXISTS");
+    assert.equal(JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8")).home, devHome, "the saved route is untouched");
+    // Old remote, twins there: refused before any mutation, with the upgrade named.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--json"]);
+    assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE", r.stdout + r.stderr); assert.match(r.json().error.message, /0\.22\.3/);
+    assert.equal(existsSync(devHome), true); assert.equal(existsSync(twinHome), true);
+    // Old remote, explicit --home: never sent where it cannot be honoured.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--home", devHome, "--json"]);
+    assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE");
+    // New remote, an explicit home that is not the saved route: refused.
+    r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
+    assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);
+    // New remote: the saved home travels as --home; the twin survives.
+    const logBefore = readFileSync(join(base, "ssh.log"), "utf8").length;
+    r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.ok(readFileSync(join(base, "ssh.log"), "utf8").slice(logBefore).includes(`retire dev-foo-1 --home ${remoteQuote(devHome)}`), "the saved home was sent as --home");
+    assert.equal(existsSync(devHome), false, "the saved-route instance is retired");
+    assert.equal(existsSync(twinHome), true, "the twin under the other agent is untouched");
+    assert.equal(existsSync(snapshotPath("new", "dev-foo-1")), false);
+    } finally { if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir; }
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
+  try {
+    const { bin, tools } = fakeBin(base);
+    const repo = remoteWorkspace(base);
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    // A "host" whose oats never answers: the remote command word runs this.
+    const slow = join(base, "slow-oats"); write(slow, "#!/bin/sh\nsleep 20\nexit 255\n"); chmodSync(slow, 0o755);
+    let r = oats(env, ["server", "add", "good", "--ssh", "good-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    for (const id of ["slow1", "slow2"]) {
+      r = oats(env, ["server", "add", id, "--ssh", `${id}-host`, "--workspace", repo, "--oats", slow, "--json"]);
+      assert.equal(r.status, 0, r.stderr);
+    }
+    const t0 = Date.now();
+    r = oats(env, ["server", "roster", "--json", "--budget", "9000", "--per-target", "4000"]);
+    const elapsed = Date.now() - t0;
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const out = r.json().result;
+    assert.ok(elapsed < 14000, `roster took ${elapsed} ms against a 9 s budget`);
+    assert.deepEqual(out.groups.map((g) => g.server), ["good", "slow1", "slow2"]);
+    assert.deepEqual(out.groups[0].probe, { ok: true });
+    assert.deepEqual(out.groups[0].souls.map((s) => s.name), ["dev"]);
+    assert.equal(out.groups[1].probe.ok, false); assert.notEqual(out.groups[1].probe.error.code, "E_ROSTER_BUDGET");
+    assert.equal(out.groups[2].probe.ok, false);
+    assert.equal(out.bounds.budgetMs, 9000); assert.equal(out.bounds.perTargetTimeoutMs, 4000);
+    // With a budget only one slow target can consume, the last one is
+    // reported as not reached rather than dropped or waited for.
+    r = oats(env, ["server", "roster", "--json", "--budget", "5000", "--per-target", "4000"]);
+    const out2 = r.json().result;
+    assert.deepEqual(out2.groups[0].probe, { ok: true });
+    assert.equal(out2.groups[2].probe.error.code, "E_ROSTER_BUDGET");
+    assert.equal(out2.bounds.skipped, 1);
+    r = oats(env, ["server", "roster", "--json", "--budget", "5"]);
+    assert.equal(r.json().error.code, "E_BAD_ARGS");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

@@ -39,7 +39,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, getServer, inspectRemote, listSnapshots, readServers, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 
 const args = process.argv.slice(2);
@@ -2777,7 +2777,12 @@ function spawnCmd() {
 
 function retireCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
+  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--home <path>] [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
+  let homeFlag = flag("home");
+  if (homeFlag === true) die("--home needs the instance home path");
+  // The calling instance knows its own home: self-retire never needs to
+  // disambiguate a same-named twin by hand.
+  if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && (process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name)) homeFlag = process.env.OATS_INSTANCE_HOME;
   const isSelf = process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name;
   if (isSelf && !args.includes("--self")) die(`"${name}" is the calling instance — self-retire is irreversible; if your task is complete and you were told to retire, re-run with --self (finish your memory files FIRST; your session dies ~8s after)`);
   if (!isSelf && args.includes("--self")) die(`--self given but "${name}" is not the calling instance`);
@@ -2785,9 +2790,10 @@ function retireCmd() {
   // Cross-repo: the instance may home in a sibling repo of the team scope.
   if (!listAgents(root).some((a) => existsSync(join(a._dir, "instances", name)))) {
     const hit = findTeamInstance(dirFlag(), name);
-    if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; console.log(`(cross-repo: instance homes at ${shortPath(root)})`); }
+    // Stdout carries only the envelope in JSON mode (the Desktop parses it).
+    if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; (args.includes("--json") ? console.error : console.log)(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
-  const r = retireInstance(root, name, { self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
   // Deferred self-retire: nothing has been inspected, run, or removed yet. The
   // caller's window dies first; a detached process then retires the instance
   // as an external operator and writes its outcome beside the home.
@@ -3118,10 +3124,13 @@ function versionCmd() {
   if (JSON_MODE) {
     // EXACT Desktop API v1 probe payload — one JSON object, nothing else on
     // stdout. Desktop accepts desktopApi === 1 and a compatible semver range.
-    // `remote`: the commands this kernel routes to a registered server with
-    // --server; a Desktop gates its remote path on it (an older CLI without
-    // the surface must fail closed with a reason, not an argument error).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session"] }));
+    // `remote`: this kernel's remote-side surface: the commands it routes to
+    // a registered server with --server, plus `roster` (the local command
+    // over registrations and saved routes); a Desktop gates its remote path
+    // on it (an older CLI without the surface must fail closed with a
+    // reason, not an argument error). `features`: kernel abilities a peer
+    // must see before relying on them (retire-home: retire --home).
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3167,8 +3176,40 @@ async function experimentalCmd() {
 function serverCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const sub = args[1];
-  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id>  [--json]";
-  if (!["add", "list", "remove", "check"].includes(sub)) bail("E_USAGE", usage);
+  const usage = "usage: oats server add <id> --ssh <host-alias> --workspace </abs/path> [--oats <path>] [--herdr <path>] [--path <dir:dir>] [--label <text>] [--replace] | list | remove <id> | check <id> | roster [--server <id>] | forget <id> --instance <name>  [--json]";
+  if (!["add", "list", "remove", "check", "roster", "forget"].includes(sub)) bail("E_USAGE", usage);
+  if (sub === "forget") {
+    // A saved route whose remote instance is gone can be dropped only by
+    // the operator: nothing routed can do it, and the changed-registration
+    // guard counts it until then.
+    const id = args[2];
+    const inst = flag("instance");
+    if (!id || id.startsWith("--") || !inst || inst === true) bail("E_USAGE", "usage: oats server forget <id> --instance <name> [--json]");
+    let snap;
+    try { snap = forgetSnapshot(id, inst); } catch (e) { bail(e.code || "E_SNAPSHOT_UNKNOWN", e.message); }
+    if (JSON_MODE) { jsonOk({ server: id, instance: inst, home: snap.home, target: snap.target, forgotten: true }); return; }
+    console.log(`Forgot the saved route of ${inst} through ${id} (${snap.target?.sshHost}:${snap.home}).`);
+    console.log(`  if that home still exists on the host it is no longer managed from here: retire it there with oats retire ${inst} --home ${snap.home}`);
+    return;
+  }
+  if (sub === "roster") {
+    // The remote roster for the Desktop and operators: grouped by saved route
+    // target, one bounded status pull per target, saved routes as the action
+    // authority. --server narrows to one registry id.
+    const only = flag("server") === true ? bail("E_BAD_ARGS", "--server needs a registered server id") : flag("server");
+    const ms = (name) => { const v = flag(name); if (v === undefined) return undefined; const n = Number(v); if (!Number.isInteger(n) || n < 1000) bail("E_BAD_ARGS", `--${name} takes whole milliseconds, at least 1000`); return n; };
+    let out;
+    try { out = rosterGroups({ server: only, io: { budgetMs: ms("budget"), perTargetTimeoutMs: ms("per-target") } }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
+    if (JSON_MODE) { jsonOk(out); return; }
+    if (!out.groups.length) { console.log("no remote groups: no registrations and no saved routes"); return; }
+    for (const g of out.groups) {
+      console.log(`  ${g.server}${g.label && g.label !== g.server ? `  ${g.label}` : ""}  [${g.id}]  ssh ${g.target.sshHost}  workspace ${g.target.workspace}${g.registrationPresent ? "" : "  (registration removed or changed; saved routes only)"}`);
+      console.log(g.probe?.ok ? `      reachable, ${g.souls.length} soul(s)` : `      UNREACHABLE: ${g.probe?.error?.message || "?"}`);
+      for (const i of g.instances) console.log(`      • ${i.instance}  ${i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown"}${i.retirePending ? " RETIRING" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+    }
+    console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target within ${out.bounds.budgetMs} ms, ${out.bounds.elapsedMs} ms used${out.bounds.skipped ? `, ${out.bounds.skipped} target(s) not reached` : ""}`);
+    return;
+  }
   let servers;
   try { servers = readServers(); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
   if (sub === "list") {
@@ -3227,6 +3268,22 @@ function serverRouteCmd() {
   // Interactive viewer: `oats session attach --server <id> --instance <name>`
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
+  if (cmd === "okf") {
+    // `oats okf harvest --server <id> --instance <name>`: the package's
+    // harvest command run in the instance's SAVED home on the host.
+    if (args[1] !== "harvest") bail("E_USAGE", "--server routes `okf harvest` only among the okf commands");
+    const inst = flag("instance");
+    if (!inst || inst === true) bail("E_BAD_ARGS", "okf harvest --server needs --instance <name> (spawned from here)");
+    let routed;
+    try { routed = routeCommand(id, "harvest", [inst]); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    if (routed.stderr?.trim()) process.stderr.write(routed.stderr.endsWith("\n") ? routed.stderr : routed.stderr + "\n");
+    if (JSON_MODE) { console.log(JSON.stringify(routed.envelope, null, 2)); if (!routed.envelope.ok) process.exit(1); return; }
+    if (!routed.envelope.ok) die(`${id}: ${routed.envelope.error?.message || "harvest failed"} (${routed.envelope.error?.code || "E_REMOTE"})`);
+    const hr = routed.envelope.result;
+    console.log(`Harvest on ${id} for ${inst}: ${hr.harvest}${hr.reason ? ` (${hr.reason})` : ""}${hr.instance && hr.harvest === "spawned" ? ` — harvester ${hr.instance}` : ""}`);
+    if (hr.instance && hr.instance !== inst) console.log(`  the harvester ${hr.instance} runs on ${id}; retire it there when it is done, or let it self-retire`);
+    return;
+  }
   if (cmd === "session") {
     const addr = { instance: flag("instance") === true ? undefined : flag("instance"), home: flag("home") === true ? undefined : flag("home") };
     if (args[1] === "inspect") {
@@ -3321,7 +3378,7 @@ function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
@@ -3373,6 +3430,16 @@ Usage:
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
                                             (same flags, same envelope; the saved route per
                                             remote instance lives under ~/.oats/remote/)
+  oats server roster [--server <id>]         remote roster grouped by server and saved route
+      [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
+      [--json]                              budget (45 s, 20 s per target); saved routes are
+                                            the authority for actions
+  oats server forget <id> --instance <name>  drop a saved route whose remote instance is gone
+                                            (the roster shows it as missingRemotely)
+  oats retire <instance> --home <path>       retire exactly that home when two agents own an
+                                            instance of the same name (else refused)
+  oats okf harvest --server <id>             run the knowledge harvest in a remote instance's
+      --instance <name> [--json]            saved home on its host
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
       --instance <name> | --home <abs>       remote instance over its saved route (--print shows
                                             attach); the server needs oats 0.22.2 or later
