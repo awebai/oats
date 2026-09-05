@@ -6,12 +6,17 @@ contract is [`docs/turn-record-sot.md`](docs/turn-record-sot.md) in this
 package; the conformance vectors under `test/vectors/` pin the format
 (`node test/vectors/validate.mjs`, dependency-free).
 
-Everything is a signed turn in an append-only record. This package is the
-core: gathering every conversation, keeping it durably, and finding it
-again. The experimental tools that select and synthesize over the record
-(dress, spawn, segments, mind) live in `packages/experimental` of the oats
-repo and run as `oats experimental <cmd>`; they are deliberately not part
-of this package.
+Turns in this append-only record are content-addressed. Native session turns
+are not signed. Projected aweb mail and chat keep their original message
+signatures verbatim.
+
+After `turn-record setup` runs on a machine, this package gathers Claude Code,
+Pi, and Codex transcripts plus aw client logs. It skips sources matched by the
+local record's ignore list. The package keeps captured conversations durably
+and finds them again. The experimental tools that select and synthesize over
+the record (dress, spawn, segments, mind) live in `packages/experimental` of
+the oats repo and run as `oats experimental <cmd>`. They are deliberately not
+part of this package.
 
 - **`lib/canonical.mjs`** — canonical JSON (integers only in the core),
   `t1:` content ids, did:key Ed25519 verification. Byte-compatible with awid
