@@ -78,6 +78,29 @@ function packageRuntimeCli() {
  *  The watermark advances only when the harvester delivers (it writes the
  *  file its briefing hands it), so a failed harvest re-reads the same window. */
 const RECORD_WATERMARK = ".okf-harvest-record.json";
+/** A window is what one harvester can actually read: a first harvest of a
+ *  long-lived session must not hand it the whole thread (tens of MB on real
+ *  homes) and then let it advance the watermark past what it never read. The
+ *  plan sizes each window with an ids-only listing and stops at the turn or
+ *  byte cap; the rest drains over later harvests, each with a truthful
+ *  watermark. Overridable through okf settings { "record-window-turns",
+ *  "record-window-bytes" }. */
+const DEFAULT_WINDOW_TURNS = 300;
+const DEFAULT_WINDOW_BYTES = 1_500_000;
+function sizeWindow(cli, thread, afterTurnId, caps) {
+  const args = ["recall", "--thread", thread, "--json", "--ids-only", "--limit", String(caps.turns)];
+  if (afterTurnId) args.push("--after", afterTurnId);
+  const r = spawnSync(cli, args, { encoding: "utf8", env: process.env, timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
+  if (r.status !== 0) return { error: String(r.stderr || r.error?.message || `recall exited ${r.status}`).trim().slice(0, 200) };
+  let doc; try { doc = JSON.parse(String(r.stdout || "").trim()); } catch (e) { return { error: `recall answered no JSON: ${String(e.message).slice(0, 100)}` }; }
+  let bytes = 0; let n = 0;
+  for (const t of doc.turns || []) {
+    if (n > 0 && bytes + t.bytes > caps.bytes) break; // always at least one turn, so a single huge turn still drains
+    bytes += t.bytes; n++;
+  }
+  if (!n) return { error: "empty window" };
+  return { untilTurnId: doc.turns[n - 1].id, newTurns: n, bytes, remaining: (doc.turns.length - n) + (doc.remaining || 0) };
+}
 function planRecordHarvest(instanceHome) {
   const watermarkPath = join(instanceHome, RECORD_WATERMARK);
   let prior = {};
@@ -88,27 +111,35 @@ function planRecordHarvest(instanceHome) {
     if (r.status !== 0) return { unavailable: String(r.stderr || r.error?.message || `capture exited ${r.status}`).trim().slice(0, 200) };
     report = JSON.parse(String(r.stdout || "").trim());
   } catch (e) { return { unavailable: String(e.message || e).slice(0, 200) }; }
+  const caps = { turns: Number(settings["record-window-turns"]) || DEFAULT_WINDOW_TURNS, bytes: Number(settings["record-window-bytes"]) || DEFAULT_WINDOW_BYTES };
   const threads = [];
+  const problems = [];
   for (const s of report.sessions || []) {
     const seen = prior[s.thread];
     // Nothing new when the count has not grown. Same count with a different
     // tail means a rewritten or pruned source: it is left alone on purpose
-    // (never re-promote a rewritten transcript), and stays stuck until the
-    // source grows again, since the watermark cannot advance past it either.
+    // (never re-promote a rewritten transcript); the window is id-bounded, so
+    // when the source grows again everything appended since is still inside it.
     if (seen && seen.turns >= s.turns) continue;
-    threads.push({ thread: s.thread, source: s.source, afterTurnId: seen?.untilTurnId || null, untilTurnId: s.lastTurnId, turns: s.turns, newTurns: s.turns - (seen?.turns || 0) });
+    const win = sizeWindow(packageRuntimeCli(), s.thread, seen?.untilTurnId || null, caps);
+    if (win.error) { problems.push(`${s.thread}: ${win.error}`); continue; }
+    threads.push({ thread: s.thread, source: s.source, afterTurnId: seen?.untilTurnId || null, untilTurnId: win.untilTurnId, turns: (seen?.turns || 0) + win.newTurns, newTurns: win.newTurns, bytes: win.bytes, remaining: win.remaining });
   }
-  if (!threads.length) return null;
+  if (!threads.length) return problems.length ? { unavailable: problems.join("; ") } : null;
   const next = { threads: { ...prior } };
   for (const t of threads) next.threads[t.thread] = { untilTurnId: t.untilTurnId, turns: t.turns, harvestedAt: new Date().toISOString() };
-  return { threads, watermarkPath, watermark: next };
+  // The exact next watermark is written beside the current one by the
+  // package; the harvester's delivery is a rename, nothing retyped.
+  const nextPath = join(instanceHome, RECORD_WATERMARK.replace(/\.json$/, ".next.json"));
+  writeFileSync(nextPath, JSON.stringify(next, null, 2) + "\n");
+  return { threads, watermarkPath, nextPath, watermark: next, unattributed: (report.unattributed || []).length, problems };
 }
 
 /** Briefing block for record-fed candidates, appended to the harvest task. */
 function recordBrief(plan, cli) {
   if (!plan?.threads?.length) return "";
-  const lines = plan.threads.map((t) => `  - ${t.thread} (${t.newTurns} new turns): \`${cli} recall --thread ${t.thread} --json${t.afterTurnId ? ` --after ${t.afterTurnId}` : ""} --until ${t.untilTurnId}\``);
-  return `\n- RECORD-FED CANDIDATES (the memory-harvest skill, section "Record-fed candidates"): this instance's own captured session turns since the last harvest. Read each window with the exact command given, never wider:\n${lines.join("\n")}\n  If a window command is rejected (its --after id is no longer in the thread), run it again without --after and read from the start. Extract candidate lessons from them in the same shape as notes (one candidate per insight, provenance = the turn ids it came from), then judge every candidate under the same promotion bar as a note. Session trivia, tool noise and anything derivable from the repo fail the bar; promoting nothing is a normal outcome.\n- When your judgement of the window is COMPLETE, whether or not anything was promoted, and after any delivery it needed, write the watermark file EXACTLY as follows (it records what you read, not what you promoted; only a failed or abandoned harvest leaves it untouched):\n  path: ${plan.watermarkPath}\n  content: ${JSON.stringify(plan.watermark)}`;
+  const lines = plan.threads.map((t) => `  - ${t.thread} (${t.newTurns} turns, ~${Math.round(t.bytes / 1024)} KB${t.remaining ? `, ${t.remaining} more wait for the next harvest` : ""}): \`${cli} recall --thread ${t.thread} --json${t.afterTurnId ? ` --after ${t.afterTurnId}` : ""} --until ${t.untilTurnId}\``);
+  return `\n- RECORD-FED CANDIDATES (the memory-harvest skill, section "Record-fed candidates"): this instance's own captured session turns since the last harvest, in windows sized for one reading. Read each window with the exact command given, never wider, and read it IN FULL: a window you could not read completely is a failed harvest, and a failed harvest leaves the watermark alone.\n${lines.join("\n")}\n  If a window command is rejected (its --after id is no longer in the thread), run it again without --after and read from the start. Extract candidate lessons from them in the same shape as notes (one candidate per insight, provenance = the turn ids it came from), then judge every candidate under the same promotion bar as a note. Session trivia, tool noise and anything derivable from the repo fail the bar; promoting nothing is a normal outcome.\n- When your judgement of every window is COMPLETE, whether or not anything was promoted, and after any delivery it needed, advance the watermark by renaming the prepared file (it records what you read, not what you promoted; a failed or abandoned harvest must leave both files as they are):\n  mv ${plan.nextPath} ${plan.watermarkPath}`;
 }
 
 /** Invoke the versioned package-runtime boundary. Task text crosses the
@@ -357,12 +388,12 @@ _(the single next action — keep this current; a fresh session on any model res
       const soulTarget = realSoul.startsWith(realRepo + "/")
         ? join(workDir, realSoul.slice(realRepo.length + 1))
         : realSoul;
-      const task = `Harvest the pending notes of live instance "${inst}" (agent "${agName}") into its soul.\n\n- Source notes: ${notes.length ? `${notesDir} (${notes.join(", ")})` : "none pending"}\n- Soul knowledge bundle to update: ${join(soulTarget, "knowledge")}\n- Soul skills dir (for procedure-shaped notes): ${join(soulTarget, "skills")}\n- You are ATTACHED to the instance's work tree (./work) — commit your promotions there as a single commit, prefixed "memory-harvest:".\n- Follow your memory-harvest skill: promote/merge/drop each note, knowledge vs skill routing, index + log discipline, validate the bundle, DELETE processed notes from the source notes/ dir (so they are not re-harvested).${recordBrief(recordPlan, packageRuntimeCli())}\n- Commit, then run \`oats retire ${harvName} --self\`.`;
+      const task = `Harvest the pending notes of live instance "${inst}" (agent "${agName}") into its soul.\n\n- Source notes: ${notes.length ? `${notesDir} (${notes.join(", ")})` : "none pending"}\n- Soul knowledge bundle to update: ${join(soulTarget, "knowledge")}\n- Soul skills dir (for procedure-shaped notes): ${join(soulTarget, "skills")}\n- You are ATTACHED to the instance's work tree (./work) — commit your promotions there as a single commit, prefixed "memory-harvest:".\n- Follow your memory-harvest skill: promote/merge/drop each note, knowledge vs skill routing, index + log discipline, validate the bundle, DELETE processed notes from the source notes/ dir (so they are not re-harvested).${recordBrief(recordPlan, packageRuntimeCli())}\n- Commit if you changed anything (a harvest that promoted nothing has nothing to commit), then run \`oats retire ${harvName} --self\`.`;
       r = await spawnHarvester(harvestSpawnArgs({
         slug, parent: inst, repo: context, work: "attached", workDir, model: harvestModel,
       }), task);
     }
-    if (JSON_MODE) jsonOk({ harvest: "spawned", instance: r.instance, window: r.tmux?.window || null, ...(recordPlan ? { record: { threads: recordPlan.threads.map((t) => t.thread) } } : {}) });
+    if (JSON_MODE) jsonOk({ harvest: "spawned", instance: r.instance, window: r.tmux?.window || null, ...(recordPlan ? { record: { threads: recordPlan.threads.map((t) => t.thread), ...(recordPlan.unattributed ? { unattributed: recordPlan.unattributed } : {}), ...(recordPlan.problems?.length ? { problems: recordPlan.problems } : {}) } } : {}) });
     out({ meta: { harvestSpawn: r.instance, window: r.tmux?.window } });
   } catch (e) {
     if (JSON_MODE) jsonFail(e.code || "E_HARVEST_FAILED", `harvest spawn failed (notes are safe on disk): ${e.message || e}`);

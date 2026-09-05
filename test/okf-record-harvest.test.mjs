@@ -29,6 +29,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 const [cmd, ...rest] = process.argv.slice(2);
 if (cmd === "capture") {
   process.stdout.write(readFileSync(${JSON.stringify(join(base, "capture.json"))}, "utf8"));
+} else if (cmd === "recall") {
+  // ids-only window sizing: turns t1..tN for the thread, each with a byte size
+  const thread = rest[rest.indexOf("--thread") + 1];
+  const limit = Number(rest[rest.indexOf("--limit") + 1] || 1e9);
+  const after = rest.includes("--after") ? rest[rest.indexOf("--after") + 1] : null;
+  const sessions = JSON.parse(readFileSync(${JSON.stringify(join(base, "capture.json"))}, "utf8")).sessions;
+  const total = sessions.find((s) => s.thread === thread).turns;
+  const bytesOf = (i) => (thread.startsWith("codex") ? 900_000 : 1000);
+  const all = Array.from({ length: total }, (_, i) => ({ id: "t" + (i + 1), ts: "", bytes: bytesOf(i) }));
+  const start = after ? all.findIndex((t) => t.id === after) + 1 : 0;
+  if (after && start === 0) { process.stderr.write("--after: no turn " + after); process.exit(1); }
+  const turns = all.slice(start, start + limit);
+  process.stdout.write(JSON.stringify({ thread, total, from: start, to: start + turns.length, remaining: all.length - start - turns.length, turns }));
 } else if (cmd === "spawn") {
   const i = rest.indexOf("--task-file");
   writeFileSync(${JSON.stringify(spawnLog)}, JSON.stringify({ args: rest, task: readFileSync(rest[i + 1], "utf8") }));
@@ -64,20 +77,21 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     assert.equal(log.args[0], "memory-harvest");
     assert.match(log.task, /Source notes: none pending/);
     assert.match(log.task, /RECORD-FED CANDIDATES/);
-    assert.match(log.task, new RegExp(`${d.fake} recall --thread cc:session:s1 --json --until t12`), "first harvest has no --after: the whole thread is the window");
+    assert.match(log.task, new RegExp(`${d.fake} recall --thread cc:session:s1 --json --until t12`), "first harvest has no --after: the whole (small) thread is the window");
     const wmPath = join(d.home, ".okf-harvest-record.json");
-    assert.ok(log.task.includes(`path: ${wmPath}`));
-    const wmLine = log.task.split("\n").find((l) => l.trim().startsWith("content: "));
-    const wm = JSON.parse(wmLine.trim().slice("content: ".length));
+    const nextPath = join(d.home, ".okf-harvest-record.next.json");
+    assert.ok(log.task.includes(`mv ${nextPath} ${wmPath}`), "delivery advances the watermark by one rename, nothing retyped");
+    const wm = JSON.parse(readFileSync(nextPath, "utf8"));
     assert.equal(wm.threads["cc:session:s1"].untilTurnId, "t12");
     assert.equal(wm.threads["cc:session:s1"].turns, 12);
-    assert.equal(existsSync(wmPath), false, "the package never writes the watermark; the harvester does");
+    assert.equal(existsSync(wmPath), false, "the package never writes the watermark itself; the harvester renames the prepared one");
     assert.match(log.task, /whether or not anything was promoted/, "a completed judgement that promotes nothing still advances the watermark");
+    assert.match(log.task, /could not read completely is a failed harvest/, "an unread window never advances it");
     assert.match(log.task, /rejected .*run it again without --after/, "a pruned boundary has a stated fallback");
-    assert.match(log.task, /Then run `oats retire memory-harvest-dev-1 --self`|Commit, then run `oats retire memory-harvest-dev-1 --self`/);
+    assert.match(log.task, /Then run `oats retire memory-harvest-dev-1 --self`|Commit if you changed anything .*then run `oats retire memory-harvest-dev-1 --self`/);
 
-    // The harvester delivered and wrote the watermark: the same window is not harvested again.
-    writeFileSync(wmPath, JSON.stringify(wm));
+    // The harvester delivered and renamed the watermark: the same window is not harvested again.
+    writeFileSync(wmPath, JSON.stringify(wm)); rmSync(nextPath);
     rmSync(spawnLog, { force: true });
     const second = harvest(d);
     assert.deepEqual(second.result, { harvest: "skipped", reason: "no pending notes" });
@@ -104,7 +118,7 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     assert.equal(third.result.harvest, "spawned");
     const log3 = JSON.parse(readFileSync(spawnLog, "utf8"));
     assert.match(log3.task, /recall --thread cc:session:s1 --json --after t12 --until t15/);
-    assert.match(log3.task, /3 new turns/);
+    assert.match(log3.task, /cc:session:s1 \(3 turns, ~3 KB\)/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -125,12 +139,43 @@ test("okf harvest: notes take precedence and the record is not consulted unless 
     assert.deepEqual(both.result.record, { threads: ["pi:session:p1"] });
     const log2 = JSON.parse(readFileSync(spawnLog, "utf8"));
     assert.match(log2.task, /Source notes: .*one\.md/);
-    assert.match(log2.task, /recall --thread pi:session:p1 --json --until d/);
+    assert.match(log2.task, /recall --thread pi:session:p1 --json --until t4`/);
 
     // Record unavailable (the fake refuses), no notes: the old answer, unchanged.
     rmSync(join(d.home, "notes", "one.md"));
     rmSync(join(base, "capture.json"));
     const r = harvest(d);
     assert.deepEqual(r.result, { harvest: "skipped", reason: "no pending notes" });
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("okf harvest: a long backlog is drained in bounded windows, by turns and by bytes, each with a truthful watermark", () => {
+  const base = mkdtempSync(join(tmpdir(), "okf-record-"));
+  const spawnLog = join(base, "spawn.json");
+  const sessions = [
+    { thread: "cc:session:long", source: "cc", sessionId: "long", stream: "mac~cc.long", turns: 1000, firstTurnId: "t1", lastTurnId: "t1000", lastTs: "" },
+    { thread: "codex:session:fat", source: "codex", sessionId: "fat", stream: "mac~codex.fat", turns: 5, firstTurnId: "t1", lastTurnId: "t5", lastTs: "" },
+  ];
+  const d = deployment(base, { sessions, spawnLog });
+  try {
+    const first = harvest(d);
+    assert.equal(first.result.harvest, "spawned");
+    const log = JSON.parse(readFileSync(spawnLog, "utf8"));
+    // turn cap: 300 of 1000, the rest announced for later harvests
+    assert.match(log.task, /recall --thread cc:session:long --json --until t300`/);
+    assert.match(log.task, /cc:session:long \(300 turns, ~293 KB, 700 more wait for the next harvest\)/);
+    // byte cap: 900 KB per turn, 1.5 MB window → one turn only
+    assert.match(log.task, /recall --thread codex:session:fat --json --until t1`/);
+    const next = JSON.parse(readFileSync(join(d.home, ".okf-harvest-record.next.json"), "utf8"));
+    assert.equal(next.threads["cc:session:long"].untilTurnId, "t300");
+    assert.equal(next.threads["cc:session:long"].turns, 300);
+    assert.equal(next.threads["codex:session:fat"].untilTurnId, "t1");
+    // the harvester delivers: rename; the next harvest continues exactly after the boundary
+    writeFileSync(join(d.home, ".okf-harvest-record.json"), JSON.stringify(next));
+    const second = harvest(d);
+    assert.equal(second.result.harvest, "spawned");
+    const log2 = JSON.parse(readFileSync(spawnLog, "utf8"));
+    assert.match(log2.task, /recall --thread cc:session:long --json --after t300 --until t600`/);
+    assert.match(log2.task, /recall --thread codex:session:fat --json --after t1 --until t2`/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

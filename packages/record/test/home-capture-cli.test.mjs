@@ -56,6 +56,11 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   assert.equal(w.turns.length, 1);
   assert.equal(w.turns[0].id, r2.lastTurnId);
   assert.deepEqual(w.turns[0].text, [{ role: "user", text: "third" }]);
+  // Sizing a window without materializing text: ids, stamps and byte counts, with the remainder.
+  const sized = JSON.parse(run(RECALL, ["--thread", "cc:session:s1", "--json", "--ids-only", "--limit", "2"]));
+  assert.deepEqual(sized.turns.map((x) => Object.keys(x).sort()), [["bytes", "id", "kind", "source", "thread", "ts"], ["bytes", "id", "kind", "source", "thread", "ts"]]);
+  assert.equal(sized.turns[0].bytes, Buffer.byteLength("first"));
+  assert.equal(sized.remaining, 1);
   // Whole thread in sequence when unbounded.
   const all = JSON.parse(run(RECALL, ["--thread", "cc:session:s1", "--json"]));
   assert.deepEqual(all.turns.map((x) => x.text[0].text), ["first", "second", "third"]);

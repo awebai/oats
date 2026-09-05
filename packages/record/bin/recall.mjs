@@ -6,7 +6,9 @@
 //   recall --thread <thread> [query]  filter/list by thread
 //   recall --thread <thread> --json   the thread's turns in journal order,
 //     [--after <id>] [--until <id>]   with extracted text; exact id bounds
-//                                     (after is exclusive, until inclusive)
+//     [--limit n] [--ids-only]        (after is exclusive, until inclusive);
+//                                     --ids-only lists id, ts and text bytes
+//                                     per turn without materializing text
 //   recall --from <name> <query...>   filter by speaker
 //   recall --limit N                  max results (default 20)
 //   recall --show <turn-id>           print one turn as JSON
@@ -102,16 +104,17 @@ try {
       end = i + 1;
     }
     const cap = args.limit ? Number(args.limit) : Infinity;
-    const window = turns.slice(start, Math.min(end, start + cap));
-    const out = window.map((t) => ({
-      id: t.id,
-      ts: t.ts,
-      thread: t.thread,
-      kind: t.kind,
-      source: t.provenance?.source ?? null,
-      text: index.extractText(t).map((d) => ({ role: d.role, text: d.text })),
-    }));
-    console.log(JSON.stringify({ thread: args.thread, total: turns.length, from: start, to: Math.min(end, start + cap), turns: out }, null, 2));
+    const stop = Math.min(end, start + cap);
+    const window = turns.slice(start, stop);
+    // A window is a bounded read: a consumer that plans one (the OKF
+    // harvester) sizes it with --ids-only first, then reads exactly that.
+    const out = window.map((t) => {
+      const docs = index.extractText(t);
+      const base = { id: t.id, ts: t.ts, thread: t.thread, kind: t.kind, source: t.provenance?.source ?? null };
+      if (args["ids-only"]) return { ...base, bytes: docs.reduce((n, d) => n + Buffer.byteLength(d.text, "utf8"), 0) };
+      return { ...base, text: docs.map((d) => ({ role: d.role, text: d.text })) };
+    });
+    console.log(JSON.stringify({ thread: args.thread, total: turns.length, from: start, to: stop, remaining: end - stop, turns: out }, null, 2));
     process.exit(0);
   }
 
