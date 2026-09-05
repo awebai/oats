@@ -19,6 +19,7 @@ import {
   existsSync,
   fsyncSync,
   ftruncateSync,
+  linkSync,
   mkdirSync,
   openSync,
   readdirSync,
@@ -28,8 +29,9 @@ import {
   statSync,
   unlinkSync,
   writeFileSync,
-  writeSync,
 } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { hostname } from "node:os";
 import { join } from "node:path";
 
 import { finishTurn, sha256Hex, verifyTurnId } from "./canonical.mjs";
@@ -141,16 +143,154 @@ export function parseJournal(input) {
   return { turns, validEnd, torn: validEnd < bytes.length };
 }
 
+// ----------------------------------------------------------- stream lock
+//
+// The per-stream lock is an exclusive-create lockfile carrying an OWNER
+// TOKEN: the creating process's pid, its hostname, and a random nonce.
+// Two properties follow from the token that a bare lockfile cannot give:
+//
+//   - staleness is judged against the HOLDER'S LIVENESS, not the lock's
+//     age, so a contender that arrives late against a still-running holder
+//     waits (or times out) instead of stealing a live lock; and
+//   - release unlinks the lock only while it still carries the releaser's
+//     nonce, so a holder whose lock was reclaimed cannot delete the
+//     replacement lock out from under its new owner.
+//
+// Crash recovery is preserved: a lock whose pid is gone from this host is
+// provably stale and is reclaimed at once, without waiting out any age.
+//
+// Age remains the fallback for the two cases where liveness is not
+// knowable here: a lock created on another host (file sync can copy one
+// in) and a lock with no readable token (written by an older version, or
+// by hand).
+
+function newLockToken() {
+  return {
+    pid: process.pid,
+    host: hostname(),
+    nonce: randomBytes(12).toString("hex"),
+    acquiredAt: new Date().toISOString(),
+  };
+}
+
+// Create the lock, or report that someone else holds it. The payload is
+// written to a temp file and hard-linked into place, so the lock never
+// exists with partial or empty content: a contender that can see the file
+// can always read the whole token.
+function createLock(lockPath, dir, token) {
+  const tmp = join(dir, `.lock.tmp-${token.pid}-${token.nonce}`);
+  try {
+    writeFileSync(tmp, JSON.stringify(token) + "\n");
+    try {
+      linkSync(tmp, lockPath);
+      return true;
+    } catch (err) {
+      if (err.code === "EEXIST") return false;
+      throw err;
+    }
+  } finally {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      /* never created, or already gone */
+    }
+  }
+}
+
+// Read the lock as { token, ino, mtimeMs }; token is null when the file
+// holds no readable owner token. Returns null when the lock has vanished.
+function readLock(lockPath) {
+  let st;
+  let raw;
+  try {
+    st = statSync(lockPath);
+    raw = readFileSync(lockPath, "utf8");
+  } catch {
+    return null;
+  }
+  let token = null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed.pid === "number" &&
+      typeof parsed.host === "string" &&
+      typeof parsed.nonce === "string"
+    ) {
+      token = parsed;
+    }
+  } catch {
+    /* no token: an older or hand-written lock, judged by age below */
+  }
+  return { token, ino: st.ino, mtimeMs: st.mtimeMs };
+}
+
+// true / false when the holder's liveness is knowable from this process,
+// null when it is not (the lock was created on another host). EPERM means
+// the process exists and belongs to another user: alive.
+function holderAlive(token) {
+  if (token.host !== hostname()) return null;
+  try {
+    process.kill(token.pid, 0);
+    return true;
+  } catch (err) {
+    return err.code === "ESRCH" ? false : true;
+  }
+}
+
+function lockIsProvenStale(held, staleMs) {
+  if (held.token) {
+    const alive = holderAlive(held.token);
+    if (alive === true) return false; // live holder: never stealable, at any age
+    if (alive === false) return true; // dead holder: crash recovery
+  }
+  return Date.now() - held.mtimeMs > staleMs;
+}
+
+// Remove a lock we have proven stale — and only that lock. The identity
+// check makes the remover give up when the file it proved stale has since
+// been replaced by a new holder's lock, so a reclaim cannot cascade into
+// stealing from whoever reclaimed first.
+function removeStaleLock(lockPath, held) {
+  try {
+    const st = statSync(lockPath);
+    if (st.ino !== held.ino || st.mtimeMs !== held.mtimeMs) return;
+    unlinkSync(lockPath);
+  } catch {
+    /* reclaimed by someone else first */
+  }
+}
+
+// Release: unlink only while the lock still carries our nonce. If it was
+// reclaimed (we ran long enough to be judged dead, or a sync overwrote
+// it), the file now belongs to another holder and is left alone.
+function releaseOwnedLock(lockPath, token) {
+  const held = readLock(lockPath);
+  if (held === null) return;
+  if (!held.token || held.token.nonce !== token.nonce) return;
+  try {
+    unlinkSync(lockPath);
+  } catch {
+    /* already gone */
+  }
+}
+
+function describeHolder(held) {
+  if (!held || !held.token) return "holder unknown";
+  return `held by pid ${held.token.pid} on ${held.token.host} since ${held.token.acquiredAt}`;
+}
+
 export class RecordStore {
   constructor(root, { owner, lockTimeoutMs = 10000, lockStaleMs = 30000 } = {}) {
     if (!root) throw new StoreError("record root is required");
-    // The lock has no liveness refresh: a holder that outlives lockStaleMs
-    // can be stolen from mid-critical-section. Keeping the waiter timeout
-    // strictly below the stale threshold guarantees a contender errors out
-    // loudly before it could ever steal a live holder's lock.
-    if (lockTimeoutMs >= lockStaleMs) {
-      throw new StoreError("lockTimeoutMs must be < lockStaleMs (stale-steal would race a live holder)");
-    }
+    // lockTimeoutMs is how long a contender waits; lockStaleMs is how old a
+    // lock must be before it is reclaimed WHEN ITS HOLDER'S LIVENESS CANNOT
+    // BE CHECKED (foreign host, no readable token). There is deliberately no
+    // ordering constraint between them: safety against stealing a live
+    // holder's lock comes from the owner token, not from the two thresholds
+    // being ordered — an ordering that never held, because the waiter's
+    // timeout starts when the contender arrives while age is measured from
+    // the lock's creation.
     this.root = root;
     this.owner = owner ?? null;
     this.lockTimeoutMs = lockTimeoutMs;
@@ -166,52 +306,33 @@ export class RecordStore {
   // processes: hooks, watchers and manual passes can all fire close
   // together for the same owner, and an unguarded repair can truncate a
   // concurrent writer's already-fsynced turn. Exclusive-create lockfile
-  // with stale-steal (a crashed holder's lock older than lockStaleMs is
-  // removed).
+  // carrying an owner token; see the stream-lock helpers above for how
+  // staleness is proven and why release is ownership-checked.
   withStreamLock(streamId, fn) {
     const dir = join(this.streamsDir(), streamId);
     mkdirSync(dir, { recursive: true });
     const lockPath = join(dir, ".lock");
+    const token = newLockToken();
     const deadline = Date.now() + this.lockTimeoutMs;
     for (;;) {
-      try {
-        const fd = openSync(lockPath, "wx");
-        try {
-          writeSync(fd, String(process.pid));
-        } finally {
-          closeSync(fd);
-        }
-        break;
-      } catch (err) {
-        if (err.code !== "EEXIST") throw err;
-        let stale = false;
-        try {
-          stale = Date.now() - statSync(lockPath).mtimeMs > this.lockStaleMs;
-        } catch {
-          continue; // lock vanished between open and stat: retry now
-        }
-        if (stale) {
-          try {
-            unlinkSync(lockPath);
-          } catch {
-            /* another process stole it first */
-          }
-          continue;
-        }
-        if (Date.now() >= deadline) {
-          throw new StoreError(`timed out waiting for lock on stream ${streamId} (${lockPath})`);
-        }
-        sleepSync(25);
+      if (createLock(lockPath, dir, token)) break;
+      const held = readLock(lockPath);
+      if (held === null) continue; // vanished between link and read: retry now
+      if (lockIsProvenStale(held, this.lockStaleMs)) {
+        removeStaleLock(lockPath, held);
+        continue;
       }
+      if (Date.now() >= deadline) {
+        throw new StoreError(
+          `timed out waiting for lock on stream ${streamId} (${lockPath}, ${describeHolder(held)})`,
+        );
+      }
+      sleepSync(25);
     }
     try {
       return fn();
     } finally {
-      try {
-        unlinkSync(lockPath);
-      } catch {
-        /* already stolen as stale; nothing to release */
-      }
+      releaseOwnedLock(lockPath, token);
     }
   }
 

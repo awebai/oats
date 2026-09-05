@@ -126,16 +126,61 @@ non-prefix copy of a stream quarantines it loudly.
 
 ## Durability and concurrency
 
-Appends and merges run under a per-stream lockfile
-(`streams/<id>/.lock`, exclusive-create, stale after 30 s), because the
-torn-tail repair is a read-truncate-write sequence and hooks, watchers and
-manual passes can fire concurrently for the same owner. Sync tools may copy
-a `.lock` file; that cannot corrupt data, but a synced-in stale lock can
-delay a local `mergeStreamCopy` on that stream by up to the stale threshold
-(30 s), so excluding `.lock` from sync patterns is the right configuration. Journal writes fsync;
-note that on macOS `fsync(2)` does not guarantee media durability (that
-would need `F_FULLFSYNC`, which Node's fs API does not expose) — the
-guarantee is OS-crash-level, not power-loss-level.
+Appends and merges run under a per-stream lockfile (`streams/<id>/.lock`),
+because the torn-tail repair is a read-truncate-write sequence and hooks,
+watchers and manual passes can fire concurrently for the same owner.
+
+The lock carries an **owner token** — the holder's pid, its hostname, and a
+random nonce — written by hard-linking a fully-written temp file into place,
+so a lock that exists is always readable in full. Two guarantees rest on
+that token:
+
+- **A live holder is never stolen from, at any age.** Staleness is proven
+  from the holder's liveness, not from how long ago the lock was created.
+  A contender that finds the holder's pid alive on this host waits, and
+  fails with a timeout naming the holder — it does not reclaim. (The
+  earlier design judged a lock stale by age while the waiter's timeout
+  started when the contender arrived; a contender arriving late therefore
+  reclaimed a lock whose holder was still inside its critical section, and
+  both ran at once.)
+- **A holder releases only its own lock.** Release unlinks `.lock` only
+  while it still carries the releaser's nonce, so a holder whose lock was
+  reclaimed cannot delete the replacement lock out from under its new
+  owner.
+
+**Crash recovery is immediate, not timed**: a lock whose pid is gone from
+this host is provably stale and is reclaimed at once, without waiting out
+any threshold.
+
+`lockStaleMs` (30 s by default) is the fallback for the two cases where
+liveness cannot be checked here: a lock created on **another host** (file
+sync can copy one in) and a lock with **no readable token** (written by an
+older version of this package, or by hand). Those are still reclaimed by
+age. `lockTimeoutMs` (10 s) is how long a contender waits; the two
+thresholds are independent, and neither ordering of them is required or
+assumed.
+
+Honest limits:
+
+- **Pid reuse across a reboot.** A lock left by a process whose pid was
+  later reused by an unrelated live process reads as held forever, and
+  contenders on that stream time out until it is deleted by hand. The
+  timeout message names the lock path and the recorded holder. This is the
+  chosen direction of failure: refusing to write is recoverable, writing
+  concurrently with a live holder is not.
+- **Reclaim is not perfectly atomic.** A contender re-checks the lock's
+  identity (inode and mtime) immediately before removing it, so it cannot
+  remove a lock that was replaced after it proved the old one stale; a
+  replacement landing inside that check-to-unlink window is still possible
+  in principle, and is not defended against further.
+- **Sync tools may copy a `.lock` file.** That cannot corrupt data, but a
+  synced-in lock from another host is judged by age, so it can delay a local
+  `mergeStreamCopy` on that stream by up to 30 s — excluding `.lock` from
+  sync patterns remains the right configuration.
+
+Journal writes fsync; note that on macOS `fsync(2)` does not guarantee media
+durability (that would need `F_FULLFSYNC`, which Node's fs API does not
+expose) — the guarantee is OS-crash-level, not power-loss-level.
 
 ## Upgrading
 

@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import {
   appendFileSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -12,7 +13,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { spawn } from "node:child_process";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
@@ -166,7 +167,9 @@ test("blank lines in a journal are tolerated, not fatal", (t) => {
   assert.deepEqual(store2.readStream("alice~x"), []);
 });
 
-test("stream lock: fresh foreign lock blocks, stale lock is stolen", (t) => {
+test("stream lock: untokened lock blocks while fresh, is reclaimed once aged", (t) => {
+  // A lock with no readable owner token (older version, or hand-written):
+  // liveness is not knowable, so age is the fallback that still applies.
   const store = tempStore(t, "alice");
   store.lockTimeoutMs = 200; // keep the blocked case fast
   const turn = finishTurn(noteCore("alice", "locked"));
@@ -174,16 +177,119 @@ test("stream lock: fresh foreign lock blocks, stale lock is stolen", (t) => {
   mkdirSync(dir, { recursive: true });
   const lockPath = join(dir, ".lock");
 
-  // Fresh lock held by "another process": append must time out, not write.
   writeFileSync(lockPath, "99999");
   assert.throws(() => store.append("alice~notes", turn), /timed out waiting for lock/);
   assert.deepEqual(store.readStream("alice~notes"), []);
 
-  // Stale lock (older than lockStaleMs): stolen, append proceeds.
   const old = new Date(Date.now() - 60_000);
   utimesSync(lockPath, old, old);
   store.append("alice~notes", turn);
   assert.equal(store.readStream("alice~notes").length, 1);
+});
+
+test("stream lock: a dead holder's lock is reclaimed at once, without waiting out its age", (t) => {
+  // Crash recovery. The pid is a process that really has exited, so the
+  // reclaim is proven by liveness rather than assumed from a made-up pid,
+  // and the lock's mtime is fresh — far younger than lockStaleMs.
+  const store = tempStore(t, "alice");
+  store.lockTimeoutMs = 200;
+  store.lockStaleMs = 60_000; // age alone would never reclaim this lock
+  const dir = join(store.streamsDir(), "alice~notes");
+  mkdirSync(dir, { recursive: true });
+  const lockPath = join(dir, ".lock");
+
+  const corpse = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  return new Promise((resolve) => corpse.on("exit", resolve)).then(() => {
+    writeFileSync(
+      lockPath,
+      JSON.stringify({
+        pid: corpse.pid,
+        host: hostname(),
+        nonce: "deadbeefdeadbeefdeadbeef",
+        acquiredAt: new Date().toISOString(),
+      }) + "\n",
+    );
+    const started = Date.now();
+    store.append("alice~notes", finishTurn(noteCore("alice", "after the crash")));
+    assert.equal(store.readStream("alice~notes").length, 1);
+    assert.ok(
+      Date.now() - started < store.lockTimeoutMs,
+      "a dead holder's lock must be reclaimed without waiting",
+    );
+  });
+});
+
+test("stream lock: a late contender never acquires against a live holder", (t) => {
+  // The reachable defect: the waiter's timeout starts when the contender
+  // arrives, while the old age test measured from the lock's creation — so
+  // a contender arriving after lockStaleMs stole a lock whose holder was
+  // still inside its critical section. Scaled thresholds, same shape.
+  const store = tempStore(t, "alice");
+  const lib = new URL("../lib/", import.meta.url).href;
+  const holderCode = `
+    import { RecordStore } from ${JSON.stringify(lib + "store.mjs")};
+    const store = new RecordStore(${JSON.stringify(store.root)},
+      { owner: "alice", lockTimeoutMs: 100, lockStaleMs: 500 });
+    store.withStreamLock("alice~notes", () => {
+      console.log("acquired");
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1600);
+      console.log("released");
+    });
+  `;
+  const holder = spawn(process.execPath, ["--input-type=module", "-e", holderCode], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  t.after(() => holder.kill());
+  let holderOut = "";
+  holder.stdout.on("data", (chunk) => (holderOut += chunk));
+
+  const acquired = new Promise((resolve) => holder.stdout.once("data", resolve));
+  const exited = new Promise((resolve) => holder.on("exit", resolve));
+
+  return acquired
+    .then(() => new Promise((resolve) => setTimeout(resolve, 700))) // arrive late
+    .then(() => {
+      const contender = new RecordStore(store.root, {
+        owner: "alice",
+        lockTimeoutMs: 100,
+        lockStaleMs: 500, // contender arrives at 700ms: older than stale
+      });
+      assert.ok(!holderOut.includes("released"), "holder is still in its critical section");
+      assert.throws(
+        () => contender.withStreamLock("alice~notes", () => assert.fail("stole a live lock")),
+        /timed out waiting for lock/,
+        "a live holder's lock must never be stolen, however old it is",
+      );
+      return exited;
+    })
+    .then(() => {
+      assert.ok(holderOut.includes("released"), "holder ran to completion");
+      assert.equal(existsSync(join(store.streamsDir(), "alice~notes", ".lock")), false);
+    });
+});
+
+test("stream lock: a holder does not release a replacement lock it does not own", (t) => {
+  // The other half of the defect: the old release unlinked .lock
+  // unconditionally, so a holder whose lock had been reclaimed deleted the
+  // NEW holder's lock on its way out, leaving two writers unserialized.
+  const store = tempStore(t, "alice");
+  const dir = join(store.streamsDir(), "alice~notes");
+  const lockPath = join(dir, ".lock");
+  const replacement =
+    JSON.stringify({
+      pid: process.pid,
+      host: hostname(),
+      nonce: "someoneelsesnonce0000000",
+      acquiredAt: new Date().toISOString(),
+    }) + "\n";
+
+  store.withStreamLock("alice~notes", () => {
+    // Simulate the reclaim: while we hold it, the lock becomes someone else's.
+    writeFileSync(lockPath, replacement);
+  });
+
+  assert.equal(existsSync(lockPath), true, "the replacement lock survived our release");
+  assert.equal(readFileSync(lockPath, "utf8"), replacement, "and it is still the new holder's");
 });
 
 test("torn-tail repair happens under the lock (no stale-offset truncation)", (t) => {
