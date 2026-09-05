@@ -205,8 +205,16 @@ function readLock(lockPath) {
   try {
     st = statSync(lockPath);
     raw = readFileSync(lockPath, "utf8");
-  } catch {
-    return null;
+  } catch (err) {
+    if (err.code === "ENOENT") return null; // vanished: the holder released
+    // Anything else (EACCES, EISDIR, EIO...) is a condition retrying cannot
+    // clear. Swallowing it here is what let the acquire loop spin: it read
+    // as "vanished" forever. Fail with the underlying code and path so the
+    // operator can act on it.
+    throw new StoreError(
+      `cannot read stream lock ${lockPath}: ${err.code ?? "unknown error"} (${err.message})`,
+      { cause: err },
+    );
   }
   let token = null;
   try {
@@ -247,17 +255,31 @@ function lockIsProvenStale(held, staleMs) {
   return Date.now() - held.mtimeMs > staleMs;
 }
 
-// Remove a lock we have proven stale — and only that lock. The identity
-// check makes the remover give up when the file it proved stale has since
-// been replaced by a new holder's lock, so a reclaim cannot cascade into
-// stealing from whoever reclaimed first.
+// Remove a lock we have proven stale — and only that lock. Re-checking the
+// file's identity immediately before the unlink DETECTS a replacement that
+// landed while we were proving the old lock stale, so the common cascade
+// (reclaiming from whoever reclaimed first) is caught. It is a detection,
+// not an exclusion: a replacement landing between this recheck and the
+// unlink is still removed, and nothing here defends against that window.
+//
+// Returns null when there is nothing to report — the lock was removed, was
+// already gone, or had been replaced since we proved it stale; all three
+// mean "retry". Returns the underlying error when the removal itself keeps
+// failing (a read-only or hostile directory), which the caller reports on
+// timeout rather than retrying silently forever.
 function removeStaleLock(lockPath, held) {
+  let st;
   try {
-    const st = statSync(lockPath);
-    if (st.ino !== held.ino || st.mtimeMs !== held.mtimeMs) return;
+    st = statSync(lockPath);
+  } catch (err) {
+    return err.code === "ENOENT" ? null : err; // already gone
+  }
+  if (st.ino !== held.ino || st.mtimeMs !== held.mtimeMs) return null; // replaced
+  try {
     unlinkSync(lockPath);
-  } catch {
-    /* reclaimed by someone else first */
+    return null;
+  } catch (err) {
+    return err.code === "ENOENT" ? null : err; // beaten to it
   }
 }
 
@@ -265,7 +287,17 @@ function removeStaleLock(lockPath, held) {
 // reclaimed (we ran long enough to be judged dead, or a sync overwrote
 // it), the file now belongs to another holder and is left alone.
 function releaseOwnedLock(lockPath, token) {
-  const held = readLock(lockPath);
+  // Release runs in a finally block: it must not replace the critical
+  // section's own outcome with a lock error. A lock we cannot read is also
+  // a lock whose ownership we cannot prove, so leaving it is the correct
+  // move as well as the safe one — it is reclaimable by liveness once this
+  // process exits.
+  let held;
+  try {
+    held = readLock(lockPath);
+  } catch {
+    return;
+  }
   if (held === null) return;
   if (!held.token || held.token.nonce !== token.nonce) return;
   try {
@@ -314,17 +346,28 @@ export class RecordStore {
     const lockPath = join(dir, ".lock");
     const token = newLockToken();
     const deadline = Date.now() + this.lockTimeoutMs;
+    // Every iteration that fails to acquire falls through to ONE deadline
+    // check and one sleep — there is deliberately no `continue` above them,
+    // and no branch that retries "for free". An earlier version checked the
+    // deadline only on the readable-and-live branch, so a lock that kept
+    // failing to be read, or kept failing to be removed, or kept reading as
+    // vanished (a dangling symlink does exactly that) retried forever, hot,
+    // with nothing able to stop it. Retrying at once after a reclaim would
+    // buy ~25ms on the crash-recovery path and reopen that hole; it is not
+    // worth it.
     for (;;) {
       if (createLock(lockPath, dir, token)) break;
-      const held = readLock(lockPath);
-      if (held === null) continue; // vanished between link and read: retry now
-      if (lockIsProvenStale(held, this.lockStaleMs)) {
-        removeStaleLock(lockPath, held);
-        continue;
-      }
+      const held = readLock(lockPath); // throws on anything but ENOENT
+      const reclaimError =
+        held !== null && lockIsProvenStale(held, this.lockStaleMs)
+          ? removeStaleLock(lockPath, held)
+          : null;
       if (Date.now() >= deadline) {
         throw new StoreError(
-          `timed out waiting for lock on stream ${streamId} (${lockPath}, ${describeHolder(held)})`,
+          `timed out waiting for lock on stream ${streamId} (${lockPath}, ${describeHolder(held)})` +
+            (reclaimError
+              ? `; it was judged stale but could not be removed: ${reclaimError.code ?? "unknown error"} (${reclaimError.message})`
+              : ""),
         );
       }
       sleepSync(25);

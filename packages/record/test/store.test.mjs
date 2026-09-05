@@ -9,6 +9,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -266,6 +267,59 @@ test("stream lock: a late contender never acquires against a live holder", (t) =
       assert.ok(holderOut.includes("released"), "holder ran to completion");
       assert.equal(existsSync(join(store.streamsDir(), "alice~notes", ".lock")), false);
     });
+});
+
+test("stream lock: an unreadable lock fails fast and actionably, it does not spin", (t) => {
+  // Regression for the bounded-retry defect: readLock treated EVERY error as
+  // "the lock vanished", and the acquire loop retried that branch without
+  // ever consulting its deadline — so a lock that could not be read spun
+  // hot forever instead of failing. A directory where the lock file belongs
+  // is a deterministic, permission-free way to produce a non-ENOENT read
+  // error (EISDIR on both macOS and Linux).
+  const store = tempStore(t, "alice");
+  store.lockTimeoutMs = 2000; // a spin, or any waiting at all, would take this long
+  const dir = join(store.streamsDir(), "alice~notes");
+  const lockPath = join(dir, ".lock");
+  mkdirSync(lockPath, { recursive: true });
+
+  const started = Date.now();
+  assert.throws(
+    () => store.append("alice~notes", finishTurn(noteCore("alice", "blocked"))),
+    (err) =>
+      err instanceof StoreError &&
+      /cannot read stream lock/.test(err.message) &&
+      /EISDIR/.test(err.message) &&
+      err.message.includes(lockPath),
+    "the underlying code and path must reach the operator",
+  );
+  assert.ok(
+    Date.now() - started < 500,
+    "an unclearable condition must fail at once, not be retried to the deadline",
+  );
+  assert.deepEqual(store.readStream("alice~notes"), []);
+});
+
+test("stream lock: a lock that always reads as vanished is bounded, not spun on", (t) => {
+  // The other half of the bounded-retry defect. A dangling symlink where the
+  // lock file belongs makes createLock fail (the NAME exists, so the link
+  // is EEXIST) while readLock's stat follows it and reports ENOENT — a
+  // genuine "vanished" reading, forever. Any branch allowed to retry
+  // without consulting the deadline spins here until killed.
+  const store = tempStore(t, "alice");
+  store.lockTimeoutMs = 300;
+  const dir = join(store.streamsDir(), "alice~notes");
+  mkdirSync(dir, { recursive: true });
+  symlinkSync(join(dir, "no-such-target"), join(dir, ".lock"));
+
+  const started = Date.now();
+  assert.throws(
+    () => store.append("alice~notes", finishTurn(noteCore("alice", "blocked"))),
+    /timed out waiting for lock/,
+  );
+  const elapsed = Date.now() - started;
+  assert.ok(elapsed >= store.lockTimeoutMs, `waited its timeout (${elapsed}ms)`);
+  assert.ok(elapsed < 5000, `and stopped at it rather than spinning (${elapsed}ms)`);
+  assert.deepEqual(store.readStream("alice~notes"), []);
 });
 
 test("stream lock: a holder does not release a replacement lock it does not own", (t) => {

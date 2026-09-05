@@ -152,6 +152,13 @@ that token:
 this host is provably stale and is reclaimed at once, without waiting out
 any threshold.
 
+A lock that cannot be read at all (anything but "not there" — a permission
+error, a directory in its place) is not retried: acquisition fails at once
+with the underlying error code and the lock's path, because retrying cannot
+clear such a condition. Everything else that fails to acquire — including a
+lock judged stale whose removal keeps failing — is bounded by
+`lockTimeoutMs` and reports why on timeout.
+
 `lockStaleMs` (30 s by default) is the fallback for the two cases where
 liveness cannot be checked here: a lock created on **another host** (file
 sync can copy one in) and a lock with **no readable token** (written by an
@@ -169,10 +176,13 @@ Honest limits:
   chosen direction of failure: refusing to write is recoverable, writing
   concurrently with a live holder is not.
 - **Reclaim is not perfectly atomic.** A contender re-checks the lock's
-  identity (inode and mtime) immediately before removing it, so it cannot
-  remove a lock that was replaced after it proved the old one stale; a
-  replacement landing inside that check-to-unlink window is still possible
-  in principle, and is not defended against further.
+  identity (inode and mtime) immediately before removing it. That recheck
+  **detects** a replacement that landed while the old lock was being proven
+  stale — the common cascade, one contender reclaiming from whoever
+  reclaimed first — and the contender gives up and retries. It is a
+  detection, not an exclusion: a replacement landing in the window between
+  the recheck and the unlink is not seen and is removed. Nothing here
+  defends against that window.
 - **Sync tools may copy a `.lock` file.** That cannot corrupt data, but a
   synced-in lock from another host is judged by age, so it can delay a local
   `mergeStreamCopy` on that stream by up to 30 s — excluding `.lock` from
