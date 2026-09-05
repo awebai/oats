@@ -17,6 +17,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit } from "./api-url.mjs";
 import { openTerm, sweepViewers } from "./tmux-target.mjs";
+import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate } from "./remote-target.mjs";
+import { openHerdrTerm, herdrTargetKey } from "./herdr-target.mjs";
 import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "./terminal-registry.mjs";
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
@@ -315,6 +317,7 @@ let nextPtyId = 1;
 // The main process owns the ptys and oatsdesk viewer sessions, so the ceiling
 // lives here — the renderer cannot be trusted to bound it.
 const termRegistry = createTerminalRegistry({ max: MAX_TERMINALS });
+const terminalPrepare = createTerminalPrepareGate(termRegistry, MAX_TERMINALS);
 
 /** Kill + release every pty owned by a renderer that navigated/reloaded/
  * died (review cb7622e-r2 important 2). On a renderer reload the OLD tabs are
@@ -351,17 +354,28 @@ function sweepOrphanViewers() {
   } catch { /* no tmux server — nothing to sweep */ }
 }
 
-ipcMain.handle("term:open", (e, { session, window: win, cols, rows }) => {
+ipcMain.handle("term:open", async (e, { session, window: win, sessionTarget, remote, cols, rows }) => {
   guard(e);
-  // Resource containment (Slice G): DEDUPE by target + HARD CAP, enforced
-  // atomically here (this handler is synchronous end to end, so concurrent
-  // IPC opens cannot interleave to exceed the cap). Repeated opens of the
-  // same target REUSE the live terminal; a distinct open beyond the cap is
-  // rejected visibly and actionably — never a silent evict or extra create.
-  const targetKey = terminalTargetKey(session, win);
+  const targetKey = remote ? remoteTargetKey(remote) : sessionTarget ? herdrTargetKey(sessionTarget) : terminalTargetKey(session, win);
+  let prepared;
+  if (remote && !termRegistry.has(targetKey)) {
+    try {
+      prepared = await terminalPrepare.prepare(targetKey, async () => {
+        // CLI selection belongs to the backend's verified discovery state.
+        const response = await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(5000) });
+        const cli = await response.json();
+        if (!response.ok || !cli.ok || !cli.bin) throw new Error("remote terminal needs a compatible installed oats CLI");
+        return prepareRemoteTerm(cli.bin, remote);
+      });
+      if (prepared.capped) return prepared;
+      guard(e); // the renderer may have navigated while SSH was inspected
+    } catch (err) { return { error: String(err.message || err) }; }
+  }
+  // All asynchronous preparation ends before plan/create/commit. The final
+  // synchronous check preserves dedupe and the PTY cap across concurrent opens.
   const plan = termRegistry.plan(targetKey);
   if (plan.action === "reuse") return { reused: true, id: plan.id };
-  if (plan.action === "cap") return { capped: true, active: plan.active, max: plan.max };
+  if (plan.action === "cap" || termRegistry.activeCount() + terminalPrepare.pendingCount() >= MAX_TERMINALS) return { capped: true, active: termRegistry.activeCount(), max: MAX_TERMINALS };
   // openTerm (tmux-target.mjs): anchors + PREFLIGHTS the exact source target
   // (missing target rejects here → the renderer's "could not attach"), then
   // builds a per-tab LINKED-WINDOW viewer session (placeholder → link exact
@@ -374,7 +388,12 @@ ipcMain.handle("term:open", (e, { session, window: win, cols, rows }) => {
   // its own partial viewer and nothing is committed to the registry.
   let opened;
   try {
-    opened = openTerm({ session, window: win, cols, rows }, {
+    opened = remote ? {
+      pty: pty.spawn(prepared.binary, prepared.args, { name: "xterm-256color", cols: Math.max(20, Number(cols) || 80), rows: Math.max(5, Number(rows) || 24), cwd: process.env.HOME, env: process.env }),
+      killViewer: () => {}, // CLI/SSH disconnect cleans only its host-side viewer
+    } : sessionTarget ? openHerdrTerm({ sessionTarget, cols, rows }, {
+      spawnPty: (argv, c, r, env) => pty.spawn("herdr", argv, { name: "xterm-256color", cols: c, rows: r, cwd: process.env.HOME, env }),
+    }) : openTerm({ session, window: win, cols, rows }, {
       preflight: (target) => tmuxRun(["list-panes", "-t", target]),
       tmux: tmuxRun,
       tmuxOut: (args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 4000 }).trim(),
