@@ -175,14 +175,17 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     const snap = JSON.parse(readFileSync(join(env.OATS_HOME_DIR, "remote", "build", "dev-probe.json"), "utf8"));
     assert.equal(snap.target.workspace, repo); assert.equal(snap.home, home); assert.equal(snap.remote.schemaVersion, 1);
     assert.equal(snap.agentsRoot, join(repo, "agents"), "the agents root comes from the remote roster, not guessed from the workspace");
-    // A request beyond what the remote advertises is refused BEFORE any spawn reaches it.
+    // A request beyond what the remote advertises is refused BEFORE any spawn
+    // reaches it. This fake remote is this kernel, which advertises pi, claude
+    // and codex on tmux and herdr with the yolo option; ask for what it lacks.
     const before = readFileSync(log, "utf8");
-    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--runtime", "codex", "--no-launch", "--json"]);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--runtime", "gemini", "--no-launch", "--json"]);
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
-    assert.match(r.json().error.message, /was not established as supported there .*does not advertise what it supports/, "a silent remote is not accused of lacking the feature");
+    assert.match(r.json().error.message, /runtime gemini was not established as supported there \(it advertises runtimes pi, claude, codex/, "an advertising remote's list is quoted, nothing more is claimed");
     assert.equal(readFileSync(log, "utf8").includes("spawn dev --purpose nope"), false, "no spawn command was sent");
-    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--yolo", "--no-launch", "--json"]);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--backend", "screen", "--no-launch", "--json"]);
     assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+    assert.match(r.json().error.message, /session backend screen/);
     // The viewer route: ssh -t, saved target, remote home from the snapshot; --print shows it.
     const att = attachArgv("build", { instance: "dev-probe" }, { skipVersionCheck: true }); // route resolution only; the version gate is exercised through the CLI above
     assert.deepEqual(att.argv.slice(0, 2), ["ssh", "-t"]);
