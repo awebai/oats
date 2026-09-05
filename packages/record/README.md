@@ -6,12 +6,17 @@ contract is [`docs/turn-record-sot.md`](docs/turn-record-sot.md) in this
 package; the conformance vectors under `test/vectors/` pin the format
 (`node test/vectors/validate.mjs`, dependency-free).
 
-Everything is a signed turn in an append-only record. This package is the
-core: gathering every conversation, keeping it durably, and finding it
-again. The experimental tools that select and synthesize over the record
-(dress, spawn, segments, mind) live in `packages/experimental` of the oats
-repo and run as `oats experimental <cmd>`; they are deliberately not part
-of this package.
+Turns in this append-only record are content-addressed. Native session turns
+are not signed. Projected aweb mail and chat keep their original message
+signatures verbatim.
+
+After `turn-record setup` runs on a machine, this package gathers Claude Code,
+Pi, and Codex transcripts plus aw client logs. It skips sources matched by the
+local record's ignore list. The package keeps captured conversations durably
+and finds them again. The experimental tools that select and synthesize over
+the record (dress, spawn, segments, mind) live in `packages/experimental` of
+the oats repo and run as `oats experimental <cmd>`. They are deliberately not
+part of this package.
 
 - **`lib/canonical.mjs`** — canonical JSON (integers only in the core),
   `t1:` content ids, did:key Ed25519 verification. Byte-compatible with awid
@@ -126,16 +131,71 @@ non-prefix copy of a stream quarantines it loudly.
 
 ## Durability and concurrency
 
-Appends and merges run under a per-stream lockfile
-(`streams/<id>/.lock`, exclusive-create, stale after 30 s), because the
-torn-tail repair is a read-truncate-write sequence and hooks, watchers and
-manual passes can fire concurrently for the same owner. Sync tools may copy
-a `.lock` file; that cannot corrupt data, but a synced-in stale lock can
-delay a local `mergeStreamCopy` on that stream by up to the stale threshold
-(30 s), so excluding `.lock` from sync patterns is the right configuration. Journal writes fsync;
-note that on macOS `fsync(2)` does not guarantee media durability (that
-would need `F_FULLFSYNC`, which Node's fs API does not expose) — the
-guarantee is OS-crash-level, not power-loss-level.
+Appends and merges run under a per-stream lockfile (`streams/<id>/.lock`),
+because the torn-tail repair is a read-truncate-write sequence and hooks,
+watchers and manual passes can fire concurrently for the same owner.
+
+The lock carries an **owner token** — the holder's pid, its hostname, and a
+random nonce — written by hard-linking a fully-written temp file into place,
+so a lock that exists is always readable in full. Two guarantees rest on
+that token:
+
+- **A live holder is never stolen from, at any age.** Staleness is proven
+  from the holder's liveness, not from how long ago the lock was created.
+  A contender that finds the holder's pid alive on this host waits, and
+  fails with a timeout naming the holder — it does not reclaim. (The
+  earlier design judged a lock stale by age while the waiter's timeout
+  started when the contender arrived; a contender arriving late therefore
+  reclaimed a lock whose holder was still inside its critical section, and
+  both ran at once.)
+- **A holder releases only its own lock.** Release unlinks `.lock` only
+  while it still carries the releaser's nonce, so a holder whose lock was
+  reclaimed cannot delete the replacement lock out from under its new
+  owner.
+
+**Crash recovery is immediate, not timed**: a lock whose pid is gone from
+this host is provably stale and is reclaimed at once, without waiting out
+any threshold.
+
+A lock that cannot be read at all (anything but "not there" — a permission
+error, a directory in its place) is not retried: acquisition fails at once
+with the underlying error code and the lock's path, because retrying cannot
+clear such a condition. Everything else that fails to acquire — including a
+lock judged stale whose removal keeps failing — is bounded by
+`lockTimeoutMs` and reports why on timeout.
+
+`lockStaleMs` (30 s by default) is the fallback for the two cases where
+liveness cannot be checked here: a lock created on **another host** (file
+sync can copy one in) and a lock with **no readable token** (written by an
+older version of this package, or by hand). Those are still reclaimed by
+age. `lockTimeoutMs` (10 s) is how long a contender waits; the two
+thresholds are independent, and neither ordering of them is required or
+assumed.
+
+Honest limits:
+
+- **Pid reuse across a reboot.** A lock left by a process whose pid was
+  later reused by an unrelated live process reads as held forever, and
+  contenders on that stream time out until it is deleted by hand. The
+  timeout message names the lock path and the recorded holder. This is the
+  chosen direction of failure: refusing to write is recoverable, writing
+  concurrently with a live holder is not.
+- **Reclaim is not perfectly atomic.** A contender re-checks the lock's
+  identity (inode and mtime) immediately before removing it. That recheck
+  **detects** a replacement that landed while the old lock was being proven
+  stale — the common cascade, one contender reclaiming from whoever
+  reclaimed first — and the contender gives up and retries. It is a
+  detection, not an exclusion: a replacement landing in the window between
+  the recheck and the unlink is not seen and is removed. Nothing here
+  defends against that window.
+- **Sync tools may copy a `.lock` file.** That cannot corrupt data, but a
+  synced-in lock from another host is judged by age, so it can delay a local
+  `mergeStreamCopy` on that stream by up to 30 s — excluding `.lock` from
+  sync patterns remains the right configuration.
+
+Journal writes fsync; note that on macOS `fsync(2)` does not guarantee media
+durability (that would need `F_FULLFSYNC`, which Node's fs API does not
+expose) — the guarantee is OS-crash-level, not power-loss-level.
 
 ## Upgrading
 

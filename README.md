@@ -16,9 +16,10 @@ session you can enter and steer.
 
 OATS works with **Pi** and **Claude Code**. A team may mix providers and models
 while sharing the same souls, package and config contracts, instance
-lifecycle, and coordination topology. Every conversation an agent has is
-captured into an append-only, searchable **turn record** that outlives models,
-harnesses, and this repository's own designs.
+lifecycle, and coordination topology. On machines where `oats setup` has run,
+the append-only, searchable **turn record** captures supported local transcripts
+and aw client logs. It outlives models, harnesses, and this repository's own
+designs.
 
 ## Contents
 
@@ -63,56 +64,34 @@ harnesses, and this repository's own designs.
   `sibling` relationships, can carry cross-machine identities through a
   messaging layer such as `oats.aweb`, and are visible together in OATS
   Desktop.
-- **Everything is on the record.** Claude Code, Pi, and Codex sessions, plus
-  aweb mail and chat, are captured as signed turns with exact provenance and
-  searched locally with `oats recall`.
+- **Supported conversations stay on the record.** On machines where `oats
+  setup` has run, OATS captures Claude Code, Pi, and Codex transcripts plus aw
+  client logs. It skips sources matched by the local record's ignore list.
+  Native session turns are content-addressed, not signed, and carry exact
+  provenance. Projected aweb mail and chat keep their original message
+  signatures verbatim. Search the captured content locally with `oats recall`.
 
 ## Quick start
 
-Requires Node.js 22 or newer and tmux.
+Follow [Run your first OATS team](docs/first-team.md) for the tested path:
+install the kernel and runtimes, adopt a development configuration, select
+an available harvester model, connect your team, and complete a real task
+through review, harvest, and retirement.
 
 ```bash
 npm install -g @awebai/oats@latest
-pi install npm:@awebai/oats-pi@latest   # only if you run agents in Pi
-```
-
-Initialize a workspace and check it:
-
-```bash
-cd my-workspace
-oats init
-oats doctor
-```
-
-Create a specialist and put it to work:
-
-```bash
-oats create backend-expert --type developers --repo . --work worktree
-oats spawn backend-expert --purpose implement --task "Add rate limiting to the public API"
-oats status --team
-oats retire <instance>
-```
-
-Or adopt a complete reference configuration from an official package:
-
-```bash
+pi install npm:@awebai/oats-pi@latest
+cd /path/to/project
 oats init --package oats.dev --config default
-oats install
 ```
 
-`oats init --package` acquires and exact-locks the full closure, validates the
-chosen template against its providers, writes it as your local
-`oats-config.yaml`, and records the adopted base so `oats config diff` and
-`oats config sync` can compare against it later.
+Continue with the guide's model, team, and executable-trust setup before
+spawning. Initialization acquires packages; it does not authenticate a
+runtime or join a messaging team.
 
-Start capturing the turn record on this machine:
-
-```bash
-oats setup
-oats recall "rate limiting"
-```
-
-A Pi agent can also load the `oats-getting-started` skill and guide the setup.
+See [the first-team example](docs/first-team-demo.md) for the real Pi and
+Claude tasks behind the guide. Existing OAS users: start with
+[the migration command](docs/migration-from-oas.md).
 
 ## How it works
 
@@ -207,10 +186,13 @@ Bare `oats install` restores the exact lock and never advances source state.
 
 ## The turn record
 
-`packages/record` is the load-bearing layer. Every conversation an agent has
-is captured as signed turns in an append-only, content-addressed, replicated
-record with exact provenance, and searched locally through a SQLite full-text
-index. It has no runtime dependencies beyond Node.
+`packages/record` is the load-bearing layer. On each machine where `oats setup`
+has run, it captures Claude Code, Pi, and Codex transcripts plus aw client logs.
+It skips sources matched by that record root's ignore list. Native session
+turns are content-addressed, not signed, and carry exact provenance. Projected
+aweb mail and chat keep their original message signatures verbatim. The
+append-only record can be replicated and searched locally through a SQLite
+full-text index. It has no runtime dependencies beyond Node.
 
 ```bash
 oats setup                 # install capture hooks and the background watcher
