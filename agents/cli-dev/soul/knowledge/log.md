@@ -1,6 +1,9 @@
 # Knowledge Log
 
 ## 2026-09-05
+* **Creation**: [gitlink-rows-must-leave-the-proof-set](/lessons/gitlink-rows-must-leave-the-proof-set.md) records that mode 160000 gitlink ids belong to nested repositories, so superproject object-presence proofs must exclude them and leave submodule restoration to nested-repository materialization.
+* **Creation**: [batch-existence-check-is-a-measurement](/lessons/batch-existence-check-is-a-measurement.md) records that batch-checking the destination clone's staged object ids measures preservation directly, repairs only missing objects, and re-measures the whole non-gitlink set before installing the index.
+* **Creation**: [assertion-message-claimed-an-unchecked-ordering](/lessons/assertion-message-claimed-an-unchecked-ordering.md) records that assertion messages are part of a test's claim and must not describe ordering unless the expression checks that ordering.
 * **Creation**: [every-failed-retry-needs-one-deadline](/lessons/every-failed-retry-needs-one-deadline.md) records that every failed lock-acquire branch must pass through the same deadline and sleep, and that directory/dangling-symlink lock shapes reproduce the escaped retry paths deterministically.
 * **Creation**: [pid-liveness-fails-toward-refusing-to-write](/decisions/pid-liveness-fails-toward-refusing-to-write.md) records that RecordStore pid-liveness locking accepts pid-reuse false positives and resolves uncertainty by timing out rather than restoring an age ceiling that can steal live locks.
 * **Creation**: [ownership-token-lock-beats-threshold-ordering](/lessons/ownership-token-lock-beats-threshold-ordering.md) records that comparing lock timeout and stale thresholds cannot prove safety when their clocks start from different events; owner tokens and ownership-checked release carry the guarantee.
