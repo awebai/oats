@@ -14,11 +14,12 @@
 
 import { watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
-import { captureAllSessions } from "../lib/capture-cc.mjs";
+import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
+import { sessionsForHome } from "../lib/sessions-for-home.mjs";
 import { SESSION_FORMATS } from "../lib/formats.mjs";
 import { captureAwLogs, defaultCommLogDir } from "../lib/capture-aw.mjs";
 import { RecordIndex } from "../lib/index-db.mjs";
@@ -41,7 +42,7 @@ function loadIgnoreOrExit(recordRoot) {
 // hostname-derived owner, which forked the whole record into a second owner
 // namespace: 571 duplicate journals from one typo. Parsing must refuse what
 // it does not understand before anything can be written.
-const VALUE_FLAGS = new Set(["root", "owner"]);
+const VALUE_FLAGS = new Set(["root", "owner", "home"]);
 const BOOL_FLAGS = new Set([
   "watch",
   "status",
@@ -61,6 +62,12 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
+  capture --home <dir>         capture the sessions that ran inside <dir> (an
+                               OATS instance home) and print them as JSON:
+                               thread, stream, turn count, first/last turn id.
+                               Tombstoned turns are never a boundary. Codex
+                               keeps a day's rollouts in one directory, so the
+                               pass captures that day; the list is filtered.
   capture --install-hint       print the Claude Code hook snippet
   capture --help               this text
   capture --quiet              suppress per-pass progress
@@ -221,6 +228,55 @@ if (args.status) {
   for (const streamId of store.listStreams()) {
     console.log(`  ${streamId}: ${store.readStream(streamId).length} turns`);
   }
+  process.exit(0);
+}
+
+// One instance home: capture its own sessions and report them with exact
+// sequence boundaries (first and last captured turn id), so a consumer such
+// as the OKF harvester can name what it read without timestamps, which tie
+// and which late capture appends behind. Output is JSON, always: this mode
+// exists for programs.
+if (args.home) {
+  warnOnStrangerOwner();
+  const ignore = loadIgnoreOrExit(root);
+  const unattributed = [];
+  const found = sessionsForHome(args.home, { onUnattributed: (source, path) => unattributed.push({ source, path }) });
+  const sessions = [];
+  const dirs = new Map(); // one capture pass per (format, directory)
+  for (const s of found) dirs.set(`${s.source}\0${dirname(s.path)}`, { format: s.source, dir: dirname(s.path) });
+  let appended = 0;
+  for (const { format, dir } of dirs.values()) {
+    appended += captureSessions(store, { owner, roots: [dir], format, ignore }).appended;
+  }
+  if (appended > 0 && !args["no-index"]) {
+    const index = new RecordIndex(store);
+    try {
+      index.update();
+    } finally {
+      index.close();
+    }
+  }
+  // A tombstoned turn is hidden everywhere; a boundary naming one would be
+  // refused by recall, so boundaries come from the visible turns only.
+  const claims = store.tombstoneClaims();
+  for (const s of found) {
+    const stream = `${owner}~${s.source}.${s.sessionId}`;
+    const turns = store.readStream(stream).filter((t) => !store.claimHides(claims, t));
+    if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
+    sessions.push({
+      thread: s.thread,
+      source: s.source,
+      sessionId: s.sessionId,
+      path: s.path,
+      cwd: s.cwd,
+      stream,
+      turns: turns.length,
+      firstTurnId: turns[0].id,
+      lastTurnId: turns[turns.length - 1].id,
+      lastTs: turns[turns.length - 1].ts,
+    });
+  }
+  console.log(JSON.stringify({ home: args.home, owner, appended, sessions, ...(unattributed.length ? { unattributed } : {}) }, null, 2));
   process.exit(0);
 }
 

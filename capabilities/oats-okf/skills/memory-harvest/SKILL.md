@@ -68,6 +68,45 @@ knowledge; if instances should RUN it the same way every time, it wants to
 be a skill instead. Souls also grow role-specific types and sections — list
 new sections in the bundle index and log the growth.
 
+## Record-fed candidates
+
+Your briefing may name **record windows** beside (or instead of) notes: the
+source instance's own captured session turns since the last harvest, each
+window given as an exact `oats recall --thread <t> --json --after <id>
+--until <id>` command. Standing roles that write few notes still learn; this
+is how what they learned reaches the soul.
+
+- Run each command exactly as given, never wider: the ids are the boundary
+  two harvests agree on, and each window is sized for one full reading (the
+  rest of a long backlog comes in later harvests). Read every window in full.
+  If your tool output truncates, redirect the command's output to a file in
+  your home and read the file in parts; that is a complete reading, not a
+  wider one. If you still could not read a window completely, this harvest
+  has FAILED: judge nothing from it and leave the watermark files untouched. If a command is rejected because its
+  `--after` id is no longer in the thread (a pruned or redacted record), run
+  it again without `--after` and read from the start; if its `--until` id is
+  rejected, this harvest has failed (leave the watermark files alone; the next
+  `oats okf harvest` replans). Read the `text` parts;
+  `tool_use` and `tool_result` are context, not lessons.
+- Extract **candidates** in the shape of notes: one candidate per insight, a
+  one-line title, the claim, and its provenance as the turn ids it came from.
+  A candidate is something the instance learned or decided, stated in the
+  turns, not something you infer it should have learned.
+- Then judge every candidate exactly as a note: promote, merge, or drop
+  against the same bar. Expect most to drop: session trivia, tool noise,
+  restated repo facts and task-scoped decisions all fail it. Promoted
+  concepts cite the turn ids in their frontmatter or body so the claim can be
+  traced back.
+- **The watermark records what you read, not what you promoted.** The
+  package prepared the exact next watermark beside the current one; your
+  briefing gives the one `mv` that advances it. Run it once your judgement of
+  every window is complete: after the commit, PR, or direct edit when
+  something was promoted, and just the same when everything dropped, which
+  is the normal outcome. Never retype it. Only a harvest that fails or is
+  abandoned leaves both files untouched, so the next harvester reads the same
+  window again; a completed judgement that never advanced the watermark would
+  be re-read forever.
+
 ## Bookkeeping (non-negotiable)
 
 1. Every promoted concept: correct frontmatter, listed in its section's
@@ -92,7 +131,9 @@ what your custody allows:
    `memory-harvest: 2 lessons + 1 skill gotcha from worker-x notes`.
 2. **Worktree of the soul's home repo** (workspace-mode source): the same single
    commit on your own branch, then push it and open a PR. Never merge it, and
-   never push to that repo's main branch — its owners review soul changes.
+   never push to that repo's main branch — its owners review soul changes. A
+   harvest that promoted nothing has no commit, push or PR to make; it is
+   complete, not failed, and still advances the watermark.
 3. **Uncommitted local soul**: nothing to commit. Your edits to the soul ARE the
    delivery; they take effect for the next instance immediately.
 

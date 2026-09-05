@@ -43,6 +43,13 @@ are no notes or a harvester is already running — calling it "too often" is
 safe; not calling it means your insights never reach the soul, and unwritten
 or unharvested notes are lost when your home is retired).
 
+**If you write few notes** (a coordinating or reviewing role, a standing
+session): still run `oats okf harvest` at task boundaries, and at least once
+a day. With no notes pending it harvests your own captured session turns
+since the last harvest instead; the harvester judges them under the same
+bar. It skips when nothing is new. `oats okf harvest --from-record` asks for
+the record even when notes are pending.
+
 **Workspace-mode instances**: your soul lives in its own home repo, and your
 `./work` (the workspace) is not where it commits. `oats okf harvest` handles
 this — it promotes your notes in a worktree of the soul's home repo and
