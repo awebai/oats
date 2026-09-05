@@ -39,7 +39,8 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { checkRemote, getServer, listSnapshots, readServers, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, getServer, listSnapshots, readServers, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { spawnSync as spawnSyncProc } from "node:child_process";
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -3185,6 +3186,18 @@ function serverRouteCmd() {
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
   if (flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  // Interactive viewer: `oats session attach --server <id> --instance <name>`
+  // (or --home </abs/remote/home>) runs the execution host's own attach
+  // through an ssh PTY with this terminal's stdio; nothing is captured.
+  if (cmd === "session") {
+    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session attach` only; inspect and input run on the execution host (the wake broker calls them there)");
+    let route;
+    try { route = attachArgv(id, { instance: flag("instance") === true ? undefined : flag("instance"), home: flag("home") === true ? undefined : flag("home") }); }
+    catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
+    const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
+    process.exit(r.status ?? 1);
+  }
   // Everything after the command word travels, minus the routing flags; a
   // local --task-file is read here and travels as --task text, since the
   // remote cannot read this machine's files.
@@ -3245,7 +3258,7 @@ function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-if (flag("server") !== undefined && ["spawn", "retire", "status"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
@@ -3296,6 +3309,8 @@ Usage:
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
                                             (same flags, same envelope; a route snapshot per
                                             remote instance lives under ~/.oats/remote/)
+  oats session attach --server <id>          attach a viewer to a remote instance through an
+      --instance <name> | --home <abs>       ssh PTY, using the saved route (--print shows the command)
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)

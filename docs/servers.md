@@ -41,9 +41,22 @@ oats retire dev-fix-123 --server build
 The remote kernel does the work in its registered workspace: composition,
 worktree, identity, launch, retirement. The local side only routes: a local
 `--task-file` travels as text, every argument is quoted for the remote login
-shell, and the remote's version and envelope are checked before any mutation
-(`E_REMOTE_INCOMPATIBLE` names both versions). `--dir` and `--server` do not
-combine; the remote workspace comes from the registration.
+shell, and the remote's version, envelope and advertised support are checked
+before any mutation. A spawn that asks for a runtime the remote does not
+advertise (including the soul's own default, resolved from the remote roster),
+a session backend it lacks, or a launch option such as `--yolo` it does not
+know is refused with `E_REMOTE_INCOMPATIBLE` naming what it does support; a
+remote that advertises nothing is treated as a 0.22.1 kernel (pi and claude,
+tmux, no options). `--dir` and `--server` do not combine; the remote workspace
+comes from the registration.
+
+```bash
+oats session attach --server build --instance dev-fix-123   # viewer through an ssh PTY
+```
+
+The viewer runs the execution host's own `oats session attach` (Herdr terminal
+or an isolated tmux linked viewer) over `ssh -t`, addressed by the saved route:
+the remote binary and path come from the snapshot, never from the caller.
 
 ## What this machine keeps
 
@@ -57,9 +70,10 @@ appends this machine's snapshots for that server.
 
 ## Limits
 
-- Lifecycle only: `spawn`, `retire`, `status`. Attach to a session with
-  `ssh -t <host> tmux attach -t oats`; Desktop terminal attachment through the
-  selected transport is the next step of the execution-targets work.
+- Routed: `spawn`, `retire`, `status` and `session attach`. Session inspect
+  and input run on the execution host, where the wake broker calls them.
+  Desktop projection of remote instances and remote viewer attachment are in
+  progress on the execution-targets work.
 - No Git over SSH: repository operations always run on the server, by its
   kernel, in its workspace.
 - A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`); the record

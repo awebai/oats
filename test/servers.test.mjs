@@ -12,7 +12,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
+import { attachArgv, checkRemoteSupport, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -87,6 +87,20 @@ test("validateServer: a registration is where and how, never credentials or ssh 
   assert.throws(() => snapshotPath("build", "../etc"), /bad instance name/);
 });
 
+test("checkRemoteSupport: a request is held to what the remote kernel advertises, soul defaults included", () => {
+  const legacy = { version: "0.22.1", runtimes: ["pi", "claude"], sessionBackends: [], launchOptions: [], advertised: false };
+  const modern = { version: "0.22.2", runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], advertised: true };
+  const target = { sshHost: "h" };
+  const roster = { agents: [{ name: "dev", runtime: "codex" }, { name: "rev", runtime: "claude" }] };
+  assert.deepEqual(checkRemoteSupport(legacy, target, ["rev", "--purpose", "x"], roster), { runtime: "claude", backend: undefined, yolo: false });
+  assert.throws(() => checkRemoteSupport(legacy, target, ["dev"], roster), /does not support runtime codex \(the default of soul dev\)/);
+  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--runtime", "codex"], roster), /runtime codex/);
+  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--yolo"], roster), /yolo launch option/);
+  assert.throws(() => checkRemoteSupport(legacy, target, ["rev", "--backend", "herdr"], roster), /session backend herdr/);
+  assert.deepEqual(checkRemoteSupport(modern, target, ["dev", "--backend", "herdr", "--yolo"], roster), { runtime: "codex", backend: "herdr", yolo: true });
+  assert.throws(() => checkRemoteSupport(modern, target, ["dev", "--backend", "screen"], roster), /session backend screen/);
+});
+
 test("oats server + --server: registry, check, remote spawn with a hostile task, status, retire from the snapshot after the registration is gone", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-servers-"));
   try {
@@ -95,6 +109,7 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     // A minimal PATH, like a non-interactive login shell: the fake ssh, node,
     // git and the system dirs; no locally installed runtime can leak in.
     const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
 
@@ -142,6 +157,24 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.equal(existsSync(join(process.cwd(), "NEVER_RUN")), false);
     const snap = JSON.parse(readFileSync(join(env.OATS_HOME_DIR, "remote", "build", "dev-probe.json"), "utf8"));
     assert.equal(snap.target.workspace, repo); assert.equal(snap.home, home); assert.equal(snap.remote.schemaVersion, 1);
+    assert.equal(snap.agentsRoot, join(repo, "agents"), "the agents root comes from the remote roster, not guessed from the workspace");
+    // A request beyond what the remote advertises is refused BEFORE any spawn reaches it.
+    const before = readFileSync(log, "utf8");
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--runtime", "codex", "--no-launch", "--json"]);
+    assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+    assert.equal(readFileSync(log, "utf8").includes("spawn dev --purpose nope"), false, "no spawn command was sent");
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "nope", "--yolo", "--no-launch", "--json"]);
+    assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
+    // The viewer route: ssh -t, saved target, remote home from the snapshot; --print shows it.
+    const att = attachArgv("build", { instance: "dev-probe" });
+    assert.deepEqual(att.argv.slice(0, 2), ["ssh", "-t"]);
+    assert.equal(att.home, home);
+    assert.match(att.argv.at(-1), new RegExp(`session attach --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
+    assert.throws(() => attachArgv("build", { instance: "ghost" }), /no remote instance "ghost"/);
+    r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-probe", "--print"]);
+    assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /^ssh -t -o 'BatchMode=yes' .* -- build-host /);
+    // the snapshot store is read with OATS_HOME_DIR in effect for the in-process calls above
+    void before;
     assert.equal(snap.target.path, tools, "the PATH prefix is part of the frozen route");
     assert.match(readFileSync(log, "utf8"), new RegExp(`PATH=${tools.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:"\\$PATH" `), "PATH prefix precedes the remote command, $PATH left for the remote shell");
     // --dir and --server do not mix
@@ -174,5 +207,6 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     r = oats(env, ["server", "check", "down", "--json"]);
     assert.notEqual(r.status, 0);
     assert.match(r.json().error.code, /^E_(SSH|REMOTE_ENVELOPE)$/);
+    if (prevHomeDir === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prevHomeDir;
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
