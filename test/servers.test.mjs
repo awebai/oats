@@ -71,6 +71,11 @@ test("remoteQuote/sshArgv: every argument survives the remote login shell byte f
   assert.equal(existsSync("NEVER_RUN"), false);
   assert.equal(remoteQuote("safe.path/x=1"), "safe.path/x=1");
   assert.equal(remoteQuote(""), "''");
+  // A ~/ path prefix expands on the REMOTE shell; a spaced one stays quoted; $PATH is the remote's.
+  const withPath = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats", path: "~/.local/bin:/opt/my tools/bin" }, ["version"]);
+  assert.equal(withPath[7], `PATH="$HOME"/.local/bin:'/opt/my tools/bin':"$PATH" oats version`);
+  const seen = execFileSync("sh", ["-c", withPath[7].replace(/ oats version$/, "; printf %s \"$PATH\"")], { encoding: "utf8", env: { HOME: "/home/remote", PATH: "/usr/bin" } });
+  assert.equal(seen, "/home/remote/.local/bin:/opt/my tools/bin:/usr/bin");
 });
 
 test("validateServer: a registration is where and how, never credentials or ssh options", () => {
