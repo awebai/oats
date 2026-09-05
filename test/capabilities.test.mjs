@@ -798,6 +798,20 @@ test("manifest targeting is rejected because activation is config-owned", () => 
   assert.throws(() => capabilityManifest("acme.bad-target", repo), /cannot declare config-owned targets: souls/);
 });
 
+test("a capability may declare extra environment namespaces it speaks for, disclosed and never reserved", () => {
+  const mk = (extra) => {
+    const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
+    capability(repo, "aw", { capability: "acme.aw", environment: ["AWEB_DELIVERY"], ...(extra !== undefined ? { environmentNamespaces: extra } : {}) });
+    write(join(repo, "oats-config.yaml"), "name: ns-test\n");
+    return repo;
+  };
+  assert.throws(() => capabilityManifest("acme.aw", mk(undefined)), /outside its ACME_ namespace \(declare another in environmentNamespaces\)/);
+  assert.equal(capabilityManifest("acme.aw", mk(["AWEB_"])).environment.includes("AWEB_DELIVERY"), true);
+  assert.throws(() => capabilityManifest("acme.aw", mk(["OATS_"])), /reserved namespace/);
+  assert.throws(() => capabilityManifest("acme.aw", mk(["PATH"])), /uppercase prefix ending in an underscore|reserved namespace/);
+  assert.throws(() => capabilityManifest("acme.aw", mk(["aweb_"])), /uppercase prefix/);
+});
+
 test("launch environment authority requires an unambiguous dotted capability ID", () => {
   for (const id of ["aweb@evil", "aweb/evil", "aweb.evil@other", "aweb.evil/other", "Aweb.evil"]) {
     const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
@@ -2735,12 +2749,13 @@ test("runtime requirements may be conditional on capability settings (when) and 
   const pkgDir = (version) => { const d = join(base, `pi-pkg-${version}`); write(join(d, "package.json"), JSON.stringify({ name: "@awebai/pi", version })); return d; };
   capability(repo, "chan", {
     capability: "acme.chan",
+    settings: { delivery: { default: "channel", values: ["channel", "session"], description: "x" } },
     requires: [
       { runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } },
       { runtime: "pi", package: "npm:@awebai/pi", minVersion: "0.3.10", why: "must honour the opt-out", when: { delivery: "session" } },
     ],
   });
-  const config = (delivery) => write(join(repo, "oats-config.yaml"), `capabilities:\n  additive:\n    acme.chan:\n      global: true\n      settings:\n        delivery: ${delivery}\n`);
+  const config = (delivery) => write(join(repo, "oats-config.yaml"), delivery === undefined ? "capabilities:\n  additive:\n    acme.chan:\n      global: true\n" : `capabilities:\n  additive:\n    acme.chan:\n      global: true\n      settings:\n        delivery: ${delivery}\n`);
   const oldPath = process.env.PATH; const oldHome = process.env.HOME; process.env.HOME = join(base, "nohome");
   try {
     // session + old extension: the floor refuses, naming both versions and the remedy
@@ -2761,6 +2776,40 @@ test("runtime requirements may be conditional on capability settings (when) and 
     const ch = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-ch", launch: false });
     assert.equal(ch.instance, "dev-ch");
     retireInstance(root, "dev-ch", { tmuxSession: "oats-test-nosuch" });
+    // UNSET: the manifest default (channel) applies, so the plain channel row is a requirement and a missing package refuses (the default path keeps its requirements)
+    config(undefined);
+    process.env.PATH = fakeRuntimes(base);
+    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-unset", launch: false }), (e) => e.code === "E_RUNTIME_RESOURCE_MISSING" && /requires the pi package npm:@awebai\/pi, which is not installed/.test(e.message));
+    // session with NO pi extension at all: the floor row is ifInstalled, absence is fine
+    capability(repo, "chan", {
+      capability: "acme.chan",
+      settings: { delivery: { default: "channel", values: ["channel", "session"], description: "x" } },
+      requires: [
+        { runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } },
+        { runtime: "pi", package: "npm:@awebai/pi", minVersion: "0.3.10", ifInstalled: true, why: "must honour the opt-out", when: { delivery: "session" } },
+      ],
+    });
+    config("session");
+    process.env.PATH = fakeRuntimes(base);
+    const none = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-none", launch: false });
+    assert.equal(none.instance, "dev-none");
+    retireInstance(root, "dev-none", { tmuxSession: "oats-test-nosuch" });
+    // a misspelled value is refused outright, never a silent skip of every row
+    config("sesion");
+    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-typo", launch: false }), /acme\.chan\.delivery is "sesion", not one of "channel", "session"/);
+    // a malformed when is a problem, not an unconditional row
+    capability(repo, "chan", { capability: "acme.chan", requires: [{ runtime: "pi", package: "npm:@awebai/pi", why: "x", when: "channel" }] });
+    config("channel");
+    assert.throws(() => spawnInstance(root, findAgent(root, "dev"), { instance: "dev-bad", launch: false }), /`when` must be an object/);
+    // restore the manifest for the last case
+    capability(repo, "chan", {
+      capability: "acme.chan",
+      settings: { delivery: { default: "channel", values: ["channel", "session"], description: "x" } },
+      requires: [
+        { runtime: "pi", package: "npm:@awebai/pi", why: "native channel", when: { delivery: "channel" } },
+        { runtime: "pi", package: "npm:@awebai/pi", minVersion: "0.3.10", why: "must honour the opt-out", when: { delivery: "session" } },
+      ],
+    });
     // session + a version the runtime cannot report: fails closed
     config("session");
     process.env.PATH = fakePiWithPackages(base, [{ source: "npm:@awebai/pi", dir: join(base, "pi-pkg-noversion") }]);

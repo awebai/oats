@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -20,7 +20,8 @@ function fakeAw(base, joinMode = "ok") {
   write(join(bin, "aw"), `#!/usr/bin/env node
 const a = process.argv.slice(2).join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
-require("node:fs").appendFileSync(log, a + "\\n");
+require("node:fs").appendFileSync(log, a + " @" + process.cwd() + "\\n");
+if (a.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
 if (a.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (a.startsWith("team invite")) { console.log(JSON.stringify({ token: "TOK-secret" })); process.exit(0); }
 if (a.startsWith("team join")) {
@@ -32,7 +33,7 @@ if (a.startsWith("workspace delete")) process.exit(0);
 if (a.startsWith("workspace connect")) process.exit(0);
 if (a.startsWith("check --online")) process.exit(0);
 if (a.startsWith("heartbeat")) process.exit(0);
-if (a.startsWith("workspace status")) { const mode = process.env.FAKE_STATUS || "ok"; console.log(JSON.stringify(mode === "ok" ? { alias: "merlin", workspace_path: process.cwd(), hostname: require("node:os").hostname() } : { alias: "merlin", workspace_path: "/somewhere/else", hostname: "other" })); process.exit(0); }
+if (a.startsWith("workspace status")) { const mode = process.env.FAKE_STATUS || "ok"; console.log(JSON.stringify({ selected_team: "t:example.test", workspace: mode === "ok" ? { alias: "merlin", workspace_path: process.cwd(), hostname: "Mac.lan" } : { alias: "merlin", workspace_path: "/somewhere/else", hostname: "other" } })); process.exit(0); }
 console.error("fake aw: unexpected " + a); process.exit(2);
 `);
   chmodSync(join(bin, "aw"), 0o755);
@@ -68,7 +69,17 @@ test("spawn with delivery=session: AWEB_DELIVERY in the launch env, no Claude ch
     assert.deepEqual(session.doc.env, { AWEB_DELIVERY: "session" });
     assert.equal(session.doc.launch, undefined, "no channel flag in session mode");
     assert.match(session.doc.brief, /Notification delivery: external \(AWEB_DELIVERY=session\)/);
-    assert.match(session.doc.brief, /NOTHING wakes you/);
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`^wake register --home ${home.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")} --identity-home .*/.aw --delivery session`, "m"), "registered with the broker");
+    // Without an aw that has the wake CLI, session mode refuses instead of going silently poll-only.
+    mkdirSync(join(root, "agents", "dev", "instances", "probe-nw"), { recursive: true });
+    const noWake = runHook(base, bin, "spawn", { ...env, OATS_INSTANCE: "probe-nw", OATS_HOME: join(root, "agents", "dev", "instances", "probe-nw"), OATS_SETTINGS: JSON.stringify({ delivery: "session" }), FAKE_NO_WAKE: "1" });
+    assert.notEqual(noWake.status, 0);
+    assert.match(noWake.stdout, /needs an aw with the wake broker CLI/);
+    // Retire in session mode deregisters.
+    mkdirSync(join(home, ".aw"), { recursive: true });
+    const ret = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(session.doc.meta) });
+    assert.equal(ret.status, 0, ret.stdout);
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), /^wake deregister --home /m);
     // An unknown value behaves as channel, never as session.
     const odd = runHook(base, bin, "spawn", { ...env, OATS_SETTINGS: JSON.stringify({ delivery: "broker" }) });
     assert.equal(odd.doc.meta.delivery, "channel");
@@ -127,19 +138,29 @@ test("retained identity: authority files copied exactly, coordination reconnecte
     assert.equal((statSync(dest).mode & 0o777), 0o700, ".aw is 0700");
     for (const f of ["workspace.yaml", "context", "interaction-log.jsonl"]) assert.equal(existsSync(join(dest, f)), false, `${f} never copied`);
     const log = readFileSync(join(base, "aw.log"), "utf8");
-    assert.match(log, /^workspace connect --service https:\/\/app\.example\.test --team t:example\.test --role coordinator$/m, "connect with the source's service, the team, and the source's role, nothing else");
+    assert.match(log, /^workspace connect --service https:\/\/app\.example\.test --team t:example\.test --role coordinator @/m, "connect with the source's service, the team, and the source's role, nothing else");
     assert.equal(log.includes("team join"), false, "a retained seat is never minted");
     assert.equal(log.includes("SECRET-API-KEY"), false);
     assert.match(log, /workspace connect[\s\S]*check --online[\s\S]*heartbeat[\s\S]*workspace status/, "connect, check, heartbeat, status, in that order");
     const lock = JSON.parse(readFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), "utf8"));
     assert.equal(lock.home, home); assert.equal(lock.alias, "merlin"); assert.equal(lock.team, "t:example.test");
-    // A second seat cannot take a live holder's identity.
-    writeFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), JSON.stringify({ ...lock, pid: process.pid }));
+    // A second seat cannot take a holder's identity while the holder's home
+    // exists, whatever any process is doing (the spawner is long gone by then).
+    assert.equal(lock.pid, undefined, "no spawner pid is recorded: it is not a liveness signal");
     const home2 = join(root, "agents", "dev", "instances", "merlin-seat-2"); mkdirSync(home2, { recursive: true });
     const second = runHook(base, bin, "spawn", { ...env, OATS_INSTANCE: "merlin-seat-2", OATS_HOME: home2 });
     assert.notEqual(second.status, 0);
     assert.match(second.stdout, /already held by /);
     assert.equal(existsSync(join(home2, ".aw")), false, "nothing copied for the refused seat");
+    // The explicit take-over is the only escape, and it warns.
+    const taken = runHook(base, bin, "spawn", { ...env, OATS_INSTANCE: "merlin-seat-2", OATS_HOME: home2, OATS_SETTINGS: JSON.stringify({ identity: { source: src, takeOver: true } }) });
+    assert.equal(taken.status, 0, taken.stdout + taken.stderr);
+    assert.equal(taken.doc.meta.tookOverFrom, home);
+    assert.match(taken.doc.warning, /took over the retained identity from .*two seats with one key/);
+    assert.match(taken.doc.warning, /workspace row hostname Mac\.lan/, "a differing row hostname is reported, not judged");
+    assert.equal((statSync(join(home2, ".aw", "encryption-keys", "x25519.key")).mode & 0o777), 0o600, "keys inside copied directories are 0600");
+    rmSync(join(home2, ".aw"), { recursive: true, force: true });
+    writeFileSync(join(base, "legacy-home", ".aw-retained-seat.json"), JSON.stringify(lock));
     // Retire releases the lock and touches nothing else: no workspace delete.
     const before = readFileSync(join(base, "aw.log"), "utf8");
     const ret = runHook(base, bin, "retire", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_META: JSON.stringify(r.doc.meta) });
@@ -158,7 +179,12 @@ test("retained identity: a status that does not show the new path fails the spaw
     const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "merlin-seat", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: JSON.stringify({ identity: { source: src } }), FAKE_STATUS: "elsewhere" });
     assert.notEqual(r.status, 0);
     assert.match(r.stdout, /retained identity could not be seated from /);
-    assert.equal(existsSync(join(home, ".aw")), false, "copied material removed");
+    // The failure came after connect: the prior binding is restored FROM THE LEGACY HOME, then the copy and lock go.
+    const log = readFileSync(join(base, "aw.log"), "utf8");
+    const connects = log.split("\n").filter((l) => l.startsWith("workspace connect"));
+    assert.equal(connects.length, 2, "connect from the new home, then the restoring connect");
+    assert.equal(connects[1].split(" @")[1], realpathSync(join(base, "legacy-home")), "the restore runs in the legacy home");
+    assert.equal(existsSync(join(home, ".aw")), false, "copied material removed after the restore");
     assert.equal(existsSync(join(base, "legacy-home", ".aw-retained-seat.json")), false, "lock released");
     assert.equal(existsSync(join(src, "signing.key")), true, "source untouched");
   } finally { rmSync(base, { recursive: true, force: true }); }

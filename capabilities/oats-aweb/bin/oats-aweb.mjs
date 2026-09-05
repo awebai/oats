@@ -37,7 +37,7 @@
  * identity joined moments before the failure must still be deletable.
  */
 import { execFileSync } from "node:child_process";
-import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join, dirname, resolve, delimiter } from "node:path";
 
@@ -175,21 +175,44 @@ if (!onPath("aw")) {
 // team-join (that is the mint path, which would try to create the alias
 // again). Retire releases the lock and leaves the identity alone.
 const IDENTITY_AUTHORITY = ["signing.key", "identity.yaml", "teams.yaml", "team-certs", "encryption.yaml", "encryption-keys"];
+// Session delivery registers the home with the host wake broker (aweb-abil:
+// `aw wake register --home <abs> --identity-home <abs> --delivery session
+// [--backend tmux|herdr]`, durable even when the daemon is down). An aw
+// without `aw wake` cannot deliver in session mode: refuse, never silently
+// turn a working channel into a poll-only instance.
+function wakeRegister(instanceHome, identityHome, minted) {
+  const backend = process.env.OATS_BACKEND;
+  try {
+    run(["aw", "wake", "register", "--home", instanceHome, "--identity-home", identityHome, "--delivery", "session", ...(backend ? ["--backend", backend] : [])], instanceHome, 60000);
+  } catch (e) {
+    fatal(`delivery: session needs an aw with the wake broker CLI (aw wake register), which this aw does not provide (${e.message || e}); install the aweb release that ships aw wake, or use delivery: channel`, minted);
+  }
+}
+function wakeDeregister(instanceHome) {
+  try { run(["aw", "wake", "deregister", "--home", instanceHome], instanceHome, 60000); return true; } catch { return false; }
+}
 const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
   return m ? m[1].trim() : undefined;
 };
-const pidAlive = (pid) => { try { process.kill(Number(pid), 0); return true; } catch (e) { return e.code === "EPERM"; } };
-function retainedSeatSpawn(source) {
+function retainedSeatSpawn(source, takeOver) {
   if (typeof source !== "string" || !source.startsWith("/")) fatal("identity.source must be the absolute path of the legacy .aw directory to retain");
   if (!existsSync(join(source, "signing.key"))) fatal(`identity.source ${source} holds no signing.key, so there is no identity to retain`);
   const lockPath = seatLockPath(source);
+  let takenOver;
   if (existsSync(lockPath)) {
     let held; try { held = JSON.parse(readFileSync(lockPath, "utf8")); } catch { held = {}; }
     const holderHome = held.home;
-    const holderLive = holderHome && existsSync(holderHome) && (!held.pid || pidAlive(held.pid));
-    if (holderLive) fatal(`identity at ${source} is already held by ${holderHome} (${lockPath}); a seat is never taken from a live holder — retire that instance first`);
+    // Held means the holder's home still exists: retire removes both the lock
+    // and the home, so a home that is there is a seat that was never retired.
+    // No process liveness is inferred (the spawner's pid says nothing about the
+    // runtime). The only escape is the explicit, warned take-over for a seat
+    // whose runtime is known to be dead.
+    if (holderHome && existsSync(holderHome)) {
+      if (takeOver !== true) fatal(`identity at ${source} is already held by ${holderHome} (${lockPath}); a seat is never taken from a holder whose home exists — retire that instance first, or set identity.takeOver: true only if you know its runtime is dead`);
+      takenOver = holderHome;
+    }
   }
   const srcWorkspace = existsSync(join(source, "workspace.yaml")) ? readFileSync(join(source, "workspace.yaml"), "utf8") : "";
   const service = process.env.OATS_AWEB_URL || yamlScalar(srcWorkspace, "aweb_url");
@@ -199,7 +222,32 @@ function retainedSeatSpawn(source) {
   if (!team && existsSync(join(source, "teams.yaml"))) team = yamlScalar(readFileSync(join(source, "teams.yaml"), "utf8"), "active_team") || yamlScalar(readFileSync(join(source, "teams.yaml"), "utf8"), "active");
   if (!team || !team.includes(":")) fatal(`cannot determine the team for the retained identity (set team.id in oats-config.yaml, or an active team in ${join(source, "teams.yaml")})`);
   const dest = join(home, ".aw");
-  const rollback = () => { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } try { rmSync(lockPath, { force: true }); } catch { /* best effort */ } };
+  const legacyHome = dirname(source);
+  // The lock is taken FIRST: a concurrent second spawn must see it before any
+  // byte of the identity is copied.
+  // Exclusive creation (wx): two concurrent spawns cannot both pass the
+  // existence check and overwrite each other; the loser fails here having
+  // copied nothing. A take-over replaces the stale lock first, deliberately.
+  if (takenOver) { try { rmSync(lockPath, { force: true }); } catch { /* replaced below */ } }
+  try {
+    writeFileSync(lockPath, JSON.stringify({ home, instance, team, takenAt: new Date().toISOString(), host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n", { mode: 0o600, flag: "wx" });
+  } catch (e) {
+    fatal(`identity at ${source} was taken by another spawn a moment ago (${lockPath} exists); nothing copied`);
+  }
+  let connected = false;
+  const rollback = () => {
+    // After `aw workspace connect` the server binding points at the new home;
+    // deleting the copy alone would leave the identity bound to nothing. Put
+    // the binding back where it was, from the legacy home, then remove the
+    // copy; if the restore fails, KEEP the copy so the seat stays recoverable.
+    let restored = !connected;
+    if (connected) {
+      try { run(["aw", "workspace", "connect", "--service", service, "--team", team, ...(role ? ["--role", role] : [])], legacyHome, 60000); restored = true; }
+      catch { restored = false; }
+    }
+    if (restored) { try { rmSync(dest, { recursive: true, force: true }); } catch { /* best effort */ } try { rmSync(lockPath, { force: true }); } catch { /* best effort */ } }
+    return restored;
+  };
   try {
     mkdirSync(dest, { recursive: true, mode: 0o700 });
     chmodSync(dest, 0o700);
@@ -207,25 +255,39 @@ function retainedSeatSpawn(source) {
       const from = join(source, name);
       if (!existsSync(from)) continue; // encryption material may be absent on an identity that never had it
       const to = join(dest, name);
-      if (statSync(from).isDirectory()) { cpSync(from, to, { recursive: true }); chmodSync(to, 0o700); }
-      else { copyFileSync(from, to); chmodSync(to, 0o600); }
+      if (statSync(from).isDirectory()) {
+        cpSync(from, to, { recursive: true }); chmodSync(to, 0o700);
+        for (const f of readdirSync(to)) { const p = join(to, f); if (statSync(p).isFile()) chmodSync(p, 0o600); } // private keys inside, whatever the source modes were
+      } else { copyFileSync(from, to); chmodSync(to, 0o600); }
     }
     for (const forbidden of ["workspace.yaml", "context", "interaction-log.jsonl", "channel-delivered-ids.json", "chat-delivered-ids.json"]) {
       if (existsSync(join(dest, forbidden))) rmSync(join(dest, forbidden), { recursive: true, force: true });
     }
-    // The lock is taken before connect: a concurrent second spawn must see it.
-    writeFileSync(lockPath, JSON.stringify({ home, instance, team, pid: process.ppid, takenAt: new Date().toISOString(), host: hostname() }, null, 2) + "\n", { mode: 0o600 });
     run(["aw", "workspace", "connect", "--service", service, "--team", team, ...(role ? ["--role", role] : [])], home, 60000);
+    connected = true;
     run(["aw", "check", "--online"], home, 60000);
     run(["aw", "heartbeat"], home, 60000);
     const status = run(["aw", "workspace", "status", "--json"], home, 60000);
-    const text = String(status);
     // Thrown, not fatal: the catch below rolls the copy and the lock back first.
-    if (!text.includes(home)) throw new Error(`aw workspace status from ${home} does not show the new path, so the seat is not connected; nothing is briefed`);
-    if (!text.includes(hostname().split(".")[0])) throw new Error(`aw workspace status from ${home} does not show this host, so the seat is not connected; nothing is briefed`);
-    let alias = instance;
-    try { const st = JSON.parse(text); alias = st.alias || st.workspace?.alias || st.identity?.alias || (yamlScalar(readFileSync(join(dest, "identity.yaml"), "utf8"), "address") || "").split("/").pop() || instance; } catch { alias = (yamlScalar(readFileSync(join(dest, "identity.yaml"), "utf8"), "address") || "").split("/").pop() || instance; }
-    writeFileSync(lockPath, JSON.stringify({ home, instance, alias, team, pid: process.ppid, takenAt: new Date().toISOString(), host: hostname() }, null, 2) + "\n", { mode: 0o600 });
+    // Verified by parsing: the workspace row's path must be this home. The
+    // hostname the row records is whatever the binding stored (on hosted
+    // teams it need not equal this OS hostname), so it is reported, not judged.
+    let st; try { st = JSON.parse(String(status)); } catch { throw new Error(`aw workspace status from ${home} answered no JSON, so the seat is not connected; nothing is briefed`); }
+    const ws = st.workspace && typeof st.workspace === "object" ? st.workspace : st;
+    const shownPath = String(ws.workspace_path || ws.path || "");
+    const same = (a, b) => { try { return realpathSync(a) === realpathSync(b); } catch { return resolve(a) === resolve(b); } };
+    if (!shownPath || !same(shownPath, home)) throw new Error(`aw workspace status from ${home} shows workspace_path ${JSON.stringify(shownPath)} not this home, so the seat is not connected; nothing is briefed`);
+    const hostNote = ws.hostname && ws.hostname !== hostname() && ws.hostname.split(".")[0] !== hostname().split(".")[0] ? ` (workspace row hostname ${ws.hostname}, this host ${hostname()})` : "";
+    const identityText = readFileSync(join(dest, "identity.yaml"), "utf8");
+    const expectedDid = yamlScalar(identityText, "did");
+    const expectedAddress = yamlScalar(identityText, "address");
+    const shownDid = ws.did || st.did || st.identity?.did;
+    if (expectedDid && shownDid && shownDid !== expectedDid) throw new Error(`aw workspace status shows did ${shownDid}, not the retained identity's ${expectedDid}; the seat is not the same identity`);
+    const aliasRaw = String(ws.alias || st.alias || (expectedAddress || "").split("/").pop() || instance);
+    if (!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(aliasRaw)) throw new Error(`aw workspace status reports an alias that is not a plausible alias; the seat is not briefed`);
+    const alias = aliasRaw;
+    if (expectedAddress && !expectedAddress.endsWith(`/${alias}`)) throw new Error(`aw workspace status shows alias ${alias}, not the retained identity's address ${expectedAddress}; the seat is not the same identity`);
+    writeFileSync(lockPath, JSON.stringify({ home, instance, alias, team, takenAt: new Date().toISOString(), host: hostname(), ...(takenOver ? { tookOverFrom: takenOver } : {}) }, null, 2) + "\n", { mode: 0o600 });
     const launch = (process.env.OATS_RUNTIME || "") === "claude" && deliveryMode === "channel"
       ? { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" }
       : undefined;
@@ -233,20 +295,25 @@ function retainedSeatSpawn(source) {
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session); until the host wake broker registers this instance NOTHING wakes you: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary.`
       : "";
+    if (deliveryMode === "session") wakeRegister(home, dest, undefined);
+    const warnings = [];
+    if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
+    if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
     out({
-      meta: { team, alias, retained: true, source, lock: lockPath, delivery: deliveryMode },
+      meta: { team, alias, retained: true, source, lock: lockPath, delivery: deliveryMode, ...(takenOver ? { tookOverFrom: takenOver } : {}) },
       ...(env ? { env } : {}),
       brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
       ...(launch ? { launch } : {}),
+      ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
   } catch (e) {
-    rollback();
-    fatal(`retained identity could not be seated from ${source}: ${e.message || e}`);
+    const restored = rollback();
+    fatal(`retained identity could not be seated from ${source}: ${e.message || e}${connected ? (restored ? " (the server binding was restored to the legacy home and the copy removed)" : ` (the server binding still points at ${home} and the copy was KEPT there so the seat is recoverable: run aw workspace connect from ${legacyHome} to restore it, or retry the spawn)`) : ""}`);
   }
 }
 
 if (event === "spawn") {
-  if (settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source));
+  if (settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true);
   let minted;                 // external identity, once `aw team join` succeeds
   const root = awebRoot();
   if (!root) fatal(`no initialized aweb root (.aw) among the bounded candidates (home, its git repo, context repo, workspace ${process.env.OATS_WORKSPACE || "?"}), so no identity could be minted and this instance would have no messaging — run \`oats aweb setup\` for guided onboarding`);
@@ -319,8 +386,9 @@ if (event === "spawn") {
       : undefined;
     const env = deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : undefined;
     const channelWarning = undefined;
+    if (deliveryMode === "session") wakeRegister(home, join(home, ".aw"), minted);
     const deliveryBrief = deliveryMode === "session"
-      ? ` Notification delivery: external (AWEB_DELIVERY=session). The native aweb channel is not running in this session, and until the host wake broker registers this instance NOTHING wakes you when mail or chat arrives: check \`aw mail inbox\` and \`aw chat pending\` at every task boundary and whenever you would otherwise wait.`
+      ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";
     out({
       meta: { team: joined.team_id, alias, delivery: deliveryMode },
@@ -340,6 +408,7 @@ if (event === "spawn") {
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
+  if (meta.delivery === "session") { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   if (meta.retained) {
     if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
     out({ meta: { retired: true, retained: true, identityReleased: true }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched` });

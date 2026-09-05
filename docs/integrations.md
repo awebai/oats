@@ -166,5 +166,7 @@ soul through the binding's `settings:` map.
 
 Requirement rows in a manifest may carry `when: { <setting>: <value> }` (the
 row applies only when the capability's effective setting matches) and
-`minVersion` (an installed version the runtime reports as older, or cannot
-report, fails the requirement with the install remedy).
+`minVersion` (the version is read from the package.json under the install
+directory the runtime's listing names; an older or absent manifest fails the
+requirement with the install remedy). `ifInstalled: true` makes an absent
+package satisfy the row, so the floor applies only to an ambient extension.

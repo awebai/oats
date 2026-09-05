@@ -3,7 +3,7 @@
   "command": "aweb",
   "version": "1.10.0",
   "compatibility": {
-    "oats": ">=0.19.0"
+    "oats": ">=0.22.3"
   },
   "layer": "messaging",
   "description": "Messaging layer via aweb: per-instance team identities + native aw mail/chat skills + cross-machine team roster.",
@@ -39,8 +39,9 @@
       "when": {
         "delivery": "session"
       },
-      "why": "with session delivery the ambient aweb extension must honour AWEB_DELIVERY=session (0.3.10 and later); an older one would open a second event stream beside the wake broker",
-      "install": "pi install npm:@awebai/pi@latest"
+      "why": "an ambient aweb pi extension, if one is installed, must honour AWEB_DELIVERY=session (0.3.10 and later); an older one would open a second event stream beside the wake broker; no extension at all is fine",
+      "install": "pi install npm:@awebai/pi@latest",
+      "ifInstalled": true
     }
   ],
   "skills": [
@@ -72,5 +73,8 @@
       ],
       "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
     }
-  }
+  },
+  "environmentNamespaces": [
+    "AWEB_"
+  ]
 }
