@@ -255,8 +255,9 @@ the shared rollout record.
   session-local schedules. Production credentials remain solely with the
   authorized production operator. His plan reserves Zeus's final cutover
   for Juan's presence; the other seats can prepare in the meantime.
-- BeadHub configuration/soul commit `3ee13a8` was independently reviewed and
-  landed. Its tracked deployment template is materialized at the canonical
+- BeadHub configuration/soul commit `3ee13a8` in `awebai/beadhub-saas`
+  (`~/awebai/beadhub/beadhub-saas`) was independently ACKed by lead and
+  landed on `main`. Its tracked deployment template is materialized at the canonical
   parent workspace, with trusted official capabilities and a clean actual
   doctor result. The soul retains SaaS Git provenance and uses workspace mode
   as a coordinator across the three canonical repositories. Its legacy holder
