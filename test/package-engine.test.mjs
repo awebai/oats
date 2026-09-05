@@ -786,6 +786,36 @@ test("acquirePackage: a path mismatch names the route that can actually resolve 
   assert.doesNotMatch(catErr.message, /oats remove/);
 });
 
+test("updatePackage: a spec moves a catalog lock to another selector; a plain update keeps the pinned one; git locks refuse", () => {
+  const t = temp();
+  const repoRoot = join(t, "repo");
+  pkgSource(join(repoRoot, "oats-package"), { package: "x.p", version: "1.0.0" }, { "capabilities/a": { capability: "x.a" } });
+  const v1 = gitify(repoRoot);
+  write(join(repoRoot, "oats-package/capabilities/a/more.md"), "v2\n");
+  pkgSource(join(repoRoot, "oats-package"), { package: "x.p", version: "2.0.0" }, { "capabilities/a": { capability: "x.a" } });
+  const v2 = gitify(repoRoot);
+  // The catalog resolves a selector to its ref; without one, to its current pin (v2).
+  const catalog = (id, selector) => (id === "x.p" ? { url: `file://${repoRoot}`, ref: selector === "v1" ? v1 : v2, path: "oats-package" } : undefined);
+  const s = scope(t);
+  acquirePackage(s, "x.p@v1", { catalog });
+  assert.equal(lockOf(s).packages["x.p"].source, "catalog:x.p@v1");
+  // A plain update keeps the explicit selector, by design.
+  assert.equal(updatePackage(s, "x.p", { catalog }).changed, false);
+  assert.equal(lockOf(s).packages["x.p"].source, "catalog:x.p@v1");
+  // A spec moves it through the same transactional path.
+  const r = updatePackage(s, "x.p", { spec: "x.p@v2", catalog });
+  assert.equal(r.changed, true);
+  assert.equal(r.after.source, "catalog:x.p@v2");
+  assert.equal(r.after.version, "2.0.0");
+  assert.equal(lockOf(s).packages["x.p"].source, "catalog:x.p@v2");
+  assert.ok(existsSync(join(artifact(s, "x.a"), "more.md")));
+  // A spec naming another package, or on a git-sourced lock, is refused.
+  throwsCode(() => updatePackage(s, "x.p", { spec: "x.other@v2", catalog }), "invalid-source", "spec for another package");
+  const g = scope(t, "git");
+  acquirePackage(g, `file://${repoRoot}@${v2}#oats-package`);
+  throwsCode(() => updatePackage(g, "x.p", { spec: "x.p@v1", catalog }), "invalid-source", "selector on a git lock");
+});
+
 test("acquirePackage: incompatible compatibility.oats floor is rejected before anything is written", () => {
   const t = temp();
   const src = pkgSource(join(t, "src"), { package: "x.p", compatibility: { oats: ">=999.0.0" } }, { "capabilities/a": { capability: "x.a" } });
