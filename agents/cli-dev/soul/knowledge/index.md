@@ -11,6 +11,7 @@ read what the current task needs, not everything.
 # Sections
 
 ## Decisions
+* [decisions/pid-liveness-fails-toward-refusing-to-write.md](decisions/pid-liveness-fails-toward-refusing-to-write.md) - Judging lock staleness by process liveness leaves a pid-reuse-after-reboot hole; the chosen resolution is to block and time out loudly rather than add an age ceiling that would restore the theft bug.
 * [decisions/capability-id-grammar-and-containment-proof.md](decisions/capability-id-grammar-and-containment-proof.md) - Revised-v2 capability ids get one strict directory-name grammar in the lock reader and package-manifest validation, with installedCapabilityDir retaining a redundant containment proof as defense in depth.
 * [decisions/provider-rows-resolve-at-their-own-lock-level.md](decisions/provider-rows-resolve-at-their-own-lock-level.md) - Merged lock maps resolve packages and capabilities independently, so provider package lookup for a capability row must use the row's own lock file instead of the closest package identity.
 * [decisions/ignore-must-precede-staging-not-the-commit.md](decisions/ignore-must-precede-staging-not-the-commit.md) - Staging lives under installed/, so fetched and materialized bytes must be ignored before the operation runs rather than only when the transaction commits.
@@ -41,6 +42,7 @@ read what the current task needs, not everything.
 * [architecture/spawn-relations-lineage-fields.md](architecture/spawn-relations-lineage-fields.md) - final child/sibling/parent/unrelated semantics, sparse lineage fields, attached-owner binding, ambiguity validation, and retirement splice behavior.
 
 ## Lessons
+* [lessons/ownership-token-lock-beats-threshold-ordering.md](lessons/ownership-token-lock-beats-threshold-ordering.md) - RecordStore assumed lockTimeoutMs < lockStaleMs prevented lock theft; the two clocks start at different events, so the invariant never held and a late contender stole a live holder's lock.
 * [lessons/clean-room-smoke-local-official-package.md](lessons/clean-room-smoke-local-official-package.md) - Under catalog-first, oats init in the clean room resolves explicit official ids through the real catalog unless the room publishes and binds its own local official package.
 * [lessons/diagnostic-remedies-are-contracts.md](lessons/diagnostic-remedies-are-contracts.md) - A diagnostic that names a repair path must be tested as a contract; the refused operation can be correct while its advice still sends operators into loops.
 * [lessons/cli-tests-scrub-oats-pi-env.md](lessons/cli-tests-scrub-oats-pi-env.md) - CLI tests spawned inside an OATS instance inherit instance and laptop-level context unless their child environment removes OATS/PI variables and pins HOME to a fixture directory.
