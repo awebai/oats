@@ -2777,9 +2777,9 @@ function retireCmd() {
   // as an external operator and writes its outcome beside the home.
   if (r.deferred) {
     if (args.includes("--json")) { console.log(JSON.stringify(r, null, 2)); return; }
-    console.log(`Retirement of ${r.retired} (agent ${r.agent}) is scheduled — this window dies in ~${r.completesInSec}s, say any goodbyes now.`);
-    console.log(`  hooks, work preservation and removal run afterwards, outside this runtime`);
-    console.log(`  outcome: ${shortPath(r.resultPath)}  (failures also show in \`oats status\`; retry with \`oats retire ${r.retired}\`)`);
+    console.log(`Retirement of ${r.retired} (agent ${r.agent}) is ${r.alreadyScheduled ? "already " : ""}scheduled — say any goodbyes now.`);
+    console.log(`  in ~${r.completesInSec}s a detached completion quiesces this runtime (that is what ends this window), preserves work, runs retire hooks and removes the home`);
+    console.log(`  if the completion fails, this window stays, the failure shows in \`oats status\` and at ${shortPath(r.resultPath)}, and \`oats retire ${r.retired}\` retries it`);
     return;
   }
   // Forced removal past an incomplete cleanup: the home is gone because the

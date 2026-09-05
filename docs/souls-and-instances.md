@@ -163,10 +163,11 @@ nothing: it records the intent beside its home as
 status before its tmux window dies a few seconds later. The completion then
 retires the instance exactly as an external `oats retire` would: quiesce the
 runtime, preserve uncommitted work, run retire hooks, repair lineage, remove
-the worktree and the home. Its outcome is written beside the home as
-`.oats-retired-<instance>.json`; a failure keeps the home (and the usual
-quarantine marker when hooks reported incomplete cleanup), shows in
-`oats status`, and is retried with `oats retire <instance>`.
+the worktree and the home. Success leaves nothing behind: the home and the
+marker are gone. A failure writes `.oats-retired-<instance>.json` beside the
+retained home (plus the usual quarantine marker when hooks reported incomplete
+cleanup), shows in `oats status` and the Desktop as a failed deferred
+retirement, and is retried and cleared with `oats retire <instance>`.
 
 ## Work modes
 

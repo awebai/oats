@@ -98,8 +98,12 @@ soul. Never put secrets, user data, or volatile task details in an instance
 name.
 
 To self-retire, first finish memory/commit/reporting requirements, report final
-status, then run `oats retire <own-instance> --self`. Never retire merely to
-clean up; retirement deletes the instance home.
+status, then run `oats retire <own-instance> --self`. That returns at once and
+a detached completion retires you a few seconds later exactly as an external
+`oats retire` would (quiesce, preserve work, hooks, remove the home). If the
+completion fails, your window stays, the failure shows in `oats status` with
+the retry command, and an operator retries. Never retire merely to clean up;
+retirement deletes the instance home.
 
 ## Canonical versus generated
 

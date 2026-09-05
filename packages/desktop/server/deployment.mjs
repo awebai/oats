@@ -696,12 +696,41 @@ export function listInstances(root, tmuxSession = DEFAULT_TMUX_SESSION) {
       // metadata may add fields but never relocate the instance.
       meta.instance = fallback.instance;
       meta.home = fallback.home;
-      return { ...meta, running: windows.includes(meta.instance) };
+      // Parity with the kernel reader: a home owed a deferred self-retirement
+      // is not a live instance (the pending marker sits beside the home).
+      let retirePending;
+      try {
+        const pending = join(instancesDir, `.oats-retire-pending-${e.name}.json`);
+        if (existsSync(pending)) { try { retirePending = JSON.parse(readFileSync(pending, "utf8")); } catch { retirePending = { reason: "retire pending" }; } }
+      } catch { /* unreadable marker: show the bare instance */ }
+      return { ...meta, running: windows.includes(meta.instance), ...(retirePending ? { retirePending } : {}) };
     });
+  };
+  // Parity with the kernel reader: failed deferred self-retirements leave an
+  // outcome file beside the (retained) home; the Desktop must show them as
+  // failures with a retry, not as idle instances.
+  const readRetireFailuresOf = (agentDir) => {
+    const instancesDir = join(agentDir, "instances");
+    let entries = [];
+    try { entries = existsSync(instancesDir) ? readdirSync(instancesDir, { withFileTypes: true }) : []; } catch { return []; }
+    const out = [];
+    for (const e of entries) {
+      const m = e.isFile() && /^\.oats-retired-(.+)\.json$/.exec(e.name);
+      if (!m) continue;
+      try {
+        const r = JSON.parse(readFileSync(join(instancesDir, e.name), "utf8"));
+        if (r && r.ok === false) out.push({ instance: m[1], completedAt: r.completedAt, error: r.error?.message, incomplete: r.result?.rollbackIncomplete, retry: r.retry, resultPath: join(instancesDir, e.name) });
+      } catch { out.push({ instance: m[1], error: "unreadable result file", resultPath: join(instancesDir, e.name) }); }
+    }
+    return out;
+  };
+  const withFailures = (entry, agentDir) => {
+    const retireFailures = readRetireFailuresOf(agentDir);
+    return retireFailures.length ? { ...entry, retireFailures } : entry;
   };
   const out = listAgents(root).map((a) => {
     const { _dir, ...soul } = a;
-    return { ...soul, dir: _dir, instances: readInstancesOf(a._dir) };
+    return withFailures({ ...soul, dir: _dir, instances: readInstancesOf(a._dir) }, a._dir);
   });
   // Capability-defined and local agents can home under a local-agents base
   // WITHOUT a local soul dir visible to listAgents (capability souls live
@@ -716,9 +745,10 @@ export function listInstances(root, tmuxSession = DEFAULT_TMUX_SESSION) {
     for (const e of entries) {
       if (!e.isDirectory() || seen.has(e.name)) continue;
       const instances = readInstancesOf(join(dir, e.name));
-      if (!instances.length) continue;
+      const retireFailures = readRetireFailuresOf(join(dir, e.name));
+      if (!instances.length && !retireFailures.length) continue;
       const cap = instances.find((i) => i.capability)?.capability;
-      out.push({ name: e.name, kind: cap ? "capability" : "local", capability: cap, description: cap ? `capability agent (${cap})` : "local agent", dir: join(dir, e.name), instances });
+      out.push({ name: e.name, kind: cap ? "capability" : "local", capability: cap, description: cap ? `capability agent (${cap})` : "local agent", dir: join(dir, e.name), instances, ...(retireFailures.length ? { retireFailures } : {}) });
       seen.add(e.name);
     }
   }
