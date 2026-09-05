@@ -150,8 +150,10 @@ soul through the binding's `settings:` map.
   the launch environment (declared by the manifest), no Claude channel flag,
   a pi extension that honours the opt-out (`@awebai/pi` 0.3.10 or later,
   enforced as a conditional requirement with a version floor), and a briefing
-  that says nothing wakes the instance until the broker registers it. For
-  broker qualification; leave the default otherwise.
+  and registration of the home with the host wake broker (`aw wake register`).
+  Until an aw that ships `aw wake` exists (aweb-abil), session mode REFUSES
+  to spawn rather than leave an instance that nothing wakes: it is for broker
+  qualification only; leave the default otherwise.
 - `identity: { source: "/abs/path/to/legacy/.aw" }`, per soul, explicit and
   never inferred. The spawned instance becomes the retained seat of that
   existing identity (same did:aw and address): the identity-authority files
