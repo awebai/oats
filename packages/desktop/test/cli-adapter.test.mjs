@@ -43,6 +43,11 @@ test("spawnArgv: allowlisted args only — unknown renderer keys are dropped, ne
   assert.ok(!argv.includes("evil-1") && !argv.includes("sneaky") && !argv.includes("injection"));
 });
 
+test("spawnArgv: native Codex reaches the CLI", () => {
+  assert.deepEqual(spawnArgv("dev", "/ws", "/t/TASK.md", { runtime: "codex" }),
+    ["spawn", "dev", "--dir", "/ws", "--task-file", "/t/TASK.md", "--runtime", "codex", "--json"]);
+});
+
 test("spawnArgv: option-shaped values are REJECTED, never forwarded (review 53a20c7)", () => {
   // The CLI parser scans raw argv with includes()/indexOf() — an
   // option-shaped VALUE would inject a real non-allowlisted token.

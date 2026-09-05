@@ -158,7 +158,20 @@ instance homed inside a repository with its own `.claude/skills` sees those
 too. Project *settings* — hooks, plugins, permissions, custom agents — resolve
 from the instance home rather than from ancestors.
 
-Both runtimes record what they actually expose in `instance.json` under
+Codex is available with `--runtime codex`. It starts in the instance home,
+reads `AGENTS.md` and `.agents/skills` natively, and receives `TASK.md` as its
+initial prompt. User configuration, approval policy, ancestor instructions and
+ambient skill sources remain native. Worktrees are already below the instance
+home; checkout/attached paths outside it use Codex's normal approval handling
+and may require approval for writes, depending on the operator's policy.
+OATS does not pass `--add-dir`, which Codex refuses under some native policies.
+OpenAI-prefixed model preferences are translated to
+Codex ids; other provider preferences fall back to its configured default.
+The Desktop model field accepts a native id without using Pi's model catalog.
+This launch support does not supply an aweb channel for Codex: agents can use
+`aw` from their home, with automatic wake delivery tracked separately.
+
+All runtimes record what they actually expose in `instance.json` under
 `composition.materialized.runtimePosture`: the OATS-composed set, what is
 curtailed, and what remains ambient. The deviation from strict composition is
 auditable rather than implied.

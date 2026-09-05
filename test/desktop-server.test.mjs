@@ -424,7 +424,8 @@ test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces
     for (const alias of ["opus", "sonnet", "haiku"]) assert.ok(ids.includes(alias), `claude alias ${alias} offered`);
     assert.ok(ids.includes("claude-opus-4-5"), "anthropic ids offered WITHOUT the provider prefix");
     assert.ok(!ids.some((id) => id.startsWith("openai/") || id === "gpt-5.2"), "non-anthropic models never offered to claude");
-    assert.equal((await post("codex")).status, 400, "unknown runtime → 400");
+    assert.deepEqual(await (await post("codex")).json(), { runtime: "codex", models: [] }, "Codex accepts native model ids without Pi catalog guesses");
+    assert.equal((await post("unknown")).status, 400, "unknown runtime → 400");
     assert.equal((await (await post(undefined)).json()).runtime, "pi", "runtime defaults to pi");
     // command-running route sits behind the POST Origin guard — a hostile
     // page can never fan out child processes cross-origin (review 9b1e3ff)

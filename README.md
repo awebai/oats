@@ -14,7 +14,7 @@ specialist, a maintainer, a reviewer, a package owner, or any other role, each
 with a precise curriculum, durable knowledge, and a full provider-native
 session you can enter and steer.
 
-OATS works with **Pi** and **Claude Code**. A team may mix providers and models
+OATS launches **Pi**, **Claude Code**, and **Codex**. A team may mix providers and models
 while sharing the same souls, package and config contracts, instance
 lifecycle, and coordination topology. On machines where `oats setup` has run,
 the append-only, searchable **turn record** captures supported local transcripts
@@ -45,7 +45,7 @@ designs.
   instantiated many times without losing its identity or accumulated
   expertise.
 - **Instances are real sessions, not hidden subagent calls.** Each instance is
-  a disposable incarnation with a full Pi or Claude Code session hosted in
+  a disposable incarnation with a full Pi, Claude Code, or Codex session hosted in
   tmux, an explicit task, its own home, and a repository or workspace view.
   You can attach to it, steer it, message it, stop it, and inspect exactly
   what it received.
@@ -145,7 +145,8 @@ template discovery curtailed while operator-configured extensions remain
 enabled. Claude Code keeps the operator's settings, skills, plugins, MCP,
 hooks, and memory, and OATS adds its canonical composed resources. The
 guarantee is an exact OATS-managed curriculum, not identical ambient behavior
-across providers.
+across providers. Codex uses native instructions, skills and approval settings;
+its launch support currently requires agents to check `aw` themselves for new messages.
 
 ### Configuration and layers
 
