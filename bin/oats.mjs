@@ -3398,7 +3398,13 @@ else if (cmd === "doctor") {
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
 }
 else if (cmd === "use") use();
-else if (cmd === "update") { const t = args[1] && !args[1].startsWith("--") ? args[1] : undefined; t ? updatePackageCmd(t) : updateCmd(); }
+else if (cmd === "update") {
+  const t = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
+  // A selector without a package must never fall through to the kernel
+  // self-update (a different product) with the flag silently ignored.
+  if (!t && flag("to") !== undefined) { cmdFail("E_BAD_ARGS", "oats update --to needs a package: oats update <package> --to <ref> (or <package> <package>@<ref>)"); process.exit(1); }
+  t ? updatePackageCmd(t) : updateCmd();
+}
 else if (cmd === "type") typeCmd();
 else if (cmd === "inject") injectCmd();
 else if (cmd === "install") install();
