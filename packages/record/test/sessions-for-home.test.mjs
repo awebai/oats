@@ -67,6 +67,34 @@ test("sessionsForHome: the home is compared canonically, so a symlinked home pat
   assert.deepEqual(sessionsForHome(real, { roots }).map((s) => s.sessionId), ["s"]);
 });
 
+test("sessionCwd: a first line larger than 64 KB and a cwd past 100 KB of bookkeeping are both found; the scan bound is respected", (t) => {
+  const base = setup(t);
+  const home = join(base, "home");
+  const big = join(base, "big.jsonl");
+  const huge = JSON.stringify({ type: "queue-operation", payload: "x".repeat(95_000) });
+  writeFileSync(big, huge + "\n" + ccLines(home, "big"));
+  assert.equal(sessionCwd("cc", big), home, "a 95 KB first line does not hide the cwd behind it");
+  const late = join(base, "late.jsonl");
+  const bookkeeping = Array.from({ length: 30 }, (_, i) => JSON.stringify({ type: "file-history-snapshot", i, snapshot: "y".repeat(4_000) })).join("\n");
+  writeFileSync(late, bookkeeping + "\n" + ccLines(home, "late"));
+  assert.equal(sessionCwd("cc", late), home, "the first cwd-bearing line at ~120 KB is found");
+  assert.equal(sessionCwd("cc", late, { bound: 64 * 1024 }), undefined, "and a tighter bound reports it as unattributed rather than guessing");
+  // A multi-byte character straddling a chunk boundary does not corrupt the line that carries the cwd.
+  const straddle = join(base, "straddle.jsonl");
+  const pad = JSON.stringify({ type: "note", text: "é".repeat(32_770) }); // 2-byte chars across the 64 KB edge
+  writeFileSync(straddle, pad + "\n" + ccLines(home, "straddle"));
+  assert.equal(sessionCwd("cc", straddle), home);
+  // The unattributed hook fires for a file with no cwd within the bound.
+  const roots = { cc: [join(base, "cc")], pi: [join(base, "nope")], codex: [join(base, "nope")] };
+  const d = join(roots.cc[0], "-x"); mkdirSync(d, { recursive: true });
+  writeFileSync(join(d, "nocwd.jsonl"), JSON.stringify({ type: "summary" }) + "\n");
+  writeFileSync(join(d, "ok.jsonl"), ccLines(home, "ok"));
+  const seen = [];
+  const found = sessionsForHome(home, { roots, onUnattributed: (source, path) => seen.push(`${source}:${path.split("/").pop()}`) });
+  assert.deepEqual(found.map((s) => s.sessionId), ["ok"]);
+  assert.deepEqual(seen, ["cc:nocwd.jsonl"]);
+});
+
 test("sessionCwd: a file whose head carries no cwd is not attributed to anyone", (t) => {
   const base = setup(t);
   const p = join(base, "x.jsonl");

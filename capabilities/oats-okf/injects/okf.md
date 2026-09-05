@@ -47,7 +47,8 @@ or unharvested notes are lost when your home is retired).
 session): still run `oats okf harvest` at task boundaries, and at least once
 a day. With no notes pending it harvests your own captured session turns
 since the last harvest instead; the harvester judges them under the same
-bar. It skips when nothing is new.
+bar. It skips when nothing is new. `oats okf harvest --from-record` asks for
+the record even when notes are pending.
 
 **Workspace-mode instances**: your soul lives in its own home repo, and your
 `./work` (the workspace) is not where it commits. `oats okf harvest` handles

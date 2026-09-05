@@ -77,8 +77,10 @@ window given as an exact `oats recall --thread <t> --json --after <id>
 is how what they learned reaches the soul.
 
 - Run each command exactly as given, never wider: the ids are the boundary
-  two harvests agree on. Read the `text` parts; `tool_use` and `tool_result`
-  are context, not lessons.
+  two harvests agree on. If a command is rejected because its `--after` id
+  is no longer in the thread (a pruned or redacted record), run it again
+  without `--after` and read from the start. Read the `text` parts;
+  `tool_use` and `tool_result` are context, not lessons.
 - Extract **candidates** in the shape of notes: one candidate per insight, a
   one-line title, the claim, and its provenance as the turn ids it came from.
   A candidate is something the instance learned or decided, stated in the
@@ -88,10 +90,13 @@ is how what they learned reaches the soul.
   restated repo facts and task-scoped decisions all fail it. Promoted
   concepts cite the turn ids in their frontmatter or body so the claim can be
   traced back.
-- **The watermark is written on delivery, never before.** Your briefing gives
-  the path and the exact content; write it after the commit, PR, or direct
-  edit that delivers your promotion. A harvest that fails or is abandoned
-  leaves it untouched, so the next harvester reads the same window again.
+- **The watermark records what you read, not what you promoted.** Write it,
+  with the exact path and content your briefing gives, once your judgement
+  of the window is complete: after the commit, PR, or direct edit when
+  something was promoted, and just the same when everything dropped, which
+  is the normal outcome. Only a harvest that fails or is abandoned leaves it
+  untouched, so the next harvester reads the same window again; a completed
+  judgement that wrote no watermark would be re-read forever.
 
 ## Bookkeeping (non-negotiable)
 

@@ -11,6 +11,9 @@
  *   spawn          scaffold instance memory (STATE.md, log.md, notes/) + brief
  *   retire         no-op (promotion is continuous — see harvest)
  *   harvest        AGENT-INITIATED (not a kernel hook): run from an instance
+ *                  home; with no pending notes (or with --from-record) it
+ *                  harvests the instance's own captured session turns since
+ *                  the last harvest (watermark .okf-harvest-record.json)
  *                  home (`node <pkg>/capabilities/oats-okf/bin/oats-okf.mjs harvest`)
  *                  after committing with pending notes — spawns the memory-harvest
  *                  agent attached to this instance's work tree.
@@ -88,8 +91,11 @@ function planRecordHarvest(instanceHome) {
   const threads = [];
   for (const s of report.sessions || []) {
     const seen = prior[s.thread];
-    if (seen && seen.turns >= s.turns && seen.untilTurnId === s.lastTurnId) continue;
-    if (seen && seen.turns >= s.turns) continue; // same count, different tail: a rewritten source, leave it
+    // Nothing new when the count has not grown. Same count with a different
+    // tail means a rewritten or pruned source: it is left alone on purpose
+    // (never re-promote a rewritten transcript), and stays stuck until the
+    // source grows again, since the watermark cannot advance past it either.
+    if (seen && seen.turns >= s.turns) continue;
     threads.push({ thread: s.thread, source: s.source, afterTurnId: seen?.untilTurnId || null, untilTurnId: s.lastTurnId, turns: s.turns, newTurns: s.turns - (seen?.turns || 0) });
   }
   if (!threads.length) return null;
@@ -102,7 +108,7 @@ function planRecordHarvest(instanceHome) {
 function recordBrief(plan, cli) {
   if (!plan?.threads?.length) return "";
   const lines = plan.threads.map((t) => `  - ${t.thread} (${t.newTurns} new turns): \`${cli} recall --thread ${t.thread} --json${t.afterTurnId ? ` --after ${t.afterTurnId}` : ""} --until ${t.untilTurnId}\``);
-  return `\n- RECORD-FED CANDIDATES (the memory-harvest skill, section "Record-fed candidates"): this instance's own captured session turns since the last harvest. Read each window with the exact command given, never wider:\n${lines.join("\n")}\n  Extract candidate lessons from them in the same shape as notes (one candidate per insight, provenance = the turn ids it came from), then judge every candidate under the same promotion bar as a note. Session trivia, tool noise and anything derivable from the repo fail the bar.\n- On delivery, and only then, write the watermark file EXACTLY as follows (it records what you read; a failed or abandoned harvest must leave it untouched):\n  path: ${plan.watermarkPath}\n  content: ${JSON.stringify(plan.watermark)}`;
+  return `\n- RECORD-FED CANDIDATES (the memory-harvest skill, section "Record-fed candidates"): this instance's own captured session turns since the last harvest. Read each window with the exact command given, never wider:\n${lines.join("\n")}\n  If a window command is rejected (its --after id is no longer in the thread), run it again without --after and read from the start. Extract candidate lessons from them in the same shape as notes (one candidate per insight, provenance = the turn ids it came from), then judge every candidate under the same promotion bar as a note. Session trivia, tool noise and anything derivable from the repo fail the bar; promoting nothing is a normal outcome.\n- When your judgement of the window is COMPLETE, whether or not anything was promoted, and after any delivery it needed, write the watermark file EXACTLY as follows (it records what you read, not what you promoted; only a failed or abandoned harvest leaves it untouched):\n  path: ${plan.watermarkPath}\n  content: ${JSON.stringify(plan.watermark)}`;
 }
 
 /** Invoke the versioned package-runtime boundary. Task text crosses the
@@ -279,22 +285,15 @@ _(the single next action — keep this current; a fresh session on any model res
     const skip = (why) => (JSON_MODE ? jsonOk({ harvest: "skipped", reason: why }) : out({ meta: { harvestSpawn: "skipped", why } }));
     if (String(agName).startsWith("memory-harvest")) skip("self (loop guard)");
     const notes = existsSync(notesDir) ? readdirSync(notesDir).filter((f) => f.endsWith(".md")) : [];
-    // No notes is no longer the end: the record may hold this instance's own
-    // sessions with turns nobody has judged yet (standing, non-coding roles
-    // write few notes). --from-record asks for the record even with notes.
-    let recordPlan = null;
-    if (notes.length === 0 || process.argv.includes("--from-record")) {
-      let planned = null;
-      try { planned = planRecordHarvest(home); } catch { planned = null; }
-      if (planned?.unavailable) {
-        if (notes.length === 0) skip("no pending notes");
-        process.stderr.write(`oats-okf: record unavailable, harvesting notes only: ${planned.unavailable}\n`);
-      } else recordPlan = planned;
-      if (notes.length === 0 && !recordPlan) skip("no pending notes");
-    }
-    if (!root || (!existsSync(root) && !existsSync(join(dirname(root), "local-agents")))) skip("no agents root found above this home");
-    if (!inst) skip("no instance identity (run from an instance home)");
-    if (!context) skip("no repository context (instance metadata has no repo)");
+
+    // With no notes the record path could still apply, but it needs the same
+    // root, identity and context as any spawn; a home missing them answers
+    // exactly as before ("no pending notes"), so nothing an operator scripted
+    // against that reason changes.
+    const prerequisite = (why) => skip(notes.length ? why : "no pending notes");
+    if (!root || (!existsSync(root) && !existsSync(join(dirname(root), "local-agents")))) prerequisite("no agents root found above this home");
+    if (!inst) prerequisite("no instance identity (run from an instance home)");
+    if (!context) prerequisite("no repository context (instance metadata has no repo)");
     const slug = String(inst).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
     // Debounce: one harvester per source instance at a time (canonical sibling
     // local-agents/ plus legacy nested locations). The public spawn boundary
@@ -305,6 +304,21 @@ _(the single next action — keep this current; a fresh session on any model res
       join(root, "tmp-agents", "memory-harvest", "instances", `memory-harvest-${slug}`),
     ];
     if (harvesterHomes.some((h) => existsSync(h))) skip("harvester already running for this instance");
+    // No notes is no longer the end: the record may hold this instance's own
+    // sessions with turns nobody has judged yet (standing, non-coding roles
+    // write few notes). --from-record asks for the record even with notes.
+    // Planned only now, after every skip above: a capture pass is a real
+    // write and index, and "calling it too often is safe" must stay true.
+    let recordPlan = null;
+    if (notes.length === 0 || process.argv.includes("--from-record")) {
+      let planned = null;
+      try { planned = planRecordHarvest(home); } catch { planned = null; }
+      if (planned?.unavailable) {
+        if (notes.length === 0) skip("no pending notes");
+        process.stderr.write(`oats-okf: record unavailable, harvesting notes only: ${planned.unavailable}\n`);
+      } else recordPlan = planned;
+      if (notes.length === 0 && !recordPlan) skip("no pending notes");
+    }
     // Effective command settings are injected by capability dispatch. No
     // resolved-config read crosses the public package boundary.
     const harvestModel = settings["harvest-model"] || DEFAULT_HARVEST_MODEL;

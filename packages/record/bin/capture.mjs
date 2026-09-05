@@ -14,10 +14,8 @@
 
 import { watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import process from "node:process";
-
-import { dirname } from "node:path";
 
 import { RecordStore } from "../lib/store.mjs";
 import { captureAllSessions, captureSessions } from "../lib/capture-cc.mjs";
@@ -64,9 +62,12 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture --watch              pass now, then re-pass on filesystem change
                                (debounced) and every 15 minutes regardless
   capture --status             show store/stream summary, capture nothing
-  capture --home <dir>         capture only the sessions that ran inside <dir>
-                               (an OATS instance home) and print them as JSON:
-                               thread, stream, turn count, first/last turn id
+  capture --home <dir>         capture the sessions that ran inside <dir> (an
+                               OATS instance home) and print them as JSON:
+                               thread, stream, turn count, first/last turn id.
+                               Tombstoned turns are never a boundary. Codex
+                               keeps a day's rollouts in one directory, so the
+                               pass captures that day; the list is filtered.
   capture --install-hint       print the Claude Code hook snippet
   capture --help               this text
   capture --quiet              suppress per-pass progress
@@ -238,7 +239,8 @@ if (args.status) {
 if (args.home) {
   warnOnStrangerOwner();
   const ignore = loadIgnoreOrExit(root);
-  const found = sessionsForHome(args.home);
+  const unattributed = [];
+  const found = sessionsForHome(args.home, { onUnattributed: (source, path) => unattributed.push({ source, path }) });
   const sessions = [];
   const dirs = new Map(); // one capture pass per (format, directory)
   for (const s of found) dirs.set(`${s.source}\0${dirname(s.path)}`, { format: s.source, dir: dirname(s.path) });
@@ -254,10 +256,13 @@ if (args.home) {
       index.close();
     }
   }
+  // A tombstoned turn is hidden everywhere; a boundary naming one would be
+  // refused by recall, so boundaries come from the visible turns only.
+  const claims = store.tombstoneClaims();
   for (const s of found) {
     const stream = `${owner}~${s.source}.${s.sessionId}`;
-    const turns = store.readStream(stream);
-    if (!turns.length) continue; // ignored by rule, or nothing capturable yet
+    const turns = store.readStream(stream).filter((t) => !store.claimHides(claims, t));
+    if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
     sessions.push({
       thread: s.thread,
       source: s.source,
@@ -271,7 +276,7 @@ if (args.home) {
       lastTs: turns[turns.length - 1].ts,
     });
   }
-  console.log(JSON.stringify({ home: args.home, owner, appended, sessions }, null, 2));
+  console.log(JSON.stringify({ home: args.home, owner, appended, sessions, ...(unattributed.length ? { unattributed } : {}) }, null, 2));
   process.exit(0);
 }
 

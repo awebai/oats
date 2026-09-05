@@ -113,9 +113,13 @@ Instances that write few notes still feed their souls. With no notes pending,
 sessions (the transcripts whose working directory is the instance home), and
 spawns the harvester on the turns captured since the last harvest, bounded by
 exact turn ids. The harvester extracts candidates from them, judges each under
-the same promotion bar as a note, and on delivery writes the watermark
-`.okf-harvest-record.json` in the instance home; a failed harvest leaves the
-watermark alone, so the same window is read again.
+the same promotion bar as a note, and once its judgement is complete writes the
+watermark `.okf-harvest-record.json` in the instance home, whether or not it
+promoted anything; only a failed harvest leaves the watermark alone, so the same
+window is read again. `oats okf harvest --from-record` consults the record even
+when notes are pending. The record path needs kernel 0.22.2 or later (the
+`capture --home` and `recall --json` surfaces); on an older kernel the command
+behaves exactly as before.
 
 ### Spawning and coordinating with other agents
 

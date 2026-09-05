@@ -74,14 +74,19 @@ try {
   // named by ids is the only one two passes agree on. after is exclusive,
   // until inclusive; an unknown id is an error, never an empty answer.
   if (args.json && args.thread && !query) {
-    const hidden = store.hiddenIds();
+    // Session streams are not in readAll(), so hiddenIds() cannot see them:
+    // resolve tombstone claims once and test each session turn directly
+    // (store.mjs, tombstoneClaims). A redacted line must never reach the
+    // harvester, which promotes what it reads into a durable soul.
+    const claims = store.tombstoneClaims();
     const turns = [];
-    for (const streamId of store.sessionStreamsFor(args.thread)) {
-      for (const t of store.readStream(streamId)) if (!hidden.has(t.id)) turns.push(t);
+    const sessionStreams = store.sessionStreamsFor(args.thread);
+    for (const streamId of sessionStreams) {
+      for (const t of store.readStream(streamId)) if (!store.claimHides(claims, t)) turns.push(t);
     }
-    if (!store.sessionStreamsFor(args.thread).length) {
-      // not a session thread (mail, chat, note): fall back to the bulk read
-      for (const { turn } of store.readAll().values()) if (turn.thread === args.thread && !hidden.has(turn.id)) turns.push(turn);
+    if (!sessionStreams.length) {
+      // not a session thread (mail, chat, note): the bulk read has them
+      for (const { turn } of store.readAll().values()) if (turn.thread === args.thread && !store.claimHides(claims, turn)) turns.push(turn);
     }
     const ids = turns.map((t) => t.id);
     let start = 0;
@@ -131,6 +136,10 @@ try {
       .all(args.thread, limit);
   }
 
+  if (rows.length === 0 && args.json) {
+    console.log("[]");
+    process.exit(0);
+  }
   if (rows.length === 0) {
     console.error("no matches");
     process.exit(1);

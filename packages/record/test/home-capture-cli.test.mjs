@@ -3,6 +3,8 @@
 
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { RecordStore } from "../lib/store.mjs";
+import { finishTurn } from "../lib/canonical.mjs";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -59,4 +61,18 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   assert.deepEqual(all.turns.map((x) => x.text[0].text), ["first", "second", "third"]);
   // An unknown boundary is an error, never a silently empty or widened window.
   assert.throws(() => run(RECALL, ["--thread", "cc:session:s1", "--json", "--after", "nope"]));
+
+  // Redaction: a tombstoned session turn is hidden from the harvester's
+  // window and is never reported as a boundary. The tombstone is written by
+  // the record owner, the authority that hides any turn.
+  const secretId = r2.lastTurnId; // "third" becomes the secret
+  const store = new RecordStore(root, { owner: "mac" });
+  store.append("mac~notes", finishTurn({ v: 1, ts: "2026-09-05T10:01:00Z", from: "mac", kind: "tombstone", body: { reason: "redacted" }, links: [{ rel: "tombstones", ref: secretId }] }));
+  const after = JSON.parse(run(RECALL, ["--thread", "cc:session:s1", "--json"]));
+  assert.deepEqual(after.turns.map((x) => x.text[0].text), ["first", "second"], "the redacted line is not emitted");
+  const r3 = JSON.parse(run(CAPTURE, ["--home", home, "--quiet"])).sessions[0];
+  assert.equal(r3.turns, 2, "visible turns only");
+  assert.equal(r3.lastTurnId, s.lastTurnId, "the boundary is the last VISIBLE turn, so a window bounded by it is never refused");
+  // --json with a query and no matches is JSON too.
+  assert.equal(run(RECALL, ["--json", "zzzznomatch"]).trim(), "[]");
 });

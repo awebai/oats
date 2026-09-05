@@ -71,7 +71,9 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     const wm = JSON.parse(wmLine.trim().slice("content: ".length));
     assert.equal(wm.threads["cc:session:s1"].untilTurnId, "t12");
     assert.equal(wm.threads["cc:session:s1"].turns, 12);
-    assert.equal(existsSync(wmPath), false, "the package never writes the watermark; delivery does");
+    assert.equal(existsSync(wmPath), false, "the package never writes the watermark; the harvester does");
+    assert.match(log.task, /whether or not anything was promoted/, "a completed judgement that promotes nothing still advances the watermark");
+    assert.match(log.task, /rejected .*run it again without --after/, "a pruned boundary has a stated fallback");
     assert.match(log.task, /Then run `oats retire memory-harvest-dev-1 --self`|Commit, then run `oats retire memory-harvest-dev-1 --self`/);
 
     // The harvester delivered and wrote the watermark: the same window is not harvested again.
@@ -80,6 +82,20 @@ test("okf harvest: no notes but new record turns → the harvester is briefed wi
     const second = harvest(d);
     assert.deepEqual(second.result, { harvest: "skipped", reason: "no pending notes" });
     assert.equal(existsSync(spawnLog), false, "nothing was spawned");
+
+    // A harvester already running for this instance: no capture pass is run,
+    // so calling the harvest "too often" stays cheap and safe.
+    rmSync(spawnLog, { force: true });
+    const captureLog = join(base, "capture-calls.log");
+    writeFileSync(join(base, "fake-oats.mjs"), readFileSync(join(base, "fake-oats.mjs"), "utf8").replace('if (cmd === "capture") {', `if (cmd === "capture") { require("node:fs").appendFileSync(${JSON.stringify(captureLog)}, "capture\\n");`).replace("#!/usr/bin/env node", "#!/usr/bin/env node\nimport { createRequire } from 'node:module'; const require = createRequire(import.meta.url);"));
+    const running = join(d.root, "local-agents", "memory-harvest", "instances", "memory-harvest-dev-1");
+    mkdirSync(running, { recursive: true });
+    rmSync(wmPath); // there IS something new, but the debounce comes first
+    const busy = harvest(d);
+    assert.deepEqual(busy.result, { harvest: "skipped", reason: "harvester already running for this instance" });
+    assert.equal(existsSync(captureLog), false, "no capture pass behind a skip");
+    rmSync(running, { recursive: true, force: true });
+    writeFileSync(wmPath, JSON.stringify(wm));
 
     // The session grew: only the new tail is the window, bounded on both ends.
     sessions[0].turns = 15; sessions[0].lastTurnId = "t15";
