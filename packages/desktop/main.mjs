@@ -17,7 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit } from "./api-url.mjs";
 import { openTerm, sweepViewers } from "./tmux-target.mjs";
-import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate } from "./remote-target.mjs";
+import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate, remoteTerminalEnvironment } from "./remote-target.mjs";
 import { openHerdrTerm, herdrTargetKey } from "./herdr-target.mjs";
 import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "./terminal-registry.mjs";
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
@@ -365,7 +365,7 @@ ipcMain.handle("term:open", async (e, { session, window: win, sessionTarget, rem
         const response = await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(5000) });
         const cli = await response.json();
         if (!response.ok || !cli.ok || !cli.bin) throw new Error("remote terminal needs a compatible installed oats CLI");
-        return prepareRemoteTerm(cli.bin, remote);
+        return prepareRemoteTerm(cli, remote);
       });
       if (prepared.capped) return prepared;
       guard(e); // the renderer may have navigated while SSH was inspected
@@ -389,7 +389,7 @@ ipcMain.handle("term:open", async (e, { session, window: win, sessionTarget, rem
   let opened;
   try {
     opened = remote ? {
-      pty: pty.spawn(prepared.binary, prepared.args, { name: "xterm-256color", cols: Math.max(20, Number(cols) || 80), rows: Math.max(5, Number(rows) || 24), cwd: process.env.HOME, env: process.env }),
+      pty: pty.spawn(prepared.binary, prepared.args, { name: "xterm-256color", cols: Math.max(20, Number(cols) || 80), rows: Math.max(5, Number(rows) || 24), cwd: process.env.HOME, env: remoteTerminalEnvironment() }),
       killViewer: () => {}, // CLI/SSH disconnect cleans only its host-side viewer
     } : sessionTarget ? openHerdrTerm({ sessionTarget, cols, rows }, {
       spawnPty: (argv, c, r, env) => pty.spawn("herdr", argv, { name: "xterm-256color", cols: c, rows: r, cwd: process.env.HOME, env }),

@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { prepareRemoteTerm, remoteTargetKey, createTerminalPrepareGate } from "../remote-target.mjs";
+import { prepareRemoteTerm, remoteTargetKey, createTerminalPrepareGate, remoteTerminalEnvironment } from "../remote-target.mjs";
+const cli = { bin: "/selected/oats", version: "0.22.2", remote: ["session"] };
 const remote = { serverId: "build", instance: "dev-task", target: { oatsPath: "/untrusted" } };
 test("remote viewer uses host-selected CLI and saved-route address only", async () => {
-  const got = await prepareRemoteTerm("/selected/oats", remote, { run: async (bin, args) => {
+  const got = await prepareRemoteTerm(cli, remote, { run: async (bin, args) => {
     assert.equal(bin, "/selected/oats");
     assert.deepEqual(args, ["session", "inspect", "--server", "build", "--instance", "dev-task", "--json"]);
     return { stdout: JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }) };
@@ -13,7 +14,7 @@ test("remote viewer uses host-selected CLI and saved-route address only", async 
 });
 test("remote viewer refuses stale and failed preflight", async () => {
   for (const doc of [{ schemaVersion: 1, ok: true, result: { present: false } }, { schemaVersion: 1, ok: false, error: { message: "unreachable" } }]) {
-    await assert.rejects(prepareRemoteTerm("/selected/oats", remote, { run: async () => ({ stdout: JSON.stringify(doc) }) }));
+    await assert.rejects(prepareRemoteTerm(cli, remote, { run: async () => ({ stdout: JSON.stringify(doc) }) }));
   }
 });
 test("pending preflights deduplicate and share the active terminal resource cap", async () => {
@@ -27,4 +28,11 @@ test("pending preflights deduplicate and share the active terminal resource cap"
   finish({ binary: "oats" });
   assert.deepEqual(await a, await b);
   assert.equal(gate.pendingCount(), 0);
+});
+
+test("remote viewer rejects old CLI before SSH and clears local nesting only", async () => {
+  await assert.rejects(prepareRemoteTerm({ bin: "/old/oats", version: "0.22.1" }, remote, { run: () => assert.fail("must not launch old CLI") }), /does not support remote session; update the CLI/);
+  const source = { PATH: "/bin", SSH_AUTH_SOCK: "/agent", TMUX: "/local,1,2", HERDR_SESSION: "local", HERDR_SOCKET_PATH: "/local" };
+  assert.deepEqual(remoteTerminalEnvironment(source), { PATH: "/bin", SSH_AUTH_SOCK: "/agent" });
+  assert.equal(source.TMUX, "/local,1,2");
 });
