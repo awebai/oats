@@ -1,0 +1,9 @@
+name: lead
+kind: persistent
+role: operating-lead
+type: framework-authors
+description: Reviews architecture and drives OATS operating adoption across teams.
+repo: .
+work: worktree
+runtime: codex
+yolo: true

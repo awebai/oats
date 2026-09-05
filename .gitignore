@@ -21,7 +21,8 @@ node_modules/
 .aw/
 packages/desktop/renderer/vendor/
 packages/desktop/dist/
-/agents/lead/
+/agents/lead/*
+!/agents/lead/soul/
 /.claude/worktrees/
 
 # Runnerless release lane outputs (scripts/release-lane.mjs): tarballs, assets, logs, MANIFEST.json
