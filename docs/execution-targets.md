@@ -179,3 +179,26 @@ inspection before attaching over SSH. Pending inspections share the terminal
 resource limit and duplicate requests share one inspection. Remote status and
 instance keys must include the server so identical paths on different hosts
 remain distinct.
+
+## Desktop remote roster and lifecycle
+
+Desktop uses the installed CLI's `server roster --json` feature when advertised.
+It refreshes one aggregate roster at a time, independently of terminal traffic;
+the CLI owns SSH deadlines, server registration and saved routes. Each target
+appears in the workspace selector with its souls and instances. An unreachable
+target stays visible with unknown runtime state and an error. A saved route
+remains visible after its registration is removed or changed.
+
+Choose the server workspace to spawn one of its souls. A successful launch
+switches to that workspace and opens the instance terminal once it appears in
+the roster. The instance action menu offers harvest and retirement, including
+for stopped agents. Remote harvest runs in the saved home on the execution host;
+retirement uses the same saved route and work-preservation rules as the CLI.
+Closing a viewer leaves the agent running.
+
+This first projection enables terminal and lifecycle actions only for remote
+instances with a route saved on this machine. Other observed instances are
+listed, but require the execution host's CLI to manage them. Remote brain files
+are accessed through the terminal. The roster and remote harvest require CLI
+feature tokens `roster` and `harvest`; the published 0.22.2 kernel has remote
+spawn, status, retirement and terminals, but not these two additions.

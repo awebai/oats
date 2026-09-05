@@ -15,7 +15,7 @@ const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
 /** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
-function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote } = {}) {
+function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, groups = [] } = {}) {
   const log = join(dir, "cli-calls.jsonl");
   const js = join(dir, "oats.cjs");
   const bin = join(dir, "oats");
@@ -30,6 +30,9 @@ if (argv[0] === "version" && argv.includes("--json")) {
   // previously made the "hanger" exit in 0.058s (review 6b90702).
   if (${JSON.stringify(probeHangMs)} > 0) { setTimeout(() => process.exit(0), ${JSON.stringify(probeHangMs)}); }
   else process.exit(${JSON.stringify(probeExit)});
+} else if (argv[0] === "server" && argv[1] === "roster") {
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { groups: ${JSON.stringify(groups)} } }));
+  process.exit(0);
 } else if (argv[0] === "session" && argv[1] === "inspect" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }));
   process.exit(0);
@@ -55,7 +58,10 @@ if (argv[0] === "version" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: {
     instance: agent + "-t1", agent, home: "/tmp/h", work: "worktree", branch: "b",
     launched: true, warnings: [], tmux: { session: "pi-agents", window: agent + "-t1" },
-    taskEcho: task } }));
+    taskEcho: task, ...(argv.includes("--server") ? { server: argv[argv.indexOf("--server") + 1] } : {}) } }));
+  process.exit(0);
+} else if (argv[0] === "retire" && argv.includes("--json")) {
+  process.stdout.write(JSON.stringify({ retired: argv[1], removedDir: true }));
   process.exit(0);
 } else if (argv[0] === "okf" && argv[1] === "harvest" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { harvest: "skipped", reason: "no pending notes" } }));
@@ -342,5 +348,51 @@ test("desktop server: remote capability survives discovery and HTTP projection i
     const prepared = await prepareRemoteTerm(cli, { serverId: "test", instance: "dev-task" });
     assert.deepEqual(prepared, { binary: fake.real, args: ["session", "attach", "--server", "test", "--instance", "dev-task"] });
     assert.ok(fake.calls().some(c => c.argv.join(" ") === "session inspect --server test --instance dev-task --json"));
+  } finally { proc.kill(); }
+});
+
+test("desktop server: remote roster, souls and harvest stay on the saved host route", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "oats-remote-roster-"));
+  const home = "/remote/project/agents/dev/instances/dev-one";
+  const groups = [{ id: "host-abc", server: "host", label: "Remote host", registrationPresent: true,
+    target: { sshHost: "host", workspace: "/remote/project", oatsPath: "oats" }, probe: { ok: true },
+    agentsRoot: "/remote/project/agents", souls: [{ name: "dev", runtime: "codex", work: "worktree" }],
+    instances: [{ instance: "dev-one", agent: "dev", home, agentsRoot: "/remote/project/agents", running: true, savedRoute: true, runtime: "codex" }],
+  }];
+  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "harvest"], groups });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  const base = `http://127.0.0.1:${port}`;
+  try {
+    await fetch(`${base}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    let panel;
+    for (let n = 0; n < 30; n++) {
+      panel = await (await fetch(`${base}/api/panel?ws=remote%3Ahost-abc`)).json();
+      if (panel.workspace?.remote) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    assert.equal(panel.workspace.id, "remote:host-abc");
+    assert.equal(panel.instances[0].server, "host");
+    assert.ok(panel.workspaces.some((w) => w.remote && w.server === "host"));
+    const agents = await (await fetch(`${base}/api/agents?ws=remote%3Ahost-abc`)).json();
+    assert.equal(agents.agents[0].agentsRoot, "/remote/project/agents");
+    assert.equal(agents.agents[0].server, "host");
+    const qualifier = `?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}&server=host`;
+    const harvested = await fetch(`${base}/api/harvest/dev-one${qualifier}`, { method: "POST" });
+    assert.equal(harvested.status, 200);
+    const call = fake.calls().find((c) => c.argv[0] === "okf");
+    assert.deepEqual(call.argv, ["okf", "harvest", "--server", "host", "--instance", "dev-one", "--json"]);
+    assert.notEqual(call.cwd, home, "remote home must never become a local process cwd");
+    const retired = await fetch(`${base}/api/retire/dev-one${qualifier}`, { method: "POST" });
+    assert.equal(retired.status, 200);
+    assert.deepEqual(fake.calls().find((c) => c.argv[0] === "retire").argv, ["retire", "dev-one", "--server", "host", "--json"]);
+    const spawned = await fetch(`${base}/api/spawn`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ agent: "dev", agentsRoot: "/remote/project/agents", serverId: "host", runtime: "codex" }) });
+    assert.equal(spawned.status, 200);
+    assert.equal((await spawned.json()).workspaceId, "remote:host-abc");
+    const spawnCall = fake.calls().find((c) => c.argv[0] === "spawn");
+    assert.equal(spawnCall.argv.includes("--dir"), false, "remote scope remains the registry's authority");
+    assert.notEqual(spawnCall.cwd, "/remote/project", "spawn's local process does not enter the remote workspace");
+    assert.equal((await fetch(`${base}/api/chat/dev-one${qualifier}`)).status, 409, "remote transcript never reads a local lookalike path");
+    assert.equal((await fetch(`${base}/api/harvest/dev-one?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}`, { method: "POST" })).status, 404, "missing server cannot select a remote instance");
   } finally { proc.kill(); }
 });

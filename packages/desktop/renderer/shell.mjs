@@ -8,7 +8,8 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange, httpError } from "./views/common.mjs";
+import { currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
+import { instanceActions } from "./instance-actions.mjs";
 import {
   initTheme, toggleTheme, xtermTheme, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
@@ -217,6 +218,10 @@ async function refreshContextRoster() {
   contextWorkspace = resolvedWs;
   contextInstances = panel.instances || [];
   renderContextRoster(contextInstances);
+  if (panel.error) {
+    const error = document.createElement("div"); error.className = "ctx-empty"; error.textContent = panel.error;
+    listEl.prepend(error);
+  }
 }
 
 function renderContextRoster(instances) {
@@ -295,8 +300,9 @@ function renderContextRoster(instances) {
         row.dataset.treeInstance = instanceId(i);
         row.dataset.treeControl = "terminal";
         row.className = "ctx-inst" + (i.running ? "" : " idle") + (isActive ? " active" : "");
-        row.disabled = !i.running;
-        row.title = i.running ? `Open ${i.instance} terminal` : `${i.instance} is idle`;
+        row.disabled = !i.running || (!!i.server && !i.savedRoute);
+        row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
+          : i.running ? `Open ${i.instance} terminal` : `${i.instance} is stopped`);
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${i.running ? "on" : "off"}`;
         const copy = document.createElement("span");
@@ -320,6 +326,19 @@ function renderContextRoster(instances) {
         row.tabIndex = -1;
         row.addEventListener("keydown", onRosterRowKey);
         rowWrap.append(guides, disclosure, row);
+        rowWrap.append(instanceActions(document, i, {
+          invoke: (action, instance) => {
+            if (currentWorkspace() !== ws) throw new Error("Workspace changed; select the instance again");
+            return api(instanceApiPath(action, instance), { method: "POST" });
+          },
+          confirmRetire: (instance) => confirm(`Retire ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}? This stops its session and preserves outstanding work through OATS retirement.`),
+          done: (result, action) => {
+            if (action === "harvest") alert(result.reason || `Harvest ${result.harvest || "requested"}`);
+            else if (result.warnings?.length) alert(result.warnings.join("\n"));
+            refreshContextRoster();
+          },
+          report: (message) => alert(message),
+        }));
         listEl.append(rowWrap);
       }
     }
@@ -772,6 +791,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   // may have waited across a workspace switch.
   if (!owns()) return;
   const name = inst.instance;
+  if (inst.server && !inst.savedRoute) return notify("No saved route for this remote instance on this machine");
   if (!inst.running || (!inst.server && !inst.tmux?.session && !inst.sessionTarget)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
 
   const wrap = document.createElement("div");
@@ -818,7 +838,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   });
 
   const made = addTab({
-    title: `⌗ ${name}`,
+    title: `⌗ ${name}${inst.server ? ` · ${inst.server}` : ""}`,
     key,
     kind: "terminal",
     workspace: ws,

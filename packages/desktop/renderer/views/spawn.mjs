@@ -8,7 +8,7 @@
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
-  setWorkspace, onWorkspaceChange, renderWorkspaceSelect, wsQuery, workspaceGeneration,
+  currentWorkspace, setWorkspace, onWorkspaceChange, renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
@@ -347,7 +347,7 @@ function focusedCard(s) {
 function brainOfFocusedCard(s) {
   const card = focusedCard(s) || gridCards(s)[0];
   const a = card && s.souls.agents.find((x) => x.name === card.dataset.agent);
-  if (a) s.ctx.openBrain?.(a.name);
+  if (a && !a.remote) s.ctx.openBrain?.(a.name);
 }
 
 function onGridKey(s, e) {
@@ -414,7 +414,7 @@ function soulCard(s, a) {
     const spawn = document.createElement("button");
     spawn.className = "act spawn-act";
     spawn.textContent = attached ? "Attached only" : "Spawn";
-    spawn.disabled = attached || noCli;
+    spawn.disabled = attached || noCli || !a.agentsRoot;
     spawn.title = attached
       ? "Attached-mode agent — spawn it from an owning instance’s work tree"
       : noCli
@@ -433,7 +433,8 @@ function soulCard(s, a) {
   const brain = document.createElement("button");
   brain.className = "act brain-act";
   brain.textContent = "View brain";
-  brain.disabled = typeof s.ctx.openBrain !== "function";
+  brain.disabled = !!a.remote || typeof s.ctx.openBrain !== "function";
+  if (a.remote) brain.title = "Remote files are available through the agent terminal";
   brain.addEventListener("click", () => s.ctx.openBrain?.(a.name));
   actions.append(brain);
   card.append(actions);
@@ -575,7 +576,7 @@ function openSpawnModal(s, a) {
           <select class="field fserver" aria-label="Execution server">
             <option value="" selected>this machine</option>
           </select></label>
-        <div class="fserverdesc" hidden>The instance is spawned by the server's own installed oats in its registered workspace (the same team repo there); this machine keeps only the route.</div>
+        <div class="fserverdesc" hidden>Runs in the selected server's workspace.</div>
         <div class="frow">
           <button class="act fspawn">Spawn</button>
           <button class="act fcancel">Cancel</button>
@@ -591,13 +592,21 @@ function openSpawnModal(s, a) {
   // and run with the privileged bridge. Assign the placeholder as a DOM
   // PROPERTY, never via innerHTML attribute text.
   modal.querySelector(".fmodel").placeholder = a.model || "runtime default";
-  // Registered servers (oats server add …) — offered only when the CLI can
-  // list them; a failure leaves "this machine" as the only choice.
-  (async () => {
+  // A remote soul belongs to its host even when server listing is unavailable.
+  const serverSelect = modal.querySelector(".fserver");
+  if (a.server) {
+    serverSelect.replaceChildren();
+    const option = document.createElement("option"); option.value = a.server; option.textContent = a.repoName || a.server;
+    serverSelect.append(option); serverSelect.value = a.server; serverSelect.disabled = true;
+    modal.querySelector(".fserverdesc").hidden = false;
+  }
+  // Local souls may also launch in a registered server's workspace.
+  if (!a.server) (async () => {
     try {
       const d = await apiJson(s.ctx, "/api/servers");
       const sel = modal.querySelector(".fserver");
-      if (!sel || !d?.servers?.length) return;
+      if (!sel) return;
+      if (!d?.servers?.length) return;
       for (const srv of d.servers) {
         const o = document.createElement("option");
         o.value = srv.id; o.textContent = `${srv.label} (ssh ${srv.sshHost})`;
@@ -768,9 +777,10 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   // the readiness the shell's open path checks (running + tmux session), so
   // the auto-open can never race the tmux registration.
   const matches = (x) => x.instance === ref.instance
+    && (x.server || "") === (ref.server || "")
     && (!ref.home || !x.home || x.home === ref.home)
     && (!ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
-    && !!x.running && (!!x.tmux?.session || !!x.sessionTarget);
+    && !!x.running && (!!x.tmux?.session || !!x.sessionTarget || (!!x.server && x.savedRoute));
   for (let i = 0; i < tries; i++) {
     if (!isCurrent()) return false;          // ws switched / superseded: stop
     try {
@@ -810,6 +820,11 @@ export async function doSpawn(s, ui) {
   const owns = () => myOp === s.spawnOp && s.alive !== false;
   const relation = ui.relation ? String(ui.relation() || "unrelated") : "unrelated";
   const relativeTo = ui.relativeTo ? String(ui.relativeTo() || "") : "";
+  if (relation !== "unrelated" && ui.server?.() && !a.server) {
+    ui.status.classList?.add("err");
+    ui.status.textContent = "Select the server workspace to choose a related remote agent, or spawn unrelated.";
+    return;
+  }
   // Submit-time capability guard FIRST (reviews f35c1dc + 8b26317): a
   // downgrade while the modal was open preserves the chosen relation, and
   // doSpawn reads values programmatically — without this check the retained
@@ -838,7 +853,7 @@ export async function doSpawn(s, ui) {
       agentsRoot: a.agentsRoot,
       task: ui.task(),                       // "" = awaiting instructions (panel default)
       purpose: ui.purpose() || undefined,
-      serverId: ui.server?.() || undefined,
+      serverId: a.server || ui.server?.() || undefined,
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? relativeTo : undefined,
       // anchor root: ALWAYS sent with a related spawn when the picker knows
@@ -860,20 +875,28 @@ export async function doSpawn(s, ui) {
     // The panel snapshot lags spawns by up to a collector cycle; opening the
     // terminal before the instance is in /api/panel makes the shell resolve
     // "unknown instance". Wait for it, still gated by ownership + workspace.
-    // A remote spawn lives on the server, not in this workspace's roster:
-    // never wait for it here. Say where it is and how to reach it, and hand
-    // off; the remote projection and viewer are the execution-targets work.
-    if (d.server) {
+    if (d.server && d.workspaceId && d.workspaceId !== currentWorkspace()) {
+      const ref = { instance: d.instance, home: d.home, server: d.server };
+      closeSpawnModal(s);
+      setWorkspace(d.workspaceId);
+      const remoteGen = workspaceGeneration();
+      const stillThere = () => remoteGen === workspaceGeneration() && currentWorkspace() === d.workspaceId;
+      const visible = await waitForInstanceInPanel(s, ref, stillThere, s.waitOpts);
+      if (visible && stillThere()) s.ctx.openTerminal(ref, { quiet: true });
+      return;
+    }
+    // Older CLIs can spawn remotely but do not yet expose a remote roster.
+    if (d.server && !d.workspaceId) {
       if (!owns()) return;
       ui.btn.disabled = false; ui.btn.textContent = "Spawn";
       ui.status.classList?.remove("err");
-      ui.status.textContent = `Spawned ${d.instance} on server ${d.server}${d.target?.sshHost ? ` (ssh ${d.target.sshHost})` : ""} at ${d.home || "its remote home"}. It runs there, not in this roster; attach with: oats session attach --server ${d.server} --instance ${d.instance}`;
+      ui.status.textContent = `Spawned ${d.instance} on ${d.server}. Attach with: oats session attach --server ${d.server} --instance ${d.instance}`;
       return;
     }
     const current = () => owns() && myGen === workspaceGeneration();
     // Poll and open by COMPOSITE identity — the spawn result's home plus the
     // selected agent's root disambiguate a same-named twin (review @7dd1e7b).
-    const spawnedRef = { instance: d.instance, ...(d.home ? { home: d.home } : {}), ...(a.agentsRoot ? { agentsRoot: a.agentsRoot } : {}) };
+    const spawnedRef = { instance: d.instance, ...(d.home ? { home: d.home } : {}), ...(a.agentsRoot ? { agentsRoot: a.agentsRoot } : {}), ...(d.server ? { server: d.server } : {}) };
     const visible = await waitForInstanceInPanel(s, spawnedRef, current, s.waitOpts);
     if (!current()) return;
     if (!visible) { ui.status.textContent = `Spawned ${d.instance} — roster is catching up; open it from the sidebar instance roster.`; return; }

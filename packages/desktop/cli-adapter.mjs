@@ -119,11 +119,11 @@ export function writeTaskFile(taskText, io = {}) {
   return { file, cleanup: () => { try { rm(dir, { recursive: true, force: true }); } catch { /* best-effort */ } } };
 }
 
-function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS } = {}) {
+function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope } = {}) {
   return new Promise((resolveP) => {
     exec(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false },
       (err, stdout) => {
-        const doc = parseEnvelope(stdout);
+        const doc = parse(stdout);
         if (doc) return resolveP(doc); // envelope wins — nonzero exit carries ok:false
         if (err && err.killed) {
           return resolveP({ schemaVersion: 1, ok: false, error: { code: "E_CLI_TIMEOUT", message: `oats did not answer within ${timeout / 1000}s` } });
@@ -163,6 +163,36 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
 /** Registered servers, from the CLI's registry (`oats server list --json`). */
 export function cliServers(bin, io = {}) {
   return runJson(bin, ["server", "list", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
+}
+
+/** One bounded aggregate read; the CLI owns registry and saved-route resolution. */
+export function cliRemoteRoster(bin, io = {}) {
+  return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000 });
+}
+
+export function cliRemoteHarvest(bin, server, instance, io = {}) {
+  return runJson(bin, ["okf", "harvest", "--server", server, "--instance", instance, "--json"], {
+    cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 300_000,
+  });
+}
+
+/** Local retire predates the envelope; preserve its incomplete-cleanup result. */
+export function parseRetireEnvelope(stdout) {
+  const envelope = parseEnvelope(stdout);
+  if (envelope && (!envelope.ok || !envelope.result?.rollbackIncomplete?.length)) return envelope;
+  try {
+    const result = envelope?.result || JSON.parse(String(stdout));
+    if (typeof result?.retired !== "string") return null;
+    const incomplete = !!result.rollbackIncomplete?.length;
+    return { schemaVersion: 1, ok: !incomplete, result,
+      ...(incomplete ? { error: { code: "E_RETIRE_INCOMPLETE", message: "Retirement cleanup is incomplete; the instance is retained for retry" } } : {}) };
+  } catch { return null; }
+}
+
+export function cliRetire(bin, { instance, workspaceDir, server }, io = {}) {
+  return runJson(bin, ["retire", instance, ...(server ? ["--server", server] : ["--dir", workspaceDir]), "--json"], {
+    cwd: workspaceDir, exec: io.exec, timeout: io.timeout || 600_000, parse: parseRetireEnvelope,
+  });
 }
 
 /**

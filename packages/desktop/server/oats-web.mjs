@@ -59,6 +59,9 @@ const model = await import(pathToFileURL(join(HERE, "model.mjs")).href);
 model.initModel(reader);
 const locator = await import(pathToFileURL(join(HERE, "..", "cli-locator.mjs")).href);
 const adapter = await import(pathToFileURL(join(HERE, "..", "cli-adapter.mjs")).href);
+const remote = await import(pathToFileURL(join(HERE, "remote-roster.mjs")).href);
+let remoteGroups = [];
+let remoteCollecting = false;
 
 /** Workspaces in view. Each --dir registers one (repeatable); no --dir means
  * the cwd. Every context resolves to its team scope (or config scope) so the
@@ -83,7 +86,7 @@ function workspaceEntry(ctx) {
 function workspaces() {
   const map = new Map();
   for (const ctx of ctxs) { const w = workspaceEntry(ctx); if (!map.has(w.id)) map.set(w.id, w); }
-  return [...map.values()];
+  return [...map.values(), ...remoteGroups.map(remote.remoteWorkspace)];
 }
 function workspaceById(id) {
   return workspaces().find((w) => w.id === id) || workspaces()[0];
@@ -92,6 +95,7 @@ function workspaceById(id) {
 function panelData(wsId) {
   const all = workspaces();
   const ws = wsId ? workspaceById(wsId) : all[0];
+  if (ws?.remote) return { ...remote.remotePanel(ws.group), workspaces: workspaceChoices(all) };
   const instances = [];
   for (const root of ws?.roots || []) {
     try {
@@ -102,12 +106,16 @@ function panelData(wsId) {
   instances.sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
   return {
     workspace: ws ? { id: ws.id, name: ws.name, team: ws.team } : null,
-    workspaces: all.map((w) => ({ id: w.id, name: w.name, team: w.team })),
+    workspaces: workspaceChoices(all),
     team: ws?.team || null,
     generatedAt: new Date().toISOString(),
     running: instances.filter((i) => i.running).length,
     instances: instances.map(projectPanelInstance),
   };
+}
+
+function workspaceChoices(all = workspaces()) {
+  return all.map((w) => ({ id: w.id, name: w.name, team: w.team, ...(w.remote ? { server: w.server, remote: true } : {}) }));
 }
 
 /* OATSWEB_PANELPROJ_BEGIN — the /api/panel per-instance contract projection.
@@ -143,6 +151,7 @@ function projectPanelInstance(i) {
  * context. */
 function agentsData(wsId) {
   const ws = wsId ? workspaceById(wsId) : workspaces()[0];
+  if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group) };
   const agents = [];
   for (const root of ws?.roots || []) {
     const context = dirname(root); // the workspace/repo owning this agents root
@@ -277,14 +286,16 @@ function spawnErrorPayload(e) {
 async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, serverId }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
+  const server = serverId ? String(serverId) : undefined;
   // agentsRoot must be one of the workspace roots this server was started for —
   // never spawn into an arbitrary caller-supplied directory.
   const known = workspaces().flatMap((w) => w.roots);
-  if (!known.some((r) => resolve(r) === root)) throw new Error(`unknown agents root "${agentsRoot}"`);
+  const remoteSoul = server && remoteGroups.some((g) => g.server === server
+    && remote.remoteAgents(g).some((a) => a.name === name && a.agentsRoot === agentsRoot));
+  if (!remoteSoul && !known.some((r) => resolve(r) === root)) throw new Error(`unknown agents root "${agentsRoot}"`);
   // A remote route: the agent is validated by the REMOTE kernel against its
   // own workspace (the same team repo on that host); the local roster only
   // supplies the name the operator picked.
-  const server = serverId ? String(serverId) : undefined;
   let def;
   if (!server) {
     def = reader.findAgent(root, name)
@@ -313,7 +324,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // values resolve as stable E_BAD_ARGS envelopes, never reach the CLI.
   const env = await adapter.cliSpawn(cliState.bin, {
     agent: name,
-    workspaceDir: dirname(root),          // the workspace context owning this agents root
+    workspaceDir: server ? ctxs[0] : dirname(root), // SSH routes choose their own remote cwd
     task: task ? String(task) : "",
     purpose: purpose ? String(purpose) : undefined,
     relation: relation ? String(relation) : undefined,
@@ -336,9 +347,12 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     throw err;
   }
   const r = env.result;
+  if (r.server) void refreshRemoteSnapshot();
+  const remoteGroup = r.server && remoteGroups.find((g) => g.server === r.server && g.registrationPresent);
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
            branch: r.branch ?? null, launched: !!r.launched, warnings: r.warnings || [],
-           tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target } : {}) };
+           tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target,
+             ...(remoteGroup ? { workspaceId: remote.remoteWorkspace(remoteGroup).id } : {}) } : {}) };
 }
 
 /* ── CLI discovery (Desktop CLI API v1) ──
@@ -382,6 +396,7 @@ async function reprobeCli(chosen) {
   if (chosen) chosenBin = chosen;
   const r = await locator.discover(cliIo, probeBin);
   cliState = { ...r, probedAt: Date.now() };
+  void refreshRemoteSnapshot();
   return cliState;
 }
 /** Stable diagnostics for the degradation card. */
@@ -423,6 +438,34 @@ function cliStatus() {
    the background every few seconds, and all requests are served from it. */
 let snapshot = { at: 0, byWs: new Map() };   // wsId -> panelData
 let collecting = false;
+function mergeRemotePanels(byWs) {
+  for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
+  for (const group of remoteGroups) {
+    const panel = remote.remotePanel(group);
+    byWs.set(panel.workspace.id, panel);
+  }
+  return byWs;
+}
+async function refreshRemoteSnapshot() {
+  if (remoteCollecting) return;
+  if (!cliState.ok || !cliState.remote?.includes("roster")) {
+    remoteGroups = []; mergeRemotePanels(snapshot.byWs); return;
+  }
+  remoteCollecting = true;
+  const bin = cliState.bin;
+  try {
+    const env = await adapter.cliRemoteRoster(bin);
+    if (!cliState.ok || cliState.bin !== bin || !cliState.remote?.includes("roster")) return;
+    const incoming = env.ok && Array.isArray(env.result?.groups)
+      ? env.result.groups : remote.unavailableGroups(remoteGroups, env.error || { code: "E_REMOTE_ROSTER", message: "Remote roster unavailable" });
+    incoming.forEach(remote.remotePanel); // validate before replacing the last readable roster
+    remoteGroups = incoming;
+    mergeRemotePanels(snapshot.byWs);
+  } catch (e) {
+    remoteGroups = remote.unavailableGroups(remoteGroups, { code: "E_REMOTE_ROSTER", message: `Remote roster unavailable: ${e.message}` });
+    mergeRemotePanels(snapshot.byWs);
+  } finally { remoteCollecting = false; }
+}
 function collectNow() {
   const byWs = new Map();
   for (const w of workspaces()) byWs.set(w.id, panelData(w.id));
@@ -441,17 +484,17 @@ function refreshSnapshot() {
     if (err) { if (DEBUG) console.log(`[snapshot] collect failed: ${err.message}`); return; }
     try {
       const parsed = JSON.parse(stdout);
-      snapshot = { at: Date.now(), byWs: new Map(Object.entries(parsed)) };
+      snapshot = { at: Date.now(), byWs: mergeRemotePanels(new Map(Object.entries(parsed))) };
     } catch (e) { if (DEBUG) console.log(`[snapshot] bad collect output: ${e.message}`); }
   });
 }
 function snapshotPanel(wsId) {
   const ids = [...snapshot.byWs.keys()];
   const id = wsId && snapshot.byWs.has(wsId) ? wsId : ids[0];
-  return id ? snapshot.byWs.get(id) : null;
+  return id ? { ...snapshot.byWs.get(id), workspaces: workspaceChoices() } : null;
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
-function findInstance(name, wsId, home) {
+function findInstance(name, wsId, home, server) {
   if (!snapshot.byWs.size) snapshot = { at: Date.now(), byWs: collectNow() }; // cold start, once
   // With a ws scope, resolve ONLY in that workspace — same-named instances
   // exist across workspaces and "first match anywhere" picks the wrong one.
@@ -461,9 +504,11 @@ function findInstance(name, wsId, home) {
   // MORE THAN ONE instance in scope returns the AMBIGUOUS sentinel and the
   // route must refuse rather than act on an arbitrary pick (merged-state
   // review @7dd1e7b).
-  const scope = wsId
+  let scope = wsId
     ? (snapshot.byWs.get(wsId)?.instances || [])
     : [...snapshot.byWs.values()].flatMap((d) => d.instances);
+  // Per-instance HTTP references always name a host; absent means local.
+  scope = scope.filter((i) => (i.server || "") === (server || ""));
   if (home) return scope.find((i) => i.instance === name && i.home === home);
   const hits = scope.filter((i) => i.instance === name);
   if (hits.length > 1) return findInstance.AMBIGUOUS;
@@ -471,8 +516,8 @@ function findInstance(name, wsId, home) {
 }
 findInstance.AMBIGUOUS = Symbol("ambiguous-instance");
 /** Route helper: resolve or produce the 404/409 payload for send(). */
-function resolveInstanceOr(name, wsId, home) {
-  const inst = findInstance(name, wsId, home);
+function resolveInstanceOr(name, wsId, home, server) {
+  const inst = findInstance(name, wsId, home, server);
   if (inst === findInstance.AMBIGUOUS)
     return { error: { status: 409, body: { error: `instance name "${name}" is ambiguous in this workspace — pass the exact home qualifier`, code: "E_INSTANCE_AMBIGUOUS" } } };
   if (!inst) return { error: { status: 404, body: { error: `unknown instance "${name}"` } } };
@@ -931,6 +976,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
     const bm = path.match(/^\/api\/brain\/([A-Za-z0-9._-]+)$/);
     if (bm && req.method === "GET") {
+      if (workspaceById(url.searchParams.get("ws"))?.remote) return send(res, 409, { error: "Remote files are available through the agent terminal", code: "E_REMOTE_FILES" });
       const d = brainData(bm[1], url.searchParams.get("ws") || undefined);
       return d ? send(res, 200, d) : send(res, 404, { error: `unknown agent "${bm[1]}"` });
     }
@@ -970,15 +1016,31 @@ const server = createServer(async (req, res) => {
       try { return send(res, 200, { spawned: true, ...(await spawnAgent(body)) }); }
       catch (e) { const { status, body: b } = spawnErrorPayload(e); return send(res, status, b); }
     }
-    const hm = path.match(/^\/api\/harvest\/([A-Za-z0-9._-]+)$/);
+    const hm = path.match(/^\/api\/(harvest|retire)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
       // Desktop v1 mutation 2: `oats okf harvest --json`, cwd FIXED by this
       // privileged backend to the RESOLVED instance home — the caller only
       // names an instance; it can never steer the cwd.
-      const r = resolveInstanceOr(hm[1], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined);
+      const r = resolveInstanceOr(hm[2], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
       if (r.error) return send(res, r.error.status, r.error.body);
       const inst = r.inst;
-      if (!cliState.ok) return send(res, 503, { error: "harvest requires a compatible installed oats CLI", code: "cli-unavailable" });
+      if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
+      if (hm[1] === "retire") {
+        if (inst.server) {
+          if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
+          locator.requireRemoteSupport(cliState, "retire");
+        } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
+        const env = await adapter.cliRetire(cliState.bin, { instance: inst.instance,
+          workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
+        refreshSnapshot(); void refreshRemoteSnapshot();
+        return env.ok ? send(res, 200, env.result) : send(res, 502, { error: env.error.message, code: env.error.code, result: env.result });
+      }
+      if (inst.server) {
+        if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
+        locator.requireRemoteSupport(cliState, "harvest");
+        const env = await adapter.cliRemoteHarvest(cliState.bin, inst.server, inst.instance);
+        return env.ok ? send(res, 200, env.result) : send(res, 502, { error: env.error.message, code: env.error.code });
+      }
       // SECURITY (review 53a20c7): the roster derives home from the
       // enumerated DIRECTORY (deployment.mjs never lets instance.json
       // relocate it), and this endpoint re-verifies before executing:
@@ -997,9 +1059,10 @@ const server = createServer(async (req, res) => {
     }
     const m = path.match(/^\/api\/(session|keys|interrupt|chat)\/([A-Za-z0-9._-]+)$/);
     if (m) {
-      const r = resolveInstanceOr(m[2], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined);
+      const r = resolveInstanceOr(m[2], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
       if (r.error) return send(res, r.error.status, r.error.body);
       const inst = r.inst;
+      if (inst.server) return send(res, 409, { error: "Use the remote agent terminal for this operation", code: "E_REMOTE_TERMINAL" });
       if (m[1] === "session" && req.method === "GET") {
         if (!inst.running) return send(res, 200, { running: false, text: "" });
         const info = paneInfo(inst);
@@ -1056,3 +1119,4 @@ reprobeCli().then((s) => {
     : `oats-desktop server: no compatible oats CLI found — reads and terminals work; Spawn/Harvest disabled (${(s.tried || []).length} candidate(s) tried)`);
 });
 setInterval(refreshSnapshot, 3000).unref(); // keep it fresh; child skipped if one is running
+setInterval(refreshRemoteSnapshot, 10000).unref(); // coalesced host reads, independent of terminal traffic
