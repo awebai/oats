@@ -3205,7 +3205,8 @@ function serverCmd() {
     for (const g of out.groups) {
       console.log(`  ${g.server}${g.label && g.label !== g.server ? `  ${g.label}` : ""}  [${g.id}]  ssh ${g.target.sshHost}  workspace ${g.target.workspace}${g.registrationPresent ? "" : "  (registration removed or changed; saved routes only)"}`);
       console.log(g.probe?.ok ? `      reachable, ${g.souls.length} soul(s)` : `      UNREACHABLE: ${g.probe?.error?.message || "?"}`);
-      for (const i of g.instances) console.log(`      • ${i.instance}  ${i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown"}${i.retirePending ? " RETIRING" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      for (const i of g.instances) console.log(`      • ${i.instance}  ${i.missingRemotely ? "GONE on the host (saved route is stale: oats server forget)" : i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown"}${i.retirePending ? " RETIRING" : ""}${i.rollbackIncomplete ? " QUARANTINED" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
+      for (const f of g.retireFailures || []) console.log(`      ! deferred retirement of ${f.instance} (${f.agent}) FAILED there${f.error?.message ? `: ${f.error.message}` : ""}${f.retry ? ` — retry on the host: ${f.retry}` : ""}`);
     }
     console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target within ${out.bounds.budgetMs} ms, ${out.bounds.elapsedMs} ms used${out.bounds.skipped ? `, ${out.bounds.skipped} target(s) not reached` : ""}`);
     return;
@@ -3335,7 +3336,7 @@ function serverRouteCmd() {
   if (cmd === "spawn") {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
-    console.log(`  route snapshot: ${shortPath(r.snapshot)}`);
+    console.log(`  route snapshot: ${r.snapshot ? shortPath(r.snapshot) : "none (see the warning)"}`);
     for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
     console.log(`  attach: ssh -t ${r.target.sshHost} tmux attach -t ${r.tmux?.session || "oats"}`);
   } else if (cmd === "retire") {
