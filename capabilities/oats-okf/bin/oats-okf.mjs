@@ -148,8 +148,19 @@ function planRecordHarvest(instanceHome) {
   // The exact next watermark is written beside the current one by the
   // package; the harvester's delivery is a rename, nothing retyped.
   const nextPath = join(instanceHome, RECORD_WATERMARK.replace(/\.json$/, ".next.json"));
-  writeFileSync(nextPath, JSON.stringify(next, null, 2) + "\n");
-  return { threads, watermarkPath, nextPath, watermark: next, unattributed: (report.unattributed || []).length, problems };
+  const windows = threads.map(({ thread, afterTurnId, untilTurnId }) => ({ thread, afterTurnId, untilTurnId }));
+  let pending;
+  try { pending = JSON.parse(readFileSync(nextPath, "utf8")).pendingHarvest; } catch { /* no prior plan */ }
+  const sameWindows = pending?.instance && JSON.stringify(pending.windows) === JSON.stringify(windows);
+  const warnings = sameWindows ? [
+    `previous harvester ${pending.instance} did not advance the watermark for ${windows.map((w) => `${w.thread} (${w.afterTurnId || "start"} -> ${w.untilTurnId})`).join(", ")}; inspect its outcome and use oats okf harvest --from-record --force to retry`,
+  ] : [];
+  // Reuse the existing prepared watermark; no extra journal. Stamp it only
+  // after a successful spawn, and never overwrite a stalled plan on a skip.
+  if (sameWindows && !process.argv.includes("--force")) return { stalled: true, warnings };
+  const prepared = JSON.stringify(next, null, 2) + "\n";
+  writeFileSync(nextPath, prepared);
+  return { threads, windows, watermarkPath, nextPath, watermark: next, prepared, unattributed: (report.unattributed || []).length, problems, warnings };
 }
 
 /** Briefing block for record-fed candidates, appended to the harvest task. */
@@ -198,11 +209,27 @@ async function spawnHarvester(spawnArgs, task) {
   }
 }
 
-function harvestSpawnArgs({ slug, parent, repo, work, workDir, branch, model }) {
-  const args = ["--purpose", slug, "--parent", parent, "--repo", repo, "--work", work];
+function harvestRuntime() {
+  const runtime = settings["harvest-runtime"] ?? "pi";
+  if (!["pi", "claude", "codex"].includes(runtime)) {
+    throw runtimeError("E_HARVEST_SETTINGS", "harvest-runtime must be pi, claude or codex");
+  }
+  const configured = settings["harvest-model"];
+  if (configured != null && (typeof configured !== "string" || !configured.trim())) {
+    throw runtimeError("E_HARVEST_SETTINGS", "harvest-model must be a nonempty model name");
+  }
+  const model = configured?.trim() || (runtime === "pi" ? DEFAULT_HARVEST_MODEL : undefined);
+  if (runtime !== "pi" && model?.includes("/")) {
+    throw runtimeError("E_HARVEST_SETTINGS", `harvest-model for ${runtime} must be a native model name, without a Pi provider/ prefix`);
+  }
+  return { runtime, model };
+}
+
+function harvestSpawnArgs({ slug, parent, repo, work, workDir, branch, runtime, model }) {
+  const args = ["--purpose", slug, "--parent", parent, "--repo", repo, "--work", work, "--runtime", runtime];
   if (workDir) args.push("--work-dir", workDir);
   if (branch) args.push("--branch", branch);
-  args.push("--model", model);
+  if (model) args.push("--model", model);
   return args;
 }
 
@@ -331,7 +358,7 @@ _(the single next action — keep this current; a fresh session on any model res
       }
     }
     const notesDir = join(home, "notes");
-    const skip = (why) => (JSON_MODE ? jsonOk({ harvest: "skipped", reason: why }) : out({ meta: { harvestSpawn: "skipped", why } }));
+    const skip = (why, warnings = []) => (JSON_MODE ? jsonOk({ harvest: "skipped", reason: why, ...(warnings.length ? { warnings } : {}) }) : out({ meta: { harvestSpawn: "skipped", why }, ...(warnings.length ? { warnings } : {}) }));
     if (String(agName).startsWith("memory-harvest")) skip("self (loop guard)");
     const notes = existsSync(notesDir) ? readdirSync(notesDir).filter((f) => f.endsWith(".md")) : [];
 
@@ -358,6 +385,7 @@ _(the single next action — keep this current; a fresh session on any model res
     // write few notes). --from-record asks for the record even with notes.
     // Planned only now, after every skip above: a capture pass is a real
     // write and index, and "calling it too often is safe" must stay true.
+    const execution = harvestRuntime();
     let recordPlan = null;
     if (notes.length === 0 || process.argv.includes("--from-record")) {
       let planned = null;
@@ -366,13 +394,14 @@ _(the single next action — keep this current; a fresh session on any model res
         process.stderr.write(`oats-okf: record unavailable${notes.length ? ", harvesting notes only" : ""}: ${planned.unavailable}\n`);
         if (notes.length === 0) skip("no pending notes");
       } else recordPlan = planned;
+      for (const warning of recordPlan?.warnings || []) process.stderr.write(`oats-okf: record: ${warning}\n`);
+      if (recordPlan?.stalled) skip("previous harvester did not advance the watermark", recordPlan.warnings);
       for (const line of recordPlan?.problems || []) process.stderr.write(`oats-okf: record: ${line}\n`);
       if (recordPlan?.unattributed) process.stderr.write(`oats-okf: record: ${recordPlan.unattributed} session file(s) carry no working directory and cannot be attributed to any home (oats capture --home <home> lists them)\n`);
       if (notes.length === 0 && !recordPlan) skip("no pending notes");
     }
     // Effective command settings are injected by capability dispatch. No
     // resolved-config read crosses the public package boundary.
-    const harvestModel = settings["harvest-model"] || DEFAULT_HARVEST_MODEL;
     const workDir = realpathSync(join(home, "work"));
     const realSoul = realpathSync(sDir);
     const harvName = `memory-harvest-${slug}`;
@@ -386,7 +415,7 @@ _(the single next action — keep this current; a fresh session on any model res
       // version. It must not touch the owner's work tree.
       const task = `Harvest the pending notes of live LOCAL-SOUL instance "${inst}" (agent "${agName}") into its soul — by direct edits, no commit.\n\n- Source notes: ${notes.length ? `${notesDir} (${notes.join(", ")})` : "none pending"}\n- Soul knowledge bundle to update: ${join(realSoul, "knowledge")}\n- Soul skills dir (for procedure-shaped notes): ${join(realSoul, "skills")}\n- This soul is LOCAL (uncommitted, gitignored): edit those soul files IN PLACE. Do NOT run git commit — not for the soul, and not in ./work (the shared tree belongs to the working instance; leave it untouched).\n- Follow your memory-harvest skill for everything else: promote/merge/drop each note, knowledge vs skill routing, index + log discipline, validate the bundle, DELETE processed notes from the source notes/ dir.\n${recordBrief(recordPlan, packageRuntimeCli())}\n- Then run \`oats retire ${harvName} --self\`.`;
       r = await spawnHarvester(harvestSpawnArgs({
-        slug, parent: inst, repo: context, work: "attached", workDir, model: harvestModel,
+        slug, parent: inst, repo: context, work: "attached", workDir, ...execution,
       }), task);
     } else if ((process.env.OATS_WORK || meta.work) === "workspace") {
       // WORKSPACE-MODE instance: ./work is the whole workspace, not a git repo —
@@ -399,7 +428,7 @@ _(the single next action — keep this current; a fresh session on any model res
       const task = `Harvest the pending notes of live WORKSPACE-MODE instance "${inst}" (agent "${agName}") into its soul — delivered as a PR.\n\n- Source notes: ${notes.length ? `${notesDir} (${notes.join(", ")})` : "none pending"}\n- Your ./work is a dedicated worktree of the soul's home repo (${soulRepo}), branch memory-harvest/${slug}.\n- Soul knowledge bundle to update: ./work/${join(relSoul, "knowledge")}\n- Soul skills dir (for procedure-shaped notes): ./work/${join(relSoul, "skills")}\n- Follow your memory-harvest skill: promote/merge/drop each note, knowledge vs skill routing, index + log discipline, validate the bundle, DELETE processed notes from the source notes/ dir, and commit once (prefixed "memory-harvest:") if anything changed.${recordBrief(recordPlan, packageRuntimeCli())}\n- If you changed anything: push the branch and open a PR (\`git push -u origin memory-harvest/${slug}\` then \`gh pr create --fill\`). Do NOT merge it; the humans/owners of ${soulRepo} review soul changes. If gh is unavailable, push the branch and report the compare URL. A harvest that promoted nothing has nothing to commit, push or open; that is a completed harvest, not a failed one.\n- Finally run \`oats retire ${harvName} --self\` (keep the branch: --self only).`;
       r = await spawnHarvester(harvestSpawnArgs({
         slug, parent: inst, repo: soulRepo, work: "worktree",
-        branch: `memory-harvest/${slug}`, model: harvestModel,
+        branch: `memory-harvest/${slug}`, ...execution,
       }), task);
     } else {
       // Repo-resident souls: write to the soul AS SEEN FROM THE WORK TREE, so the
@@ -410,11 +439,27 @@ _(the single next action — keep this current; a fresh session on any model res
         : realSoul;
       const task = `Harvest the pending notes of live instance "${inst}" (agent "${agName}") into its soul.\n\n- Source notes: ${notes.length ? `${notesDir} (${notes.join(", ")})` : "none pending"}\n- Soul knowledge bundle to update: ${join(soulTarget, "knowledge")}\n- Soul skills dir (for procedure-shaped notes): ${join(soulTarget, "skills")}\n- You are ATTACHED to the instance's work tree (./work) — commit your promotions there as a single commit, prefixed "memory-harvest:".\n- Follow your memory-harvest skill: promote/merge/drop each note, knowledge vs skill routing, index + log discipline, validate the bundle, DELETE processed notes from the source notes/ dir (so they are not re-harvested).${recordBrief(recordPlan, packageRuntimeCli())}\n- Commit if you changed anything (a harvest that promoted nothing has nothing to commit), then run \`oats retire ${harvName} --self\`.`;
       r = await spawnHarvester(harvestSpawnArgs({
-        slug, parent: inst, repo: context, work: "attached", workDir, model: harvestModel,
+        slug, parent: inst, repo: context, work: "attached", workDir, ...execution,
       }), task);
     }
-    if (JSON_MODE) jsonOk({ harvest: "spawned", instance: r.instance, window: r.tmux?.window || null, ...(recordPlan ? { record: { threads: recordPlan.threads.map((t) => t.thread), ...(recordPlan.unattributed ? { unattributed: recordPlan.unattributed } : {}), ...(recordPlan.problems?.length ? { problems: recordPlan.problems } : {}) } } : {}) });
-    out({ meta: { harvestSpawn: r.instance, window: r.tmux?.window } });
+    if (recordPlan) {
+      try {
+        // A fast harvester may already have renamed the prepared file. Never
+        // recreate that consumed plan or replace a different plan's contents.
+        if (readFileSync(recordPlan.nextPath, "utf8") === recordPlan.prepared) {
+          writeFileSync(recordPlan.nextPath, JSON.stringify({ ...recordPlan.watermark, pendingHarvest: { instance: r.instance, windows: recordPlan.windows } }, null, 2) + "\n");
+        }
+      } catch (e) {
+        if (e.code !== "ENOENT") {
+          const warning = `harvester ${r.instance} spawned but its retry marker could not be recorded: ${e.message}`;
+          recordPlan.warnings.push(warning);
+          process.stderr.write(`oats-okf: ${warning}\n`);
+        }
+      }
+    }
+    const warnings = recordPlan?.warnings?.length ? { warnings: recordPlan.warnings } : {};
+    if (JSON_MODE) jsonOk({ harvest: "spawned", instance: r.instance, window: r.tmux?.window || null, ...warnings, ...(recordPlan ? { record: { threads: recordPlan.threads.map((t) => t.thread), ...(recordPlan.unattributed ? { unattributed: recordPlan.unattributed } : {}), ...(recordPlan.problems?.length ? { problems: recordPlan.problems } : {}) } } : {}) });
+    out({ meta: { harvestSpawn: r.instance, window: r.tmux?.window }, ...warnings });
   } catch (e) {
     if (JSON_MODE) jsonFail(e.code || "E_HARVEST_FAILED", `harvest spawn failed (notes are safe on disk): ${e.message || e}`);
     warn(`harvest spawn failed (notes are safe on disk): ${e.message || e}`);
