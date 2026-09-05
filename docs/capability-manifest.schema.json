@@ -123,13 +123,7 @@
               "when": {
                 "type": "object",
                 "description": "Applies only when every named capability setting has the given effective value (a requirement conditional on configuration, e.g. delivery: channel).",
-                "additionalProperties": {
-                  "type": [
-                    "string",
-                    "number",
-                    "boolean"
-                  ]
-                }
+                "additionalProperties": {}
               },
               "minVersion": {
                 "type": "string",
@@ -247,13 +241,8 @@
           "default": {},
           "values": {
             "type": "array",
-            "items": {
-              "type": [
-                "string",
-                "number",
-                "boolean"
-              ]
-            }
+            "description": "Accepted scalar values; an effective value outside the list is refused at resolution.",
+            "items": {}
           },
           "description": {
             "type": "string"
