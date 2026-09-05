@@ -247,6 +247,7 @@
 * **Update**: [spawn-lineage-explicit-only](/decisions/spawn-lineage-explicit-only.md) records the grep-all-Markdown rule for migrating agent-facing `oats spawn` recipes when spawn semantics change.
 * **Creation**: [spawn-lineage-explicit-only](/decisions/spawn-lineage-explicit-only.md) records explicit-only spawn parentage and adds the Decisions section to the bundle index.
 * **Creation**: [task-flag-boolean-crash](/lessons/task-flag-boolean-crash.md) records the missing value-carrying flag boolean foot-gun behind the `--task` spawn crash.
+* **Creation**: [snapshot-before-registry-is-per-command](/lessons/snapshot-before-registry-is-per-command.md), [dispatch-allowlist-strands-its-own-guard](/lessons/dispatch-allowlist-strands-its-own-guard.md) and [identity-key-fields-shape-the-diagnostic](/lessons/identity-key-fields-shape-the-diagnostic.md) record the three generalizations behind the servers-roster review findings F1, F2 and F3 (5a49b3b), written by the reviewer and promoted by the coordinator because the reviewer's home was retired before a harvest.
 
 ## 2026-07-21
 
