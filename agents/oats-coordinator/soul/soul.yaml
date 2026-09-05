@@ -1,0 +1,9 @@
+name: oats-coordinator
+kind: persistent
+role: release-coordinator
+type: framework-authors
+description: Coordinates OATS releases, cross-repository payload publication, review routing and deployment operations for the oats side.
+repo: .
+work: worktree
+runtime: claude
+yolo: true

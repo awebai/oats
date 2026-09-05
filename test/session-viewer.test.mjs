@@ -6,8 +6,9 @@ function fixture(failLink = false) {
   const calls = [];
   return { calls, exec(bin, args) {
     assert.equal(bin, "tmux");
-    assert.deepEqual(args.slice(0, 2), ["-S", target.socket]);
-    const cmd = args.slice(2); calls.push(cmd);
+    // The shared tmux helper forces UTF-8 (-u) ahead of the socket (a0b0e14).
+    assert.deepEqual(args.slice(0, 3), ["-u", "-S", target.socket]);
+    const cmd = args.slice(3); calls.push(cmd);
     if (cmd[0] === "list-panes") return "%1\t0\tcodex\t123\n";
     if (cmd[0] === "new-session") return "@98\n";
     if (cmd[0] === "link-window" && failLink) throw new Error("target disappeared");
@@ -22,7 +23,7 @@ test("tmux attach isolates one exact window and cleanup kills only the viewer", 
   viewer.cleanup();
   assert.equal(io.calls.at(-1)[0], "kill-session");
   assert.match(io.calls.at(-1)[2], /^=oatsview-/);
-  assert.deepEqual(viewer.args.slice(0, 3), ["-S", target.socket, "attach-session"]);
+  assert.deepEqual(viewer.args.slice(0, 4), ["-u", "-S", target.socket, "attach-session"]);
 });
 test("failed viewer allocation cleans its placeholder without touching source", () => {
   const io = fixture(true);
