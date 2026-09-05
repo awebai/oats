@@ -191,7 +191,7 @@ export async function discover(io, probe) {
         continue;
       }
       const a = acceptProbe(payload);
-      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}) };
+      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
       tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
     }
   }
@@ -199,6 +199,16 @@ export async function discover(io, probe) {
 }
 
 /** Old kernels silently treat unknown runtimes/backends as their defaults. */
+/** Remote routing is a NEWER v1 surface: an older CLI ignores --server and
+ *  spawns LOCALLY while reporting success, the exact silent degradation the
+ *  relation gate exists for (review f921f7d). Fail closed on the probe's
+ *  advertisement, never on inference. Throws; there is no optional form. */
+export function requireRemoteSupport(cli, operation) {
+  if (!Array.isArray(cli?.remote) || !cli.remote.includes(operation)) {
+    throw Object.assign(new Error(`installed oats ${cli?.version || "(unknown)"} does not route ${operation} to a registered server; update the CLI`), { code: "unsupported-remote-operation" });
+  }
+}
+
 export function requireExecutionSupport(cli, runtime, backend, yolo) {
   if (yolo !== undefined && !cli.launchOptions?.includes("yolo")) throw Object.assign(new Error(`installed oats ${cli.version} does not support yolo overrides; update the CLI`), { code: "unsupported-launch-option" });
   if (!(cli.runtimes || ["pi", "claude"]).includes(runtime || "pi")) {

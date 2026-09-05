@@ -12,7 +12,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { attachArgv, checkRemoteSupport, resolveRoute, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
+import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -101,6 +101,11 @@ test("runRemote: a bare retire answer with cleanup still owed is not ok, so a ro
   assert.equal(envelope.error.code, "E_RETIRE_INCOMPLETE");
   assert.match(envelope.error.message, /retained there: retire hook acme.chan/);
   assert.equal(envelope.result.retired, "dev-x", "the remote's own result stays visible");
+  // Through the route, the failed envelope still names the server and target (R2).
+  const routed = routeCommand("build", "retire", ["dev-x"], { server: { id: "build", sshHost: "h", workspace: "/w", oatsPath: "oats" }, execFileSync: (bin, argv) => (String(argv.at(-1)).includes("version --json") ? JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.2", desktopApi: 1 }) : exec()) });
+  assert.equal(routed.envelope.ok, false);
+  assert.equal(routed.envelope.result.server, "build");
+  assert.equal(routed.envelope.result.target.sshHost, "h");
   const clean = () => JSON.stringify({ retired: "dev-x", agent: "dev", removedDir: true });
   assert.equal(runRemote({ sshHost: "h", workspace: "/w", oatsPath: "oats" }, ["retire", "dev-x", "--json"], { execFileSync: clean }).envelope.ok, true);
 });
@@ -193,12 +198,13 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     assert.match(att.argv.at(-1), new RegExp(`session attach --home ${home.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
     assert.throws(() => attachArgv("build", { instance: "ghost" }, { skipVersionCheck: true }), /no remote instance "ghost"/);
     assert.deepEqual(resolveRoute("build", { instance: "dev-probe" }).target, snap.target, "inspect and attach share the saved route");
-    // Session routes need a remote that has `oats session` (0.22.2); this fake remote is this kernel, which reports 0.22.1, so the route refuses BEFORE any session command is sent, naming the reason.
+    // Session routes need a remote whose probe advertises session; this fake remote is this kernel, which does, so the inspect runs there against the snapshot's home and its envelope is relayed.
     r = oats(env, ["session", "inspect", "--server", "build", "--instance", "dev-probe", "--json"]);
-    assert.notEqual(r.status, 0);
-    assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE");
-    assert.match(r.json().error.message, /has no `oats session` commands/);
-    assert.equal(readFileSync(log, "utf8").includes("session inspect --home"), false, "no session command was sent to a remote that cannot serve it");
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.json().ok, true);
+    assert.equal(r.json().result.home, home);
+    assert.equal(r.json().result.server, "build");
+    assert.match(readFileSync(log, "utf8"), new RegExp(`session inspect --home ${home.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")} --json`), "the inspect ran on the host against the snapshot's home");
     r = oats(env, ["session", "inspect", "--server", "build", "--instance", "ghost", "--json"]);
     assert.equal(r.json().error.code, "E_SNAPSHOT_UNKNOWN");
     r = oats(env, ["session", "attach", "--server", "build", "--instance", "dev-probe", "--print"]);

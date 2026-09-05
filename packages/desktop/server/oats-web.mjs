@@ -301,7 +301,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // Local execution support is proven here for a local spawn; a remote spawn
   // is held to what the REMOTE advertises by the router (checkRemoteSupport),
   // and the local guard only needs the remote surface itself.
-  if (server) locator.requireRemoteSupport?.(cliState, "spawn");
+  if (server) locator.requireRemoteSupport(cliState, "spawn");
   else locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
   // Relation flags are a NEWER v1 surface: older v1 CLIs ignore unknown
   // spawn options and report success, silently creating an UNRELATED
@@ -405,6 +405,7 @@ function cliStatus() {
     runtimes: cliState.runtimes || ["pi", "claude"],
     sessionBackends: cliState.sessionBackends || ["tmux"],
     launchOptions: cliState.launchOptions || [],
+    remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
     probedAt: cliState.probedAt || null,
