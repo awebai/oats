@@ -154,6 +154,11 @@ unregister after quiescence. The broker must tolerate this lifecycle order and
 missing homes, and persist pending hints until handled. Kernel session operations
 contain no aweb identity, credentials, stream or notification logic.
 
+The portable integration belongs to the official `oats.aweb` capability.
+The aweb development deployment currently selects its owned `aweb.identity`
+capability; that deployment-specific choice does not change the broker interface
+and needs equivalent registration glue when switched to session delivery.
+
 ## Shared permission setting
 
 Set `yolo: true` in an `oats-config.yaml` to apply it to that scope. The closest

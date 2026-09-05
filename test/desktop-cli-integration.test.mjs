@@ -15,7 +15,7 @@ const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
 /** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
-function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0 } = {}) {
+function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote } = {}) {
   const log = join(dir, "cli-calls.jsonl");
   const js = join(dir, "oats.cjs");
   const bin = join(dir, "oats");
@@ -23,13 +23,16 @@ function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probe
 const argv = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, cwd: process.cwd() }) + "\\n");
 if (argv[0] === "version" && argv.includes("--json")) {
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)} }));
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)} }));
   // Liar modes (review 0b83988): print a VALID probe, then exit nonzero or
   // REALLY hang past the probe timeout — either must be rejected by
   // discovery. if/else if throughout: fallthrough to the trailing exit(2)
   // previously made the "hanger" exit in 0.058s (review 6b90702).
   if (${JSON.stringify(probeHangMs)} > 0) { setTimeout(() => process.exit(0), ${JSON.stringify(probeHangMs)}); }
   else process.exit(${JSON.stringify(probeExit)});
+} else if (argv[0] === "session" && argv[1] === "inspect" && argv.includes("--json")) {
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { present: true } }));
+  process.exit(0);
 } else if (argv[0] === "spawn" && argv.includes("--json")) {
   const agent = argv[1];
   const tf = argv[argv.indexOf("--task-file") + 1];
@@ -324,5 +327,20 @@ test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches t
     const bn = await rn.json();
     assert.equal(bn.code, "E_SPAWN_FAILED");
     assert.equal(bn.error.length, 300, "non-ambiguity errors stay capped at 300 over HTTP");
+  } finally { proc.kill(); }
+});
+
+
+test("desktop server: remote capability survives discovery and HTTP projection into terminal preparation", async () => {
+  const { prepareRemoteTerm } = await import("../packages/desktop/remote-target.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "oats-cliremote-"));
+  const fake = fakeCli(dir, { remote: ["spawn", "retire", "status", "session"] });
+  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+  try {
+    await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const cli = await (await fetch(`http://127.0.0.1:${port}/api/cli`)).json();
+    const prepared = await prepareRemoteTerm(cli, { serverId: "test", instance: "dev-task" });
+    assert.deepEqual(prepared, { binary: fake.real, args: ["session", "attach", "--server", "test", "--instance", "dev-task"] });
+    assert.ok(fake.calls().some(c => c.argv.join(" ") === "session inspect --server test --instance dev-task --json"));
   } finally { proc.kill(); }
 });

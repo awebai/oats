@@ -199,16 +199,6 @@ export async function discover(io, probe) {
 }
 
 /** Old kernels silently treat unknown runtimes/backends as their defaults. */
-/** Remote routing is a NEWER v1 surface: an older CLI ignores --server and
- *  spawns LOCALLY while reporting success, the exact silent degradation the
- *  relation gate exists for (review f921f7d). Fail closed on the probe's
- *  advertisement, never on inference. Throws; there is no optional form. */
-export function requireRemoteSupport(cli, operation) {
-  if (!Array.isArray(cli?.remote) || !cli.remote.includes(operation)) {
-    throw Object.assign(new Error(`installed oats ${cli?.version || "(unknown)"} does not route ${operation} to a registered server; update the CLI`), { code: "unsupported-remote-operation" });
-  }
-}
-
 export function requireExecutionSupport(cli, runtime, backend, yolo) {
   if (yolo !== undefined && !cli.launchOptions?.includes("yolo")) throw Object.assign(new Error(`installed oats ${cli.version} does not support yolo overrides; update the CLI`), { code: "unsupported-launch-option" });
   if (!(cli.runtimes || ["pi", "claude"]).includes(runtime || "pi")) {
@@ -217,4 +207,9 @@ export function requireExecutionSupport(cli, runtime, backend, yolo) {
   if (!(cli.sessionBackends || ["tmux"]).includes(backend || "tmux")) {
     throw Object.assign(new Error(`installed oats ${cli.version} does not support session backend ${backend}; update the CLI`), { code: "unsupported-backend" });
   }
+}
+
+/** Remote routing arrived within API v1; older accepted CLIs lack it. */
+export function requireRemoteSupport(cli, operation) {
+  if (!cli?.remote?.includes(operation)) throw Object.assign(new Error(`installed oats ${cli?.version || "unknown"} does not support remote ${operation}; update the CLI`), { code: "unsupported-remote-operation" });
 }

@@ -283,10 +283,16 @@ test("relations floor also covers --relative-root: the last pre-addition release
   assert.equal(supportsRelations(RELATIONS_MIN.join(".")), true, "the floor release itself is capable");
 });
 
-test("requireRemoteSupport: fails closed on the probe's advertisement, never on inference; discover retains remote", () => {
+test("requireRemoteSupport: fails closed on the probe's advertisement, never on inference", () => {
   const cli = { ok: true, bin: "/x/oats", version: "0.22.2", runtimes: ["pi", "claude", "codex"], remote: ["spawn", "retire", "status", "session"] };
   assert.doesNotThrow(() => requireRemoteSupport(cli, "spawn"));
-  assert.throws(() => requireRemoteSupport({ ...cli, remote: undefined }, "spawn"), (e) => e.code === "unsupported-remote-operation" && /does not route spawn/.test(e.message));
-  assert.throws(() => requireRemoteSupport({ ...cli, remote: ["spawn"] }, "session"), /does not route session/);
-  assert.throws(() => requireRemoteSupport(undefined, "spawn"), /unsupported|does not route/);
+  assert.throws(() => requireRemoteSupport({ ...cli, remote: undefined }, "spawn"), (e) => e.code === "unsupported-remote-operation" && /remote spawn/.test(e.message));
+  assert.throws(() => requireRemoteSupport({ ...cli, remote: ["spawn"] }, "session"), /remote session/);
+  assert.throws(() => requireRemoteSupport(undefined, "spawn"), /unsupported|does not (route|support)/);
+});
+
+test("discovery retains remote routing capabilities for terminal preflight", async () => {
+  const io = { persisted: () => "/bin/oats", env: {}, isExecutableFile: () => true };
+  const cli = await discover(io, async () => ({ stdout: JSON.stringify({ ...PROBE(), remote: ["spawn", "session"] }) }));
+  assert.deepEqual(cli.remote, ["spawn", "session"]);
 });

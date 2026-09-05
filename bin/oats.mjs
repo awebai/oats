@@ -2852,7 +2852,7 @@ async function paneCmd() {
 function createCmd() {
   const yolo = yoloFlag();
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude|codex] [--model <m>] [--instructions-file <f>]");
+  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude|codex] [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]");
   const local = args.includes("--local");
   const startDir = dirFlag();
   // `create` BOOTSTRAPS a deployment: with no agents/ or local-agents/ yet,
@@ -3379,7 +3379,7 @@ Usage:
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
-      [--model <m>] [--instructions-file <f>]
+      [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
   oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
