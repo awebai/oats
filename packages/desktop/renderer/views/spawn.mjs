@@ -571,6 +571,11 @@ function openSpawnModal(s, a) {
         <label>Model (optional — defaults to the agent's definition${a.model ? `: ${escapeHtml(a.model)}` : ""})
           <input class="field fmodel" autocomplete="off" list="spawn-model-options"></label>
         <datalist id="spawn-model-options"></datalist>
+        <label>Run on
+          <select class="field fserver" aria-label="Execution server">
+            <option value="" selected>this machine</option>
+          </select></label>
+        <div class="fserverdesc" hidden>The instance is spawned by the server's own installed oats in its registered workspace (the same team repo there); this machine keeps only the route.</div>
         <div class="frow">
           <button class="act fspawn">Spawn</button>
           <button class="act fcancel">Cancel</button>
@@ -586,6 +591,21 @@ function openSpawnModal(s, a) {
   // and run with the privileged bridge. Assign the placeholder as a DOM
   // PROPERTY, never via innerHTML attribute text.
   modal.querySelector(".fmodel").placeholder = a.model || "runtime default";
+  // Registered servers (oats server add …) — offered only when the CLI can
+  // list them; a failure leaves "this machine" as the only choice.
+  (async () => {
+    try {
+      const d = await apiJson(s.ctx, "/api/servers");
+      const sel = modal.querySelector(".fserver");
+      if (!sel || !d?.servers?.length) return;
+      for (const srv of d.servers) {
+        const o = document.createElement("option");
+        o.value = srv.id; o.textContent = `${srv.label} (ssh ${srv.sshHost})`;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => { modal.querySelector(".fserverdesc").hidden = !sel.value; });
+    } catch { /* local only */ }
+  })();
   const f = modal; // field lookups span the whole modal
 
   // Model dropdown (datalist): advisory options from POST /api/models for
@@ -697,6 +717,7 @@ function openSpawnModal(s, a) {
     backend: () => f.querySelector(".fbackend").value,
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
+    server: () => f.querySelector(".fserver")?.value || "",
     clear: () => {
       f.querySelector(".fpurpose").value = ""; f.querySelector(".ftask").value = "";
       f.querySelector(".frelation").value = "unrelated";
@@ -817,6 +838,7 @@ export async function doSpawn(s, ui) {
       agentsRoot: a.agentsRoot,
       task: ui.task(),                       // "" = awaiting instructions (panel default)
       purpose: ui.purpose() || undefined,
+      serverId: ui.server?.() || undefined,
       relation: relation !== "unrelated" ? relation : undefined,
       relativeTo: relation !== "unrelated" ? relativeTo : undefined,
       // anchor root: ALWAYS sent with a related spawn when the picker knows
@@ -838,6 +860,16 @@ export async function doSpawn(s, ui) {
     // The panel snapshot lags spawns by up to a collector cycle; opening the
     // terminal before the instance is in /api/panel makes the shell resolve
     // "unknown instance". Wait for it, still gated by ownership + workspace.
+    // A remote spawn lives on the server, not in this workspace's roster:
+    // never wait for it here. Say where it is and how to reach it, and hand
+    // off; the remote projection and viewer are the execution-targets work.
+    if (d.server) {
+      if (!owns()) return;
+      ui.btn.disabled = false; ui.btn.textContent = "Spawn";
+      ui.status.classList?.remove("err");
+      ui.status.textContent = `Spawned ${d.instance} on server ${d.server}${d.target?.sshHost ? ` (ssh ${d.target.sshHost})` : ""} at ${d.home || "its remote home"}. It runs there, not in this roster; attach with: oats session attach --server ${d.server} --instance ${d.instance}`;
+      return;
+    }
     const current = () => owns() && myGen === workspaceGeneration();
     // Poll and open by COMPOSITE identity — the spawn result's home plus the
     // selected agent's root disambiguate a same-named twin (review @7dd1e7b).

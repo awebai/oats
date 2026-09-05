@@ -11,11 +11,6 @@
       "dir": "<base>/scope/agents/dev",
       "instances": [
         {
-          "instance": ".oats-retirement",
-          "home": "<base>/scope/agents/dev/instances/.oats-retirement",
-          "running": false
-        },
-        {
           "agent": "dev",
           "kind": "persistent",
           "instance": "dev-claude-checkout-kstub-mstub",

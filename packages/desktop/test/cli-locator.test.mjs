@@ -1,5 +1,6 @@
 // CLI locator (packages/desktop/cli-locator.mjs) — Desktop CLI API v1
 // discovery order, canonicalization, acceptance, and stable diagnostics.
+import { requireRemoteSupport } from "../cli-locator.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { delimiter } from "node:path";
@@ -280,6 +281,14 @@ test("relations floor also covers --relative-root: the last pre-addition release
     assert.ok(err && err.code === "cli-no-relations", `${v} fails closed before any relation/qualifier flag is emitted`);
   }
   assert.equal(supportsRelations(RELATIONS_MIN.join(".")), true, "the floor release itself is capable");
+});
+
+test("requireRemoteSupport: fails closed on the probe's advertisement, never on inference", () => {
+  const cli = { ok: true, bin: "/x/oats", version: "0.22.2", runtimes: ["pi", "claude", "codex"], remote: ["spawn", "retire", "status", "session"] };
+  assert.doesNotThrow(() => requireRemoteSupport(cli, "spawn"));
+  assert.throws(() => requireRemoteSupport({ ...cli, remote: undefined }, "spawn"), (e) => e.code === "unsupported-remote-operation" && /remote spawn/.test(e.message));
+  assert.throws(() => requireRemoteSupport({ ...cli, remote: ["spawn"] }, "session"), /remote session/);
+  assert.throws(() => requireRemoteSupport(undefined, "spawn"), /unsupported|does not (route|support)/);
 });
 
 test("discovery retains remote routing capabilities for terminal preflight", async () => {
