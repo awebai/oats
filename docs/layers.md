@@ -256,11 +256,12 @@ them.
 
 ## The capture contract (proposed)
 
-**Shipped, outside the slot model.** `packages/record` captures every
-Claude Code, Pi, and Codex session and the aw client logs into an
-append-only, content-addressed record with a search index
-(`oats setup`, `oats capture`, `oats recall`). It is not a capability and no
-lifecycle hook knows about it.
+**Shipped, outside the slot model.** On machines where `oats setup` has run,
+`packages/record` captures Claude Code, Pi, and Codex transcripts plus aw
+client logs. It skips sources matched by the local record's ignore list. It
+stores captured turns in an append-only, content-addressed record with a search
+index (`oats setup`, `oats capture`, `oats recall`). It is not a capability and
+no lifecycle hook knows about it.
 
 **Contract.** The format of ephemeral state. Two kinds satisfy it: an agent's
 own notes (its report of what mattered, today created by the knowledge

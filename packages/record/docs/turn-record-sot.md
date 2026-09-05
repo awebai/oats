@@ -8,7 +8,7 @@ aweb mail and chat messages into it. It is the contract implemented by the
 record tools (`capture`, `recall`, and the experimental tools over them); this
 package (`@awebai/turn-record`, in the oats repo) is the reference
 implementation, and the spec lives beside it on purpose: the record spans
-agent sessions from every harness, and the aweb server is one projected
+agent sessions from supported harnesses, and the aweb server is one projected
 source, not the record's home. The architecture decision it implements is
 `2026-08-18-turn-record-and-tools.md` in the strategy repo
 (github.com/awebai/strategy); the identity and messaging contracts it builds
