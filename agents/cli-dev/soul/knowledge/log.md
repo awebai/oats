@@ -1,6 +1,9 @@
 # Knowledge Log
 
 ## 2026-09-05
+* **Creation**: [gitlink-rows-must-leave-the-proof-set](/lessons/gitlink-rows-must-leave-the-proof-set.md) records that mode 160000 gitlink ids belong to nested repositories, so superproject object-presence proofs must exclude them and leave submodule restoration to nested-repository materialization.
+* **Creation**: [batch-existence-check-is-a-measurement](/lessons/batch-existence-check-is-a-measurement.md) records that batch-checking the destination clone's staged object ids measures preservation directly, repairs only missing objects, and re-measures the whole non-gitlink set before installing the index.
+* **Creation**: [assertion-message-claimed-an-unchecked-ordering](/lessons/assertion-message-claimed-an-unchecked-ordering.md) records that assertion messages are part of a test's claim and must not describe ordering unless the expression checks that ordering.
 * **Creation**: [every-failed-retry-needs-one-deadline](/lessons/every-failed-retry-needs-one-deadline.md) records that every failed lock-acquire branch must pass through the same deadline and sleep, and that directory/dangling-symlink lock shapes reproduce the escaped retry paths deterministically.
 * **Creation**: [pid-liveness-fails-toward-refusing-to-write](/decisions/pid-liveness-fails-toward-refusing-to-write.md) records that RecordStore pid-liveness locking accepts pid-reuse false positives and resolves uncertainty by timing out rather than restoring an age ceiling that can steal live locks.
 * **Creation**: [ownership-token-lock-beats-threshold-ordering](/lessons/ownership-token-lock-beats-threshold-ordering.md) records that comparing lock timeout and stale thresholds cannot prove safety when their clocks start from different events; owner tokens and ownership-checked release carry the guarantee.
@@ -244,6 +247,8 @@
 * **Update**: [spawn-lineage-explicit-only](/decisions/spawn-lineage-explicit-only.md) records the grep-all-Markdown rule for migrating agent-facing `oats spawn` recipes when spawn semantics change.
 * **Creation**: [spawn-lineage-explicit-only](/decisions/spawn-lineage-explicit-only.md) records explicit-only spawn parentage and adds the Decisions section to the bundle index.
 * **Creation**: [task-flag-boolean-crash](/lessons/task-flag-boolean-crash.md) records the missing value-carrying flag boolean foot-gun behind the `--task` spawn crash.
+* **Creation**: [snapshot-before-registry-is-per-command](/lessons/snapshot-before-registry-is-per-command.md), [dispatch-allowlist-strands-its-own-guard](/lessons/dispatch-allowlist-strands-its-own-guard.md) and [identity-key-fields-shape-the-diagnostic](/lessons/identity-key-fields-shape-the-diagnostic.md) record the three generalizations behind the servers-roster review findings F1, F2 and F3 (5a49b3b), written by the reviewer and promoted by the coordinator because the reviewer's home was retired before a harvest.
+* **Creation**: [whitelist-normalizer-drops-new-probe-fields](/lessons/whitelist-normalizer-drops-new-probe-fields.md) and [recording-a-disambiguator-is-not-passing-it](/lessons/recording-a-disambiguator-is-not-passing-it.md) record the two boundary-whitelist defects the round-2 reviewer of servers-roster (aee50c6) found; promoted by the coordinator from the reviewer's mail.
 
 ## 2026-07-21
 
