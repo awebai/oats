@@ -30,7 +30,7 @@ if (a.startsWith("team join")) {
 }
 if (a.startsWith("init")) process.exit(0);
 if (a === "version") { console.log(process.env.FAKE_AW_VERSION || "aw 1.34.11"); process.exit(0); }
-if (a.startsWith("workspace delete")) { if (a.endsWith("--json")) console.log(JSON.stringify({ alias_released: process.env.FAKE_ALIAS_RELEASED !== "false", reason: process.env.FAKE_ALIAS_RELEASED === "false" ? "certificate still active" : "revoked" })); process.exit(0); }
+if (a.startsWith("workspace delete")) { if (a.endsWith("--json")) console.log(JSON.stringify({ alias: "probe", alias_released: process.env.FAKE_ALIAS_RELEASED !== "false", alias_released_reason: process.env.FAKE_ALIAS_RELEASED === "false" ? "no_workspace_credential" : "revoked" })); process.exit(0); }
 if (a.startsWith("workspace connect")) process.exit(0);
 if (a.startsWith("check --online")) process.exit(0);
 if (a.startsWith("heartbeat")) process.exit(0);
@@ -112,8 +112,8 @@ test("retire on aw 1.36.1: aliasReusable follows aw workspace delete --json (rel
     assert.equal(r.doc.warning, undefined, "a released alias needs no warning");
     assert.match(readFileSync(join(base, "aw.log"), "utf8"), /workspace delete probe --json/);
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.1", FAKE_ALIAS_RELEASED: "false" });
-    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "certificate still active" });
-    assert.match(r.doc.warning, /not released \(certificate still active\).*fresh --purpose/);
+    assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential" });
+    assert.match(r.doc.warning, /not released \(no_workspace_credential\).*fresh --purpose/);
     // Below the floor the pre-abim report stands, and --json is never sent.
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.0" });
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false });

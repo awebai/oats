@@ -452,7 +452,9 @@ if (event === "spawn") {
       const raw = run(["aw", "workspace", "delete", meta.alias, "--json"], home);
       let doc; try { doc = JSON.parse(raw); } catch { doc = undefined; }
       const released = doc?.alias_released === true;
-      const reason = typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
+      // aw 1.36.1 prints the cause as alias_released_reason (workspace.go,
+      // workspace_self_retire.go); `reason` is tolerated for a later rename.
+      const reason = typeof doc?.alias_released_reason === "string" ? doc.alias_released_reason : typeof doc?.reason === "string" ? doc.reason : (doc ? "unstated" : "no JSON answer");
       out({ meta: { retired: true, aliasReusable: released, aliasReason: reason }, ...(released ? {} : { warning: `oats-aweb: workspace "${meta.alias}" deleted but its alias was not released (${reason}); spawn successors with a fresh --purpose until it is` }) });
     }
     run(["aw", "workspace", "delete", meta.alias], home);
