@@ -279,6 +279,7 @@
       },
       "requiredHooks": [],
       "environment": [],
+      "environmentNamespaces": [],
       "missingRequires": [],
       "trust": {
         "trusted": true,
@@ -301,6 +302,7 @@
       "environment": [
         "GOLDEN_BROKER_ENDPOINT"
       ],
+      "environmentNamespaces": [],
       "missingRequires": [],
       "trust": {
         "trusted": true,
