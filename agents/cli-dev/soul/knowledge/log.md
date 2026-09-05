@@ -249,6 +249,7 @@
 * **Creation**: [task-flag-boolean-crash](/lessons/task-flag-boolean-crash.md) records the missing value-carrying flag boolean foot-gun behind the `--task` spawn crash.
 * **Creation**: [snapshot-before-registry-is-per-command](/lessons/snapshot-before-registry-is-per-command.md), [dispatch-allowlist-strands-its-own-guard](/lessons/dispatch-allowlist-strands-its-own-guard.md) and [identity-key-fields-shape-the-diagnostic](/lessons/identity-key-fields-shape-the-diagnostic.md) record the three generalizations behind the servers-roster review findings F1, F2 and F3 (5a49b3b), written by the reviewer and promoted by the coordinator because the reviewer's home was retired before a harvest.
 * **Creation**: [whitelist-normalizer-drops-new-probe-fields](/lessons/whitelist-normalizer-drops-new-probe-fields.md) and [recording-a-disambiguator-is-not-passing-it](/lessons/recording-a-disambiguator-is-not-passing-it.md) record the two boundary-whitelist defects the round-2 reviewer of servers-roster (aee50c6) found; promoted by the coordinator from the reviewer's mail.
+* **Creation**: [remote-roster-widens-local-file-guard](/lessons/remote-roster-widens-local-file-guard.md) and [finding-fixed-on-one-surface-only](/lessons/finding-fixed-on-one-surface-only.md) record the round-2 Desktop projection review (b73918f) findings B1 and B3; promoted by the coordinator from the reviewer's mail.
 
 ## 2026-07-21
 
