@@ -1,5 +1,6 @@
 // Remote terminal addressing is an installed-CLI operation, never a renderer
 // supplied SSH command, executable path, socket or server registration.
+import { requireRemoteSupport } from "./cli-locator.mjs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 const exec = promisify(execFile);
@@ -9,7 +10,9 @@ export function remoteTargetKey(remote) {
     || !/^[a-z0-9][a-z0-9-]*$/.test(remote?.instance || "")) throw new Error("invalid remote terminal target");
   return JSON.stringify(["remote", remote.serverId, remote.instance]);
 }
-export async function prepareRemoteTerm(bin, remote, { run = exec } = {}) {
+export async function prepareRemoteTerm(cli, remote, { run = exec } = {}) {
+  requireRemoteSupport(cli, "session");
+  const bin = cli.bin;
   remoteTargetKey(remote);
   const address = ["--server", remote.serverId, "--instance", remote.instance];
   const { stdout } = await run(bin, ["session", "inspect", ...address, "--json"], {
@@ -34,4 +37,13 @@ export function createTerminalPrepareGate(registry, max) {
     },
     pendingCount() { return pending.size; },
   };
+}
+
+// Preserve the operator's SSH agent and PATH, but not local terminal nesting.
+export function remoteTerminalEnvironment(source = process.env) {
+  const env = { ...source };
+  delete env.TMUX;
+  delete env.HERDR_SESSION;
+  delete env.HERDR_SOCKET_PATH;
+  return env;
 }

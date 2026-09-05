@@ -191,7 +191,7 @@ export async function discover(io, probe) {
         continue;
       }
       const a = acceptProbe(payload);
-      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}) };
+      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
       tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
     }
   }
@@ -207,4 +207,9 @@ export function requireExecutionSupport(cli, runtime, backend, yolo) {
   if (!(cli.sessionBackends || ["tmux"]).includes(backend || "tmux")) {
     throw Object.assign(new Error(`installed oats ${cli.version} does not support session backend ${backend}; update the CLI`), { code: "unsupported-backend" });
   }
+}
+
+/** Remote routing arrived within API v1; older accepted CLIs lack it. */
+export function requireRemoteSupport(cli, operation) {
+  if (!cli?.remote?.includes(operation)) throw Object.assign(new Error(`installed oats ${cli?.version || "unknown"} does not support remote ${operation}; update the CLI`), { code: "unsupported-remote-operation" });
 }

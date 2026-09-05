@@ -281,3 +281,9 @@ test("relations floor also covers --relative-root: the last pre-addition release
   }
   assert.equal(supportsRelations(RELATIONS_MIN.join(".")), true, "the floor release itself is capable");
 });
+
+test("discovery retains remote routing capabilities for terminal preflight", async () => {
+  const io = { persisted: () => "/bin/oats", env: {}, isExecutableFile: () => true };
+  const cli = await discover(io, async () => ({ stdout: JSON.stringify({ ...PROBE(), remote: ["spawn", "session"] }) }));
+  assert.deepEqual(cli.remote, ["spawn", "session"]);
+});
