@@ -767,6 +767,36 @@ test("CLI activation writes stable global/type/soul bindings without activating 
   assert.equal(resolveOatsConfig(repo, "reviewer").capabilities.some((c) => c.id === "oats.okf"), true);
 });
 
+test("oats use --soul on a layer set to none creates a targeted binding with global false; an existing untargeted layer keeps its implicit global when narrowed", () => {
+  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
+  let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  r = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  write(join(repo, "agents", "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
+  write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
+  // The layer starts as an explicit none.
+  r = spawnSync(process.execPath, [CLI, "use", "none", "--layer", "knowledge", "--dir", repo], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /knowledge:\s*none/);
+  // A soul-targeted first binding replaces none WITHOUT becoming global.
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--soul", "dev", "--settings", "harvest-runtime=claude", "--dir", repo], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  const cfg = readFileSync(join(repo, "oats-config.yaml"), "utf8");
+  assert.match(cfg, /global:\s*false/, "a binding created from none is not global");
+  assert.doesNotMatch(cfg, /global:\s*true/);
+  const okf = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
+  assert.equal(okf?.settings?.["harvest-runtime"], "claude");
+  // An existing untargeted (implicitly global) layer keeps everyone when narrowed by a soul.
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--dir", repo], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/\n\s*global:\s*(true|false)\n/, "\n").replace(/\n\s*souls:\n\s*dev:\s*true\n/, "\n"));
+  assert.doesNotMatch(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /global:/);
+  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--soul", "dev", "--dir", repo], { encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /global:\s*true/, "an existing implicit-global entry is materialized as global true before narrowing");
+});
+
 test("--settings accepts multiple pairs per flag, repeated flags, and rejects malformed pairs", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
