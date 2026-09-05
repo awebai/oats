@@ -16,10 +16,13 @@ the remote's instance rows keyed on instance name only, so with twins it
 marked whichever agent the remote enumerated first as `savedRoute: true` and
 consumed the snapshot there. The twin that actually owned the route came out
 `savedRoute: false`, read-only in the UI. A Desktop that gates lifecycle on
-`savedRoute` therefore offered retire and harvest on the row that had no
-route, and the CLI then correctly acted on the other home. Both layers
-behaved exactly as specified and the pair retired the instance the operator
-was not looking at.
+`savedRoute` therefore offered actions on the row that had no route. What
+happens next differs by action: an exact-home retire compares the offered
+row's home with the saved route and refuses it (`E_HOME_MISMATCH`), so the
+guard does catch the mismatch there; but the terminal and harvest routes
+addressed the saved route by NAME, so from the wrong row they reached the
+other home, the one the operator was not looking at. Both layers behaved
+exactly as specified, and the offer was still wrong.
 
 Two things generalise:
 
@@ -29,9 +32,13 @@ Two things generalise:
   elsewhere is now suspect. Grep the identifier the guard disambiguates by
   (here: instance name) and check each use for whether it needs the
   disambiguator too.
-- Fail-closed at the action does not rescue a wrong offer. The `--home`
-  check cannot detect this, because by the time it runs the operator has
-  already chosen a row and the home it is handed is internally consistent.
+- Fail-closed at the action does not rescue a wrong offer. An exact-home
+  check refuses the mismatched retire, which is the right outcome, but the
+  operator is left with a refusal on the row they were shown and no action
+  on the row that owns the route; and any route that still addresses by
+  name (terminal, harvest) has nothing to refuse with and silently targets
+  the other home. The fix belongs in the projection (join by name and home)
+  and in every route (address by home).
 
 The same review found the sibling case: the store the projection reads is
 itself keyed by (server, instance name), so a second routed spawn of a
