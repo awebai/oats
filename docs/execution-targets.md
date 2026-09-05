@@ -113,10 +113,18 @@ qualify remote support.
 Run on the execution host:
 
 ```sh
+oats session attach --home /absolute/instance
 oats session inspect --home /absolute/instance --json
 oats session input --home /absolute/instance --text-file /path/to/message --json
 printf '%s' 'Check your pending work.' | oats session input --home /absolute/instance --json
 ```
+
+`attach` is interactive and does not accept `--json`. It validates the saved
+endpoint on the execution host, then opens a Herdr terminal viewer or an
+isolated tmux session linked to that agent's window alone. Closing its terminal
+cleans the viewer without stopping the agent; retiring the agent ends the viewer
+instead of switching it to a sibling. This host-local command is also the
+remote Desktop attachment seam over an SSH PTY.
 
 Input accepts UTF-8 text up to 256 KiB, with no NUL bytes. The CLI uses the
 independent lifecycle receipt and refuses metadata disagreement. Tmux uses

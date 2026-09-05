@@ -31,7 +31,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -2815,17 +2815,22 @@ function retireCmd() {
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
 }
 
-function sessionCmd() {
+async function sessionCmd() {
   try {
     const home = flag("home");
     let result;
+    if (args[1] === "attach") {
+      if (JSON_MODE) throw Object.assign(new Error("session attach is interactive; omit --json"), { code: "E_BAD_ARGS" });
+      process.exitCode = await attachInstanceSession(home);
+      return;
+    }
     if (args[1] === "inspect") result = inspectInstanceSession(home);
     else if (args[1] === "input") {
       const file = flag("text-file");
       if (file === true) throw Object.assign(new Error("--text-file needs a path"), { code: "E_BAD_ARGS" });
       if (!file && process.stdin.isTTY) throw Object.assign(new Error("provide --text-file or pipe input on stdin"), { code: "E_BAD_ARGS" });
       result = inputInstanceSession(home, readFileSync(file || 0, "utf8"));
-    } else throw Object.assign(new Error("usage: oats session inspect|input --home /absolute/home [--text-file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach --home /absolute/home [--text-file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
 }
@@ -3177,7 +3182,7 @@ else if (cmd === "pane") await paneCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // Same rule as the inner catch: a typed CLI failure surfaces with its own code
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
-else if (cmd === "session") sessionCmd();
+else if (cmd === "session") await sessionCmd();
 else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "create") createCmd();
@@ -3203,7 +3208,7 @@ Usage:
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--instructions-file <f>]
-  oats session inspect|input --home <absolute-home> [--text-file <path>] [--json]
+  oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
   oats spawn <agent> [--task <text>]         spawn an instance (tmux; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
       [--parent <instance>]                 --def-file creates a local agent;
