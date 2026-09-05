@@ -413,20 +413,7 @@ export class RecordIndex {
   // Text documents for one turn. Mail/chat: one doc. Session: one doc per
   // conversational event extracted from the transcript blob.
   extractText(turn) {
-    if (turn.kind === "note" && turn.body?.segment) return []; // dedicated role "segment" row
-    if (turn.kind === "mail" || turn.kind === "chat" || turn.kind === "note") {
-      const subject = turn.body?.subject ?? "";
-      const text = turn.body?.text ?? "";
-      const joined = subject ? subject + "\n" + text : text;
-      return joined.trim() ? [{ loc: "", role: turn.kind, text: joined }] : [];
-    }
-    if (turn.kind === "session" && typeof turn.body?.line === "string") {
-      const loc = `line:${turn.provenance?.origin?.line ?? 0}`;
-      return extractSessionTextFor(turn.provenance?.source, Buffer.from(turn.body.line, "utf8")).map(
-        (d) => ({ ...d, loc }),
-      );
-    }
-    return [];
+    return extractTurnText(turn);
   }
 
   // FTS query with optional filters. Returns rows with turn metadata and a
@@ -500,6 +487,24 @@ export class RecordIndex {
       docs: Number(row.docs ?? 0),
     };
   }
+}
+
+// Journal text extraction is independent of the derived search database.
+export function extractTurnText(turn) {
+  if (turn.kind === "note" && turn.body?.segment) return []; // dedicated role "segment" row
+  if (turn.kind === "mail" || turn.kind === "chat" || turn.kind === "note") {
+    const subject = turn.body?.subject ?? "";
+    const text = turn.body?.text ?? "";
+    const joined = subject ? subject + "\n" + text : text;
+    return joined.trim() ? [{ loc: "", role: turn.kind, text: joined }] : [];
+  }
+  if (turn.kind === "session" && typeof turn.body?.line === "string") {
+    const loc = `line:${turn.provenance?.origin?.line ?? 0}`;
+    return extractSessionTextFor(turn.provenance?.source, Buffer.from(turn.body.line, "utf8")).map(
+      (d) => ({ ...d, loc }),
+    );
+  }
+  return [];
 }
 
 // Claude Code text extraction, re-exported for compatibility; the
