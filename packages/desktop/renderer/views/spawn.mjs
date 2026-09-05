@@ -843,6 +843,16 @@ export async function doSpawn(s, ui) {
     // The panel snapshot lags spawns by up to a collector cycle; opening the
     // terminal before the instance is in /api/panel makes the shell resolve
     // "unknown instance". Wait for it, still gated by ownership + workspace.
+    // A remote spawn lives on the server, not in this workspace's roster:
+    // never wait for it here. Say where it is and how to reach it, and hand
+    // off; the remote projection and viewer are the execution-targets work.
+    if (d.server) {
+      if (!owns()) return;
+      ui.btn.disabled = false; ui.btn.textContent = "Spawn";
+      ui.status.classList?.remove("err");
+      ui.status.textContent = `Spawned ${d.instance} on server ${d.server}${d.target?.sshHost ? ` (ssh ${d.target.sshHost})` : ""} at ${d.home || "its remote home"}. It runs there, not in this roster; attach with: oats session attach --server ${d.server} --instance ${d.instance}`;
+      return;
+    }
     const current = () => owns() && myGen === workspaceGeneration();
     // Poll and open by COMPOSITE identity — the spawn result's home plus the
     // selected agent's root disambiguate a same-named twin (review @7dd1e7b).

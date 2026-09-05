@@ -3185,7 +3185,7 @@ function serverRouteCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
-  if (flag("dir") !== undefined) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  if (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir="))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   // Interactive viewer: `oats session attach --server <id> --instance <name>`
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
@@ -3205,7 +3205,7 @@ function serverRouteCmd() {
     }
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
-    try { route = attachArgv(id, addr); }
+    try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
     if (args.includes("--print")) { console.log(route.argv.map(shellQuote).join(" ")); return; }
     const r = spawnSyncProc(route.argv[0], route.argv.slice(1), { stdio: "inherit" });
@@ -3233,9 +3233,10 @@ function serverRouteCmd() {
   catch (e) { bail(e.code || "E_SSH", e.message); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
-  if (JSON_MODE) { console.log(JSON.stringify(envelope, null, 2)); if (!envelope.ok) process.exit(1); return; }
-  if (!envelope.ok) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
+  if (JSON_MODE) { console.log(JSON.stringify(envelope, null, 2)); if (!envelope.ok || envelope.result?.rollbackIncomplete) process.exit(1); return; }
+  if (!envelope.ok && !(cmd === "retire" && envelope.result)) die(`${id}: ${envelope.error?.message || "remote command failed"} (${envelope.error?.code || "E_REMOTE"})`);
   const r = envelope.result;
+  const target = r.target || {};
   if (cmd === "spawn") {
     console.log(`Spawned ${r.instance} on ${id} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? ` — tmux window "${r.tmux?.window}" on ${r.target.sshHost}` : " — not launched"}`);
     console.log(`  remote home: ${r.home}`);
@@ -3243,8 +3244,19 @@ function serverRouteCmd() {
     for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
     console.log(`  attach: ssh -t ${r.target.sshHost} tmux attach -t ${r.tmux?.session || "oats"}`);
   } else if (cmd === "retire") {
+    // Everything the local retireCmd tells the operator, for a remote home
+    // they cannot see: forced-incomplete state now theirs to remove by hand
+    // there, work preserved there and where, and incomplete cleanup.
+    if (r.forcedIncomplete) {
+      console.error(`Removed ${r.retired} on ${id} under --force with cleanup INCOMPLETE — this external state was NOT cleaned up and is now yours to remove by hand on ${target.sshHost}:`);
+      for (const f of r.forcedIncomplete) console.error(`  ${f}`);
+    }
     console.log(`Retired ${r.retired} on ${id}${r.deferred ? " (deferred completion scheduled there)" : ""}${r.rollbackIncomplete ? " — cleanup INCOMPLETE on the server, home retained there" : ""}`);
-    if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); process.exit(1); }
+    for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
+      console.log(`Work that was not committed has been preserved on ${target.sshHost}: ${(recovery.classes || []).join(", ")}`);
+      console.log(`  ${recovery.path}`);
+    }
+    if (r.rollbackIncomplete) { for (const f of r.rollbackIncomplete) console.error(`  ${f}`); console.error(`Fix the cause there and re-run \`oats retire ${r.retired} --server ${id}\`.`); process.exit(1); }
   } else {
     console.log(`oats status — server ${id} (ssh ${r.target.sshHost}, workspace ${r.target.workspace})\n`);
     for (const a of r.agents || []) {
@@ -3320,10 +3332,11 @@ Usage:
       [--path <dir:dir>]                    --path = dirs prepended to the remote PATH, e.g. ~/.local/bin)
   oats server list|remove <id>|check <id>    registry; check = reachability + version, no mutation
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
-                                            (same flags, same envelope; a route snapshot per
+                                            (same flags, same envelope; the saved route per
                                             remote instance lives under ~/.oats/remote/)
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
-      --instance <name> | --home <abs>       remote instance, using the saved route (--print shows attach)
+      --instance <name> | --home <abs>       remote instance over its saved route (--print shows
+                                            attach); the server needs oats 0.22.2 or later
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)

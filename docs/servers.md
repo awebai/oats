@@ -4,7 +4,8 @@ A **server** is another machine with its own installed OATS, reached over an
 OpenSSH host alias. Registering one lets `oats spawn`, `oats retire` and
 `oats status` run there with the same flags and the same JSON envelope as
 locally, and lets the Desktop offer it at spawn time. The contract behind
-this is [execution targets](execution-targets.md).
+this is the execution-targets contract (`docs/execution-targets.md`, landing
+with the transport work).
 
 ## Register
 
@@ -41,14 +42,17 @@ oats retire dev-fix-123 --server build
 The remote kernel does the work in its registered workspace: composition,
 worktree, identity, launch, retirement. The local side only routes: a local
 `--task-file` travels as text, every argument is quoted for the remote login
-shell, and the remote's version, envelope and advertised support are checked
-before any mutation. A spawn that asks for a runtime the remote does not
-advertise (including the soul's own default, resolved from the remote roster),
-a session backend it lacks, or a launch option such as `--yolo` it does not
-know is refused with `E_REMOTE_INCOMPATIBLE` naming what it does support; a
-remote that advertises nothing is treated as a 0.22.1 kernel (pi and claude,
-tmux, no options). `--dir` and `--server` do not combine; the remote workspace
-comes from the registration.
+shell, and the remote's version and envelope are checked before either
+mutation (spawn and retire). A spawn is also held to what the remote
+advertises: a runtime it does not list (including the soul's own default as
+the remote roster reports it), a session backend it lacks, or a launch option
+such as `--yolo` it does not know is refused with `E_REMOTE_INCOMPATIBLE`
+saying what was established. A remote that advertises nothing (any kernel
+before 0.22.2) is assumed to run pi and claude on tmux with no options, and
+the refusal says so rather than claiming the remote lacks the feature; a soul
+the remote roster does not list with a runtime is validated by the remote
+kernel itself at spawn. `--dir` and `--server` do not combine; the remote
+workspace comes from the registration.
 
 ```bash
 oats session attach --server build --instance dev-fix-123   # viewer through an ssh PTY
@@ -56,7 +60,10 @@ oats session attach --server build --instance dev-fix-123   # viewer through an 
 
 The viewer runs the execution host's own `oats session attach` (Herdr terminal
 or an isolated tmux linked viewer) over `ssh -t`, addressed by the saved route:
-the remote binary and path come from the snapshot, never from the caller.
+the remote binary and path come from the snapshot, never from the caller. The
+`oats session` commands ship in kernel 0.22.2: against an older server both
+session routes refuse with `E_REMOTE_INCOMPATIBLE` before connecting a viewer,
+and `ssh -t <host> tmux attach -t oats` remains the way in.
 
 ## What this machine keeps
 
@@ -70,14 +77,18 @@ appends this machine's snapshots for that server.
 
 ## Limits
 
-- Routed: `spawn`, `retire`, `status`, `session inspect` (the execution
-  host's envelope, relayed; a Desktop preflight before attaching) and
-  `session attach`. Session input runs on the execution host, where the wake
-  broker calls it.
+- Routed: `spawn`, `retire`, `status`, and, against a 0.22.2 or later
+  server, `session inspect` (the execution host's envelope, relayed; a Desktop
+  preflight before attaching) and `session attach`. Session input runs on the
+  execution host, where the wake broker calls it.
   Desktop projection of remote instances and remote viewer attachment are in
   progress on the execution-targets work.
 - No Git over SSH: repository operations always run on the server, by its
   kernel, in its workspace.
-- A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`); the record
-  commands (`capture`, `recall`) need Node 22.5+ there for `node:sqlite`, which
+- A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`) for spawn,
+  retire and status, and 0.22.2 for the session routes; the record commands
+  (`capture`, `recall`) need Node 22.5+ there for `node:sqlite`, which
   lifecycle routing does not.
+- After a remote spawn the Desktop reports the server and remote home; the
+  instance does not appear in the local roster (projection of remote instances
+  is the next step of the execution-targets work).
