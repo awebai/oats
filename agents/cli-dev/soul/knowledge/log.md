@@ -1,6 +1,8 @@
 # Knowledge Log
 
 ## 2026-09-05
+* **Creation**: [help-allowlist-mirrors-the-dispatch-chain](/lessons/help-allowlist-mirrors-the-dispatch-chain.md) records that `KERNEL_COMMANDS` hand-copies the `cmd === "..."` dispatch chain for `--help`, so a future command silently regains side-effecting help unless a test asserts set equality.
+* **Creation**: [positive-control-proves-a-non-execution-test](/lessons/positive-control-proves-a-non-execution-test.md) records that absence-of-side-effect tests need a same-fixture positive control, because a broken marker executable and a working non-execution guard produce the same negative observation.
 * **Creation**: [gitlink-rows-must-leave-the-proof-set](/lessons/gitlink-rows-must-leave-the-proof-set.md) records that mode 160000 gitlink ids belong to nested repositories, so superproject object-presence proofs must exclude them and leave submodule restoration to nested-repository materialization.
 * **Creation**: [batch-existence-check-is-a-measurement](/lessons/batch-existence-check-is-a-measurement.md) records that batch-checking the destination clone's staged object ids measures preservation directly, repairs only missing objects, and re-measures the whole non-gitlink set before installing the index.
 * **Creation**: [assertion-message-claimed-an-unchecked-ordering](/lessons/assertion-message-claimed-an-unchecked-ordering.md) records that assertion messages are part of a test's claim and must not describe ordering unless the expression checks that ordering.
