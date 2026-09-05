@@ -193,10 +193,12 @@ test("engine failures are loud, typed errors", (t) => {
     () => selectClothes(store, index, { task: "widget", engine: null }),
     LibrarianError,
   );
-  assert.throws(() => runEngine("false", "prompt"), /engine exited/);
-  assert.throws(() => runEngine("echo no json here", "prompt"), /no JSON object/);
+  // Consume the prompt before exiting so these fixtures exercise the intended
+  // result, rather than racing the parent's stdin write with an early exit.
+  assert.throws(() => runEngine("cat >/dev/null; false", "prompt"), /engine exited/);
+  assert.throws(() => runEngine("cat >/dev/null; echo no json here", "prompt"), /no JSON object/);
   assert.throws(
-    () => selectClothes(store, index, { task: "widget", engine: 'echo "{\\"nope\\": 1}"' }),
+    () => selectClothes(store, index, { task: "widget", engine: 'cat >/dev/null; echo "{\\"nope\\": 1}"' }),
     /missing selected/,
   );
 });
