@@ -44,12 +44,27 @@ of continuing seats.
 
 | Scope | Starting point | Required disposition |
 | --- | --- | --- |
-| `~/awebai/oats` | Published OATS workers qualified; standing coordinator and lead homes remain outside the managed lifecycle | Include those standing sessions, not just future workers |
-| `~/cjr` | Config/packages converted; seven existing identities in legacy homes; no proven cjr harvest | Fresh specialist/reviewer identities with work handovers; preserve Merlin's DID and address |
-| `~/awebai/aweb` | Config installed; four aweb-oss souls discoverable; coordinator and frontend remain legacy sessions | Cover child repositories and required skills, not only aweb-oss |
-| `~/tsm` | Five reported active legacy seats; no OATS config/soul setup | Define souls and retained knowledge, then migrate with the team owner |
-| `~/prj/beadhub-all`, `~/prj/docflow` | Active sessions reported; team and lifecycle mapping need confirmation | Include in inventory; do not exclude based on directory shape |
-| `~/awebai/ai.aweb` and archived/offline homes elsewhere | Legacy homes found; continuing need unconfirmed | Explicitly retain, migrate or retire with owner agreement; do not restart archives automatically |
+| `~/awebai/oats` | Live Claude coordinator and Codex lead; managed review workers also running | Oats owns coordinator handover; lead owns lead handover; preserve established identities |
+| `~/cjr` | Knowledge/config preparation landed at `5afb3e8b`; managed developer pilot running; legacy Merlin and Minerva observed live | Merlin owns pilot and safe handovers; preserve his DID and address; harvest acceptance remains pending |
+| `~/awebai/aweb` | Live Claude coordinator and frontend in legacy homes | Oats owns coordinator handover; lead coordinates frontend with aweb after its current work; preserve identities and cover child repositories |
+| `~/tsm` | Five live seats: Zeus, Prometeo, Argos, Themis on Claude; Hermes on Codex. No OATS config/souls found | Lead coordinates with Zeus; cross-team handoff currently rejected by local identity routing; establish a supported route, then prepare souls/knowledge and safe handovers |
+| `~/prj/beadhub-all` | Live Codex session, despite stale offline roster | Lead sent handover request to Beadhub; preserve its established identity and current work; no billing/production changes |
+| `~/prj/docflow` | Live Claude session; credential workspace alias `alice` on `docflow:juan.aweb.ai` | Lead and Merlin establish responsible owner and handover; that alias is not proof of a globally routable address |
+| `ai.aweb` on `aweb-agents` | Athena last seen 53 days ago; remote legacy home exists in inventory | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
+| `~/awebai/demo-aweb/bob` | Live Pi demo | Aweb owns safe stop and archival disposition; it is not an operating-team migration |
+| `~/.turn-record` | Live Pi capture service under launchd | Retain as infrastructure; qualify record capture separately from standing seats |
+
+The live inventory above was checked on 2026-09-05 using harness process
+working directories, without interrupting them. Old aweb presence timestamps
+are insufficient to decide whether a harness is alive. A migration plan or
+new soul directory does not establish that the corresponding seat moved.
+
+Grace's missing old local path and the offline retirement, docs, bertha,
+cowork, federation, membership-review, aazb-reviewer, id-bugs, billing and
+claweb entries are archival investigations, not launch requests. Preserve
+homes until their work and authority have a recorded disposition. Do not
+bulk-delete aliases based on roster age; certificate cleanup belongs to the
+aweb lifecycle fix and its verified recovery procedure.
 
 ## Shared prerequisites and owners
 
@@ -116,6 +131,19 @@ identities are a reproduction. Independently verify coordination cleanup,
 claims and certificate state. Admin cleanup is a recovery procedure, not
 proof of automatic retirement. This gates temporary-worker completion;
 adopted standing executions instead must preserve their durable identity.
+
+### Recover standing executions after reboot
+
+Tmux and Herdr keep agents alive when a viewer disconnects; a machine reboot
+ends those executions. Replaying `instance.json.command` manually does not
+refresh OATS's independent session receipt and is not a supported recovery.
+The first planned recovery reuses the tested retained-authority handover:
+preserve the stopped home, knowledge and identity, then create its replacement
+with a new receipt and one active holder. That capability binding is not built
+yet; until qualified, rebooted standing seats remain down. A terminal-only
+restart operation may follow; it must refresh the receipt without rerunning
+resource-provisioning hooks. No automatic supervisor is required for the first
+supported manual recovery.
 
 ### Include noncoding learning and all actual runtimes
 
