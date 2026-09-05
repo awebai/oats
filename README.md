@@ -69,50 +69,25 @@ harnesses, and this repository's own designs.
 
 ## Quick start
 
-Requires Node.js 22 or newer and tmux.
+Follow [Run your first OATS team](docs/first-team.md) for the tested path:
+install the kernel and runtimes, adopt a development configuration, select
+an available harvester model, connect your team, and complete a real task
+through review, harvest, and retirement.
 
 ```bash
 npm install -g @awebai/oats@latest
-pi install npm:@awebai/oats-pi@latest   # only if you run agents in Pi
-```
-
-Initialize a workspace and check it:
-
-```bash
-cd my-workspace
-oats init
-oats doctor
-```
-
-Create a specialist and put it to work:
-
-```bash
-oats create backend-expert --type developers --repo . --work worktree
-oats spawn backend-expert --purpose implement --task "Add rate limiting to the public API"
-oats status --team
-oats retire <instance>
-```
-
-Or adopt a complete reference configuration from an official package:
-
-```bash
+pi install npm:@awebai/oats-pi@latest
+cd /path/to/project
 oats init --package oats.dev --config default
-oats install
 ```
 
-`oats init --package` acquires and exact-locks the full closure, validates the
-chosen template against its providers, writes it as your local
-`oats-config.yaml`, and records the adopted base so `oats config diff` and
-`oats config sync` can compare against it later.
+Continue with the guide's model, team, and executable-trust setup before
+spawning. Initialization acquires packages; it does not authenticate a
+runtime or join a messaging team.
 
-Start capturing the turn record on this machine:
-
-```bash
-oats setup
-oats recall "rate limiting"
-```
-
-A Pi agent can also load the `oats-getting-started` skill and guide the setup.
+See [the first-team example](docs/first-team-demo.md) for the real Pi and
+Claude tasks behind the guide. Existing OAS users: start with
+[the migration command](docs/migration-from-oas.md).
 
 ## How it works
 
