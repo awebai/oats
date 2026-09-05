@@ -440,6 +440,16 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     // Old remote, explicit --home: never sent where it cannot be honoured.
     r = oats(env, ["retire", "dev-foo-1", "--server", "old", "--home", devHome, "--json"]);
     assert.equal(r.json().error?.code, "E_REMOTE_INCOMPATIBLE");
+    // A viewer addresses the HOME: the twin (no saved route) is reachable by
+    // its home, the saved instance by name, and a name with the wrong home
+    // is refused; the ssh command word carries the home either way.
+    for (const [addr, wantHome] of [[["--instance", "dev-foo-1"], devHome], [["--home", twinHome], twinHome]]) {
+      const mark = readFileSync(join(base, "ssh.log"), "utf8").length;
+      r = oats(env, ["session", "inspect", "--server", "new", ...addr, "--json"]);
+      assert.ok(readFileSync(join(base, "ssh.log"), "utf8").slice(mark).includes(`session inspect --home ${remoteQuote(wantHome)}`), `viewer route for ${addr.join(" ")}: ${r.stdout}`);
+    }
+    r = oats(env, ["session", "inspect", "--server", "new", "--instance", "dev-foo-1", "--home", twinHome, "--json"]);
+    assert.equal(r.json().error?.code, "E_HOME_MISMATCH");
     // Old remote, one instance of that name only, but not at the saved home
     // (the route drifted): refused as a stale route, nothing retired.
     const driftSnap = JSON.parse(readFileSync(snapshotPath("old", "dev-foo-1"), "utf8"));

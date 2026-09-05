@@ -60,7 +60,11 @@ oats session attach --server build --instance dev-fix-123   # viewer through an 
 
 The viewer runs the execution host's own `oats session attach` (Herdr terminal
 or an isolated tmux linked viewer) over `ssh -t`, addressed by the saved route:
-the remote binary and path come from the snapshot, never from the caller. The
+the remote binary and path come from the snapshot, never from the caller.
+Address the home rather than the name (`--home </remote/home>`) when two
+souls on the host own an instance of the same name: the home is the identity,
+the saved route that owns it supplies the target, and a name given together
+with a home that is not its saved route is refused. The
 `oats session` commands ship in kernel 0.22.2: against an older server both
 session routes refuse with `E_REMOTE_INCOMPATIBLE` before connecting a viewer,
 and `ssh -t <host> tmux attach -t oats` remains the way in.
