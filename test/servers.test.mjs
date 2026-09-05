@@ -8,7 +8,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -72,6 +72,11 @@ test("remoteQuote/sshArgv: every argument survives the remote login shell byte f
   assert.equal(remoteQuote("safe.path/x=1"), "safe.path/x=1");
   assert.equal(remoteQuote(""), "''");
   // A ~/ path prefix expands on the REMOTE shell; a spaced one stays quoted; $PATH is the remote's.
+  // A cwd prefix is quoted like any argument and precedes the PATH prefix.
+  const withCwd = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats" }, ["okf", "harvest"], { cwd: "/w/it's here/$(touch NEVER_RUN)" });
+  assert.equal(withCwd[7], `cd '/w/it'\\''s here/$(touch NEVER_RUN)' && oats okf harvest`);
+  const cwdSeen = execFileSync("/bin/sh", ["-c", withCwd[7].replace(/ && oats okf harvest$/, " 2>/dev/null || printf %s \"$1\"") , "--", "cd-failed-as-expected"], { encoding: "utf8" });
+  assert.equal(cwdSeen, "cd-failed-as-expected"); assert.equal(existsSync("NEVER_RUN"), false);
   const withPath = sshArgv({ sshHost: "h", workspace: "/w", oatsPath: "oats", path: "~/.local/bin:/opt/my tools/bin" }, ["version"]);
   assert.equal(withPath[7], `PATH="$HOME"/.local/bin:'/opt/my tools/bin':"$PATH" oats version`);
   const seen = execFileSync("/bin/sh", ["-c", withPath[7].replace(/ oats version$/, "; printf %s \"$PATH\"")], { encoding: "utf8", env: { HOME: "/home/remote", PATH: "/usr/bin:/bin" } });
@@ -280,6 +285,8 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     assert.equal(g.instances[0].instance, "dev-r1"); assert.equal(g.instances[0].agent, "dev");
     assert.equal(g.instances[0].savedRoute, true); assert.equal(g.instances[0].running, false);
     assert.equal(g.instances[0].home, home);
+    assert.deepEqual([g.instances[0].retirePending, g.instances[0].rollbackIncomplete, g.instances[0].missingRemotely], [false, false, false]);
+    assert.deepEqual(g.retireFailures, []);
     assert.equal(typeof out.bounds.perTargetTimeoutMs, "number");
     assert.match(readFileSync(log, "utf8"), /status --json --dir/, "the roster pulled remote status");
     r = oats(env, ["server", "roster"]);
@@ -294,7 +301,9 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     out = r.json().result;
     const down = out.groups.find((x) => x.server === "down");
     assert.equal(down.probe.ok, false); assert.equal(typeof down.probe.error.message, "string");
-    assert.deepEqual(down.instances, []); assert.deepEqual(down.souls, []);
+    assert.deepEqual(down.instances, []); assert.deepEqual(down.souls, []); assert.deepEqual(down.retireFailures, []);
+    r = oats(env, ["server", "roster", "--server", "nope", "--json"]);
+    assert.equal(r.json().error.code, "E_SERVER_UNKNOWN");
     assert.equal(out.groups.find((x) => x.server === "build").probe.ok, true);
     r = oats(env, ["server", "roster", "--server", "down", "--json"]);
     assert.deepEqual(r.json().result.groups.map((x) => x.server), ["down"]);
@@ -310,6 +319,27 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     const sshLog = readFileSync(log, "utf8");
     assert.ok(sshLog.includes(`cd ${remoteQuote(home)} && `), "harvest ran in the saved home");
     assert.match(sshLog, /okf harvest --json/);
+    // Any other okf command with --server is refused, never run locally.
+    r = oats(env, ["okf", "status", "--server", "build", "--json"]);
+    assert.equal(r.json().error.code, "E_USAGE");
+    // The route outlives the registration, like retire: remove it, harvest
+    // still reaches the saved home; a saved route the remote no longer lists
+    // is flagged, not invented as idle.
+    const savedReg = readFileSync(join(env.OATS_HOME_DIR, "servers.json"), "utf8");
+    r = oats(env, ["server", "remove", "build", "--json"]); assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["okf", "harvest", "--server", "build", "--instance", "dev-r1", "--json"]);
+    assert.notEqual(r.json().error?.code, "E_SERVER_UNKNOWN", r.stdout);
+    r = oats(env, ["server", "roster", "--server", "build", "--json"]);
+    assert.equal(r.json().result.groups[0].registrationPresent, false);
+    assert.equal(r.json().result.groups[0].instances[0].missingRemotely, false);
+    writeFileSync(join(env.OATS_HOME_DIR, "servers.json"), savedReg);
+    // A --replace that only moves the binary is the same target: no refusal.
+    const movedOats = join(base, "oats-moved"); symlinkSync(CLI, movedOats);
+    r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", movedOats, "--path", tools, "--replace", "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "moved", "--no-launch", "--json"]);
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    r = oats(env, ["retire", "dev-moved", "--server", "build", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
 
     // The guard: a registration edited to another target must not overwrite
     // the saved routes spawned through the old one.
@@ -334,5 +364,45 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
     assert.equal(r.status, 0, r.stderr + r.stdout);
     r = oats(env, ["server", "roster", "--server", "build", "--json"]);
     assert.deepEqual(r.json().result.groups.map((x) => x.instances.length), [0]);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("roster budget: slow targets are bounded, healthy results survive, unreached targets are reported", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-servers-budget-"));
+  try {
+    const { bin, tools } = fakeBin(base);
+    const repo = remoteWorkspace(base);
+    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
+    for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
+    // A "host" whose oats never answers: the remote command word runs this.
+    const slow = join(base, "slow-oats"); write(slow, "#!/bin/sh\nsleep 20\nexit 255\n"); chmodSync(slow, 0o755);
+    let r = oats(env, ["server", "add", "good", "--ssh", "good-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--json"]);
+    assert.equal(r.status, 0, r.stderr);
+    for (const id of ["slow1", "slow2"]) {
+      r = oats(env, ["server", "add", id, "--ssh", `${id}-host`, "--workspace", repo, "--oats", slow, "--json"]);
+      assert.equal(r.status, 0, r.stderr);
+    }
+    const t0 = Date.now();
+    r = oats(env, ["server", "roster", "--json", "--budget", "9000", "--per-target", "4000"]);
+    const elapsed = Date.now() - t0;
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const out = r.json().result;
+    assert.ok(elapsed < 14000, `roster took ${elapsed} ms against a 9 s budget`);
+    assert.deepEqual(out.groups.map((g) => g.server), ["good", "slow1", "slow2"]);
+    assert.deepEqual(out.groups[0].probe, { ok: true });
+    assert.deepEqual(out.groups[0].souls.map((s) => s.name), ["dev"]);
+    assert.equal(out.groups[1].probe.ok, false); assert.notEqual(out.groups[1].probe.error.code, "E_ROSTER_BUDGET");
+    assert.equal(out.groups[2].probe.ok, false);
+    assert.equal(out.bounds.budgetMs, 9000); assert.equal(out.bounds.perTargetTimeoutMs, 4000);
+    // With a budget only one slow target can consume, the last one is
+    // reported as not reached rather than dropped or waited for.
+    r = oats(env, ["server", "roster", "--json", "--budget", "5000", "--per-target", "4000"]);
+    const out2 = r.json().result;
+    assert.deepEqual(out2.groups[0].probe, { ok: true });
+    assert.equal(out2.groups[2].probe.error.code, "E_ROSTER_BUDGET");
+    assert.equal(out2.bounds.skipped, 1);
+    r = oats(env, ["server", "roster", "--json", "--budget", "5"]);
+    assert.equal(r.json().error.code, "E_BAD_ARGS");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

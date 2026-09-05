@@ -70,18 +70,29 @@ oats server roster --json                                  # every remote group,
 oats okf harvest --server build --instance dev-fix-123     # the knowledge harvest, run in the saved home
 ```
 
-The **roster** is what the Desktop projects: one group per registered server
-and route target, each with the registration (present or not), the probe
-(`ok`, or the error that stopped it), the souls the remote reports with their
-`agentsRoot`, and the instances joined with this machine's saved routes
-(`savedRoute`, `running` true/false, or `null` when the remote could not be
-asked; `retirePending`). A registration that was removed or edited keeps its
-group from the saved routes alone, so nothing spawned through it disappears
-from view. Remote state is pulled every time, bounded per target
-(`bounds.perTargetTimeoutMs`), never cached. **Harvest** runs the knowledge
-package's own `okf harvest --json` in the instance's saved home on the host:
-the home comes from the route saved at spawn, never from the caller, and the
-package's envelope is relayed as is.
+The **roster** is what the Desktop projects: one group per server id and
+route target (host and workspace), each with the registration (present or
+not), the probe (`ok`, or the error that stopped it), the souls the remote
+reports with their `agentsRoot`, the instances joined with this machine's
+saved routes (`savedRoute`; `running` true/false, or `null` when the remote
+could not be asked; `retirePending`; `rollbackIncomplete` for a quarantined
+home; `missingRemotely` when a saved route names an instance the reachable
+remote no longer lists), and `retireFailures` (deferred self-retirements
+that failed there and need `oats retire` again). A registration that was
+removed or edited keeps its group from the saved routes alone, so nothing
+spawned through it disappears from view. Remote state is pulled every time,
+never cached, within a budget: each group gets at most `--per-target` (20 s)
+of a `--budget` (45 s) total, and groups the budget cannot reach are reported
+with `E_ROSTER_BUDGET` rather than dropped or waited for. **Harvest** runs
+the knowledge package's own `okf harvest --json` in the instance's saved home
+on the host (a route that outlives the registration, like retire): the home
+comes from the route saved at spawn, never from the caller, the remote must
+advertise `harvest` in its version probe (0.22.3), and the package's envelope
+is relayed as is. **Retire** through a saved route sends that route's home as
+`--home` when the remote advertises `retire-home` in its probe `features`, so
+a same-named twin under another agent on the host is never the one retired;
+locally, `oats retire <name> --home <path>` does the same and a bare name that
+resolves to several homes is refused.
 
 ## What this machine keeps
 
@@ -111,7 +122,8 @@ until then.
 - No Git over SSH: repository operations always run on the server, by its
   kernel, in its workspace.
 - A remote needs an OATS at least 0.22.1 (`MIN_REMOTE_VERSION`) for spawn,
-  retire and status, and 0.22.2 for the session routes; the record commands
+  retire and status, 0.22.2 for the session routes, and 0.22.3 for harvest
+  and for the exact-home retire; the record commands
   (`capture`, `recall`) need Node 22.5+ there for `node:sqlite`, which
   lifecycle routing does not.
 - Lifecycle actions on a remote instance need a saved route from this

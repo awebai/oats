@@ -2777,7 +2777,12 @@ function spawnCmd() {
 
 function retireCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
+  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--home <path>] [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
+  let homeFlag = flag("home");
+  if (homeFlag === true) die("--home needs the instance home path");
+  // The calling instance knows its own home: self-retire never needs to
+  // disambiguate a same-named twin by hand.
+  if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && (process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name)) homeFlag = process.env.OATS_INSTANCE_HOME;
   const isSelf = process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name;
   if (isSelf && !args.includes("--self")) die(`"${name}" is the calling instance — self-retire is irreversible; if your task is complete and you were told to retire, re-run with --self (finish your memory files FIRST; your session dies ~8s after)`);
   if (!isSelf && args.includes("--self")) die(`--self given but "${name}" is not the calling instance`);
@@ -2787,7 +2792,7 @@ function retireCmd() {
     const hit = findTeamInstance(dirFlag(), name);
     if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; console.log(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
-  const r = retireInstance(root, name, { self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
   // Deferred self-retire: nothing has been inspected, run, or removed yet. The
   // caller's window dies first; a detached process then retires the instance
   // as an external operator and writes its outcome beside the home.
@@ -3121,7 +3126,7 @@ function versionCmd() {
     // `remote`: the commands this kernel routes to a registered server with
     // --server; a Desktop gates its remote path on it (an older CLI without
     // the surface must fail closed with a reason, not an argument error).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3174,8 +3179,9 @@ function serverCmd() {
     // target, one bounded status pull per target, saved routes as the action
     // authority. --server narrows to one registry id.
     const only = flag("server") === true ? bail("E_BAD_ARGS", "--server needs a registered server id") : flag("server");
+    const ms = (name) => { const v = flag(name); if (v === undefined) return undefined; const n = Number(v); if (!Number.isInteger(n) || n < 1000) bail("E_BAD_ARGS", `--${name} takes whole milliseconds, at least 1000`); return n; };
     let out;
-    try { out = rosterGroups({ server: only }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
+    try { out = rosterGroups({ server: only, io: { budgetMs: ms("budget"), perTargetTimeoutMs: ms("per-target") } }); } catch (e) { bail(e.code || "E_SERVERS_UNREADABLE", e.message); }
     if (JSON_MODE) { jsonOk(out); return; }
     if (!out.groups.length) { console.log("no remote groups: no registrations and no saved routes"); return; }
     for (const g of out.groups) {
@@ -3183,7 +3189,7 @@ function serverCmd() {
       console.log(g.probe?.ok ? `      reachable, ${g.souls.length} soul(s)` : `      UNREACHABLE: ${g.probe?.error?.message || "?"}`);
       for (const i of g.instances) console.log(`      • ${i.instance}  ${i.running === true ? "RUNNING" : i.running === false ? "idle" : "unknown"}${i.retirePending ? " RETIRING" : ""}${i.savedRoute ? "" : "  (observed only, no saved route)"}${i.runtimeError ? `  ${i.runtimeError}` : ""}`);
     }
-    console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target, ${out.bounds.elapsedMs} ms total`);
+    console.log(`  bounds: ${out.bounds.perTargetTimeoutMs} ms per target within ${out.bounds.budgetMs} ms, ${out.bounds.elapsedMs} ms used${out.bounds.skipped ? `, ${out.bounds.skipped} target(s) not reached` : ""}`);
     return;
   }
   let servers;
@@ -3257,6 +3263,7 @@ function serverRouteCmd() {
     if (!routed.envelope.ok) die(`${id}: ${routed.envelope.error?.message || "harvest failed"} (${routed.envelope.error?.code || "E_REMOTE"})`);
     const hr = routed.envelope.result;
     console.log(`Harvest on ${id} for ${inst}: ${hr.harvest}${hr.reason ? ` (${hr.reason})` : ""}${hr.instance && hr.harvest === "spawned" ? ` — harvester ${hr.instance}` : ""}`);
+    if (hr.instance && hr.instance !== inst) console.log(`  the harvester ${hr.instance} runs on ${id}; retire it there when it is done, or let it self-retire`);
     return;
   }
   if (cmd === "session") {
@@ -3353,7 +3360,7 @@ function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-if (flag("server") !== undefined && (["spawn", "retire", "status", "session"].includes(cmd) || (cmd === "okf" && args[1] === "harvest"))) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
@@ -3405,8 +3412,12 @@ Usage:
   oats spawn|retire|status ... --server <id> run that command on the server's installed oats
                                             (same flags, same envelope; the saved route per
                                             remote instance lives under ~/.oats/remote/)
-  oats server roster [--server <id>] [--json] remote roster grouped by saved route target: one
-                                            status pull per target, saved routes as authority
+  oats server roster [--server <id>]         remote roster grouped by server and saved route
+      [--budget <ms>] [--per-target <ms>]   target: one status pull per group within a total
+      [--json]                              budget (45 s, 20 s per target); saved routes are
+                                            the authority for actions
+  oats retire <instance> --home <path>       retire exactly that home when two agents own an
+                                            instance of the same name (else refused)
   oats okf harvest --server <id>             run the knowledge harvest in a remote instance's
       --instance <name> [--json]            saved home on its host
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a

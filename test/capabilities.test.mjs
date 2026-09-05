@@ -1545,6 +1545,39 @@ test("anchor enumeration sees intra-root duplicates (generated-name collisions)"
   } finally { process.env.PATH = oldPath; }
 });
 
+test("retire refuses a same-named twin by name alone and retires exactly the home it is given", () => {
+  const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
+  const root = join(repo, "agents");
+  for (const soul of ["dev", "dev-foo"]) {
+    write(join(root, soul, "soul", "soul.yaml"), `name: ${soul}\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
+    write(join(root, soul, "soul", "AGENTS.md"), `# ${soul}\n`);
+    mkdirSync(join(root, soul, "instances"), { recursive: true });
+  }
+  const oldPath = process.env.PATH;
+  process.env.PATH = fakeRuntimes(base);
+  try {
+    spawnInstance(root, findAgent(root, "dev"), { instance: "dev-foo-1", launch: false });
+    spawnInstance(root, findAgent(root, "dev-foo"), { instance: "dev-foo-1", launch: false });
+    const homes = findInstanceHomes(root, "dev-foo-1");
+    assert.equal(homes.length, 2);
+    const first = join(root, "dev", "instances", "dev-foo-1"), second = join(root, "dev-foo", "instances", "dev-foo-1");
+    // By name alone: refused, both homes named, nothing removed.
+    assert.throws(() => retireInstance(root, "dev-foo-1", { keepDir: false }), (e) => e.code === "E_AMBIGUOUS_INSTANCE" && e.message.includes(first) && e.message.includes(second));
+    assert.equal(existsSync(first), true); assert.equal(existsSync(second), true);
+    // A home that is not one of that name's homes: refused.
+    assert.throws(() => retireInstance(root, "dev-foo-1", { home: join(root, "dev", "instances", "other") }), (e) => e.code === "E_HOME_MISMATCH");
+    assert.equal(existsSync(first), true); assert.equal(existsSync(second), true);
+    // The second twin, by home: only it goes; the first-match twin survives.
+    const r = retireInstance(root, "dev-foo-1", { home: second });
+    assert.equal(r.retired, "dev-foo-1"); assert.equal(r.agent, "dev-foo");
+    assert.equal(existsSync(second), false, "the addressed twin is retired");
+    assert.equal(existsSync(first), true, "the first-match twin is untouched");
+    // One home left: the bare name resolves again.
+    assert.equal(retireInstance(root, "dev-foo-1", {}).agent, "dev");
+    assert.equal(existsSync(first), false);
+  } finally { process.env.PATH = oldPath; }
+});
+
 test("local-soul instances enumerate once and accept relations (no false intra-root ambiguity)", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   const root = join(repo, "agents");
