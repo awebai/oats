@@ -49,9 +49,20 @@ into the source soul and committed it on the worker's branch:
 - [Content-addressed turn IDs do not authenticate native capture](https://github.com/awebai/oats/commit/91993a0b85db132c59c32d43ee2c90ec5569bd50).
 - [Lock ownership and the limits of comparing timeout thresholds](https://github.com/awebai/oats/commit/120e3474b93efc0d37f94c426327f802e27893ea).
 
-These are reviewed, inspectable knowledge changes. They demonstrate a
-working promotion path; they do not by themselves measure a productivity
-improvement.
+After the documentation promotion landed, the predecessor retired: its
+worktree, branch, home, and aweb alias were removed. A new Pi instance of
+the same soul, `docs-expert-capture-contract-check`, then started a real
+follow-up task checking the capture contract documentation.
+
+Its first report named the promoted file:
+`soul/knowledge/lessons/content-addressed-turn-ids-not-authentication.md`.
+The worker said the lesson reinforced the distinction between unsigned
+native turns and preserved source signatures, and explicitly said it did
+not change what it was already about to do.
+
+That verifies a concrete lifecycle: useful task, reviewed promotion,
+predecessor retirement, and a successor reading the updated soul. It does
+not establish a measured productivity improvement.
 
 ## What the run exposed
 
@@ -61,9 +72,10 @@ The run found first-use problems that unit tests alone had not resolved:
   the 0.22.1 changes.
 - The default harvester model assumed a provider absent on this machine.
   The workspace now selects an authenticated model explicitly.
-- Retiring an aweb identity could leave a remote alias behind. Temporary
-  harvesters are excluded from messaging in this deployment; remote cleanup
-  is tracked separately from local retirement.
+- Early harvester retirements left remote aliases behind. Temporary
+  harvesters are excluded from messaging in this deployment. The later
+  documentation-worker retirement removed its alias successfully; the
+  earlier orphan cleanup remains a separate issue.
 - A combined workspace roster did not make the workspace a spawn scope for
   every child repository. Commands select the owning repository explicitly.
 
