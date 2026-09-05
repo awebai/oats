@@ -40,6 +40,12 @@ Aliases are instance names (e.g. `dev-coordinator-1`). Discovery:
 `oats status --team` lists this machine's live instances; `oats aweb roster`
 lists the aweb team across machines.
 
+**Notification delivery.** Your instance briefing (TASK.md, the Comms line)
+says how messages reach you. If it carries "Notification delivery: external",
+the native channel is NOT running in this session and, until the host wake
+broker registers you, nothing wakes you: check `aw mail inbox` and
+`aw chat pending` at every task boundary. Otherwise the rule below applies.
+
 **Never sleep, poll, or busy-wait for another agent's reply.** Send your
 message, finish your turn, and go idle when a delivery channel is configured
 (you saw `✓ aweb connected` at startup). Native Codex has no aweb channel:

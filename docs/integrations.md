@@ -139,3 +139,39 @@ contract design, and the `integration-authoring` skill routes work to it.
 Test an integration as a capability package: acquire, lock, trust, activate,
 spawn, retire, with the golden fixtures as the behavior oracle for the kernel
 side.
+
+## oats.aweb settings (1.10.0)
+
+Set with `oats use oats.aweb --settings <key>=<value>` at a scope, or per
+soul through the binding's `settings:` map.
+
+- `delivery: channel | session` (default `channel`). `session` hands
+  notification delivery to the host wake broker: `AWEB_DELIVERY=session` in
+  the launch environment (declared by the manifest), no Claude channel flag,
+  a pi extension that honours the opt-out (`@awebai/pi` 0.3.10 or later,
+  enforced as a conditional requirement with a version floor), and a briefing
+  and registration of the home with the host wake broker (`aw wake register`).
+  Until an aw that ships `aw wake` exists (aweb-abil), session mode REFUSES
+  to spawn rather than leave an instance that nothing wakes: it is for broker
+  qualification only; leave the default otherwise.
+- `identity: { source: "/abs/path/to/legacy/.aw" }`, per soul, explicit and
+  never inferred. The spawned instance becomes the retained seat of that
+  existing identity (same did:aw and address). The aweb service URL comes
+  from the source's `workspace.yaml` (`aweb_url`); a hosted-init source has
+  none, so set `OATS_AWEB_URL` (for example `https://app.aweb.ai/api`) in
+  the spawn environment when the source lacks it: the identity-authority files
+  are copied into the home's `.aw` (never `workspace.yaml` or caches), the
+  coordination binding is reconnected with `aw workspace connect`, and the
+  seat is verified online before the instance is briefed. A lock beside the
+  source (`.aw-retained-seat.json`) refuses a second seat while a holder is
+  live. Retire releases the lock and touches neither the identity nor the
+  source; removing the legacy `.aw` is a human step. Rehearse on a disposable
+  global identity first: a send, a claim and a heartbeat from the new home
+  must all work before any real seat moves.
+
+Requirement rows in a manifest may carry `when: { <setting>: <value> }` (the
+row applies only when the capability's effective setting matches) and
+`minVersion` (the version is read from the package.json under the install
+directory the runtime's listing names; an older or absent manifest fails the
+requirement with the install remedy). `ifInstalled: true` makes an absent
+package satisfy the row, so the floor applies only to an ambient extension.

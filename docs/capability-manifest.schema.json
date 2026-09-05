@@ -119,6 +119,20 @@
               "marketplace": {
                 "type": "string",
                 "description": "Optional source to register before installing (Claude marketplaces). Shown at the consent prompt, since registering a third-party source is part of what is being agreed to."
+              },
+              "when": {
+                "type": "object",
+                "description": "Applies only when every named capability setting has the given effective value (a requirement conditional on configuration, e.g. delivery: channel).",
+                "additionalProperties": {}
+              },
+              "minVersion": {
+                "type": "string",
+                "description": "Lowest acceptable installed version of the package, read from the package.json under the install directory the runtime's listing names; an older or absent manifest fails the requirement with the install remedy.",
+                "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+"
+              },
+              "ifInstalled": {
+                "type": "boolean",
+                "description": "When true, an absent package satisfies the row; the row's minVersion and loadability checks apply only to a package that is installed (an ambient extension that must honour a contract if present)."
               }
             },
             "additionalProperties": false
@@ -217,6 +231,33 @@
         "type": "string"
       },
       "description": "Package-relative soul directories (soul.yaml + AGENTS.md) \u2014 capability-defined agents; they resolve like local souls where the capability is active, souls stay read-only in the package, instances home under the scope's local-agents/."
+    },
+    "settings": {
+      "type": "object",
+      "description": "Declared capability settings: name to { default, values?, description }. Documentation for `oats use --settings`; undeclared settings are still accepted.",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "default": {},
+          "values": {
+            "type": "array",
+            "description": "Accepted scalar values; an effective value outside the list is refused at resolution.",
+            "items": {}
+          },
+          "description": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "environmentNamespaces": {
+      "type": "array",
+      "description": "Additional environment-name prefixes this capability may declare besides its vendor's own (e.g. AWEB_ for the official oats.aweb integration). Each is an uppercase prefix ending in an underscore; the reserved core (OATS_, PI_AGENT_) and process bootstrap namespaces cannot be claimed. Disclosed at trust time with the environment list.",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9]*_$"
+      }
     }
   },
   "additionalProperties": false
