@@ -274,16 +274,23 @@ function spawnErrorPayload(e) {
 }
 /* OATSWEB_SPAWNERR_END */
 
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, serverId }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   // agentsRoot must be one of the workspace roots this server was started for —
   // never spawn into an arbitrary caller-supplied directory.
   const known = workspaces().flatMap((w) => w.roots);
   if (!known.some((r) => resolve(r) === root)) throw new Error(`unknown agents root "${agentsRoot}"`);
-  const def = reader.findAgent(root, name)
-    || reader.findCapabilityAgent(dirname(root), root, name);
-  if (!def) throw new Error(`unknown agent "${name}"`);
+  // A remote route: the agent is validated by the REMOTE kernel against its
+  // own workspace (the same team repo on that host); the local roster only
+  // supplies the name the operator picked.
+  const server = serverId ? String(serverId) : undefined;
+  let def;
+  if (!server) {
+    def = reader.findAgent(root, name)
+      || reader.findCapabilityAgent(dirname(root), root, name);
+    if (!def) throw new Error(`unknown agent "${name}"`);
+  }
   // Mutation boundary: a compatible installed CLI is required — degradation,
   // not a bundled kernel.
   if (!cliState.ok) {
@@ -291,7 +298,11 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     err.code = "cli-unavailable";
     throw err;
   }
-  locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
+  // Local execution support is proven here for a local spawn; a remote spawn
+  // is held to what the REMOTE advertises by the router (checkRemoteSupport),
+  // and the local guard only needs the remote surface itself.
+  if (server) locator.requireRemoteSupport(cliState, "spawn");
+  else locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
   // Relation flags are a NEWER v1 surface: older v1 CLIs ignore unknown
   // spawn options and report success, silently creating an UNRELATED
   // instance. Fail closed instead of degrading silently (review f921f7d).
@@ -317,6 +328,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     backend: backend ? String(backend) : undefined,
     yolo,
     model: model ? String(model) : undefined,
+    server,
   });
   if (!env.ok) {
     const err = new Error(env.error.message || "spawn failed");
@@ -326,7 +338,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   const r = env.result;
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
            branch: r.branch ?? null, launched: !!r.launched, warnings: r.warnings || [],
-           tmux: r.tmux ?? null };
+           tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target } : {}) };
 }
 
 /* ── CLI discovery (Desktop CLI API v1) ──
@@ -929,6 +941,15 @@ const server = createServer(async (req, res) => {
       const runtime = typeof body.runtime === "string" && body.runtime ? body.runtime : "pi";
       if (!["pi", "claude", "codex"].includes(runtime)) return send(res, 400, { error: `unknown runtime "${runtime}" (pi|claude|codex)` });
       return send(res, 200, { runtime, models: await modelsData(runtime) });
+    }
+    if (req.method === "GET" && path === "/api/servers") {
+      // Registered execution servers, read through the CLI (the Desktop
+      // holds no registry of its own). Without a compatible CLI there are
+      // no servers to offer, which the renderer renders as "local only".
+      if (!cliState.ok) return send(res, 200, { servers: [], reason: "cli-unavailable" });
+      const env = await adapter.cliServers(cliState.bin);
+      if (!env.ok) return send(res, 200, { servers: [], reason: env.error?.code || "E_SERVERS" });
+      return send(res, 200, { servers: (env.result.servers || []).map((s) => ({ id: s.id, label: s.label || s.id, sshHost: s.sshHost, workspace: s.workspace })) });
     }
     if (req.method === "GET" && path === "/api/cli") {
       return send(res, 200, cliStatus());

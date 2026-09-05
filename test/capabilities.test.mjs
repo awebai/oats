@@ -853,7 +853,12 @@ test("marketplace automatic trust discloses environment before authority persist
   const base = temp();
   const framework = join(base, "framework");
   const packageRoot = resolve(dirname(CLI), "..");
-  for (const relativePath of ["bin/oats.mjs", "lib/core.mjs", "lib/packages.mjs", "lib/tmux-config.mjs", "package.json"]) {
+  // The CLI's module closure: everything bin/oats.mjs and lib/core.mjs import
+  // from lib/. A module missing here makes the copied CLI fail to load and
+  // the test see empty stdout, which is what happened when session-viewer
+  // and servers were added.
+  for (const relativePath of ["bin/oats.mjs", "lib/core.mjs", "lib/packages.mjs", "lib/tmux-config.mjs", "lib/servers.mjs", "lib/session-viewer.mjs", "lib/session-input.mjs", "lib/herdr.mjs", "package.json"]) {
+    if (!existsSync(join(packageRoot, relativePath))) continue;
     write(join(framework, relativePath), readFileSync(join(packageRoot, relativePath)));
   }
   const marketplace = join(framework, "capabilities", "vendor-market");
