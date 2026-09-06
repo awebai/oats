@@ -49,6 +49,18 @@ const mk = (d, extra = {}) => createTerminalTab({
   ...extra,
 });
 
+test("terminal tab forwards the instance's saved socket to the privileged bridge", async () => {
+  const d = makeDoubles(Promise.resolve(7));
+  let spec;
+  d.desk.termOpen = async (value) => { spec = value; return { id: 7 }; };
+  const tab = mk(d, { tmux: { session: "team", window: "minerva", socket: "/saved/socket" } });
+  await tab.start();
+  assert.equal(spec.socket, "/saved/socket");
+  assert.equal(spec.session, "team");
+  assert.equal(spec.window, "minerva");
+  await tab.close();
+});
+
 test("close during pending open: no setup at all, late pty detached, UI disposed once", async () => {
   const gate = deferred();
   const d = makeDoubles(gate.promise);

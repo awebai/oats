@@ -11,7 +11,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
     const key = instanceId(instance);
     const ws = currentWorkspace(), generation = workspaceGeneration();
     const opener = doc.activeElement;
-    const modal = doc.createElement("div"); modal.className = "instance-start-modal";
+    const modal = doc.createElement("div"); modal.className = "oats-view instance-start-modal";
     modal.innerHTML = `<form class="instance-start-dialog" role="dialog" aria-modal="true" aria-labelledby="instance-start-title">
       <h2 id="instance-start-title"></h2>
       <p class="start-context"></p>
