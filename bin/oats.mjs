@@ -39,8 +39,10 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
+import { listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -2754,6 +2756,28 @@ function spawnCmd() {
   const relativeRoot = flag("relative-root");
   if (relativeRoot !== undefined && (relativeRoot === true || !String(relativeRoot).trim())) bail("E_BAD_ARGS", "--relative-root needs an agents-root path");
   if (relativeRoot && !relativeTo) bail("E_BAD_ARGS", "--relative-root only qualifies --relative-to/--parent");
+  // Wake at launch: --wake-file <private JSON {cron, tz, message, enabled}>
+  // is the backend bridge; --wake-every/--wake-cron/--wake-tz/--wake-message
+  // (or --wake-message-file) are the human sugar for the same object. The
+  // wake job is saved AFTER a successful spawn, bound to the returned home.
+  let wake;
+  try {
+    const wakeFile = flag("wake-file");
+    if (wakeFile === true) bail("E_BAD_ARGS", "--wake-file needs a path");
+    if (wakeFile) {
+      if (!existsSync(wakeFile)) bail("E_BAD_ARGS", `--wake-file not found: ${wakeFile}`);
+      let doc; try { doc = JSON.parse(readFileSync(wakeFile, "utf8")); } catch (e) { bail("E_SCHEDULE_INVALID", `--wake-file is not valid JSON: ${e.message}`); }
+      if (!doc || typeof doc !== "object") bail("E_SCHEDULE_INVALID", "--wake-file must hold {cron, tz, message, enabled}");
+      wake = { cron: doc.cron, tz: doc.tz, message: doc.message, enabled: doc.enabled === undefined ? true : doc.enabled };
+    } else if (flag("wake-every") !== undefined || flag("wake-cron") !== undefined) {
+      const mf = flag("wake-message-file");
+      if (mf === true) bail("E_BAD_ARGS", "--wake-message-file needs a path");
+      if (mf && !existsSync(mf)) bail("E_BAD_ARGS", `--wake-message-file not found: ${mf}`);
+      const message = mf ? readFileSync(mf, "utf8") : flag("wake-message") === true ? undefined : flag("wake-message");
+      wake = wakeFromFlags({ every: flag("wake-every") === true ? undefined : flag("wake-every"), cron: flag("wake-cron") === true ? undefined : flag("wake-cron"), tz: flag("wake-tz") === true ? undefined : flag("wake-tz"), message });
+    }
+    if (wake && (typeof wake.message !== "string" || !wake.message.trim())) bail("E_SCHEDULE_INVALID", "wake message: non-empty text is required");
+  } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message); throw e; }
   let r;
   try {
     r = spawnInstance(root, agent, {
@@ -2770,11 +2794,19 @@ function spawnCmd() {
     if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
     bail(e.code === "E_RELATIVE_AMBIGUOUS" ? "E_RELATIVE_AMBIGUOUS" : "E_SPAWN_FAILED", e.message || e); throw e;
   }
+  // The instance exists from here on: a failed wake save is reported beside
+  // the full receipt, never hidden, and never causes a second spawn.
+  let wakeSchedule, wakeScheduleError;
+  if (wake) {
+    try { wakeSchedule = saveWakeForHome(workspaceOf(root), { instance: r.instance, home: r.home, wake }); }
+    catch (e) { wakeScheduleError = { code: e.code || "E_SCHEDULE_FAILED", message: e.message }; r.warnings = [...(r.warnings || []), `wake schedule NOT saved: ${e.message}`]; }
+  }
   if (JSON_MODE) {
     // Desktop CLI API v1 spawn result — a FIXED shape (see docs/desktop-cli-api.md).
     jsonOk({
       instance: r.instance, agent: r.agent, home: r.home, work: r.work,
       branch: r.branch || null, launched: r.launched, warnings: r.warnings || [],
+      ...(wakeSchedule ? { wakeSchedule } : {}), ...(wakeScheduleError ? { wakeScheduleError } : {}),
       tmux: r.tmux || null, repo: r.repo || null, runtime: r.runtime || null,
       model: r.model || null, parent: r.parentInstance || null,
       sibling: r.siblingInstance || null, relation: r.relation || null,
@@ -2786,6 +2818,8 @@ function spawnCmd() {
   }
   console.log(`Spawned ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch}` : ""})${r.launched ? r.sessionTarget ? ` — Herdr pane "${r.sessionTarget.paneId}"` : ` — tmux window "${r.tmux.window}"` : " — not launched"}`);
   console.log(`  home:   ${shortPath(r.home)}`);
+  if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
+  if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
   if (!r.launched) console.log(`  launch: (cd ${shortPath(r.home)} && ${r.command})`);
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
   console.log(`  attach: ${r.attach}`);
@@ -2809,7 +2843,11 @@ function retireCmd() {
     // Stdout carries only the envelope in JSON mode (the Desktop parses it).
     if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; (args.includes("--json") ? console.error : console.log)(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
+  const retiringHome = homeFlag || findInstanceHome(root, name);
   const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  // A retired home's wake jobs are forgotten (definitions only; nothing is
+  // stopped by this); a deferred self-retire keeps them until the home is gone.
+  if (retiringHome && r.removedDir !== false && !r.deferred) { try { const gone = removeWakeForHome(workspaceOf(root), retiringHome); if (gone.length) r.wakeSchedulesRemoved = gone; } catch (e) { r.warnings = [...(r.warnings || []), `wake schedules not cleaned: ${e.message}`]; } }
   // Deferred self-retire: nothing has been inspected, run, or removed yet. The
   // caller's window dies first; a detached process then retires the instance
   // as an external operator and writes its outcome beside the home.
@@ -2845,6 +2883,54 @@ function retireCmd() {
     console.log(`  ${recovery.path}`);
   }
   if (isSelf) console.log("This window dies in ~8s — say any goodbyes now.");
+}
+
+/** `oats schedule ...`: workspace-scoped definitions, host-owned execution
+ *  (lib/schedule.mjs). Every subcommand answers the envelope; nothing here
+ *  launches unless a job is due or run-now is asked. */
+function scheduleCmd() {
+  const sub = args[1];
+  const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+  const ws = resolve(dirFlag());
+  const io = { hostStatus: () => hostUnitStatus() };
+  const out = (result) => { if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2)); };
+  const readSpec = () => {
+    const inline = flag("spec-json");
+    if (inline && inline !== true) { try { return JSON.parse(inline); } catch (e) { throw scheduleError("E_SCHEDULE_INVALID", `--spec-json is not valid JSON: ${e.message}`, { field: "file" }); } }
+    const f = flag("file");
+    if (!f || f === true) throw scheduleError("E_BAD_ARGS", "--file <spec.json> is required (a private JSON file with the definition)");
+    if (!existsSync(f)) throw scheduleError("E_BAD_ARGS", `spec file not found: ${f}`);
+    try { return JSON.parse(readFileSync(f, "utf8")); } catch (e) { throw scheduleError("E_SCHEDULE_INVALID", `${f} is not valid JSON: ${e.message}`, { field: "file" }); }
+  };
+  const needId = () => { if (!id) throw scheduleError("E_BAD_ARGS", `oats schedule ${sub} <id>`); return id; };
+  try {
+    switch (sub) {
+      case "list": return out(listSchedules(ws, io));
+      case "show": return out({ schedule: describeSchedule(ws, needId(), io) });
+      case "add": { const spec = readSpec(); if (id && spec.id === undefined) spec.id = id; if (id && spec.id !== id) throw scheduleError("E_SCHEDULE_INVALID", `id ${JSON.stringify(spec.id)} in the file does not match ${JSON.stringify(id)}`, { field: "id" }); return out({ schedule: addSchedule(ws, spec, io) }); }
+      case "update": return out({ schedule: updateSchedule(ws, needId(), readSpec(), io) });
+      case "enable": return out({ schedule: setScheduleEnabled(ws, needId(), true, io) });
+      case "disable": return out({ schedule: setScheduleEnabled(ws, needId(), false, io) });
+      case "run": return out(runScheduleNow(ws, needId(), { io, force: args.includes("--force") }));
+      case "remove": return out(removeSchedule(ws, needId(), { force: args.includes("--force") }));
+      case "reconcile": return out(reconcileSchedule(ws, needId(), { io }));
+      case "tick": {
+        const dryRun = args.includes("--dry-run");
+        if (args.includes("--host")) return out(tickHost({ io, dryRun }));
+        const reg = readRegistry();
+        const considered = withHostLock(() => tickWorkspace(ws, { io, reg, wsList: reg.workspaces.includes(ws) ? reg.workspaces : [...reg.workspaces, ws], dryRun }));
+        return out({ tickedAt: new Date().toISOString(), considered, scheduler: schedulerStatus(ws, io) });
+      }
+      case "host": {
+        const op = args[2];
+        if (op === "install") { registerWorkspace(ws); installHostUnit(); return out({ scheduler: schedulerStatus(ws, io) }); }
+        if (op === "uninstall") { unregisterWorkspace(ws); if (!readRegistry().workspaces.length) uninstallHostUnit(); return out({ scheduler: schedulerStatus(ws, io) }); }
+        if (op === "status") return out({ scheduler: schedulerStatus(ws, io) });
+        throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
+      }
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id>|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+    }
+  } catch (e) { cmdFail(e.code || "E_SCHEDULE_FAILED", e.message); }
 }
 
 async function sessionCmd() {
@@ -3161,7 +3247,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest"], features: ["retire-home", "session-start"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule"], features: ["retire-home", "session-start", "schedule"], scheduleApi: SCHEDULE_API }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3316,6 +3402,32 @@ function serverRouteCmd() {
     if (hr.instance && hr.instance !== inst) console.log(`  the harvester ${hr.instance} runs on ${id}; retire it there when it is done, or let it self-retire`);
     return;
   }
+  if (cmd === "schedule") {
+    // Host-owned: the subcommand runs in the server's registered workspace.
+    // A local --file spec is read here and travels inline; the remote
+    // cannot read this machine's files.
+    const rest = [];
+    for (let i = 1; i < args.length; i++) {
+      const a = args[i];
+      if (a === "--server") { i++; continue; }
+      if (a === "--json") continue;
+      if (a === "--file") {
+        const f = args[++i];
+        if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--file needs a path");
+        if (!existsSync(f)) bail("E_BAD_ARGS", `spec file not found: ${f}`);
+        rest.push("--spec-json", readFileSync(f, "utf8"));
+        continue;
+      }
+      rest.push(a);
+    }
+    let out;
+    try { out = scheduleRemote(id, rest); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
+    if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+    if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "schedule command failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
+    console.log(JSON.stringify(out.envelope.result, null, 2));
+    return;
+  }
   if (cmd === "session") {
     const addr = { instance: flag("instance") === true ? undefined : flag("instance"), home: flag("home") === true ? undefined : flag("home") };
     if (args[1] === "inspect") {
@@ -3426,10 +3538,10 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
@@ -3459,6 +3571,7 @@ else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // Same rule as the inner catch: a typed CLI failure surfaces with its own code
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
 else if (cmd === "session") await sessionCmd();
+else if (cmd === "schedule") scheduleCmd();
 else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "create") createCmd();
@@ -3530,6 +3643,13 @@ Usage:
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
+  oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>
+      enable|disable|run|remove|reconcile <id>   workspace-scoped, host-owned schedules (spawn,
+      tick [--dry-run] [--host]                  command or wake jobs on a five-field cron with an
+      host install|uninstall|status              explicit IANA tz; see docs/schedules.md); --server
+                                                routes to that host's workspace
+  oats spawn ... --wake-file <json> | --wake-every <N> --wake-message <text>  save a wake schedule
+                                                bound to the new instance's home (docs/schedules.md)
   oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model

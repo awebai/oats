@@ -44,7 +44,8 @@
     "packages/record/package.json"
   ],
   "dependencies": {
-    "@awebai/pi": "^0.2.1"
+    "@awebai/pi": "^0.2.1",
+    "croner": "10.0.1"
   },
   "bin": {
     "oats": "./bin/oats.mjs"
