@@ -111,9 +111,6 @@ export function buildConstellation(instances) {
 }
 
 export function collectControlPane(root) {
-  const tmuxText = exec("tmux", ["list-windows", "-a", "-F", "#{session_name}\t#{window_name}\t#{window_id}\t#{window_active}\t#{pane_current_command}\t#{pane_dead}"]);
-  const windows = parseTmuxWindows(tmuxText);
-  const windowByTarget = new Map(windows.map((window) => [`${window.session}:${window.window}`, window]));
   const knowledgeCounts = new Map();
   const agents = listInstances(root);
   const instances = [];
@@ -128,15 +125,13 @@ export function collectControlPane(root) {
       const stateText = readMarkdown(join(home, "STATE.md"));
       const session = metadata.tmux?.session || "pi-agents";
       const windowName = metadata.tmux?.window || metadata.instance;
-      const window = windowByTarget.get(`${session}:${windowName}`);
       instances.push({
         ...metadata,
         agent: metadata.agent || agent.name,
         description: agent.description || "",
         home,
-        running: metadata.sessionTarget ? metadata.running : !!window && !window.dead,
-        tmux: metadata.sessionTarget ? null : { ...metadata.tmux, session, window: windowName, id: window?.id },
-        command: window?.command || "",
+        running: metadata.running,
+        tmux: metadata.sessionTarget ? null : { ...metadata.tmux, session, window: windowName },
         git: gitState(workPath, metadata.branch),
         task: readMarkdownSection(taskText, "Task") || "No task provided",
         next: readMarkdownSection(stateText, "Next") || "No next action recorded",
@@ -153,7 +148,7 @@ export function collectControlPane(root) {
     rows: buildConstellation(instances),
     running: instances.filter((instance) => instance.running).length,
     soulCount: agents.length,
-    tmuxAvailable: windows.length > 0,
+    tmuxAvailable: instances.some((instance) => instance.tmux && instance.running),
   };
 }
 
