@@ -48,6 +48,7 @@ test("commands OATS did not render are refused, never rewritten by substring", (
     "'claude' --model 'x'; rm -rf /",
     "'claude' --model 'x $(id)'x -- \"$(cat TASK.md)\"",
     "'claude' --model",
+    "'claude' --mo\\del 'x'",
     "'claude' --model --yolo",
     "'claude' --model 'first' --model 'last'",
     "FOO=bar 'claude'",
