@@ -25,6 +25,7 @@ import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor } from "./workspace-registry.mjs";
 import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
+import { startSingleInstance } from "./single-instance.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -59,7 +60,9 @@ const serverHost = createServerHost({
       ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : [])], {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: WORKSPACE,
-      env: { ...process.env },
+      // process.execPath is the packaged Electron executable. The backend
+      // and its collector children must run as Node, not relaunch the app.
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     });
     child.stdout.on("data", (d) => process.stdout.write(`[oats-desktop-server] ${d}`));
     child.stderr.on("data", (d) => process.stderr.write(`[oats-desktop-server] ${d}`));
@@ -499,7 +502,7 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(async () => {
+const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindows(), async () => {
   installAppMenu();
   sweepOrphanViewers(); // a previously crashed desktop must not leak viewer sessions
   try { await ensureServer(); }
@@ -515,7 +518,7 @@ app.whenReady().then(async () => {
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });
 
-app.on("window-all-closed", () => { app.quit(); });
+if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 
 function shutdown() {
   // Detach every pty and kill its viewer session (never the durable
@@ -530,9 +533,9 @@ function shutdown() {
   sweepOrphanViewers();
   serverHost.stop();
 }
-app.on("before-quit", shutdown);
+if (primaryInstance) app.on("before-quit", shutdown);
 // SIGTERM/SIGINT (e.g. `kill <pid>`, Ctrl-C from a launcher shell) do not run
 // before-quit on their own — without this the spawned backend child leaks.
-for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) {
+for (const sig of primaryInstance ? ["SIGTERM", "SIGINT", "SIGHUP"] : []) {
   process.on(sig, () => { shutdown(); app.quit(); });
 }

@@ -27,6 +27,7 @@ module.exports = {
     "preload.cjs",
     "api-url.mjs",
     "app-menu.mjs",
+    "single-instance.mjs",
     "cli-adapter.mjs",
     "cli-locator.mjs",
     "server-compat.mjs",

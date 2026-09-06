@@ -404,6 +404,43 @@ export class RecordStore {
     return parseJournal(readFileSync(path)).turns;
   }
 
+  // Bulk consumers need one turn at a time, not a buffer and parsed array
+  // for an entire historical journal (some exceed 800 MB). Keep at most
+  // one complete line plus read chunks, with the same corruption/torn-tail
+  // rules as readStream. Joining fragments only at a newline avoids
+  // repeatedly copying long lines as each chunk arrives.
+  *iterateStream(streamId) {
+    let fd;
+    try { fd = openSync(this.journalPath(streamId), "r"); }
+    catch (e) { if (e.code === "ENOENT") return; throw e; }
+    let pieces = [], size = 0, lineStart = 0;
+    try {
+      for (;;) {
+        const chunk = Buffer.allocUnsafe(65536);
+        const n = readSync(fd, chunk, 0, chunk.length, null);
+        if (n === 0) break;
+        let from = 0;
+        for (let nl = chunk.indexOf(10, from); nl >= 0 && nl < n; nl = chunk.indexOf(10, from)) {
+          pieces.push(chunk.subarray(from, nl + 1));
+          size += nl + 1 - from;
+          const line = pieces.length === 1 ? pieces[0] : Buffer.concat(pieces, size);
+          let parsed;
+          try { parsed = parseJournal(line); }
+          catch (e) {
+            if (e instanceof StoreError) throw new StoreError(`corrupt interior journal line at byte ${lineStart}`);
+            throw e;
+          }
+          lineStart += size;
+          pieces = []; size = 0; from = nl + 1;
+          yield* parsed.turns;
+        }
+        if (from < n) { pieces.push(chunk.subarray(from, n)); size += n - from; }
+      }
+      // A final fragment without a newline is a torn tail, even if its
+      // JSON is valid. Readers leave it for the owner's append repair.
+    } finally { closeSync(fd); }
+  }
+
   // Is this a session-content stream (`<owner>~<source>.<session-id>`)?
   // Their journals hold whole conversations and can be large, so bulk
   // reads exclude them unless asked; access them per-thread instead.

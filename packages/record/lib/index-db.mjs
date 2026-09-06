@@ -163,12 +163,13 @@ export class RecordIndex {
         "INSERT INTO index_state (stream, indexed_count) VALUES (?, ?) ON CONFLICT(stream) DO UPDATE SET indexed_count = excluded.indexed_count",
       );
       for (const streamId of this.store.listStreams()) {
-        const turns = this.store.readStream(streamId);
         const done = Number(getState.get(streamId)?.indexed_count ?? 0);
-        for (let i = done; i < turns.length; i++) {
-          this.addTurn(turns[i], streamId, effectiveOwner);
+        let count = 0;
+        for (const turn of this.store.iterateStream(streamId)) {
+          if (count >= done) this.addTurn(turn, streamId, effectiveOwner);
+          count++;
         }
-        setState.run(streamId, turns.length);
+        setState.run(streamId, count);
       }
       this.db.exec("COMMIT");
     } catch (err) {
