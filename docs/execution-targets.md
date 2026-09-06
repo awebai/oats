@@ -117,7 +117,31 @@ oats session attach --home /absolute/instance
 oats session inspect --home /absolute/instance --json
 oats session input --home /absolute/instance --text-file /path/to/message --json
 printf '%s' 'Check your pending work.' | oats session input --home /absolute/instance --json
+oats session start --home /absolute/instance [--model <id>] --json
 ```
+
+`start` runs a STOPPED instance again in its existing home: same identity,
+worktree, notes and launch environment, no spawn hooks, no new home. It reuses
+the persisted launch command, on the recorded tmux session and socket or the
+recorded Herdr server, and records the new session target in the instance
+metadata and the independent lifecycle receipt (whose home and work
+fingerprints are untouched, so a later retire still preserves everything
+changed since the original spawn). `--model` replaces the recorded model for
+this and later starts by re-rendering the persisted command; a command shape
+OATS did not generate is refused rather than rewritten. A live harness is
+refused (`E_SESSION_RUNNING`); a fallback shell with no harness descendant
+and a dead pane restart in that exact pane, a missing window opens again, and
+a lost tmux server after a reboot is recreated on the recorded socket. A state
+that cannot be established refuses (`E_SESSION_UNKNOWN`). Every observation
+happens under a per-home guard, so two starts of one home serialize
+(`E_SESSION_START_BUSY`); a start that allocated a session but could not
+record it leaves `.oats-start-pending.json` naming the actual target, and the
+next start reconciles that receipt before the ordinary metadata check: a
+target that is present is recorded and adopted, one that is provably gone is
+dropped, and one that cannot be observed refuses and keeps the receipt.
+The start opens a new harness conversation on the instance's `TASK.md`; the
+instance resumes its work from its own `STATE.md`, as the knowledge protocol
+prescribes.
 
 `attach` is interactive and does not accept `--json`. It validates the saved
 endpoint on the execution host, then opens a Herdr terminal viewer or an
