@@ -60,7 +60,9 @@ const serverHost = createServerHost({
       ...dirs.flatMap((d) => ["--dir", d]), ...(chosen ? ["--oats-bin", chosen] : [])], {
       stdio: ["ignore", "pipe", "pipe"],
       cwd: WORKSPACE,
-      env: { ...process.env },
+      // process.execPath is the packaged Electron executable. The backend
+      // and its collector children must run as Node, not relaunch the app.
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
     });
     child.stdout.on("data", (d) => process.stdout.write(`[oats-desktop-server] ${d}`));
     child.stderr.on("data", (d) => process.stderr.write(`[oats-desktop-server] ${d}`));
