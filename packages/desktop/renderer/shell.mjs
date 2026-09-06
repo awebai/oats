@@ -9,7 +9,7 @@
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
-import { instanceActions } from "./instance-actions.mjs";
+import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
 import {
@@ -237,6 +237,7 @@ async function refreshContextRoster() {
 function renderContextRoster(instances) {
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const restoreTreeState = captureTreeRenderState(listEl);
+  const restoreActionMenu = captureInstanceActionMenu(listEl);
   listEl.innerHTML = "";
   const matching = filterInstanceTree(instances, contextFilter);
   const ws = contextWorkspace || currentWorkspace();
@@ -363,6 +364,7 @@ function renderContextRoster(instances) {
     }
   }
   restoreTreeState();
+  restoreActionMenu();
   // roving tabindex: exactly one row enters the tab order — the focused row
   // when it survived the rebuild, else the first enabled one
   const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
