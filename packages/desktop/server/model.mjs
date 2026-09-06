@@ -132,6 +132,7 @@ export function collectControlPane(root) {
         home,
         running: metadata.running,
         tmux: metadata.sessionTarget ? null : { ...metadata.tmux, session, window: windowName },
+        command: metadata.paneCommand || "",
         git: gitState(workPath, metadata.branch),
         task: readMarkdownSection(taskText, "Task") || "No task provided",
         next: readMarkdownSection(stateText, "Next") || "No next action recorded",

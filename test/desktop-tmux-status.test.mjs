@@ -44,7 +44,7 @@ test("unreachable or malformed status stays unknown, proven missing socket is st
 
 test("panel model preserves saved-route status instead of rechecking the default socket", () => {
   const instances = [
-    { instance: "live", running: true, tmux: { socket: "/saved", session: "team", window: "live", id: "@1" } },
+    { instance: "live", running: true, command: "PRIVATE_ENV=value claude", paneCommand: "claude", tmux: { socket: "/saved", session: "team", window: "live", id: "@1" } },
     { instance: "unknown", running: null, runtimeError: "unreachable", tmux: { socket: "/lost" } },
   ];
   initModel({ listInstances: () => [{ name: "agent", dir: "/nonexistent-oats-status-test", instances }] });
@@ -52,5 +52,6 @@ test("panel model preserves saved-route status instead of rechecking the default
   assert.equal(panel.instances[0].running, true);
   assert.equal(panel.instances[0].tmux.socket, "/saved");
   assert.equal(panel.instances[0].tmux.id, "@1");
+  assert.equal(panel.instances[0].command, "claude", "do not expose the persisted launch command as process status");
   assert.equal(panel.instances[1].running, null);
 });
