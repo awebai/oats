@@ -302,7 +302,15 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // apiUrl rejects off-origin resolution (e.g. "//attacker/x"), and pins
   // the verified workspace on scoped endpoints unless the caller selects a
   // workspace this server actually advertises (the views' ws switcher).
-  const url = apiUrl(pathname, base(), wsId, allowedWs);
+  let url = apiUrl(pathname, base(), wsId, allowedWs);
+  const requestedWs = new URL(pathname, base()).searchParams.get("ws");
+  // SSH workspaces can appear after startup. Before replacing an explicit
+  // selection with the local default, refresh the server's advertised set.
+  // Known-workspace polling stays unchanged; unadvertised paths stay pinned.
+  if (requestedWs && url.searchParams.get("ws") !== requestedWs) {
+    await panelWorkspaces();
+    url = apiUrl(pathname, base(), wsId, allowedWs);
+  }
   // apiInit forwards pre-serialized (string) bodies and headers unchanged —
   // views serialize once in common.mjs::postJson — and serializes object
   // bodies itself.
