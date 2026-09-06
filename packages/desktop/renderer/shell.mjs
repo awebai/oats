@@ -314,7 +314,7 @@ function renderContextRoster(instances) {
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
         row.disabled = i.running == null || (!!i.server && !i.savedRoute);
         row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
-          : i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
+          : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");

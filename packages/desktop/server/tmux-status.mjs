@@ -56,7 +56,7 @@ export function createTmuxStatusReader({ exec = execFileSync } = {}) {
     tmux.id = pane.id;
     try {
       const running = !shells.has(pane.command.replace(/^-/, "")) || hasHarness(pane.pid);
-      return { tmux, running, runtimeState: running ? "running" : "shell" };
+      return { tmux, running, runtimeState: running ? "running" : "shell", paneCommand: pane.command };
     } catch (e) { return unknown(e.message); }
   };
 }
