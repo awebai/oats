@@ -16,6 +16,7 @@ function bridge() {
   let advertised = ["/"];
   let panelFails = false;
   let heldResponse = null;
+  let inTransition = false;
   const requests = [];
   const fetch = async (input) => {
     const url = new URL(input);
@@ -33,8 +34,9 @@ function bridge() {
   };
   const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let serverEpoch = 0;\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
-  const invalidate = new Function("fetch", "apiUrl", "apiInit", "ipcMain", "guard", setup)(
+  const invalidate = new Function("fetch", "apiUrl", "apiInit", "ipcMain", "guard", "serverHost", setup)(
     fetch, apiUrl, apiInit, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
+    { inTransition: () => inTransition },
   );
   return {
     call: (path, opts) => handler({}, path, opts),
@@ -42,6 +44,8 @@ function bridge() {
     failPanel: () => { panelFails = true; },
     holdNext: () => { let release; heldResponse = new Promise((resolve) => { release = resolve; }); return release; },
     invalidate, requests,
+    beginTransition: () => { inTransition = true; invalidate(); },
+    endTransition: () => { inTransition = false; },
   };
 }
 
@@ -90,4 +94,18 @@ test("an outgoing backend response cannot restore its invalidated choices", asyn
   await pending;
   const result = await b.call("/api/agents?ws=" + encodeURIComponent(remote));
   assert.equal(result.body.workspace.id, "/");
+});
+
+test("a poll started during replacement cannot teach outgoing choices after replacement finishes", async () => {
+  const b = bridge();
+  b.advertise(["/", remote]);
+  b.beginTransition();
+  const release = b.holdNext();
+  const pending = b.call("/api/panel");
+  b.advertise(["/"]);
+  b.endTransition();
+  release();
+  await pending;
+  await b.call("/api/agents?ws=" + encodeURIComponent(remote));
+  assert.equal(b.requests.at(-1).searchParams.get("ws"), "/");
 });
