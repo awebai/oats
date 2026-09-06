@@ -45,7 +45,9 @@ review, adding harvest-runtime selection and detection of unadvanced record
 plans. Each deployment selects an authenticated harness; without an explicit
 harvest-model, that harness uses its own configured default. Some prepared
 teams still use the compatible 1.5.0 package; preserve the exact versions of
-each earlier qualification.
+each earlier qualification. Follow-up 1.5.2 is now published with truthful
+failure exits, harmless help and repeat-harvest branch reuse. BeadHub's actual
+deployment has been updated and re-trusted at 1.5.2; its previous lock was 1.5.0.
 
 BeadHub, Minerva and Merlin now have managed standing executions with retained
 identities. BeadHub and Minerva passed separate mail/chat checks; Merlin verified
@@ -97,12 +99,12 @@ Experimental mind follow remains paused.
 | Scope | Verified state | Next boundary |
 | --- | --- | --- |
 | Host services | Published aw 1.36.1 installed; normal launchd wake service on Mac and enabled user service on `aweb-agents`; private broker stopped | Investigate repeated reconnect hints and reported read timing without assuming the broker acknowledged mail |
-| BeadHub | `beadhub-seat`, retained DID/address and claims; native Codex; independent mail/chat; first reviewed knowledge PR merged at `70c839e` | Repeat harvest exposed a retained merged-branch collision; operator updated the linked soul and removed only the verified merged branch; next cycle waits for a bounded launch slot |
-| Cjr | `accountant-minerva` and `coordinator-merlin` live on retained identities; old holders stopped first; claims preserved; real delivery and reviewed learning recorded | Reviewed log update `5bfeefd1` landed with user edits preserved; the idle librarian has the sole slot for its ordinary harvest; no financial authority changes |
-| Aweb | Coordinator remains live; `frontend-oats` passed independent mail/chat and reviewed knowledge promotion `d649d729`; failed-join cleanup completed using oats.aweb 1.10.3 | A separately resumed old frontend was confirmed idle and stopped with its channel child; absence verified 2026-09-06 01:03:15 UTC; coordinator handover awaits its slot |
+| BeadHub | `beadhub-seat`, retained DID/address and claims; native Codex; independent mail/chat; first reviewed knowledge PR merged at `70c839e`; trusted OKF 1.5.2 and aweb 1.10.3 | One repeat harvest of four real notes has the assigned slot; its exact promotion still needs acceptance |
+| Cjr | `accountant-minerva` and `coordinator-merlin` live on retained identities; old holders stopped first; claims preserved; real delivery and reviewed learning recorded | Log `5bfeefd1` and corrected librarian knowledge `6c91f986` landed with user edits preserved; librarian retired with alias reusable; Merlin's own harvest and health-reader follow-up remain queued |
+| Aweb | Retained `coordinator-aweb` and fresh `frontend-oats` both passed independent mail/chat; frontend knowledge `d649d729` reviewed and landed | Old holders stopped with their channel children before replacement; metadata repair and encryption-key findings tracked separately, with repeated wake-hint diagnosis in progress |
 | TSM | Prepared souls and owner checkpoints; Themis setup failed before the current hold | **No migration work until Zeus reports deployment finished**; re-inventory with its owner afterwards |
 | Docflow | Legacy seat and actual mail backfill remain running | Finish backfill and register checks; owner restores mail-ingest afterwards; accountant-sync remains unloaded under its separate export fence |
-| Oats/lead | Existing coordinators remain active | Last handovers, with actual stop receipts and all unresolved work carried forward |
+| Oats/lead | Retained `oats-coordinator-coordinator` verified identity and independent mail wake after old holder and channel stopped | Lead's fresh local successor remains the final handover; preserve the active epic and all unresolved boundaries |
 | Remote qualification | Published host service delivered native Claude mail/chat through Herdr; corrected knowledge independently reviewed; source retired with `aliasReusable: true` | Earlier separate fresh-reader cycle passed; latest corrected wake-specific retrieval is still pending |
 
 Published aw 1.36.1 is tagged at `bfdb20886080e4ffe1f02b266f6116d12bd100fd`.
