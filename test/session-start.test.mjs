@@ -401,15 +401,16 @@ test("a never-launched Herdr home without an endpoint cannot silently switch to 
 test("a live startup shell is protected until its command actually exits", async () => {
   const f = makeHome("slow-shell");
   const harness = join(base, "slow-shell-wrapper");
-  // Builtins only: the runtime inspector correctly sees shells throughout
-  // startup. The reviewer reproduced duplicate starts during this phase.
+  // Builtins only. macOS reports the interpreter as a shell; Linux may
+  // report the script name as an active process. Both must refuse a retry.
+  // The injected transient-child test below pins the shell-only branch.
   writeFileSync(harness, '#!/bin/bash\nSECONDS=0\nwhile (( SECONDS < 2 )); do :; done\nexit 0\n');
   chmodSync(harness, 0o755);
   writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, command: shq(harness) }));
   const first = startInstanceSession(f.home);
   const pane = tmux("display-message", "-p", "-t", `=${session}:=slow-shell`, "#{pane_id}");
   assert.equal(first.reused, "new");
-  assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_START_BUSY");
+  assert.throws(() => startInstanceSession(f.home), (e) => ["E_SESSION_START_BUSY", "E_SESSION_RUNNING"].includes(e.code));
   assert.equal(tmux("display-message", "-p", "-t", `=${session}:=slow-shell`, "#{pane_id}"), pane);
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
   await waitUntil(() => existsSync(join(f.home, ".oats-start-exited")) && inspectInstanceSession(f.home).state === "shell", "slow shell completion marker");
