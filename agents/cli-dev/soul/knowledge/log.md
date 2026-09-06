@@ -251,6 +251,7 @@
 * **Creation**: [whitelist-normalizer-drops-new-probe-fields](/lessons/whitelist-normalizer-drops-new-probe-fields.md) and [recording-a-disambiguator-is-not-passing-it](/lessons/recording-a-disambiguator-is-not-passing-it.md) record the two boundary-whitelist defects the round-2 reviewer of servers-roster (aee50c6) found; promoted by the coordinator from the reviewer's mail.
 * **Creation**: [remote-roster-widens-local-file-guard](/lessons/remote-roster-widens-local-file-guard.md) and [finding-fixed-on-one-surface-only](/lessons/finding-fixed-on-one-surface-only.md) record the round-2 Desktop projection review (b73918f) findings B1 and B3; promoted by the coordinator from the reviewer's mail.
 * **Creation**: [retry-hint-sites-travel-in-packs](/lessons/retry-hint-sites-travel-in-packs.md) and [guard-the-projection-not-just-the-action](/lessons/guard-the-projection-not-just-the-action.md) record the round-3 servers-roster review (444967f); promoted by the coordinator from the reviewer's mail.
+* **Creation**: [implicit-global-is-one-predicate-written-twice](/lessons/implicit-global-is-one-predicate-written-twice.md) and [mutation-killed-but-measuring-the-wrong-layer](/lessons/mutation-killed-but-measuring-the-wrong-layer.md) record the use-from-none review (7d98a55); promoted by the coordinator from the reviewer's mail.
 
 ## 2026-07-21
 

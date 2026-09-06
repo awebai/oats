@@ -2961,6 +2961,17 @@ function capabilityCommand() {
     if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${m.capability} executable command is blocked: ${trust.reason}`);
     const sub = args[1];
     const cmds = Object.keys(m.commands);
+    // `oats <ns> --help` and `oats <ns> <cmd> --help` answer from the manifest
+    // and never run the executable: the command's own help, if it has one,
+    // is not worth a side effect (harvest --help once spawned a harvester).
+    if (HELP_WORDS.has(sub) || args.slice(2).some((a) => a === "--help" || a === "-h")) {
+      const known = sub && !HELP_WORDS.has(sub) && Object.prototype.hasOwnProperty.call(m.commands, sub);
+      if (JSON_MODE) { jsonOk({ capability: m.capability, namespace: cmd, command: known ? sub : null, commands: cmds, description: m.description || null, help: "printed from the manifest; the executable was not run" }); return; }
+      console.log(`oats ${cmd}${known ? ` ${sub}` : ""} — ${m.capability}${m.description ? `: ${m.description}` : ""}`);
+      console.log(`  commands: ${cmds.join(", ") || "(none)"}`);
+      console.log(`  (help printed from the manifest; the executable was not run)`);
+      process.exit(0);
+    }
     // Distinguish an ABSENT key from a declared-but-invalid value: a manifest
     // entry of "" / 0 / false / null is a broken capability, not an unknown
     // command (it is listed in cmds).
@@ -3395,6 +3406,13 @@ function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
+// `--help`/`-h` anywhere after a kernel command prints that command's usage
+// and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
+// using a command, and `install --help` once ran the bare restore while
+// `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
+if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "doctor") {
@@ -3439,7 +3457,29 @@ else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && capabilityComma
 // text must NOT contaminate stdout — still one envelope object, nonzero exit.
 else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", `unknown command "${cmd}" — no kernel subcommand or active capability namespace matches`);
 else {
-  console.log(`oats — Open Agent Team Specification
+  console.log(usageText());
+  process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
+}
+
+/** The usage lines for one kernel command (its `oats <cmd> ...` lines and
+ *  their indented continuations), or the whole usage when none match. */
+function usageLinesFor(name) {
+  const out = [];
+  let inside = false;
+  for (const line of usageText().split("\n")) {
+    if (new RegExp(`^  oats ${name}(\\s|$)`).test(line)) { out.push(line); inside = true; continue; }
+    if (inside && /^ {6}/.test(line) && !/^  oats /.test(line)) { out.push(line); continue; }
+    inside = false;
+  }
+  return out;
+}
+function usageFor(name) {
+  const out = usageLinesFor(name);
+  console.log(out.length ? `Usage:\n${out.join("\n")}` : usageText());
+}
+
+function usageText() {
+  return `oats — Open Agent Team Specification
 
 Usage:
   oats version [--json]                      kernel version; --json emits the
@@ -3592,8 +3632,7 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)
 
-Layers: ${LAYERS.join(", ")}. Level detection: ~ → laptop, .git → repo, else workspace.`);
-  process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
+Layers: ${LAYERS.join(", ")}. Level detection: ~ → laptop, .git → repo, else workspace.`;
 }
 } catch (e) {
   if (!TYPED_CLI_FAILURES.has(e?.code)) throw e;

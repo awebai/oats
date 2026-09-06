@@ -206,6 +206,17 @@ function wakeDeregister(instanceHome) {
   try { run(["aw", "wake", "deregister", "--home", instanceHome], instanceHome, 60000); return true; } catch { return false; }
 }
 const seatLockPath = (source) => join(dirname(source), ".aw-retained-seat.json");
+/** The alias a home's .aw/workspace.yaml records under memberships (indented),
+ *  or undefined. Read only when the hook has no alias of its own. */
+const workspaceAliasOf = (homeDir) => {
+  try { const m = readFileSync(join(homeDir, ".aw", "workspace.yaml"), "utf8").match(/^\s*alias:\s*["']?([a-z0-9][a-z0-9._-]{0,127})["']?\s*$/mi); return m ? m[1] : undefined; }
+  catch { return undefined; }
+};
+/** A join that the CLI reported as failed (or that this hook killed on
+ *  timeout) may still have completed server-side: the home then holds a
+ *  signing key, a team certificate and a workspace binding. */
+const joinedLate = (homeDir) => existsSync(join(homeDir, ".aw", "signing.key")) && existsSync(join(homeDir, ".aw", "team-certs")) && !!workspaceAliasOf(homeDir);
+const JOIN_TIMEOUT_MS = Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) > 0 ? Number(process.env.OATS_AWEB_JOIN_TIMEOUT_MS) : 120000;
 const yamlScalar = (text, key) => {
   const m = String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
   return m ? m[1].trim() : undefined;
@@ -360,8 +371,18 @@ if (event === "spawn") {
     if (!inv?.token || typeof inv.token !== "string") fatal("aw team invite returned no usable token, so no identity could be minted");
     let raw;
     try {
-      raw = parseSecretJson(run(["aw", "team", "join", inv.token, "--name", instance, "--json"], home, 45000, { secrets: [inv.token], secretSafe: true }), "aw team join");
+      // 120 s: a join on a slow or flapping link is slow, not broken; a killed
+      // join that completed server-side is caught below.
+      raw = parseSecretJson(run(["aw", "team", "join", inv.token, "--name", instance, "--json"], home, JOIN_TIMEOUT_MS, { secrets: [inv.token], secretSafe: true }), "aw team join");
     } catch (e) {
+      // The join may have completed after the CLI was killed or reported a
+      // failure: if the home now holds a bound identity, that identity EXISTS
+      // and must be reported so compensation retires it instead of orphaning it.
+      if (joinedLate(home)) {
+        const late = workspaceAliasOf(home);
+        minted = { team, alias: late };
+        fatal(`aw team join was reported failed (${e.message || e}) but the home now holds a bound identity "${late}" on ${team}; reported for compensation so it is retired, not orphaned`, minted);
+      }
       // A retired alias keeps its certificate until aweb-abim ships, so a
       // re-spawn under the same name is refused by AWID. Say that, and the
       // remedy, instead of relaying a bare join error.
@@ -424,7 +445,7 @@ if (event === "spawn") {
     fatal(`identity minting failed: ${e.message || e}`, minted);
   }
 } else if (event === "retire") {
-  const meta = JSON.parse(process.env.OATS_META || "{}");
+  let meta = JSON.parse(process.env.OATS_META || "{}");
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
@@ -437,6 +458,10 @@ if (event === "spawn") {
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
   // the remote record exists and its key is gone, so the self-delete cannot be
   // authenticated and the cleanup is incomplete, not vacuous (reviewer-602627c).
+  // A home whose spawn hook could not report its alias (a join killed on
+  // timeout that completed anyway) still carries the alias in its workspace
+  // binding: use it rather than leaving the workspace orphaned.
+  if (!meta.alias) { const late = workspaceAliasOf(home); if (late) meta = { ...meta, alias: late, aliasFromHome: true }; }
   if (!meta.alias) out({ meta: { retired: false, reason: "nothing-to-delete" } });
   if (!existsSync(join(home, ".aw"))) {
     out({ meta: { retired: false, reason: "no-local-identity-key" }, warning: `oats-aweb: alias "${meta.alias}" was minted but ${join(home, ".aw")} is gone, so the remote record cannot be self-deleted and will linger until stale` }, 1);

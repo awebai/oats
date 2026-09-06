@@ -222,6 +222,37 @@ function opsCapability(repo, { commands = { ping: "ping.mjs" } } = {}) {
   return dir;
 }
 
+test("--help never executes: kernel builtins print usage, capability commands answer from the manifest", () => {
+  const base = temp(); const { repo } = fixtureSoul(base);
+  const envNoHome = { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "" };
+  // A builtin with side effects (install with no source runs the bare restore): --help prints usage and touches nothing.
+  let r = spawnSync(process.execPath, [CLI, "install", "--help", "--dir", repo], { cwd: repo, encoding: "utf8", env: envNoHome });
+  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /^Usage:\n  oats install/); assert.doesNotMatch(r.stdout, /Nothing to restore/);
+  assert.equal(existsSync(join(repo, "oats-lock.json")), false, "install --help wrote no lock");
+  r = spawnSync(process.execPath, [CLI, "spawn", "-h"], { cwd: repo, encoding: "utf8", env: envNoHome });
+  assert.equal(r.status, 0); assert.match(r.stdout, /oats spawn <agent>/);
+  r = spawnSync(process.execPath, [CLI, "update", "--help", "--json"], { cwd: repo, encoding: "utf8", env: envNoHome });
+  assert.equal(r.status, 0); const helpDoc = parseOnly(r.stdout); assert.equal(helpDoc.result.command, "update"); assert.ok(helpDoc.result.usage.some((l) => /oats update <package>/.test(l)));
+  // A capability command: the executable must not run for --help.
+  const dir = opsCapability(repo);
+  const marker = join(base, "ping-ran");
+  write(join(dir, "ping.mjs"), `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(marker)}, "ran"); console.log(JSON.stringify({schemaVersion:1,ok:true,result:{pong:true}}))\n`);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.ops:\n      souls:\n        dev: true\n");
+  const home = join(base, "instance"); mkdirSync(home);
+  write(join(home, "instance.json"), JSON.stringify({ repo, capabilities: [{ id: "acme.ops" }] }));
+  const envHome = { ...process.env, PI_AGENT_HOME: home, OATS_HOME: home };
+  for (const argv of [["ops", "ping", "--help"], ["ops", "ping", "-h"], ["ops", "--help"], ["ops", "ping", "--json", "--help"]]) {
+    r = spawnSync(process.execPath, [CLI, ...argv], { cwd: repo, encoding: "utf8", env: envHome });
+    assert.equal(r.status, 0, `${argv.join(" ")}: ${r.stdout}${r.stderr}`);
+    assert.equal(existsSync(marker), false, `${argv.join(" ")} ran the executable`);
+    if (argv.includes("--json")) { const d = parseOnly(r.stdout); assert.equal(d.result.capability, "acme.ops"); assert.deepEqual(d.result.commands, ["ping"]); }
+    else assert.match(r.stdout, /acme\.ops.*\n\s+commands: ping/);
+  }
+  // Without --help the executable still runs.
+  r = spawnSync(process.execPath, [CLI, "ops", "ping"], { cwd: repo, encoding: "utf8", env: envHome });
+  assert.equal(r.status, 0, r.stderr); assert.equal(existsSync(marker), true);
+});
+
 test("capability dispatch --json failures are one stdout envelope with stable codes", () => {
   const base = temp(); const { repo } = fixtureSoul(base);
   opsCapability(repo);
