@@ -86,6 +86,27 @@ test("session events index exactly once as the session grows", (t) => {
   assert.equal(index.search("charlie").length, 1);
 });
 
+test("incremental indexing streams journals, preserves cursors and rolls back on corruption", (t) => {
+  const { store } = setup(t);
+  store.appendCore("mac~aw-test", mailCore("firststreamword"));
+  const index = new RecordIndex(store);
+  t.after(() => index.close());
+  // Bulk materialization must not sneak back into the indexing path.
+  store.readStream = () => { throw new Error("index must not materialize a full journal"); };
+  index.update();
+  assert.equal(index.search("firststreamword").length, 1);
+  const next = finishTurn(mailCore("secondstreamword"));
+  appendFileSync(store.journalPath("mac~aw-test"), '\n' + JSON.stringify(next) + '\n');
+  index.update(); index.update();
+  assert.equal(index.search("secondstreamword").length, 1);
+  assert.equal(index.db.prepare("SELECT indexed_count FROM index_state WHERE stream = ?").get("mac~aw-test").indexed_count, 2);
+  const third = finishTurn(mailCore("rollbackstreamword"));
+  appendFileSync(store.journalPath("mac~aw-test"), JSON.stringify(third) + '\nbroken\n');
+  assert.throws(() => index.update(), /corrupt interior journal line/);
+  assert.equal(index.search("rollbackstreamword").length, 0, "failed scan rolls back new turns");
+  assert.equal(index.db.prepare("SELECT indexed_count FROM index_state WHERE stream = ?").get("mac~aw-test").indexed_count, 2);
+});
+
 test("tombstoned turns disappear from search", (t) => {
   const { store } = setup(t);
   const { turn } = store.appendCore("mac~aw-test", mailCore("ephemeral secret"));
