@@ -455,3 +455,53 @@ test("a transient startup child does not discard the startup guard", () => {
   assert.equal(launches, 1);
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
 });
+
+test("launch errors never expose saved commands through tmux or Herdr diagnostics", () => {
+  const secret = "SYNTHETIC_START_SECRET";
+  for (const backend of ["respawn", "new-window", "herdr"]) {
+    for (const failure of [{ stderr: secret }, { stderr: "" }, { code: "ENOENT" }, { code: "ETIMEDOUT" }, { signal: "SIGTERM" }]) {
+      const f = makeHome(`redact-${backend}-${Object.keys(failure)[0]}-${String(failure.stderr ?? failure.code ?? failure.signal).length}`);
+      let meta = { ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` };
+      const target = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "h.sock"), protocol: 20, workspaceId: "w", paneId: "p", terminalId: "t" };
+      if (backend === "herdr") {
+        meta = { ...meta, backend: "herdr", sessionTarget: target };
+        delete meta.tmux;
+        writeFileSync(f.baselinePath, JSON.stringify({ ...readJson(f.baselinePath), runtime: { launched: true, sessionTarget: target } }));
+      }
+      writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
+      const baseline = readFileSync(f.baselinePath, "utf8");
+      const io = { exec: (binary, args) => {
+        if (binary === "ps") return "100 1 /bin/zsh\n";
+        if (args.includes("list-panes")) {
+          if (backend === "new-window") throw Object.assign(new Error("absent"), { stderr: "can't find window: agent" });
+          return "%1\t0\tzsh\t100\n";
+        }
+        if (args.includes("list-windows")) return "hq\n";
+        if (args.join(" ") === "api snapshot") return JSON.stringify({ result: { snapshot: { protocol: 20, panes: [{ pane_id: "p", terminal_id: "t" }] } } });
+        if (args[1] === "process-info") return JSON.stringify({ result: { process_info: { foreground_processes: [{ name: "zsh" }] } } });
+        assert.ok(args.includes("respawn-pane") || args.includes("new-window") || args[1] === "run");
+        throw Object.assign(new Error(`Command failed: ${binary} ${args.join(" ")}`), failure);
+      } };
+      assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_START_FAILED" && !e.message.includes(secret) && /evidence is retained/.test(e.message));
+      assert.ok(readJson(join(f.home, ".oats-start-pending.json")).command.includes(secret));
+      assert.deepEqual(readJson(join(f.home, "instance.json")), meta);
+      assert.equal(readFileSync(f.baselinePath, "utf8"), baseline);
+    }
+  }
+});
+
+test("successful launch responses omit the private launch command too", () => {
+  const f = makeHome("private-result");
+  const secret = "SYNTHETIC_RESPONSE_SECRET";
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, command: `REVIEW_TOKEN=${shq(secret)} ${f.command}` }));
+  const io = { exec: (binary, args) => {
+    if (args.includes("list-panes")) throw Object.assign(new Error("absent"), { stderr: "can't find window: private-result" });
+    if (args.includes("list-windows")) return "hq\n";
+    assert.ok(args.includes("new-window"));
+    return "";
+  } };
+  const result = startInstanceSession(f.home, { io });
+  assert.equal("command" in result, false);
+  assert.equal(JSON.stringify(result).includes(secret), false);
+  assert.ok(readJson(join(f.home, "instance.json")).command.includes(secret));
+});
