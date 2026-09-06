@@ -34,3 +34,23 @@ for (const outcome of ["visible", "switched", "missing", "routeConflict"]) test(
     if (outcome === "routeConflict") assert.match(ui.status.textContent, /already has a saved route.*\/remote\/home/);
   } finally { setWorkspace(previous); }
 });
+
+test("a created agent with an unsaved wake schedule stays visible and cannot be spawned twice", async () => {
+  await refreshCli({ api: async () => ({ ok: true, version: "0.22.10", bin: "/oats" }) });
+  const previous = currentWorkspace(); setWorkspace("local");
+  let calls = 0, partial;
+  const wake = { cron: "*/15 * * * *", tz: "UTC", message: "Check pending work", enabled: true };
+  const s = { alive: true, spawnOp: 0, selAgent: { name: "dev", agentsRoot: "/local/agents" }, ctx: {
+    api: async (path, opts) => {
+      assert.equal(path, "/api/spawn"); calls++;
+      assert.deepEqual(JSON.parse(opts.body).wake, wake);
+      return { instance: "dev-one", home: "/local/home", launched: true, wakeScheduleError: { code: "E_DISK", message: "Disk full" } };
+    }, openTerminal: () => assert.fail("partial failure needs acknowledgement"),
+  } };
+  const ui = { btn: {}, status: { classList: { add() {}, remove() {} } }, task: () => "task", purpose: () => "one", wake: () => wake, clear() {}, partial: result => { partial = result; } };
+  try {
+    await doSpawn(s, ui); await doSpawn(s, ui);
+    assert.equal(calls, 1); assert.equal(ui.btn.disabled, true); assert.equal(partial.home, "/local/home");
+    assert.match(ui.status.textContent, /Created dev-one.*not saved.*Disk full/);
+  } finally { setWorkspace(previous); }
+});
