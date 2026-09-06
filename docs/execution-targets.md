@@ -128,7 +128,7 @@ metadata and the independent lifecycle receipt (whose home and work
 fingerprints are untouched, so a later retire still preserves everything
 changed since the original spawn). `--model` replaces the recorded model for
 this and later starts by re-rendering the persisted command; a command shape
-OATS did not generate is refused rather than rewritten. A live harness is
+OATS did not generate is refused rather than rewritten. A quarantined home or one whose self-retirement is in progress is refused (`E_INSTANCE_RETIRING`). A live harness is
 refused (`E_SESSION_RUNNING`); a fallback shell with no harness descendant
 and a dead pane restart in that exact pane, a missing window opens again, and
 a lost tmux server after a reboot is recreated on the recorded socket. A state
