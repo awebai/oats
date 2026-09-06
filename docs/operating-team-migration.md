@@ -33,12 +33,13 @@ Every remembering role must have a tested learning path. Preserve each role's
 explicit policy: Cjr reviewers exclude accumulated memory; Themis uses
 reviewed learning. Config discovery alone establishes none of this.
 
-The installed CLI baseline is published OATS 0.22.5 on this Mac and `aweb-agents`,
+The installed CLI baseline is published OATS 0.22.6 on this Mac and `aweb-agents`,
 including native Pi/Claude/Codex, tmux/Herdr, shared `yolo`, remote Desktop
 roster/actions, retained-authority binding and corrected deferred retirement.
-The installed Mac Desktop 0.22.5 passed published ZIP checksum, strict deep
-codesign, packaged renderer and PTY launch checks; the previous 0.22.4 app
-is preserved for rollback. Official oats.okf 1.5.1 is published after independent
+The installed Mac Desktop 0.22.6 passed published ZIP checksum and strict deep
+codesign and remains closed during resource recovery. The previous 0.22.5 app
+is preserved for rollback; earlier renderer/PTY checks remain version-specific.
+Official oats.okf 1.5.1 is published after independent
 review, adding harvest-runtime selection and detection of unadvanced record
 plans. Each deployment selects an authenticated harness; without an explicit
 harvest-model, that harness uses its own configured default. Some prepared
@@ -48,9 +49,10 @@ each earlier qualification.
 BeadHub, Minerva and Merlin now have managed standing executions with retained
 identities. BeadHub and Minerva passed separate mail/chat checks; Merlin verified
 his identity and preserved claims, then received and replied to Minerva's real
-mail through the host wake path. This is not completion of all teams: frontend
-and Themis encountered failed setup, Docflow still has a running backfill, and
-the coordinator handovers remain outstanding. See the current status below;
+mail through the host wake path. Frontend also has a managed execution with
+separate mail/chat proof and reviewed knowledge promotion. This is not completion
+of all teams: TSM is held, Docflow still has a running backfill, and the coordinator
+handovers remain outstanding. See the current status below;
 older evidence records keep the version and outcome of each earlier check.
 
 ## Current status and operating limits (2026-09-06)
@@ -72,17 +74,24 @@ Lead stopped the capture watcher and residual capture passes, disabled their
 exact Claude hooks, and stopped the experimental mind follow service. Settings,
 service definitions, raw records and learning state are preserved. GUI launch
 is paused. Resume with one bounded operation at a time, checking memory between
-launches; declining swap alone does not prove sustained stability. Capture stays
-disabled until its concurrency fix is independently reviewed and measured. The
-first proposed lock was rejected because age-based stealing and initialization
-races could still permit overlapping passes.
+launches; declining swap alone does not prove sustained stability. Published
+0.22.6 prevents overlapping capture passes with a conservative lock that never
+steals an existing owner; interrupted owners require explicit recovery. Its
+measured full pass still exceeded a 2 GiB RSS budget during indexing and was
+stopped by the monitor. The follow-up streams journal entries instead of loading
+whole arrays. The independently reviewed candidate completed the real index of
+1.74 million turns in 41.6 seconds, at 809.5 MiB peak RSS with normal memory
+pressure, under a 256 MiB Node old-space budget. Capture remains disabled until
+that fix is published and installed. The prepared replacement is one background
+pass every 15 minutes, without per-tool hooks or a permanent watcher.
+Experimental mind follow remains paused.
 
 | Scope | Verified state | Next boundary |
 | --- | --- | --- |
 | Host services | Published aw 1.36.1 installed; normal launchd wake service on Mac and enabled user service on `aweb-agents`; private broker stopped | Investigate repeated reconnect hints and reported read timing without assuming the broker acknowledged mail |
 | BeadHub | `beadhub-seat`, retained DID/address and claims; native Codex; independent mail/chat; first reviewed knowledge PR merged at `70c839e` | Repeat harvest exposed a retained merged-branch collision; operator updated the linked soul and removed only the verified merged branch; next cycle waits for a bounded launch slot |
-| Cjr | `accountant-minerva` and `coordinator-merlin` live on retained identities; old holders stopped first; claims preserved; real delivery and reviewed learning recorded | Complete the existing log worker's fresh review, one reviewer at a time; no financial authority changes |
-| Aweb | Coordinator remains live; old frontend stopped; replacement failed during a timed-out join that completed server-side | Supported cleanup of the retained failed home/orphan binding, then one successor with independent delivery checks |
+| Cjr | `accountant-minerva` and `coordinator-merlin` live on retained identities; old holders stopped first; claims preserved; real delivery and reviewed learning recorded | Reviewed log update `5bfeefd1` landed with user edits preserved; the idle librarian has the sole slot for its ordinary harvest; no financial authority changes |
+| Aweb | Coordinator remains live; `frontend-oats` passed independent mail/chat and reviewed knowledge promotion `d649d729`; failed-join cleanup completed using oats.aweb 1.10.3 | A separately resumed old frontend was confirmed idle and stopped with its channel child; absence verified 2026-09-06 01:03:15 UTC; coordinator handover awaits its slot |
 | TSM | Prepared souls and owner checkpoints; Themis setup failed before the current hold | **No migration work until Zeus reports deployment finished**; re-inventory with its owner afterwards |
 | Docflow | Legacy seat and actual mail backfill remain running | Finish backfill and register checks; owner restores mail-ingest afterwards; accountant-sync remains unloaded under its separate export fence |
 | Oats/lead | Existing coordinators remain active | Last handovers, with actual stop receipts and all unresolved work carried forward |
@@ -97,10 +106,13 @@ Production same-alias join/delete/rejoin passed, and official oats.aweb 1.10.2
 reports the released alias result truthfully. Retained standing-seat retirement
 must still preserve authority.
 
-Desktop 0.22.5 has six validated team roots saved as workspace suggestions,
+Desktop has six validated team roots saved as workspace suggestions,
 not six running GUI instances. It starts with one workspace and can add others.
 It is currently closed; visual QA and sustained multi-workspace memory behavior
-are not claimed. Native remote Pi authentication and remote Codex remain
+are not claimed. Version 0.22.6 includes a single-instance guard. The reviewed
+0.22.7 candidate also explicitly runs the packaged backend as Node; a headless
+check served the API at about 70 MiB. The 0.22.7 release is building on hosted
+runners, not on this Mac. Native remote Pi authentication and remote Codex remain
 unqualified; the accepted remote harness is Claude.
 
 ## Scope inventory
