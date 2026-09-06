@@ -209,7 +209,11 @@ function pass() {
     const ignored = awIgnored ? `, ${awIgnored} ignored` : "";
     log(`aw-logs: ${awFiles} files, ${awEntries} entries, ${awAppended} new, ${awFailed} failed${ignored}`);
   }
-  if (out.appended > 0 && !args["no-index"]) {
+  // Index whenever this pass may index, not only when THIS pass appended:
+  // an append-only pass (--no-index, the hook form) leaves turns behind
+  // that the next indexing pass must pick up. index.update() walks
+  // per-stream cursors, so a pass with nothing new is cheap.
+  if (!args["no-index"]) {
     const index = new RecordIndex(store);
     try {
       index.update();
@@ -271,7 +275,7 @@ if (args.home) {
     for (const { format, dir } of dirs.values()) {
       n += captureSessions(store, { owner, roots: [dir], format, ignore }).appended;
     }
-    if (n > 0 && !args["no-index"]) {
+    if (!args["no-index"]) { // same as pass(): an earlier append-only pass may have left unindexed turns
       const index = new RecordIndex(store);
       try {
         index.update();
