@@ -70,10 +70,11 @@ const serverHost = createServerHost({
   },
   // trust state belongs to the outgoing server — stale entries must never
   // validate ?ws= or decideAdd; repopulated only from the current server.
-  onInvalidate: () => { allowedWs = new Set(); },
+  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; },
 });
 let wsId = null;        // verified workspace id on the server we use
 let allowedWs = new Set(); // workspace ids the connected server advertises
+let serverEpoch = 0;    // prevents an outgoing server response restoring its allowlist
 
 async function panelWorkspaces() {
   try {
@@ -302,15 +303,8 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // apiUrl rejects off-origin resolution (e.g. "//attacker/x"), and pins
   // the verified workspace on scoped endpoints unless the caller selects a
   // workspace this server actually advertises (the views' ws switcher).
-  let url = apiUrl(pathname, base(), wsId, allowedWs);
-  const requestedWs = new URL(pathname, base()).searchParams.get("ws");
-  // SSH workspaces can appear after startup. Before replacing an explicit
-  // selection with the local default, refresh the server's advertised set.
-  // Known-workspace polling stays unchanged; unadvertised paths stay pinned.
-  if (requestedWs && url.searchParams.get("ws") !== requestedWs) {
-    await panelWorkspaces();
-    url = apiUrl(pathname, base(), wsId, allowedWs);
-  }
+  const url = apiUrl(pathname, base(), wsId, allowedWs);
+  const epoch = serverEpoch;
   // apiInit forwards pre-serialized (string) bodies and headers unchanged —
   // views serialize once in common.mjs::postJson — and serializes object
   // bodies itself.
@@ -318,6 +312,11 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   const r = await fetch(url, init);
   const text = await r.text();
   let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  // Remote discovery can finish after startup. Accept the same server-owned
+  // choices the menu receives, without adding requests to workspace polling.
+  if (epoch === serverEpoch && r.ok && url.pathname === "/api/panel" && Array.isArray(json?.workspaces)) {
+    allowedWs = new Set(json.workspaces.map((w) => w?.id).filter((id) => typeof id === "string"));
+  }
   return { ok: r.ok, status: r.status, body: json };
 });
 
