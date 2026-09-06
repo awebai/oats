@@ -128,7 +128,10 @@ under another soul is observed only.
 
 - Routed: `spawn`, `retire`, `status`, `okf harvest`, and, against a 0.22.2
   or later server, `session inspect` (the execution host's envelope, relayed;
-  a Desktop preflight before attaching) and `session attach`. Session input
+  a Desktop preflight before attaching) and `session attach`; against a
+  server whose version probe advertises the `session-start` feature (0.22.9
+  or later), `session start` (the execution host starts the stopped instance
+  in its saved home; `--model` travels). Session input
   runs on the execution host, where the wake broker calls it. `server roster`
   is local (registrations and saved routes, one status pull per group). The
   version probe's `remote` list names this kernel's remote-side surface
