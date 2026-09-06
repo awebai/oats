@@ -46,7 +46,16 @@ execFileSync("/bin/sh", ["-c", `${RECALL} --thread t --json --until ${id} > ${f}
 assert.ok(statSync(f).size <= cap);
 ```
 
-Avoid measuring large subprocess output through `execFileSync(..., { encoding:
-"utf8" })` when size is the fact under test; in this case it silently truncated
-at 65,536 bytes despite an explicit larger `maxBuffer`. Redirect and `statSync`
-when the file size is the measurement.
+Redirect and `statSync` when the file size is the measurement: that measures the
+artifact itself rather than whatever the capture path handed back.
+
+One observation from this command and output path, cause unestablished: reading
+the same answer through `execFileSync(..., { encoding: "utf8" })` returned
+65,536 bytes despite an explicit larger `maxBuffer`. Do not read that as a
+general limit of Node's subprocess capture. An independent control on Node
+v26.8.1 received all 262,144 bytes with UTF-8 and a 2 MiB `maxBuffer` when the
+child wrote synchronously, so the short read does not reproduce on the flag
+combination alone. What produced it here — child exit and flush timing, the
+shell layer, the transport — was never isolated, and nothing in this note
+measures it. Keep it as a reason to prefer the file measurement when size is the
+fact under test, not as a documented behaviour of `execFileSync`.
