@@ -304,7 +304,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // the verified workspace on scoped endpoints unless the caller selects a
   // workspace this server actually advertises (the views' ws switcher).
   const url = apiUrl(pathname, base(), wsId, allowedWs);
-  const epoch = serverEpoch;
+  const epoch = serverHost.inTransition() ? null : serverEpoch;
   // apiInit forwards pre-serialized (string) bodies and headers unchanged —
   // views serialize once in common.mjs::postJson — and serializes object
   // bodies itself.
@@ -314,7 +314,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
   // Remote discovery can finish after startup. Accept the same server-owned
   // choices the menu receives, without adding requests to workspace polling.
-  if (epoch === serverEpoch && r.ok && url.pathname === "/api/panel" && Array.isArray(json?.workspaces)) {
+  if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && url.pathname === "/api/panel" && Array.isArray(json?.workspaces)) {
     allowedWs = new Set(json.workspaces.map((w) => w?.id).filter((id) => typeof id === "string"));
   }
   return { ok: r.ok, status: r.status, body: json };
