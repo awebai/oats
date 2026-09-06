@@ -31,7 +31,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -39,7 +39,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 
 const args = process.argv.slice(2);
@@ -2857,12 +2857,16 @@ async function sessionCmd() {
       return;
     }
     if (args[1] === "inspect") result = inspectInstanceSession(home);
-    else if (args[1] === "input") {
+    else if (args[1] === "start") {
+      const model = flag("model");
+      if (model === true) throw Object.assign(new Error("--model needs a model id; omit it to keep the recorded model"), { code: "E_BAD_ARGS" });
+      result = startInstanceSession(home, { model: model || undefined });
+    } else if (args[1] === "input") {
       const file = flag("text-file");
       if (file === true) throw Object.assign(new Error("--text-file needs a path"), { code: "E_BAD_ARGS" });
       if (!file && process.stdin.isTTY) throw Object.assign(new Error("provide --text-file or pipe input on stdin"), { code: "E_BAD_ARGS" });
       result = inputInstanceSession(home, readFileSync(file || 0, "utf8"));
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach --home /absolute/home [--text-file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start --home /absolute/home [--text-file path] [--model id] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
 }
@@ -3157,7 +3161,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "roster", "harvest"], features: ["retire-home"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest"], features: ["retire-home", "session-start"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3326,7 +3330,19 @@ function serverRouteCmd() {
       console.log(`${r.instance || r.home} on ${id}: ${r.present ? `present, ${r.state || "unknown"}` : "not present"}${r.backend ? ` (${r.backend})` : ""}`);
       return;
     }
-    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect` and `session attach`; input runs on the execution host (the wake broker calls it there)");
+    if (args[1] === "start") {
+      const model = flag("model");
+      if (model === true) bail("E_BAD_ARGS", "--model needs a model id; omit it to keep the recorded model");
+      let out;
+      try { out = startRemote(id, { ...addr, model: model || undefined }); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
+      if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+      if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "start failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
+      const r = out.envelope.result;
+      console.log(`Started ${r.instance || r.home} on ${id} (${r.backend}${r.model ? `, model ${r.model}` : ""}, ${r.reused === "pane" ? "in its existing pane" : r.reused === "adopted" ? "adopted the pending session" : "new window"})`);
+      return;
+    }
+    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -3506,11 +3522,18 @@ Usage:
   oats session inspect|attach --server <id>  inspect (envelope) or attach a viewer (ssh PTY) for a
       --instance <name> | --home <abs>       remote instance over its saved route (--print shows
                                             attach); the server needs oats 0.22.2 or later
+  oats session start --server <id>           start a stopped remote instance in its existing home
+      --instance <name> | --home <abs>       over its saved route; the server must advertise
+      [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]
   oats session inspect|input|attach --home <absolute-home> [--text-file <path>] [--json]
+  oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
+      [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
+                                            spawn hooks); --model replaces the recorded model
+                                            for this and later starts; a live harness is refused
   oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
       [--parent <instance>]                 --def-file creates a local agent;
