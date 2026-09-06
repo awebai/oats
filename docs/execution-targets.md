@@ -134,12 +134,17 @@ and a dead pane restart in that exact pane, a missing window opens again, and
 a lost tmux server after a reboot is recreated on the recorded socket. A state
 that cannot be established refuses (`E_SESSION_UNKNOWN`). Every observation
 happens under a per-home guard, so two starts of one home serialize
-(`E_SESSION_START_BUSY`); a start that allocated a session but could not
-record it leaves `.oats-start-pending.json` naming the actual target, and the
-next start reconciles that receipt before the ordinary metadata check: a
+(`E_SESSION_START_BUSY`). Each launch retains `.oats-start-pending.json`
+with its target and unique id. The wrapper writes that id to
+`.oats-start-exited` only when the saved command returns. A shell without
+the matching exit marker is still starting and cannot be respawned by a
+second caller. This also covers shell-only harness initialization; it needs
+no background monitor. The next start reconciles the complete receipt before
+the ordinary metadata check: a
 target that is present is recorded and adopted; an exited target is reconciled
 before restarting, and an unobservable target or malformed receipt refuses
-and keeps the receipt. Recovery never silently applies a new model to an
+and keeps the receipt. Recovery is idempotent for an already-recorded launch
+and never silently applies a new model to an
 already-running harness. A never-launched legacy Herdr home without a saved
 server endpoint requires that endpoint to be configured before it can start;
 it does not fall back to tmux.
