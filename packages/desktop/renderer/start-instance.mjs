@@ -91,7 +91,12 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
         const ready = await waitForReady({ ctx }, instance, owns);
         if (!owns()) return;
         if (ready) { close(); await ctx.openTerminal(instance, { quiet: true }); }
-        else { status.textContent = "Started; the roster is still updating. Open its terminal from the sidebar when it appears."; }
+        else {
+          // Launch acceptance is not proof that the harness stayed alive.
+          // Permit another attempt only after a fresh status check.
+          started = false; canStart = false;
+          status.textContent = "The launch returned, but no running harness was observed. It may have exited. Refresh status before retrying.";
+        }
       } catch (error) {
         if (!owns()) return;
         status.textContent = started ? `Started, but the terminal could not open: ${error.message}` : error.message;

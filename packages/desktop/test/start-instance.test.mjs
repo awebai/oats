@@ -6,7 +6,7 @@ import { setWorkspace } from "../renderer/views/common.mjs";
 import { cliStart } from "../cli-adapter.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
-function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start } = {}) {
+function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true } = {}) {
   const dom = new JSDOM("<body><button id='opener'>Start</button></body>");
   setWorkspace("/workspace");
   const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running };
@@ -20,7 +20,7 @@ function setup({ running = false, cli = { ok: true, features: ["session-start"],
     assert.fail(path);
   }, openTerminal: async (ref) => opened.push(ref) };
   const opener = dom.window.document.querySelector("#opener"); opener.focus();
-  const open = createInstanceStarter(dom.window.document, ctx, { waitForReady: async () => true });
+  const open = createInstanceStarter(dom.window.document, ctx, { waitForReady: async () => ready });
   const modal = open(instance);
   const submit = () => modal.querySelector("form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
   const cleanup = () => { setWorkspace("/finished"); dom.window.close(); };
@@ -105,4 +105,17 @@ test("start adapter preserves saved home/server and treats the model as one argv
     const r = await cliStart("/installed/oats", { home: "/saved/home", model }, { exec: () => assert.fail("must not execute") });
     assert.equal(r.error.code, "E_BAD_ARGS");
   }
+});
+
+test("an accepted launch that exits permits recovery after a fresh status check", async () => {
+  const s = setup({ ready: false });
+  try {
+    await tick(); s.submit(); await tick();
+    assert.equal(s.opened.length, 0);
+    assert.match(s.modal.querySelector(".start-status").textContent, /may have exited/);
+    assert.equal(s.modal.querySelector(".start-submit").disabled, true);
+    assert.equal(s.modal.querySelector(".start-retry").disabled, false);
+    s.modal.querySelector(".start-retry").click(); await tick();
+    assert.equal(s.modal.querySelector(".start-submit").disabled, false);
+  } finally { s.cleanup(); }
 });
