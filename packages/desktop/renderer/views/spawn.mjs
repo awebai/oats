@@ -15,6 +15,8 @@ import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard, cliRelationsAvailable } from "./cli-status.mjs";
 import { distinguishingRootTags } from "../instance-tree.mjs";
+import { preselectSchedule } from "./schedules.mjs";
+import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
 
 /** Required-version label for the disabled relation note. The floor is the
  * LOCATOR's (RELATIONS_MIN, served as `relationsMin`); restating a number here
@@ -439,6 +441,11 @@ function soulCard(s, a) {
   brain.addEventListener("click", () => s.ctx.openBrain?.(a.name));
   actions.append(brain);
   card.append(actions);
+  const schedule = document.createElement("button");
+  schedule.className = "act schedule-act"; schedule.textContent = "Schedule…";
+  schedule.disabled = attached || noCli || !a.agentsRoot;
+  schedule.addEventListener("click", () => { preselectSchedule(a); s.ctx.openView?.("schedules"); });
+  actions.append(schedule);
   return card;
 }
 
@@ -586,6 +593,8 @@ function openSpawnModal(s, a) {
       </div>
     </section>`;
   const dialog = modal.querySelector(".spawn-dialog");
+  const wakeFields = wakeScheduleFields(doc);
+  modal.querySelector(".soul-form").insertBefore(wakeFields.el, modal.querySelector(".frow"));
   buildRefOptions(modal.querySelector(".frelto")); // safe DOM construction (never innerHTML)
   // SECURITY (merged-state review @3e76616): a.model is workspace-controlled
   // and escapeHtml is TEXT-context only (it does not escape quotes) — an
@@ -708,7 +717,7 @@ function openSpawnModal(s, a) {
     if (e.key === "Escape") { e.preventDefault(); close(); return; }
     if (e.key !== "Tab") return; // focus trap (ws-dialog pattern)
     const focusable = [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])")]
-      .filter((el) => !el.hidden && el.tabIndex >= 0);
+      .filter((el) => !el.hidden && !el.closest("[hidden]") && el.tabIndex >= 0);
     if (!focusable.length) return;
     const first = focusable[0], last = focusable.at(-1);
     if (e.shiftKey && doc.activeElement === first) { e.preventDefault(); last.focus(); }
@@ -728,6 +737,17 @@ function openSpawnModal(s, a) {
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
     server: () => f.querySelector(".fserver")?.value || "",
+    wake: () => wakeFields.read(),
+    partial: (result) => {
+      const manage = doc.createElement("button"); manage.className = "act"; manage.type = "button";
+      manage.textContent = "View schedules";
+      manage.addEventListener("click", () => {
+        closeSpawnModal(s);
+        if (result.workspaceId) setWorkspace(result.workspaceId);
+        s.ctx.openView?.("schedules");
+      });
+      f.querySelector(".frow").append(manage);
+    },
     clear: () => {
       f.querySelector(".fpurpose").value = ""; f.querySelector(".ftask").value = "";
       f.querySelector(".frelation").value = "unrelated";
@@ -795,6 +815,7 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
 }
 
 export async function doSpawn(s, ui) {
+  if (ui?.spawned) return;
   const a = s.selAgent;
   if (!a) return;
   // CLI gate at SUBMIT time (review d7becaf): a modal opened before a state
@@ -864,6 +885,7 @@ export async function doSpawn(s, ui) {
       backend: (ui.backend ? ui.backend() : "") || undefined,
       runtime: (ui.runtime ? ui.runtime() : "") || undefined,
       model: (ui.model ? ui.model() : "") || undefined,
+      wake: ui.wake?.(),
     });
     if (myGen !== workspaceGeneration()) {
       // Workspace switched while the spawn was in flight: never auto-open.
@@ -872,6 +894,15 @@ export async function doSpawn(s, ui) {
     }
     if (!owns()) return;                     // superseded — leave the form alone
     ui.clear();
+    if (d.wakeScheduleError) {
+      ui.spawned = d;
+      ui.status.classList?.add("err");
+      ui.status.textContent = `Created ${d.instance}, but its wake schedule was not saved: ${d.wakeScheduleError.message}. The agent is available in the sidebar. Add its wake schedule from Schedules.`;
+      ui.btn.textContent = "Agent created";
+      ui.partial?.(d);
+      return;
+    }
+    if (d.wakeSchedule) s.ctx.notify?.(`Wake schedule saved for ${d.instance}. Check Schedules to verify its host scheduler is enabled.`);
     if (d.routeConflict) {
       ui.status.textContent = `Spawned ${d.instance} on ${d.server}, but its name already has a saved route. Manage the new home ${d.home} from the execution host. ${(d.warnings || []).join(" ")}`;
       return;
@@ -930,6 +961,6 @@ export async function doSpawn(s, ui) {
         : `Spawn failed: ${e.message || e}`;
     }
   } finally {
-    if (owns()) { ui.btn.disabled = false; ui.btn.textContent = "Spawn"; }
+    if (owns() && !ui.spawned) { ui.btn.disabled = false; ui.btn.textContent = "Spawn"; }
   }
 }

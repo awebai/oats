@@ -11,6 +11,7 @@
 export const NAV = [
   { name: "hierarchy", label: "Active overview", icon: "⌘", title: "Active overview" },
   { name: "spawn", label: "Soul roster", icon: "✦", title: "Soul roster" },
+  { name: "schedules", label: "Schedules", icon: "◷", title: "Schedules" },
 ];
 
 /** Sidebar mode a stage view pairs with (spawn shows the souls context). */
