@@ -79,6 +79,6 @@ export function createTerminalRegistry({ max = MAX_TERMINALS } = {}) {
 /** Stable target key for a tmux terminal target. NUL-joined so no
  * session/window value can forge a different key (both are already charset-
  * validated by tmuxAttachTarget before a viewer is ever built). */
-export function terminalTargetKey(session, window) {
-  return `${String(session)}\u0000${window === undefined || window === null ? "" : String(window)}`;
+export function terminalTargetKey(session, window, socket) {
+  return `${String(session)}\u0000${window === undefined || window === null ? "" : String(window)}${socket ? `\u0000${socket}` : ""}`;
 }

@@ -107,7 +107,7 @@ export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wra
         // registry): {id} | {reused,id} | {capped,active,max} | {error}.
         // Translate to the lifecycle's numeric-id contract, classifying
         // the two rejections so the banner is actionable.
-        const r = await desk.termOpen({ ...(remote ? { remote } : sessionTarget ? { sessionTarget } : { session: tmux.session, window: tmux.window }), cols: term.cols, rows: term.rows });
+        const r = await desk.termOpen({ ...(remote ? { remote } : sessionTarget ? { sessionTarget } : { session: tmux.session, window: tmux.window, socket: tmux.socket }), cols: term.cols, rows: term.rows });
         if (r && typeof r === "object") {
           if (r.capped) { const e = new Error(`Terminal limit reached (${r.max}). Close a terminal tab first.`); e.code = "cap"; throw e; }
           if (r.reused) { const e = new Error("This terminal is already open."); e.code = "reused"; throw e; }
