@@ -54,8 +54,9 @@ identities. BeadHub and Minerva passed separate mail/chat checks; Merlin verifie
 his identity and preserved claims, then received and replied to Minerva's real
 mail through the host wake path. Frontend also has a managed execution with
 separate mail/chat proof and reviewed knowledge promotion. This is not completion
-of all teams: TSM is held, Docflow still has a running backfill, and the coordinator
-handovers remain outstanding. See the current status below;
+of all teams: TSM is held, Docflow still has a running backfill, and normal
+coordinator learning remains queued. The final lead handover is accepted.
+See the current status below;
 older evidence records keep the version and outcome of each earlier check.
 
 ## Current status and operating limits (2026-09-06)
@@ -104,7 +105,7 @@ Experimental mind follow remains paused.
 | Aweb | Retained `coordinator-aweb` and fresh `frontend-oats` both passed independent mail/chat; frontend knowledge `d649d729` reviewed and landed | Old holders stopped with their channel children before replacement; metadata repair and encryption-key findings tracked separately, with repeated wake-hint diagnosis in progress |
 | TSM | Prepared souls and owner checkpoints; Themis setup failed before the current hold | **No migration work until Zeus reports deployment finished**; re-inventory with its owner afterwards |
 | Docflow | Legacy seat and actual mail backfill remain running | Finish backfill and register checks; owner restores mail-ingest afterwards; accountant-sync remains unloaded under its separate export fence |
-| Oats/lead | Retained `oats-coordinator-coordinator` verified identity and independent mail wake after old holder and channel stopped; two finished idle Pi harvesters retired with their unlanded work preserved; root packages trusted at OKF 1.5.2 and aweb 1.10.3 | Lead's fresh local successor remains the final handover; preserve the active epic and route future cross-team updates through the retained global coordinators |
+| Oats/lead | Retained `oats-coordinator-coordinator` passed independent mail wake; fresh team-local `lead-operating-lead` passed separate idle-to-wake mail fetch/reply after verified predecessor stop; root packages trusted at OKF 1.5.2 and aweb 1.10.3 | BeadHub accepted the lead and transferred the still-open rollout epic; Oats's provider capacity, historical lead claim reconciliation, coordinator learning and preserved recovery lessons remain follow-ups; cross-team updates use retained global relays |
 | Remote qualification | Published host service delivered native Claude mail/chat through Herdr; corrected knowledge independently reviewed; source retired with `aliasReusable: true` | Earlier separate fresh-reader cycle passed; latest corrected wake-specific retrieval is still pending |
 
 Published aw 1.36.1 is tagged at `bfdb20886080e4ffe1f02b266f6116d12bd100fd`.
