@@ -164,7 +164,10 @@ function log(...parts) {
 function withCaptureLock(fn) {
   const lock = acquireCaptureLock(root);
   if (lock.held) {
-    log(`capture: another pass holds ${root} (pid ${lock.held.pid ?? "?"} since ${lock.held.startedAt ?? "?"}); skipping, the next pass catches up`);
+    // Never quiet: a stale lock after a killed pass needs the operator, and
+    // the line says exactly what to check and what to remove.
+    const line = `capture: another pass holds ${root}: ${lock.held.recovery}; skipping this pass`;
+    if (lock.held.liveness === "alive") log(line); else console.error(line);
     return { appended: 0, skipped: true };
   }
   try { return fn(); } finally { lock.release(); }

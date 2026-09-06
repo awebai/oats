@@ -3,71 +3,57 @@
 // multi-gigabyte search index; a second pass finding the lock exits at once
 // and the next pass catches up, since reconciliation is idempotent.
 //
-// The lock is a DIRECTORY: mkdir is atomic on every filesystem this runs on
-// and a directory is never observable half-created, unlike a file whose
-// contents arrive after the open. The owner record (pid, start time) is
-// written inside it after the mkdir; a contender that sees the directory
-// but no record yet treats the lock as held (the owner is initializing).
-// Reclaiming a dead holder's lock is an atomic rename of the directory to a
-// unique name, so two reclaimers cannot both "win": the one whose rename
-// fails simply retries the mkdir. A holder is never stolen while its pid
-// is alive, whatever its age; a same-pid or unknowable (EPERM) holder is
-// treated as live.
-import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+// The lock is a DIRECTORY: mkdir is atomic and a directory is never
+// observable half-created. The owner record (pid, start time) is written
+// inside it after the mkdir. Nothing here ever steals a lock: any existing
+// lock, live, dead, unknowable or still initializing, refuses the pass and
+// names the holder and the operator recovery. A stale lock after a killed
+// pass is removed by the operator once the pid is verified gone; the
+// message says exactly that. (A reclaim protocol was reviewed and rejected:
+// rename is not compare-and-swap, and stealing from a stalled live
+// initializer under memory pressure is the failure we are preventing.)
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const CAPTURE_LOCK_INIT_GRACE_MS = 60 * 1000;
 export function captureLockPath(root) { return join(root, ".capture.lock"); }
 
-/** true = alive, false = dead, "unknown" = exists but not signalable (EPERM). */
-function pidAlive(pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM" ? "unknown" : false; }
+/** "alive" | "dead" | "unknown" for an owner pid ("unknown" = exists but not signalable). */
+export function holderLiveness(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return "unknown";
+  try { process.kill(pid, 0); return "alive"; } catch (e) { return e.code === "EPERM" ? "unknown" : "dead"; }
 }
 
 function readOwner(dir) {
   try { return JSON.parse(readFileSync(join(dir, "owner.json"), "utf8")); } catch { return undefined; }
 }
 
-/** Try to take the root's capture lock. Returns { release } when taken, or
- *  { held: { pid, startedAt } } while a live process holds it. Only a holder
- *  whose pid is known to be dead (or a lock left without an owner record for
- *  longer than the initialization grace) is reclaimed. */
-export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, alive = pidAlive, initGraceMs = CAPTURE_LOCK_INIT_GRACE_MS } = {}) {
+/** The operator's recovery line for a lock that is not ours. */
+export function recoveryInstruction(dir, owner, liveness) {
+  const who = owner?.pid ? `pid ${owner.pid} (started ${owner.startedAt || "?"}, now ${liveness})` : "a pass that has not written its owner record yet";
+  if (liveness === "alive") return `${dir} is held by ${who}; let it finish, the next pass catches up`;
+  return `${dir} is held by ${who}; if that process is gone (ps -p <pid>), remove the lock with: rm -r ${JSON.stringify(dir)}  and rerun`;
+}
+
+/** Try to take the root's capture lock. Returns { path, release } when
+ *  taken, or { path, held: { pid, startedAt, liveness, recovery } } when any
+ *  lock exists. Never removes a lock it did not create. */
+export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness } = {}) {
   const dir = captureLockPath(root);
   mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      mkdirSync(dir);
-    } catch (e) {
-      if (e.code !== "EEXIST") throw e;
-      const owner = readOwner(dir);
-      if (!owner) {
-        // No record yet: the owner is initializing, or died between mkdir and
-        // write. Only a record-less lock older than the grace is reclaimed.
-        let age = 0;
-        try { age = now() - statSync(dir).mtimeMs; } catch { continue; } // vanished: retry
-        if (age < initGraceMs) return { path: dir, held: { pid: undefined, startedAt: undefined } };
-      } else {
-        const liveness = Number.isInteger(owner.pid) && owner.pid !== pid ? alive(owner.pid) : (owner.pid === pid ? true : false);
-        if (liveness === true || liveness === "unknown") return { path: dir, held: { pid: owner.pid, startedAt: owner.startedAt } };
-      }
-      // Dead holder: reclaim atomically. A failed rename means another
-      // contender reclaimed it first; retry the mkdir.
-      const grave = `${dir}.dead-${process.pid}-${now()}-${attempt}`;
-      try { renameSync(dir, grave); } catch { continue; }
-      try { rmSync(grave, { recursive: true, force: true }); } catch { /* best effort */ }
-      continue;
-    }
-    writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, startedAt: new Date(now()).toISOString() }));
-    return {
-      path: dir,
-      release: () => {
-        // Remove only a lock this pid owns; a reclaimed-and-replaced lock is left alone.
-        const cur = readOwner(dir);
-        if (cur && cur.pid === pid) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* already gone */ } }
-      },
-    };
+  try {
+    mkdirSync(dir);
+  } catch (e) {
+    if (e.code !== "EEXIST") throw e;
+    const owner = readOwner(dir);
+    const live = owner ? (owner.pid === pid ? "alive" : liveness(owner.pid)) : "unknown";
+    return { path: dir, held: { pid: owner?.pid, startedAt: owner?.startedAt, liveness: live, recovery: recoveryInstruction(dir, owner, live) } };
   }
-  return { path: dir, held: { pid: undefined, startedAt: undefined } };
+  writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, startedAt: new Date(now()).toISOString() }));
+  return {
+    path: dir,
+    release: () => {
+      const cur = readOwner(dir);
+      if (cur && cur.pid === pid) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* already gone */ } }
+    },
+  };
 }
