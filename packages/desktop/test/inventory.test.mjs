@@ -10,9 +10,22 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import builder from "../electron-builder.config.cjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => readFileSync(join(PKG, p), "utf8");
+
+test("inventory: main's sibling module imports are included in the packaged app", () => {
+  // Top-level modules are individually allowlisted; server/ and renderer/
+  // use directory globs. Derive this inventory from the real entry point
+  // so extracting another helper cannot leave a source-only working app.
+  const siblings = [...read("main.mjs").matchAll(/\bfrom\s+["']\.\/([^/"']+)["']/g)].map((m) => m[1]);
+  assert.ok(siblings.length > 0, "entry-point sibling imports found");
+  for (const module of siblings) {
+    assert.ok(existsSync(join(PKG, module)), `${module}: source exists`);
+    assert.ok(builder.files.includes(module), `${module}: must be included in packaged files`);
+  }
+});
 
 test("inventory: dormant view modules are gone", () => {
   assert.ok(!existsSync(join(PKG, "renderer", "views", "diff.mjs")), "diff.mjs must not ship");
