@@ -399,6 +399,15 @@ test("a never-launched Herdr home without an endpoint cannot silently switch to 
 });
 
 test("a live startup shell is protected until its command actually exits", async () => {
+  // This private session must not run the operator's interactive startup
+  // files after command completion: their transient children are unrelated
+  // to the launch under test and legitimately read as active processes.
+  // Also support running this regression alone, before any earlier test
+  // has created the private server.
+  if (!windows().length) tmux("-f", "/dev/null", "new-session", "-d", "-s", session, "-n", "hq", "-c", base, "/bin/sh");
+  tmux("set-option", "-t", session, "default-shell", "/bin/sh");
+  tmux("set-environment", "-t", session, "SHELL", "/bin/sh");
+  for (const key of ["ENV", "BASH_ENV"]) tmux("set-environment", "-r", "-t", session, key);
   const f = makeHome("slow-shell");
   const harness = join(base, "slow-shell-wrapper");
   // Builtins only. macOS reports the interpreter as a shell; Linux may
