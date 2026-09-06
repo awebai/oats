@@ -195,6 +195,19 @@ export function cliRetire(bin, { instance, home, workspaceDir, server }, io = {}
   });
 }
 
+/** Launch an existing home through the kernel, with a model override only. */
+export function cliStart(bin, { home, workspaceDir, server, model }, io = {}) {
+  if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0")
+    || (server !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server))
+    || (model !== undefined && (typeof model !== "string" || !/^[^-][^\0]*$/.test(model)))) {
+    return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid start home, server or model" } });
+  }
+  return runJson(bin, ["session", "start", "--home", home,
+    ...(server ? ["--server", server] : []), ...(model ? ["--model", model] : []), "--json"], {
+    cwd: workspaceDir, exec: io.exec, timeout: io.timeout,
+  });
+}
+
 /**
  * Desktop v1 harvest. cwd is FIXED to the resolved instance home by the
  * caller (the privileged backend resolves it — never a renderer path).

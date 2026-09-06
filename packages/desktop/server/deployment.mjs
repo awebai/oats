@@ -20,6 +20,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, realpat
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { readHerdrTarget } from "../herdr-target.mjs";
+import { createTmuxStatusReader } from "./tmux-status.mjs";
 
 export const RESERVED = new Set(["bin", "local-agents", "tmp-agents"]);
 /** Local (uncommitted) souls dir: <scope>/local-agents, a SIBLING of agents/
@@ -663,17 +664,11 @@ export function containsPackageFile(packageDir, file) {
 
 // ---- instances --------------------------------------------------------------
 
-function tmuxWindows(session) {
-  try {
-    return execFileSync("tmux", ["list-windows", "-t", `=${session}`, "-F", "#{window_name}"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 4000 }).split("\n").filter(Boolean);
-  } catch { return []; }
-}
 
 /** Souls with their instances (roster collection seam — read-only walk of
  * instances/ dirs plus tmux window liveness). */
 export function listInstances(root, tmuxSession = DEFAULT_TMUX_SESSION) {
-  const windows = tmuxWindows(tmuxSession);
+  const readTmux = createTmuxStatusReader();
   const readInstancesOf = (agentDir) => {
     const instancesDir = join(agentDir, "instances");
     let entries = [];
@@ -710,7 +705,7 @@ export function listInstances(root, tmuxSession = DEFAULT_TMUX_SESSION) {
         try { const state = readHerdrTarget(meta.sessionTarget); return { ...meta, ...(retirePending ? { retirePending } : {}), running: state.present, runtimeState: state.status }; }
         catch (e) { return { ...meta, ...(retirePending ? { retirePending } : {}), running: null, runtimeState: "unreachable", runtimeError: e.message }; }
       }
-      return { ...meta, ...(retirePending ? { retirePending } : {}), running: windows.includes(meta.instance) };
+      return { ...meta, ...(retirePending ? { retirePending } : {}), ...readTmux(meta, tmuxSession) };
 
     });
   };

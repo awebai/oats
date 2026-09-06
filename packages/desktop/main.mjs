@@ -17,6 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit } from "./api-url.mjs";
 import { openTerm, sweepViewers } from "./tmux-target.mjs";
+import { localTmuxIo, tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate, remoteTerminalEnvironment } from "./remote-target.mjs";
 import { openHerdrTerm, herdrTargetKey } from "./herdr-target.mjs";
 import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "./terminal-registry.mjs";
@@ -351,22 +352,23 @@ const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout:
 
 /** Sweep viewer sessions leaked by CRASHED desktop instances (exact: only
  * oatsdesk-<pid>- names whose pid is dead). Run at app start and quit. */
-function sweepOrphanViewers() {
+function sweepOrphanViewers(socket) {
   try {
-    const names = execFileSync("tmux", ["list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 4000 })
+    const prefix = tmuxSocketArgs(socket);
+    const names = execFileSync("tmux", [...prefix, "list-sessions", "-F", "#{session_name}"], { encoding: "utf8", timeout: 4000 })
       .split("\n").filter(Boolean);
     const swept = sweepViewers({
       listSessions: () => names,
-      killSession: (name) => tmuxRun(["kill-session", "-t", `=${name}`]),
+      killSession: (name) => tmuxRun([...prefix, "kill-session", "-t", `=${name}`]),
       pidAlive: (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } },
     });
     if (swept.length) console.log(`oats-desktop: swept ${swept.length} orphaned viewer session(s): ${swept.join(", ")}`);
   } catch { /* no tmux server — nothing to sweep */ }
 }
 
-ipcMain.handle("term:open", async (e, { session, window: win, sessionTarget, remote, cols, rows }) => {
+ipcMain.handle("term:open", async (e, { session, window: win, socket, sessionTarget, remote, cols, rows }) => {
   guard(e);
-  const targetKey = remote ? remoteTargetKey(remote) : sessionTarget ? herdrTargetKey(sessionTarget) : terminalTargetKey(session, win);
+  const targetKey = remote ? remoteTargetKey(remote) : sessionTarget ? herdrTargetKey(sessionTarget) : terminalTargetKey(session, win, socket);
   let prepared;
   if (remote && !termRegistry.has(targetKey)) {
     try {
@@ -398,19 +400,15 @@ ipcMain.handle("term:open", async (e, { session, window: win, sessionTarget, rem
   // its own partial viewer and nothing is committed to the registry.
   let opened;
   try {
+    if (!remote && !sessionTarget) sweepOrphanViewers(socket);
     opened = remote ? {
       pty: pty.spawn(prepared.binary, prepared.args, { name: "xterm-256color", cols: Math.max(20, Number(cols) || 80), rows: Math.max(5, Number(rows) || 24), cwd: process.env.HOME, env: remoteTerminalEnvironment() }),
       killViewer: () => {}, // CLI/SSH disconnect cleans only its host-side viewer
     } : sessionTarget ? openHerdrTerm({ sessionTarget, cols, rows }, {
       spawnPty: (argv, c, r, env) => pty.spawn("herdr", argv, { name: "xterm-256color", cols: c, rows: r, cwd: process.env.HOME, env }),
-    }) : openTerm({ session, window: win, cols, rows }, {
-      preflight: (target) => tmuxRun(["list-panes", "-t", target]),
-      tmux: tmuxRun,
-      tmuxOut: (args) => execFileSync("tmux", args, { encoding: "utf8", timeout: 4000 }).trim(),
-      spawnPty: (target, c, r) => pty.spawn("tmux", ["attach-session", "-t", target], {
-        name: "xterm-256color", cols: c, rows: r, cwd: process.env.HOME, env: process.env,
-      }),
-    });
+    }) : openTerm({ session, window: win, cols, rows }, localTmuxIo(socket, {
+      execFileSync, spawnPty: (...args) => pty.spawn(...args),
+    }));
   } catch (err) {
     return { error: String(err.message || err) };
   }
