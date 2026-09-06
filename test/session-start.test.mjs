@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, execFile } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -48,6 +48,8 @@ test("commands OATS did not render are refused, never rewritten by substring", (
     "'claude' --model 'x'; rm -rf /",
     "'claude' --model 'x $(id)'x -- \"$(cat TASK.md)\"",
     "'claude' --model",
+    "'claude' --model --yolo",
+    "'claude' --model 'first' --model 'last'",
     "FOO=bar 'claude'",
     "",
   ]) {
@@ -144,12 +146,15 @@ test("a live harness is refused; a stopped instance starts in its recorded sessi
   // which is a stopped instance that restarts IN PLACE, never a second window.
   await new Promise((r2) => setTimeout(r2, 3500));
   assert.equal(inspectInstanceSession(f.home).state, "shell");
+  tmux("send-keys", "-t", `=${session}:=live`, `cd ${shq(base)}`, "Enter");
+  await new Promise((r2) => setTimeout(r2, 100));
   const again = startInstanceSession(f.home);
   assert.equal(again.reused, "pane");
   assert.equal(again.model, "claude-x", "omitted model keeps the recorded one");
   assert.deepEqual(windows().filter((w) => w === "live"), ["live"]);
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 2);
   assert.equal(inspectInstanceSession(f.home).present, true);
+  assert.equal(tmux("display-message", "-p", "-t", `=${session}:=live`, "#{pane_current_path}"), f.home, "restart restores the instance cwd after shell navigation");
 });
 
 test("a lost tmux server on the recorded socket is a stopped instance: the session comes back on that socket", () => {
@@ -267,9 +272,116 @@ test("the CLI advertises session-start and routes it only to a remote that adver
     const out = startRemote("s", { home: "/remote/home", model: "m" }, io(["retire-home", "session-start"]));
     assert.equal(out.envelope.ok, true);
     assert.equal(out.envelope.result.server, "s");
+    assert.equal(out.envelope.result.instance, "r", "explicit-home routes preserve the remote instance name");
     const sent = calls.find((c) => c.includes("session start"));
     assert.match(sent, /session start --home \/remote\/home --model m --json/);
   } finally {
     if (prev === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = prev;
   }
+});
+
+test("recovery preserves the actual model and reconciles even an exited allocation", async () => {
+  const f = makeHome("model-recovery");
+  const target = { backend: "tmux", session, window: "model-recovery-new", socket };
+  const pending = { target, command: withLaunchModel(f.command, "claude-old"), model: "claude-old", startedAt: "2026-09-06T01:00:00.000Z" };
+  const receipt = join(f.home, ".oats-start-pending.json");
+  tmux("new-window", "-t", session, "-n", target.window, "sleep 30");
+  await new Promise((r) => setTimeout(r, 100)); // the fixture shell execs sleep
+  writeFileSync(receipt, JSON.stringify(pending));
+  assert.throws(() => startInstanceSession(f.home, { model: "claude-new" }), (e) => e.code === "E_SESSION_RUNNING" && /not applied/.test(e.message));
+  assert.equal(readJson(join(f.home, "instance.json")).model, "claude-old");
+  assert.equal(inspectInstanceSession(f.home).present, true);
+  tmux("kill-window", "-t", `=${session}:=${target.window}`);
+  // Crash between baseline and metadata writes, followed by target exit.
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify(f.meta));
+  writeFileSync(receipt, JSON.stringify(pending));
+  assert.throws(() => inspectInstanceSession(f.home), (e) => e.code === "E_RUNTIME_AUTHORITY_MISMATCH");
+  const r = startInstanceSession(f.home, { model: "claude-new" });
+  assert.equal(r.model, "claude-new");
+  assert.equal(r.target.window, target.window);
+  assert.equal(existsSync(receipt), false);
+});
+
+test("invalid recovery receipts and tmux permission errors preserve evidence and never launch", () => {
+  const f = makeHome("bad-recovery");
+  const receipt = join(f.home, ".oats-start-pending.json");
+  for (const bytes of ["{", '{}', '{"target":{"backend":"something"}}']) {
+    writeFileSync(receipt, bytes);
+    assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_UNKNOWN");
+    assert.equal(readFileSync(receipt, "utf8"), bytes);
+  }
+  rmSync(receipt);
+  const io = { exec: (_bin, args) => {
+    assert.ok(args.includes("list-panes"), "only inspection is attempted");
+    throw Object.assign(new Error("socket failed"), { stderr: `error connecting to ${socket} (Permission denied)` });
+  } };
+  assert.throws(() => startInstanceSession(f.home, { io }), (e) => e.code === "E_SESSION_UNKNOWN");
+  assert.deepEqual(readJson(join(f.home, "instance.json")), f.meta);
+});
+
+test("Herdr restarts in the saved server, writes recovery before launching, and restores cwd", () => {
+  const f = makeHome("herdr-restart");
+  const old = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "herdr.sock"), protocol: 20, workspaceId: "w0", paneId: "p0", terminalId: "t0" };
+  const meta = { ...f.meta, backend: "herdr", sessionTarget: old };
+  delete meta.tmux;
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
+  writeFileSync(f.baselinePath, JSON.stringify({ ...readJson(f.baselinePath), runtime: { launched: true, sessionTarget: old } }));
+  let panes = [], agent = false, allocations = 0, runs = 0;
+  const io = { exec: (binary, args, options) => {
+    assert.equal(binary, old.binary);
+    assert.equal(options.env.HERDR_SOCKET_PATH, old.socket);
+    let result;
+    if (args.join(" ") === "api snapshot") result = { snapshot: { protocol: 20, panes, agents: agent ? [{ terminal_id: "t1", agent_status: "working" }] : [] } };
+    else if (args[0] === "workspace") {
+      allocations++;
+      assert.ok(args.includes(f.home));
+      panes = [{ pane_id: "p1", terminal_id: "t1", workspace_id: "w1" }];
+      result = { root_pane: panes[0] };
+    } else if (args[1] === "process-info") result = { process_info: { foreground_processes: [{ name: "zsh" }] } };
+    else if (args[1] === "run") {
+      runs++;
+      const pending = readJson(join(f.home, ".oats-start-pending.json"));
+      assert.equal(pending.target.paneId, "p1");
+      assert.ok(args[3].includes("cd "));
+      assert.ok(args[3].includes(f.home));
+      agent = true;
+      result = {};
+    } else assert.fail(`unexpected Herdr call: ${args}`);
+    return JSON.stringify({ result });
+  } };
+  assert.throws(() => startInstanceSession(f.home, { model: "claude-herdr", io: { ...io, failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
+  const recovered = startInstanceSession(f.home, { io });
+  assert.equal(recovered.reused, "adopted");
+  assert.equal(recovered.model, "claude-herdr");
+  assert.equal(allocations, 1);
+  assert.equal(runs, 1);
+  agent = false; // an idle fallback shell in the same pane
+  assert.equal(startInstanceSession(f.home, { model: "claude-next", io }).reused, "pane");
+  assert.equal(allocations, 1);
+  assert.equal(runs, 2);
+  assert.equal(readJson(f.baselinePath).runtime.sessionTarget.terminalId, "t1");
+});
+
+test("simultaneous CLI starts produce one launch and preserve a never-launched home's saved socket", async () => {
+  const f = makeHome("concurrent", { launched: false });
+  const invoke = () => new Promise((resolveRun, reject) => {
+    execFile(process.execPath, [bin, "session", "start", "--home", f.home, "--model", "claude-x", "--json"], { timeout: 15000 }, (error, stdout, stderr) => {
+      try { resolveRun(JSON.parse(stdout)); } catch { reject(new Error(`${error?.message}: ${stderr}`)); }
+    });
+  });
+  const results = await Promise.all([invoke(), invoke()]);
+  assert.equal(results.filter((r) => r.ok).length, 1, JSON.stringify(results));
+  assert.ok(results.some((r) => ["E_SESSION_START_BUSY", "E_SESSION_RUNNING"].includes(r.error?.code)), JSON.stringify(results));
+  assert.deepEqual(windows().filter((w) => w === "concurrent"), ["concurrent"]);
+  assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
+  assert.equal(readJson(join(f.home, "instance.json")).tmux.socket, socket);
+});
+
+test("a never-launched Herdr home without an endpoint cannot silently switch to tmux", () => {
+  const f = makeHome("herdr-no-launch", { launched: false });
+  const meta = { ...f.meta, backend: "herdr" };
+  delete meta.tmux;
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify(meta));
+  assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_RUNTIME_ENDPOINT_UNKNOWN");
+  assert.deepEqual(readJson(join(f.home, "instance.json")), meta);
 });

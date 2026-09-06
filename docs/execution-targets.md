@@ -137,8 +137,12 @@ happens under a per-home guard, so two starts of one home serialize
 (`E_SESSION_START_BUSY`); a start that allocated a session but could not
 record it leaves `.oats-start-pending.json` naming the actual target, and the
 next start reconciles that receipt before the ordinary metadata check: a
-target that is present is recorded and adopted, one that is provably gone is
-dropped, and one that cannot be observed refuses and keeps the receipt.
+target that is present is recorded and adopted; an exited target is reconciled
+before restarting, and an unobservable target or malformed receipt refuses
+and keeps the receipt. Recovery never silently applies a new model to an
+already-running harness. A never-launched legacy Herdr home without a saved
+server endpoint requires that endpoint to be configured before it can start;
+it does not fall back to tmux.
 The start opens a new harness conversation on the instance's `TASK.md`; the
 instance resumes its work from its own `STATE.md`, as the knowledge protocol
 prescribes.
