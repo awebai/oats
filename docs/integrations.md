@@ -167,6 +167,15 @@ start a second harvester while the first one's home exists. The check uses the
 existing prepared watermark file and does not treat a successful spawn as
 completed learning.
 
+## oats.aweb late joins (1.10.3)
+
+`aw team join` at spawn gets 120 s (a slow link is slow, not broken). If the
+join is reported failed or is killed on timeout but the home then holds a
+bound identity (signing key, team certificate, workspace alias), the hook
+reports that alias in its meta so the kernel's compensation retires it
+instead of orphaning it. The retire hook likewise reads the alias from the
+home's `.aw/workspace.yaml` when its meta carries none.
+
 ## oats.aweb retire report (1.10.2)
 
 On a host whose installed `aw` is 1.36.1 or later, the retire hook deletes

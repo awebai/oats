@@ -26,6 +26,12 @@ if (a.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:ex
 if (a.startsWith("team invite")) { console.log(JSON.stringify({ token: "TOK-secret" })); process.exit(0); }
 if (a.startsWith("team join")) {
   if (${JSON.stringify(joinMode)} === "conflict") { console.error("aweb: http 422: alias already holds an active certificate for this team"); process.exit(1); }
+  if (process.env.FAKE_JOIN_LATE) {
+    // The join completes server-side (and binds the home) but the CLI hangs past the hook's timeout.
+    const fs = require("node:fs"); const p = require("node:path"); const aw = p.join(process.cwd(), ".aw");
+    fs.mkdirSync(p.join(aw, "team-certs"), { recursive: true }); fs.writeFileSync(p.join(aw, "signing.key"), "k"); fs.writeFileSync(p.join(aw, "workspace.yaml"), "memberships:\\n    - team_id: t:example.test\\n      alias: probe\\n");
+    require("node:child_process").execFileSync("sleep", ["3"]); process.exit(0);
+  }
   console.log(JSON.stringify({ alias: "probe", team_id: "t:example.test" })); process.exit(0);
 }
 if (a.startsWith("init")) process.exit(0);
@@ -97,6 +103,31 @@ test("retire: workspace deleted is reported as retired with aliasReusable false 
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false });
     assert.match(r.doc.warning, /certificate is not revoked \(aweb-abim\).*fresh --purpose/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("spawn: a join killed on timeout that completed server-side is reported as minted, so compensation retires it", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base);
+    const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}", FAKE_JOIN_LATE: "1", OATS_AWEB_JOIN_TIMEOUT_MS: "500" });
+    assert.notEqual(r.status, 0, "the spawn hook fails (no briefing without a confirmed join)");
+    assert.deepEqual(r.doc.meta, { team: "t:example.test", alias: "probe" }, "the late-bound identity is reported for compensation");
+    assert.match(r.doc.warning, /reported failed .*bound identity "probe".*retired, not orphaned/);
+    assert.equal(r.stdout.includes("TOK-secret"), false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("retire: with no alias in its meta the hook reads the home's workspace binding instead of leaving the workspace orphaned", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { home } = deployment(base);
+    mkdirSync(join(home, ".aw"), { recursive: true });
+    writeFileSync(join(home, ".aw", "workspace.yaml"), "memberships:\n    - team_id: t:example.test\n      alias: probe\n");
+    const r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify({ team: "t:example.test" }) });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.retired, true);
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), /workspace delete probe/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
