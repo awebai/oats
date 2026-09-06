@@ -138,7 +138,8 @@ function projectPanelInstance(i) {
     siblingInstance: i.siblingInstance || null,
     relation: i.relation || null,
     relativeTo: i.relativeTo || null,
-    ...(i.sessionTarget ? { sessionTarget: i.sessionTarget, runtimeState: i.runtimeState, runtimeError: i.runtimeError } : {}),
+    ...(i.sessionTarget ? { sessionTarget: i.sessionTarget } : {}),
+    runtimeState: i.runtimeState, runtimeError: i.runtimeError,
     tmux: i.tmux, git: i.git, task: i.task, next: i.next,
     team: i.team || null,
   };
@@ -1026,7 +1027,7 @@ const server = createServer(async (req, res) => {
       try { return send(res, 200, { spawned: true, ...(await spawnAgent(body)) }); }
       catch (e) { const { status, body: b } = spawnErrorPayload(e); return send(res, status, b); }
     }
-    const hm = path.match(/^\/api\/(harvest|retire)\/([A-Za-z0-9._-]+)$/);
+    const hm = path.match(/^\/api\/(harvest|retire|start)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
       // Desktop v1 mutation 2: `oats okf harvest --json`, cwd FIXED by this
       // privileged backend to the RESOLVED instance home — the caller only
@@ -1035,6 +1036,20 @@ const server = createServer(async (req, res) => {
       if (r.error) return send(res, r.error.status, r.error.body);
       const inst = r.inst;
       if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
+      /* OATSWEB_START_BEGIN — resolved instance start, exercised without launching a harness. */
+      if (hm[1] === "start") {
+        if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
+        if (inst.server) {
+          if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
+          locator.requireRemoteSupport(cliState, "session-start");
+        } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
+        const body = await readBody(req);
+        const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
+          workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
+        refreshSnapshot(); void refreshRemoteSnapshot();
+        return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
+      }
+      /* OATSWEB_START_END */
       if (hm[1] === "retire") {
         if (typeof inst.home !== "string" || !inst.home.startsWith("/")) return send(res, 409, { error: "Instance has no absolute home for retirement", code: "E_HOME_UNKNOWN" });
         if (!cliState.features?.includes("retire-home")) return send(res, 409, { error: "Retirement requires an updated OATS CLI with exact-home targeting", code: "unsupported-retire-option" });

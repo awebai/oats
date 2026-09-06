@@ -10,6 +10,7 @@
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
 import { instanceActions } from "./instance-actions.mjs";
+import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
 import {
   initTheme, toggleTheme, xtermTheme, onThemeChange,
@@ -64,6 +65,7 @@ const ctx = {
   },
   openFile: (path) => openViewTab("markdown", `≡ ${String(path).split("/").pop()}`, { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
+  startInstance: (instance) => openInstanceStart(instance),
   openBrain: (agent) => openBrainTab(agent),
   // CLI degradation affordances (cli-status.mjs feature-detects both):
   // native binary picker (privileged; main persists the choice) and external
@@ -75,6 +77,7 @@ const ctx = {
   // to a named sidebar view (stage views are not tabs — see below).
   openView: (name) => showStage(name),
 };
+const openInstanceStart = createInstanceStarter(document, ctx);
 
 // ── stage: the sidebar-driven main surface ──────────────────────────
 // Sidebar items switch the stage view in place; they never create tabs.
@@ -309,9 +312,9 @@ function renderContextRoster(instances) {
         row.dataset.treeControl = "terminal";
         const state = runtimeState(i);
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
-        row.disabled = !i.running || (!!i.server && !i.savedRoute);
+        row.disabled = i.running == null || (!!i.server && !i.savedRoute);
         row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
-          : i.running ? `Open ${i.instance} terminal` : `${i.instance}: ${state}`);
+          : i.running ? `Open ${i.instance} terminal` : `Start ${i.instance}`);
         const dot = document.createElement("span");
         dot.className = `ctx-dot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}`;
         const copy = document.createElement("span");
@@ -327,7 +330,7 @@ function renderContextRoster(instances) {
         row.append(dot, copy);
         // pass the FULL reference: same-named instances in other agents
         // roots must open THEIR tmux session, not the first name match
-        row.addEventListener("click", () => openTerminalTab({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot, server: i.server }));
+        row.addEventListener("click", () => i.running ? openTerminalTab(i) : openInstanceStart(i));
         // full keyboard tree operability (roving tabindex; policy in
         // roster-keys.mjs). Enter is the button's native activation.
         row.dataset.rosterChildren = hasChildren ? "1" : "0";
@@ -335,6 +338,13 @@ function renderContextRoster(instances) {
         row.tabIndex = -1;
         row.addEventListener("keydown", onRosterRowKey);
         rowWrap.append(guides, disclosure, row);
+        if (i.running === false) {
+          const start = document.createElement("button"); start.className = "act ctx-start";
+          start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
+          start.disabled = !!i.server && !i.savedRoute;
+          start.addEventListener("click", () => openInstanceStart(i));
+          rowWrap.append(start);
+        }
         rowWrap.append(instanceActions(document, i, {
           invoke: (action, instance) => {
             if (currentWorkspace() !== ws) throw new Error("Workspace changed; select the instance again");
