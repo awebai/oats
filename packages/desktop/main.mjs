@@ -350,8 +350,9 @@ const wcWired = new WeakSet(); // wire each renderer's lifecycle listeners once
 
 const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 4000 });
 
-/** Sweep viewer sessions leaked by CRASHED desktop instances (exact: only
- * oatsdesk-<pid>- names whose pid is dead). Run at app start and quit. */
+/** Sweep crashed Desktop viewers on one socket (dead oatsdesk-<pid>- owners only).
+ * Startup/quit sweep the default socket; opening a terminal also sweeps its
+ * saved socket. Normal close/quit uses each viewer's own scoped cleanup. */
 function sweepOrphanViewers(socket) {
   try {
     const prefix = tmuxSocketArgs(socket);
@@ -509,7 +510,7 @@ async function createWindow() {
 
 const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindows(), async () => {
   installAppMenu();
-  sweepOrphanViewers(); // a previously crashed desktop must not leak viewer sessions
+  sweepOrphanViewers(); // default socket now; saved sockets are swept when opened
   try { await ensureServer(); }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
   await createWindow();
