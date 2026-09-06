@@ -4,13 +4,15 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { acquireCaptureLock, captureLockPath } from "../lib/capture-lock.mjs";
+import { acquireCaptureLock, captureLockPath, shellQuote } from "../lib/capture-lock.mjs";
+import { RecordStore } from "../lib/store.mjs";
+import { RecordIndex } from "../lib/index-db.mjs";
 
 const CAPTURE = resolve(new URL("../bin/capture.mjs", import.meta.url).pathname);
 const LOCK_LIB = resolve(new URL("../lib/capture-lock.mjs", import.meta.url).pathname);
 
 test("capture lock: any existing lock refuses (live, dead, same pid, record-less); release removes only its own; nothing is ever stolen", () => {
-  const root = mkdtempSync(join(tmpdir(), "capture-lock-"));
+  const root = join(mkdtempSync(join(tmpdir(), "capture-lock-")), "o'dd $(echo x) `w` dir");
   try {
     const a = acquireCaptureLock(root);
     assert.ok(a.release);
@@ -29,11 +31,18 @@ test("capture lock: any existing lock refuses (live, dead, same pid, record-less
     writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
     const d = acquireCaptureLock(root);
     assert.equal(d.release, undefined, "a dead holder's lock is not stolen");
-    assert.equal(d.held.liveness, "dead"); assert.match(d.held.recovery, /ps -p <pid>.*rm -r ".*\.capture\.lock".*rerun/);
+    assert.equal(d.held.liveness, "dead"); assert.match(d.held.recovery, /ps -p 999999999/);
+    assert.ok(d.held.recovery.includes(`rm -r -- ${shellQuote(captureLockPath(root))}`), d.held.recovery);
+    // The displayed removal is shell-safe for this hostile path: it removes exactly the lock and executes nothing.
+    const cmd = d.held.recovery.slice(d.held.recovery.indexOf("rm -r -- "), d.held.recovery.indexOf("  and rerun"));
+    const sh = spawnSync("sh", ["-c", cmd], { encoding: "utf8" });
+    assert.equal(sh.status, 0, sh.stderr); assert.equal(existsSync(captureLockPath(root)), false, "the pasted command removed the lock");
+    assert.equal(existsSync(root), true);
+    mkdirSync(captureLockPath(root)); writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
     assert.equal(existsSync(captureLockPath(root)), true);
     // Record-less lock (initializing or killed before writing): refused, unknown liveness.
     rmSync(captureLockPath(root), { recursive: true, force: true }); mkdirSync(captureLockPath(root));
-    const u = acquireCaptureLock(root); assert.equal(u.release, undefined); assert.equal(u.held.liveness, "unknown"); assert.match(u.held.recovery, /not written its owner record/);
+    const u = acquireCaptureLock(root); assert.equal(u.release, undefined); assert.equal(u.held.liveness, "unknown"); assert.match(u.held.recovery, /not written its owner record.*stop capture triggers.*pgrep -f capture\.mjs.*rm -r -- /);
     // release removes only a lock this pid owns.
     rmSync(captureLockPath(root), { recursive: true, force: true });
     const e = acquireCaptureLock(root);
@@ -71,7 +80,8 @@ test("capture CLI: a locked root (live holder) skips quietly; an interrupted own
   const root = mkdtempSync(join(tmpdir(), "capture-lock-cli-"));
   const child = spawn("sleep", ["30"]);
   try {
-    const env = { ...process.env, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+    const home = join(root, "home"); mkdirSync(join(home, ".claude", "projects"), { recursive: true });
+    const env = { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
     mkdirSync(captureLockPath(root)); writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }));
     let r = spawnSync(process.execPath, [CAPTURE, "--sessions-only"], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr + r.stdout); assert.match(r.stdout, /another pass holds .*let it finish/);
@@ -79,7 +89,7 @@ test("capture CLI: a locked root (live holder) skips quietly; an interrupted own
     writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: new Date().toISOString() }));
     r = spawnSync(process.execPath, [CAPTURE, "--sessions-only"], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
-    assert.match(r.stderr, /now dead.*ps -p <pid>.*rm -r ".*\.capture\.lock".*rerun/);
+    assert.match(r.stderr, /now dead.*ps -p 999999999.*rm -r -- '.*\.capture\.lock'.*rerun/);
     assert.equal(existsSync(join(root, "index")), false, "no index was created by a skipped pass");
     assert.equal(existsSync(captureLockPath(root)), true, "the lock was not removed by the tool");
     // Operator recovery, then a pass runs.
@@ -95,4 +105,22 @@ test("capture --install-hint recommends append-only hook passes", () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /--sessions-only --no-index --quiet/);
   assert.match(r.stdout, /One pass runs per record root at a time/);
+});
+
+test("an append-only hook pass (--no-index) is indexed by the next plain pass even though that pass appends nothing", () => {
+  const base = mkdtempSync(join(tmpdir(), "capture-append-only-"));
+  try {
+    const root = join(base, "record"), home = join(base, "home");
+    const project = join(home, ".claude", "projects", "-tmp-proj"); mkdirSync(project, { recursive: true });
+    writeFileSync(join(project, "s1.jsonl"), JSON.stringify({ type: "user", timestamp: "2026-08-25T10:00:00.000Z", message: { content: [{ type: "text", text: "the rare word zebrafish" }] }, sessionId: "s1" }) + "\n");
+    const env = { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+    let r = spawnSync(process.execPath, [CAPTURE, "--sessions-only", "--no-index", "--quiet"], { encoding: "utf8", env });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    const searchable = () => { const i = new RecordIndex(new RecordStore(root, { owner: "tester" })); try { return i.search("zebrafish").length; } finally { i.close(); } };
+    assert.equal(searchable(), 0, "the append-only pass indexed nothing");
+    r = spawnSync(process.execPath, [CAPTURE, "--sessions-only"], { encoding: "utf8", env });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.match(r.stdout, /0 new turns/); assert.match(r.stdout, /index: updated/);
+    assert.equal(searchable(), 1, "the earlier appended turn is searchable after the plain pass");
+  } finally { rmSync(base, { recursive: true, force: true }); }
 });

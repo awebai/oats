@@ -27,11 +27,16 @@ function readOwner(dir) {
   try { return JSON.parse(readFileSync(join(dir, "owner.json"), "utf8")); } catch { return undefined; }
 }
 
+/** Single-quote shell escaping: safe to paste whatever the path contains. */
+export function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
 /** The operator's recovery line for a lock that is not ours. */
 export function recoveryInstruction(dir, owner, liveness) {
-  const who = owner?.pid ? `pid ${owner.pid} (started ${owner.startedAt || "?"}, now ${liveness})` : "a pass that has not written its owner record yet";
+  const remove = `rm -r -- ${shellQuote(dir)}`;
+  if (!owner?.pid) return `${dir} is held by a pass that has not written its owner record yet (initializing, or killed before it could); stop capture triggers (hooks, launchd), verify no capture process is running (pgrep -f capture.mjs), then remove the lock with: ${remove}  and rerun`;
+  const who = `pid ${owner.pid} (started ${owner.startedAt || "?"}, now ${liveness})`;
   if (liveness === "alive") return `${dir} is held by ${who}; let it finish, the next pass catches up`;
-  return `${dir} is held by ${who}; if that process is gone (ps -p <pid>), remove the lock with: rm -r ${JSON.stringify(dir)}  and rerun`;
+  return `${dir} is held by ${who}; if that process is gone (ps -p ${owner.pid}), remove the lock with: ${remove}  and rerun`;
 }
 
 /** Try to take the root's capture lock. Returns { path, release } when
