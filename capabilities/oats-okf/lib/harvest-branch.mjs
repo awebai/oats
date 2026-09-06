@@ -6,6 +6,9 @@
 // harvest refuses with the exact remedy instead of touching it.
 import { execFileSync } from "node:child_process";
 
+/** Single-quote shell escaping for the operator remedy: the repo path may hold spaces or shell metacharacters. */
+export function shellQuote(s) { return "'" + String(s).replace(/'/g, "'\\''") + "'"; }
+
 function git(repo, args) {
   return execFileSync("git", ["-C", repo, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
@@ -27,10 +30,14 @@ export function reclaimHarvestBranch(repo, branch) {
   let merged = false;
   if (base) { try { git(repo, ["merge-base", "--is-ancestor", branch, base]); merged = true; } catch { merged = false; } }
   if (!merged) {
-    const err = new Error(`branch ${branch} already exists in ${repo} and is not merged into ${base || "any base branch"}: a previous harvest's promotion is unfinished — review and merge or delete it (git -C ${repo} branch -D ${branch}) before harvesting again`);
+    const err = new Error(`branch ${branch} already exists in ${repo} and is not merged into ${base || "any base branch"}: a previous harvest's promotion is unfinished — review and merge or delete it (git -C ${shellQuote(repo)} branch -D ${shellQuote(branch)}) before harvesting again`);
     err.code = "E_HARVEST_BRANCH_EXISTS";
     throw err;
   }
-  git(repo, ["branch", "-d", branch]);
+  // -D, not -d: the merge check above is against the BASE (origin/main when
+  // present). `branch -d` re-checks against the branch's upstream or the
+  // current HEAD instead, so with the soul's local main behind origin/main a
+  // branch fully merged upstream would still be refused as "not fully merged".
+  git(repo, ["branch", "-D", branch]);
   return { action: "deleted", base };
 }
