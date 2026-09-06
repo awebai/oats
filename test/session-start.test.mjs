@@ -94,6 +94,10 @@ test("refusals happen before any mutation", () => {
   writeFileSync(join(f.home, ".oats-rollback-incomplete.json"), "{}\n");
   assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_INSTANCE_RETIRING");
   rmSync(join(f.home, ".oats-rollback-incomplete.json"));
+  // A self-retirement's marker beside the home (its detached teardown is running).
+  writeFileSync(join(dirname(f.home), ".oats-retire-pending-refuse.json"), "{}\n");
+  assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_INSTANCE_RETIRING" && /retire-pending/.test(e.message));
+  rmSync(join(dirname(f.home), ".oats-retire-pending-refuse.json"));
   mkdirSync(join(f.home, ".oats-start.lock"));
   assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_START_BUSY");
   rmSync(join(f.home, ".oats-start.lock"), { recursive: true });
