@@ -33,11 +33,12 @@ Every remembering role must have a tested learning path. Preserve each role's
 explicit policy: Cjr reviewers exclude accumulated memory; Themis uses
 reviewed learning. Config discovery alone establishes none of this.
 
-The installed CLI baseline is published OATS 0.22.6 on this Mac and `aweb-agents`,
+The installed CLI baseline is published OATS 0.22.7 on this Mac and `aweb-agents`,
 including native Pi/Claude/Codex, tmux/Herdr, shared `yolo`, remote Desktop
 roster/actions, retained-authority binding and corrected deferred retirement.
-The installed Mac Desktop 0.22.6 passed published ZIP checksum and strict deep
-codesign and remains closed during resource recovery. The previous 0.22.5 app
+The installed Mac Desktop 0.22.7 passed published ZIP checksum and strict deep
+codesign. Its controlled single-instance check passed and the app was closed
+afterwards, with all owned processes verified gone. The previous 0.22.6 app
 is preserved for rollback; earlier renderer/PTY checks remain version-specific.
 Official oats.okf 1.5.1 is published after independent
 review, adding harvest-runtime selection and detection of unadvanced record
@@ -72,8 +73,8 @@ no OATS Desktop process remained when lead took the incident snapshot.
 
 Lead stopped the capture watcher and residual capture passes, disabled their
 exact Claude hooks, and stopped the experimental mind follow service. Settings,
-service definitions, raw records and learning state are preserved. GUI launch
-is paused. Resume with one bounded operation at a time, checking memory between
+service definitions, raw records and learning state are preserved. Continue
+with one bounded operation at a time, checking memory between
 launches; declining swap alone does not prove sustained stability. Published
 0.22.6 prevents overlapping capture passes with a conservative lock that never
 steals an existing owner; interrupted owners require explicit recovery. Its
@@ -81,9 +82,16 @@ measured full pass still exceeded a 2 GiB RSS budget during indexing and was
 stopped by the monitor. The follow-up streams journal entries instead of loading
 whole arrays. The independently reviewed candidate completed the real index of
 1.74 million turns in 41.6 seconds, at 809.5 MiB peak RSS with normal memory
-pressure, under a 256 MiB Node old-space budget. Capture remains disabled until
-that fix is published and installed. The prepared replacement is one background
-pass every 15 minutes, without per-tool hooks or a permanent watcher.
+pressure, under a 256 MiB Node old-space budget. That fix is now published and
+installed in 0.22.7. The replacement launchd job runs one background pass every
+15 minutes, without per-tool hooks or a permanent watcher. Its first real pass
+completed in 101 seconds at 746 MiB peak RSS, with index completion and zero
+aw-log projection failures. The reviewed operator wrapper stops its own child
+on a 2 GiB RSS limit, two elevated memory-pressure samples, or a five-minute
+deadline. It records each run atomically in
+`~/.local/state/oats/capture/status.json`, retaining the previous success time
+through failures. Idle between passes is normal. Interrupted capture locks
+still need explicit owner-checked recovery; the wrapper reports the remedy.
 Experimental mind follow remains paused.
 
 | Scope | Verified state | Next boundary |
@@ -109,10 +117,14 @@ must still preserve authority.
 Desktop has six validated team roots saved as workspace suggestions,
 not six running GUI instances. It starts with one workspace and can add others.
 It is currently closed; visual QA and sustained multi-workspace memory behavior
-are not claimed. Version 0.22.6 includes a single-instance guard. The reviewed
-0.22.7 candidate also explicitly runs the packaged backend as Node; a headless
-check served the API at about 70 MiB. The 0.22.7 release is building on hosted
-runners, not on this Mac. Native remote Pi authentication and remote Codex remain
+are not claimed. Version 0.22.6 added a single-instance guard and 0.22.7 runs the
+packaged backend as Node. An installed 0.22.7 check served the Oats workspace API;
+a second launch exited successfully while the primary remained, with both
+owned process groups peaking at 589 MiB and normal memory pressure. All test
+processes were stopped and verified absent. The full release gate and all three
+Desktop builds passed on hosted runners; publication succeeded, and the bot's
+version-bump PR permission failure was resolved through reviewed manual PR #8.
+Native remote Pi authentication and remote Codex remain
 unqualified; the accepted remote harness is Claude.
 
 ## Scope inventory
@@ -131,7 +143,7 @@ of continuing seats.
 | `~/prj/docflow` | Live Claude seat identified itself as local `juan.aweb.ai/alice` on `docflow:juan.aweb.ai` | Owner Juan; finish running mail backfill and register checks before transfer; retain identity, memory and Minerva route; accountant-sync remains deliberately unloaded |
 | `ai.aweb` on `aweb-agents` | Aweb confirms Athena intentionally inactive; remote legacy home retained | Aweb and oats own archival inspection; do not resurrect as a continuing seat |
 | `~/awebai/demo-aweb/bob` | Live Pi demo | Aweb owns safe stop and archival disposition; it is not an operating-team migration |
-| `~/.turn-record` | Capture and experimental mind services paused after memory incident | Preserve records; review and measure resource fixes before resuming |
+| `~/.turn-record` | Guarded periodic capture enabled and measured; per-tool hooks and experimental mind follow remain disabled | Preserve records; monitor the run artifact; no blind watcher restart |
 
 The starting inventory above was checked on 2026-09-05 using harness process
 working directories and exact custom tmux sockets, without interrupting them.
