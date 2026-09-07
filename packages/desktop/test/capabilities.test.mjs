@@ -20,6 +20,9 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
   const options = { workspace, cli, agents, instances, localCwd: '/local', invoke: async (bin, args) => { calls.push(args); return envelope({}); } };
   await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, options);
   assert.equal(calls[0].context, '/team/two'); assert.equal(calls[0].agentsRoot, agents[1].agentsRoot);
+  await capabilityRequest({ action: 'inspect', selector: { home } }, options);
+  assert.equal(calls.at(-1).context, undefined, 'exact home owns its context; agents root is not necessarily the work repo');
+  assert.equal(calls.at(-1).localCwd, '/team');
   await assert.rejects(capabilityRequest({ action: 'set', selector: { soul: 'dev' } }, options), /one soul/);
   await assert.rejects(capabilityRequest({ action: 'use', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot }, binding: { action: 'none', layer: 'knowledge' } }, options), /whole configuration scope/);
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home: '/foreign' } }, options), /existing home/);
@@ -34,7 +37,7 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
 test('adapter preserves remote scope and literal instructions in a private file, cleaning after failure', async () => {
   let file, call;
   const text = '# Literal\n`code` $(not a command) <tag>\n';
-  const result = await cliCapability(cli.bin, { action: 'set', context: '/remote/member', server: 'hetzner', soul: 'dev', agentsRoot: '/remote/member/agents', localCwd: '/local', fields: { model: '', instructions: text, yolo: true } }, {
+  const result = await cliCapability(cli.bin, { action: 'set', context: '/remote/member', server: 'hetzner', soul: 'dev', agentsRoot: '/remote/member/agents', localCwd: '/local', fields: { model: '', description: '', instructions: text, yolo: true } }, {
     exec(bin, argv, opts, done) {
       call = { argv, opts }; file = argv[argv.indexOf('--instructions-file') + 1];
       assert.equal(readFileSync(file, 'utf8'), text); assert.equal(statSync(file).mode & 0o777, 0o600);
@@ -42,7 +45,7 @@ test('adapter preserves remote scope and literal instructions in a private file,
     },
   });
   assert.equal(result.ok, false); assert.equal(existsSync(file), false); assert.equal(call.opts.cwd, '/local'); assert.equal(call.opts.shell, false);
-  assert.ok(call.argv.includes('--no-model')); assert.ok(call.argv.includes('--yolo'));
+  assert.ok(call.argv.includes('--no-description')); assert.ok(call.argv.includes('--no-model')); assert.ok(call.argv.includes('--yolo'));
   assert.equal(call.argv[call.argv.indexOf('--dir') + 1], '/remote/member');
   assert.equal(call.argv[call.argv.indexOf('--server') + 1], 'hetzner');
   await assert.rejects(cliCapability(cli.bin, { action: 'set', soul: 'dev', fields: { runtime: '--force' } }, { exec: assert.fail }), /Invalid runtime/);

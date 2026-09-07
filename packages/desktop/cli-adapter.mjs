@@ -278,6 +278,7 @@ export async function cliCapability(bin, { action, context, server, soul, agents
           if (typeof v !== 'boolean') bad('Invalid permission setting');
           argv.push(v ? '--yolo' : '--no-yolo');
         } else if (key === 'model' && v === '') argv.push('--no-model');
+        else if (key === 'description' && v === '') argv.push('--no-description');
         else if (['runtime', 'backend', 'model', 'description'].includes(key)) {
           const allowed = key === 'runtime' ? ['pi', 'claude', 'codex'] : key === 'backend' ? ['tmux', 'herdr'] : null;
           if (allowed && !allowed.includes(v)) bad(`Invalid ${key}`);
