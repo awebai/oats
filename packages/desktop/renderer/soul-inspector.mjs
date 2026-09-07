@@ -2,6 +2,7 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 
 export const inspectorCSS = `
+.souls { container-type:inline-size; }
 .souls-body { display:flex; flex:1; min-height:0; }
 .souls-body.inspecting > .souls-grid { flex:0 0 310px; grid-template-columns:minmax(0,1fr); padding:12px; }
 .soul-inspector { flex:1; min-width:0; overflow:auto; padding:22px; border-left:1px solid var(--border); }
@@ -25,7 +26,7 @@ export const inspectorCSS = `
 .inspector-status { min-height:1.5em; font-size:13px; color:var(--muted); white-space:pre-wrap; }
 .inspector-status:empty { min-height:0; margin:0; }
 .inspector-status.error { color:var(--danger); }
-@media(max-width:850px) { .souls-body.inspecting > .souls-grid { display:none; } .soul-inspector { border-left:0; padding:16px; } }
+@container(max-width:850px) { .souls-body.inspecting > .souls-grid { display:none; } .soul-inspector { border-left:0; padding:16px; } }
 `;
 
 export function createSoulInspector(container, { ctx, launch, schedule, changed, closed }) {
