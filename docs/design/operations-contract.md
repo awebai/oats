@@ -105,9 +105,12 @@ type. A layer bound to another capability at a level is never overwritten
 ## Remote
 
 `inspect`, `operation`, `use` and `soul` route with `--server <id>` through
-the saved route; the remote must list `operations` in `remote` and
-`features` and answer `operationsApi: 1` (`E_REMOTE_INCOMPATIBLE` before
-anything is sent). An explicit `--dir` is the exact member context and
+the saved route. The gate is the destination's `features` list containing
+`operations` and its `operationsApi: 1` (`E_REMOTE_INCOMPATIBLE` before
+anything is sent): `features` describes what a kernel can do locally, which
+is what runs on the host. The probe's `remote` list describes what a CLI
+can ROUTE to a server and is what a GUI checks on the local CLI before
+offering remote actions; it is not a gate on the destination. An explicit `--dir` is the exact member context and
 travels as is; `--home` is its own context; otherwise the registered
 workspace is the scope. Soul instructions travel as bytes on the ssh stdin
 (`--instructions-stdin` on the host), never as a local path.
