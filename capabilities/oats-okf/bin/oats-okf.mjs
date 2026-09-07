@@ -44,7 +44,7 @@ const jsonFail = (code, message) => { process.stdout.write(JSON.stringify({ sche
 // --help/-h never runs a command here either (the kernel answers it from the
 // manifest since 0.22.6; this keeps an older kernel from spawning a harvester).
 if (process.argv.slice(2).some((a) => a === "--help" || a === "-h")) {
-  process.stdout.write("oats okf harvest [--json] [--from-record] [--force]  promote this instance's pending notes (and record windows) into its soul by spawning a memory-harvest worker; --help never spawns\noats okf status [--json]\n");
+  process.stdout.write("oats okf harvest [--json] [--from-record] [--force]  promote this instance's pending notes (and record windows) into its soul by spawning a memory-harvest worker; --help never runs it\noats okf inspect [--json]  answer this instance's working knowledge (STATE.md, log.md, pending notes) as labeled documents\n");
   process.exit(0);
 }
 const event = process.env.OATS_EVENT || process.argv[2];
@@ -473,6 +473,30 @@ _(the single next action — keep this current; a fresh session on any model res
     if (JSON_MODE) jsonFail(e.code || "E_HARVEST_FAILED", `harvest spawn failed (notes are safe on disk): ${e.message || e}`);
     warnFail(`harvest spawn failed (notes are safe on disk): ${e.message || e}`);
   }
+} else if (event === "inspect") {
+  // VIEW OPERATION (kernel contract, docs/design/operations-contract.md):
+  // the instance's working knowledge as labeled documents, read from the
+  // home this command runs in. Text only; paths are provenance for the
+  // reader. Answers the JSON-v1 envelope regardless of --json.
+  try {
+    const CAP = 256 * 1024;
+    const doc = (label, file) => {
+      if (!existsSync(file)) return null;
+      const bytes = readFileSync(file);
+      const truncated = bytes.length > CAP;
+      let text = truncated ? bytes.subarray(0, CAP).toString("utf8") : bytes.toString("utf8");
+      if (truncated && text.endsWith("\uFFFD")) text = text.slice(0, -1);
+      return { label, kind: "markdown", path: file, text, ...(truncated ? { truncated: true, bytes: bytes.length } : {}) };
+    };
+    const documents = [doc("Working state (STATE.md)", join(home, "STATE.md")), doc("Log (log.md)", join(home, "log.md"))].filter(Boolean);
+    const notesDir = join(home, "notes");
+    const notes = existsSync(notesDir) ? readdirSync(notesDir).filter((f) => f.endsWith(".md")).sort() : [];
+    for (const f of notes) { const d = doc(`Pending note: ${f}`, join(notesDir, f)); if (d) documents.push(d); }
+    const summary = documents.length ? `${documents.length} document${documents.length === 1 ? "" : "s"}: ${existsSync(join(home, "STATE.md")) ? "state" : "no state"}, ${existsSync(join(home, "log.md")) ? "log" : "no log"}, ${notes.length} pending note${notes.length === 1 ? "" : "s"}` : "no working memory in this home yet (STATE.md, log.md and notes/ are written by the instance)";
+    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { summary, documents } }) + "\n"); process.exit(0);
+  } catch (e) {
+    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_INSPECT_FAILED", message: String(e.message || e).slice(0, 300) } }) + "\n"); process.exit(1);
+  }
 } else if (event === "retire") {
   // Retirement is intentionally a no-op for knowledge (for now): promotion happens
   // continuously via agent-initiated harvest. Uncommitted notes die with the home —
@@ -480,5 +504,5 @@ _(the single next action — keep this current; a fresh session on any model res
   // before finishing.
   out({ meta: {} });
 } else {
-  warn(`unknown event "${event}" (expected soul-scaffold|spawn|retire)`);
+  warn(`unknown event "${event}" (expected soul-scaffold|spawn|retire|harvest|inspect)`);
 }
