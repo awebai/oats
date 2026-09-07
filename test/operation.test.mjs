@@ -31,7 +31,7 @@ function scope(name) {
   const notes = join(repo, ".agents", "capabilities", "owned", "notes");
   write(join(notes, "oats.json"), JSON.stringify({
     capability: "test.notes", version: "0.1.0", description: "Test knowledge provider", compatibility: { oats: ">=0.6.2" }, layer: "knowledge", command: "notes",
-    commands: { digest: "bin/notes.mjs digest", inspect: "bin/notes.mjs inspect", badview: "bin/notes.mjs badview", fail: "bin/notes.mjs fail", sweep: "bin/notes.mjs sweep", liar: "bin/notes.mjs liar", noisy: "bin/notes.mjs noisy" },
+    commands: { digest: "bin/notes.mjs digest", inspect: "bin/notes.mjs inspect", badview: "bin/notes.mjs badview", fail: "bin/notes.mjs fail", sweep: "bin/notes.mjs sweep", liar: "bin/notes.mjs liar", noisy: "bin/notes.mjs noisy", liarnamed: "bin/notes.mjs liarnamed" },
     operations: {
       harvest: { kind: "action", command: "digest", context: "home", description: "Digest MEMORY.md", args: [{ name: "depth", required: true, description: "how deep" }, { name: "dry" }] },
       inspect: { kind: "view", command: "inspect", context: "home" },
@@ -39,6 +39,7 @@ function scope(name) {
       fail: { command: "fail", context: "home" },
       sweep: { command: "sweep", context: "scope" },
       liar: { command: "liar", context: "home" },
+      liarnamed: { command: "liarnamed", context: "home" },
       noisy: { command: "noisy", context: "home" },
     },
     settings: { tone: { description: "digest tone" } },
@@ -56,6 +57,7 @@ else if (cmd === "badview") console.log(JSON.stringify({ schemaVersion: 1, ok: t
 else if (cmd === "fail") { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_NOTES_EMPTY", message: "nothing to digest" } })); process.exit(1); }
 else if (cmd === "sweep") console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { swept: process.cwd() } }));
 else if (cmd === "liar") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); process.exit(1); }
+else if (cmd === "liarnamed") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "notes-harvester-9" } })); process.exit(1); }
 else if (cmd === "noisy") { console.log("progress 1/2"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); }
 `);
   write(join(repo, "oats-config.yaml"), "name: t\ncapabilities:\n  layers:\n    knowledge:\n      capability: test.notes\n      from: owned\n      global: true\n      settings:\n        tone: dry\n    messaging: none\n    tasks: none\n");
@@ -140,4 +142,33 @@ test("a schedule of kind operation resolves the provider when it runs and tracks
   assert.throws(() => S.updateSchedule(ws, "h", { cron: "0 * * * *", tz: "UTC", kind: "operation", operation: "knowledge:inspect", home }), (e) => e.code === "E_SCHEDULE_RUNNING");
   const listed = oats(["schedule", "list", "--dir", ws, "--json"]).json().result.schedules.find((j) => j.id === "h");
   assert.equal(listed.operation, "knowledge:harvest");
+});
+
+test("an unconfirmed operation outcome carries what was observed in error.details, and a scheduled operation keeps its slot as unknown and reconciles by the answered name", () => {
+  const { repo, home } = scope("s3");
+  const e = oats(["operation", "run", "knowledge:liarnamed", "--home", home, "--json"]).json().error;
+  assert.equal(e.code, "E_OPERATION_RESULT"); assert.equal(e.details.unconfirmed, true); assert.equal(e.details.exit, 1); assert.equal(e.details.envelope.result.instance, "notes-harvester-9");
+  const ws = repo;
+  S.addSchedule(ws, { id: "u", cron: "0 * * * *", tz: "UTC", kind: "operation", operation: "knowledge:liarnamed", home });
+  const io = { inspect: () => ({ present: true, state: "unknown" }) };
+  const c = S.tickWorkspace(ws, { now: new Date("2026-09-08T12:00:00Z"), io, reg: { maxConcurrent: 1 } });
+  assert.equal(c[0].action, "unknown", "not a confirmed failure"); assert.match(c[0].error, /unconfirmed/);
+  const d = S.describe(ws, "u", io);
+  assert.equal(d.running, true, "the slot is kept"); assert.ok(d.attempt); assert.equal(d.lastRun.instance, "notes-harvester-9", "the answered name is kept for reconcile");
+  write(join(home, "..", "notes-harvester-9", "instance.json"), JSON.stringify({ instance: "notes-harvester-9", agent: "dev" }));
+  const r = S.reconcile(ws, "u", { io });
+  assert.equal(r.reconciled, "adopted"); assert.equal(r.schedule.lastRun.instance, "notes-harvester-9");
+});
+
+test("a provider whose manifest requires a command missing from PATH is reported unavailable by inspect and refused by operation run", () => {
+  const { repo, home } = scope("s4");
+  const manifestPath = join(repo, ".agents", "capabilities", "owned", "notes", "oats.json");
+  const m = JSON.parse(readFileSync(manifestPath, "utf8")); m.requires = [{ command: "definitely-missing-tool-xyz", why: "digests need it", install: "brew install xyz" }]; writeFileSync(manifestPath, JSON.stringify(m));
+  const ins = oats(["inspect", "--home", home, "--json"]).json().result;
+  const notes = ins.capabilities.find((c) => c.id === "test.notes");
+  assert.deepEqual(notes.missingRequires, [{ command: "definitely-missing-tool-xyz", why: "digests need it", install: "brew install xyz" }]);
+  assert.equal(notes.operations.find((o) => o.name === "inspect").available, false); assert.match(notes.operations.find((o) => o.name === "inspect").reason, /requires "definitely-missing-tool-xyz" on PATH \(digests need it\)/);
+  const e = oats(["operation", "run", "knowledge:inspect", "--home", home, "--json"]).json().error;
+  assert.equal(e.code, "E_CAPABILITY_REQUIRES"); assert.match(e.message, /install: brew install xyz/);
+  assert.equal(existsSync(join(home, "notes-invocation.json")), false, "the provider was not run");
 });
