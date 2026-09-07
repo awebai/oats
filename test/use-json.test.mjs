@@ -40,13 +40,29 @@ test("use --json answers receipts for enable, disable, settings, layer none, and
   assert.equal(r.status, 0, r.stdout + r.stderr); rc = r.json().result;
   assert.equal(rc.action, "disable"); assert.equal(rc.layer, "knowledge"); assert.equal(rc.after.enabled, false); assert.equal(rc.after.effective.id, null, "for soul dev the layer now has no provider");
   assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /knowledge:\n      capability: acme\.kb\n(?:.*\n)*?      souls:\n        dev: false/);
-  // --inherit removes that soul binding; the entry disappears (no target left) and the outer global applies again.
+  // --inherit removes ONLY the soul binding; the explicit global:false this level carries stays (the receipt says so), so the entry remains.
   r = oats(["use", "acme.kb", "--soul", "dev", "--inherit", "--dir", repo, "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr); rc = r.json().result;
-  assert.equal(rc.action, "inherit"); assert.equal(rc.entryRemoved, true); assert.deepEqual(rc.before, { bound: true, enabled: false, settings: {} }); assert.equal(rc.after.bound, false);
-  assert.equal(rc.after.effective.id, "acme.kb"); assert.match(rc.after.effective.provenance, /global @/);
-  assert.doesNotMatch(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /acme\.kb/);
+  assert.equal(rc.action, "inherit"); assert.equal(rc.entryRemoved, false); assert.deepEqual(rc.before, { bound: true, enabled: false, settings: {} }); assert.equal(rc.after.bound, false);
+  assert.deepEqual(rc.remaining, ["global: false"]); assert.match(rc.note, /--inherit --global/);
+  assert.equal(rc.after.effective.id, null, "the level's explicit global exclusion still applies to dev");
   assert.equal(oats(["use", "acme.kb", "--soul", "dev", "--inherit", "--dir", repo, "--json"]).json().error.code, "E_NOT_BOUND");
+  // Removing the remaining global binding removes the entry; the outer global applies again.
+  r = oats(["use", "acme.kb", "--global", "--inherit", "--dir", repo, "--json"]); rc = r.json().result;
+  assert.equal(rc.entryRemoved, true); assert.deepEqual(rc.remaining, []); assert.equal(rc.after.effective.id, "acme.kb"); assert.match(rc.after.effective.provenance, /global @/);
+  assert.doesNotMatch(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /acme\.kb/);
+  // A layer none is a level statement: no soul or type target.
+  assert.equal(oats(["use", "none", "--layer", "knowledge", "--soul", "dev", "--dir", repo, "--json"]).json().error.code, "E_BAD_ARGS");
+  assert.doesNotMatch(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /knowledge: none/);
+  // Another provider for a bound layer is refused, even as an exclusion, with the exact remedy.
+  owned(outer, "kb2", { capability: "acme.kb2", layer: "knowledge" });
+  oats(["use", "acme.kb", "--global", "--dir", repo, "--json"]);
+  for (const extra of [[], ["--disable"], ["--soul", "dev", "--disable"]]) {
+    const e = oats(["use", "acme.kb2", ...extra, "--dir", repo, "--json"]).json().error;
+    assert.equal(e.code, "E_LAYER_BOUND"); assert.match(e.message, /oats use acme\.kb --inherit --global/); assert.match(e.message, /oats use none --layer knowledge/);
+  }
+  assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /capability: acme\.kb\n/, "the bound entry is untouched");
+  oats(["use", "acme.kb", "--global", "--inherit", "--dir", repo, "--json"]);
   // --inherit on a soul target keeps the entry when another target remains.
   oats(["use", "acme.extra", "--global", "--dir", repo, "--json"]);
   r = oats(["use", "acme.extra", "--soul", "dev", "--inherit", "--dir", repo, "--json"]); rc = r.json().result;

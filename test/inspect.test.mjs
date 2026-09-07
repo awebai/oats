@@ -103,6 +103,7 @@ test("inspect --soul selects one soul with its instructions and soul-specific bi
   assert.deepEqual(res.currentConfig.activations.map((a) => a.id).sort(), ["test.notes", "test.tools"]); assert.deepEqual(res.currentConfig.activations.find((a) => a.id === "test.notes").settings, { tone: "warm" });
   assert.ok(res.problems.some((p) => p.code === "captured-capability-missing" && p.capability === "test.gone"));
   assert.equal(oats(["inspect", "--home", home, "--dir", join(base, "elsewhere"), "--json"]).json().error.code, "E_HOME_MISMATCH", "--dir must be the home's context");
+  assert.equal(oats(["inspect", "--home", home, "--dir", repo, "--json"]).status, 0, "the workspace of the home's agents root is an accepted --dir");
   assert.equal(oats(["inspect", "--home", home, "--agents-root", join(base, "elsewhere"), "--json"]).json().error.code, "E_HOME_MISMATCH", "--agents-root must be the home's root");
   assert.equal(res.snapshot.instance, "dev-one"); assert.equal(res.snapshot.instructions.text, "# dev-one composed\n"); assert.deepEqual(res.snapshot.instructions.sources, [{ source: "kernel:oats", file: "/x/oats.md" }]);
   const drift = Object.fromEntries(res.snapshot.drift.map((d) => [`${d.id}:${d.field}`, d]));
