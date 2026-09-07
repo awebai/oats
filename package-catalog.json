@@ -2,7 +2,7 @@
   "packages": {
     "oats.okf": {
       "url": "https://github.com/awebai/oats-okf.git",
-      "ref": "v1.5.2",
+      "ref": "v1.6.0",
       "path": "oats-package"
     },
     "oats.aweb": {
@@ -33,12 +33,33 @@
   },
   "capabilities": {
     "oats.review": "oats.dev",
-    "oas.okf": { "package": "oats.okf", "capability": "oats.okf" },
-    "oas.aweb": { "package": "oats.aweb", "capability": "oats.aweb" },
-    "oas.jira": { "package": "oats.jira", "capability": "oats.jira" },
-    "oas.linear": { "package": "oats.linear", "capability": "oats.linear" },
-    "oas.authoring": { "package": "oats.authoring", "capability": "oats.authoring" },
-    "oas.dev": { "package": "oats.dev", "capability": "oats.dev" },
-    "oas.review": { "package": "oats.dev", "capability": "oats.review" }
+    "oas.okf": {
+      "package": "oats.okf",
+      "capability": "oats.okf"
+    },
+    "oas.aweb": {
+      "package": "oats.aweb",
+      "capability": "oats.aweb"
+    },
+    "oas.jira": {
+      "package": "oats.jira",
+      "capability": "oats.jira"
+    },
+    "oas.linear": {
+      "package": "oats.linear",
+      "capability": "oats.linear"
+    },
+    "oas.authoring": {
+      "package": "oats.authoring",
+      "capability": "oats.authoring"
+    },
+    "oas.dev": {
+      "package": "oats.dev",
+      "capability": "oats.dev"
+    },
+    "oas.review": {
+      "package": "oats.dev",
+      "capability": "oats.review"
+    }
   }
 }
