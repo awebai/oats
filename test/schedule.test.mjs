@@ -409,6 +409,11 @@ process.stdout.write("spawned dev-harvest-text\\n");\n`);
   S.addSchedule(ws, { id: "shape", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "status"] });
   const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:00Z"), io: io2, reg: { maxConcurrent: 4 } });
   assert.equal(c2.find((x) => x.id === "shape").action, "unknown");
+  // A valid ok:false envelope that reports an INCOMPLETE rollback keeps its slot as unknown.
+  const io2b = { command: () => ({ ok: false, error: { code: "E_SPAWN_FAILED", message: "harvest spawn failed; rollback INCOMPLETE: pane could not be stopped, home quarantined" } }), inspect: io.inspect };
+  S.addSchedule(ws, { id: "rollback", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  const c2b = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:30Z"), io: io2b, reg: { maxConcurrent: 4 } });
+  assert.equal(c2b.find((x) => x.id === "rollback").action, "unknown"); assert.equal(S.describe(ws, "rollback", io).running, true);
   // A spawn whose compensation reports an INCOMPLETE rollback keeps its slot as unknown.
   const io3 = { spawn: () => { throw Object.assign(new Error("spawn failed: pane could not be stopped; rollback INCOMPLETE, home quarantined"), { code: "E_SPAWN_FAILED" }); }, inspect: io.inspect };
   S.addSchedule(ws, { id: "incomplete", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
@@ -417,7 +422,7 @@ process.stdout.write("spawned dev-harvest-text\\n");\n`);
   // A spawn that failed with a complete compensation is a confirmed failure.
   const io4 = { spawn: () => { throw Object.assign(new Error("no soul named x"), { code: "E_AGENT_UNKNOWN" }); }, inspect: io.inspect };
   S.addSchedule(ws, { id: "clean", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
-  const c4 = S.tickWorkspace(ws, { now: at("2026-09-07T18:03:00Z"), io: io4, reg: { maxConcurrent: 4 } });
+  const c4 = S.tickWorkspace(ws, { now: at("2026-09-07T18:03:00Z"), io: io4, reg: { maxConcurrent: 5 } });
   assert.equal(c4.find((x) => x.id === "clean").action, "launch-failed"); assert.equal(S.describe(ws, "clean", io).running, false);
 });
 
@@ -491,9 +496,9 @@ test("an execution target cannot be edited under a running or unresolved job; ti
   assert.throws(() => S.updateSchedule(ws, "job", { cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", purpose: "other" }, io), (e) => e.code === "E_SCHEDULE_RUNNING", "purpose names the instance reconcile looks for");
   const d = S.updateSchedule(ws, "job", { cron: "5 * * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "new text" }, io);
   assert.equal(d.cron, "5 * * * *"); assert.equal(d.running, true);
-  // A cold wake reserves its slot BEFORE the start call: a start that fails
-  // after it may have allocated keeps the slot; a refusal that allocated
-  // nothing gives it back.
+  // A cold wake reserves its slot BEFORE the start call and keeps it on
+  // ANY start exception (an error code does not prove nothing was
+  // allocated); the next observation releases it once stopped is proven.
   const hc = home(ws, "dev-cold");
   const states = { [hc]: { present: false, state: "stopped" } };
   let seenLockDuringStart = null;
@@ -502,11 +507,14 @@ test("an execution target cannot be edited under a running or unresolved job; ti
   rmSync(S.describe(ws, "job", io).lastRun.home, { recursive: true, force: true });
   let by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:01:00Z"), io: wio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
   assert.equal(seenLockDuringStart, true, "the slot is persisted before start runs");
-  assert.equal(by.cold.action, "skipped"); assert.match(by.cold.reason, /could not be confirmed/); assert.ok(S.jobLockInfo(ws, "cold"), "an uncertain start keeps the slot");
-  // Observation proves the runtime absent: the slot is released and a refusing start gives it back at once.
-  const rio = { inspect: (x) => states[x], start: () => { throw Object.assign(new Error("being retired"), { code: "E_INSTANCE_RETIRING" }); } };
+  assert.equal(by.cold.action, "skipped"); assert.match(by.cold.reason, /did not complete/); assert.ok(S.jobLockInfo(ws, "cold"), "an uncertain start keeps the slot");
+  // A refusal whose code looks clean is treated the same (core can refuse while recording, after allocation).
+  const rio = { inspect: (x) => states[x], start: () => { throw Object.assign(new Error("independent receipt is invalid"), { code: "E_RUNTIME_ENDPOINT_UNKNOWN" }); } };
   by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:02:00Z"), io: rio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
-  assert.equal(by.cold.action, "skipped"); assert.match(by.cold.reason, /start refused/); assert.equal(S.jobLockInfo(ws, "cold"), null);
+  assert.equal(by.cold.action, "skipped"); assert.equal(by.cold.reason.includes("E_RUNTIME_ENDPOINT_UNKNOWN"), true); assert.ok(S.jobLockInfo(ws, "cold"));
+  // The next observation (a non-due tick) proves the runtime stopped and releases the slot; nothing is started off the minute.
+  by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:02:30Z"), io: rio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
+  assert.equal(by.cold.action, "skipped"); assert.equal(S.jobLockInfo(ws, "cold"), null, "observation released the slot");
   // Registry register/unregister are serialized and idempotent.
   const before = S.readRegistry();
   try { S.registerWorkspace(ws); S.registerWorkspace(ws); assert.equal(S.readRegistry().workspaces.filter((w) => w === ws).length, 1); S.unregisterWorkspace(ws); assert.ok(!S.readRegistry().workspaces.includes(ws)); }
