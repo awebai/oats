@@ -20,6 +20,10 @@ test("tmux attach isolates one exact window and cleanup kills only the viewer", 
   const viewer = prepareSessionViewer(target, io);
   assert.deepEqual(io.calls.find((c) => c[0] === "link-window").slice(0, 3), ["link-window", "-s", "=oats:=agent"]);
   assert.deepEqual(io.calls.find((c) => c[0] === "kill-window"), ["kill-window", "-t", "@98"]);
+  const viewerName = io.calls.find((c) => c[0] === "new-session")[3];
+  assert.match(viewerName, /^oatsview-/);
+  assert.ok(io.calls.some((c) => c.join(" ") === `set-option -t ${viewerName} status off`), "the status line is hidden on the temporary viewer session only");
+  assert.equal(io.calls.some((c) => c[0] === "set-option" && c[2] !== viewerName), false, "no option is set on the agents' session");
   viewer.cleanup();
   assert.equal(io.calls.at(-1)[0], "kill-session");
   assert.match(io.calls.at(-1)[2], /^=oatsview-/);
