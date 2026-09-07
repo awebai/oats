@@ -151,6 +151,9 @@ export function openTerm(spec, io) {
     }
     // wheel needs tmux mouse handling in the viewer
     io.tmux(["set-option", "-t", viewer, "mouse", "on"]);
+    // The Desktop already labels this terminal. Hide only its viewer's
+    // status bar; the durable agent session keeps the operator's settings.
+    io.tmux(["set-option", "-t", viewer, "status", "off"]);
     const pty = io.spawnPty(`=${viewer}`, Math.max(20, Number(spec.cols) || 80), Math.max(5, Number(spec.rows) || 24));
     return { target, viewer, pty, killViewer };
   } catch (e) {

@@ -27,6 +27,7 @@ import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, deci
 import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { startSingleInstance } from "./single-instance.mjs";
+import { prepareTerminalAttachments } from "./terminal-attachments.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -424,7 +425,7 @@ ipcMain.handle("term:open", async (e, { session, window: win, socket, sessionTar
     dropViewer(); // pty gone (detach or session end) — the viewer session must not linger
     if (!wc.isDestroyed()) wc.send(`term:exit:${id}`, exitCode);
   });
-  ptys.set(id, { pty: p, killViewer: dropViewer, wc });
+  ptys.set(id, { pty: p, killViewer: dropViewer, wc, remote });
   termRegistry.commit(targetKey, id);
   // Release this renderer's ptys when it reloads, navigates, or its process
   // goes away — the tabs that owned them no longer exist (wired once per wc).
@@ -436,6 +437,26 @@ ipcMain.handle("term:open", async (e, { session, window: win, socket, sessionTar
     wc.once("destroyed", drop);              // window/webContents torn down
   }
   return { id };
+});
+ipcMain.handle("term:attachments", async (e, id, items) => {
+  guard(e);
+  const target = ptys.get(id);
+  if (!target || target.wc !== e.sender) throw new Error("This terminal is no longer open.");
+  if (target.attaching) throw new Error("Wait for the current attachments to finish.");
+  target.attaching = true;
+  try {
+    let cli;
+    if (target.remote) {
+      const response = await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error("OATS CLI is unavailable.");
+      cli = await response.json();
+    }
+    const paths = await prepareTerminalAttachments(items, {
+      directory: join(app.getPath("userData"), "attachments"), remote: target.remote, cli,
+    });
+    if (ptys.get(id) !== target || e.sender.isDestroyed()) throw new Error("The terminal closed before the files were attached.");
+    return paths;
+  } finally { target.attaching = false; }
 });
 ipcMain.on("term:write", (e, id, data) => { guard(e); ptys.get(id)?.pty.write(String(data)); });
 ipcMain.on("term:resize", (e, id, cols, rows) => {

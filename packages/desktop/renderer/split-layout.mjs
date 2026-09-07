@@ -76,6 +76,20 @@ export function groupOfTab(split, id) {
   return split?.groups.find((g) => g.tabs.includes(id)) ?? null;
 }
 
+/** An explicit sidebar/quick-open choice fills an empty group even when
+ * its terminal is already open. Move the tab; never attach a second PTY. */
+export function fillEmptyGroup(split, id) {
+  const source = groupOfTab(split, id);
+  const target = split?.groups.find(g => g.id === split.focusedGroup);
+  if (!source || !target || target.tabs.length || source === target) return split;
+  return { ...split, groups: split.groups.map(g => {
+    if (g === target) return { ...g, tabs: [id], activeTab: id };
+    if (g !== source) return g;
+    const tabs = g.tabs.filter(t => t !== id);
+    return { ...g, tabs, activeTab: g.activeTab === id ? tabs.at(-1) ?? null : g.activeTab };
+  }) };
+}
+
 /** True when tab `id` belongs to any group of `split`. */
 export function isSplitMember(split, id) {
   return !!groupOfTab(split, id);

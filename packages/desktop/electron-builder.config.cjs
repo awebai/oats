@@ -36,6 +36,7 @@ module.exports = {
     "local-tmux-io.mjs",
     "herdr-target.mjs", "remote-target.mjs",
     "terminal-registry.mjs",
+    "terminal-attachments.mjs",
     "workspace-registry.mjs",
     "server/**/*",
     "renderer/**/*",

@@ -35,6 +35,7 @@
 
 // a Comment marker holds #tab-actions' flat slot while the controls ride a
 // group strip, so the restore is byte-identical (whitespace preserved).
+import { updateSplitHandle } from "./split-resize.mjs";
 const MARKER = Symbol("flat-slot-marker");
 
 function ensureCell(host, before, group) {
@@ -149,6 +150,8 @@ export function projectSplitDom(els, split, on, entries) {
   for (const c of tabhost.querySelectorAll(":scope > .group-cell")) {
     if (!live.has(c.dataset.group)) c.remove();
   }
+  const cells = [...tabhost.querySelectorAll(":scope > .group-cell")];
+  cells.forEach((cell, i) => updateSplitHandle(tabhost, cell, split.orientation, i < cells.length - 1));
   if (focused && doc.activeElement !== focused
       && (tabhost.contains(focused) || tabbar.contains(focused))) focused.focus();
 }

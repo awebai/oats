@@ -8,6 +8,7 @@
 // settle signal), so a close-during-pending resumes only after setup — or
 // skips it entirely — and disposeUi covers every resource created here.
 import { createTermLifecycle } from "./term-lifecycle.mjs";
+import { wireTerminalAttachments } from "./terminal-attachments.mjs";
 
 /**
  * @param {object} deps
@@ -100,6 +101,7 @@ export function terminalKeyDecision(ev, interceptKey) {
 export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wrap, isActive, fit, observe, interceptKey, onError = (e) => console.error(e) }) {
   let offData = null, offExit = null;
   let unobserve = null;
+  let detachAttachments = null;
 
   const life = createTermLifecycle(
     { open: async () => {
@@ -124,6 +126,7 @@ export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wra
     // Detach-only semantics live in the lifecycle; this is the UI teardown.
     offData?.(); offExit?.();
     unobserve?.();
+    detachAttachments?.();
     term.dispose();
   };
 
@@ -167,6 +170,7 @@ export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wra
         });
         term.onResize(({ cols, rows }) => { if (life.ptyId() !== null) desk.termResize(life.ptyId(), cols, rows); });
         unobserve = (observe || defaultObserve)(wrap);
+        if (desk.termAttachFiles) detachAttachments = wireTerminalAttachments({ wrap, desk, term, ptyId: () => life.ptyId() });
         term.focus();
       },
       (e) => banner(`could not attach: ${e?.message || e}`),

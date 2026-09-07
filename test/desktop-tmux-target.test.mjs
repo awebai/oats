@@ -74,6 +74,7 @@ test("openTerm: linked-window viewer built in order, keys locked, pty attaches t
     ["tmux", "unbind-key", "-a", "-q", "-T", "oatsdesk-locked"],              // tables are server-global: clear stale bindings first
     ...LOCKED_TABLE_BINDINGS.map((b) => ["tmux", "bind-key", "-T", "oatsdesk-locked", ...b]), // provisioned wheel bindings
     ["tmux", "set-option", "-t", "oatsdesk-test-1", "mouse", "on"],            // wheel events reach tmux
+    ["tmux", "set-option", "-t", "oatsdesk-test-1", "status", "off"],          // no duplicate terminal chrome
     ["spawn", "=oatsdesk-test-1", 120, 40],                                     // pty attaches to the viewer
   ]);
   assert.equal(r.pty, fake);

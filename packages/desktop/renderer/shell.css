@@ -236,7 +236,11 @@ body {
    phantom chrome row — the PR #44 defect). ── */
 #tabhost.split-row { display: flex; flex-direction: row; }
 #tabhost.split-col { display: flex; flex-direction: column; }
-.group-cell { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; }
+.group-cell { display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; min-height: 0; position: relative; }
+.split-resizer { position: absolute; z-index: 8; touch-action: none; }
+.split-resizer[data-orientation="row"] { top: 0; bottom: 0; right: -3px; width: 6px; cursor: col-resize; }
+.split-resizer[data-orientation="col"] { left: 0; right: 0; bottom: -3px; height: 6px; cursor: row-resize; }
+.split-resizer:hover, .split-resizer:focus-visible { background: var(--accent); outline: none; }
 #tabhost.split-row > .group-cell + .group-cell { border-left: 1px solid var(--border); }
 #tabhost.split-col > .group-cell + .group-cell { border-top: 1px solid var(--border); }
 .group-tabbar { display: flex; flex: none; min-width: 0; overflow-x: auto; height: var(--bar-h);
@@ -269,6 +273,10 @@ body {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;
 }
+.term-attachment-status { position: absolute; bottom: 12px; left: 16px; right: 16px;
+  padding: 10px 14px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; z-index: 6; font-size: 13px; }
+.term-attachment-status[hidden] { display: none; }
 
 /* ── command palette (⌘K) ── */
 .palette-overlay {
