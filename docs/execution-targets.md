@@ -181,6 +181,21 @@ pane in that exact window. Herdr additionally verifies the original terminal ID.
 The broker owns busy/approval policy and must not interpret `submitted` as
 processing acknowledgement.
 
+### Attachments
+
+A viewer that drops a file or pastes an image gives the agent a path, never
+terminal input. `oats session upload --file <local> --home <abs>` stores a
+copy as a private file under `<home>/.oats-attachments/` (directory 0700,
+file 0600, `name-2` on collision) and answers `{path, bytes, sha256}`; the
+caller pastes `path` into the still-live session itself. With `--server <id>`
+and `--instance <name>` (or `--home`), the same saved route as attach is
+resolved, the remote must advertise the `session-upload` feature, and the
+bytes stream on ssh stdin into `oats session receive --home <abs> --name
+<file>` on the execution host, which enforces the kernel bound of 64 MiB
+while reading and writes nothing above it; the local side refuses the result
+unless the remote's size and sha256 equal the local file's. A remote file
+is never a local path over SSH. Attachments live and die with the home.
+
 Capability spawn hooks register a pending home before runtime allocation;
 inspection becomes available once its receipt is persisted. Retire hooks
 unregister after quiescence. The broker must tolerate this lifecycle order and
