@@ -16,7 +16,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
@@ -396,8 +396,28 @@ function selectSoul(souls, name, agentsRoot, ctx) {
   let matches = souls.filter((s) => s.name === name);
   if (agentsRoot) matches = matches.filter((s) => realOrResolved(s.agentsRoot) === realOrResolved(agentsRoot));
   if (!matches.length) throw Object.assign(new Error(`no soul ${JSON.stringify(name)} in the scope of ${ctx}${agentsRoot ? ` under ${agentsRoot}` : ""}`), { code: "E_SOUL_UNKNOWN" });
-  if (matches.length > 1) throw Object.assign(new Error(`soul ${JSON.stringify(name)} exists under ${matches.length} agents roots (${matches.map((m) => m.agentsRoot).join(", ")}); pass --agents-root <abs>`), { code: "E_SOUL_AMBIGUOUS" });
+  // Same-named souls under several member roots: the member the caller
+  // addressed with --dir breaks the tie; a team root or an unrelated
+  // directory does not, and the answer names --agents-root as the remedy.
+  if (matches.length > 1) {
+    const here = realOrResolved(ctx);
+    const own = matches.filter((s) => s.kind !== "capability" && realOrResolved(dirname(s.agentsRoot)) === here);
+    if (own.length === 1) return own[0];
+    throw Object.assign(new Error(`soul ${JSON.stringify(name)} exists under ${matches.length} agents roots (${matches.map((m) => m.agentsRoot).join(", ")}); pass --agents-root <abs>`), { code: "E_SOUL_AMBIGUOUS" });
+  }
   return matches[0];
+}
+/** The config context a selected soul belongs to: the workspace of its
+ *  agents root (a member repository under a team scope). An explicit --dir
+ *  may be that context or a scope enclosing it (the team root); another
+ *  member's context contradicts the selection and is refused. */
+function memberContextOf(soul, ctx, explicitDir, bail) {
+  if (soul.kind === "capability") return realOrResolved(ctx);
+  const member = realOrResolved(dirname(soul.agentsRoot));
+  const given = realOrResolved(ctx);
+  if (member === given) return member;
+  if (explicitDir && !member.startsWith(given + sep)) bail("E_SCOPE_MISMATCH", `--dir ${ctx} is not the scope of soul ${soul.name} under ${soul.agentsRoot} (${member}); pass that member's directory, an enclosing team scope, or omit --dir`);
+  return member;
 }
 /** A home's context for --dir validation: its recorded repository, or the
  *  workspace that holds its agents root (what a roster derives). */
@@ -462,16 +482,28 @@ function inspectCmd() {
   }
   let r;
   try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-  const chain = configChain(ctx);
+  let chain = configChain(ctx);
   const enumerated = scopeSouls(ctx, r, { extraRoots: meta ? [agentsRootOfHome(realOrResolved(home))] : [] });
   const roots = enumerated.roots;
   let souls = enumerated.souls;
   const packagedDiagnostics = enumerated.diagnostics;
   let selectedSoul = null;
+  const requestedContext = ctx;
   if (soulName) {
     try { selectedSoul = selectSoul(souls, soulName, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
     selectedSoul.instructions = readTextCapped(selectedSoul.instructionsFile);
     souls = [selectedSoul];
+    // A soul's effective bindings are its own member's: a team root or
+    // another member's --dir must not be applied to it. (A home keeps its
+    // recorded repository as its context; that is what composed it.)
+    if (!meta) {
+      const member = memberContextOf(selectedSoul, ctx, flag("dir") !== undefined, bail);
+      if (member !== realOrResolved(ctx)) {
+        ctx = member;
+        try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+        chain = configChain(ctx);
+      }
+    }
   }
 
   // Capabilities: installed state and health from the package engine (exactly
@@ -576,7 +608,7 @@ function inspectCmd() {
   }
   const result = {
     operationsApi: 1, kernel: OATS_VERSION,
-    scope: { context: ctx, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
+    scope: { context: ctx, requestedContext: requestedContext === ctx ? null : requestedContext, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
     selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config" },
     souls, layers, capabilities, knowledge, snapshot, currentConfig,
     problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability })),
@@ -599,6 +631,8 @@ function inspectCmd() {
  *  its envelope. A view operation must answer { documents: [...] }. No
  *  provider name appears here. */
 const OPERATION_ADDRESS_RE = /^(knowledge|messaging|tasks):([a-z][a-z0-9-]*)$/;
+/** The same phrasing the scheduler treats as retained effects. */
+const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|could not (?:be )?(?:verif|confirm)/i.test(String(message || ""));
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = 4 * 60 * 1000;
@@ -646,6 +680,10 @@ function operationCmd() {
     let rSel;
     try { rSel = resolveOatsConfig(ctx, meta ? undefined : soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
     try { selectedSoul = selectSoul(scopeSouls(ctx, rSel, { extraRoots: meta ? [agentsRootOfHome(realOrResolved(home))] : [] }).souls, soulName, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    // The provider and its settings are the selected soul's own member's,
+    // never a team root's or another member's (a home keeps its recorded
+    // repository as its context).
+    if (!meta) ctx = memberContextOf(selectedSoul, ctx, flag("dir") !== undefined, bail);
   }
   // --arg k=v pairs, matched against the operation's declared args below.
   const given = Object.create(null);
@@ -728,7 +766,11 @@ function operationCmd() {
   let envelope;
   try { envelope = JSON.parse(String(r.stdout || "").trim()); } catch { envelope = undefined; }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status}); its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(parseEnvelopeText(String(r.stdout || ""))));
-  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, envelope.error?.details);
+  // A provider's own failure is relayed with its code; its WHOLE envelope
+  // (a partial receipt such as result.instance of something it launched
+  // before failing, and any details it gave) travels in error.details so a
+  // scheduler can keep an unconfirmed outcome and reconcile that target.
+  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, { exit: r.status, envelope, ...(reportsRetainedEffectsText(envelope.error?.message) ? { unconfirmed: true } : {}) });
   if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted and its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(envelope));
   const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
   if (op.kind === "view") {

@@ -129,10 +129,20 @@ test("inspect in a team scope lists every member root and disambiguates same-nam
   const res = oats(["inspect", "--dir", join(team, "a"), "--json"]).json().result;
   assert.deepEqual(res.scope.agentsRoots.map((r) => r.replace(team, "")).sort(), ["/a/agents", "/b/agents"]);
   assert.equal(res.souls.filter((s) => s.name === "dev").length, 2);
-  assert.equal(oats(["inspect", "--dir", join(team, "a"), "--soul", "dev", "--json"]).json().error.code, "E_SOUL_AMBIGUOUS");
-  const one = oats(["inspect", "--dir", join(team, "a"), "--soul", "dev", "--agents-root", join(team, "b", "agents"), "--json"]).json().result;
+  assert.equal(oats(["inspect", "--dir", team, "--soul", "dev", "--json"]).json().error.code, "E_SOUL_AMBIGUOUS", "from the team root a bare name is ambiguous");
+  assert.equal(oats(["inspect", "--dir", join(team, "a"), "--soul", "dev", "--json"]).json().result.souls[0].description, "dev of a", "the addressed member breaks the tie");
+  // Selecting b's dev from the team root resolves b's OWN bindings (b activates an owned capability a does not); from a's directory it is a contradiction.
+  write(join(team, "b", ".agents", "capabilities", "owned", "bx", "oats.json"), JSON.stringify({ capability: "test.bx", version: "1.0.0", description: "b only", compatibility: { oats: ">=0.6.2" } }));
+  write(join(team, "b", "oats-config.yaml"), "name: b\ncapabilities:\n  additive:\n    test.bx:\n      from: owned\n      global: true\n");
+  const one = oats(["inspect", "--dir", team, "--soul", "dev", "--agents-root", join(team, "b", "agents"), "--json"]).json().result;
   assert.equal(one.souls[0].description, "dev of b"); assert.equal(one.selected.agentsRoot, join(team, "b", "agents"));
+  assert.equal(one.scope.context, join(team, "b"), "the selected member's context"); assert.equal(one.scope.requestedContext, team);
+  assert.equal(one.capabilities.find((c) => c.id === "test.bx")?.activation.enabled, true, "b's effective binding, not the team root's");
   assert.equal(one.layers.knowledge.disabled, true); assert.equal(one.knowledge.provider, null);
+  const contra = oats(["inspect", "--dir", join(team, "a"), "--soul", "dev", "--agents-root", join(team, "b", "agents"), "--json"]).json();
+  assert.equal(contra.error.code, "E_SCOPE_MISMATCH");
+  const own = oats(["inspect", "--dir", join(team, "b"), "--soul", "dev", "--json"]).json().result;
+  assert.equal(own.scope.context, join(team, "b")); assert.equal(own.scope.requestedContext, null);
   // A home selects its own soul by its root: same-named souls elsewhere are never ambiguous for it.
   const homeB = join(team, "b", "agents", "dev", "instances", "dev-b1");
   write(join(homeB, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-b1", home: homeB, repo: join(team, "b"), launched: false, capabilities: [] }));

@@ -31,7 +31,7 @@ function scope(name) {
   const notes = join(repo, ".agents", "capabilities", "owned", "notes");
   write(join(notes, "oats.json"), JSON.stringify({
     capability: "test.notes", version: "0.1.0", description: "Test knowledge provider", compatibility: { oats: ">=0.6.2" }, layer: "knowledge", command: "notes",
-    commands: { digest: "bin/notes.mjs digest", inspect: "bin/notes.mjs inspect", badview: "bin/notes.mjs badview", fail: "bin/notes.mjs fail", sweep: "bin/notes.mjs sweep", liar: "bin/notes.mjs liar", noisy: "bin/notes.mjs noisy", liarnamed: "bin/notes.mjs liarnamed" },
+    commands: { digest: "bin/notes.mjs digest", inspect: "bin/notes.mjs inspect", badview: "bin/notes.mjs badview", fail: "bin/notes.mjs fail", sweep: "bin/notes.mjs sweep", liar: "bin/notes.mjs liar", noisy: "bin/notes.mjs noisy", liarnamed: "bin/notes.mjs liarnamed", retained: "bin/notes.mjs retained" },
     operations: {
       harvest: { kind: "action", command: "digest", context: "home", description: "Digest MEMORY.md", args: [{ name: "depth", required: true, description: "how deep" }, { name: "dry" }] },
       inspect: { kind: "view", command: "inspect", context: "home" },
@@ -40,6 +40,7 @@ function scope(name) {
       sweep: { command: "sweep", context: "scope" },
       liar: { command: "liar", context: "home" },
       liarnamed: { command: "liarnamed", context: "home" },
+      retained: { command: "retained", context: "home" },
       noisy: { command: "noisy", context: "home" },
     },
     settings: { tone: { description: "digest tone" } },
@@ -58,6 +59,7 @@ else if (cmd === "fail") { console.log(JSON.stringify({ schemaVersion: 1, ok: fa
 else if (cmd === "sweep") console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { swept: process.cwd() } }));
 else if (cmd === "liar") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); process.exit(1); }
 else if (cmd === "liarnamed") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "notes-harvester-9" } })); process.exit(1); }
+else if (cmd === "retained") { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_SPAWN_FAILED", message: "harvester pane could not be stopped; rollback INCOMPLETE, home retained" }, result: { instance: "notes-harvester-3", home: join(process.cwd(), "..", "notes-harvester-3") } })); process.exit(1); }
 else if (cmd === "noisy") { console.log("progress 1/2"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); }
 `);
   write(join(repo, "oats-config.yaml"), "name: t\ncapabilities:\n  layers:\n    knowledge:\n      capability: test.notes\n      from: owned\n      global: true\n      settings:\n        tone: dry\n    messaging: none\n    tasks: none\n");
@@ -171,4 +173,32 @@ test("a provider whose manifest requires a command missing from PATH is reported
   const e = oats(["operation", "run", "knowledge:inspect", "--home", home, "--json"]).json().error;
   assert.equal(e.code, "E_CAPABILITY_REQUIRES"); assert.match(e.message, /install: brew install xyz/);
   assert.equal(existsSync(join(home, "notes-invocation.json")), false, "the provider was not run");
+});
+
+test("a provider's ordinary ok:false answer with a partial receipt keeps that receipt in error.details; a scheduled operation stays unknown and reconciles to the reported target", () => {
+  const { repo, home } = scope("s5");
+  const e = oats(["operation", "run", "knowledge:retained", "--home", home, "--json"]).json().error;
+  assert.equal(e.code, "E_SPAWN_FAILED"); assert.equal(e.details.unconfirmed, true); assert.equal(e.details.envelope.result.instance, "notes-harvester-3"); assert.equal(e.details.exit, 1);
+  const ws = repo;
+  S.addSchedule(ws, { id: "r", cron: "0 * * * *", tz: "UTC", kind: "operation", operation: "knowledge:retained", home });
+  const io = { inspect: () => ({ present: true, state: "unknown" }) };
+  const c = S.tickWorkspace(ws, { now: new Date("2026-09-08T14:00:00Z"), io, reg: { maxConcurrent: 1 } });
+  assert.equal(c[0].action, "unknown");
+  const d = S.describe(ws, "r", io); assert.equal(d.running, true); assert.equal(d.lastRun.instance, "notes-harvester-3");
+  write(join(home, "..", "notes-harvester-3", "instance.json"), JSON.stringify({ instance: "notes-harvester-3", agent: "dev" }));
+  const rec = S.reconcile(ws, "r", { io }); assert.equal(rec.reconciled, "adopted"); assert.equal(rec.schedule.lastRun.instance, "notes-harvester-3");
+});
+
+test("operation run for a soul resolves the provider at the soul's own member context under a team scope", () => {
+  const team = join(base, "opteam"); mkdirSync(team, { recursive: true });
+  write(join(team, "oats-config.yaml"), "team:\n  name: t\ncapabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
+  const member = join(team, "m"); gitRepo(member);
+  const notes = join(member, ".agents", "capabilities", "owned", "notes");
+  write(join(notes, "oats.json"), JSON.stringify({ capability: "test.notes", version: "0.1.0", description: "p", compatibility: { oats: ">=0.6.2" }, layer: "knowledge", command: "notes", commands: { sweep: "bin/notes.mjs" }, operations: { sweep: { command: "sweep", context: "scope" } } }));
+  write(join(notes, "bin", "notes.mjs"), `console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { cwd: process.cwd(), context: process.env.OATS_CONTEXT } }));\n`);
+  write(join(member, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: test.notes\n      from: owned\n      global: true\n");
+  write(join(member, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: checkout\nruntime: pi\n"); write(join(member, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
+  const r = oats(["operation", "run", "knowledge:sweep", "--soul", "dev", "--dir", team, "--agents-root", join(member, "agents"), "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.json().result.cwd, member, "runs in the member scope, not the team root"); assert.equal(r.json().result.result.context, member);
 });
