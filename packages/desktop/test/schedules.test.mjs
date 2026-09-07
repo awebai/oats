@@ -55,9 +55,12 @@ test("schedule boundary resolves homes in the selected workspace and refuses uns
   await assert.rejects(scheduleRequest({ operation: "add", id: "review", spec: { ...spec, home: "/other/home" } }, context), /existing agent home/);
   await assert.rejects(scheduleRequest({ operation: "list" }, { ...context, workspace: undefined }), /known workspace/);
   await assert.rejects(scheduleRequest({ operation: "list" }, { ...context, cli: { ...cli, scheduleApi: undefined } }), /Update/);
-  await scheduleRequest({ operation: "add", id: "harvest", spec: { ...spec, kind: "harvest" } }, context);
-  assert.deepEqual(calls.at(-1).spec.argv, ["oats", "okf", "harvest", "--json"]);
-  assert.equal(calls.at(-1).spec.cwd, home);
+  await scheduleRequest({ operation: "add", id: "digest", spec: { ...spec, kind: "operation", operation: "knowledge:digest" } }, { ...context,
+    inspect: async () => ({ capabilities: [{ layer: "knowledge", activation: { enabled: true }, operations: [{ name: "digest", kind: "action", available: true }] }] }),
+  });
+  assert.equal(calls.at(-1).spec.operation, "knowledge:digest");
+  assert.equal(calls.at(-1).spec.home, home);
+  assert.equal(calls.at(-1).spec.kind, "operation");
   await scheduleRequest({ operation: "list" }, { ...context, workspace: { ...workspace, server: "hetzner", registrationPresent: true } });
   assert.equal(calls.at(-1).server, "hetzner"); assert.equal(calls.at(-1).workspaceDir, "/local");
 });
