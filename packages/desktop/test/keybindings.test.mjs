@@ -144,7 +144,7 @@ test("matchEvent: a context action beats a global action on the same chord", (t)
   assert.equal(matchEvent(ev("j", { metaKey: true }), { isMac: true, insideTerminal: false }), "g.act");
 });
 
-test("terminal policy mac: only ⌘-resolved chords fire inside xterm", (t) => {
+test("terminal policy mac: command shortcuts and Ctrl+Tab navigation fire inside xterm", (t) => {
   withActions(t, [
     { id: "app.palette", label: "Palette", context: "global", run: () => {} },
     { id: "tabs.next", label: "Next", context: "global", run: () => {} },
@@ -153,8 +153,11 @@ test("terminal policy mac: only ⌘-resolved chords fire inside xterm", (t) => {
   setBinding("x.ctrl", "Ctrl+B");
   // ⌘K fires inside terminal
   assert.equal(matchEvent(ev("k", { metaKey: true }), { isMac: true, insideTerminal: true }), "app.palette");
-  // Ctrl+Tab (tabs.next default) must NOT fire inside terminal on mac — Ctrl belongs to the pty
-  assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), { isMac: true, insideTerminal: true }), null);
+  // Tab navigation remains available while the agent input has focus.
+  assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), { isMac: true, insideTerminal: true }), "tabs.next");
+  setBinding("tabs.next", "Ctrl+B");
+  assert.equal(matchEvent(ev("b", { ctrlKey: true }), { isMac: true, insideTerminal: true }), null);
+  resetBinding("tabs.next");
   assert.equal(matchEvent(ev("Tab", { ctrlKey: true }), { isMac: true, insideTerminal: false }), "tabs.next");
   // explicit Ctrl chord never fires inside terminal on mac (tmux prefix etc.)
   assert.equal(matchEvent(ev("b", { ctrlKey: true }), { isMac: true, insideTerminal: true }), null);

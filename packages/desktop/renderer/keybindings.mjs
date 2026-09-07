@@ -6,7 +6,7 @@
 //
 // Terminal safety (mirrors palette.mjs isPaletteShortcut and app-menu.mjs):
 // when the keydown target is inside `.xterm`, on macOS ONLY chords whose
-// `Mod` resolves to ⌘ (meta) may fire — explicit Ctrl chords belong to the
+// `Mod` resolves to ⌘ (meta), plus Ctrl+Tab navigation, may fire — other Ctrl chords belong to the
 // attached program. On Linux/Windows the Ctrl key IS the terminal's control
 // key, so only an explicit allowlist of action ids (palette, tab next/prev/
 // close) may fire inside the terminal; every other Ctrl chord passes through.
@@ -362,9 +362,11 @@ export function matchEvent(e, opts = {}) {
     if (!bound || !chordMatches(bound, evChord, isMac)) continue;
     if (insideTerminal) {
       if (isMac) {
-        // Only ⌘-resolved chords may fire inside xterm; Ctrl belongs to the pty.
-        if (!(bound.mod && evChord.mod)) continue;
-        if (evChord.ctrl) continue;
+        // Ctrl+Tab is standard tab navigation on macOS too. Keep other
+        // Ctrl chords with the attached program, even after a custom rebind.
+        const tabNavigation = ["tabs.next", "tabs.prev"].includes(action.id)
+          && evChord.key === "tab" && evChord.ctrl && !evChord.mod && !evChord.alt;
+        if (!tabNavigation && (!(bound.mod && evChord.mod) || evChord.ctrl)) continue;
       } else if (!TERMINAL_ALLOWLIST.includes(action.id)) {
         continue; // Ctrl chords belong to the attached program
       }
