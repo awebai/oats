@@ -74,8 +74,8 @@ app focus, and Retry. Until a compatible CLI is verified, the Soul roster's
 **Spawn** buttons are disabled behind one card showing what was detected,
 what is required, **Choose oats…** (pick the binary yourself — the choice
 persists), **Retry**, a docs link, and the copyable install command. The
-app never installs anything itself. (Memory harvest runs through the same
-CLI boundary in the backend; it has no dedicated button in this release.)
+app never installs the CLI itself. Memory harvest runs through the same
+CLI boundary and is available from an instance's action menu.
 
 The probe/mutation contract is specified in
 [desktop-cli-api.md](desktop-cli-api.md).
@@ -94,6 +94,32 @@ Local souls (uncommitted, machine-local agents under `local-agents/`) are
 first-class: they appear in the roster with a `local` chip, their brains
 and knowledge render, and they spawn like any other soul. Launch flags for
 scripted use: `--dir <workspace>` and `OATS_DESKTOP_PORT`.
+
+## Scheduling agents and wake messages
+
+Open **Schedules** in the selected workspace to launch a new agent on a cron,
+wake an existing agent with a message, or harvest its knowledge. **Schedule…**
+on a Soul roster card preselects that soul. Choose the task or message, repeat
+pattern and time zone; new agent jobs also offer runtime, model, permissions
+and session backend. The list shows the next run, last observed outcome and
+whether the host scheduler is enabled. Pause, edit, run now and delete operate
+on that workspace's saved jobs. Launching an agent is reported separately from
+the end of its run; neither means its task succeeded.
+
+The Spawn dialog also has an optional **Recurring wake-up** setting. It binds
+the schedule to the newly created home, preserving that agent's identity and
+work. A wake starts that same home if it is stopped, then sends the saved
+message through its terminal when ready. It sends no interrupt; the harness
+decides when to process submitted input. Missed cron times are skipped. If the
+agent is created but its wake schedule cannot be saved, the dialog reports both
+facts and directs you to Schedules without spawning another agent.
+
+Use **Enable host scheduler** when the view reports that the timer or workspace
+registration is missing. One host timer handles its registered workspaces with
+a shared limit on scheduled agent launches. The GUI can then be closed. For a
+registered remote workspace the timer and definitions live on that server, so
+they do not depend on the Mac staying awake. See [Schedules](schedules.md) for
+the CLI, cron semantics, observed outcomes and recovery commands.
 
 ## Migrating from the web panel / TUI pane
 
