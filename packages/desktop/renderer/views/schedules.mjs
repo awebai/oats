@@ -13,7 +13,7 @@ export function scheduleOutcome(run) {
   return [labels[run.outcome] || run.outcome || "Attempt recorded", run.error?.message || run.error, run.reason].filter(Boolean).join(" · ");
 }
 const CSS = `
-.schedules-view { height:100%; overflow:auto; padding:20px; background:var(--bg); color:var(--fg); }
+.schedules-view { display:block; height:100%; overflow:auto; padding:20px; background:var(--bg); color:var(--fg); }
 .schedules-view header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
 .schedules-view h2 { margin:0; flex:1; font-size:18px; }
 .schedules-view .schedule-status { color:var(--muted); margin:12px 0; }
@@ -25,6 +25,7 @@ const CSS = `
 .schedule-actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .schedule-form { max-width:680px; margin-top:16px; display:grid; gap:12px; }
 .schedule-form[hidden], .schedule-form [hidden] { display:none; }
+.schedule-form h3 { margin:0; }
 .schedule-form label { display:grid; gap:5px; }
 .schedule-form .schedule-check { display:flex; align-items:center; gap:8px; }
 .schedule-form .schedule-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
@@ -36,7 +37,7 @@ const CSS = `
 export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
   const doc = el.ownerDocument;
   ensureTheme(doc);
-  el.innerHTML = `<style>${CSS}</style><section class="schedules-view">
+  el.innerHTML = `<style>${CSS}</style><section class="oats-view schedules-view">
     <header><h2>Schedules</h2><button class="act schedule-new">New schedule</button><button class="act schedule-refresh">Refresh</button></header>
     <p>Schedules run on this workspace’s server, including while the GUI is closed.</p>
     <div class="schedule-status" role="status"></div>
@@ -64,7 +65,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
         <label>Cron expression<input class="field" name="cron" required value="*/15 * * * *" aria-describedby="schedule-cron-hint"></label>
         <label>Time zone<input class="field" name="tz" required placeholder="America/Toronto"></label>
       </div>
-      <p class="schedule-hint" id="schedule-cron-hint">Minute, hour, day of month, month, day of week. Missed times are skipped. Busy agents are not interrupted.</p>
+      <p class="schedule-hint" id="schedule-cron-hint">Minute, hour, day of month, month, day of week. Missed times are skipped. Wake messages use the agent’s terminal; no interrupts are sent.</p>
       <label class="schedule-check"><input type="checkbox" name="enabled" checked>Enabled</label>
       <div class="schedule-actions"><button class="act schedule-save" type="submit">Save schedule</button><button class="act schedule-cancel" type="button">Cancel</button></div>
       <p class="schedule-form-error schedule-error" role="alert"></p>
