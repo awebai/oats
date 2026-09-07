@@ -510,4 +510,3 @@ A manifest may declare `operations` (named actions or views delegating to
 its own commands) that a GUI or a schedule invokes through `oats operation
 run <layer>:<name>`; `oats inspect --json` reports them with availability.
 See [docs/design/operations-contract.md](design/operations-contract.md).
-
