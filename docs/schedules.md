@@ -1,9 +1,12 @@
 # Schedules
 
 A schedule launches an agent, runs an oats command, or wakes an existing
-instance on a cron. Definitions belong to a workspace and are committable;
-execution belongs to the host that holds that workspace, so a schedule on a
-registered server keeps running while your laptop sleeps.
+instance on a cron. Definitions belong to a scope, the team workspace (the
+config level that declares the team, else the outermost `oats-config.yaml`
+level), and are committable; every `oats schedule` command run anywhere
+inside that scope, including from an instance home, reads and writes the
+same file. Execution belongs to the host that holds the scope, so a
+schedule on a registered server keeps running while your laptop sleeps.
 
 There is no daemon. One host timer (a launchd user agent on macOS, a systemd
 user timer on Linux) runs `oats schedule tick --host` once a minute; the tick
@@ -19,9 +22,12 @@ and no queue.
   {<id>: ...}}`). Commit it if you want the schedule shared with the team.
 - `<workspace>/.agents/schedules/state.json` — last attempted minute and
   last run per job (gitignored), plus one lock directory per running job.
-- `~/.oats/schedules/registry.json` — the host registry: which workspaces
-  the host ticks, `maxConcurrent` (default 1) and the tick interval. One
-  host lock serializes ticks and run-now.
+- `~/.oats/schedules/registry.json` — the host registry: which scopes the
+  host ticks, `maxConcurrent` (default 1) and the tick interval. One host
+  lock serializes ticks, run-now, reconcile and remove; it is never reclaimed
+  by another process: a lock whose owner is unreadable or gone is reported
+  with the directory to remove, and the holder removes its own lock on exit
+  and on SIGINT/SIGTERM. Definition edits take a short per-scope lock.
 
 ## Kinds
 
@@ -70,7 +76,7 @@ oats schedule list | show <id> | enable <id> | disable <id> | remove <id>
 oats schedule run <id>            # now, under the same lock and bound
 oats schedule tick --dry-run      # what would run this minute, launching nothing
 oats schedule reconcile <id>      # resolve an attempt whose result was never recorded
-oats schedule host install        # register this workspace and install the ONE host timer
+oats schedule host install        # register this scope and install the ONE host timer (idempotent while active)
 oats schedule host status | uninstall
 oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --wake-file spec.json
 ```
@@ -84,12 +90,26 @@ running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`.
 
 ## What a run reports
 
-`launched` (spawn or command returned), `active` (the instance is running),
+`launched` (spawn or command returned), `active` (the instance is running;
+a home whose retirement is pending still counts, its runtime may be alive),
 `ended` (its home is gone), `stopped` (home present, nothing running: needs
-attention, never removed for you), `launch-failed`, `unknown` (an attempt
-whose result was never recorded: the job is skipped until you `reconcile`
-it), and for wake jobs `delivered`, `started` or `skipped`. The kernel never
-claims a task succeeded.
+attention, never removed for you), `launch-failed`, `unknown`, and for wake
+jobs `delivered`, `started` or `skipped`. The kernel never claims a task
+succeeded.
+
+`unknown` means the launch's side effects are unconfirmed: a command timed
+out or answered no envelope, an envelope named an instance the roster
+cannot place, or an attempt was never recorded. The job keeps its slot and
+is skipped until `oats schedule reconcile <id>`, which adopts the one home
+the roster shows for the attempt (a spawn job by its instance name, a
+command job by a home created after the attempt), clears a proven absence,
+and otherwise stays unknown and tells you what to do by hand.
+
+A wake job that starts a stopped home holds a launch slot until that home
+ends; delivering a message to a home that is already running takes no slot.
+Due jobs are visited least-recently-launched first, so one frequent job
+cannot keep the only slot forever. An invalid definition is reported on that
+job and the rest of the tick continues.
 
 `disable` never stops anything. `update` never touches a running instance.
 `remove` refuses while the job's instance is still tracked (`--force`

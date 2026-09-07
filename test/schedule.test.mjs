@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -145,7 +145,7 @@ test("a wake job starts a stopped home, delivers once when active, and skips wha
   const reg = S.readRegistry();
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T09:15:00Z"), io, reg });
   assert.equal(c[0].action, "started"); assert.deepEqual(started, [h]); assert.equal(inputs.length, 0);
-  assert.equal(S.jobLockInfo(ws, "nudge"), null, "wake holds no lock between minutes");
+  assert.ok(S.jobLockInfo(ws, "nudge"), "a wake that started a runtime holds the job lock (a launch slot) until that home ends");
   assert.deepEqual(S.describe(ws, "nudge", io).pendingWake, { scheduledFor: "2026-09-07T09:15:00.000Z" }, "the started wake keeps ONE pending delivery");
   // Still stopped on the next (non-due) tick: no restart between due minutes, still pending.
   c = S.tickWorkspace(ws, { now: at("2026-09-07T09:16:00Z"), io, reg });
@@ -172,8 +172,11 @@ test("a wake job starts a stopped home, delivers once when active, and skips wha
   assert.equal(c[0].action, "skipped"); assert.match(c[0].reason, /cannot observe/); assert.equal(c[0].pending, true);
   rmSync(h, { recursive: true, force: true });
   c = S.tickWorkspace(ws, { now: at("2026-09-07T10:16:00Z"), io, reg });
-  assert.equal(c[0].action, "skipped"); assert.match(c[0].reason, /gone/);
+  assert.deepEqual(c, [], "the observation pass handles a gone home: nothing pending, nothing due");
   assert.equal(S.describe(ws, "nudge", io).pendingWake, undefined, "a gone home drops the pending delivery");
+  assert.equal(S.jobLockInfo(ws, "nudge"), null, "the slot is released when the started home is gone");
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:30:00Z"), io, reg });
+  assert.equal(c[0].action, "skipped"); assert.match(c[0].reason, /gone/);
   assert.equal(inputs.length, 3);
 });
 
@@ -272,8 +275,11 @@ test("host units render the single tick and status reports what the OS says", ()
   assert.match(plist, /<string>ai\.oats\.schedule-tick<\/string>/);
   assert.match(plist, /<string>schedule<\/string>\s*<string>tick<\/string>\s*<string>--host<\/string>\s*<string>--json<\/string>/);
   assert.match(plist, /<integer>60<\/integer>/); assert.match(plist, /OATS_HOME_DIR/);
+  assert.match(plist, /<key>PATH<\/key><string>\/usr\/local\/bin:/, "the unit carries an explicit PATH starting with the node's dir");
   const units = H.renderSystemdUnits({ node: "/usr/bin/node", oatsBin: "/opt/oats/bin/oats.mjs" });
-  assert.match(units.service, /ExecStart=\/usr\/bin\/node \/opt\/oats\/bin\/oats\.mjs schedule tick --host --json/);
+  assert.match(units.service, /ExecStart="\/usr\/bin\/node" "\/opt\/oats\/bin\/oats\.mjs" schedule tick --host --json/);
+  assert.match(units.service, /Environment="PATH=/);
+  assert.equal(H.systemdQuote("/opt/my apps/100%/oats"), '"/opt/my apps/100%%/oats"');
   assert.match(units.timer, /OnUnitActiveSec=60/);
   const exec = (b, argv) => { if (argv[0] === "print" || argv[1] === "is-active") throw Object.assign(new Error("not loaded"), { status: 113 }); return ""; };
   const st = H.hostUnitStatus({ exec, os: "darwin" });
@@ -281,6 +287,18 @@ test("host units render the single tick and status reports what the OS says", ()
   const lin = H.hostUnitStatus({ exec, os: "linux" });
   assert.equal(lin.installed, false); assert.equal(lin.active, false);
   assert.equal(H.hostUnitStatus({ os: "win32" }).kind, "unsupported");
+  // Idempotent install: an active identical unit is left untouched (no bootout).
+  const plistPath = H.hostUnitPaths("darwin").plist;
+  const keep = existsSync(plistPath) ? readFileSync(plistPath, "utf8") : null;
+  const calls = [];
+  const activeExec = (b, argv) => { calls.push(argv.join(" ")); return ""; };
+  try {
+    mkdirSync(dirname(plistPath), { recursive: true });
+    writeFileSync(plistPath, H.renderLaunchdPlist({ intervalSec: 60 }));
+    const st2 = H.installHostUnit({ exec: activeExec, os: "darwin", intervalSec: 60 });
+    assert.equal(st2.active, true);
+    assert.equal(calls.some((c) => c.startsWith("bootout") || c.startsWith("bootstrap")), false, "identical active unit: no bootout, no bootstrap");
+  } finally { if (keep === null) rmSync(plistPath, { force: true }); else writeFileSync(plistPath, keep); }
 });
 
 test("remote schedules route to the server workspace only when the host advertises the feature", () => {
@@ -293,4 +311,184 @@ test("remote schedules route to the server workspace only when the host advertis
   const out = scheduleRemote("s", ["add", "x", "--spec-json", "{}"], io(["retire-home", "schedule"]));
   assert.equal(out.envelope.ok, true); assert.equal(out.envelope.result.server, "s");
   assert.match(calls.find((c) => c.includes("schedule add")), /schedule add x --spec-json .*\{\}.* --dir \/w --json/);
+});
+
+test("a cold wake needs a launch slot; a delivery to a running home does not; a started runtime keeps its slot until the home ends", () => {
+  const ws = workspace();
+  const h1 = home(ws, "dev-one"), h2 = home(ws, "dev-two"), h3 = home(ws, "dev-running");
+  const states = { [h1]: { present: false, state: "shell" }, [h2]: { present: false, state: "shell" }, [h3]: { present: true, state: "unknown" } };
+  const started = [], inputs = [];
+  const io = { inspect: (h) => states[h], start: (h) => { started.push(h); return { instance: "x" }; }, input: (h, t) => { inputs.push([h, t]); return { submitted: true }; }, spawn: fakeSpawn(ws) };
+  S.addSchedule(ws, { id: "one", cron: "* * * * *", tz: "UTC", kind: "wake", home: h1, message: "m1" });
+  S.addSchedule(ws, { id: "two", cron: "* * * * *", tz: "UTC", kind: "wake", home: h2, message: "m2" });
+  S.addSchedule(ws, { id: "run", cron: "* * * * *", tz: "UTC", kind: "wake", home: h3, message: "m3" });
+  const reg = S.readRegistry();
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T15:00:00Z"), io, reg });
+  const by = Object.fromEntries(c.map((x) => [x.id, x]));
+  assert.equal(by.one.action, "started"); assert.equal(by.two.action, "skipped"); assert.match(by.two.reason, /host busy/); assert.equal(by.two.pending, true);
+  assert.equal(by.run.action, "delivered", "a running home receives its message without a slot");
+  assert.equal(started.length, 1); assert.deepEqual(S.describe(ws, "two", io).pendingWake, { scheduledFor: "2026-09-07T15:00:00.000Z" });
+  // one becomes active: its pending message is delivered on the next tick and it still holds the slot.
+  states[h1] = { present: true, state: "unknown" };
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T15:01:00Z"), io, reg });
+  const by2 = Object.fromEntries(c.map((x) => [x.id, x]));
+  assert.equal(by2.one.action, "delivered"); assert.equal(by2.two.action, "skipped"); assert.match(by2.two.reason, /host busy/);
+  assert.ok(S.jobLockInfo(ws, "one")); assert.equal(started.length, 1);
+  // one's home ends: the slot frees; two starts at the next due minute.
+  rmSync(h1, { recursive: true, force: true });
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T15:02:00Z"), io, reg });
+  const by3 = Object.fromEntries(c.map((x) => [x.id, x]));
+  assert.equal(by3.two.action, "started"); assert.equal(started.length, 2); assert.equal(S.jobLockInfo(ws, "one"), null);
+});
+
+test("a running wake delivers beside a long scheduled spawn that holds the only slot", () => {
+  const ws = workspace();
+  const h = home(ws, "dev-live");
+  const inputs = [];
+  const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }), input: (hh, t) => { inputs.push(t); return { submitted: true }; } };
+  S.addSchedule(ws, { id: "long", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "long" });
+  S.addSchedule(ws, { id: "ping", cron: "* * * * *", tz: "UTC", kind: "wake", home: h, message: "ping" });
+  const reg = S.readRegistry();
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T16:00:00Z"), io, reg });
+  assert.deepEqual(c.map((x) => [x.id, x.action]), [["long", "launched"], ["ping", "delivered"]]);
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T16:01:00Z"), io, reg });
+  assert.deepEqual(c.map((x) => [x.id, x.action]).sort(), [["long", "skipped"], ["ping", "delivered"]]);
+  assert.equal(inputs.length, 2);
+});
+
+test("a command that creates a home and then times out stays unknown with its slot held until reconcile adopts it", () => {
+  const ws = workspace();
+  const src = home(ws, "dev-src");
+  // A dummy oats binary: creates an instance home like a harvester spawn would, prints nothing, then sleeps past the timeout.
+  const dummy = join(base, "dummy-oats.mjs");
+  writeFileSync(dummy, `import { mkdirSync, writeFileSync } from "node:fs"; import { join } from "node:path";
+const h = join(${JSON.stringify(ws)}, "agents", "dev", "instances", "dev-harvest-late"); mkdirSync(h, { recursive: true }); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: "dev-harvest-late", home: h }));
+await new Promise((r) => setTimeout(r, 5000));\n`);
+  const io = { oatsBin: dummy, commandTimeoutMs: 800, inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "late", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  const reg = S.readRegistry();
+  const c = S.tickWorkspace(ws, { now: at("2026-09-07T17:00:00Z"), io, reg });
+  assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /timed out/);
+  let d = S.describe(ws, "late", io);
+  assert.equal(d.lastRun.outcome, "unknown"); assert.ok(d.attempt, "the attempt is retained"); assert.equal(d.running, true, "the slot is held");
+  // The next minute must not launch again.
+  const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T17:01:00Z"), io, reg });
+  assert.equal(c2[0].action, "skipped"); assert.match(c2[0].reason, /reconcile/);
+  assert.throws(() => S.runNow(ws, "late", { io }), (e) => e.code === "E_SCHEDULE_UNRESOLVED");
+  // Reconcile finds the one home created after the attempt and adopts it.
+  const r = S.reconcile(ws, "late", { io });
+  assert.equal(r.reconciled, "adopted"); assert.equal(r.schedule.lastRun.instance, "dev-harvest-late"); assert.equal(r.schedule.lastRun.outcome, "active");
+  assert.equal(S.describe(ws, "late", io).attempt, undefined);
+});
+
+test("a command whose envelope names a member-repository home is tracked through the complete roster; an unplaceable instance stays unknown", () => {
+  const ws = workspace();
+  const src = home(ws, "dev-src2");
+  const member = join(ws, "member", "agents");
+  mkdirSync(join(member, "dev", "soul"), { recursive: true });
+  writeFileSync(join(member, "dev", "soul", "soul.yaml"), "name: dev\n"); writeFileSync(join(member, "dev", "soul", "AGENTS.md"), "#\n");
+  const memberHome = join(member, "dev", "instances", "memory-harvest-one"); mkdirSync(memberHome, { recursive: true }); writeFileSync(join(memberHome, "instance.json"), "{}");
+  const io = { command: () => ({ ok: true, result: { harvest: "spawned", instance: "memory-harvest-one" } }), inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "member-harvest", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  const c = S.tickWorkspace(ws, { now: at("2026-09-07T18:00:00Z"), io, reg: S.readRegistry() });
+  assert.equal(c[0].action, "launched");
+  const d = S.describe(ws, "member-harvest", io);
+  assert.equal(d.lastRun.home, memberHome); assert.equal(d.running, true);
+  const io2 = { command: () => ({ ok: true, result: { harvest: "spawned", instance: "memory-harvest-nowhere" } }), inspect: io.inspect };
+  S.addSchedule(ws, { id: "lost", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  rmSync(memberHome, { recursive: true, force: true });
+  const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:00Z"), io: io2, reg: S.readRegistry() });
+  const lost = c2.find((x) => x.id === "lost");
+  assert.equal(lost.action, "unknown"); assert.match(lost.error, /no home for it/);
+  assert.ok(S.describe(ws, "lost", io2).attempt, "the attempt is retained, the slot held");
+  assert.equal(S.parseEnvelopeText('note\n{"ok":true,"result":{"a":1}}').result.a, 1);
+  assert.equal(S.parseEnvelopeText('{\n "ok": true,\n "result": {"b": 2}\n}').result.b, 2);
+  assert.equal(S.parseEnvelopeText("garbage"), null);
+});
+
+test("the host lock is never reclaimed: an unreadable or dead owner is refused with the directory to remove", () => {
+  const dir = join(process.env.OATS_HOME_DIR, "schedules", "host.lock");
+  mkdirSync(dir, { recursive: true }); // the pre-owner-publication state of a live acquirer
+  assert.throws(() => S.withHostLock(() => "entered"), (e) => e.code === "E_SCHEDULER_BUSY" && e.message.includes(dir) && /not readable/.test(e.message));
+  assert.ok(existsSync(dir), "the contender did not delete the other acquirer's lock");
+  writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid: 999999, at: "x" }));
+  assert.throws(() => S.withHostLock(() => "entered"), (e) => e.code === "E_SCHEDULER_BUSY" && /gone/.test(e.message));
+  assert.ok(existsSync(dir), "a dead owner is reported, not reclaimed");
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(S.withHostLock(() => "entered"), "entered");
+  assert.equal(existsSync(dir), false, "own lock removed in finally");
+});
+
+test("dry-run touches no lock, state or definition; a retiring home keeps its slot; run-now observes before judging a lock", () => {
+  const ws = workspace();
+  const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "d", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const reg = S.readRegistry();
+  const statePath = join(ws, ".agents", "schedules", "state.json");
+  const before = existsSync(statePath) ? readFileSync(statePath, "utf8") : null;
+  const dry = S.tickWorkspace(ws, { now: at("2026-09-07T19:00:00Z"), io, reg, dryRun: true });
+  assert.deepEqual(dry.map((x) => [x.id, x.action]), [["d", "due"]]);
+  assert.equal(existsSync(statePath) ? readFileSync(statePath, "utf8") : null, before, "dry-run wrote no state");
+  assert.equal(S.jobLockInfo(ws, "d"), null);
+  S.tickWorkspace(ws, { now: at("2026-09-07T19:00:00Z"), io, reg });
+  const h = S.describe(ws, "d", io).lastRun.home;
+  // A pending retirement marker beside the home is not "ended": the runtime may still be alive.
+  writeFileSync(join(dirname(h), `.oats-retire-pending-${basename(h)}.json`), "{}");
+  const seen = S.observeHome(h, io);
+  assert.equal(seen.outcome, "active"); assert.match(seen.note, /retiring/);
+  const dry2 = S.tickWorkspace(ws, { now: at("2026-09-07T19:01:00Z"), io, reg, dryRun: true });
+  assert.equal(dry2[0].reason, "still running"); assert.ok(S.jobLockInfo(ws, "d"), "dry-run released nothing");
+  // The home is gone: run-now observes that under the host lock and runs instead of refusing on a stale lock.
+  rmSync(join(dirname(h), `.oats-retire-pending-${basename(h)}.json`), { force: true }); rmSync(h, { recursive: true, force: true });
+  const r = S.runNow(ws, "d", { io, now: at("2026-09-07T19:05:30Z") });
+  assert.equal(r.run.outcome, "launched");
+  assert.equal(readJson(statePath).jobs.d.lastAttemptedMinute, "2026-09-07T19:05", "run-now records the attempted minute so the timer cannot double-fire");
+});
+
+test("the schedule scope is the team level, else the outermost config level; invalid definitions do not stop the tick; due jobs rotate", () => {
+  const team = join(base, "team-scope"); mkdirSync(join(team, "member", "agents", "dev", "soul"), { recursive: true });
+  writeFileSync(join(team, "oats-config.yaml"), "team:\n  name: t\n");
+  writeFileSync(join(team, "member", "oats-config.yaml"), "capabilities: {}\n");
+  assert.equal(S.scheduleScopeOf(join(team, "member", "agents", "dev", "soul")), realpathSync(team));
+  const plain = join(base, "plain-scope"); mkdirSync(join(plain, "inner", "agents"), { recursive: true });
+  writeFileSync(join(plain, "oats-config.yaml"), "capabilities: {}\n"); writeFileSync(join(plain, "inner", "oats-config.yaml"), "capabilities: {}\n");
+  assert.equal(S.scheduleScopeOf(join(plain, "inner", "agents")), realpathSync(plain), "outermost config level wins without a team");
+  const ws = workspace();
+  const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
+  S.addSchedule(ws, { id: "b", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
+  const defs = S.readDefinitions(ws); defs.jobs.broken = { ...defs.jobs.a, id: "broken", cron: "99 99 * * *" }; S.writeDefinitions(ws, defs);
+  const reg = S.readRegistry();
+  let c = S.tickWorkspace(ws, { now: at("2026-09-07T20:00:00Z"), io, reg });
+  const by = Object.fromEntries(c.map((x) => [x.id, x.action]));
+  assert.equal(by.broken, "invalid"); assert.equal(by.a, "launched"); assert.equal(by.b, "skipped");
+  rmSync(S.describe(ws, "a", io).lastRun.home, { recursive: true, force: true });
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T20:01:00Z"), io, reg });
+  const by2 = Object.fromEntries(c.map((x) => [x.id, x.action]));
+  assert.equal(by2.b, "launched", "the job that never ran goes first"); assert.equal(by2.a, "skipped");
+});
+
+test("the launchd unit runs the CLI under a minimal environment with only its own PATH", () => {
+  const plist = H.renderLaunchdPlist();
+  const path = /<key>PATH<\/key><string>([^<]+)<\/string>/.exec(plist)[1];
+  const out = execFileSync("/usr/bin/env", ["-i", `PATH=${path}`, "HOME=" + process.env.HOME, "node", bin, "version", "--json"], { encoding: "utf8" });
+  assert.equal(JSON.parse(out.trim()).name, "@awebai/oats");
+  const which = execFileSync("/usr/bin/env", ["-i", `PATH=${path}`, "sh", "-c", "command -v tmux || true"], { encoding: "utf8" }).trim();
+  assert.ok(which.includes("tmux"), `tmux resolvable under the unit PATH (got ${JSON.stringify(which)})`);
+});
+
+test("a routed spawn refuses a wake schedule when the host lacks the feature and forwards it inline otherwise", async () => {
+  const { routeCommand } = await import("../lib/servers.mjs");
+  const oatsHome = process.env.OATS_HOME_DIR; mkdirSync(oatsHome, { recursive: true });
+  writeFileSync(join(oatsHome, "servers.json"), JSON.stringify({ servers: { s: { sshHost: "h", workspace: "/w" } } }));
+  const calls = [];
+  const io = (features) => ({ execFileSync: (b, argv) => { const a = argv.join(" "); calls.push(a);
+    if (a.includes("version --json")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { desktopApi: 1, version: "0.22.10", runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux"], launchOptions: ["yolo"], remote: ["spawn", "session"], features } });
+    if (a.includes(" status ")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { root: "/w/agents", agents: [{ name: "dev", runtime: "claude" }] } });
+    return JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-x", home: "/w/agents/dev/instances/dev-x", launched: true } }); } });
+  assert.throws(() => routeCommand("s", "spawn", ["dev", "--wake-json", "{\"cron\":\"*/5 * * * *\",\"tz\":\"UTC\",\"message\":\"hi\"}"], io(["retire-home"])), (e) => e.code === "E_REMOTE_INCOMPATIBLE" && /wake schedule/.test(e.message));
+  assert.equal(calls.filter((c) => c.includes(" spawn ")).length, 0, "refused before spawning");
+  const out = routeCommand("s", "spawn", ["dev", "--wake-json", "{\"cron\":\"*/5 * * * *\",\"tz\":\"UTC\",\"message\":\"hi\"}"], io(["retire-home", "schedule"]));
+  assert.equal(out.envelope.ok, true);
+  assert.match(calls.find((c) => c.includes(" spawn ")), /--wake-json/);
 });
