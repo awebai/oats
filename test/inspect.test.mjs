@@ -141,6 +141,23 @@ test("inspect in a team scope lists every member root and disambiguates same-nam
   assert.equal(oats(["inspect", "--home", homeB, "--agents-root", join(team, "a", "agents"), "--json"]).json().error.code, "E_HOME_MISMATCH");
 });
 
+test("a home whose recorded work repository is another repository still selects its own soul under its owner's root, for inspect and operation run", () => {
+  const owner = join(base, "owner"); gitRepo(owner);
+  const code = join(base, "code"); gitRepo(code);
+  write(join(owner, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
+  write(join(code, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
+  write(join(owner, "agents", "dev", "soul", "soul.yaml"), `name: dev\nrepo: ${code}\nwork: checkout\nruntime: pi\ndescription: owner's dev\n`);
+  write(join(owner, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
+  const home = join(owner, "agents", "dev", "instances", "dev-seat");
+  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-seat", home, repo: code, launched: false, capabilities: [], layers: {} }));
+  write(join(home, "AGENTS.md"), "# composed\n");
+  const res = oats(["inspect", "--home", home, "--json"]).json().result;
+  assert.equal(res.selected.soul, "dev"); assert.equal(res.selected.agentsRoot, join(owner, "agents")); assert.equal(res.scope.context, code, "config resolves at the recorded work repository");
+  assert.equal(res.souls[0].description, "owner's dev"); assert.ok(res.scope.agentsRoots.includes(join(owner, "agents")));
+  assert.equal(oats(["operation", "run", "knowledge:anything", "--home", home, "--json"]).json().error.code, "E_OPERATION_UNAVAILABLE", "the soul is found; the layer is simply disabled");
+  assert.equal(oats(["inspect", "--dir", code, "--soul", "dev", "--json"]).json().error.code, "E_SOUL_UNKNOWN", "a non-home selector still refuses a soul that is not in its scope");
+});
+
 test("instruction text is capped by bytes at a character boundary and unreadable files report the reason", () => {
   const repo = join(base, "cap"); gitRepo(repo);
   write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
