@@ -107,3 +107,13 @@ test('late save from another workspace never refreshes or paints the current edi
     assert.equal(view.calls.length, 2); assert.equal(view.el.hidden, true);
   } finally { view.close(); }
 });
+
+test('unreadable instructions are explained and never offered as an empty editable draft', async () => {
+  const value = inspection(); value.souls[0].instructions = { text: null, error: 'EACCES: cannot read AGENTS.md' };
+  const view = ui(() => value);
+  try {
+    await view.controller.show(selection);
+    assert.match(view.el.textContent, /EACCES: cannot read AGENTS.md/);
+    assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Edit instructions'), false);
+  } finally { view.close(); }
+});
