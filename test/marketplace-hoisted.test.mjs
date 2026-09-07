@@ -59,6 +59,12 @@ function installedKernel(base) {
     const rel = entry.replace(/\/$/, "");
     if (existsSync(join(REPO, rel))) cpSync(join(REPO, rel), join(kernel, rel), { recursive: true });
   }
+  // ...plus the kernel's declared runtime dependencies, nested the way npm
+  // installs them (the CLI imports croner at load; a copy without them is
+  // not the kernel as installed).
+  for (const dep of Object.keys(pkg.dependencies || {})) {
+    if (existsSync(join(REPO, "node_modules", dep))) cpSync(join(REPO, "node_modules", dep), join(kernel, "node_modules", dep), { recursive: true });
+  }
   // These fixtures exercise the legacy bundled marketplace compatibility seam,
   // not the now-preferred official package catalog route.
   rmSync(join(kernel, "package-catalog.json"), { force: true });
