@@ -269,6 +269,10 @@ body {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;
 }
+.term-attachment-status { position: absolute; bottom: 12px; left: 16px; right: 16px;
+  padding: 10px 14px; background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+  border-radius: 8px; z-index: 6; font-size: 13px; }
+.term-attachment-status[hidden] { display: none; }
 
 /* ── command palette (⌘K) ── */
 .palette-overlay {
