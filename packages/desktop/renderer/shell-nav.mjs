@@ -10,7 +10,7 @@
  * (scope correction of PR #29 — the human rejected the extra tab/sidebar). */
 export const NAV = [
   { name: "hierarchy", label: "Active overview", icon: "⌘", title: "Active overview" },
-  { name: "spawn", label: "Soul roster", icon: "✦", title: "Soul roster" },
+  { name: "spawn", label: "Souls & capabilities", icon: "✦", title: "Souls & capabilities" },
   { name: "schedules", label: "Schedules", icon: "◷", title: "Schedules" },
 ];
 

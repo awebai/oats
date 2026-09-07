@@ -6,6 +6,7 @@
    instance awaiting instructions; attached-mode agents are not spawnable
    standalone. GET /api/agents, POST /api/spawn.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
+import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
@@ -37,7 +38,7 @@ const CSS = `
 .souls { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
 .souls-bar { display: flex; align-items: center; gap: 10px; height: var(--bar-h, 48px); flex: none; padding: 0 14px;
              border-bottom: 1px solid var(--border); background: var(--surface); }
-.souls-bar .filter { width: 260px; }
+.souls-bar .filter { width: min(260px, 35%); min-width:100px; }
 .souls-sum { color: var(--muted); font-size: 12.5px; }
 .souls-grid { flex: 1; overflow-y: auto; padding: 18px; display: grid; gap: 14px;
               grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-content: start; }
@@ -53,7 +54,7 @@ const CSS = `
 .soul-card .sname .glyph { color: var(--accent); }
 .soul-card .sdesc { color: var(--muted); font-size: 12.5px; line-height: 1.5; flex: 1; }
 .soul-card .schips { display: flex; gap: 5px; flex-wrap: wrap; }
-.soul-card .sactions { display: flex; gap: 7px; margin-top: 3px; }
+.soul-card .sactions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 3px; }
 .soul-card .sactions .act { padding: 5px 11px; }
 .soul-card .sactions .brain-act { color: var(--accent); }
 .soul-form { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
@@ -86,20 +87,26 @@ const CSS = `
 
 let state = null;
 
-/* ── Quick Open handoff (renderer/quick-open.mjs) ──────────────────
-   Selecting a soul in Quick Open must land the user IN this view's spawn
-   flow — the one form, with its CLI-degradation semantics intact. The
-   shell calls preselectSoul() before/around switching the stage; the next
-   successful roster paint consumes it: a spawnable soul on a verified CLI
-   opens the SPAWN MODAL directly, anything else (attached-only, CLI
-   pending/unavailable, name not in this workspace's roster) just focuses
-   the soul's card so the card itself explains the state. Consumed-once:
-   a stale preselect must never pop a modal minutes later. The pending value
-   carries the workspace generation it was minted under: a preselect from a
-   NEWER workspace must not be consumed against a stale still-painted roster
-   (refresh stamps s.rosterGen when its paint commits), and a preselect that
-   predates a workspace switch is dropped, not applied. */
+/* Quick Open selects a soul for inspection; launch remains explicit. */
 let pendingPreselect = null;
+let pendingHome = null;
+export function preselectHome(instance) {
+  pendingHome = { home: instance.home, gen: workspaceGeneration() };
+  if (state?.alive && state.rosterGen === workspaceGeneration()) applyHome(state);
+}
+function applyHome(s) {
+  if (!pendingHome) return;
+  if (pendingHome.gen !== workspaceGeneration()) { pendingHome = null; return; }
+  if (s.rosterGen !== workspaceGeneration()) return;
+  const instance = s.panelInstances.find(i => i.home === pendingHome.home);
+  pendingHome = null;
+  if (instance) s.inspector?.show({ instance, selector: { home: instance.home } });
+}
+function inspectSoul(s, agent) {
+  s.inspectRef = { name: agent.name, agentsRoot: agent.agentsRoot };
+  renderGrid(s);
+  s.inspector?.show({ agent, selector: { soul: agent.name, agentsRoot: agent.agentsRoot } });
+}
 
 export function preselectSoul(ref) {
   pendingPreselect = ref && ref.name
@@ -122,7 +129,7 @@ function applyPreselect(s) {
   const a = s.souls.agents.find((x) => x.name === ref.name
     && (!ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot));
   if (!a) return;
-  if (a.work !== "attached" && cliAvailable()) { openSpawnModal(s, a); return; }
+  inspectSoul(s, a);
   // degraded / attached: focus the card — its disabled button + tooltip
   // (and the degradation card above the grid) carry the explanation. An
   // active filter may exclude the selected soul's card: reveal it by
@@ -146,20 +153,34 @@ export function mount(el, ctx) {
   const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterGen: null };
   el.innerHTML = `
     <div class="oats-view" style="display:block">
-      <style>${CSS}</style>
+      <style>${CSS}
+${inspectorCSS}</style>
       <div class="souls">
         <div class="souls-bar">
           <select class="field wssel" style="display:none"></select>
-          <input class="field filter" placeholder="Filter agents…" autocomplete="off">
-          <span class="souls-sum"></span>
+          <input class="field filter" placeholder="Filter souls…" autocomplete="off">
+          <span class="souls-sum"></span><button class="act capabilities-act">Capabilities</button>
         </div>
-        <div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading agents…</div></div>
+        <div class="souls-body"><div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div><aside class="soul-inspector" aria-label="Soul and capability details" hidden></aside></div>
       </div>
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
+  s.inspector = createSoulInspector(s.q("soul-inspector"), {
+    ctx, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
+    schedule: agent => { preselectSchedule(agent); ctx.openView?.("schedules"); },
+    changed: () => refresh(s), closed: () => { s.inspectRef = null; if (s.alive) { renderGrid(s); s.q("filter").focus(); } },
+  });
+  s.q("capabilities-act").addEventListener("click", () => {
+    const contexts = [{ context: '', label: 'Workspace defaults' }];
+    for (const agent of s.souls.agents) {
+      const context = agent.agentsRoot?.replace(/\/[^/]+\/?$/, "") || agent.workspace;
+      if (context && !contexts.some(c => c.context === context)) contexts.push({ context, label: context });
+    }
+    s.inspector.show({ selector: {}, contexts });
+  });
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
   // Keyboard operability (task: keybindings wiring): `/` focuses the filter,
-  // arrows rove the card grid, Enter opens the focused card's spawn form,
+  // arrows rove the card grid, Enter inspects the focused soul,
   // b opens its brain, Esc cancels an open form. spawn.filter/spawn.brain
   // are registered stage:spawn actions; their keys resolve through the
   // engine keymap (view-keys.mjs) so editor rebinds take effect, while
@@ -189,8 +210,8 @@ export function mount(el, ctx) {
   // matchEvent skips these before preventDefault, so outside keypresses
   // are not swallowed and colliding globals still run; dispatch is local.
   s.disposers = [
-    registerAction({ id: "spawn.filter", label: "Soul roster: focus the filter", context: "view:spawn", defaultChord: "/", run: () => s.q("filter").focus() }),
-    registerAction({ id: "spawn.brain", label: "Soul roster: open Brain of focused card", context: "view:spawn", defaultChord: "B", run: () => brainOfFocusedCard(s) }),
+    registerAction({ id: "spawn.filter", label: "Souls: focus the filter", context: "view:spawn", defaultChord: "/", run: () => s.q("filter").focus() }),
+    registerAction({ id: "spawn.brain", label: "Souls: open files of focused card", context: "view:spawn", defaultChord: "B", run: () => brainOfFocusedCard(s) }),
   ];
   // CLI degradation: refresh once on mount and re-render the grid whenever
   // availability flips — spawn buttons disable consistently with the card.
@@ -207,6 +228,7 @@ export function mount(el, ctx) {
     // Workspace switch owns the whole surface: invalidate any A spawn modal
     // immediately, remove its DOM before B loads, and clear A's agentsRoot.
     s.spawnOp++;
+    s.inspector.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
     s.q("souls-grid").innerHTML = '<div class="loading-block"><span class="spinner"></span> Loading agents…</div>';
     // No force flag: if a newer B poll paints a B spawn modal before this
@@ -231,7 +253,9 @@ export function unmount() {
   // let a remount minutes later pop a modal the user no longer expects
   // (review 04584f9 — the consumed-once/stale-intent contract).
   pendingPreselect = null;
+  pendingHome = null;
   state.alive = false;
+  state.inspector.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
   if (state.unsubWs) state.unsubWs();
@@ -261,6 +285,7 @@ export async function refresh(s) {
   renderWorkspaceSelect(s.q("wssel"), panel.workspaces, panel.workspace?.id || "");
   renderGrid(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
+  applyHome(s);
 }
 
 function matches(s, a) {
@@ -292,7 +317,7 @@ function renderGrid(s) {
   const list = s.souls.agents.filter((a) => matches(s, a));
   const spawnable = s.souls.agents.filter((a) => a.work !== "attached").length;
   s.q("souls-sum").textContent = s.souls.agents.length
-    ? `${s.souls.agents.length} agents · ${spawnable} spawnable` : "";
+    ? `${s.souls.agents.length} souls · ${spawnable} launchable` : "";
   if (!s.souls.agents.length) {
     grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><span class="big">◎</span>No agents defined in this workspace.</div>';
     return;
@@ -368,7 +393,7 @@ function onGridKey(s, e) {
     focusCard(s, cards, Math.max(0, at - 1));
   } else if (e.key === "Enter" && cur && e.target === cur) {
     e.preventDefault();
-    cur.querySelector(".spawn-act:not([disabled])")?.click();
+    cur.querySelector(".inspect-act")?.click();
   } else if (cur && e.target === cur) {
     // ALL view actions resolve from a focused card — the primary
     // non-editable surface (review 93ff03d: '/' must reach the filter
@@ -396,11 +421,12 @@ function soulCard(s, a) {
   const attached = a.work === "attached"; // needs an owning instance's work tree
   const noCli = !cliAvailable();          // unknown OR unavailable — mutations need a verified CLI
   const card = document.createElement("div");
-  card.className = "soul-card" + (attached ? " attached" : "") + (s.sel === a.name ? " open" : "");
+  card.className = "soul-card" + (attached ? " attached" : "") + ((s.sel === a.name || (s.inspectRef?.name === a.name && s.inspectRef?.agentsRoot === a.agentsRoot)) ? " open" : "");
   card.dataset.agent = a.name;
   card.tabIndex = -1; // roving tabindex — renderGrid elects the tabbable card
   card.setAttribute("role", "group");
   card.setAttribute("aria-label", a.name);
+  card.addEventListener("click", event => { if (!event.target.closest("button")) inspectSoul(s, a); });
   card.innerHTML = `
     <div class="sname"><span class="glyph" aria-hidden="true">✦</span>${escapeHtml(a.name)}</div>
     ${a.description ? `<div class="sdesc">${escapeHtml(a.description)}</div>` : '<div class="sdesc"></div>'}
@@ -413,10 +439,12 @@ function soulCard(s, a) {
     </div>`;
   const actions = document.createElement("div");
   actions.className = "sactions";
+  const inspect = document.createElement("button"); inspect.className = "act inspect-act";
+  inspect.textContent = "Details"; inspect.addEventListener("click", () => inspectSoul(s, a)); actions.append(inspect);
   {
     const spawn = document.createElement("button");
     spawn.className = "act spawn-act";
-    spawn.textContent = attached ? "Attached only" : "Spawn";
+    spawn.textContent = attached ? "Attached only" : "Launch…";
     spawn.disabled = attached || noCli || !a.agentsRoot;
     spawn.title = attached
       ? "Attached-mode agent — spawn it from an owning instance’s work tree"
@@ -435,7 +463,7 @@ function soulCard(s, a) {
   }
   const brain = document.createElement("button");
   brain.className = "act brain-act";
-  brain.textContent = "View brain";
+  brain.textContent = "Files";
   brain.disabled = !!a.remote || typeof s.ctx.openBrain !== "function";
   if (a.remote) brain.title = "Remote files are available through the agent terminal";
   brain.addEventListener("click", () => s.ctx.openBrain?.(a.name));

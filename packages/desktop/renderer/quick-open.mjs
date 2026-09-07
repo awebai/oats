@@ -43,7 +43,7 @@ export function quickOpenRows(agents, query, { onPick } = {}) {
  */
 export function createQuickOpen({ loadSouls, onPick, doc }) {
   return createOverlayPicker({
-    placeholder: "Find a soul to spawn…",
+    placeholder: "Find a soul…",
     ariaLabel: "Quick open souls",
     doc,
     loadItems: async () => { try { return await loadSouls(); } catch { return { agents: [] }; } },

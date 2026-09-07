@@ -347,14 +347,19 @@ function renderContextRoster(instances) {
           rowWrap.append(start);
         }
         rowWrap.append(instanceActions(document, i, {
-          invoke: (action, instance) => {
+          invoke: async (action, instance) => {
             if (currentWorkspace() !== ws) throw new Error("Workspace changed; select the instance again");
+            if (action === "inspect") {
+              const { preselectHome } = await import("./views/spawn.mjs");
+              if (currentWorkspace() !== ws) return;
+              preselectHome(instance); await showStage("spawn"); return;
+            }
             return api(instanceApiPath(action, instance), { method: "POST" });
           },
           confirmRetire: (instance) => confirm(`Retire ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}? This stops its session and preserves outstanding work through OATS retirement.`),
           done: (result, action) => {
-            if (action === "harvest") alert(result.reason || `Harvest ${result.harvest || "requested"}`);
-            else { const summary = retirementSummary(result); if (summary) alert(summary); }
+            if (action === "inspect") return;
+            { const summary = retirementSummary(result); if (summary) alert(summary); }
             refreshContextRoster();
           },
           report: (message, result) => alert([message, retirementSummary(result)].filter(Boolean).join("\n")),

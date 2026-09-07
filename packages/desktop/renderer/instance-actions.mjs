@@ -61,7 +61,7 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
   });
   trigger.addEventListener("keydown", (event) => {
     if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-    event.preventDefault(); event.stopPropagation(); open(event.key === "ArrowUp" ? "retire" : "harvest");
+    event.preventDefault(); event.stopPropagation(); open(event.key === "ArrowUp" ? "retire" : "inspect");
   });
   menu.addEventListener("keydown", (event) => {
     if (event.key === "Tab") { close(true); return; }
@@ -73,9 +73,9 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
       : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
     items[index].focus();
   });
-  for (const [action, label] of [["harvest", "Harvest knowledge"], ["retire", "Retire instance"]]) {
+  for (const [action, label] of [["inspect", "Knowledge & capabilities…"], ["retire", "Retire instance"]]) {
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
-    if (action === "harvest") item.autofocus = true;
+    if (action === "inspect") item.autofocus = true;
     item.setAttribute("role", "menuitem"); item.dataset.action = action; item.textContent = label;
     item.addEventListener("click", async () => {
       if (trigger.disabled || pending.has(key)) return;
