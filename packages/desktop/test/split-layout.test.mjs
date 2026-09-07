@@ -162,3 +162,13 @@ test("mutation guard: removeSplitTab of a non-member changes nothing", () => {
   assert.equal(r.successor, null);
   assert.deepEqual(removeSplitTab(null, 1), { split: null, successor: null });
 });
+
+test('choosing an already-open terminal fills the empty split without duplicating it', async () => {
+  const { fillEmptyGroup } = await import('../renderer/split-layout.mjs');
+  const original = requestSplit(null, 'row', [1, 2], 1).split;
+  const moved = fillEmptyGroup(original, 2);
+  assert.deepEqual(moved.groups.map(g => g.tabs), [[1], [2]]);
+  assert.equal(moved.groups[1].activeTab, 2);
+  assert.deepEqual(original.groups.map(g => g.tabs), [[1, 2], []]);
+  assert.equal(fillEmptyGroup(moved, 1), moved, 'ordinary navigation does not move tabs out of populated groups');
+});
