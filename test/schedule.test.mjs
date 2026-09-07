@@ -488,8 +488,25 @@ test("an execution target cannot be edited under a running or unresolved job; ti
   assert.throws(() => S.updateSchedule(ws, "job", { cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: join(ws, "agents") }, io), (e) => e.code === "E_SCHEDULE_RUNNING");
   const h = home(ws, "dev-elsewhere");
   assert.throws(() => S.updateSchedule(ws, "job", { cron: "* * * * *", tz: "UTC", kind: "wake", home: h, message: "m" }, io), (e) => e.code === "E_SCHEDULE_RUNNING");
+  assert.throws(() => S.updateSchedule(ws, "job", { cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", purpose: "other" }, io), (e) => e.code === "E_SCHEDULE_RUNNING", "purpose names the instance reconcile looks for");
   const d = S.updateSchedule(ws, "job", { cron: "5 * * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "new text" }, io);
   assert.equal(d.cron, "5 * * * *"); assert.equal(d.running, true);
+  // A cold wake reserves its slot BEFORE the start call: a start that fails
+  // after it may have allocated keeps the slot; a refusal that allocated
+  // nothing gives it back.
+  const hc = home(ws, "dev-cold");
+  const states = { [hc]: { present: false, state: "stopped" } };
+  let seenLockDuringStart = null;
+  const wio = { inspect: (x) => states[x], start: () => { seenLockDuringStart = !!S.jobLockInfo(ws, "cold"); throw Object.assign(new Error("tmux start could not be confirmed"), { code: "E_SESSION_START_FAILED" }); } };
+  S.addSchedule(ws, { id: "cold", cron: "* * * * *", tz: "UTC", kind: "wake", home: hc, message: "m" });
+  rmSync(S.describe(ws, "job", io).lastRun.home, { recursive: true, force: true });
+  let by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:01:00Z"), io: wio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
+  assert.equal(seenLockDuringStart, true, "the slot is persisted before start runs");
+  assert.equal(by.cold.action, "skipped"); assert.match(by.cold.reason, /could not be confirmed/); assert.ok(S.jobLockInfo(ws, "cold"), "an uncertain start keeps the slot");
+  // Observation proves the runtime absent: the slot is released and a refusing start gives it back at once.
+  const rio = { inspect: (x) => states[x], start: () => { throw Object.assign(new Error("being retired"), { code: "E_INSTANCE_RETIRING" }); } };
+  by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T22:02:00Z"), io: rio, reg: { maxConcurrent: 1 } }).map((x) => [x.id, x]));
+  assert.equal(by.cold.action, "skipped"); assert.match(by.cold.reason, /start refused/); assert.equal(S.jobLockInfo(ws, "cold"), null);
   // Registry register/unregister are serialized and idempotent.
   const before = S.readRegistry();
   try { S.registerWorkspace(ws); S.registerWorkspace(ws); assert.equal(S.readRegistry().workspaces.filter((w) => w === ws).length, 1); S.unregisterWorkspace(ws); assert.ok(!S.readRegistry().workspaces.includes(ws)); }
