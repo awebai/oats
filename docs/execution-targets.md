@@ -189,12 +189,18 @@ copy as a private file under `<home>/.oats-attachments/` (directory 0700,
 file 0600, `name-2` on collision) and answers `{path, bytes, sha256}`; the
 caller pastes `path` into the still-live session itself. With `--server <id>`
 and `--instance <name>` (or `--home`), the same saved route as attach is
-resolved, the remote must advertise the `session-upload` feature, and the
-bytes stream on ssh stdin into `oats session receive --home <abs> --name
-<file>` on the execution host, which enforces the kernel bound of 64 MiB
-while reading and writes nothing above it; the local side refuses the result
-unless the remote's size and sha256 equal the local file's. A remote file
-is never a local path over SSH. Attachments live and die with the home.
+resolved, the remote must list `session-upload` in both its `remote` and
+`features` probe arrays, and the bytes travel on ssh stdin into `oats session
+receive --home <abs> --name <file>` on the execution host. Each side holds
+the whole file in memory up to the 64 MiB kernel bound (this is a bounded
+transfer, not end-to-end streaming); the receiver reads stdin event-driven,
+refuses above the bound before writing, and allocates the destination
+exclusively (`name-2`, `name-3` when taken), so simultaneous uploads of one
+name never overwrite each other and a planted symlink is never followed. The
+attachments directory must be a real directory inside the home. The local
+side refuses the result unless the remote's size and sha256 equal the local
+file's. A remote file is never a local path over SSH. Attachments live and
+die with the home.
 
 Capability spawn hooks register a pending home before runtime allocation;
 inspection becomes available once its receipt is persisted. Retire hooks
