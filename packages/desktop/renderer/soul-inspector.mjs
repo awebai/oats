@@ -108,7 +108,7 @@ export function createSoulInspector(container, { ctx, launch, schedule, changed,
     if (soul && !snapshot) renderSoul(soul);
     if (snapshot) {
       content.append(node('h3', 'Instructions'));
-      content.append(node('pre', data.snapshot?.instructions?.text || 'No instructions reported.'));
+      content.append(node('pre', data.snapshot?.instructions?.error || data.snapshot?.instructions?.text || 'No instructions reported.'));
       if (data.snapshot?.drift?.length) {
         content.append(node('h3', 'Configuration changes since creation'), node('pre', JSON.stringify(data.snapshot.drift, null, 2)));
       }
@@ -124,10 +124,10 @@ export function createSoulInspector(container, { ctx, launch, schedule, changed,
     const editable = soul.editable || {};
     if (editable.fields?.length) content.append(button('Edit defaults', () => editDefaults(soul)));
     else if (editable.reason) content.append(node('p', editable.reason, 'muted'));
-    const instructions = node('details'); instructions.append(node('summary', 'Instructions'), node('pre', soul.instructions?.text || 'No instructions reported.'));
+    const instructions = node('details'); instructions.append(node('summary', 'Instructions'), node('pre', soul.instructions?.error || soul.instructions?.text || 'No instructions reported.'));
     content.append(instructions);
     if (soul.instructions?.truncated) content.append(node('p', 'Instructions are truncated. Edit the source file to preserve the full document.', 'muted'));
-    if (editable.instructions && !soul.instructions?.truncated) content.append(button('Edit instructions', () => editInstructions(soul)));
+    if (editable.instructions && !soul.instructions?.truncated && !soul.instructions?.error) content.append(button('Edit instructions', () => editInstructions(soul)));
   }
   function field(form, label, key, value, choices) {
     const wrap = node('label', label); const input = node(choices ? 'select' : 'input'); input.className = 'field'; input.name = key;

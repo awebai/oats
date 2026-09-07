@@ -958,7 +958,7 @@ const palette = createPalette({
 });
 
 // ── Quick Open for souls (Mod+P): find a soul, land in its spawn form ──
-// Selection hands off to the Spawn view's OWN form flow (preselectSoul —
+// Selection hands off to the soul inspector (preselectSoul —
 // consumed by the view's next roster paint), so CLI degradation and the
 // attached-only rule render exactly as the Spawn view always renders them.
 // Terminal policy (documented): app.quickOpenSouls is NOT terminal-
