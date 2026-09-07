@@ -146,17 +146,54 @@ test("a wake job starts a stopped home, delivers once when active, and skips wha
   let c = S.tickWorkspace(ws, { now: at("2026-09-07T09:15:00Z"), io, reg });
   assert.equal(c[0].action, "started"); assert.deepEqual(started, [h]); assert.equal(inputs.length, 0);
   assert.equal(S.jobLockInfo(ws, "nudge"), null, "wake holds no lock between minutes");
+  assert.deepEqual(S.describe(ws, "nudge", io).pendingWake, { scheduledFor: "2026-09-07T09:15:00.000Z" }, "the started wake keeps ONE pending delivery");
+  // Still stopped on the next (non-due) tick: no restart between due minutes, still pending.
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:16:00Z"), io, reg });
+  assert.equal(c[0].action, "skipped"); assert.equal(c[0].pending, true); assert.equal(inputs.length, 0); assert.equal(started.length, 1);
+  // Active on a later non-due tick: the pending message is delivered once, independent of the cron.
   state = { present: true, state: "unknown" };
-  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:30:00Z"), io, reg });
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:17:00Z"), io, reg });
   assert.equal(c[0].action, "delivered"); assert.deepEqual(inputs, [[h, "Check your inbox and pending chats."]]);
+  assert.equal(S.describe(ws, "nudge", io).pendingWake, undefined);
+  assert.deepEqual(S.tickWorkspace(ws, { now: at("2026-09-07T09:18:00Z"), io, reg }), [], "nothing pending, nothing due");
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:30:00Z"), io, reg });
+  assert.equal(c[0].action, "delivered"); assert.equal(inputs.length, 2);
   assert.deepEqual(S.tickWorkspace(ws, { now: at("2026-09-07T09:30:40Z"), io, reg }), [], "never twice in one minute");
+  // A due minute while a delivery is pending adds nothing: one pending, one delivery.
+  state = { present: false, state: "shell" };
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:45:00Z"), io, reg }); assert.equal(c[0].action, "started"); assert.equal(started.length, 2);
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:50:00Z"), io, reg }); assert.equal(c[0].action, "skipped"); assert.equal(started.length, 2, "no restart between due minutes");
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg }); assert.equal(c[0].action, "started"); assert.equal(started.length, 3, "started again only at the due minute");
+  state = { present: true, state: "unknown" };
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:01:00Z"), io, reg }); assert.equal(c[0].action, "delivered"); assert.equal(inputs.length, 3);
+  assert.deepEqual(S.tickWorkspace(ws, { now: at("2026-09-07T10:02:00Z"), io, reg }), []);
   state = new Error("socket unavailable");
-  c = S.tickWorkspace(ws, { now: at("2026-09-07T09:45:00Z"), io, reg });
-  assert.equal(c[0].action, "skipped"); assert.match(c[0].reason, /cannot observe/);
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:15:00Z"), io, reg });
+  assert.equal(c[0].action, "skipped"); assert.match(c[0].reason, /cannot observe/); assert.equal(c[0].pending, true);
   rmSync(h, { recursive: true, force: true });
-  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:00:00Z"), io, reg });
+  c = S.tickWorkspace(ws, { now: at("2026-09-07T10:16:00Z"), io, reg });
   assert.equal(c[0].action, "skipped"); assert.match(c[0].reason, /gone/);
-  assert.equal(inputs.length, 1);
+  assert.equal(S.describe(ws, "nudge", io).pendingWake, undefined, "a gone home drops the pending delivery");
+  assert.equal(inputs.length, 3);
+});
+
+test("agentsRoot selects the exact soul among same-named souls in member repositories; repo stays the work repository", () => {
+  const ws = workspace();
+  const other = join(ws, "member", "agents");
+  mkdirSync(join(other, "dev", "soul"), { recursive: true });
+  writeFileSync(join(other, "dev", "soul", "soul.yaml"), "name: dev\nwork: worktree\nruntime: pi\n");
+  writeFileSync(join(other, "dev", "soul", "AGENTS.md"), "# Member dev\n");
+  const base1 = S.resolveScheduledAgent(ws, { agent: "dev" });
+  assert.equal(base1.root, join(ws, "agents"));
+  const picked = S.resolveScheduledAgent(ws, { agent: "dev", agentsRoot: other, repo: "/some/work/repo" });
+  assert.equal(picked.root, other); assert.equal(picked.agent.runtime, "pi");
+  assert.throws(() => S.validateDefinition(ws, { id: "x", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: join(base, "outside") }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agentsRoot");
+  assert.throws(() => S.validateDefinition(ws, { id: "x", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: join(ws, "member") }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === "agentsRoot");
+  const calls = [];
+  const io = { spawn: (root, agent, opts) => { calls.push({ root, agent: agent.name, runtime: agent.runtime, repo: opts.repo }); return { instance: `dev-${opts.purpose}`, home: home(ws, `dev-${opts.purpose}`), launched: true }; }, inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "member", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", agentsRoot: other, repo: "/some/work/repo", task: "t" });
+  S.tickWorkspace(ws, { now: at("2026-09-07T14:00:00Z"), io, reg: S.readRegistry() });
+  assert.deepEqual(calls, [{ root: other, agent: "dev", runtime: "pi", repo: "/some/work/repo" }], "launched from the named root with repo passed as the work repository");
 });
 
 test("a command job runs an oats-only argv in its cwd and tracks the instance the envelope names", () => {
