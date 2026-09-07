@@ -21,6 +21,7 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
   await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, options);
   assert.equal(calls[0].context, '/team/two'); assert.equal(calls[0].agentsRoot, agents[1].agentsRoot);
   await assert.rejects(capabilityRequest({ action: 'set', selector: { soul: 'dev' } }, options), /one soul/);
+  await assert.rejects(capabilityRequest({ action: 'use', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot }, binding: { action: 'none', layer: 'knowledge' } }, options), /whole configuration scope/);
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home: '/foreign' } }, options), /existing home/);
   await assert.rejects(capabilityRequest({ action: 'use', selector: { home } }, options), /snapshot is read-only/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: undefined }), /known workspace/);
@@ -77,6 +78,7 @@ test('inspector ignores old responses and keeps an explicit edit scoped to its o
     void view.controller.show({ agent: { name: 'old' }, selector: { soul: 'old' } });
     await view.controller.show(selection); resolveOld(inspection('old')); await tick();
     assert.equal(view.el.querySelector('h2').textContent, 'dev');
+    assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Disable layer'), false);
     view.click('Edit defaults'); view.el.querySelector('[name="model"]').value = 'sonnet'; view.click('Save defaults'); await tick();
     const write = view.calls.find(c => c.action === 'set'); assert.deepEqual(write.fields, { model: 'sonnet' }); assert.deepEqual(write.selector, selection.selector);
     assert.match(view.el.textContent, /Future instances/);

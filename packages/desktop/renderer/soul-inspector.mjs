@@ -164,7 +164,7 @@ export function createSoulInspector(container, { ctx, launch, schedule, changed,
   function renderCapabilities(snapshot) {
     content.append(node('h3', 'Effective providers'));
     facts(['knowledge', 'messaging', 'tasks'].map(layer => [layer[0].toUpperCase() + layer.slice(1), data.layers?.[layer]?.id || (data.layers?.[layer]?.disabled ? 'Disabled' : 'None configured')]));
-    if (!snapshot) {
+    if (!snapshot && !selection.agent) {
       const actions = node('details'); actions.append(node('summary', 'Layer defaults'));
       for (const layer of ['knowledge', 'messaging', 'tasks']) {
         const row = node('div', undefined, 'inspector-actions'); row.append(node('span', layer));

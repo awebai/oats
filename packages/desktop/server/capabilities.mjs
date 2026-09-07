@@ -37,6 +37,7 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     if (!contexts.has(selector.context)) fail('Select a configuration scope in this workspace');
     context = selector.context;
   }
+  if (action === 'use' && soul && (request.binding?.action === 'none' || request.binding?.capability === 'none')) fail('Layer-wide defaults apply to the whole configuration scope; open workspace Capabilities to change them');
   if (action === 'set' && !soul) fail('Select a soul to edit');
   if (action === 'run' && !home && !soul) fail('Select a soul or home for this operation');
   const envelope = await invoke(cli.bin, {
