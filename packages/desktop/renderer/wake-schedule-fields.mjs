@@ -8,7 +8,7 @@ export function wakeScheduleFields(doc) {
       <label>Cron expression<input class="field fwake-cron" value="*/15 * * * *"></label>
       <label>Time zone<input class="field fwake-tz"></label>
       <label>Message on wake-up<textarea class="field fwake-message" rows="3" placeholder="Check your pending work and report anything that needs attention."></textarea></label>
-      <p class="freldesc">Uses this same agent home. Busy agents are not interrupted. The host scheduler must be enabled for wake-ups to run.</p>
+      <p class="freldesc">Uses this same agent home and sends the message through its terminal, without an interrupt. The host scheduler must be enabled for wake-ups to run.</p>
     </div>`;
   const q = selector => el.querySelector(selector);
   q(".fwake-tz").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
