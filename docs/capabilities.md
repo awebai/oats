@@ -503,3 +503,10 @@ The source packages live under `capabilities/`. Acquired packages live under
 `<level>/.agents/capabilities/installed/` (gitignored, restorable); packages
 authored at a scope live under `<level>/.agents/capabilities/owned/`
 (committed where the scope is a git repo). Within one scope `owned/` overrides `installed/` on ID collision.
+
+## Operations a capability declares
+
+A manifest may declare `operations` (named actions or views delegating to
+its own commands) that a GUI or a schedule invokes through `oats operation
+run <layer>:<name>`; `oats inspect --json` reports them with availability.
+See [docs/design/operations-contract.md](design/operations-contract.md).

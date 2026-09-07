@@ -150,6 +150,38 @@
         "minLength": 1
       }
     },
+    "operations": {
+      "description": "Named operations a GUI or scheduler may invoke through `oats operation run`, each delegating to one of this manifest's commands. kind \"view\" answers { documents: [{label, kind, path, text}] }; \"action\" (default) runs something. context \"home\" (default) runs in an instance home, \"scope\" in the config scope.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]*$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["command"],
+        "additionalProperties": false,
+        "properties": {
+          "command": { "type": "string", "minLength": 1 },
+          "kind": { "enum": ["action", "view"] },
+          "context": { "enum": ["home", "scope"] },
+          "description": { "type": "string" },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+                "flag": { "type": "string", "pattern": "^--[a-z][a-z0-9-]*$" },
+                "required": { "type": "boolean" },
+                "description": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
     "hooks": {
       "type": "object",
       "properties": {

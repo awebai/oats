@@ -1,12 +1,12 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "1.5.2",
+  "version": "1.6.0",
   "compatibility": {
     "oats": ">=0.22.3"
   },
   "layer": "knowledge",
-  "description": "Knowledge layer via OKF: soul bundles, instance memory (STATE.md/log.md/notes/), continuous post-commit harvest into the soul (commit, PR, or direct-edit for local souls), craft + memory skills, validator.",
+  "description": "Knowledge layer via OKF: soul bundles, instance memory (STATE.md/log.md/notes/), continuous post-commit harvest into the soul (commit, PR, or direct-edit for local souls), craft + memory skills, validator; declares the operations a GUI or schedule may run (inspect, harvest).",
   "requires": [],
   "settings": {
     "harvest-runtime": {
@@ -29,11 +29,26 @@
     "skills"
   ],
   "commands": {
-    "harvest": "bin/oats-okf.mjs harvest"
+    "harvest": "bin/oats-okf.mjs harvest",
+    "inspect": "bin/oats-okf.mjs inspect"
   },
   "inject": "injects/okf.md",
   "hooks": {
     "soul-scaffold": "bin/oats-okf.mjs soul-scaffold",
     "spawn": "bin/oats-okf.mjs spawn"
+  },
+  "operations": {
+    "inspect": {
+      "kind": "view",
+      "command": "inspect",
+      "context": "home",
+      "description": "Show this instance's working knowledge: STATE.md, log.md and pending notes"
+    },
+    "harvest": {
+      "kind": "action",
+      "command": "harvest",
+      "context": "home",
+      "description": "Promote this instance's pending notes (or captured record) into its soul by spawning a memory-harvest worker"
+    }
   }
 }

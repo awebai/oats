@@ -60,9 +60,9 @@ test("oats version --json emits the exact Desktop API v1 probe payload", () => {
   const r = spawnSync(process.execPath, [CLI, "version", "--json"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const doc = parseOnly(r.stdout);
-  assert.deepEqual(doc, { schemaVersion: 1, name: "@awebai/oats", version: PKG_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload"], features: ["retire-home", "session-start", "schedule", "session-upload"], scheduleApi: 1 });
+  assert.deepEqual(doc, { schemaVersion: 1, name: "@awebai/oats", version: PKG_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "schedule", "session-upload", "operations"], scheduleApi: 1, operationsApi: 1 });
   // key order is part of the published fixture — Desktop probes with string compare fallback
-  assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"runtimes":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","roster","harvest","schedule","session-upload"],"features":["retire-home","session-start","schedule","session-upload"],"scheduleApi":1}`);
+  assert.equal(r.stdout.trim(), `{"schemaVersion":1,"name":"@awebai/oats","version":"${PKG_VERSION}","desktopApi":1,"runtimes":["pi","claude","codex"],"sessionBackends":["tmux","herdr"],"launchOptions":["yolo"],"remote":["spawn","retire","status","session","session-start","roster","harvest","schedule","session-upload","operations"],"features":["retire-home","session-start","schedule","session-upload","operations"],"scheduleApi":1,"operationsApi":1}`);
 });
 
 test("oats version human output stays ergonomic and mentions the version", () => {

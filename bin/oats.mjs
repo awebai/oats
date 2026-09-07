@@ -16,11 +16,12 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
 import {
-  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain,
+  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath,
   readCapabilityLocks, writeCapabilityLock,
@@ -41,7 +42,7 @@ import {
 } from "../lib/packages.mjs";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
-import { scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
@@ -82,7 +83,7 @@ const JSON_MODE = args.includes("--json");
 // Canonical absolute path of this CLI executable — the versioned OATS_CLI_BIN
 // env contract for dispatched package commands (never resolved via PATH).
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
-const jsonFail = (code, message) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message) } })); process.exit(1); };
+const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
 
 /** Level of a directory: laptop (home), repo (.git), else workspace. */
@@ -329,6 +330,558 @@ function doctorPackagesData(ctx, chain, { teamScope } = {}) {
       : null,
   }));
   return { lockError: lockBroken, packages, legacyLockFiles, adoptedTemplates, missingHostRequirements, officialMigration: officialMigrationState(pkgLocks.legacy, { teamScope, ctx }) };
+}
+
+// ---------- inspect: one authoritative answer for GUIs ----------
+/** Souls, capabilities (installed state and health, separately from
+ *  activation), effective layer bindings and declared operations for a
+ *  scope, a selected soul, or a running home's snapshot. Read-only; the
+ *  integrity scan runs only when asked (a GUI calls this on Refresh, never
+ *  from its roster poll). Nothing here is provider-specific: what a
+ *  knowledge provider offers is what its manifest declares. */
+const INSPECT_TEXT_CAP = 256 * 1024;
+function readTextCapped(file) {
+  let bytes;
+  try { bytes = readFileSync(file); }
+  catch (e) { return { file, text: null, sha256: null, truncated: false, error: `${e.code || "EIO"}: ${e.message}` }; }
+  const truncated = bytes.length > INSPECT_TEXT_CAP;
+  // The bound is bytes; a cut inside a multi-byte sequence is dropped, never
+  // rendered as a replacement character.
+  let text = truncated ? bytes.subarray(0, INSPECT_TEXT_CAP).toString("utf8") : bytes.toString("utf8");
+  if (truncated && text.endsWith("\uFFFD")) text = text.slice(0, -1);
+  return { file, text, sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length, truncated, error: null };
+}
+/** The canonical agents root a home belongs to, from its path alone:
+ *  <root>/<agent>/instances/<instance>, or <workspace>/local-agents/<agent>/
+ *  instances/<instance> whose canonical root is the sibling agents/. */
+function agentsRootOfHome(home) {
+  const agentDir = dirname(dirname(home));
+  const base = dirname(agentDir);
+  return basename(base) === "local-agents" ? join(dirname(base), "agents") : base;
+}
+const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description"];
+const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+/** Every soul of a scope: persistent and local souls of every agents root in
+ *  scope, plus packaged souls (read-only). One enumeration for inspect and
+ *  operation run, so both address souls the same way. */
+function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
+  // A home's own agents root is always in scope for that home: its recorded
+  // work repository may be another repository entirely (repo overrides), and
+  // the config context resolves there while the soul lives with its owner.
+  const roots = [...new Set([...(r.team ? teamAgentRoots(r.team.scope) : [findRoot(ctx)]), ...extraRoots].filter(Boolean).map((p) => realOrResolved(resolve(p))))];
+  const souls = [];
+  for (const root of roots) {
+    for (const a of listInstances(root)) {
+      const soul = findAgent(root, a.name) || a;
+      const e = soulEntry(soul, root);
+      e.instances = (a.instances || []).map((i) => i.instance);
+      souls.push(e);
+    }
+  }
+  const diagnostics = [];
+  try {
+    const packaged = listCapabilityAgents(ctx);
+    diagnostics.push(...(packaged.diagnostics || []));
+    for (const pa of packaged) {
+      let soul = {};
+      try { soul = stripInternalAnnotations(withConfigFile(join(pa.soulDir, "soul.yaml"), () => parseYamlNested(readFileSync(join(pa.soulDir, "soul.yaml"), "utf8")))); } catch { /* reported by name only */ }
+      souls.push(soulEntry({ ...soul, name: pa.name, description: pa.description ?? soul.description, soulDir: pa.soulDir }, roots[0] || ctx, { capability: pa.capability }));
+    }
+  } catch (e) { diagnostics.push({ code: e.code || "E_CAPABILITY_BROKEN", message: e.message }); }
+  return { roots, souls, diagnostics };
+}
+/** The one soul a name (and optional agents root) addresses; throws with a
+ *  code when none or several match. */
+function selectSoul(souls, name, agentsRoot, ctx) {
+  let matches = souls.filter((s) => s.name === name);
+  if (agentsRoot) matches = matches.filter((s) => realOrResolved(s.agentsRoot) === realOrResolved(agentsRoot));
+  if (!matches.length) throw Object.assign(new Error(`no soul ${JSON.stringify(name)} in the scope of ${ctx}${agentsRoot ? ` under ${agentsRoot}` : ""}`), { code: "E_SOUL_UNKNOWN" });
+  // Same-named souls under several member roots: the member the caller
+  // addressed with --dir breaks the tie; a team root or an unrelated
+  // directory does not, and the answer names --agents-root as the remedy.
+  if (matches.length > 1) {
+    const here = realOrResolved(ctx);
+    const own = matches.filter((s) => s.kind !== "capability" && realOrResolved(dirname(s.agentsRoot)) === here);
+    if (own.length === 1) return own[0];
+    throw Object.assign(new Error(`soul ${JSON.stringify(name)} exists under ${matches.length} agents roots (${matches.map((m) => m.agentsRoot).join(", ")}); pass --agents-root <abs>`), { code: "E_SOUL_AMBIGUOUS" });
+  }
+  return matches[0];
+}
+/** The config context a selected soul belongs to: the workspace of its
+ *  agents root (a member repository under a team scope). An explicit --dir
+ *  may be that context or a scope enclosing it (the team root); another
+ *  member's context contradicts the selection and is refused. */
+function memberContextOf(soul, ctx, explicitDir, bail) {
+  if (soul.kind === "capability") return realOrResolved(ctx);
+  const member = realOrResolved(dirname(soul.agentsRoot));
+  const given = realOrResolved(ctx);
+  if (member === given) return member;
+  if (explicitDir && !member.startsWith(given + sep)) bail("E_SCOPE_MISMATCH", `--dir ${ctx} is not the scope of soul ${soul.name} under ${soul.agentsRoot} (${member}); pass that member's directory, an enclosing team scope, or omit --dir`);
+  return member;
+}
+/** A home's context for --dir validation: its recorded repository, or the
+ *  workspace that holds its agents root (what a roster derives). */
+function homeContexts(home, meta) {
+  const out = [];
+  if (meta.repo && existsSync(meta.repo)) out.push(resolve(meta.repo));
+  out.push(dirname(agentsRootOfHome(realOrResolved(home))));
+  return out;
+}
+function soulEntry(soul, root, { capability } = {}) {
+  const dir = soul._dir || soul.soulDir;
+  const soulDir = capability ? soul.soulDir : join(dir, "soul");
+  const packaged = !!capability;
+  return {
+    name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
+    type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
+    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, backend: soul.backend ?? null,
+    agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
+    editable: packaged
+      ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
+      : { fields: [...SOUL_FIELDS], instructions: true, reason: null },
+    instances: [],
+  };
+}
+/** These commands address a scope explicitly (--dir, --home, cwd); the
+ *  invoking process's ambient agents-root override must not redirect them
+ *  to its own deployment. */
+function dropAmbientRoot() { delete process.env.PI_AGENTS_ROOT; }
+function inspectCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  dropAmbientRoot();
+  const homeFlag = flag("home");
+  const home = homeFlag === true ? bail("E_BAD_ARGS", "--home needs an absolute instance home") : homeFlag;
+  let meta;
+  if (home) {
+    if (!isAbsolute(home)) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const metaFile = join(home, "instance.json");
+    if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
+    try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (e) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${e.message}`); }
+  }
+  const real = realOrResolved;
+  let ctx;
+  if (meta) {
+    // The home is the identity and its recorded repository is ALWAYS its
+    // context (that is what composed it); an explicit --dir is accepted only
+    // as an alias naming that repository or the workspace of the home's
+    // agents root, and never replaces the context.
+    const contexts = homeContexts(home, meta);
+    if (flag("dir") !== undefined) { const given = dirFlag(); if (!contexts.some((c) => real(c) === real(given))) bail("E_HOME_MISMATCH", `--dir ${given} is not the context of ${home} (${contexts.join(" or ")}); omit --dir for a home`); }
+    ctx = contexts[0];
+  } else ctx = dirFlag();
+  const soulFlag = flag("soul");
+  if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
+  if (meta && soulFlag && soulFlag !== meta.agent) bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${home} (${meta.agent})`);
+  const soulName = soulFlag || meta?.agent || undefined;
+  let agentsRootFlag = flag("agents-root");
+  if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  if (meta) {
+    // The soul is the home's own, under the home's own root; same-named souls
+    // in other member repositories are ordinary and never ambiguous here.
+    const homeRoot = agentsRootOfHome(real(home));
+    if (agentsRootFlag && real(agentsRootFlag) !== real(homeRoot)) bail("E_HOME_MISMATCH", `--agents-root ${agentsRootFlag} is not the agents root of ${home} (${homeRoot})`);
+    agentsRootFlag = homeRoot;
+  }
+  let r;
+  try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  let chain = configChain(ctx);
+  const enumerated = scopeSouls(ctx, r, { extraRoots: meta ? [agentsRootOfHome(realOrResolved(home))] : [] });
+  const roots = enumerated.roots;
+  let souls = enumerated.souls;
+  const packagedDiagnostics = enumerated.diagnostics;
+  let selectedSoul = null;
+  const requestedContext = ctx;
+  if (soulName) {
+    try { selectedSoul = selectSoul(souls, soulName, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    selectedSoul.instructions = readTextCapped(selectedSoul.instructionsFile);
+    souls = [selectedSoul];
+    // A soul's effective bindings are its own member's: a team root or
+    // another member's --dir must not be applied to it. (A home keeps its
+    // recorded repository as its context; that is what composed it.)
+    if (!meta) {
+      const member = memberContextOf(selectedSoul, ctx, flag("dir") !== undefined, bail);
+      if (member !== realOrResolved(ctx)) {
+        ctx = member;
+        try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+        chain = configChain(ctx);
+      }
+    }
+  }
+
+  // Capabilities: installed state and health from the package engine (exactly
+  // what `oats list` reports), owned/path manifests beside them, and the
+  // ACTIVATION for the selected soul (or global) from the resolver.
+  const mans = capabilityManifests(ctx);
+  let lockError = null;
+  const byId = new Map();
+  try {
+    const pkgs = listInstalledPackages(ctx), locks = readPackageLocks(ctx);
+    for (const p of pkgs) {
+      const rows = levelRows(locks, p.level);
+      for (const c of p.capabilities) {
+        const h = capabilityHealth(p.level, c, rows.capabilities[c.id], rows.packages[p.package]);
+        byId.set(c.id, {
+          id: c.id, package: p.package, version: c.version || null, layer: c.manifest?.layer || null, command: c.manifest?.command || null,
+          origin: "installed", level: p.level, source: p.source || null, dir: h.dir,
+          health: { status: h.status, code: h.code, detail: h.detail, installed: !!c.installed, locked: true, trusted: c.trusted === true, integrity: c.integrity || null, installedIntegrity: h.integrity ?? null },
+        });
+      }
+    }
+  } catch (e) { lockError = { code: e.code || "invalid-lock", message: e.message }; }
+  for (const [id, m] of Object.entries(mans)) {
+    if (byId.has(id)) continue;
+    const trust = capabilityTrust(m, ctx);
+    const executable = Object.keys(m.commands || {}).length || Object.keys(m.hooks || {}).length || (m.environment?.length || 0);
+    let integrity = trust.integrity || null;
+    if (!integrity) { try { integrity = capabilityArtifactIntegrity(m._dir); } catch { integrity = null; } }
+    byId.set(id, {
+      id, package: m._package || null, version: m.version || null, layer: m.layer || null, command: m.command || null,
+      origin: String(m._origin || "").split(":")[0] || "unknown", level: String(m._origin || "").split(":").slice(1).join(":") || null, source: null, dir: m._dir,
+      health: { status: executable && !trust.trusted ? "untrusted" : "ok", code: executable && !trust.trusted ? "untrusted-surface" : null, detail: executable && !trust.trusted ? (trust.reason || null) : null, installed: true, locked: !!trust.lock, trusted: !!trust.trusted, integrity, installedIntegrity: integrity },
+    });
+  }
+  // What is EFFECTIVE for the answer: a home's captured bindings and settings
+  // (with the currently acquired manifests and current trust); a soul's or
+  // scope's current config otherwise. The current config is reported
+  // separately for a home so a GUI can show both without confusing them.
+  const snapshotCaps = meta ? (meta.capabilities || []) : null;
+  const layerIdOf = (rec) => { const m = typeof rec === "string" ? /^([a-z0-9][a-z0-9._-]*)(?:\s|$)/.exec(rec) : null; return m && m[1] !== "none" ? m[1] : null; };
+  const effectiveLayers = meta
+    ? Object.fromEntries(LAYERS.map((l) => { const id = layerIdOf(meta.layers?.[l]) || snapshotCaps.find((c) => mans[c.id]?.layer === l)?.id || null; const rec = typeof meta.layers?.[l] === "string" ? meta.layers[l] : null; return [l, { id, level: snapshotCaps.find((c) => c.id === id)?.level || null, provenance: rec, disabled: !id && !!rec && rec.startsWith("none") }]; }))
+    : Object.fromEntries(LAYERS.map((l) => [l, r.layers[l]
+      ? { id: r.layers[l].id, level: r.layers[l].level, provenance: r.provenance[l] || null, disabled: false }
+      : { id: null, level: r.layerDisabled?.[l]?.level || null, provenance: r.provenance[l] || null, disabled: !!r.layerDisabled?.[l] }]));
+  const effectiveActive = (id) => meta
+    ? (() => { const c = snapshotCaps.find((x) => x.id === id); return c ? { id, level: c.level || null, provenance: c.provenance || [], settings: c.settings || {} } : undefined; })()
+    : r.capabilities.find((c) => c.id === id);
+  const declaredAt = (id) => chain.flatMap((cfg) => configCapabilityEntries(cfg).filter((e) => e.id === id).map((e) => ({ level: cfg._level, slot: e.slot || null, targets: [
+    ...(e.spec.global !== undefined ? [`global`] : []),
+    ...Object.keys(e.spec["agent-types"] || {}).map((t) => `type:${t}`),
+    ...Object.keys(e.spec.souls || {}).map((sn) => `soul:${sn}`),
+  ] })));
+  const targetOf = (provenance) => [...provenance].map((p) => p.split(" @ ")[0]).sort((a, b) => (b.startsWith("soul:") ? 2 : b.startsWith("type:") ? 1 : 0) - (a.startsWith("soul:") ? 2 : a.startsWith("type:") ? 1 : 0))[0] || (meta ? "snapshot" : "global");
+  const capabilities = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)).map((entry) => {
+    const active = effectiveActive(entry.id);
+    const m = mans[entry.id];
+    const missingRequires = (() => { try { return capabilityMissingRequires(entry.id, ctx).map((x) => ({ command: x.command, why: x.why || null, install: x.install || null })); } catch { return []; } })();
+    const disabledLayer = entry.layer && (meta ? (effectiveLayers[entry.layer]?.disabled ? { level: null } : null) : r.layerDisabled?.[entry.layer]);
+    const declared = declaredAt(entry.id);
+    const activation = active
+      ? { enabled: true, source: meta ? "snapshot" : "config", target: targetOf(active.provenance || []), level: active.level, provenance: active.provenance || [], settings: active.settings || {}, declaredAt: declared }
+      : { enabled: false, source: meta ? "snapshot" : "config", target: declared.length ? "declared" : "none", level: declared[0]?.level || null, provenance: [], settings: {}, declaredAt: declared, ...(disabledLayer ? { reason: `layer ${entry.layer} is disabled${disabledLayer.level ? ` at ${disabledLayer.level}` : " for this home"}` } : {}) };
+    const operations = manifestOperations(m).map((op) => {
+      let reason = null;
+      if (!active) reason = disabledLayer ? `layer ${entry.layer} is disabled${disabledLayer.level ? ` at ${disabledLayer.level}` : " for this home"}` : `${entry.id} is not activated for ${meta ? `home ${basename(home)}` : soulName ? `soul ${soulName}` : "this scope"}`;
+      else if (!entry.health.trusted) reason = `${entry.id} executable surface is not trusted (oats trust ${entry.id})`;
+      else if (entry.health.status !== "ok") reason = entry.health.detail || entry.health.status;
+      else if (missingRequires.length) reason = `${entry.id} requires ${missingRequires.map((x) => `"${x.command}" on PATH${x.why ? ` (${x.why})` : ""}`).join(", ")}`;
+      else if (op.context === "home" && !home) reason = "needs a running home (--home)";
+      return { ...op, argv: [entry.command, op.command], available: !reason, reason };
+    });
+    return { ...entry, missingRequires, activation, operations };
+  });
+  const layers = effectiveLayers;
+  // For a home, the CURRENT config beside the captured bindings, so a GUI can
+  // show what future instances would get without mistaking it for the home's.
+  const currentConfig = meta ? {
+    layers: Object.fromEntries(LAYERS.map((l) => [l, r.layers[l] ? { id: r.layers[l].id, level: r.layers[l].level, provenance: r.provenance[l] || null, disabled: false } : { id: null, level: r.layerDisabled?.[l]?.level || null, provenance: r.provenance[l] || null, disabled: !!r.layerDisabled?.[l] }])),
+    activations: r.capabilities.map((c) => ({ id: c.id, target: targetOf(c.provenance), level: c.level, settings: c.settings || {} })),
+  } : null;
+  const knowledgeCap = layers.knowledge.id ? capabilities.find((c) => c.id === layers.knowledge.id) : null;
+  const knowledge = knowledgeCap ? { provider: knowledgeCap.id, version: knowledgeCap.version, operations: knowledgeCap.operations.map((o) => ({ name: o.name, kind: o.kind, available: o.available, reason: o.reason })) } : { provider: null, version: null, operations: [] };
+
+  let snapshot = null;
+  if (meta) {
+    const runtimeById = new Map((meta.capabilityRuntime || []).map((c) => [c.id, c]));
+    const drift = [];
+    for (const c of meta.capabilities || []) {
+      const now = r.capabilities.find((x) => x.id === c.id);
+      if (!now) { drift.push({ id: c.id, field: "activation", snapshot: true, config: false }); continue; }
+      if (JSON.stringify(c.settings || {}) !== JSON.stringify(now.settings || {})) drift.push({ id: c.id, field: "settings", snapshot: c.settings || {}, config: now.settings || {} });
+      const then = runtimeById.get(c.id)?.trust?.integrity, cur = byId.get(c.id)?.health?.integrity;
+      if (then && cur && then !== cur) drift.push({ id: c.id, field: "integrity", snapshot: then, config: cur });
+    }
+    for (const now of r.capabilities) if (!(meta.capabilities || []).some((c) => c.id === now.id)) drift.push({ id: now.id, field: "activation", snapshot: false, config: true });
+    snapshot = {
+      home, instance: meta.instance, agent: meta.agent, runtime: meta.runtime || null, model: meta.model ?? null, yolo: meta.yolo ?? null, launched: !!meta.launched, createdAt: meta.createdAt || null,
+      layers: meta.layers || {}, capabilities: (meta.capabilities || []).map((c) => ({ id: c.id, level: c.level, settings: c.settings || {}, trusted: runtimeById.get(c.id)?.trust?.trusted ?? null })),
+      instructions: { ...readTextCapped(join(home, "AGENTS.md")), sources: meta.instructions || [] }, drift,
+    };
+  }
+  const result = {
+    operationsApi: 1, kernel: OATS_VERSION,
+    scope: { context: ctx, requestedContext: requestedContext === ctx ? null : requestedContext, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
+    selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config" },
+    souls, layers, capabilities, knowledge, snapshot, currentConfig,
+    problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability })),
+      ...(meta ? snapshotCaps.filter((c) => !mans[c.id]).map((c) => ({ code: "captured-capability-missing", message: `${c.id} was active when this home was composed but no manifest for it is acquired now`, capability: c.id })) : [])],
+  };
+  if (JSON_MODE) { jsonOk(result); return; }
+  console.log(`oats inspect — ${shortPath(ctx)}${selectedSoul ? ` soul ${selectedSoul.name}` : ""}${home ? ` home ${shortPath(home)}` : ""}`);
+  for (const s of souls) console.log(`  soul ${s.name} [${s.kind}${s.capability ? ` ${s.capability}` : ""}] runtime ${s.runtime}${s.model ? ` model ${s.model}` : ""} work ${s.work}${s.editable.fields.length ? "" : " (read-only)"}`);
+  for (const l of LAYERS) console.log(`  layer ${l}: ${layers[l].id || (layers[l].disabled ? "disabled" : "none")}${layers[l].provenance ? `  (${layers[l].provenance})` : ""}`);
+  for (const c of capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.health.status}${c.activation.enabled ? ` active:${c.activation.target}` : " inactive"}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
+  for (const p of result.problems) console.log(`  ! ${p.code}: ${p.message}`);
+}
+
+// ---------- operation run: generic invoke through the capability engine ----------
+/** `oats operation run <layer>:<name>`: resolve the provider that fills
+ *  <layer> for a running home (its snapshot) or for a soul in a scope (the
+ *  config), require the operation to be declared and the executable surface
+ *  trusted, then run the provider's own command exactly as `oats <ns> <cmd>`
+ *  would, in the home (context home) or the scope (context scope), and relay
+ *  its envelope. A view operation must answer { documents: [...] }. No
+ *  provider name appears here. */
+const OPERATION_ADDRESS_RE = /^(knowledge|messaging|tasks):([a-z][a-z0-9-]*)$/;
+/** The same phrasing the scheduler treats as retained effects. */
+const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|could not (?:be )?(?:verif|confirm)/i.test(String(message || ""));
+// Comfortably below the scheduler's 5-minute command bound and any GUI
+// proxy, so the receipt always reaches the caller before a wrapper gives up.
+const OPERATION_TIMEOUT_MS = 4 * 60 * 1000;
+function operationCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  dropAmbientRoot();
+  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]) [--arg k=v ...] [--json]");
+  const address = args[2];
+  const m0 = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
+  if (!m0) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
+  const [, layer, opName] = m0;
+  const homeFlag = flag("home");
+  if (homeFlag === true) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+  const home = homeFlag ? resolve(homeFlag) : undefined;
+  let meta;
+  if (home) {
+    if (!isAbsolute(homeFlag)) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const metaFile = join(home, "instance.json");
+    if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
+    try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (e) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${e.message}`); }
+  }
+  // The home is the identity: an explicit --dir must be one of its own
+  // contexts, never a different scope's config applied to it.
+  let ctx;
+  if (meta) {
+    // The recorded repository is always a home's context; --dir is only an
+    // alias to validate (the repository or the workspace of the home's root).
+    const contexts = homeContexts(home, meta);
+    if (flag("dir") !== undefined) { const given = dirFlag(); if (!contexts.some((c) => realOrResolved(c) === realOrResolved(given))) bail("E_HOME_MISMATCH", `--dir ${given} is not the context of ${home} (${contexts.join(" or ")}); omit --dir for a home`); }
+    ctx = contexts[0];
+  } else ctx = dirFlag();
+  const soulFlag = flag("soul");
+  if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
+  if (meta && soulFlag && soulFlag !== meta.agent) bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${home} (${meta.agent})`);
+  const soulName = soulFlag || meta?.agent || undefined;
+  let agentsRootFlag = flag("agents-root");
+  if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  if (meta) {
+    const homeRoot = agentsRootOfHome(realOrResolved(home));
+    if (agentsRootFlag && realOrResolved(agentsRootFlag) !== realOrResolved(homeRoot)) bail("E_HOME_MISMATCH", `--agents-root ${agentsRootFlag} is not the agents root of ${home} (${homeRoot})`);
+    agentsRootFlag = homeRoot;
+  }
+  // The same soul selection as inspect: name plus agents root, refused when
+  // ambiguous, never silently the first match.
+  let selectedSoul;
+  if (soulName) {
+    let rSel;
+    try { rSel = resolveOatsConfig(ctx, meta ? undefined : soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    try { selectedSoul = selectSoul(scopeSouls(ctx, rSel, { extraRoots: meta ? [agentsRootOfHome(realOrResolved(home))] : [] }).souls, soulName, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    // The provider and its settings are the selected soul's own member's,
+    // never a team root's or another member's (a home keeps its recorded
+    // repository as its context).
+    if (!meta) ctx = memberContextOf(selectedSoul, ctx, flag("dir") !== undefined, bail);
+  }
+  // --arg k=v pairs, matched against the operation's declared args below.
+  const given = Object.create(null);
+  for (let i = 3; i < args.length; i++) {
+    if (args[i] !== "--arg") continue;
+    const kv = args[i + 1];
+    if (!kv || kv.startsWith("--") || !kv.includes("=")) bail("E_BAD_ARGS", "--arg expects name=value");
+    const eq = kv.indexOf("=");
+    given[kv.slice(0, eq)] = kv.slice(eq + 1);
+    i++;
+  }
+  // Provider resolution: the snapshot's active capabilities for a home, the
+  // config for a soul/scope.
+  const mans = capabilityManifests(ctx);
+  let provider, settings, team, disabled = null;
+  if (meta) {
+    const ids = (meta.capabilities || []).map((c) => c.id);
+    const id = ids.find((cid) => mans[cid]?.layer === layer);
+    provider = id ? mans[id] : undefined;
+    settings = (meta.capabilities || []).find((c) => c.id === id)?.settings || {};
+    team = meta.team || (() => { try { return resolveOatsConfig(ctx).team; } catch { return undefined; } })();
+    if (!provider) { const rec = meta.layers?.[layer]; disabled = typeof rec === "string" && rec.startsWith("none") ? rec : null; }
+  } else {
+    let r;
+    try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    provider = r.layers[layer] ? mans[r.layers[layer].id] : undefined;
+    settings = r.layers[layer]?.settings || {};
+    team = r.team;
+    if (!provider && r.layerDisabled?.[layer]) disabled = `none @ ${r.layerDisabled[layer].level}`;
+  }
+  if (!provider) bail("E_OPERATION_UNAVAILABLE", disabled ? `layer ${layer} is explicitly disabled (${disabled}); no provider can run ${address}` : `no ${layer} provider is active for ${meta ? home : soulName ? `soul ${soulName} in ${ctx}` : ctx}`);
+  const op = manifestOperations(provider).find((o) => o.name === opName);
+  if (!op) bail("E_OPERATION_UNKNOWN", `${provider.capability} declares no operation ${JSON.stringify(opName)} (declared: ${manifestOperations(provider).map((o) => o.name).join(", ") || "none"})`);
+  const trust = capabilityTrust(provider, ctx);
+  if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${provider.capability} executable surface is blocked: ${trust.reason || "not trusted"} (oats trust ${provider.capability})`);
+  const missingReq = capabilityMissingRequires(provider.capability, ctx);
+  if (missingReq.length) bail("E_CAPABILITY_REQUIRES", `${provider.capability} requires ${missingReq.map((m) => `"${m.command}" on PATH${m.why ? ` (${m.why})` : ""}${m.install ? ` [install: ${m.install}]` : ""}`).join(", ")}; ${address} was not run`);
+  if (op.context === "home" && !meta) bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
+  const declared = new Map(op.args.map((a) => [a.name, a]));
+  for (const name of Object.keys(given)) if (!declared.has(name)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(name)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
+  for (const a of op.args) if (a.required && given[a.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${a.name}=<value>: ${a.description || "required"}`);
+  const argFlags = op.args.flatMap((a) => (given[a.name] === undefined ? [] : [a.flag, given[a.name]]));
+  const spec = provider.commands[op.command];
+  if (typeof spec !== "string" || !spec.trim()) bail("E_CAPABILITY_BROKEN", `${provider.capability}: command ${op.command} is not a non-empty string`);
+  const [script, ...rest] = spec.trim().split(/\s+/);
+  let abs;
+  try { abs = capabilityExecutablePath(provider, script); } catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
+  if (!abs) bail("E_CAPABILITY_BROKEN", `${provider.capability} ${op.command}: script not found (${join(provider._dir, script)})`);
+  const cwd = op.context === "home" ? home : ctx;
+  // The provider sees exactly the selected target: identity and context
+  // variables are SET for it (a home, or a soul in a scope) and every
+  // ambient one from the invoking process is removed, so a coordinator
+  // running this for another home never steers the provider to its own.
+  const env = { ...process.env };
+  for (const k of ["OATS_EVENT", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_CONTEXT", "OATS_ROOT", "OATS_WORKSPACE", "OATS_LEVEL", "OATS_META", "OATS_KIND", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete env[k];
+  const targetRoot = meta ? agentsRootOfHome(realOrResolved(home)) : selectedSoul?.agentsRoot;
+  const soulDir = meta ? join(dirname(dirname(realOrResolved(home))), "soul") : selectedSoul ? dirname(selectedSoul.soulFile) : undefined;
+  Object.assign(env, {
+    OATS_CAPABILITY: provider.capability, OATS_SETTINGS: JSON.stringify(settings || {}), OATS_CLI_BIN: CLI_BIN, OATS_OPERATION: address,
+    OATS_CONTEXT: ctx, OATS_WORKSPACE: targetRoot ? workspaceOf(targetRoot) : workspaceOf(findRoot(ctx) || ctx),
+    OATS_TEAM_NAME: team?.name || "", OATS_TEAM_ID: team?.id || "", OATS_TEAM_SCOPE: team?.scope || "",
+    ...(targetRoot ? { OATS_ROOT: targetRoot, PI_AGENTS_ROOT: targetRoot } : {}),
+    ...(soulName ? { OATS_AGENT: soulName } : {}), ...(soulDir ? { OATS_SOUL: soulDir } : {}),
+  });
+  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home, PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home });
+  const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
+  const stderr = String(r.stderr || "").trim();
+  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && r.signal === "SIGTERM");
+  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
+  const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
+  // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
+  // by the exit status) carry what WAS observed in error.details, so a
+  // scheduler can keep the slot as unknown and reconcile by any name the
+  // provider managed to answer; they are never confirmed failures.
+  const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) });
+  if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
+  // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
+  // that agrees with it: contaminated output or a success envelope from a
+  // process that then failed is not a receipt.
+  let envelope;
+  try { envelope = JSON.parse(String(r.stdout || "").trim()); } catch { envelope = undefined; }
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status}); its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(parseEnvelopeText(String(r.stdout || ""))));
+  // A provider's own failure is relayed with its code; its WHOLE envelope
+  // (a partial receipt such as result.instance of something it launched
+  // before failing, and any details it gave) travels in error.details so a
+  // scheduler can keep an unconfirmed outcome and reconcile that target.
+  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, { exit: r.status, envelope, ...(reportsRetainedEffectsText(envelope.error?.message) ? { unconfirmed: true } : {}) });
+  if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted and its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(envelope));
+  const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
+  if (op.kind === "view") {
+    const docs = result.documents;
+    const bad = !Array.isArray(docs) || docs.some((d) => !d || typeof d !== "object" || typeof d.label !== "string" || !d.label
+      || (d.kind !== undefined && !["markdown", "text"].includes(d.kind))
+      || (d.path !== undefined && d.path !== null && (typeof d.path !== "string" || !isAbsolute(d.path)))
+      || (d.text !== undefined && d.text !== null && typeof d.text !== "string"));
+    if (bad) bail("E_OPERATION_RESULT", `${address} is a view operation but ${provider.capability} ${op.command} did not answer { documents: [{label, kind?, path?, text?}] }`);
+  }
+  // A launch receipt in the delegated result (a harvester the provider
+  // spawned) is surfaced as top-level instance/home so the scheduler tracks
+  // it exactly as it tracks a command job's launch; the source home itself
+  // is `target`, never a launch.
+  const receipt = {};
+  if (typeof result.instance === "string" && result.instance !== meta?.instance) receipt.instance = result.instance;
+  if (typeof result.home === "string" && result.home !== home) receipt.home = result.home;
+  const out = { ...base, ...receipt, result, ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
+  if (JSON_MODE) { jsonOk(out); return; }
+  console.log(`${address} via ${provider.capability}@${provider.version || "?"} (${provider.command} ${op.command}) in ${shortPath(cwd)}: ok`);
+  if (op.kind === "view") for (const d of result.documents) console.log(`  - ${d.label}${d.path ? ` (${shortPath(d.path)})` : ""}${d.text ? `: ${String(d.text).split("\n")[0].slice(0, 100)}` : ""}`);
+  else console.log(JSON.stringify(result, null, 2));
+  if (stderr) console.error(stderr);
+}
+
+// ---------- soul set: runtime defaults and instructions of an editable soul ----------
+/** Rewrites only the given soul.yaml fields, preserving every other line
+ *  (unknown keys, comments, order), and replaces AGENTS.md when asked.
+ *  Packaged souls are read-only (their source is the package). */
+async function soulCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  dropAmbientRoot();
+  if (args[1] !== "set") bail("E_USAGE", "usage: oats soul set <name> [--dir <scope>] [--agents-root <abs>] [--runtime pi|claude|codex] [--model <m> | --no-model] [--yolo | --no-yolo] [--backend tmux|herdr] [--description <d> | --no-description] [--instructions-file <path> | --instructions-stdin] [--json]");
+  const name = args[2];
+  if (!name || name.startsWith("--")) bail("E_BAD_ARGS", "soul set needs a soul name");
+  const ctx = dirFlag();
+  const agentsRootFlag = flag("agents-root");
+  if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  let r;
+  try { r = resolveOatsConfig(ctx); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  let soul;
+  try { soul = selectSoul(scopeSouls(ctx, r).souls, name, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+  if (!soul.editable.fields.length) bail("E_SOUL_READONLY", `${name} is a ${soul.kind} soul: ${soul.editable.reason}`);
+  // Field changes, validated before anything is written.
+  const changes = {};
+  const has = (f) => args.includes(`--${f}`);
+  const val = (f) => { const v = flag(f); if (v === true) bail("E_BAD_ARGS", `--${f} needs a value`); return v; };
+  if (has("runtime")) { const v = val("runtime"); if (!["pi", "claude", "codex"].includes(v)) bail("E_BAD_ARGS", "--runtime must be pi, claude or codex"); changes.runtime = v; }
+  if (has("model") && has("no-model")) bail("E_BAD_ARGS", "choose --model <m> or --no-model, not both");
+  if (has("model")) { const v = val("model"); if (!v.trim()) bail("E_BAD_ARGS", "--model needs a model id (use --no-model to clear)"); changes.model = assertSafeConfigValue(v, "--model"); }
+  if (has("no-model")) changes.model = null;
+  if (has("yolo") && has("no-yolo")) bail("E_BAD_ARGS", "choose --yolo or --no-yolo, not both");
+  if (has("yolo")) changes.yolo = true;
+  if (has("no-yolo")) changes.yolo = false;
+  if (has("backend")) { const v = val("backend"); if (!["tmux", "herdr"].includes(v)) bail("E_BAD_ARGS", "--backend must be tmux or herdr"); changes.backend = v; }
+  if (has("description") && has("no-description")) bail("E_BAD_ARGS", "choose --description <d> or --no-description, not both");
+  if (has("description")) changes.description = assertSafeConfigValue(val("description"), "--description");
+  if (has("no-description")) changes.description = null;
+  let instructions;
+  if (has("instructions-file") && has("instructions-stdin")) bail("E_BAD_ARGS", "choose --instructions-file or --instructions-stdin, not both");
+  if (has("instructions-file")) {
+    const file = val("instructions-file");
+    let bytes;
+    try { bytes = readFileSync(file); } catch (e) { bail("E_BAD_ARGS", `--instructions-file ${file}: ${e.message}`); }
+    if (bytes.includes(0)) bail("E_BAD_ARGS", "--instructions-file must be text without NUL bytes");
+    if (bytes.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", `--instructions-file is ${bytes.length} bytes; the bound is ${INSPECT_TEXT_CAP} (what inspect can answer whole)`);
+    instructions = bytes;
+  }
+  if (has("instructions-stdin")) {
+    // The routed form: bytes arrive on stdin (the ssh transport), bounded
+    // while reading, exactly like session receive.
+    if (process.stdin.isTTY) bail("E_BAD_ARGS", "--instructions-stdin reads the instructions from stdin");
+    let bytes;
+    try { bytes = await readStreamBounded(process.stdin, INSPECT_TEXT_CAP); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    if (bytes.includes(0)) bail("E_BAD_ARGS", "instructions must be text without NUL bytes");
+    // An empty completed stream is a deliberate replacement with nothing,
+    // exactly like an empty --instructions-file: the option itself states
+    // the intent, and a TTY was refused above.
+    instructions = bytes;
+  }
+  if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --description/--no-description, --instructions-file");
+  for (const f of Object.keys(changes)) if (!soul.editable.fields.includes(f)) bail("E_BAD_ARGS", `${f} is not an editable field of ${name}`);
+  const before = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, backend: soul.backend, description: soul.description };
+  // soul.yaml: replace or append `key: value` lines in place; a cleared
+  // field's line is removed; nothing else in the file moves.
+  let yamlText = "";
+  try { yamlText = readFileSync(soul.soulFile, "utf8"); } catch (e) { bail("E_SOUL_UNKNOWN", `${soul.soulFile}: ${e.message}`); }
+  const lines = yamlText.replace(/\n*$/, "").split("\n");
+  for (const [key, value] of Object.entries(changes)) {
+    const idx = lines.findIndex((l) => new RegExp(`^${key}:\\s`).test(l) || l === `${key}:`);
+    if (value === null) { if (idx >= 0) lines.splice(idx, 1); continue; }
+    const line = `${key}: ${value}`;
+    if (idx >= 0) lines[idx] = line; else lines.push(line);
+  }
+  const receipt = { soul: name, kind: soul.kind, agentsRoot: soul.agentsRoot, file: soul.soulFile, instructionsFile: soul.instructionsFile, changed: Object.keys(changes), before, instructions: null };
+  if (Object.keys(changes).length) writeFileAtomic(soul.soulFile, lines.join("\n") + "\n");
+  if (instructions) {
+    const prev = (() => { try { return createHash("sha256").update(readFileSync(soul.instructionsFile)).digest("hex"); } catch { return null; } })();
+    writeFileAtomic(soul.instructionsFile, instructions);
+    receipt.instructions = { before: prev, after: createHash("sha256").update(instructions).digest("hex"), bytes: instructions.length };
+  }
+  let after;
+  try { after = selectSoul(scopeSouls(ctx, r).souls, name, soul.agentsRoot, ctx); } catch { after = soul; }
+  receipt.after = { runtime: after.runtime, model: after.model, yolo: after.yolo, backend: after.backend, description: after.description };
+  if (JSON_MODE) { jsonOk(receipt); return; }
+  console.log(`Updated soul ${name} (${shortPath(soul.soulFile)})${instructions ? ` and its instructions (${shortPath(soul.instructionsFile)})` : ""}: ${Object.keys(changes).map((k) => `${k}=${changes[k] === null ? "(cleared)" : changes[k]}`).join(", ") || "instructions only"}`);
+  console.log("Future instances use these defaults; existing homes keep what they were composed with.");
 }
 
 function doctorJson(dir) {
@@ -632,19 +1185,43 @@ function readCapabilitiesModel(file) {
 // ---------- use / activation ----------
 function use() {
   const requested = args[1];
-  if (!requested || requested.startsWith("--")) die("usage: oats use <capability|none> [--global|--type <agent-type>|--soul <name>] [--disable] [--layer <name>] [--settings k=v [k2=v2 ...]] [--dir <dir>]");
+  if (!requested || requested.startsWith("--")) cmdFail("E_USAGE", "usage: oats use <capability|none> [--global|--type <agent-type>|--soul <name>] [--disable|--inherit] [--layer <name>] [--settings k=v [k2=v2 ...]] [--dir <dir>] [--json]");
   const dir = dirFlag();
   const level = levelOf(dir);
   const file = join(dir, "oats-config.yaml");
   const layer = flag("layer");
-  if (layer && !LAYERS.includes(layer)) die(`--layer must be one of: ${LAYERS.join(", ")}`);
+  if (layer && !LAYERS.includes(layer)) cmdFail("E_BAD_ARGS", `--layer must be one of: ${LAYERS.join(", ")}`);
+  const inherit = args.includes("--inherit");
+  if (inherit && args.includes("--disable")) cmdFail("E_BAD_ARGS", "choose --inherit (remove this level's binding) or --disable (explicit exclusion), not both");
   let text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
   const caps = readCapabilitiesModel(file);
+  // The receipt names what this level said before and after, and what is
+  // effective afterwards, so a GUI never has to re-read the file to know.
+  const effectiveAfter = (soulName, layerName, capId) => {
+    try {
+      const r = resolveOatsConfig(dir, soulName);
+      if (layerName) return { layer: layerName, id: r.layers[layerName]?.id || null, provenance: r.provenance[layerName] || null, disabled: !!r.layerDisabled?.[layerName] };
+      const c = r.capabilities.find((x) => x.id === capId);
+      return { capability: capId, enabled: !!c, provenance: c?.provenance || [], settings: c?.settings || {} };
+    } catch (e) { return { error: e.message }; }
+  };
+  const answer = (receipt, line) => { if (JSON_MODE) jsonOk(receipt); else console.log(line); };
   if (requested === "none") {
-    if (!layer) die("oats use none requires --layer <name>");
+    if (!layer) cmdFail("E_BAD_ARGS", "oats use none requires --layer <name>");
+    // A layer `none` is a LEVEL statement; there is no per-soul or per-type
+    // none, so a target here must be refused, never silently widened.
+    if (flag("soul") !== undefined || flag("type") !== undefined) cmdFail("E_BAD_ARGS", `oats use none --layer ${layer} disables the layer for this whole level; it takes no --soul or --type (exclude one capability for a soul with oats use <capability> --soul <name> --disable)`);
+    const before = caps.layers[layer] === "none" ? "none" : caps.layers[layer] ? caps.layers[layer].capability : null;
+    if (inherit) {
+      if (caps.layers[layer] !== "none") cmdFail("E_NOT_BOUND", `layer ${layer} is not explicitly none at ${level} level (${shortPath(file)}); nothing to inherit from`);
+      delete caps.layers[layer];
+      writeFileSync(file, replaceCapabilitiesBlock(text, caps));
+      answer({ capability: null, action: "inherit", target: "layer", layer, level, file, before: { layer: before }, after: { layer: null, effective: effectiveAfter(undefined, layer) } }, `Layer ${layer} at ${level} level now inherits (${shortPath(file)})`);
+      return;
+    }
     caps.layers[layer] = "none";
     writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-    console.log(`Disabled fundamental layer ${layer} at ${level} level (${shortPath(file)})`);
+    answer({ capability: null, action: "layer-none", target: "layer", layer, level, file, before: { layer: before }, after: { layer: "none", effective: effectiveAfter(undefined, layer) } }, `Disabled fundamental layer ${layer} at ${level} level (${shortPath(file)})`);
     return;
   }
   const manifest = capabilityManifest(requested, dir);
@@ -665,28 +1242,57 @@ function use() {
       cmdFail("E_NO_CONFIG", `capability "${requested}" is present in the capability store at ${shellQuote(dir)}, but there is no oats-config.yaml at this scope or any level above it — \`oats use\` activates into a config file and this scope has none. Create the minimal one with \`oats init --raw --dir ${shellQuote(dir)}\`, then re-run \`oats use ${requested}\`.`);
       return;
     }
-    die(`unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
+    cmdFail("E_UNKNOWN_CAPABILITY", `unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
   }
-  if (layer && manifest.layer !== layer) die(`capability "${manifest.capability}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
+  if (layer && manifest.layer !== layer) cmdFail("E_LAYER_MISMATCH", `capability "${manifest.capability}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
   const targets = [["agent-types", flag("type")], ["souls", flag("soul")]].filter(([, value]) => value);
   if (args.includes("--global")) targets.push(["global", undefined]);
-  if (targets.length > 1) die("choose exactly one of --global, --type, or --soul");
+  if (targets.length > 1) cmdFail("E_BAD_ARGS", "choose exactly one of --global, --type, or --soul");
   const [targetKind, targetName] = targets[0] || ["global", undefined];
+  const targetLabel = targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"}:${targetName}`;
+  const soulForEffective = targetKind === "souls" ? targetName : undefined;
   const enabled = !args.includes("--disable");
+  const bindingOf = (e) => (!e ? undefined : targetKind === "global" ? e.global : e[targetKind]?.[targetName]);
+  const stateOf = (e) => ({ bound: bindingOf(e) !== undefined, enabled: bindingOf(e) === undefined ? null : (typeof bindingOf(e) === "object" ? bindingOf(e).enabled !== false : !!bindingOf(e)), settings: e?.settings && typeof e.settings === "object" ? { ...e.settings } : {} });
+  // --inherit removes THIS level's binding for the addressed target (and the
+  // whole entry once no target is left), so outer scopes and targets apply
+  // again. Distinct from --disable, which writes an explicit exclusion.
+  if (inherit) {
+    const existing = manifest.layer ? caps.layers[manifest.layer] : caps.additive[manifest.capability];
+    const entry0 = existing && existing !== "none" && (!manifest.layer || existing.capability === manifest.capability) ? existing : undefined;
+    const before = stateOf(entry0);
+    if (!entry0 || !before.bound) cmdFail("E_NOT_BOUND", `${manifest.capability} has no ${targetLabel} binding at ${level} level (${shortPath(file)}); nothing to inherit from`);
+    // Only the addressed target goes. Every other binding the entry carries
+    // (an explicit global, other souls, types) is policy this command cannot
+    // tell from intent, so it stays; the receipt names what still applies.
+    if (targetKind === "global") delete entry0.global;
+    else { delete entry0[targetKind][targetName]; if (!Object.keys(entry0[targetKind]).length) delete entry0[targetKind]; }
+    const remaining = [...(entry0.global !== undefined ? [`global: ${entry0.global}`] : []), ...Object.entries(entry0["agent-types"] || {}).map(([t, v]) => `type:${t}: ${JSON.stringify(v)}`), ...Object.entries(entry0.souls || {}).map(([n, v]) => `soul:${n}: ${JSON.stringify(v)}`)];
+    const targetsLeft = remaining.length > 0;
+    if (!targetsLeft) { if (manifest.layer) delete caps.layers[manifest.layer]; else delete caps.additive[manifest.capability]; }
+    writeFileSync(file, replaceCapabilitiesBlock(text, caps));
+    const note = targetsLeft ? `this level still binds ${manifest.capability}: ${remaining.join(", ")}; remove them with oats use ${manifest.capability} --inherit --global|--type <t>|--soul <s> if the intent is full inheritance` : null;
+    answer({ capability: manifest.capability, action: "inherit", target: targetLabel, layer: manifest.layer || null, level, file, entryRemoved: !targetsLeft, remaining, note, before, after: { bound: false, enabled: null, settings: targetsLeft ? before.settings : {}, effective: effectiveAfter(soulForEffective, manifest.layer, manifest.capability) } },
+      `${manifest.capability} ${targetLabel} binding removed at ${level} level${targetsLeft ? `; still bound here: ${remaining.join(", ")}` : " (entry removed)"} (${shortPath(file)})`);
+    return;
+  }
   // Locate or create the entry in the right subtree.
   let entry;
   if (manifest.layer) {
     const existing = caps.layers[manifest.layer];
     var entryExisted = !!(existing && existing !== "none" && existing.capability === manifest.capability);
     entry = entryExisted ? existing : { capability: manifest.capability };
-    if (existing && existing !== "none" && existing.capability !== manifest.capability && enabled) {
-      die(`fundamental layer ${manifest.layer} already binds ${existing.capability} at this level — disable it first`);
+    // One entry per layer per level: another capability's entry is never
+    // overwritten, not even by an exclusion, and the remedy is exact.
+    if (existing && existing !== "none" && existing.capability !== manifest.capability) {
+      cmdFail("E_LAYER_BOUND", `fundamental layer ${manifest.layer} already binds ${existing.capability} at ${level} level (${shortPath(file)}); remove that binding first with oats use ${existing.capability} --inherit --global (and --type/--soul for each of its targets), or disable the layer here with oats use none --layer ${manifest.layer}, then use ${manifest.capability}`);
     }
     caps.layers[manifest.layer] = entry;
   } else {
     entry = caps.additive[manifest.capability] || {};
     caps.additive[manifest.capability] = entry;
   }
+  const beforeState = stateOf(entryExisted || !manifest.layer ? entry : undefined);
   const from = originToFrom(manifest._origin);
   if (from && !entry.from) entry.from = from;
   const settingsArgs = [];
@@ -694,14 +1300,14 @@ function use() {
     if (args[i] !== "--settings") continue;
     let consumed = 0;
     for (let j = i + 1; j < args.length && !args[j].startsWith("--"); j++, consumed++) settingsArgs.push(args[j]);
-    if (!consumed) die("--settings expects one or more key=value pairs");
+    if (!consumed) cmdFail("E_BAD_ARGS", "--settings expects one or more key=value pairs");
     i += consumed;
   }
   if (settingsArgs.length) {
     entry.settings = entry.settings && typeof entry.settings === "object" ? entry.settings : {};
     for (const kv of settingsArgs) {
       const eq = kv.indexOf("=");
-      if (eq <= 0) die(`--settings expects key=value, got "${kv}"`);
+      if (eq <= 0) cmdFail("E_BAD_ARGS", `--settings expects key=value, got "${kv}"`);
       // WRITE side of the refusals the readers enforce. Two distinct hazards on
       // this one line:
       //   - `--settings __proto__=x` assigned through the inherited setter,
@@ -731,8 +1337,12 @@ function use() {
     entry[targetKind][assertSafeConfigWriteKey(targetName, `--${targetKind === "agent-types" ? "type" : "soul"} name ${JSON.stringify(String(targetName))}`)] = enabled;
   }
   writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-  console.log(`${enabled ? "Activated" : "Excluded"} ${manifest.capability} for ${targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"} ${targetName}`} at ${level} level (${shortPath(file)})`);
-  for (const miss of capabilityMissingRequires(manifest.capability, dir)) console.log(`WARNING: required command "${miss.command}" not on PATH — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
+  const afterState = stateOf(entry);
+  const missing = capabilityMissingRequires(manifest.capability, dir);
+  answer({ capability: manifest.capability, action: enabled ? "enable" : "disable", target: targetLabel, layer: manifest.layer || null, level, file, settings: entry.settings || {}, before: beforeState, after: { ...afterState, effective: effectiveAfter(soulForEffective, manifest.layer, manifest.capability) }, missingRequires: missing },
+    `${enabled ? "Activated" : "Excluded"} ${manifest.capability} for ${targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"} ${targetName}`} at ${level} level (${shortPath(file)})`);
+  if (JSON_MODE) return;
+  for (const miss of missing) console.log(`WARNING: required command "${miss.command}" not on PATH — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
   console.log("New instances receive the resolved capability; committed souls are unchanged.");
 }
 
@@ -2882,7 +3492,7 @@ function retireCmd() {
     console.error(`Fix the cause and re-run \`oats retire ${r.retired}\`; the home holds the state that cleanup needs.`);
     process.exit(1);
   }
-  console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}${r.harvested?.length ? `, harvested: ${r.harvested.join(", ")}` : ""}`);
+  console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}`);
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
@@ -3268,7 +3878,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload"], features: ["retire-home", "session-start", "schedule", "session-upload"], scheduleApi: SCHEDULE_API }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3403,7 +4013,11 @@ function serverRouteCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
-  if (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir="))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  // The operations contract addresses an exact member context on the host,
+  // so its explicit --dir travels; every other routed command takes its
+  // scope from the registration.
+  const explicitScopeOk = ["inspect", "operation", "use", "soul"].includes(cmd);
+  if (!explicitScopeOk && (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir=")))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   // Interactive viewer: `oats session attach --server <id> --instance <name>`
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
@@ -3499,6 +4113,7 @@ function serverRouteCmd() {
   // local --task-file is read here and travels as --task text, since the
   // remote cannot read this machine's files.
   const rest = [];
+  let routedInput;
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
     if (a === "--server") { i++; continue; }
@@ -3528,10 +4143,23 @@ function serverRouteCmd() {
       rest.push("--wake-message", readFileSync(f, "utf8"));
       continue;
     }
+    // Soul instructions travel as BYTES on the ssh stdin (the same transport
+    // as session upload), never as a path the host cannot read nor as a
+    // command-line argument.
+    if (a === "--instructions-file") {
+      const f = args[++i];
+      if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--instructions-file needs a path");
+      let bytes; try { bytes = readFileSync(f); } catch (e) { bail("E_BAD_ARGS", `instructions file not readable: ${f}: ${e.message}`); }
+      if (bytes.includes(0)) bail("E_BAD_ARGS", "--instructions-file must be text without NUL bytes");
+      if (bytes.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", `--instructions-file is ${bytes.length} bytes; the bound is ${INSPECT_TEXT_CAP}`);
+      routedInput = bytes;
+      rest.push("--instructions-stdin");
+      continue;
+    }
     rest.push(a);
   }
   let routed;
-  try { routed = routeCommand(id, cmd, rest); }
+  try { routed = routeCommand(id, cmd, rest, routedInput === undefined ? {} : { input: routedInput }); }
   catch (e) { bail(e.code || "E_SSH", e.message); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
@@ -3589,11 +4217,14 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
+else if (cmd === "inspect") inspectCmd();
+else if (cmd === "operation") operationCmd();
+else if (cmd === "soul") await soulCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -3689,6 +4320,11 @@ Usage:
   oats session start --server <id>           start a stopped remote instance in its existing home
       --instance <name> | --home <abs>       over its saved route; the server must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
+  oats inspect|operation|use|soul --server <id>   the same commands on a registered server over its
+      ... [--dir <remote member>] [--home <abs>]  saved route (an explicit --dir travels as is; a --home
+                                            is its own context; else the registered workspace);
+                                            soul set --instructions-file streams the bytes; the
+                                            server must advertise operations (oats 0.22.15 or later)
   oats session upload --server <id>          copy a local file into a remote instance's private
       --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
@@ -3729,6 +4365,25 @@ Usage:
       [--self] [--delete-branch]            worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
                                             a detached external retirement runs
+  oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
+      [--agents-root <abs>]] [--home <abs>]   (runtime defaults, editability, instructions),
+      [--json]                              installed capabilities with health, effective
+                                            layer bindings and activation, declared
+                                            operations with availability; --home answers the
+                                            running home's captured bindings and their drift
+                                            from the current config
+  oats operation run <layer>:<name>          run an operation the effective provider of that
+      (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
+      [--arg k=v ...] [--json]              inspect ...): resolved from the home's captured
+                                            bindings or the scope's config, trust checked, the provider's
+                                            own command run in the home or scope, envelope
+                                            relayed; a view answers {documents: [...]}
+  oats soul set <name> [--dir <scope>]       change an editable soul's launch defaults and/or
+      [--agents-root <abs>] [--runtime r]    instructions in place (soul.yaml lines replaced,
+      [--model m | --no-model]              everything else kept; AGENTS.md replaced from
+      [--yolo | --no-yolo] [--backend b]     --instructions-file); packaged souls are refused;
+      [--description d | --no-description]  the receipt carries before/after and sha256s
+      [--instructions-file <path>] [--json]
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
