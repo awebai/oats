@@ -69,6 +69,16 @@ test("inspect, use, soul set and operation run route to a registered server over
   // operation run on the home: the provider's documents come back.
   r = oats(["operation", "run", "knowledge:inspect", "--server", "build", "--home", home, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(r.json().result.result.documents, [{ label: "Memory", kind: "text", text: "remote memory" }]); assert.equal(r.json().result.server, "build");
+  // An exact remote home or a saved instance name resolves its FROZEN route: the snapshot's target, even after the registration moved; a home/name disagreement is refused.
+  write(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "moved-host", workspace: team, oatsPath: CLI }, old: { sshHost: "old-host", workspace: team, oatsPath: oldOats } } }));
+  r = oats(["inspect", "--server", "build", "--instance", "dev-r1", "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(r.json().result.selected.home, home, "--instance resolved to the saved route's home"); assert.deepEqual(r.json().result.route, { home, instance: "dev-r1", frozen: true });
+  const lastHost = sent().split("\n--\n").filter((b) => b.includes("inspect --home")).at(-1);
+  assert.ok(lastHost.includes("build-host") && !lastHost.includes("moved-host"), `frozen route target used: ${lastHost}`);
+  r = oats(["inspect", "--server", "build", "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.ok(sent().split("\n--\n").filter((b) => b.includes(`inspect --dir ${team}`)).at(-1).includes("moved-host"), "a scope request uses the registration");
+  assert.equal(oats(["inspect", "--server", "build", "--instance", "dev-r1", "--home", join(team, "elsewhere"), "--json"]).json().error.code, "E_HOME_MISMATCH");
+  write(join(env.OATS_HOME_DIR, "servers.json"), JSON.stringify({ servers: { build: { sshHost: "build-host", workspace: team, oatsPath: CLI }, old: { sshHost: "old-host", workspace: team, oatsPath: oldOats } } }));
   // An old remote is refused before anything is sent.
   const before = sent();
   r = oats(["inspect", "--server", "old", "--json"]); assert.equal(r.json().error.code, "E_REMOTE_INCOMPATIBLE"); assert.match(r.json().error.message, /operations contract/);
