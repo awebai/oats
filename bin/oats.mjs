@@ -42,7 +42,7 @@ import {
 } from "../lib/packages.mjs";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
-import { scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
@@ -347,7 +347,7 @@ function readTextCapped(file) {
     return { file, text: truncated ? text.slice(0, INSPECT_TEXT_CAP) : text, sha256: createHash("sha256").update(text).digest("hex"), truncated };
   } catch { return { file, text: null, sha256: null, truncated: false }; }
 }
-const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "work", "type", "description"];
+const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description"];
 function soulEntry(soul, root, { capability } = {}) {
   const dir = soul._dir || soul.soulDir;
   const soulDir = capability ? soul.soulDir : join(dir, "soul");
@@ -510,6 +510,136 @@ function inspectCmd() {
   for (const l of LAYERS) console.log(`  layer ${l}: ${layers[l].id || (layers[l].disabled ? "disabled" : "none")}${layers[l].provenance ? `  (${layers[l].provenance})` : ""}`);
   for (const c of capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.health.status}${c.activation.enabled ? ` active:${c.activation.target}` : " inactive"}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
   for (const p of result.problems) console.log(`  ! ${p.code}: ${p.message}`);
+}
+
+// ---------- operation run: generic invoke through the capability engine ----------
+/** `oats operation run <layer>:<name>`: resolve the provider that fills
+ *  <layer> for a running home (its snapshot) or for a soul in a scope (the
+ *  config), require the operation to be declared and the executable surface
+ *  trusted, then run the provider's own command exactly as `oats <ns> <cmd>`
+ *  would, in the home (context home) or the scope (context scope), and relay
+ *  its envelope. A view operation must answer { documents: [...] }. No
+ *  provider name appears here. */
+const OPERATION_ADDRESS_RE = /^(knowledge|messaging|tasks):([a-z][a-z0-9-]*)$/;
+const OPERATION_TIMEOUT_MS = 10 * 60 * 1000;
+function operationCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]) [--arg k=v ...] [--json]");
+  const address = args[2];
+  const m0 = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
+  if (!m0) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
+  const [, layer, opName] = m0;
+  const homeFlag = flag("home");
+  if (homeFlag === true) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+  const home = homeFlag ? resolve(homeFlag) : undefined;
+  let meta;
+  if (home) {
+    if (!isAbsolute(homeFlag)) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const metaFile = join(home, "instance.json");
+    if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
+    try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (e) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${e.message}`); }
+  }
+  // The home is the identity: an explicit --dir must be the context the home
+  // was composed from, never a different scope's config applied to it.
+  let ctx;
+  if (meta) {
+    const recorded = meta.repo && existsSync(meta.repo) ? resolve(meta.repo) : undefined;
+    const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+    if (flag("dir") !== undefined) { ctx = dirFlag(); if (recorded && real(ctx) !== real(recorded)) bail("E_HOME_MISMATCH", `--dir ${ctx} is not the context of ${home} (${recorded}); omit --dir for a home`); }
+    else ctx = recorded || dirFlag();
+  } else ctx = dirFlag();
+  const soulFlag = flag("soul");
+  if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
+  if (meta && soulFlag && soulFlag !== meta.agent) bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${home} (${meta.agent})`);
+  const soulName = soulFlag || meta?.agent || undefined;
+  if (!meta && soulName) {
+    const root = findRoot(ctx);
+    if (!root || !(findAgent(root, soulName) || (() => { try { return findCapabilityAgent(ctx, root, soulName); } catch { return undefined; } })())) bail("E_SOUL_UNKNOWN", `no soul ${JSON.stringify(soulName)} in the scope of ${ctx}`);
+  }
+  // --arg k=v pairs, matched against the operation's declared args below.
+  const given = Object.create(null);
+  for (let i = 3; i < args.length; i++) {
+    if (args[i] !== "--arg") continue;
+    const kv = args[i + 1];
+    if (!kv || kv.startsWith("--") || !kv.includes("=")) bail("E_BAD_ARGS", "--arg expects name=value");
+    const eq = kv.indexOf("=");
+    given[kv.slice(0, eq)] = kv.slice(eq + 1);
+    i++;
+  }
+  // Provider resolution: the snapshot's active capabilities for a home, the
+  // config for a soul/scope.
+  const mans = capabilityManifests(ctx);
+  let provider, settings, team, disabled = null;
+  if (meta) {
+    const ids = (meta.capabilities || []).map((c) => c.id);
+    const id = ids.find((cid) => mans[cid]?.layer === layer);
+    provider = id ? mans[id] : undefined;
+    settings = (meta.capabilities || []).find((c) => c.id === id)?.settings || {};
+    team = meta.team || (() => { try { return resolveOatsConfig(ctx).team; } catch { return undefined; } })();
+    if (!provider) { const rec = meta.layers?.[layer]; disabled = typeof rec === "string" && rec.startsWith("none") ? rec : null; }
+  } else {
+    let r;
+    try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    provider = r.layers[layer] ? mans[r.layers[layer].id] : undefined;
+    settings = r.layers[layer]?.settings || {};
+    team = r.team;
+    if (!provider && r.layerDisabled?.[layer]) disabled = `none @ ${r.layerDisabled[layer].level}`;
+  }
+  if (!provider) bail("E_OPERATION_UNAVAILABLE", disabled ? `layer ${layer} is explicitly disabled (${disabled}); no provider can run ${address}` : `no ${layer} provider is active for ${meta ? home : soulName ? `soul ${soulName} in ${ctx}` : ctx}`);
+  const op = manifestOperations(provider).find((o) => o.name === opName);
+  if (!op) bail("E_OPERATION_UNKNOWN", `${provider.capability} declares no operation ${JSON.stringify(opName)} (declared: ${manifestOperations(provider).map((o) => o.name).join(", ") || "none"})`);
+  const trust = capabilityTrust(provider, ctx);
+  if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${provider.capability} executable surface is blocked: ${trust.reason || "not trusted"} (oats trust ${provider.capability})`);
+  if (op.context === "home" && !meta) bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
+  const declared = new Map(op.args.map((a) => [a.name, a]));
+  for (const name of Object.keys(given)) if (!declared.has(name)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(name)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
+  for (const a of op.args) if (a.required && given[a.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${a.name}=<value>: ${a.description || "required"}`);
+  const argFlags = op.args.flatMap((a) => (given[a.name] === undefined ? [] : [a.flag, given[a.name]]));
+  const spec = provider.commands[op.command];
+  if (typeof spec !== "string" || !spec.trim()) bail("E_CAPABILITY_BROKEN", `${provider.capability}: command ${op.command} is not a non-empty string`);
+  const [script, ...rest] = spec.trim().split(/\s+/);
+  let abs;
+  try { abs = capabilityExecutablePath(provider, script); } catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
+  if (!abs) bail("E_CAPABILITY_BROKEN", `${provider.capability} ${op.command}: script not found (${join(provider._dir, script)})`);
+  const cwd = op.context === "home" ? home : ctx;
+  const env = {
+    ...process.env, OATS_CAPABILITY: provider.capability, OATS_SETTINGS: JSON.stringify(settings || {}), OATS_CLI_BIN: CLI_BIN,
+    OATS_TEAM_NAME: team?.name || "", OATS_TEAM_ID: team?.id || "", OATS_TEAM_SCOPE: team?.scope || "",
+    OATS_OPERATION: address,
+  };
+  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home, OATS_AGENT: meta.agent, PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home });
+  else for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
+  const stderr = String(r.stderr || "").trim();
+  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && r.signal === "SIGTERM");
+  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
+  const envelope = parseEnvelopeText(String(r.stdout || ""));
+  const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
+  if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`);
+  if (!envelope || typeof envelope !== "object" || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered no envelope (exit ${r.status})${stderr ? `: ${stderr.slice(0, 400)}` : ""}`);
+  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`);
+  const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
+  if (op.kind === "view") {
+    const docs = result.documents;
+    const bad = !Array.isArray(docs) || docs.some((d) => !d || typeof d !== "object" || typeof d.label !== "string" || !d.label
+      || (d.kind !== undefined && !["markdown", "text"].includes(d.kind))
+      || (d.path !== undefined && d.path !== null && (typeof d.path !== "string" || !isAbsolute(d.path)))
+      || (d.text !== undefined && d.text !== null && typeof d.text !== "string"));
+    if (bad) bail("E_OPERATION_RESULT", `${address} is a view operation but ${provider.capability} ${op.command} did not answer { documents: [{label, kind?, path?, text?}] }`);
+  }
+  // A launch receipt in the delegated result (a harvester the provider
+  // spawned) is surfaced as top-level instance/home so the scheduler tracks
+  // it exactly as it tracks a command job's launch; the source home itself
+  // is `target`, never a launch.
+  const receipt = {};
+  if (typeof result.instance === "string" && result.instance !== meta?.instance) receipt.instance = result.instance;
+  if (typeof result.home === "string" && result.home !== home) receipt.home = result.home;
+  const out = { ...base, ...receipt, result, ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
+  if (JSON_MODE) { jsonOk(out); return; }
+  console.log(`${address} via ${provider.capability}@${provider.version || "?"} (${provider.command} ${op.command}) in ${shortPath(cwd)}: ok`);
+  if (op.kind === "view") for (const d of result.documents) console.log(`  - ${d.label}${d.path ? ` (${shortPath(d.path)})` : ""}${d.text ? `: ${String(d.text).split("\n")[0].slice(0, 100)}` : ""}`);
+  else console.log(JSON.stringify(result, null, 2));
+  if (stderr) console.error(stderr);
 }
 
 function doctorJson(dir) {
@@ -3770,12 +3900,13 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
+else if (cmd === "operation") operationCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -3917,6 +4048,12 @@ Usage:
                                             layer bindings and activation, declared
                                             operations with availability; --home adds the
                                             running home's snapshot and its drift from config
+  oats operation run <layer>:<name>          run an operation the effective provider of that
+      (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
+      [--arg k=v ...] [--json]              inspect ...): resolved from the home's snapshot or
+                                            the scope's config, trust checked, the provider's
+                                            own command run in the home or scope, envelope
+                                            relayed; a view answers {documents: [...]}
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
