@@ -56,6 +56,15 @@ and no queue.
   home is started again only at due minutes, never every minute, so a
   harness that keeps exiting is not restarted in a loop. A job holds at most
   one pending delivery: a due minute while one is pending adds nothing.
+- **operation** `{id, enabled, cron, tz, kind: "operation", operation, home}`
+  — runs a provider operation such as `knowledge:harvest` in the instance at
+  `home` through `oats operation run <layer>:<name> --home <home>`. The
+  provider is whatever fills that layer for the home when the job runs (its
+  snapshot), not something stored in the job, so the job stays valid across
+  provider changes and a GUI can list and edit it without parsing argv.
+  Admission, tracking and reconciliation are those of a command job: a
+  launch receipt the provider answers (a harvester it spawned) is followed
+  until that home is gone; the source home is never treated as a launch.
   Unobservable or still starting: skipped with the reason, delivery kept
   pending. Whether a running harness is busy cannot be seen from the
   terminal: delivery is terminal input (bracketed paste plus Enter), never an

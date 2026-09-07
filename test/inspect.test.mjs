@@ -62,7 +62,7 @@ test("inspect answers souls with editability, capabilities with health separate 
   assert.deepEqual(names, ["dev:persistent", "helper:capability", "scratch:local"]);
   const dev = res.souls.find((s) => s.name === "dev");
   assert.equal(dev.runtime, "claude"); assert.equal(dev.model, "opus"); assert.equal(dev.yolo, true); assert.equal(dev.work, "worktree");
-  assert.deepEqual(dev.editable.fields, ["runtime", "model", "yolo", "backend", "work", "type", "description"]); assert.equal(dev.editable.instructions, true);
+  assert.deepEqual(dev.editable.fields, ["runtime", "model", "yolo", "backend", "description"]); assert.equal(dev.editable.instructions, true);
   assert.equal(dev.agentsRoot, join(repo, "agents")); assert.deepEqual(dev.instances, ["dev-one"]); assert.equal(dev.instructions, undefined, "instructions travel only for the selected soul");
   const helper = res.souls.find((s) => s.name === "helper");
   assert.equal(helper.capability, "test.tools"); assert.deepEqual(helper.editable.fields, []); assert.equal(helper.editable.instructions, false); assert.match(helper.editable.reason, /packaged soul/);
