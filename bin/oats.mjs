@@ -364,8 +364,11 @@ const realOrResolved = (p) => { try { return realpathSync(p); } catch { return r
 /** Every soul of a scope: persistent and local souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
  *  operation run, so both address souls the same way. */
-function scopeSouls(ctx, r) {
-  const roots = (r.team ? teamAgentRoots(r.team.scope) : [findRoot(ctx)]).filter(Boolean).map((p) => resolve(p));
+function scopeSouls(ctx, r, { extraRoots = [] } = {}) {
+  // A home's own agents root is always in scope for that home: its recorded
+  // work repository may be another repository entirely (repo overrides), and
+  // the config context resolves there while the soul lives with its owner.
+  const roots = [...new Set([...(r.team ? teamAgentRoots(r.team.scope) : [findRoot(ctx)]), ...extraRoots].filter(Boolean).map((p) => realOrResolved(resolve(p))))];
   const souls = [];
   for (const root of roots) {
     for (const a of listInstances(root)) {
@@ -460,7 +463,7 @@ function inspectCmd() {
   let r;
   try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
   const chain = configChain(ctx);
-  const enumerated = scopeSouls(ctx, r);
+  const enumerated = scopeSouls(ctx, r, { extraRoots: meta ? [agentsRootOfHome(realOrResolved(home))] : [] });
   const roots = enumerated.roots;
   let souls = enumerated.souls;
   const packagedDiagnostics = enumerated.diagnostics;
@@ -640,7 +643,7 @@ function operationCmd() {
   if (soulName) {
     let rSel;
     try { rSel = resolveOatsConfig(ctx, meta ? undefined : soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-    try { selectedSoul = selectSoul(scopeSouls(ctx, rSel).souls, soulName, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    try { selectedSoul = selectSoul(scopeSouls(ctx, rSel, { extraRoots: meta ? [agentsRootOfHome(realOrResolved(home))] : [] }).souls, soulName, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
   }
   // --arg k=v pairs, matched against the operation's declared args below.
   const given = Object.create(null);
