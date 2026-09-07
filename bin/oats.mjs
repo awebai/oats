@@ -83,7 +83,7 @@ const JSON_MODE = args.includes("--json");
 // Canonical absolute path of this CLI executable — the versioned OATS_CLI_BIN
 // env contract for dispatched package commands (never resolved via PATH).
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
-const jsonFail = (code, message) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message) } })); process.exit(1); };
+const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
 
 /** Level of a directory: laptop (home), repo (.git), else workspace. */
@@ -529,6 +529,7 @@ function inspectCmd() {
   const capabilities = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)).map((entry) => {
     const active = effectiveActive(entry.id);
     const m = mans[entry.id];
+    const missingRequires = (() => { try { return capabilityMissingRequires(entry.id, ctx).map((x) => ({ command: x.command, why: x.why || null, install: x.install || null })); } catch { return []; } })();
     const disabledLayer = entry.layer && (meta ? (effectiveLayers[entry.layer]?.disabled ? { level: null } : null) : r.layerDisabled?.[entry.layer]);
     const declared = declaredAt(entry.id);
     const activation = active
@@ -539,10 +540,11 @@ function inspectCmd() {
       if (!active) reason = disabledLayer ? `layer ${entry.layer} is disabled${disabledLayer.level ? ` at ${disabledLayer.level}` : " for this home"}` : `${entry.id} is not activated for ${meta ? `home ${basename(home)}` : soulName ? `soul ${soulName}` : "this scope"}`;
       else if (!entry.health.trusted) reason = `${entry.id} executable surface is not trusted (oats trust ${entry.id})`;
       else if (entry.health.status !== "ok") reason = entry.health.detail || entry.health.status;
+      else if (missingRequires.length) reason = `${entry.id} requires ${missingRequires.map((x) => `"${x.command}" on PATH${x.why ? ` (${x.why})` : ""}`).join(", ")}`;
       else if (op.context === "home" && !home) reason = "needs a running home (--home)";
       return { ...op, argv: [entry.command, op.command], available: !reason, reason };
     });
-    return { ...entry, activation, operations };
+    return { ...entry, missingRequires, activation, operations };
   });
   const layers = effectiveLayers;
   // For a home, the CURRENT config beside the captured bindings, so a GUI can
@@ -601,7 +603,7 @@ const OPERATION_ADDRESS_RE = /^(knowledge|messaging|tasks):([a-z][a-z0-9-]*)$/;
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = 4 * 60 * 1000;
 function operationCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
   if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]) [--arg k=v ...] [--json]");
   const address = args[2];
@@ -679,6 +681,8 @@ function operationCmd() {
   if (!op) bail("E_OPERATION_UNKNOWN", `${provider.capability} declares no operation ${JSON.stringify(opName)} (declared: ${manifestOperations(provider).map((o) => o.name).join(", ") || "none"})`);
   const trust = capabilityTrust(provider, ctx);
   if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${provider.capability} executable surface is blocked: ${trust.reason || "not trusted"} (oats trust ${provider.capability})`);
+  const missingReq = capabilityMissingRequires(provider.capability, ctx);
+  if (missingReq.length) bail("E_CAPABILITY_REQUIRES", `${provider.capability} requires ${missingReq.map((m) => `"${m.command}" on PATH${m.why ? ` (${m.why})` : ""}${m.install ? ` [install: ${m.install}]` : ""}`).join(", ")}; ${address} was not run`);
   if (op.context === "home" && !meta) bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
   const declared = new Map(op.args.map((a) => [a.name, a]));
   for (const name of Object.keys(given)) if (!declared.has(name)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(name)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
@@ -712,15 +716,20 @@ function operationCmd() {
   const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && r.signal === "SIGTERM");
   if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
   const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
-  if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`);
+  // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
+  // by the exit status) carry what WAS observed in error.details, so a
+  // scheduler can keep the slot as unknown and reconcile by any name the
+  // provider managed to answer; they are never confirmed failures.
+  const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) });
+  if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
   // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
   // that agrees with it: contaminated output or a success envelope from a
   // process that then failed is not a receipt.
   let envelope;
   try { envelope = JSON.parse(String(r.stdout || "").trim()); } catch { envelope = undefined; }
-  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status})${stderr ? `: ${stderr.slice(0, 400)}` : ""}`);
-  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`);
-  if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted${stderr ? `: ${stderr.slice(0, 400)}` : ""}`);
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status}); its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(parseEnvelopeText(String(r.stdout || ""))));
+  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, envelope.error?.details);
+  if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted and its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(envelope));
   const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
   if (op.kind === "view") {
     const docs = result.documents;
