@@ -165,6 +165,9 @@ test("a home whose recorded work repository is another repository still selects 
   assert.equal(res.selected.soul, "dev"); assert.equal(res.selected.agentsRoot, join(owner, "agents")); assert.equal(res.scope.context, code, "config resolves at the recorded work repository");
   assert.equal(res.souls[0].description, "owner's dev"); assert.ok(res.scope.agentsRoots.includes(join(owner, "agents")));
   assert.equal(oats(["operation", "run", "knowledge:anything", "--home", home, "--json"]).json().error.code, "E_OPERATION_UNAVAILABLE", "the soul is found; the layer is simply disabled");
+  // The owner workspace is accepted as a --dir alias but never becomes the context: the recorded repository always is.
+  const alias = oats(["inspect", "--home", home, "--dir", owner, "--json"]).json().result;
+  assert.equal(alias.scope.context, code, "recorded repository stays the context under an owner --dir alias"); assert.equal(alias.selected.agentsRoot, join(owner, "agents"));
   assert.equal(oats(["inspect", "--dir", code, "--soul", "dev", "--json"]).json().error.code, "E_SOUL_UNKNOWN", "a non-home selector still refuses a soul that is not in its scope");
 });
 

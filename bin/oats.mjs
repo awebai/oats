@@ -461,11 +461,13 @@ function inspectCmd() {
   const real = realOrResolved;
   let ctx;
   if (meta) {
-    // The home is the identity: an explicit --dir must be one of its own
-    // contexts (recorded repository, or the workspace of its agents root).
+    // The home is the identity and its recorded repository is ALWAYS its
+    // context (that is what composed it); an explicit --dir is accepted only
+    // as an alias naming that repository or the workspace of the home's
+    // agents root, and never replaces the context.
     const contexts = homeContexts(home, meta);
-    if (flag("dir") !== undefined) { ctx = dirFlag(); if (!contexts.some((c) => real(c) === real(ctx))) bail("E_HOME_MISMATCH", `--dir ${ctx} is not the context of ${home} (${contexts.join(" or ")}); omit --dir for a home`); }
-    else ctx = contexts[0];
+    if (flag("dir") !== undefined) { const given = dirFlag(); if (!contexts.some((c) => real(c) === real(given))) bail("E_HOME_MISMATCH", `--dir ${given} is not the context of ${home} (${contexts.join(" or ")}); omit --dir for a home`); }
+    ctx = contexts[0];
   } else ctx = dirFlag();
   const soulFlag = flag("soul");
   if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
@@ -658,9 +660,11 @@ function operationCmd() {
   // contexts, never a different scope's config applied to it.
   let ctx;
   if (meta) {
+    // The recorded repository is always a home's context; --dir is only an
+    // alias to validate (the repository or the workspace of the home's root).
     const contexts = homeContexts(home, meta);
-    if (flag("dir") !== undefined) { ctx = dirFlag(); if (!contexts.some((c) => realOrResolved(c) === realOrResolved(ctx))) bail("E_HOME_MISMATCH", `--dir ${ctx} is not the context of ${home} (${contexts.join(" or ")}); omit --dir for a home`); }
-    else ctx = contexts[0];
+    if (flag("dir") !== undefined) { const given = dirFlag(); if (!contexts.some((c) => realOrResolved(c) === realOrResolved(given))) bail("E_HOME_MISMATCH", `--dir ${given} is not the context of ${home} (${contexts.join(" or ")}); omit --dir for a home`); }
+    ctx = contexts[0];
   } else ctx = dirFlag();
   const soulFlag = flag("soul");
   if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
