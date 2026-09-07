@@ -19,6 +19,14 @@ export function wakeScheduleFields(doc) {
   q(".fwake-cron").addEventListener("input", () => { q(".fwake-repeat").value = "custom"; });
   return {
     el,
+    set(value) {
+      q(".fwake-enabled").checked = !!value;
+      q(".fwake-options").hidden = !value;
+      q(".fwake-cron").value = value?.cron || "*/15 * * * *";
+      q(".fwake-tz").value = value?.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      q(".fwake-message").value = value?.message || "";
+      q(".fwake-repeat").value = [...q(".fwake-repeat").options].some(o => o.value === q(".fwake-cron").value) ? q(".fwake-cron").value : "custom";
+    },
     read() {
       if (!q(".fwake-enabled").checked) return undefined;
       const message = q(".fwake-message").value;

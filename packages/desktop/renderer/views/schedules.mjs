@@ -1,4 +1,5 @@
 import { apiJson, postJson, ensureTheme, onWorkspaceChange, workspaceGeneration, wsQuery } from "./common.mjs";
+import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
 
 let mounted;
 let preselection;
@@ -29,6 +30,7 @@ const CSS = `
 .schedule-form label { display:grid; gap:5px; }
 .schedule-form .schedule-check { display:flex; align-items:center; gap:8px; }
 .schedule-form .schedule-pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.schedule-form fieldset { border:1px solid var(--border); border-radius:8px; margin:12px 0 0; padding:12px; }
 .schedule-form textarea { resize:vertical; min-height:90px; }
 .schedule-form .schedule-hint { color:var(--muted); font-size:12px; margin:0; }
 @media(max-width:650px) { .schedule-form .schedule-pair { grid-template-columns:1fr; } }
@@ -51,6 +53,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
       <label class="schedule-home-field">Agent home<select class="field" name="home"></select></label>
       <label class="schedule-task-field"><span class="schedule-task-label">Wake message</span><textarea class="field" name="task" placeholder="What should the agent do each time?"></textarea></label>
       <div class="schedule-spawn-options">
+        <label>Purpose (optional instance name prefix)<input class="field" name="purpose"></label>
         <div class="schedule-pair">
           <label>Runtime<select class="field" name="runtime"><option value="">Soul default</option><option>pi</option><option>claude</option><option>codex</option></select></label>
           <label>Model<input class="field" name="model" placeholder="Soul default"></label>
@@ -72,6 +75,8 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     </form><div class="schedule-list"></div></section>`;
   const q = selector => el.querySelector(selector);
   const form = q("form"), field = name => form.elements.namedItem(name);
+  const nestedWake = wakeScheduleFields(doc);
+  q(".schedule-spawn-options").append(nestedWake.el);
   let alive = true, request = 0, busy = false, available = false, editing = null;
   let schedules = [], agents = [], instances = [];
   const button = (label, action, disabled = false) => {
@@ -109,6 +114,8 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     if (job?.agent || soul) field("agent").value = JSON.stringify([job?.agent || soul.name, job?.repo || soul?.repo || null, job?.agentsRoot || soul?.agentsRoot]);
     if (job?.home || job?.cwd) field("home").value = job.home || job.cwd;
     field("task").value = job?.message || job?.task || "";
+    field("purpose").value = job?.purpose || "";
+    nestedWake.set(job?.wake);
     for (const name of ["runtime", "model", "backend"]) field(name).value = job?.[name] || "";
     field("yolo").value = job?.yolo === undefined ? "" : String(job.yolo);
     syncKind(); form.hidden = false; field(editing ? "cron" : "id").focus();
@@ -198,6 +205,9 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     const spec = { kind, cron: field("cron").value.trim(), tz: field("tz").value.trim(), enabled: field("enabled").checked };
     if (kind === "spawn") {
       const [agent, repo, agentsRoot] = JSON.parse(field("agent").value || "[]"); Object.assign(spec, { agent, repo, agentsRoot, task: field("task").value });
+      if (field("purpose").value.trim()) spec.purpose = field("purpose").value.trim();
+      try { const wake = nestedWake.read(); if (wake) spec.wake = wake; }
+      catch (e) { q(".schedule-form-error").textContent = e.message; return; }
       for (const name of ["runtime", "model", "backend"]) if (field(name).value) spec[name] = field(name).value;
       if (field("yolo").value) spec.yolo = field("yolo").value === "true";
     } else {

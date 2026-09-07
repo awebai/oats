@@ -103,6 +103,24 @@ test("wake form saves exact home/message and polling preserves unsaved input", a
   } finally { s.cleanup(); }
 });
 
+test("editing only a spawn cron preserves its purpose and recurring wake through the server boundary", async () => {
+  const wake = { cron: "*/10 * * * *", tz: "UTC", message: "Check pending work" };
+  const original = { id: "review", kind: "spawn", enabled: true, cron: "0 3 * * *", tz: "UTC", agent: "reviewer", agentsRoot: "/team/src/agents", repo: "src", task: "Review work", purpose: "sweep", wake };
+  let saved;
+  const s = setup({ read: async () => ({ schedules: [original], scheduler: { installed: true, active: true, registered: true } }), mutate: async (path, body) => {
+    return scheduleRequest(body, { workspace, cli, agents: [{ name: "reviewer", agentsRoot: "/team/src/agents", repo: "src", work: "worktree" }], invoke: async (bin, args) => {
+      saved = args.spec; return { ok: true, result: { schedule: { ...args.spec, id: "review" } } };
+    } });
+  } });
+  try {
+    await tick(); [...s.el.querySelectorAll(".schedule-card button")].find(b => b.textContent === "Edit").click();
+    const form = s.el.querySelector("form"); form.elements.cron.value = "0 4 * * *";
+    form.dispatchEvent(new s.dom.window.Event("submit", { cancelable: true })); await tick();
+    assert.equal(saved.cron, "0 4 * * *"); assert.equal(saved.purpose, "sweep"); assert.deepEqual(saved.wake, wake);
+    assert.equal(saved.agentsRoot, original.agentsRoot);
+  } finally { s.cleanup(); }
+});
+
 test("double submit dispatches once; late result from prior workspace cannot erase the next draft", async () => {
   let finish; const s = setup({ mutate: () => new Promise(resolve => { finish = resolve; }) });
   try {
