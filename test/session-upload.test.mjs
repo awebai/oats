@@ -116,6 +116,15 @@ test("corrections: simultaneous same-name receives never clobber, a planted syml
   assert.notEqual(pa, pb, "two files");
   assert.ok([pa, pb].every((p) => /Screenshot(-2)?\.png$/.test(p)));
   assert.deepEqual(readFileSync(pa), a); assert.deepEqual(readFileSync(pb), b);
+  // First uploads into a home with NO attachments directory yet, in parallel: both succeed, one directory.
+  const fresh = home();
+  assert.equal(existsSync(join(fresh, ".oats-attachments")), false);
+  const first = (input) => new Promise((res) => { const p = spawn(process.execPath, [CLI, "session", "receive", "--home", fresh, "--name", "first.png", "--json"], { env: cleanEnv() }); let out = ""; p.stdout.on("data", (d) => { out += d; }); p.on("close", (code) => res({ code, out })); p.stdin.end(input); });
+  const firsts = await Promise.all([first(a), first(b), first(payload)]);
+  for (const f of firsts) assert.equal(f.code, 0, f.out);
+  const firstPaths = firsts.map((f) => JSON.parse(f.out).result.path);
+  assert.equal(new Set(firstPaths).size, 3, "three distinct files from three simultaneous first uploads");
+  assert.equal(statSync(join(fresh, ".oats-attachments")).mode & 0o777, 0o700);
   // A symlink planted under the next candidate name is skipped, never followed; the outside target is untouched.
   const outside = join(base, "outside.txt"); writeFileSync(outside, "keep");
   symlinkSync(outside, join(h, ".oats-attachments", "Screenshot-3.png"));
