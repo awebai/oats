@@ -989,19 +989,40 @@ function readCapabilitiesModel(file) {
 // ---------- use / activation ----------
 function use() {
   const requested = args[1];
-  if (!requested || requested.startsWith("--")) die("usage: oats use <capability|none> [--global|--type <agent-type>|--soul <name>] [--disable] [--layer <name>] [--settings k=v [k2=v2 ...]] [--dir <dir>]");
+  if (!requested || requested.startsWith("--")) cmdFail("E_USAGE", "usage: oats use <capability|none> [--global|--type <agent-type>|--soul <name>] [--disable|--inherit] [--layer <name>] [--settings k=v [k2=v2 ...]] [--dir <dir>] [--json]");
   const dir = dirFlag();
   const level = levelOf(dir);
   const file = join(dir, "oats-config.yaml");
   const layer = flag("layer");
-  if (layer && !LAYERS.includes(layer)) die(`--layer must be one of: ${LAYERS.join(", ")}`);
+  if (layer && !LAYERS.includes(layer)) cmdFail("E_BAD_ARGS", `--layer must be one of: ${LAYERS.join(", ")}`);
+  const inherit = args.includes("--inherit");
+  if (inherit && args.includes("--disable")) cmdFail("E_BAD_ARGS", "choose --inherit (remove this level's binding) or --disable (explicit exclusion), not both");
   let text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
   const caps = readCapabilitiesModel(file);
+  // The receipt names what this level said before and after, and what is
+  // effective afterwards, so a GUI never has to re-read the file to know.
+  const effectiveAfter = (soulName, layerName, capId) => {
+    try {
+      const r = resolveOatsConfig(dir, soulName);
+      if (layerName) return { layer: layerName, id: r.layers[layerName]?.id || null, provenance: r.provenance[layerName] || null, disabled: !!r.layerDisabled?.[layerName] };
+      const c = r.capabilities.find((x) => x.id === capId);
+      return { capability: capId, enabled: !!c, provenance: c?.provenance || [], settings: c?.settings || {} };
+    } catch (e) { return { error: e.message }; }
+  };
+  const answer = (receipt, line) => { if (JSON_MODE) jsonOk(receipt); else console.log(line); };
   if (requested === "none") {
-    if (!layer) die("oats use none requires --layer <name>");
+    if (!layer) cmdFail("E_BAD_ARGS", "oats use none requires --layer <name>");
+    const before = caps.layers[layer] === "none" ? "none" : caps.layers[layer] ? caps.layers[layer].capability : null;
+    if (inherit) {
+      if (caps.layers[layer] !== "none") cmdFail("E_NOT_BOUND", `layer ${layer} is not explicitly none at ${level} level (${shortPath(file)}); nothing to inherit from`);
+      delete caps.layers[layer];
+      writeFileSync(file, replaceCapabilitiesBlock(text, caps));
+      answer({ capability: null, action: "inherit", target: "layer", layer, level, file, before: { layer: before }, after: { layer: null, effective: effectiveAfter(undefined, layer) } }, `Layer ${layer} at ${level} level now inherits (${shortPath(file)})`);
+      return;
+    }
     caps.layers[layer] = "none";
     writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-    console.log(`Disabled fundamental layer ${layer} at ${level} level (${shortPath(file)})`);
+    answer({ capability: null, action: "layer-none", target: "layer", layer, level, file, before: { layer: before }, after: { layer: "none", effective: effectiveAfter(undefined, layer) } }, `Disabled fundamental layer ${layer} at ${level} level (${shortPath(file)})`);
     return;
   }
   const manifest = capabilityManifest(requested, dir);
@@ -1022,14 +1043,40 @@ function use() {
       cmdFail("E_NO_CONFIG", `capability "${requested}" is present in the capability store at ${shellQuote(dir)}, but there is no oats-config.yaml at this scope or any level above it — \`oats use\` activates into a config file and this scope has none. Create the minimal one with \`oats init --raw --dir ${shellQuote(dir)}\`, then re-run \`oats use ${requested}\`.`);
       return;
     }
-    die(`unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
+    cmdFail("E_UNKNOWN_CAPABILITY", `unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
   }
-  if (layer && manifest.layer !== layer) die(`capability "${manifest.capability}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
+  if (layer && manifest.layer !== layer) cmdFail("E_LAYER_MISMATCH", `capability "${manifest.capability}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
   const targets = [["agent-types", flag("type")], ["souls", flag("soul")]].filter(([, value]) => value);
   if (args.includes("--global")) targets.push(["global", undefined]);
-  if (targets.length > 1) die("choose exactly one of --global, --type, or --soul");
+  if (targets.length > 1) cmdFail("E_BAD_ARGS", "choose exactly one of --global, --type, or --soul");
   const [targetKind, targetName] = targets[0] || ["global", undefined];
+  const targetLabel = targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"}:${targetName}`;
+  const soulForEffective = targetKind === "souls" ? targetName : undefined;
   const enabled = !args.includes("--disable");
+  const bindingOf = (e) => (!e ? undefined : targetKind === "global" ? e.global : e[targetKind]?.[targetName]);
+  const stateOf = (e) => ({ bound: bindingOf(e) !== undefined, enabled: bindingOf(e) === undefined ? null : (typeof bindingOf(e) === "object" ? bindingOf(e).enabled !== false : !!bindingOf(e)), settings: e?.settings && typeof e.settings === "object" ? { ...e.settings } : {} });
+  // --inherit removes THIS level's binding for the addressed target (and the
+  // whole entry once no target is left), so outer scopes and targets apply
+  // again. Distinct from --disable, which writes an explicit exclusion.
+  if (inherit) {
+    const existing = manifest.layer ? caps.layers[manifest.layer] : caps.additive[manifest.capability];
+    const entry0 = existing && existing !== "none" && (!manifest.layer || existing.capability === manifest.capability) ? existing : undefined;
+    const before = stateOf(entry0);
+    if (!entry0 || !before.bound) cmdFail("E_NOT_BOUND", `${manifest.capability} has no ${targetLabel} binding at ${level} level (${shortPath(file)}); nothing to inherit from`);
+    if (targetKind === "global") delete entry0.global;
+    else { delete entry0[targetKind][targetName]; if (!Object.keys(entry0[targetKind]).length) delete entry0[targetKind]; }
+    // A layer entry whose first binding was targeted carries the explicit
+    // `global: false` this command materialized to scope it (see below).
+    // Once no target is left, that exclusion has nothing left to scope and
+    // would exclude everyone at this level: it goes with the entry.
+    if (manifest.layer && entry0.global === false && !entry0["agent-types"] && !entry0.souls) delete entry0.global;
+    const targetsLeft = entry0.global !== undefined || entry0["agent-types"] || entry0.souls;
+    if (!targetsLeft) { if (manifest.layer) delete caps.layers[manifest.layer]; else delete caps.additive[manifest.capability]; }
+    writeFileSync(file, replaceCapabilitiesBlock(text, caps));
+    answer({ capability: manifest.capability, action: "inherit", target: targetLabel, layer: manifest.layer || null, level, file, entryRemoved: !targetsLeft, before, after: { bound: false, enabled: null, settings: targetsLeft ? before.settings : {}, effective: effectiveAfter(soulForEffective, manifest.layer, manifest.capability) } },
+      `${manifest.capability} ${targetLabel} binding removed at ${level} level${targetsLeft ? "" : " (entry removed)"}; it now inherits (${shortPath(file)})`);
+    return;
+  }
   // Locate or create the entry in the right subtree.
   let entry;
   if (manifest.layer) {
@@ -1037,13 +1084,14 @@ function use() {
     var entryExisted = !!(existing && existing !== "none" && existing.capability === manifest.capability);
     entry = entryExisted ? existing : { capability: manifest.capability };
     if (existing && existing !== "none" && existing.capability !== manifest.capability && enabled) {
-      die(`fundamental layer ${manifest.layer} already binds ${existing.capability} at this level — disable it first`);
+      cmdFail("E_LAYER_BOUND", `fundamental layer ${manifest.layer} already binds ${existing.capability} at this level — disable it first`);
     }
     caps.layers[manifest.layer] = entry;
   } else {
     entry = caps.additive[manifest.capability] || {};
     caps.additive[manifest.capability] = entry;
   }
+  const beforeState = stateOf(entryExisted || !manifest.layer ? entry : undefined);
   const from = originToFrom(manifest._origin);
   if (from && !entry.from) entry.from = from;
   const settingsArgs = [];
@@ -1051,14 +1099,14 @@ function use() {
     if (args[i] !== "--settings") continue;
     let consumed = 0;
     for (let j = i + 1; j < args.length && !args[j].startsWith("--"); j++, consumed++) settingsArgs.push(args[j]);
-    if (!consumed) die("--settings expects one or more key=value pairs");
+    if (!consumed) cmdFail("E_BAD_ARGS", "--settings expects one or more key=value pairs");
     i += consumed;
   }
   if (settingsArgs.length) {
     entry.settings = entry.settings && typeof entry.settings === "object" ? entry.settings : {};
     for (const kv of settingsArgs) {
       const eq = kv.indexOf("=");
-      if (eq <= 0) die(`--settings expects key=value, got "${kv}"`);
+      if (eq <= 0) cmdFail("E_BAD_ARGS", `--settings expects key=value, got "${kv}"`);
       // WRITE side of the refusals the readers enforce. Two distinct hazards on
       // this one line:
       //   - `--settings __proto__=x` assigned through the inherited setter,
@@ -1088,8 +1136,12 @@ function use() {
     entry[targetKind][assertSafeConfigWriteKey(targetName, `--${targetKind === "agent-types" ? "type" : "soul"} name ${JSON.stringify(String(targetName))}`)] = enabled;
   }
   writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-  console.log(`${enabled ? "Activated" : "Excluded"} ${manifest.capability} for ${targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"} ${targetName}`} at ${level} level (${shortPath(file)})`);
-  for (const miss of capabilityMissingRequires(manifest.capability, dir)) console.log(`WARNING: required command "${miss.command}" not on PATH — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
+  const afterState = stateOf(entry);
+  const missing = capabilityMissingRequires(manifest.capability, dir);
+  answer({ capability: manifest.capability, action: enabled ? "enable" : "disable", target: targetLabel, layer: manifest.layer || null, level, file, settings: entry.settings || {}, before: beforeState, after: { ...afterState, effective: effectiveAfter(soulForEffective, manifest.layer, manifest.capability) }, missingRequires: missing },
+    `${enabled ? "Activated" : "Excluded"} ${manifest.capability} for ${targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"} ${targetName}`} at ${level} level (${shortPath(file)})`);
+  if (JSON_MODE) return;
+  for (const miss of missing) console.log(`WARNING: required command "${miss.command}" not on PATH — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
   console.log("New instances receive the resolved capability; committed souls are unchanged.");
 }
 
@@ -4092,12 +4144,13 @@ Usage:
       [--agents-root <abs>]] [--home <abs>]   (runtime defaults, editability, instructions),
       [--json]                              installed capabilities with health, effective
                                             layer bindings and activation, declared
-                                            operations with availability; --home adds the
-                                            running home's snapshot and its drift from config
+                                            operations with availability; --home answers the
+                                            running home's captured bindings and their drift
+                                            from the current config
   oats operation run <layer>:<name>          run an operation the effective provider of that
       (--home <abs> | --soul <name> [--dir <d>])  layer declares (knowledge:harvest, knowledge:
-      [--arg k=v ...] [--json]              inspect ...): resolved from the home's snapshot or
-                                            the scope's config, trust checked, the provider's
+      [--arg k=v ...] [--json]              inspect ...): resolved from the home's captured
+                                            bindings or the scope's config, trust checked, the provider's
                                             own command run in the home or scope, envelope
                                             relayed; a view answers {documents: [...]}
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
