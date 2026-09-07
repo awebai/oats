@@ -17,7 +17,10 @@ function gitRepo(dir) {
   execFileSync("git", ["-C", dir, "config", "user.email", "t@example.invalid"]); execFileSync("git", ["-C", dir, "config", "user.name", "T"]);
   write(join(dir, ".gitignore"), "\n"); execFileSync("git", ["-C", dir, "add", "."]); execFileSync("git", ["-C", dir, "commit", "-qm", "init"]);
 }
-function oats(args, cwd = base) { const r = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...process.env }, cwd }); const json = () => { try { return JSON.parse(r.stdout.trim()); } catch { throw new Error(`no JSON: ${r.stdout}\n${r.stderr}`); } }; return { ...r, json }; }
+// The invoking process carries ANOTHER home's identity and context (a
+// coordinator running this for a teammate): none of it may reach the provider.
+const ambient = { OATS_INSTANCE: "other-seat", OATS_INSTANCE_HOME: "/elsewhere/other-seat", OATS_HOME: "/elsewhere/other-seat", OATS_AGENT: "other", OATS_SOUL: "/elsewhere/other/soul", OATS_CONTEXT: "/elsewhere", OATS_ROOT: "/elsewhere/agents", OATS_WORKSPACE: "/elsewhere", OATS_EVENT: "spawn", PI_AGENT_HOME: "/elsewhere/other-seat", PI_AGENTS_ROOT: "/elsewhere/agents" };
+function oats(args, cwd = base) { const r = spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", env: { ...process.env, ...ambient }, cwd }); const json = () => { try { return JSON.parse(r.stdout.trim()); } catch { throw new Error(`no JSON: ${r.stdout}\n${r.stderr}`); } }; return { ...r, json }; }
 
 /** An alternative knowledge provider whose commands record how they were
  *  invoked (cwd, env, args) and answer real envelopes. Its digest "launches"
@@ -28,13 +31,15 @@ function scope(name) {
   const notes = join(repo, ".agents", "capabilities", "owned", "notes");
   write(join(notes, "oats.json"), JSON.stringify({
     capability: "test.notes", version: "0.1.0", description: "Test knowledge provider", compatibility: { oats: ">=0.6.2" }, layer: "knowledge", command: "notes",
-    commands: { digest: "bin/notes.mjs digest", inspect: "bin/notes.mjs inspect", badview: "bin/notes.mjs badview", fail: "bin/notes.mjs fail", sweep: "bin/notes.mjs sweep" },
+    commands: { digest: "bin/notes.mjs digest", inspect: "bin/notes.mjs inspect", badview: "bin/notes.mjs badview", fail: "bin/notes.mjs fail", sweep: "bin/notes.mjs sweep", liar: "bin/notes.mjs liar", noisy: "bin/notes.mjs noisy" },
     operations: {
       harvest: { kind: "action", command: "digest", context: "home", description: "Digest MEMORY.md", args: [{ name: "depth", required: true, description: "how deep" }, { name: "dry" }] },
       inspect: { kind: "view", command: "inspect", context: "home" },
       badview: { kind: "view", command: "badview", context: "home" },
       fail: { command: "fail", context: "home" },
       sweep: { command: "sweep", context: "scope" },
+      liar: { command: "liar", context: "home" },
+      noisy: { command: "noisy", context: "home" },
     },
     settings: { tone: { description: "digest tone" } },
   }, null, 2));
@@ -42,13 +47,16 @@ function scope(name) {
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 const [cmd, ...rest] = process.argv.slice(2);
-const record = { cmd, rest, cwd: process.cwd(), env: { OATS_HOME: process.env.OATS_HOME || null, OATS_INSTANCE: process.env.OATS_INSTANCE || null, OATS_SETTINGS: process.env.OATS_SETTINGS || null, OATS_OPERATION: process.env.OATS_OPERATION || null, OATS_CAPABILITY: process.env.OATS_CAPABILITY || null, OATS_CLI_BIN: process.env.OATS_CLI_BIN || null } };
+const pick = (k) => process.env[k] === undefined ? null : process.env[k];
+const record = { cmd, rest, cwd: process.cwd(), env: Object.fromEntries(["OATS_HOME", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SETTINGS", "OATS_OPERATION", "OATS_CAPABILITY", "OATS_CLI_BIN", "OATS_AGENT", "OATS_SOUL", "OATS_CONTEXT", "OATS_ROOT", "OATS_WORKSPACE", "OATS_EVENT", "PI_AGENT_HOME", "PI_AGENTS_ROOT"].map((k) => [k, pick(k)])) };
 writeFileSync(join(process.cwd(), "notes-invocation.json"), JSON.stringify(record));
 if (cmd === "digest") { console.error("digesting"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { digested: true, instance: "notes-harvester-1", home: join(process.cwd(), "..", "notes-harvester-1") } })); }
 else if (cmd === "inspect") { const f = join(process.cwd(), "MEMORY.md"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { summary: "one file", documents: [{ label: "Memory", kind: "markdown", path: f, text: existsSync(f) ? readFileSync(f, "utf8") : null }] } })); }
 else if (cmd === "badview") console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { documents: [{ kind: "markdown" }] } }));
 else if (cmd === "fail") { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_NOTES_EMPTY", message: "nothing to digest" } })); process.exit(1); }
 else if (cmd === "sweep") console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { swept: process.cwd() } }));
+else if (cmd === "liar") { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); process.exit(1); }
+else if (cmd === "noisy") { console.log("progress 1/2"); console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: { done: true } })); }
 `);
   write(join(repo, "oats-config.yaml"), "name: t\ncapabilities:\n  layers:\n    knowledge:\n      capability: test.notes\n      from: owned\n      global: true\n      settings:\n        tone: dry\n    messaging: none\n    tasks: none\n");
   write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: worktree\nruntime: claude\n");
@@ -71,6 +79,9 @@ test("operation run resolves the home's provider from its snapshot, runs the pro
   const inv = JSON.parse(readFileSync(join(home, "notes-invocation.json"), "utf8"));
   assert.equal(inv.cmd, "digest"); assert.deepEqual(inv.rest, ["--depth", "2", "--json"]); assert.equal(inv.cwd, home);
   assert.equal(inv.env.OATS_HOME, home); assert.equal(inv.env.OATS_INSTANCE, "dev-one"); assert.equal(inv.env.OATS_OPERATION, "knowledge:harvest"); assert.equal(inv.env.OATS_CAPABILITY, "test.notes");
+  assert.equal(inv.env.OATS_AGENT, "dev"); assert.equal(inv.env.OATS_SOUL, join(repo, "agents", "dev", "soul")); assert.equal(inv.env.OATS_ROOT, join(repo, "agents")); assert.equal(inv.env.PI_AGENTS_ROOT, join(repo, "agents"));
+  assert.equal(inv.env.OATS_CONTEXT, repo); assert.equal(inv.env.OATS_WORKSPACE, repo); assert.equal(inv.env.OATS_EVENT, null); assert.equal(inv.env.PI_AGENT_HOME, home);
+  for (const v of Object.values(inv.env)) assert.ok(!String(v).startsWith("/elsewhere") && v !== "other-seat" && v !== "other", `ambient identity leaked: ${v}`);
   assert.deepEqual(JSON.parse(inv.env.OATS_SETTINGS), { tone: "cold" }, "the snapshot's captured settings, not the current config's");
   assert.equal(inv.env.OATS_CLI_BIN, CLI);
   // A view operation answers validated documents.
@@ -91,7 +102,17 @@ test("operation run resolves the home's provider from its snapshot, runs the pro
   r = oats(["operation", "run", "knowledge:sweep", "--soul", "dev", "--dir", repo, "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(r.json().result.cwd, repo); assert.equal(r.json().result.target, null);
   const inv2 = JSON.parse(readFileSync(join(repo, "notes-invocation.json"), "utf8"));
-  assert.deepEqual(JSON.parse(inv2.env.OATS_SETTINGS), { tone: "dry" }); assert.equal(inv2.env.OATS_HOME, null, "no instance env outside a home");
+  assert.deepEqual(JSON.parse(inv2.env.OATS_SETTINGS), { tone: "dry" }); assert.equal(inv2.env.OATS_HOME, null, "no instance env outside a home"); assert.equal(inv2.env.OATS_INSTANCE, null);
+  assert.equal(inv2.env.OATS_AGENT, "dev"); assert.equal(inv2.env.OATS_SOUL, join(repo, "agents", "dev", "soul")); assert.equal(inv2.env.OATS_ROOT, join(repo, "agents")); assert.equal(inv2.env.OATS_CONTEXT, repo);
+  for (const v of Object.values(inv2.env)) assert.ok(!String(v).startsWith("/elsewhere") && v !== "other-seat" && v !== "other", `ambient identity leaked: ${v}`);
+  // --agents-root is honoured for a soul selection: a wrong root is E_SOUL_UNKNOWN, the right one runs.
+  assert.equal(oats(["operation", "run", "knowledge:sweep", "--soul", "dev", "--dir", repo, "--agents-root", join(base, "elsewhere", "agents"), "--json"]).json().error.code, "E_SOUL_UNKNOWN");
+  assert.equal(oats(["operation", "run", "knowledge:sweep", "--soul", "dev", "--dir", repo, "--agents-root", join(repo, "agents"), "--json"]).status, 0);
+  // A success envelope from a process that then exits nonzero is not a receipt; contaminated stdout is not a receipt.
+  const liar = oats(["operation", "run", "knowledge:liar", "--home", home, "--json"]).json(); assert.equal(liar.error.code, "E_OPERATION_RESULT"); assert.match(liar.error.message, /exited 1/);
+  const noisy = oats(["operation", "run", "knowledge:noisy", "--home", home, "--json"]).json(); assert.equal(noisy.error.code, "E_OPERATION_RESULT"); assert.match(noisy.error.message, /exactly one JSON-v1 envelope/);
+  // --dir with --home may be the home's recorded repo or the workspace of its agents root (what a roster derives); anything else is a mismatch.
+  assert.equal(oats(["operation", "run", "knowledge:sweep", "--home", home, "--dir", repo, "--json"]).status, 0);
   assert.equal(oats(["operation", "run", "knowledge:sweep", "--soul", "ghost", "--dir", repo, "--json"]).json().error.code, "E_SOUL_UNKNOWN");
 });
 
