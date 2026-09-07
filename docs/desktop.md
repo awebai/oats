@@ -211,3 +211,19 @@ certificate auto-discovery disabled) and
 marked build-verify mode (inventory + strict codesign verification +
 node-pty ABI, no GUI launch); a local
 interactive run may also exercise the launch phase.
+
+### Attach files and screenshots
+
+Drop a file onto an agent terminal to insert its path into that agent's draft.
+Pasting an image from the clipboard uses the same attachment path. Neither
+operation presses Enter. Text paste continues to use the terminal's normal
+paste behavior. A drop targets the pane under the pointer, including a visible
+pane in a split.
+
+Local files are referenced in place. Clipboard images are saved privately in
+Desktop's application-data `attachments` directory and retained so an agent can
+read them later. For remote terminals, Desktop calls the installed CLI's
+`session upload` operation; it inserts the returned path only after the file
+has reached the execution host. Both CLI installations must advertise
+`session-upload`. A failed transfer leaves the draft unchanged and shows an
+error in the terminal. Each drop/paste accepts up to 16 files totaling 25 MB.

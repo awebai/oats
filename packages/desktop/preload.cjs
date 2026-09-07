@@ -1,7 +1,7 @@
 // OATS desktop — preload. The ONLY bridge between the isolated renderer and
 // the main process. Exposes a minimal, promise-based surface; no Node objects
 // cross the boundary.
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("oatsDesktop", {
   /** ctx.api backing: proxied fetch against the oats-web server. */
@@ -12,6 +12,17 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   termWrite: (id, data) => ipcRenderer.send("term:write", id, data),
   termResize: (id, cols, rows) => ipcRenderer.send("term:resize", id, cols, rows),
   termClose: (id) => ipcRenderer.send("term:close", id),
+  termAttachFiles: async (id, files) => {
+    if (!Array.isArray(files) || !files.length || files.length > 16) throw new Error("Choose between 1 and 16 files.");
+    if (files.reduce((n, f) => n + f.size, 0) > 25 * 1024 * 1024) throw new Error("Attachments must total 25 MB or less.");
+    const items = await Promise.all(files.map(async file => {
+      const path = webUtils.getPathForFile(file);
+      if (path) return { path };
+      if (!file.type.startsWith("image/")) throw new Error("This file has no local path.");
+      return { type: file.type, bytes: new Uint8Array(await file.arrayBuffer()) };
+    }));
+    return ipcRenderer.invoke("term:attachments", id, items);
+  },
 
   /** Runtime workspace switcher (privileged; renderer modal is the UX layer). */
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
