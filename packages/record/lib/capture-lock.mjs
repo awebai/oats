@@ -12,7 +12,8 @@
 // message says exactly that. (A reclaim protocol was reviewed and rejected:
 // rename is not compare-and-swap, and stealing from a stalled live
 // initializer under memory pressure is the failure we are preventing.)
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
 export function captureLockPath(root) { return join(root, ".capture.lock"); }
@@ -41,8 +42,25 @@ export function recoveryInstruction(dir, owner, liveness) {
 
 /** Try to take the root's capture lock. Returns { path, release } when
  *  taken, or { path, held: { pid, startedAt, liveness, recovery } } when any
- *  lock exists. Never removes a lock it did not create. */
-export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness } = {}) {
+ *  lock exists. Never removes a lock it did not create.
+ *
+ *  Two failure points are reported rather than left behind. If the owner
+ *  record cannot be written after THIS call created the directory (a full
+ *  disk, say), the directory is this call's own initialization and nothing
+ *  else can own it, so it is removed and the original error rethrown with
+ *  `lockCleanup: { path, removed, error?, recovery? }` saying whether that
+ *  removal happened. And `release()` never throws: it answers
+ *  `{ released: true }` only when the lock is verifiably gone, otherwise
+ *  `{ released: false, reason: "not-owner" | "remove-failed", ... }`.
+ *
+ *  The owner record carries a per-acquisition nonce, so a release kept from
+ *  an earlier acquisition cannot erase a later one by the same pid (an
+ *  operator recovery followed by a new pass in the same long-lived process).
+ *  That is ownership checking; no lock is ever reclaimed.
+ *
+ *  `io` exists for fault injection in tests only. */
+export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, io = {} } = {}) {
+  const fs = { writeFileSync, rmSync, ...io };
   const dir = captureLockPath(root);
   mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
   try {
@@ -53,12 +71,32 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     const live = owner ? (owner.pid === pid ? "alive" : liveness(owner.pid)) : "unknown";
     return { path: dir, held: { pid: owner?.pid, startedAt: owner?.startedAt, liveness: live, recovery: recoveryInstruction(dir, owner, live) } };
   }
-  writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, startedAt: new Date(now()).toISOString() }));
+  const nonce = randomBytes(8).toString("hex");
+  try {
+    fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString() }));
+  } catch (err) {
+    let cleanupError;
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e2) { cleanupError = e2; }
+    const removed = !existsSync(dir);
+    err.lockCleanup = {
+      path: dir,
+      removed,
+      ...(cleanupError ? { error: cleanupError.message } : {}),
+      ...(removed ? {} : { recovery: recoveryInstruction(dir, undefined, "unknown") }),
+    };
+    throw err;
+  }
   return {
     path: dir,
     release: () => {
       const cur = readOwner(dir);
-      if (cur && cur.pid === pid) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* already gone */ } }
+      if (!cur || cur.pid !== pid || cur.nonce !== nonce) {
+        return { released: false, reason: "not-owner", owner: cur };
+      }
+      let error;
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { error = e; }
+      if (!existsSync(dir)) return { released: true };
+      return { released: false, reason: "remove-failed", ...(error ? { error: error.message } : {}), recovery: recoveryInstruction(dir, cur, "dead") };
     },
   };
 }

@@ -100,6 +100,72 @@ test("capture CLI: a locked root (live holder) skips quietly; an interrupted own
   } finally { child.kill(); rmSync(root, { recursive: true, force: true }); }
 });
 
+test("capture lock: an owner record that cannot be written removes only this call's initializing directory and rethrows; a failed removal is reported, never claimed", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-init-"));
+  try {
+    const enospc = () => { throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" }); };
+    // Injected write failure after the atomic mkdir: the caller never receives a lock, so nothing outside could release it.
+    let err;
+    try { acquireCaptureLock(root, { io: { writeFileSync: enospc } }); } catch (e) { err = e; }
+    assert.equal(err?.code, "ENOSPC", "the original failure is rethrown");
+    assert.deepEqual(err.lockCleanup, { path: captureLockPath(root), removed: true });
+    assert.equal(existsSync(captureLockPath(root)), false, "the initializing lock did not outlive the failed acquisition");
+    const next = acquireCaptureLock(root); assert.ok(next.release, "the next pass acquires normally"); assert.deepEqual(next.release(), { released: true });
+    // Removal itself failing: reported with the recovery, and the directory is really still there.
+    const ebusy = () => { throw Object.assign(new Error("EBUSY: resource busy"), { code: "EBUSY" }); };
+    err = undefined;
+    try { acquireCaptureLock(root, { io: { writeFileSync: enospc, rmSync: ebusy } }); } catch (e) { err = e; }
+    assert.equal(err?.code, "ENOSPC");
+    assert.equal(err.lockCleanup.removed, false); assert.equal(err.lockCleanup.error, "EBUSY: resource busy");
+    assert.match(err.lockCleanup.recovery, /not written its owner record.*rm -r -- /);
+    assert.equal(existsSync(captureLockPath(root)), true, "removed:false is not claimed when the directory remains");
+    const refused = acquireCaptureLock(root); assert.equal(refused.release, undefined); assert.equal(refused.held.liveness, "unknown");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture lock: release checks the acquisition nonce, so an earlier release cannot erase a later same-pid lock; a removal that did not happen is reported", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-nonce-"));
+  try {
+    const first = acquireCaptureLock(root);
+    const owner1 = JSON.parse(readFileSync(join(captureLockPath(root), "owner.json"), "utf8"));
+    assert.equal(owner1.pid, process.pid); assert.match(owner1.nonce, /^[0-9a-f]{16}$/);
+    // Operator recovery of a pass believed dead, then a new pass in the same process.
+    rmSync(captureLockPath(root), { recursive: true, force: true });
+    const second = acquireCaptureLock(root); assert.ok(second.release);
+    const owner2 = JSON.parse(readFileSync(join(captureLockPath(root), "owner.json"), "utf8"));
+    assert.notEqual(owner2.nonce, owner1.nonce);
+    const stale = first.release();
+    assert.equal(stale.released, false); assert.equal(stale.reason, "not-owner"); assert.equal(stale.owner.nonce, owner2.nonce);
+    assert.equal(existsSync(captureLockPath(root)), true, "the newer same-pid lock survives the stale release");
+    // Removal failure at release: no throw from a finally, and no claim of success.
+    const held = acquireCaptureLock(root); assert.equal(held.release, undefined, "the second lock is still held");
+    const failing = { rmSync: () => { throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" }); } };
+    rmSync(captureLockPath(root), { recursive: true, force: true });
+    const third = acquireCaptureLock(root, { io: failing });
+    const r = third.release();
+    assert.equal(r.released, false); assert.equal(r.reason, "remove-failed"); assert.equal(r.error, "EPERM: operation not permitted");
+    assert.match(r.recovery, new RegExp(`pid ${process.pid} .*rm -r -- `));
+    assert.equal(existsSync(captureLockPath(root)), true);
+    rmSync(captureLockPath(root), { recursive: true, force: true });
+    assert.deepEqual(second.release(), { released: false, reason: "not-owner", owner: undefined }, "a lock already gone is not reported as released by this holder");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture CLI: an unreadable ignore file stops the pass with one line and exit 1, and leaves no lock behind", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-ignore-"));
+  try {
+    const home = join(root, "home"); mkdirSync(join(home, ".claude", "projects"), { recursive: true });
+    mkdirSync(join(root, "ignore")); // a directory where the ignore FILE is expected: EISDIR, fail closed
+    const env = { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+    const r = spawnSync(process.execPath, [CAPTURE, "--sessions-only", "--no-index"], { encoding: "utf8", env });
+    assert.equal(r.status, 1, r.stderr + r.stdout);
+    assert.match(r.stderr, /ignore/); assert.doesNotMatch(r.stderr, /\n\s+at /, "one line, not a stack trace");
+    assert.equal(existsSync(captureLockPath(root)), false, "the refused pass left no lock for the next pass to trip over");
+    const again = spawnSync(process.execPath, [CAPTURE, "--sessions-only", "--no-index"], { encoding: "utf8", env });
+    assert.doesNotMatch(again.stderr, /another pass holds/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("capture --install-hint recommends append-only hook passes", () => {
   const r = spawnSync(process.execPath, [CAPTURE, "--install-hint"], { encoding: "utf8" });
   assert.equal(r.status, 0);
