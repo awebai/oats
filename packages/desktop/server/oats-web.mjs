@@ -996,7 +996,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
     if (path === "/api/schedules" && ["GET", "POST"].includes(req.method)) {
       const workspaceId = url.searchParams.get("ws");
-      const workspace = workspaceId ? workspaces().find(w => w.id === workspaceId) : workspaces()[0];
+      const workspace = workspaceId ? workspaces().find(w => w.id === workspaceId) : req.method === "GET" ? workspaces()[0] : undefined;
       try {
         const request = req.method === "GET" ? { operation: "list" } : await readBody(req);
         const result = await scheduleRequest(request, {

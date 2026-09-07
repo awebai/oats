@@ -134,6 +134,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
   function render() {
     q(".schedule-new").disabled = busy || !available;
     q(".schedule-save").disabled = busy || !available;
+    for (const control of form.querySelectorAll("input, select, textarea")) control.disabled = busy || (control.name === "id" && !!editing);
     q(".schedule-host-actions").querySelectorAll("button").forEach(b => { b.disabled = busy || !available; });
     const list = q(".schedule-list");
     const focused = doc.activeElement?.closest?.("[data-schedule-id]");
