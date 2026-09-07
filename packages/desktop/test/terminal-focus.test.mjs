@@ -9,7 +9,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
+import { fillEmptyGroup, requestSplit } from "../renderer/split-layout.mjs";
+import { terminalOpenOwnsWorkspace } from "../renderer/workspace-tabs.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(PKG, f), "utf8");
@@ -30,11 +33,34 @@ test("terminal tabs provide focusContent = term.focus and fresh-open dedup focus
     "addTab's dedup inside openTerminalTabInner is a user jump");
 });
 
-test("every openTerminalTab jump path focuses the existing tab's terminal input", () => {
+test("existing-terminal jumps focus input, fill an empty split without another attach, and ignore stale workspaces", async () => {
   const src = read("renderer/shell.mjs");
-  // the already-open activation inside openTerminalTab (palette jump,
-  // roster row, quick-open post-spawn) passes focusContent: true
-  assert.match(src, /if \(t\.key === key\) \{ activateTab\(tid, \{ focusContent: true \}\); return; \}/);
+  // Exercise the actual shell flow without booting Electron. Do not pin its
+  // formatting: adding the split transition must preserve the focus contract.
+  const flow = src.match(/async function openTerminalTabFlow\(ref, notify\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(flow, "terminal open flow exists");
+  for (const scenario of ["flat", "empty-split", "workspace-changed"]) {
+    const initial = scenario === "flat" ? null : requestSplit(null, "row", [1, 2], 2).split;
+    const activated = [];
+    let workspace = "workspace-a";
+    const context = {
+      split: initial, tabs: new Map([[1, { key: "other" }], [2, { key: "selected" }]]),
+      setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
+      currentWorkspace: () => workspace, terminalOpenOwnsWorkspace, fillEmptyGroup,
+      api: async () => ({ instances: [] }),
+      resolveTerminalOpen: () => ({ inst: {}, key: "selected" }),
+      whenKeyFree: async () => { if (scenario === "workspace-changed") workspace = "workspace-b"; },
+      activateTab: (id, options) => activated.push({ id, focusContent: options.focusContent }),
+      pendingTerms: new Set(),
+      openTerminalTabInner: () => assert.fail("an existing tab must not attach again"),
+    };
+    const run = runInNewContext(`(${flow})`, context);
+    await run({}, () => assert.fail("existing terminal must resolve"));
+    assert.deepEqual(activated, scenario === "workspace-changed" ? [] : [{ id: 2, focusContent: true }], scenario);
+    if (scenario === "empty-split") {
+      assert.deepEqual(context.split.groups.map((g) => g.tabs), [[1], [2]]);
+    } else assert.equal(context.split, initial, "flat or stale layout stays unchanged");
+  }
 });
 
 test("workspace-switch restoration does NOT steal focus (side-effect activation)", () => {
