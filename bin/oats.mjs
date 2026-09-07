@@ -742,6 +742,77 @@ function operationCmd() {
   if (stderr) console.error(stderr);
 }
 
+// ---------- soul set: runtime defaults and instructions of an editable soul ----------
+/** Rewrites only the given soul.yaml fields, preserving every other line
+ *  (unknown keys, comments, order), and replaces AGENTS.md when asked.
+ *  Packaged souls are read-only (their source is the package). */
+function soulCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  dropAmbientRoot();
+  if (args[1] !== "set") bail("E_USAGE", "usage: oats soul set <name> [--dir <scope>] [--agents-root <abs>] [--runtime pi|claude|codex] [--model <m> | --no-model] [--yolo | --no-yolo] [--backend tmux|herdr] [--description <d> | --no-description] [--instructions-file <path>] [--json]");
+  const name = args[2];
+  if (!name || name.startsWith("--")) bail("E_BAD_ARGS", "soul set needs a soul name");
+  const ctx = dirFlag();
+  const agentsRootFlag = flag("agents-root");
+  if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  let r;
+  try { r = resolveOatsConfig(ctx); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  let soul;
+  try { soul = selectSoul(scopeSouls(ctx, r).souls, name, agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+  if (!soul.editable.fields.length) bail("E_SOUL_READONLY", `${name} is a ${soul.kind} soul: ${soul.editable.reason}`);
+  // Field changes, validated before anything is written.
+  const changes = {};
+  const has = (f) => args.includes(`--${f}`);
+  const val = (f) => { const v = flag(f); if (v === true) bail("E_BAD_ARGS", `--${f} needs a value`); return v; };
+  if (has("runtime")) { const v = val("runtime"); if (!["pi", "claude", "codex"].includes(v)) bail("E_BAD_ARGS", "--runtime must be pi, claude or codex"); changes.runtime = v; }
+  if (has("model") && has("no-model")) bail("E_BAD_ARGS", "choose --model <m> or --no-model, not both");
+  if (has("model")) { const v = val("model"); if (!v.trim()) bail("E_BAD_ARGS", "--model needs a model id (use --no-model to clear)"); changes.model = assertSafeConfigValue(v, "--model"); }
+  if (has("no-model")) changes.model = null;
+  if (has("yolo") && has("no-yolo")) bail("E_BAD_ARGS", "choose --yolo or --no-yolo, not both");
+  if (has("yolo")) changes.yolo = true;
+  if (has("no-yolo")) changes.yolo = false;
+  if (has("backend")) { const v = val("backend"); if (!["tmux", "herdr"].includes(v)) bail("E_BAD_ARGS", "--backend must be tmux or herdr"); changes.backend = v; }
+  if (has("description") && has("no-description")) bail("E_BAD_ARGS", "choose --description <d> or --no-description, not both");
+  if (has("description")) changes.description = assertSafeConfigValue(val("description"), "--description");
+  if (has("no-description")) changes.description = null;
+  let instructions;
+  if (has("instructions-file")) {
+    const file = val("instructions-file");
+    let bytes;
+    try { bytes = readFileSync(file); } catch (e) { bail("E_BAD_ARGS", `--instructions-file ${file}: ${e.message}`); }
+    if (bytes.includes(0)) bail("E_BAD_ARGS", "--instructions-file must be text without NUL bytes");
+    if (bytes.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", `--instructions-file is ${bytes.length} bytes; the bound is ${INSPECT_TEXT_CAP} (what inspect can answer whole)`);
+    instructions = bytes;
+  }
+  if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --description/--no-description, --instructions-file");
+  for (const f of Object.keys(changes)) if (!soul.editable.fields.includes(f)) bail("E_BAD_ARGS", `${f} is not an editable field of ${name}`);
+  const before = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, backend: soul.backend, description: soul.description };
+  // soul.yaml: replace or append `key: value` lines in place; a cleared
+  // field's line is removed; nothing else in the file moves.
+  let yamlText = "";
+  try { yamlText = readFileSync(soul.soulFile, "utf8"); } catch (e) { bail("E_SOUL_UNKNOWN", `${soul.soulFile}: ${e.message}`); }
+  const lines = yamlText.replace(/\n*$/, "").split("\n");
+  for (const [key, value] of Object.entries(changes)) {
+    const idx = lines.findIndex((l) => new RegExp(`^${key}:\\s`).test(l) || l === `${key}:`);
+    if (value === null) { if (idx >= 0) lines.splice(idx, 1); continue; }
+    const line = `${key}: ${value}`;
+    if (idx >= 0) lines[idx] = line; else lines.push(line);
+  }
+  const receipt = { soul: name, kind: soul.kind, agentsRoot: soul.agentsRoot, file: soul.soulFile, instructionsFile: soul.instructionsFile, changed: Object.keys(changes), before, instructions: null };
+  if (Object.keys(changes).length) writeFileAtomic(soul.soulFile, lines.join("\n") + "\n");
+  if (instructions) {
+    const prev = (() => { try { return createHash("sha256").update(readFileSync(soul.instructionsFile)).digest("hex"); } catch { return null; } })();
+    writeFileAtomic(soul.instructionsFile, instructions);
+    receipt.instructions = { before: prev, after: createHash("sha256").update(instructions).digest("hex"), bytes: instructions.length };
+  }
+  let after;
+  try { after = selectSoul(scopeSouls(ctx, r).souls, name, soul.agentsRoot, ctx); } catch { after = soul; }
+  receipt.after = { runtime: after.runtime, model: after.model, yolo: after.yolo, backend: after.backend, description: after.description };
+  if (JSON_MODE) { jsonOk(receipt); return; }
+  console.log(`Updated soul ${name} (${shortPath(soul.soulFile)})${instructions ? ` and its instructions (${shortPath(soul.instructionsFile)})` : ""}: ${Object.keys(changes).map((k) => `${k}=${changes[k] === null ? "(cleared)" : changes[k]}`).join(", ") || "instructions only"}`);
+  console.log("Future instances use these defaults; existing homes keep what they were composed with.");
+}
+
 function doctorJson(dir) {
   const ctx = resolve(dir || process.cwd());
   const soulName = flag("soul");
@@ -4057,13 +4128,14 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
+else if (cmd === "soul") soulCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -4212,6 +4284,12 @@ Usage:
                                             bindings or the scope's config, trust checked, the provider's
                                             own command run in the home or scope, envelope
                                             relayed; a view answers {documents: [...]}
+  oats soul set <name> [--dir <scope>]       change an editable soul's launch defaults and/or
+      [--agents-root <abs>] [--runtime r]    instructions in place (soul.yaml lines replaced,
+      [--model m | --no-model]              everything else kept; AGENTS.md replaced from
+      [--yolo | --no-yolo] [--backend b]     --instructions-file); packaged souls are refused;
+      [--description d | --no-description]  the receipt carries before/after and sha256s
+      [--instructions-file <path>] [--json]
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
