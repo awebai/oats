@@ -804,7 +804,9 @@ async function soulCmd() {
     let bytes;
     try { bytes = await readStreamBounded(process.stdin, INSPECT_TEXT_CAP); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
     if (bytes.includes(0)) bail("E_BAD_ARGS", "instructions must be text without NUL bytes");
-    if (!bytes.length) bail("E_BAD_ARGS", "no instruction bytes arrived on stdin");
+    // An empty completed stream is a deliberate replacement with nothing,
+    // exactly like an empty --instructions-file: the option itself states
+    // the intent, and a TTY was refused above.
     instructions = bytes;
   }
   if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --description/--no-description, --instructions-file");

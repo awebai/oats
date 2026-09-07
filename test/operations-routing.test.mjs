@@ -60,6 +60,12 @@ test("inspect, use, soul set and operation run route to a registered server over
   r = oats(["soul", "set", "dev", "--server", "build", "--dir", member, "--model", "opus", "--instructions-file", instr, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(r.json().result.after.model, "opus"); assert.equal(readFileSync(join(member, "agents", "dev", "soul", "AGENTS.md"), "utf8"), "# remote dev\n\n$(not run) `literal`\n");
   assert.ok(sent().includes("--instructions-stdin") && !sent().includes(instr), "instructions travel as bytes, not as a local path");
+  // Clearing the instructions: an empty local file replaces the remote AGENTS.md with nothing (the GUI's empty editor), locally and remotely alike.
+  const emptyInstr = join(base, "empty.md"); writeFileSync(emptyInstr, "");
+  r = oats(["soul", "set", "dev", "--server", "build", "--dir", member, "--instructions-file", emptyInstr, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(readFileSync(join(member, "agents", "dev", "soul", "AGENTS.md"), "utf8"), ""); assert.equal(r.json().result.instructions.bytes, 0);
+  oats(["soul", "set", "dev", "--server", "build", "--dir", member, "--instructions-file", instr, "--json"]);
+  assert.equal(readFileSync(join(member, "agents", "dev", "soul", "AGENTS.md"), "utf8"), "# remote dev\n\n$(not run) `literal`\n", "restored");
   // operation run on the home: the provider's documents come back.
   r = oats(["operation", "run", "knowledge:inspect", "--server", "build", "--home", home, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.deepEqual(r.json().result.result.documents, [{ label: "Memory", kind: "text", text: "remote memory" }]); assert.equal(r.json().result.server, "build");
