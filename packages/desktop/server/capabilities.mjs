@@ -18,13 +18,15 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   let soul, agentsRoot, home;
   let context = workspace.scope;
   if (selector.home !== undefined) {
-    if (selector.soul !== undefined || selector.agentsRoot !== undefined) fail('Select a soul or an instance home');
+    if (selector.soul !== undefined || selector.agentsRoot !== undefined || selector.context !== undefined) fail('Select a soul or an instance home');
     const matches = instances.filter(i => i.home === selector.home);
     if (matches.length !== 1) fail('Select one existing home in this workspace');
     const instance = matches[0];
     if (server && !instance.savedRoute) fail('No saved route for this instance', 'E_SNAPSHOT_UNKNOWN');
     home = instance.home;
-    context = instance.agentsRoot ? dirname(instance.agentsRoot) : workspace.scope;
+    // The owning agents root and the recorded work repository may differ.
+    // --home is authoritative; the CLI derives its captured context.
+    context = undefined;
     if (!['inspect', 'run'].includes(action)) fail('An instance snapshot is read-only; edit its soul defaults for future instances');
   } else if (selector.soul !== undefined) {
     const matches = agents.filter(a => a.name === selector.soul && a.agentsRoot === selector.agentsRoot);
@@ -43,7 +45,7 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
   const envelope = await invoke(cli.bin, {
     action, context, server, soul, agentsRoot, home,
     binding: request.binding, fields: request.fields, operation: request.operation,
-    localCwd: server ? localCwd : context,
+    localCwd: server ? localCwd : context || workspace.scope,
   });
   if (!envelope.ok) fail(envelope.error?.message || 'Capability operation failed', envelope.error?.code || 'E_OPERATION_FAILED');
   return envelope.result;
