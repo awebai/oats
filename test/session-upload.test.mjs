@@ -26,7 +26,7 @@ test("receive stores private bytes inside the instance home, refuses hostile nam
   assert.equal(statSync(r.path).mode & 0o777, 0o600); assert.equal(statSync(dirname(r.path)).mode & 0o777, 0o700);
   assert.equal(receiveAttachment(h, "shot.png", payload).path, join(h, ".oats-attachments", "shot-2.png"), "a taken name gets a suffix, the original stays");
   assert.equal(receiveAttachment(h, "shot.png", payload).path, join(h, ".oats-attachments", "shot-3.png"));
-  for (const bad of ["", " ", "a/b", "..\\x", "..", ".", "-rf", "x\0y", "tab\tname", "x".repeat(201)]) assert.throws(() => attachmentName(bad), (e) => e.code === "E_BAD_ARGS", JSON.stringify(bad));
+  for (const bad of ["", " ", "a/b", "..\\x", "..", ".", "-rf", "--name", "x\0y", "tab\tname", "x".repeat(201)]) assert.throws(() => attachmentName(bad), (e) => e.code === "E_BAD_ARGS", JSON.stringify(bad));
   assert.throws(() => receiveAttachment(join(base, "nowhere"), "a.txt", payload), (e) => e.code === "E_SESSION_UNKNOWN", "not an instance home");
   assert.throws(() => receiveAttachment(h, "big.bin", payload, { maxBytes: 100 }), (e) => e.code === "E_UPLOAD_TOO_LARGE");
   assert.equal(existsSync(join(h, ".oats-attachments", "big.bin")), false, "nothing written above the bound");
@@ -99,4 +99,57 @@ test("a routed upload streams the bytes on ssh stdin to the real receiver over t
   const bad = JSON.parse(r.stdout.trim());
   assert.equal(bad.error.code, "E_UPLOAD_FAILED"); assert.match(bad.error.message, /deadbeef/); assert.match(bad.error.message, /left for inspection/);
   assert.equal(sha256Hex(payload), sha);
+});
+
+test("corrections: simultaneous same-name receives never clobber, a planted symlink or symlinked directory is refused, a stalled stdin costs no CPU, both probe lists must carry the token", async () => {
+  const { readStreamBounded } = await import("../lib/attachments.mjs");
+  const { PassThrough } = await import("node:stream");
+  const { symlinkSync } = await import("node:fs");
+  const h = home();
+  // Two receives of one name in parallel processes: two distinct files, both intact.
+  const a = Buffer.alloc(200000, 1), b = Buffer.alloc(200000, 2);
+  const { spawn } = await import("node:child_process");
+  const run = (input) => new Promise((res) => { const p = spawn(process.execPath, [CLI, "session", "receive", "--home", h, "--name", "Screenshot.png", "--json"], { env: cleanEnv() }); let out = ""; p.stdout.on("data", (d) => { out += d; }); p.on("close", (code) => res({ code, out })); p.stdin.end(input); });
+  const [ra, rb] = await Promise.all([run(a), run(b)]);
+  assert.equal(ra.code, 0, ra.out); assert.equal(rb.code, 0, rb.out);
+  const pa = JSON.parse(ra.out).result.path, pb = JSON.parse(rb.out).result.path;
+  assert.notEqual(pa, pb, "two files");
+  assert.ok([pa, pb].every((p) => /Screenshot(-2)?\.png$/.test(p)));
+  assert.deepEqual(readFileSync(pa), a); assert.deepEqual(readFileSync(pb), b);
+  // A symlink planted under the next candidate name is skipped, never followed; the outside target is untouched.
+  const outside = join(base, "outside.txt"); writeFileSync(outside, "keep");
+  symlinkSync(outside, join(h, ".oats-attachments", "Screenshot-3.png"));
+  const r3 = receiveAttachment(h, "Screenshot.png", payload);
+  assert.equal(r3.path, join(h, ".oats-attachments", "Screenshot-4.png")); assert.equal(readFileSync(outside, "utf8"), "keep");
+  // A symlinked attachments directory is refused with nothing written outside.
+  const h2 = home(); const elsewhere = join(base, "elsewhere"); mkdirSync(elsewhere, { recursive: true });
+  symlinkSync(elsewhere, join(h2, ".oats-attachments"));
+  assert.throws(() => receiveAttachment(h2, "x.png", payload), (e) => e.code === "E_UPLOAD_FAILED");
+  assert.equal(existsSync(join(elsewhere, "x.png")), false);
+  // A stalled sender: half the bytes, a pause, the rest. The wait is event-driven (no busy retry).
+  const stream = new PassThrough();
+  const pending = readStreamBounded(stream, 1024 * 1024);
+  stream.write(payload.subarray(0, 256));
+  const cpu0 = process.cpuUsage();
+  await new Promise((r) => setTimeout(r, 400));
+  const cpu = process.cpuUsage(cpu0);
+  assert.ok((cpu.user + cpu.system) / 1000 < 100, `idle wait used ${(cpu.user + cpu.system) / 1000} ms CPU`);
+  stream.end(payload.subarray(256));
+  assert.deepEqual(await pending, payload);
+  const big = new PassThrough(); const tooBig = readStreamBounded(big, 100); big.write(Buffer.alloc(101));
+  await assert.rejects(tooBig, (e) => e.code === "E_UPLOAD_TOO_LARGE");
+  // Token gate: the token must be in BOTH probe lists; missing arrays are incompatibility.
+  const probes = [
+    { remote: ["session", "session-upload"], features: ["retire-home"] },
+    { remote: ["session"], features: ["session-upload"] },
+    { remote: undefined, features: undefined },
+  ];
+  for (const probe of probes) {
+    const exec = (bin, argv) => JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.13", desktopApi: 1, runtimes: ["pi"], sessionBackends: ["tmux"], launchOptions: [], ...probe });
+    const saved = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = join(base, "oats-home");
+    try {
+      const src = join(base, "local", "gate.bin"); write(src, payload);
+      assert.throws(() => uploadAttachment({ file: src, server: "build", instance: "dev-remote" }, { execFileSync: exec }), (e) => e.code === "E_REMOTE_INCOMPATIBLE", JSON.stringify(probe));
+    } finally { if (saved === undefined) delete process.env.OATS_HOME_DIR; else process.env.OATS_HOME_DIR = saved; }
+  }
 });

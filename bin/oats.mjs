@@ -43,7 +43,7 @@ import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, star
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
-import { receiveAttachment, uploadAttachment, readBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
+import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -2962,13 +2962,13 @@ async function sessionCmd() {
       if (!file && process.stdin.isTTY) throw Object.assign(new Error("provide --text-file or pipe input on stdin"), { code: "E_BAD_ARGS" });
       result = inputInstanceSession(home, readFileSync(file || 0, "utf8"));
     } else if (args[1] === "receive") {
-      // Bytes arrive on stdin (the routed upload pipes them through ssh);
-      // the bound is enforced while reading, before anything is written.
+      // Bytes arrive on stdin (the routed upload pipes them through ssh),
+      // collected event-driven and bounded before anything is written.
       const name = flag("name");
       if (!name || name === true) throw Object.assign(new Error("session receive needs --name <file name>"), { code: "E_BAD_ARGS" });
       if (!home || home === true) throw Object.assign(new Error("session receive needs --home </absolute/instance>"), { code: "E_BAD_ARGS" });
       if (process.stdin.isTTY) throw Object.assign(new Error("session receive reads the attachment bytes from stdin"), { code: "E_BAD_ARGS" });
-      result = receiveAttachment(home, name, readBounded(0, MAX_ATTACHMENT_BYTES));
+      result = receiveAttachment(home, name, await readStreamBounded(process.stdin, MAX_ATTACHMENT_BYTES));
     } else if (args[1] === "upload") {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
