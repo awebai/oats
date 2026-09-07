@@ -2921,7 +2921,7 @@ function scheduleCmd() {
       case "disable": return out({ schedule: setScheduleEnabled(ws, needId(), false, io) });
       case "run": return out(runScheduleNow(ws, needId(), { io, force: args.includes("--force") }));
       case "remove": return out(removeSchedule(ws, needId(), { force: args.includes("--force") }));
-      case "reconcile": return out(reconcileSchedule(ws, needId(), { io }));
+      case "reconcile": return out(reconcileSchedule(ws, needId(), { io, clear: args.includes("--clear") }));
       case "tick": {
         const dryRun = args.includes("--dry-run");
         if (args.includes("--host")) return out(tickHost({ io, dryRun }));
@@ -2936,7 +2936,7 @@ function scheduleCmd() {
         if (op === "status") return out({ scheduler: schedulerStatus(ws, io) });
         throw scheduleError("E_BAD_ARGS", "oats schedule host install|uninstall|status");
       }
-      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id>|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
+      default: throw scheduleError("E_BAD_ARGS", "usage: oats schedule list|show <id>|add <id> --file <spec.json>|update <id> --file <spec.json>|enable <id>|disable <id>|run <id> [--force]|remove <id> [--force]|reconcile <id> [--clear]|tick [--dry-run] [--host]|host install|uninstall|status [--dir <workspace>|--server <id>] [--json]");
     }
   } catch (e) { cmdFail(e.code || "E_SCHEDULE_FAILED", e.message); }
 }
