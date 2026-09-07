@@ -43,6 +43,7 @@ import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, star
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
+import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -2960,7 +2961,19 @@ async function sessionCmd() {
       if (file === true) throw Object.assign(new Error("--text-file needs a path"), { code: "E_BAD_ARGS" });
       if (!file && process.stdin.isTTY) throw Object.assign(new Error("provide --text-file or pipe input on stdin"), { code: "E_BAD_ARGS" });
       result = inputInstanceSession(home, readFileSync(file || 0, "utf8"));
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start --home /absolute/home [--text-file path] [--model id] [--json]"), { code: "E_BAD_ARGS" });
+    } else if (args[1] === "receive") {
+      // Bytes arrive on stdin (the routed upload pipes them through ssh),
+      // collected event-driven and bounded before anything is written.
+      const name = flag("name");
+      if (!name || name === true) throw Object.assign(new Error("session receive needs --name <file name>"), { code: "E_BAD_ARGS" });
+      if (!home || home === true) throw Object.assign(new Error("session receive needs --home </absolute/instance>"), { code: "E_BAD_ARGS" });
+      if (process.stdin.isTTY) throw Object.assign(new Error("session receive reads the attachment bytes from stdin"), { code: "E_BAD_ARGS" });
+      result = receiveAttachment(home, name, await readStreamBounded(process.stdin, MAX_ATTACHMENT_BYTES));
+    } else if (args[1] === "upload") {
+      const file = flag("file");
+      if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
+      result = uploadAttachment({ file, home: home === true ? undefined : home });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|receive|upload --home /absolute/home [--text-file path] [--model id] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
 }
@@ -3255,7 +3268,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule"], features: ["retire-home", "session-start", "schedule"], scheduleApi: SCHEDULE_API }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload"], features: ["retire-home", "session-start", "schedule", "session-upload"], scheduleApi: SCHEDULE_API }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3462,7 +3475,19 @@ function serverRouteCmd() {
       console.log(`Started ${r.instance || r.home} on ${id} (${r.backend}${r.model ? `, model ${r.model}` : ""}, ${r.reused === "pane" ? "in its existing pane" : r.reused === "adopted" ? "adopted the pending session" : "new window"})`);
       return;
     }
-    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start` and `session attach`; input runs on the execution host (the wake broker calls it there)");
+    if (args[1] === "upload") {
+      // Bytes stream to `session receive` on the execution host over the
+      // same route as attach; the answer's checksum is verified here.
+      const file = flag("file");
+      if (!file || file === true) bail("E_BAD_ARGS", "session upload needs --file <local path>");
+      let r;
+      try { r = uploadAttachment({ file, server: id, ...addr }); } catch (e) { bail(e.code || "E_UPLOAD_FAILED", e.message); }
+      if (r.stderr) process.stderr.write(r.stderr + "\n");
+      if (JSON_MODE) { jsonOk(r); return; }
+      console.log(`Uploaded ${r.name} (${r.bytes} bytes) to ${r.instance || r.home} on ${id}: ${r.path}`);
+      return;
+    }
+    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -3664,6 +3689,10 @@ Usage:
   oats session start --server <id>           start a stopped remote instance in its existing home
       --instance <name> | --home <abs>       over its saved route; the server must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
+  oats session upload --server <id>          copy a local file into a remote instance's private
+      --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
+      --file <path> [--json]                 ssh stdin; sha256 verified); the server must
+                                            advertise session-upload (oats 0.22.13 or later)
   oats create <name> [--local]               create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
@@ -3676,6 +3705,11 @@ Usage:
                                                 routes to that host's workspace
   oats spawn ... --wake-file <json> | --wake-every <N> --wake-message <text>  save a wake schedule
                                                 bound to the new instance's home (docs/schedules.md)
+  oats session upload --file <path>          store a copy of a local file as a private attachment
+      --home <absolute-home> [--json]         in the instance home (.oats-attachments/); answers
+                                            {path, bytes, sha256}; never types into the session
+  oats session receive --home <abs> --name   store attachment bytes read from stdin (the routed
+      <file> [--json]                       upload's remote half)
   oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model
