@@ -256,6 +256,7 @@ export async function cliCapability(bin, { action, context, server, soul, agents
       if (typeof operation !== 'string' || !/^(knowledge|messaging|tasks):[a-zA-Z0-9._-]+$/.test(operation)) bad('Select a declared provider operation');
       argv = ['operation', 'run', operation];
     } else if (action === 'use') {
+      if (soul && (binding?.action === 'none' || binding?.capability === 'none')) bad('Layer-wide defaults cannot target one soul');
       if (!binding || !['enable', 'disable', 'inherit', 'none'].includes(binding.action)) bad('Choose enable, disable, inherit, or none');
       argv = ['use', binding.action === 'none' ? 'none' : value(binding.capability, 'capability')];
       if (!soul) argv.push('--global');

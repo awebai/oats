@@ -14,7 +14,8 @@ The Capabilities button inspects workspace defaults, with a member-scope
 selector where a workspace contains several roots. Installed version, source
 and health are separate from effective activation, provenance and settings.
 Enable, explicit disable and return to inheritance call `oats use`; layer-wide
-disable is distinct from excluding a single capability. These changes apply to
+disable is distinct from excluding a single capability, and is available only
+when inspecting a workspace or member scope, never an individual soul. These changes apply to
 future instances. Existing homes retain their captured bindings and settings.
 
 Authored souls expose only the fields the kernel reports as editable. Desktop
