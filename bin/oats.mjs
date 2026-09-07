@@ -758,10 +758,10 @@ function operationCmd() {
 /** Rewrites only the given soul.yaml fields, preserving every other line
  *  (unknown keys, comments, order), and replaces AGENTS.md when asked.
  *  Packaged souls are read-only (their source is the package). */
-function soulCmd() {
+async function soulCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   dropAmbientRoot();
-  if (args[1] !== "set") bail("E_USAGE", "usage: oats soul set <name> [--dir <scope>] [--agents-root <abs>] [--runtime pi|claude|codex] [--model <m> | --no-model] [--yolo | --no-yolo] [--backend tmux|herdr] [--description <d> | --no-description] [--instructions-file <path>] [--json]");
+  if (args[1] !== "set") bail("E_USAGE", "usage: oats soul set <name> [--dir <scope>] [--agents-root <abs>] [--runtime pi|claude|codex] [--model <m> | --no-model] [--yolo | --no-yolo] [--backend tmux|herdr] [--description <d> | --no-description] [--instructions-file <path> | --instructions-stdin] [--json]");
   const name = args[2];
   if (!name || name.startsWith("--")) bail("E_BAD_ARGS", "soul set needs a soul name");
   const ctx = dirFlag();
@@ -788,12 +788,23 @@ function soulCmd() {
   if (has("description")) changes.description = assertSafeConfigValue(val("description"), "--description");
   if (has("no-description")) changes.description = null;
   let instructions;
+  if (has("instructions-file") && has("instructions-stdin")) bail("E_BAD_ARGS", "choose --instructions-file or --instructions-stdin, not both");
   if (has("instructions-file")) {
     const file = val("instructions-file");
     let bytes;
     try { bytes = readFileSync(file); } catch (e) { bail("E_BAD_ARGS", `--instructions-file ${file}: ${e.message}`); }
     if (bytes.includes(0)) bail("E_BAD_ARGS", "--instructions-file must be text without NUL bytes");
     if (bytes.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", `--instructions-file is ${bytes.length} bytes; the bound is ${INSPECT_TEXT_CAP} (what inspect can answer whole)`);
+    instructions = bytes;
+  }
+  if (has("instructions-stdin")) {
+    // The routed form: bytes arrive on stdin (the ssh transport), bounded
+    // while reading, exactly like session receive.
+    if (process.stdin.isTTY) bail("E_BAD_ARGS", "--instructions-stdin reads the instructions from stdin");
+    let bytes;
+    try { bytes = await readStreamBounded(process.stdin, INSPECT_TEXT_CAP); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    if (bytes.includes(0)) bail("E_BAD_ARGS", "instructions must be text without NUL bytes");
+    if (!bytes.length) bail("E_BAD_ARGS", "no instruction bytes arrived on stdin");
     instructions = bytes;
   }
   if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --description/--no-description, --instructions-file");
@@ -3819,7 +3830,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload"], features: ["retire-home", "session-start", "schedule", "session-upload"], scheduleApi: SCHEDULE_API }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3954,7 +3965,11 @@ function serverRouteCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
-  if (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir="))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  // The operations contract addresses an exact member context on the host,
+  // so its explicit --dir travels; every other routed command takes its
+  // scope from the registration.
+  const explicitScopeOk = ["inspect", "operation", "use", "soul"].includes(cmd);
+  if (!explicitScopeOk && (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir=")))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   // Interactive viewer: `oats session attach --server <id> --instance <name>`
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
@@ -4050,6 +4065,7 @@ function serverRouteCmd() {
   // local --task-file is read here and travels as --task text, since the
   // remote cannot read this machine's files.
   const rest = [];
+  let routedInput;
   for (let i = 1; i < args.length; i++) {
     const a = args[i];
     if (a === "--server") { i++; continue; }
@@ -4079,10 +4095,23 @@ function serverRouteCmd() {
       rest.push("--wake-message", readFileSync(f, "utf8"));
       continue;
     }
+    // Soul instructions travel as BYTES on the ssh stdin (the same transport
+    // as session upload), never as a path the host cannot read nor as a
+    // command-line argument.
+    if (a === "--instructions-file") {
+      const f = args[++i];
+      if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--instructions-file needs a path");
+      let bytes; try { bytes = readFileSync(f); } catch (e) { bail("E_BAD_ARGS", `instructions file not readable: ${f}: ${e.message}`); }
+      if (bytes.includes(0)) bail("E_BAD_ARGS", "--instructions-file must be text without NUL bytes");
+      if (bytes.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", `--instructions-file is ${bytes.length} bytes; the bound is ${INSPECT_TEXT_CAP}`);
+      routedInput = bytes;
+      rest.push("--instructions-stdin");
+      continue;
+    }
     rest.push(a);
   }
   let routed;
-  try { routed = routeCommand(id, cmd, rest); }
+  try { routed = routeCommand(id, cmd, rest, routedInput === undefined ? {} : { input: routedInput }); }
   catch (e) { bail(e.code || "E_SSH", e.message); }
   const { envelope, stderr } = routed;
   if (stderr && stderr.trim()) process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
@@ -4143,11 +4172,11 @@ try {
 const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
-else if (cmd === "soul") soulCmd();
+else if (cmd === "soul") await soulCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -4243,6 +4272,11 @@ Usage:
   oats session start --server <id>           start a stopped remote instance in its existing home
       --instance <name> | --home <abs>       over its saved route; the server must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
+  oats inspect|operation|use|soul --server <id>   the same commands on a registered server over its
+      ... [--dir <remote member>] [--home <abs>]  saved route (an explicit --dir travels as is; a --home
+                                            is its own context; else the registered workspace);
+                                            soul set --instructions-file streams the bytes; the
+                                            server must advertise operations (oats 0.22.15 or later)
   oats session upload --server <id>          copy a local file into a remote instance's private
       --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
