@@ -122,9 +122,13 @@ or malformed definition is reported on that job and the rest of the tick
 continues.
 
 `disable` never stops anything. `update` never touches a running instance,
-and while a job holds a slot or has an unresolved attempt its execution
-target (kind, agent, agentsRoot, repo, home, cwd, argv) cannot change;
-cron, tz, task, message, purpose, runtime, model and enabled can.
+and while a job holds a slot or has an unresolved attempt what its run is
+tracked or reconciled by (kind, agent, agentsRoot, repo, purpose, home, cwd,
+argv) cannot change; cron, tz, task, message, runtime, model and enabled
+can. A cold wake persists its slot before the session start runs: a start
+that fails after it may have allocated keeps the slot until the session
+is observed stopped or absent; a refusal that allocated nothing gives it
+back at once.
 `remove` refuses while the job's instance is still tracked (`--force`
 forgets the job without stopping anything). Retiring an instance removes the
 wake jobs bound to its home; a wake whose home is gone otherwise stays
