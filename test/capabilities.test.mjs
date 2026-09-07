@@ -920,13 +920,16 @@ test("marketplace automatic trust discloses environment before authority persist
   const base = temp();
   const framework = join(base, "framework");
   const packageRoot = resolve(dirname(CLI), "..");
-  // The CLI's module closure: everything bin/oats.mjs and lib/core.mjs import
-  // from lib/. A module missing here makes the copied CLI fail to load and
-  // the test see empty stdout, which is what happened when session-viewer
-  // and servers were added.
-  for (const relativePath of ["bin/oats.mjs", "lib/core.mjs", "lib/packages.mjs", "lib/tmux-config.mjs", "lib/servers.mjs", "lib/session-viewer.mjs", "lib/session-input.mjs", "lib/herdr.mjs", "package.json"]) {
-    if (!existsSync(join(packageRoot, relativePath))) continue;
-    write(join(framework, relativePath), readFileSync(join(packageRoot, relativePath)));
+  // The CLI's module closure: bin/oats.mjs, the whole lib/ directory (an
+  // explicit module list went stale every time a module was added, and a
+  // missing module makes the copied CLI fail to load with empty stdout),
+  // and the kernel's declared runtime dependencies (croner is imported at
+  // load by lib/schedule.mjs).
+  write(join(framework, "bin", "oats.mjs"), readFileSync(join(packageRoot, "bin", "oats.mjs")));
+  write(join(framework, "package.json"), readFileSync(join(packageRoot, "package.json")));
+  cpSync(join(packageRoot, "lib"), join(framework, "lib"), { recursive: true });
+  for (const dep of Object.keys(JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).dependencies || {})) {
+    if (existsSync(join(packageRoot, "node_modules", dep))) cpSync(join(packageRoot, "node_modules", dep), join(framework, "node_modules", dep), { recursive: true });
   }
   const marketplace = join(framework, "capabilities", "vendor-market");
   write(join(marketplace, "oats.json"), JSON.stringify({
