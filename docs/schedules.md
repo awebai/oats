@@ -75,7 +75,7 @@ oats schedule update <id> --file spec.json
 oats schedule list | show <id> | enable <id> | disable <id> | remove <id>
 oats schedule run <id>            # now, under the same lock and bound
 oats schedule tick --dry-run      # what would run this minute, launching nothing
-oats schedule reconcile <id>      # resolve an attempt whose result was never recorded
+oats schedule reconcile <id> [--clear]   # resolve an attempt whose result was never recorded
 oats schedule host install        # register this scope and install the ONE host timer (idempotent while active)
 oats schedule host status | uninstall
 oats spawn <agent> ... --wake-every 15 --wake-message "Anything new?"   # or --wake-file spec.json
@@ -100,18 +100,31 @@ succeeded.
 `unknown` means the launch's side effects are unconfirmed: a command timed
 out or answered no envelope, an envelope named an instance the roster
 cannot place, or an attempt was never recorded. The job keeps its slot and
-is skipped until `oats schedule reconcile <id>`, which adopts the one home
-the roster shows for the attempt (a spawn job by its instance name, a
-command job by a home created after the attempt), clears a proven absence,
-and otherwise stays unknown and tells you what to do by hand.
+is skipped until `oats schedule reconcile <id>`. Reconcile adopts only an
+attributable receipt: a spawn job's instance is named deterministically for
+its minute, a command job's only by the instance its answer named. Nothing
+is inferred from file times. A command whose answer named nothing stays
+unknown; check the roster and the host by hand, then
+`oats schedule reconcile <id> --clear` records launch-failed and frees the
+slot (or `remove --force` forgets the job).
 
-A wake job that starts a stopped home holds a launch slot until that home
-ends; delivering a message to a home that is already running takes no slot.
-Due jobs are visited least-recently-launched first, so one frequent job
-cannot keep the only slot forever. An invalid definition is reported on that
-job and the rest of the tick continues.
+A wake job that starts a stopped home holds a launch slot while that
+runtime is starting, active, retiring or unobservable, and releases it when
+the runtime is proven stopped (the session start receipt's exit marker for
+that launch, or a home that no longer has a session) or the home is gone.
+A persistent home that outlives its process does not keep a slot. Delivering
+a message to a home that is already running takes no slot. The host tick
+observes every registered scope first, then admits due jobs in one
+host-wide order, least recently launched first (only an actual runtime
+launch counts; a skipped or pending job keeps its place at the front), so
+one frequent job in one scope cannot keep the only slot forever. An invalid
+or malformed definition is reported on that job and the rest of the tick
+continues.
 
-`disable` never stops anything. `update` never touches a running instance.
+`disable` never stops anything. `update` never touches a running instance,
+and while a job holds a slot or has an unresolved attempt its execution
+target (kind, agent, agentsRoot, repo, home, cwd, argv) cannot change;
+cron, tz, task, message, purpose, runtime, model and enabled can.
 `remove` refuses while the job's instance is still tracked (`--force`
 forgets the job without stopping anything). Retiring an instance removes the
 wake jobs bound to its home; a wake whose home is gone otherwise stays

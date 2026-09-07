@@ -287,18 +287,22 @@ test("host units render the single tick and status reports what the OS says", ()
   const lin = H.hostUnitStatus({ exec, os: "linux" });
   assert.equal(lin.installed, false); assert.equal(lin.active, false);
   assert.equal(H.hostUnitStatus({ os: "win32" }).kind, "unsupported");
-  // Idempotent install: an active identical unit is left untouched (no bootout).
-  const plistPath = H.hostUnitPaths("darwin").plist;
-  const keep = existsSync(plistPath) ? readFileSync(plistPath, "utf8") : null;
+  // Idempotent install: an active identical unit is left untouched (no
+  // bootout). Unit paths are injected: the real LaunchAgents dir is never touched.
+  const unitDir = join(base, "launch-agents");
+  const plistPath = H.hostUnitPaths("darwin", { unitDir }).plist;
+  assert.equal(dirname(plistPath), unitDir);
   const calls = [];
   const activeExec = (b, argv) => { calls.push(argv.join(" ")); return ""; };
-  try {
-    mkdirSync(dirname(plistPath), { recursive: true });
-    writeFileSync(plistPath, H.renderLaunchdPlist({ intervalSec: 60 }));
-    const st2 = H.installHostUnit({ exec: activeExec, os: "darwin", intervalSec: 60 });
-    assert.equal(st2.active, true);
-    assert.equal(calls.some((c) => c.startsWith("bootout") || c.startsWith("bootstrap")), false, "identical active unit: no bootout, no bootstrap");
-  } finally { if (keep === null) rmSync(plistPath, { force: true }); else writeFileSync(plistPath, keep); }
+  mkdirSync(unitDir, { recursive: true });
+  writeFileSync(plistPath, H.renderLaunchdPlist({ intervalSec: 60 }));
+  const st2 = H.installHostUnit({ exec: activeExec, os: "darwin", intervalSec: 60, unitDir });
+  assert.equal(st2.active, true);
+  assert.equal(calls.some((c) => c.startsWith("bootout") || c.startsWith("bootstrap")), false, "identical active unit: no bootout, no bootstrap");
+  // A changed unit is replaced through bootout + bootstrap, in the fixture dir.
+  H.installHostUnit({ exec: activeExec, os: "darwin", intervalSec: 120, unitDir });
+  assert.ok(calls.some((c) => c.startsWith("bootout")) && calls.some((c) => c.startsWith("bootstrap")));
+  assert.match(readFileSync(plistPath, "utf8"), /<integer>120<\/integer>/);
 });
 
 test("remote schedules route to the server workspace only when the host advertises the feature", () => {
@@ -375,10 +379,121 @@ await new Promise((r) => setTimeout(r, 5000));\n`);
   const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T17:01:00Z"), io, reg });
   assert.equal(c2[0].action, "skipped"); assert.match(c2[0].reason, /reconcile/);
   assert.throws(() => S.runNow(ws, "late", { io }), (e) => e.code === "E_SCHEDULE_UNRESOLVED");
-  // Reconcile finds the one home created after the attempt and adopts it.
-  const r = S.reconcile(ws, "late", { io });
-  assert.equal(r.reconciled, "adopted"); assert.equal(r.schedule.lastRun.instance, "dev-harvest-late"); assert.equal(r.schedule.lastRun.outcome, "active");
+  // The answer named no instance: nothing is inferred from the roster (the
+  // home that appeared is not attributable); unknown stays until the
+  // operator has checked by hand and clears it explicitly.
+  let r = S.reconcile(ws, "late", { io });
+  assert.equal(r.reconciled, "unknown"); assert.match(r.remedy, /--clear/);
+  assert.ok(S.describe(ws, "late", io).attempt, "the attempt is still retained"); assert.equal(S.describe(ws, "late", io).running, true);
+  r = S.reconcile(ws, "late", { io, clear: true });
+  assert.equal(r.reconciled, "cleared"); assert.equal(r.schedule.lastRun.outcome, "launch-failed"); assert.equal(r.schedule.running, false);
   assert.equal(S.describe(ws, "late", io).attempt, undefined);
+});
+
+test("a command that answers no valid envelope stays unknown; an incomplete spawn rollback stays unknown; a named answer is the only adoptable receipt", () => {
+  const ws = workspace();
+  const src = home(ws, "dev-src2");
+  // A dummy oats: creates a home, prints text that is not JSON, exits 0.
+  const dummy = join(base, "dummy-oats-text.mjs");
+  writeFileSync(dummy, `import { mkdirSync, writeFileSync } from "node:fs"; import { join } from "node:path";
+const h = join(${JSON.stringify(ws)}, "agents", "dev", "instances", "dev-harvest-text"); mkdirSync(h, { recursive: true }); writeFileSync(join(h, "instance.json"), JSON.stringify({ instance: "dev-harvest-text", home: h }));
+process.stdout.write("spawned dev-harvest-text\\n");\n`);
+  const io = { oatsBin: dummy, inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "text", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "okf", "harvest"] });
+  const reg = S.readRegistry();
+  const c = S.tickWorkspace(ws, { now: at("2026-09-07T18:00:00Z"), io, reg });
+  assert.equal(c[0].action, "unknown"); assert.match(c[0].error, /no valid envelope/);
+  assert.equal(S.describe(ws, "text", io).running, true, "the slot is held: a home may exist");
+  // An envelope that is JSON but not an envelope is no receipt either.
+  const io2 = { command: () => ({ spawned: true }), inspect: io.inspect };
+  S.addSchedule(ws, { id: "shape", cron: "* * * * *", tz: "UTC", kind: "command", cwd: src, argv: ["oats", "status"] });
+  const c2 = S.tickWorkspace(ws, { now: at("2026-09-07T18:01:00Z"), io: io2, reg: { maxConcurrent: 4 } });
+  assert.equal(c2.find((x) => x.id === "shape").action, "unknown");
+  // A spawn whose compensation reports an INCOMPLETE rollback keeps its slot as unknown.
+  const io3 = { spawn: () => { throw Object.assign(new Error("spawn failed: pane could not be stopped; rollback INCOMPLETE, home quarantined"), { code: "E_SPAWN_FAILED" }); }, inspect: io.inspect };
+  S.addSchedule(ws, { id: "incomplete", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const c3 = S.tickWorkspace(ws, { now: at("2026-09-07T18:02:00Z"), io: io3, reg: { maxConcurrent: 4 } });
+  assert.equal(c3.find((x) => x.id === "incomplete").action, "unknown"); assert.equal(S.describe(ws, "incomplete", io).running, true);
+  // A spawn that failed with a complete compensation is a confirmed failure.
+  const io4 = { spawn: () => { throw Object.assign(new Error("no soul named x"), { code: "E_AGENT_UNKNOWN" }); }, inspect: io.inspect };
+  S.addSchedule(ws, { id: "clean", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  const c4 = S.tickWorkspace(ws, { now: at("2026-09-07T18:03:00Z"), io: io4, reg: { maxConcurrent: 4 } });
+  assert.equal(c4.find((x) => x.id === "clean").action, "launch-failed"); assert.equal(S.describe(ws, "clean", io).running, false);
+});
+
+test("a wake slot is released when its started runtime is proven stopped, and kept while it is starting (the start receipt), even though the home remains", () => {
+  const ws = workspace();
+  const h1 = home(ws, "dev-persistent"), h2 = home(ws, "dev-waiting");
+  const states = { [h1]: { present: false, state: "stopped" }, [h2]: { present: false, state: "stopped" } };
+  const started = [], inputs = [];
+  const io = { inspect: (h) => states[h], start: (h) => { started.push(h); return { instance: basename(h) }; }, input: (h, t) => { inputs.push([h, t]); return { submitted: true }; } };
+  S.addSchedule(ws, { id: "one", cron: "* * * * *", tz: "UTC", kind: "wake", home: h1, message: "m1" });
+  S.addSchedule(ws, { id: "two", cron: "* * * * *", tz: "UTC", kind: "wake", home: h2, message: "m2" });
+  const reg = { maxConcurrent: 1 };
+  let by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T12:00:00Z"), io, reg }).map((x) => [x.id, x]));
+  assert.equal(by.one.action, "started"); assert.equal(by.two.action, "skipped");
+  // Startup phase: a shell with the start receipt and no matching exit marker keeps the slot.
+  writeFileSync(join(h1, ".oats-start-pending.json"), JSON.stringify({ id: "start-1" }));
+  states[h1] = { present: true, state: "shell" };
+  by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T12:00:20Z"), io, reg }).map((x) => [x.id, x]));
+  assert.equal(by.one.action, "skipped"); assert.match(by.one.reason, /starting/); assert.ok(S.jobLockInfo(ws, "one"));
+  assert.equal(by.two.action, "skipped"); assert.equal(by.two.pending, true, "not a due minute: two waits");
+  // Active: the pending message is delivered.
+  states[h1] = { present: true, state: "unknown" };
+  by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T12:00:40Z"), io, reg }).map((x) => [x.id, x]));
+  assert.equal(by.one.action, "delivered"); assert.equal(inputs.length, 1);
+  // The harness exits: the wrapper wrote the exit marker for that launch and a shell remains; the home stays.
+  writeFileSync(join(h1, ".oats-start-exited"), "start-1\n");
+  states[h1] = { present: true, state: "shell" };
+  by = Object.fromEntries(S.tickWorkspace(ws, { now: at("2026-09-07T12:01:00Z"), io, reg }).map((x) => [x.id, x]));
+  assert.equal(by.two.action, "started", "the never-launched job goes first once the slot is free");
+  assert.equal(by.one.action, "skipped"); assert.match(by.one.reason, /host busy/);
+  assert.ok(existsSync(h1), "the persistent home is untouched"); assert.equal(S.jobLockInfo(ws, "one"), null); assert.ok(S.jobLockInfo(ws, "two"));
+  assert.deepEqual(started, [h1, h2]);
+  assert.match(S.describe(ws, "one", io).lastRun.reason, /host busy/, "one is not restarted while two holds the only slot");
+});
+
+test("the host tick observes every registered scope before admitting, in one host-wide least-recently-launched order", () => {
+  const ws1 = workspace(), ws2 = workspace();
+  const io = { spawn: (root, agent, opts) => { const ws = root.startsWith(ws1) ? ws1 : ws2; const name = `${agent.name}-${opts.purpose}`; return { instance: name, home: home(ws, name), launched: true }; }, inspect: () => ({ present: true, state: "unknown" }) };
+  const before = S.readRegistry();
+  S.writeRegistry({ ...before, maxConcurrent: 1, workspaces: [ws1, ws2] });
+  try {
+    S.addSchedule(ws1, { id: "first", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "a" });
+    S.addSchedule(ws2, { id: "second", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "b" });
+    let r = S.tickHost({ now: at("2026-09-07T21:00:00Z"), io });
+    const launched = (res) => res.considered.filter((x) => x.action === "launched").map((x) => `${basename(x.workspace)}/${x.id}`);
+    assert.deepEqual(launched(r), [`${basename(ws1)}/first`]);
+    // first's instance retires between ticks: the slot frees and the never-launched second scope goes first.
+    rmSync(S.describe(ws1, "first", io).lastRun.home, { recursive: true, force: true });
+    r = S.tickHost({ now: at("2026-09-07T21:01:00Z"), io });
+    assert.deepEqual(launched(r), [`${basename(ws2)}/second`]);
+    assert.equal(r.considered.find((x) => x.id === "first").reason, "host busy");
+    // A malformed definition in one scope neither aborts that scope's healthy jobs nor the other scope.
+    const defs = S.readDefinitions(ws1); defs.jobs.nul = null; defs.jobs.odd = { id: "odd", enabled: true, kind: 42, cron: "* * * * *", tz: "UTC" }; S.writeDefinitions(ws1, defs);
+    rmSync(S.describe(ws2, "second", io).lastRun.home, { recursive: true, force: true });
+    r = S.tickHost({ now: at("2026-09-07T21:02:00Z"), io });
+    const by = Object.fromEntries(r.considered.map((x) => [x.id, x]));
+    assert.equal(by.nul.action, "invalid"); assert.equal(by.odd.action, "invalid"); assert.match(by.odd.error, /kind 42/);
+    assert.equal(launched(r).length, 1);
+  } finally { S.writeRegistry(before); }
+});
+
+test("an execution target cannot be edited under a running or unresolved job; timing and text can; the tracked home is the launched one", () => {
+  const ws = workspace();
+  const io = { spawn: fakeSpawn(ws), inspect: () => ({ present: true, state: "unknown" }) };
+  S.addSchedule(ws, { id: "job", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t" });
+  S.tickWorkspace(ws, { now: at("2026-09-07T22:00:00Z"), io, reg: { maxConcurrent: 1 } });
+  assert.equal(S.describe(ws, "job", io).running, true);
+  assert.throws(() => S.updateSchedule(ws, "job", { cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "dev", task: "t", agentsRoot: join(ws, "agents") }, io), (e) => e.code === "E_SCHEDULE_RUNNING");
+  const h = home(ws, "dev-elsewhere");
+  assert.throws(() => S.updateSchedule(ws, "job", { cron: "* * * * *", tz: "UTC", kind: "wake", home: h, message: "m" }, io), (e) => e.code === "E_SCHEDULE_RUNNING");
+  const d = S.updateSchedule(ws, "job", { cron: "5 * * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "new text" }, io);
+  assert.equal(d.cron, "5 * * * *"); assert.equal(d.running, true);
+  // Registry register/unregister are serialized and idempotent.
+  const before = S.readRegistry();
+  try { S.registerWorkspace(ws); S.registerWorkspace(ws); assert.equal(S.readRegistry().workspaces.filter((w) => w === ws).length, 1); S.unregisterWorkspace(ws); assert.ok(!S.readRegistry().workspaces.includes(ws)); }
+  finally { S.writeRegistry(before); }
 });
 
 test("a command whose envelope names a member-repository home is tracked through the complete roster; an unplaceable instance stays unknown", () => {
