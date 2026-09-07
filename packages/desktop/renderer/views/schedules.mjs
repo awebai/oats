@@ -44,6 +44,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     <p>Schedules run on this workspace’s server, including while the GUI is closed.</p>
     <div class="schedule-status" role="status"></div>
     <div class="schedule-host-actions"></div>
+    <p class="schedule-operation-result" role="status"></p>
     <p class="schedule-error" role="alert"></p>
     <form class="schedule-form" hidden>
       <h3 class="schedule-form-title">New schedule</h3>
@@ -122,13 +123,14 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
   }
   async function mutate(operation, id, spec) {
     if (busy || !available) return;
-    const generation = workspaceGeneration(); busy = true; error(""); render();
+    const generation = workspaceGeneration(); busy = true; error(""); q(".schedule-operation-result").textContent = ""; render();
     q(".schedule-save").disabled = true;
     try {
       const result = await postJson(ctx, `/api/schedules${wsQuery()}`, { operation, id, ...(spec ? { spec } : {}) });
       if (!alive || generation !== workspaceGeneration()) return;
       if (operation === "add" || operation === "update") form.hidden = true;
-      if (operation === "run" && result.run) q(".schedule-status").textContent = scheduleOutcome(result.run);
+      if (operation === "run" && result.run) q(".schedule-operation-result").textContent = scheduleOutcome(result.run);
+      if (operation === "reconcile") q(".schedule-operation-result").textContent = [result.reconciled === "unknown" ? "Run state is still unknown." : `Run state: ${result.reconciled || "checked"}.`, result.remedy].filter(Boolean).join(" ");
       await refresh();
     } catch (e) {
       if (alive && generation === workspaceGeneration()) {
@@ -221,7 +223,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
   q(".schedule-cancel").addEventListener("click", () => { form.hidden = true; q(".schedule-new").focus(); });
   const unsubscribe = onWorkspaceChange(() => {
     form.hidden = true; busy = false; available = false; schedules = []; agents = []; instances = []; editing = null;
-    error(""); q(".schedule-host-actions").replaceChildren(); render(); void refresh();
+    error(""); q(".schedule-operation-result").textContent = ""; q(".schedule-host-actions").replaceChildren(); render(); void refresh();
   });
   render(); void refresh();
   const timer = pollMs > 0 ? setInterval(refresh, pollMs) : null;

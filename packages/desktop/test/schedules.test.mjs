@@ -170,3 +170,16 @@ test("spawner wake fields are opt-in and preserve the literal message", () => {
   assert.equal(scheduleOutcome({ outcome: "ended" }), "Run ended");
   assert.doesNotMatch(scheduleOutcome({ outcome: "ended" }), /success/i);
 });
+
+
+test("checking an unknown run preserves the returned remedy across refresh and clears it on workspace change", async () => {
+  const unknown = { ...job, lastRun: { outcome: "unknown", error: "Command answered no envelope" } };
+  const remedy = "Check the host, then run oats schedule reconcile review --clear";
+  const s = setup({ read: async () => ({ schedules: [unknown], scheduler: { installed: true, active: true, registered: true } }), mutate: async () => ({ reconciled: "unknown", remedy }) });
+  try {
+    await tick(); [...s.el.querySelectorAll(".schedule-card button")].find(b => b.textContent === "Check run state").click(); await tick();
+    assert.equal(s.el.querySelector(".schedule-operation-result").textContent, "Run state is still unknown. " + remedy);
+    await s.view.refresh(); assert.match(s.el.querySelector(".schedule-operation-result").textContent, /--clear/);
+    setWorkspace("/other"); await tick(); assert.equal(s.el.querySelector(".schedule-operation-result").textContent, "");
+  } finally { s.cleanup(); }
+});
