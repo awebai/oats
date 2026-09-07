@@ -25,11 +25,13 @@ and no queue.
 
 ## Kinds
 
-- **spawn** `{id, enabled, cron, tz, kind: "spawn", agent, repo?, backend?,
-  purpose?, task, runtime?, model?, yolo?, wake?}` — every due minute
-  launches one disposable instance of `agent` with the same options `oats
-  spawn` takes (`repo` selects the checkout holding the soul, as `--repo`
-  does). The task gets a trailing schedule block naming the job and the
+- **spawn** `{id, enabled, cron, tz, kind: "spawn", agent, agentsRoot?,
+  repo?, backend?, purpose?, task, runtime?, model?, yolo?, wake?}` — every
+  due minute launches one disposable instance of `agent` with the same
+  options `oats spawn` takes. `agentsRoot` names the exact agents root that
+  holds the soul (it must lie inside the workspace and defaults to the
+  workspace's own root); it is what tells same-named souls in different
+  member repositories apart. `repo` is the work repository, as `--repo`. The task gets a trailing schedule block naming the job and the
   minute and ending with `oats retire --self`. An optional `wake` object
   (`{cron, tz, message}`) attaches a wake schedule to each launched instance;
   nothing is attached unless you ask.
@@ -41,14 +43,18 @@ and no queue.
   Command return is not task completion.
 - **wake** `{id, enabled, cron, tz, kind: "wake", home, message}` — every
   due minute inspects the instance at `home` through its session receipts.
-  Not running (absent, dead pane or fallback shell): the same home is started
-  with `session start`, nothing is delivered that minute. Running: `message`
-  is delivered once with `session input`. Unobservable or still starting:
-  skipped with the reason. Whether a running harness is busy cannot be seen
-  from the terminal, so the guarantee is at most one delivery per due minute,
-  no replay of missed minutes, never input into a stopped or starting shell,
-  never an interrupt. Word wake messages so that receiving one again is
-  harmless.
+  Running: `message` is delivered once with `session input`. Not running
+  (absent, dead pane or fallback shell): the same home is started with
+  `session start` and the message becomes the job's one pending delivery,
+  completed on a later tick, any tick, as soon as the session is active; the
+  home is started again only at due minutes, never every minute, so a
+  harness that keeps exiting is not restarted in a loop. A job holds at most
+  one pending delivery: a due minute while one is pending adds nothing.
+  Unobservable or still starting: skipped with the reason, delivery kept
+  pending. Whether a running harness is busy cannot be seen from the
+  terminal: delivery is terminal input (bracketed paste plus Enter), never an
+  interrupt, never Ctrl-C, never into a stopped or starting shell. Word wake
+  messages so that receiving one again is harmless.
 
 `cron` has five fields (minute hour day month weekday) and `tz` is a
 required IANA zone; both are evaluated by the croner library. `--wake-every
@@ -87,8 +93,9 @@ claims a task succeeded.
 
 `disable` never stops anything. `update` never touches a running instance.
 `remove` refuses while the job's instance is still tracked (`--force`
-forgets the job without stopping anything). Retiring an instance forgets the
-wake jobs bound to its home.
+forgets the job without stopping anything). Retiring an instance removes the
+wake jobs bound to its home; a wake whose home is gone otherwise stays
+listed with its skipped reason.
 
 ## Wake at spawn
 
