@@ -49,9 +49,10 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     <form class="schedule-form" hidden>
       <h3 class="schedule-form-title">New schedule</h3>
       <label>Name<input class="field" name="id" required pattern="[a-z0-9][a-z0-9-]{0,39}" placeholder="daily-review"></label>
-      <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="harvest">Harvest knowledge</option></select></label>
+      <label>Action<select class="field" name="kind"><option value="wake">Wake an existing agent</option><option value="spawn">Launch a new agent</option><option value="operation">Run a provider operation</option></select></label>
       <label class="schedule-agent-field">Soul<select class="field" name="agent"></select></label>
       <label class="schedule-home-field">Agent home<select class="field" name="home"></select></label>
+      <label class="schedule-provider-field" hidden>Provider operation<select class="field" name="providerOperation"></select><span class="schedule-provider-note schedule-hint"></span></label>
       <label class="schedule-task-field"><span class="schedule-task-label">Wake message</span><textarea class="field" name="task" placeholder="What should the agent do each time?"></textarea></label>
       <div class="schedule-spawn-options">
         <label>Purpose (optional instance name prefix)<input class="field" name="purpose"></label>
@@ -80,6 +81,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
   q(".schedule-spawn-options").append(nestedWake.el);
   let alive = true, request = 0, busy = false, available = false, editing = null;
   let schedules = [], agents = [], instances = [];
+  let operationRequest = 0;
   const button = (label, action, disabled = false) => {
     const b = doc.createElement("button"); b.className = "act"; b.type = "button";
     b.textContent = label; b.disabled = disabled; b.addEventListener("click", action); return b;
@@ -89,17 +91,38 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     select.replaceChildren();
     for (const row of rows) { const o = doc.createElement("option"); o.value = value(row); o.textContent = label(row); select.append(o); }
   };
-  function syncKind() {
+  function syncKind(preferred) {
     const kind = field("kind").value;
     q(".schedule-agent-field").hidden = kind !== "spawn";
     q(".schedule-home-field").hidden = kind === "spawn";
     q(".schedule-spawn-options").hidden = kind !== "spawn";
-    q(".schedule-task-field").hidden = kind === "harvest";
+    q(".schedule-task-field").hidden = kind === "operation";
     q(".schedule-task-label").textContent = kind === "wake" ? "Wake message" : "Task";
-    field("task").required = kind !== "harvest";
+    field("task").required = kind !== "operation";
     field("agent").required = kind === "spawn";
     field("home").required = kind !== "spawn";
+    q(".schedule-provider-field").hidden = kind !== "operation";
+    field("providerOperation").required = kind === "operation";
+    void loadOperations(typeof preferred === "string" ? preferred : undefined);
   }
+  async function loadOperations(preferred = field("providerOperation").value) {
+    const token = ++operationRequest, generation = workspaceGeneration();
+    if (field("kind").value !== "operation") return;
+    field("providerOperation").replaceChildren();
+    q(".schedule-provider-note").textContent = "Loading operations for this home…";
+    try {
+      const inspection = await postJson(ctx, `/api/capabilities${wsQuery()}`, { action: "inspect", selector: { home: field("home").value } });
+      if (!alive || token !== operationRequest || generation !== workspaceGeneration()) return;
+      const operations = (inspection.capabilities || []).filter(cap => cap.layer && cap.activation?.enabled).flatMap(cap =>
+        (cap.operations || []).filter(op => op.kind === "action" && op.available && !op.args?.some(arg => arg.required)).map(op => ({ address: `${cap.layer}:${op.name}`, label: `${cap.layer}: ${op.name} — ${op.description || cap.id}` })));
+      fill(field("providerOperation"), operations, op => op.label, op => op.address);
+      if (operations.some(op => op.address === preferred)) field("providerOperation").value = preferred;
+      q(".schedule-provider-note").textContent = operations.length ? "Resolved through this home's active provider at each run." : "No available provider actions for this home.";
+    } catch (error) {
+      if (alive && token === operationRequest && generation === workspaceGeneration()) q(".schedule-provider-note").textContent = error.message;
+    }
+  }
+  field("home").addEventListener("change", () => void loadOperations());
   function openForm(job, soul) {
     editing = job?.id || null; form.reset();
     q(".schedule-form-error").textContent = "";
@@ -111,7 +134,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     field("cron").value = job?.cron || "*/15 * * * *";
     field("repeat").value = [...field("repeat").options].some(o => o.value === field("cron").value) ? field("cron").value : "custom";
     field("enabled").checked = job?.enabled ?? true;
-    field("kind").value = job?.kind === "command" ? "harvest" : job?.kind || (soul ? "spawn" : "wake");
+    field("kind").value = job?.kind || (soul ? "spawn" : "wake");
     if (job?.agent || soul) field("agent").value = JSON.stringify([job?.agent || soul.name, job?.repo || soul?.repo || null, job?.agentsRoot || soul?.agentsRoot]);
     if (job?.home || job?.cwd) field("home").value = job.home || job.cwd;
     field("task").value = job?.message || job?.task || "";
@@ -119,7 +142,7 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     nestedWake.set(job?.wake);
     for (const name of ["runtime", "model", "backend"]) field(name).value = job?.[name] || "";
     field("yolo").value = job?.yolo === undefined ? "" : String(job.yolo);
-    syncKind(); form.hidden = false; field(editing ? "cron" : "id").focus();
+    syncKind(job?.operation); form.hidden = false; field(editing ? "cron" : "id").focus();
   }
   async function mutate(operation, id, spec) {
     if (busy || !available) return;
@@ -153,12 +176,12 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     for (const job of schedules) {
       const card = doc.createElement("article"); card.className = "schedule-card"; card.dataset.scheduleId = job.id;
       const title = doc.createElement("h3"); title.textContent = `${job.id} · ${job.enabled ? "Enabled" : "Paused"}`; card.append(title);
-      const target = job.kind === "spawn" ? `Launch ${job.agent}` : job.kind === "wake" ? `Wake ${job.home}` : `Command: ${(job.argv || []).join(" ")}`;
+      const target = job.kind === "spawn" ? `Launch ${job.agent}` : job.kind === "wake" ? `Wake ${job.home}` : job.kind === "operation" ? `${job.operation} · ${job.home}` : `Command: ${(job.argv || []).join(" ")}`;
       for (const text of [target, `${job.cron} · ${job.tz}`, `Next: ${when(job.nextRun)}`, `Last: ${when(job.lastRun?.startedAt)} · ${scheduleOutcome(job.lastRun)}`]) {
         const p = doc.createElement("p"); p.textContent = text; card.append(p);
       }
       const actions = doc.createElement("div"); actions.className = "schedule-actions";
-      const editable = job.kind !== "command" || JSON.stringify(job.argv) === JSON.stringify(["oats", "okf", "harvest", "--json"]);
+      const editable = job.kind !== "command";
       actions.append(button("Edit", () => openForm(job), busy || !available || !editable));
       actions.append(button(job.enabled ? "Pause" : "Enable", () => mutate(job.enabled ? "disable" : "enable", job.id), busy || !available));
       actions.append(button("Run now", () => mutate("run", job.id), busy || !available || !job.enabled));
@@ -215,6 +238,10 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     } else {
       spec.home = field("home").value;
       if (kind === "wake") spec.message = field("task").value;
+      if (kind === "operation") {
+        if (!field("providerOperation").value) { q(".schedule-form-error").textContent = "Select an available provider operation"; return; }
+        spec.operation = field("providerOperation").value;
+      }
     }
     void mutate(editing ? "update" : "add", field("id").value.trim(), spec);
   });

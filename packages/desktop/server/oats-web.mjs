@@ -17,7 +17,7 @@
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
- *   POST /api/harvest/<instance>    `oats okf harvest --json` with cwd fixed to the instance home
+ *   POST /api/harvest/<instance>    the active provider’s harvest operation with cwd fixed to the instance home
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
  *   GET  /api/file?path=<abs>       text file content, guarded to workspace roots + agent homes
@@ -33,6 +33,7 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
+import { capabilityRequest } from "./capabilities.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -994,6 +995,17 @@ const server = createServer(async (req, res) => {
       return send(res, 200, d || panelData(url.searchParams.get("ws") || undefined));
     }
     if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
+    if (path === "/api/capabilities" && req.method === "POST") {
+      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      try {
+        const result = await capabilityRequest(await readBody(req), {
+          workspace, cli: cliState, localCwd: ctxs[0],
+          agents: workspace ? agentsData(workspace.id).agents : [],
+          instances: workspace ? panelData(workspace.id).instances : [],
+        });
+        return send(res, 200, result);
+      } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+    }
     if (path === "/api/schedules" && ["GET", "POST"].includes(req.method)) {
       const workspaceId = url.searchParams.get("ws");
       const workspace = workspaceId ? workspaces().find(w => w.id === workspaceId) : req.method === "GET" ? workspaces()[0] : undefined;
@@ -1051,7 +1063,7 @@ const server = createServer(async (req, res) => {
     }
     const hm = path.match(/^\/api\/(harvest|retire|start)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
-      // Desktop v1 mutation 2: `oats okf harvest --json`, cwd FIXED by this
+      // Desktop v1 mutation 2: the active provider’s harvest operation, cwd FIXED by this
       // privileged backend to the RESOLVED instance home — the caller only
       // names an instance; it can never steer the cwd.
       const r = resolveInstanceOr(hm[2], url.searchParams.get("ws") || undefined, url.searchParams.get("home") || undefined, url.searchParams.get("server") || undefined);
@@ -1084,23 +1096,13 @@ const server = createServer(async (req, res) => {
         refreshSnapshot(); void refreshRemoteSnapshot();
         return env.ok ? send(res, 200, env.result) : send(res, 502, { error: env.error.message, code: env.error.code, result: env.result });
       }
-      if (inst.server) {
-        if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
-        locator.requireRemoteSupport(cliState, "harvest");
-        const env = await adapter.cliRemoteHarvest(cliState.bin, inst.server, inst.instance);
-        return env.ok ? send(res, 200, env.result) : send(res, 502, { error: env.error.message, code: env.error.code });
-      }
-      // SECURITY (review 53a20c7): the roster derives home from the
-      // enumerated DIRECTORY (deployment.mjs never lets instance.json
-      // relocate it), and this endpoint re-verifies before executing:
-      // the canonical home must sit under a known agents root's <agent>/
-      // instances/ (or its local-agents sibling) — a tampered snapshot or
-      // future regression can never make the CLI run in an arbitrary cwd.
-      const home = harvestHome(inst);
-      if (!home) return send(res, 409, { error: "instance home not found or outside the workspace instances layout" });
-      const env = await adapter.cliHarvest(cliState.bin, home);
-      if (!env.ok) return send(res, 502, { error: env.error.message || "harvest failed", code: env.error.code || "E_HARVEST_FAILED" });
-      return send(res, 200, env.result);
+      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      const result = await capabilityRequest({ action: "run", selector: { home: inst.home }, operation: "knowledge:harvest" }, {
+        workspace, cli: cliState, localCwd: ctxs[0],
+        agents: workspace ? agentsData(workspace.id).agents : [],
+        instances: workspace ? panelData(workspace.id).instances : [],
+      });
+      return send(res, 200, result);
     }
     if (req.method === "GET" && path === "/api/file") {
       const r = fileData(url.searchParams.get("path") || "");

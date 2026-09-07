@@ -5,7 +5,7 @@
 //
 //   1. oats spawn <agent> --dir <workspace> --task-file <0600-temp>
 //      [allowlisted purpose/repo/work/runtime/model args] --json
-//   2. oats okf harvest --json           (cwd fixed to the instance home)
+//   2. oats operation run <layer>:<operation> --home <resolved home> --json
 //
 // JSON mode emits exactly one stdout object (progress goes to stderr):
 //   success:  {"schemaVersion":1,"ok":true,"result":{...}}
@@ -204,12 +204,6 @@ export function cliRemoteRoster(bin, io = {}) {
   return runJson(bin, ["server", "roster", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 60_000 });
 }
 
-export function cliRemoteHarvest(bin, server, instance, io = {}) {
-  return runJson(bin, ["okf", "harvest", "--server", server, "--instance", instance, "--json"], {
-    cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout || 300_000,
-  });
-}
-
 /** Local retire predates the envelope; preserve its incomplete-cleanup result. */
 export function parseRetireEnvelope(stdout) {
   const envelope = parseEnvelope(stdout);
@@ -242,10 +236,56 @@ export function cliStart(bin, { home, workspaceDir, server, model }, io = {}) {
   });
 }
 
-/**
- * Desktop v1 harvest. cwd is FIXED to the resolved instance home by the
- * caller (the privileged backend resolves it — never a renderer path).
- */
-export function cliHarvest(bin, instanceHome, io = {}) {
-  return runJson(bin, ["okf", "harvest", "--json"], { cwd: instanceHome, exec: io.exec, timeout: io.timeout });
+/** Inspection, scoped activation and provider operations share one CLI boundary. */
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, binding, fields, operation, localCwd }, io = {}) {
+  const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
+  const value = (v, label) => {
+    if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
+    return v;
+  };
+  const target = [];
+  if (context) target.push('--dir', value(context, 'scope'));
+  if (server) target.push('--server', value(server, 'server'));
+  if (home) target.push('--home', value(home, 'home'));
+  if (soul && action !== 'set') target.push('--soul', value(soul, 'soul'));
+  if (agentsRoot && action !== 'use') target.push('--agents-root', value(agentsRoot, 'agents root'));
+  let argv, temporary;
+  try {
+    if (action === 'inspect') argv = ['inspect'];
+    else if (action === 'run') {
+      if (typeof operation !== 'string' || !/^(knowledge|messaging|tasks):[a-zA-Z0-9._-]+$/.test(operation)) bad('Select a declared provider operation');
+      argv = ['operation', 'run', operation];
+    } else if (action === 'use') {
+      if (!binding || !['enable', 'disable', 'inherit', 'none'].includes(binding.action)) bad('Choose enable, disable, inherit, or none');
+      argv = ['use', binding.action === 'none' ? 'none' : value(binding.capability, 'capability')];
+      if (!soul) argv.push('--global');
+      if (binding.layer !== undefined) {
+        if (!['knowledge', 'messaging', 'tasks'].includes(binding.layer)) bad('Unknown capability layer');
+        argv.push('--layer', binding.layer);
+      }
+      if (binding.action === 'none' && !binding.layer) bad('Choose a layer to disable');
+      if (binding.action === 'disable') argv.push('--disable');
+      if (binding.action === 'inherit') argv.push('--inherit');
+    } else if (action === 'set') {
+      if (!fields || typeof fields !== 'object' || Array.isArray(fields) || !Object.keys(fields).length) bad('Specify the defaults to update');
+      argv = ['soul', 'set', value(soul, 'soul')];
+      for (const [key, v] of Object.entries(fields)) {
+        if (key === 'instructions') {
+          if (typeof v !== 'string' || Buffer.byteLength(v) > 256 * 1024) bad('Instructions must be text up to 256 KiB');
+          temporary = writeTaskFile(v, io); argv.push('--instructions-file', temporary.file);
+        } else if (key === 'yolo') {
+          if (typeof v !== 'boolean') bad('Invalid permission setting');
+          argv.push(v ? '--yolo' : '--no-yolo');
+        } else if (key === 'model' && v === '') argv.push('--no-model');
+        else if (['runtime', 'backend', 'model', 'description'].includes(key)) {
+          const allowed = key === 'runtime' ? ['pi', 'claude', 'codex'] : key === 'backend' ? ['tmux', 'herdr'] : null;
+          if (allowed && !allowed.includes(v)) bad(`Invalid ${key}`);
+          argv.push(`--${key}`, value(v, key));
+        } else bad(`Unsupported soul field: ${key}`);
+      }
+    } else bad('Unknown capability action');
+    return await runJson(bin, [...argv, ...target, '--json'], {
+      cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
+    });
+  } finally { temporary?.cleanup(); }
 }

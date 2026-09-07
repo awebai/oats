@@ -1,9 +1,10 @@
 /** Workspace-scoped scheduling through the installed CLI. */
+import { capabilityRequest } from "./capabilities.mjs";
 import { cliSchedule } from "../cli-adapter.mjs";
 
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
-export async function scheduleRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliSchedule }) {
+export async function scheduleRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliSchedule, inspect = capabilityRequest }) {
   if (!workspace) fail("Select a known workspace", "E_WORKSPACE_UNKNOWN");
   if (!cli?.ok || cli.scheduleApi !== 1 || !cli.features?.includes("schedule")) fail("Update the installed oats CLI to use schedules", "cli-no-schedule");
   const server = workspace.server || undefined;
@@ -44,11 +45,15 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       if (!source) fail("Select an existing agent home in this workspace");
       if (typeof value.message !== "string" || !value.message.trim()) fail("Specify the message to send when waking the agent");
       spec = { ...spec, kind: "wake", home: source.home, message: value.message };
-    } else if (value.kind === "harvest") {
+    } else if (value.kind === "operation") {
       const source = instances.find(i => i.home === value.home);
       if (!source) fail("Select an existing agent home in this workspace");
-      spec = { ...spec, kind: "command", cwd: source.home, argv: ["oats", "okf", "harvest", "--json"] };
-    } else fail("Choose a new agent, an existing agent to wake, or knowledge harvest");
+      const inspection = await inspect({ action: "inspect", selector: { home: source.home } }, { workspace, cli, agents, instances, localCwd });
+      const supported = inspection.capabilities?.some(cap => cap.layer && cap.activation?.enabled && cap.operations?.some(op =>
+        `${cap.layer}:${op.name}` === value.operation && op.kind === "action" && op.available && !op.args?.some(arg => arg.required)));
+      if (!supported) fail("Select an available provider action for this home", "E_OPERATION_UNAVAILABLE");
+      spec = { ...spec, kind: "operation", home: source.home, operation: value.operation };
+    } else fail("Choose a new agent, an existing agent to wake, or a provider operation");
   }
   const envelope = await invoke(cli.bin, {
     operation, id, spec, server,

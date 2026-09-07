@@ -310,7 +310,10 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // apiInit forwards pre-serialized (string) bodies and headers unchanged —
   // views serialize once in common.mjs::postJson — and serializes object
   // bodies itself.
-  const init = { ...apiInit(opts), signal: AbortSignal.timeout(20000) };
+  // Provider actions may perform bounded work before returning their receipt.
+  // Let the CLI's five-minute limit report the outcome before the proxy times out.
+  const timeout = url.pathname === "/api/capabilities" ? 310_000 : 20_000;
+  const init = { ...apiInit(opts), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();
   let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }

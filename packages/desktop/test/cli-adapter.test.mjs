@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { statSync, readFileSync, existsSync } from "node:fs";
 import {
-  parseEnvelope, spawnArgv, writeTaskFile, cliSpawn, cliHarvest,
+  parseEnvelope, spawnArgv, writeTaskFile, cliSpawn, cliCapability,
 } from "../cli-adapter.mjs";
 
 const OK = (result) => JSON.stringify({ schemaVersion: 1, ok: true, result });
@@ -146,16 +146,16 @@ test("cliSpawn: an agent literally named __TASKFILE__ cannot collide with the pl
   assert.ok(tf.includes("oats-desktop-task-"), `task file is the mkdtemp path (${tf})`);
 });
 
-test("cliHarvest: runs `okf harvest --json` with cwd fixed to the given instance home", async () => {
+test("provider operation runs with an explicit home", async () => {
   let seen = null;
   const exec = fakeExec((bin, argv, opts) => {
     seen = { bin, argv, opts };
     return { stdout: OK({ harvest: "skipped", reason: "no pending notes" }) };
   });
-  const env = await cliHarvest("/abs/oats", "/homes/dev-1", { exec });
+  const env = await cliCapability("/abs/oats", { action: "run", home: "/homes/dev-1", localCwd: "/homes/dev-1", operation: "knowledge:harvest" }, { exec });
   assert.equal(env.ok, true);
   assert.equal(env.result.harvest, "skipped");
-  assert.deepEqual(seen.argv, ["okf", "harvest", "--json"]);
+  assert.deepEqual(seen.argv, ["operation", "run", "knowledge:harvest", "--home", "/homes/dev-1", "--json"]);
   assert.equal(seen.opts.cwd, "/homes/dev-1", "cwd is the resolved instance home");
   assert.equal(seen.opts.shell, false);
 });

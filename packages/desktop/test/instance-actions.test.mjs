@@ -40,7 +40,7 @@ test("instance actions keep the full host reference and confirm retirement befor
   });
   dom.window.document.body.append(select);
   await choose(select, "retire"); assert.equal(calls.length, 0);
-  await choose(select, "harvest"); assert.deepEqual(calls[0], ["harvest", instance]);
+  await choose(select, "inspect"); assert.deepEqual(calls[0], ["inspect", instance]);
   confirmed = true; await choose(select, "retire"); assert.deepEqual(calls[1], ["retire", instance]);
   assert.equal(triggerOf(select).disabled, false);
   assert.equal(triggerOf(instanceActions(dom.window.document, { ...instance, savedRoute: false }, {})).disabled, true);
@@ -69,7 +69,7 @@ test("roster rebuilds cannot submit a second lifecycle action while one is pendi
     confirmRetire: () => true, done() {}, report: assert.fail };
   const first = instanceActions(dom.window.document, instance, options);
   dom.window.document.body.append(first);
-  first.querySelector('[data-action="harvest"]').click();
+  first.querySelector('[data-action="inspect"]').click();
   const replacement = instanceActions(dom.window.document, instance, options);
   assert.equal(triggerOf(replacement).disabled, true);
   replacement.querySelector('[data-action="retire"]').click();
@@ -92,7 +92,7 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
   const key = (element, value) => element.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true }));
   trigger.click();
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
-  assert.equal(doc.activeElement.dataset.action, "harvest");
+  assert.equal(doc.activeElement.dataset.action, "inspect");
   key(doc.activeElement, "ArrowDown");
   assert.equal(doc.activeElement.dataset.action, "retire");
   const restore = captureInstanceActionMenu(doc.body);
@@ -100,7 +100,7 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
   trigger = triggerOf(control); menu = control.querySelector('[role="menu"]');
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
   assert.equal(doc.activeElement.dataset.action, "retire", "refresh keeps the selected action");
-  key(doc.activeElement, "Home"); assert.equal(doc.activeElement.dataset.action, "harvest");
+  key(doc.activeElement, "Home"); assert.equal(doc.activeElement.dataset.action, "inspect");
   key(doc.activeElement, "End"); assert.equal(doc.activeElement.dataset.action, "retire");
   key(doc.activeElement, "Escape");
   assert.equal(trigger.getAttribute("aria-expanded"), "false");

@@ -206,12 +206,13 @@ async function mountSpawn(t, { cliOk = true } = {}) {
   return { dom, doc: dom.window.document, spawn };
 }
 
-test("preselectSoul before roster paint opens the soul's spawn modal (CLI ok)", async (t) => {
+test("preselectSoul opens inspection; launching is explicit", async (t) => {
   const { doc, spawn } = await mountSpawn(t);
   spawn.preselectSoul({ name: "ux-designer", agentsRoot: "/r2" });
-  const dialog = doc.querySelector(".spawn-dialog");
-  assert.ok(dialog, "spawn modal opened");
-  assert.match(dialog.textContent, /Spawn ux-designer/);
+  const inspector = doc.querySelector(".soul-inspector");
+  assert.equal(inspector.hidden, false);
+  assert.match(inspector.textContent, /ux-designer/);
+  assert.equal(doc.querySelector(".spawn-dialog"), null);
 });
 
 test("preselectSoul on an attached-only soul focuses its card, never a modal", async (t) => {
@@ -228,11 +229,12 @@ test("preselectSoul with the CLI unavailable focuses the card (degradation respe
   assert.equal(doc.activeElement?.dataset?.agent, "ux-designer");
 });
 
-test("preselect is consumed once: a second roster paint must not reopen the modal", async (t) => {
+test("preselect is consumed once: closing inspection keeps it closed", async (t) => {
   const { doc, spawn } = await mountSpawn(t);
   spawn.preselectSoul({ name: "ux-designer" });
-  assert.ok(doc.querySelector(".spawn-dialog"));
-  doc.querySelector(".fcancel").click();
+  assert.equal(doc.querySelector(".soul-inspector").hidden, false);
+  [...doc.querySelectorAll(".inspector-head button")].find(b => b.textContent === "Back").click();
+  assert.equal(doc.querySelector(".soul-inspector").hidden, true);
   assert.equal(doc.querySelector(".spawn-dialog"), null);
   // a later roster paint (poll) must not resurrect the consumed preselect
   await tick(); await tick();
@@ -290,9 +292,9 @@ test("preselect during a workspace switch is not consumed against the stale rost
   assert.equal(dom.window.document.querySelector(".spawn-dialog"), null, "not consumed against the stale roster");
   releaseB();
   await tick(); await tick();
-  const dialog = dom.window.document.querySelector(".spawn-dialog");
-  assert.ok(dialog, "preselect consumed by wsB's own roster paint");
-  assert.match(dialog.textContent, /Spawn b-soul/);
+  const inspector = dom.window.document.querySelector(".soul-inspector");
+  assert.equal(inspector.hidden, false, "preselect consumed by wsB's own roster paint");
+  assert.match(inspector.textContent, /b-soul/);
 });
 
 test("a deferred preselect dies with the view: defer → unmount → remount opens no modal (review 04584f9)", async (t) => {
