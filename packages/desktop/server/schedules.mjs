@@ -24,7 +24,7 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       if (typeof value.task !== "string" || !value.task.trim()) fail("A scheduled agent needs a task");
       spec = { ...spec, kind: "spawn", agent: matches[0].name, agentsRoot: matches[0].agentsRoot, task: value.task };
       if (matches[0].repo) spec.repo = matches[0].repo;
-      for (const key of ["runtime", "model", "backend"]) {
+      for (const key of ["runtime", "model", "backend", "purpose"]) {
         if (value[key] !== undefined && value[key] !== "") {
           if (typeof value[key] !== "string") fail(`Invalid ${key}`);
           spec[key] = value[key];
@@ -33,6 +33,11 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       if (value.yolo !== undefined) {
         if (typeof value.yolo !== "boolean") fail("Invalid permission setting");
         spec.yolo = value.yolo;
+      }
+      if (value.wake !== undefined) {
+        const wake = value.wake;
+        if (!wake || typeof wake !== "object" || !["cron", "tz", "message"].every(k => typeof wake[k] === "string" && wake[k].trim())) fail("Specify the nested wake cron, time zone, and message");
+        spec.wake = { cron: wake.cron, tz: wake.tz, message: wake.message };
       }
     } else if (value.kind === "wake") {
       const source = instances.find(i => i.home === value.home);
