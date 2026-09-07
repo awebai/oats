@@ -125,10 +125,10 @@ continues.
 and while a job holds a slot or has an unresolved attempt what its run is
 tracked or reconciled by (kind, agent, agentsRoot, repo, purpose, home, cwd,
 argv) cannot change; cron, tz, task, message, runtime, model and enabled
-can. A cold wake persists its slot before the session start runs: a start
-that fails after it may have allocated keeps the slot until the session
-is observed stopped or absent; a refusal that allocated nothing gives it
-back at once.
+can. A cold wake persists its slot before the session start runs and keeps
+it on any start exception, whatever its code (the kernel can refuse while
+recording, after the session exists); the next observation releases it once
+the runtime is proven stopped or absent, one tick at worst.
 `remove` refuses while the job's instance is still tracked (`--force`
 forgets the job without stopping anything). Retiring an instance removes the
 wake jobs bound to its home; a wake whose home is gone otherwise stays
