@@ -17,7 +17,7 @@
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
- *   POST /api/harvest/<instance>    the active provider’s harvest operation with cwd fixed to the instance home
+ *   POST /api/harvest/<instance>    the active provider’s harvest operation addressed by the exact --home; the CLI derives the recorded context
  *   GET  /api/brain/<agent>?ws=<id> agent "brain" JSON: soul (AGENTS.md, skills,
  *                                   knowledge tree) + per-instance artifacts (abs paths)
  *   GET  /api/file?path=<abs>       text file content, guarded to workspace roots + agent homes

@@ -15,7 +15,7 @@ const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
 /** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
-function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, groups = [] } = {}) {
+function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [] } = {}) {
   const log = join(dir, "cli-calls.jsonl");
   const js = join(dir, "oats.cjs");
   const bin = join(dir, "oats");
@@ -23,7 +23,7 @@ function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probe
 const argv = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, cwd: process.cwd() }) + "\\n");
 if (argv[0] === "version" && argv.includes("--json")) {
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)}, features: ${JSON.stringify(features)} }));
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)}, features: ${JSON.stringify(features)}, operationsApi: ${JSON.stringify(operationsApi)} }));
   // Liar modes (review 0b83988): print a VALID probe, then exit nonzero or
   // REALLY hang past the probe timeout — either must be rejected by
   // discovery. if/else if throughout: fallthrough to the trailing exit(2)
@@ -65,8 +65,10 @@ if (argv[0] === "version" && argv.includes("--json")) {
 } else if (argv[0] === "retire" && argv.includes("--json")) {
   process.stdout.write(JSON.stringify({ retired: argv[1], removedDir: true }));
   process.exit(0);
-} else if (argv[0] === "okf" && argv[1] === "harvest" && argv.includes("--json")) {
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { harvest: "skipped", reason: "no pending notes" } }));
+} else if (argv[0] === "operation" && argv[1] === "run" && argv.includes("--json")) {
+  // The provider-operation contract: the kernel envelope carries the
+  // provider's own view/action result under result.result.
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { operation: argv[2], capability: "oats.okf", result: { harvest: "skipped", reason: "no pending notes" } } }));
   process.exit(0);
 } else {
   process.stderr.write("unexpected argv: " + argv.join(" "));
@@ -216,9 +218,9 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
   } finally { r2.proc.kill(); }
 });
 
-test("desktop server: spawn routes through the CLI with --dir/--task-file argv; harvest fixes cwd to the instance home", async () => {
+test("desktop server: spawn routes through the CLI with --dir/--task-file argv; harvest addresses the exact instance home", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-climut-"));
-  const { bin, calls } = fakeCli(dir);
+  const { bin, calls } = fakeCli(dir, { features: ["operations"], operationsApi: 1 });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -248,17 +250,17 @@ test("desktop server: spawn routes through the CLI with --dir/--task-file argv; 
     // "boom" is not a real soul in this repo — unknown agent (409) is also
     // acceptable; the point is a stable non-2xx with an error body.
     assert.ok([409, 502].includes(rf.status), `spawn failure surfaces (${rf.status})`);
-    // ---- harvest: pick a real instance from the panel and check cwd
+    // ---- harvest: pick a real instance from the panel; the bridge names the
+    // RESOLVED home explicitly and lets the CLI derive its recorded context
     const pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json();
     const inst = pd.instances.find((i) => i.home);
     if (inst) {
       const hr = await fetch(`http://127.0.0.1:${port}/api/harvest/${encodeURIComponent(inst.instance)}?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
       assert.equal(hr.status, 200, JSON.stringify(await hr.clone().json()));
       const hb = await hr.json();
-      assert.equal(hb.harvest, "skipped");
-      const harvestCall = calls().find((c) => c.argv[0] === "okf");
-      assert.deepEqual(harvestCall.argv, ["okf", "harvest", "--json"]);
-      assert.equal(harvestCall.cwd, inst.home, "cwd fixed by the backend to the RESOLVED instance home");
+      assert.equal(hb.result.harvest, "skipped");
+      const harvestCall = calls().find((c) => c.argv[0] === "operation");
+      assert.deepEqual(harvestCall.argv, ["operation", "run", "knowledge:harvest", "--home", inst.home, "--json"]);
     }
     // unknown instance → 404, CLI never invoked for it
     const h404 = await fetch(`http://127.0.0.1:${port}/api/harvest/no-such-instance`, { method: "POST" });
@@ -268,7 +270,7 @@ test("desktop server: spawn routes through the CLI with --dir/--task-file argv; 
 
 test("desktop server: hostile instance.json cannot steer the harvest cwd (review 53a20c7 blocker)", async () => {
   const cliDir = mkdtempSync(join(tmpdir(), "oats-clihostile-"));
-  const { bin, calls } = fakeCli(cliDir);
+  const { bin, calls } = fakeCli(cliDir, { features: ["operations"], operationsApi: 1 });
   // Workspace with an instance whose instance.json points home at an
   // ARBITRARY directory — the roster and the endpoint must both pin the
   // directory-derived home; the CLI must never run in the steered cwd.
@@ -297,13 +299,13 @@ test("desktop server: hostile instance.json cannot steer the harvest cwd (review
     const evil = pd.instances.find((i) => i.instance === "dev-evil");
     assert.ok(evil, "instance surfaces");
     assert.equal(evil.home, instHome, "roster home is directory-derived, never instance.json's");
-    // harvest: runs in the real home — never in the steered directory
+    // harvest: addresses the real home — never the steered directory
     const hr = await fetch(`http://127.0.0.1:${port + 1}/api/harvest/dev-evil?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
     assert.equal(hr.status, 200, JSON.stringify(await hr.clone().json()));
-    const harvestCall = calls().find((c) => c.argv[0] === "okf");
+    const harvestCall = calls().find((c) => c.argv[0] === "operation");
     assert.ok(harvestCall, "harvest ran");
-    assert.equal(harvestCall.cwd, instHome, "cwd pinned to the enumerated directory");
-    assert.notEqual(harvestCall.cwd, steerTarget, "steered cwd never used");
+    assert.deepEqual(harvestCall.argv, ["operation", "run", "knowledge:harvest", "--home", instHome, "--json"], "--home pinned to the enumerated directory");
+    assert.ok(!harvestCall.argv.includes(steerTarget) && harvestCall.cwd !== steerTarget, "steered home never reaches the CLI");
   } finally { proc2.kill(); }
 });
 
@@ -364,7 +366,7 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
       { instance: "dev-one", agent: "dev", home, agentsRoot: "/remote/project/agents", running: true, savedRoute: true, runtime: "codex" },
     ],
   }];
-  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "harvest"], features: ["retire-home"], groups });
+  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "operations"], features: ["retire-home", "operations"], operationsApi: 1, groups });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   const base = `http://127.0.0.1:${port}`;
   try {
@@ -384,8 +386,8 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     const qualifier = `?ws=remote%3Ahost-abc&home=${encodeURIComponent(home)}&server=host`;
     const harvested = await fetch(`${base}/api/harvest/dev-one${qualifier}`, { method: "POST" });
     assert.equal(harvested.status, 200);
-    const call = fake.calls().find((c) => c.argv[0] === "okf");
-    assert.deepEqual(call.argv, ["okf", "harvest", "--server", "host", "--instance", "dev-one", "--json"]);
+    const call = fake.calls().find((c) => c.argv[0] === "operation");
+    assert.deepEqual(call.argv, ["operation", "run", "knowledge:harvest", "--server", "host", "--home", home, "--json"], "saved --server route and the exact remote --home");
     assert.notEqual(call.cwd, home, "remote home must never become a local process cwd");
     const retired = await fetch(`${base}/api/retire/dev-one${qualifier}`, { method: "POST" });
     assert.equal(retired.status, 200);
