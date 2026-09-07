@@ -40,7 +40,7 @@ import {
   fallbackTabForContext, terminalOpenOwnsWorkspace, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import {
-  requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, wireSplitPaneSelection,
+  requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, wireSplitPaneSelection, fillEmptyGroup,
 } from "./split-layout.mjs";
 import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
@@ -793,10 +793,14 @@ async function openTerminalTabFlow(ref, notify) {
   }
   const { inst, key } = r;
   await whenKeyFree(key);
+  if (!owns()) return;
   // Every jump path through here is user-initiated (palette, roster row,
   // quick-open, post-spawn open) — activating an existing tab focuses its
   // terminal input so the user can type into tmux immediately.
-  for (const [tid, t] of tabs) if (t.key === key) { activateTab(tid, { focusContent: true }); return; }
+  for (const [tid, t] of tabs) if (t.key === key) {
+    split = fillEmptyGroup(split, tid);
+    activateTab(tid, { focusContent: true }); return;
+  }
   if (pendingTerms.has(key)) return; // an open for this key is already in flight
   pendingTerms.add(key);
   try {
