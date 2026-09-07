@@ -17,9 +17,9 @@ import { NAV, stageSidebarMode, loadStageView } from "../renderer/shell-nav.mjs"
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("NAV is exactly the two pre-#29 destinations — no Instances stage", () => {
-  assert.deepEqual(NAV.map((v) => v.name), ["hierarchy", "spawn"],
-    "rail destinations are Active overview and Soul roster only");
+test("NAV includes schedules and keeps the instance roster in the sidebar", () => {
+  assert.deepEqual(NAV.map((v) => v.name), ["hierarchy", "spawn", "schedules"],
+    "rail destinations are Active overview, Soul roster and Schedules");
   for (const v of NAV) {
     assert.ok(v.label && v.icon && v.title, `${v.name} entry carries full rail chrome`);
   }

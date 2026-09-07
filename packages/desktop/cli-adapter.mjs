@@ -143,7 +143,19 @@ function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_M
  */
 export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io = {}) {
   let argv;
-  try { argv = spawnArgv(agent, workspaceDir, "__TASKFILE__", opts); }
+  let wake;
+  try {
+    argv = spawnArgv(agent, workspaceDir, "__TASKFILE__", opts);
+    if (opts.wake !== undefined) {
+      const value = opts.wake;
+      if (!value || typeof value !== "object" || Array.isArray(value)
+        || !["cron", "tz", "message"].every(k => typeof value[k] === "string" && value[k].trim() && !value[k].includes("\0"))
+        || (value.enabled !== undefined && typeof value.enabled !== "boolean")) {
+        throw Object.assign(new Error("Specify the wake cron, time zone, and message"), { code: "E_BAD_ARGS" });
+      }
+      wake = { cron: value.cron, tz: value.tz, message: value.message, enabled: value.enabled ?? true };
+    }
+  }
   catch (e) {
     // Validation failures resolve as domain errors (stable codes), never throw
     // — the endpoint maps them like CLI envelope failures.
@@ -155,14 +167,36 @@ export async function cliSpawn(bin, { agent, workspaceDir, task, ...opts }, io =
   // occupy an earlier argv slot and indexOf would clobber the agent name
   // instead (review 0b83988).
   argv[argv.indexOf("--task-file") + 1] = file;
+  let wakeFile;
   try {
+    if (wake) { wakeFile = writeTaskFile(JSON.stringify(wake), io); argv.push("--wake-file", wakeFile.file); }
     return await runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout });
-  } finally { cleanup(); }
+  } finally { wakeFile?.cleanup(); cleanup(); }
 }
 
 /** Registered servers, from the CLI's registry (`oats server list --json`). */
 export function cliServers(bin, io = {}) {
   return runJson(bin, ["server", "list", "--json"], { cwd: io.cwd || process.cwd(), exec: io.exec, timeout: io.timeout });
+}
+
+/** Schedule definitions travel as private JSON files, never shell text. */
+export async function cliSchedule(bin, { operation, id, spec, workspaceDir, server }, io = {}) {
+  const actions = new Set(["list", "show", "add", "update", "enable", "disable", "remove", "run", "reconcile", "host-install", "host-uninstall", "host-status"]);
+  const writes = operation === "add" || operation === "update";
+  const needsId = actions.has(operation) && operation !== "list" && !operation.startsWith("host-");
+  if (!actions.has(operation) || (needsId && (typeof id !== "string" || !/^[a-z0-9][a-z0-9-]{0,39}$/.test(id)))
+    || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
+    || typeof workspaceDir !== "string" || !workspaceDir.startsWith("/") || workspaceDir.includes("\0")
+    || (writes && (!spec || typeof spec !== "object" || Array.isArray(spec)))) {
+    return { schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid schedule operation or definition" } };
+  }
+  const argv = ["schedule", ...operation.split("-")];
+  if (needsId) argv.push(id);
+  const temporary = writes ? writeTaskFile(JSON.stringify({ ...spec, id }), io) : null;
+  if (temporary) argv.push("--file", temporary.file);
+  argv.push(...(server ? ["--server", server] : ["--dir", workspaceDir]), "--json");
+  try { return await runJson(bin, argv, { cwd: workspaceDir, exec: io.exec, timeout: io.timeout }); }
+  finally { temporary?.cleanup(); }
 }
 
 /** One bounded aggregate read; the CLI owns registry and saved-route resolution. */

@@ -32,6 +32,7 @@ import { existsSync, readFileSync, readdirSync, statSync, lstatSync, realpathSyn
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
+import { scheduleRequest } from "./schedules.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -284,7 +285,7 @@ function spawnErrorPayload(e) {
 }
 /* OATSWEB_SPAWNERR_END */
 
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, serverId }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   const server = serverId ? String(serverId) : undefined;
@@ -315,6 +316,10 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // and the local guard only needs the remote surface itself.
   if (server) locator.requireRemoteSupport(cliState, "spawn");
   else locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
+  if (wake !== undefined) {
+    if (!cliState.features?.includes("schedule")) throw Object.assign(new Error("Update oats to configure recurring wake-ups"), { code: "cli-no-schedule" });
+    if (server) locator.requireRemoteSupport(cliState, "schedule");
+  }
   // Relation flags are a NEWER v1 surface: older v1 CLIs ignore unknown
   // spawn options and report success, silently creating an UNRELATED
   // instance. Fail closed instead of degrading silently (review f921f7d).
@@ -341,6 +346,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     yolo,
     model: model ? String(model) : undefined,
     server,
+    wake,
   });
   if (!env.ok) {
     const err = new Error(env.error.message || "spawn failed");
@@ -351,6 +357,8 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   if (r.server) void refreshRemoteSnapshot();
   const remoteWorkspaceId = remote.spawnedWorkspace(remoteGroups, r);
   return { instance: r.instance, agent: r.agent, home: r.home, work: r.work,
+    ...(r.wakeSchedule ? { wakeSchedule: r.wakeSchedule } : {}),
+    ...(r.wakeScheduleError ? { wakeScheduleError: r.wakeScheduleError } : {}),
     ...(r.routeConflict ? { routeConflict: r.routeConflict } : {}),
            branch: r.branch ?? null, launched: !!r.launched, warnings: r.warnings || [],
            tmux: r.tmux ?? null, ...(r.server ? { server: r.server, target: r.target,
@@ -426,6 +434,7 @@ function cliStatus() {
     sessionBackends: cliState.sessionBackends || ["tmux"],
     launchOptions: cliState.launchOptions || [],
     features: cliState.features || [],
+    scheduleApi: cliState.scheduleApi || null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -985,6 +994,19 @@ const server = createServer(async (req, res) => {
       return send(res, 200, d || panelData(url.searchParams.get("ws") || undefined));
     }
     if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
+    if (path === "/api/schedules" && ["GET", "POST"].includes(req.method)) {
+      const workspaceId = url.searchParams.get("ws");
+      const workspace = workspaceId ? workspaces().find(w => w.id === workspaceId) : req.method === "GET" ? workspaces()[0] : undefined;
+      try {
+        const request = req.method === "GET" ? { operation: "list" } : await readBody(req);
+        const result = await scheduleRequest(request, {
+          workspace, cli: cliState, localCwd: ctxs[0],
+          agents: workspace ? agentsData(workspace.id).agents : [],
+          instances: workspace ? panelData(workspace.id).instances : [],
+        });
+        return send(res, 200, result);
+      } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+    }
     const bm = path.match(/^\/api\/brain\/([A-Za-z0-9._-]+)$/);
     if (bm && req.method === "GET") {
       if (workspaceById(url.searchParams.get("ws"))?.remote) return send(res, 409, { error: "Remote files are available through the agent terminal", code: "E_REMOTE_FILES" });
