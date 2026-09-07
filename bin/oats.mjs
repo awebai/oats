@@ -16,11 +16,12 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
 import {
-  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain,
+  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath,
   readCapabilityLocks, writeCapabilityLock,
@@ -329,6 +330,186 @@ function doctorPackagesData(ctx, chain, { teamScope } = {}) {
       : null,
   }));
   return { lockError: lockBroken, packages, legacyLockFiles, adoptedTemplates, missingHostRequirements, officialMigration: officialMigrationState(pkgLocks.legacy, { teamScope, ctx }) };
+}
+
+// ---------- inspect: one authoritative answer for GUIs ----------
+/** Souls, capabilities (installed state and health, separately from
+ *  activation), effective layer bindings and declared operations for a
+ *  scope, a selected soul, or a running home's snapshot. Read-only; the
+ *  integrity scan runs only when asked (a GUI calls this on Refresh, never
+ *  from its roster poll). Nothing here is provider-specific: what a
+ *  knowledge provider offers is what its manifest declares. */
+const INSPECT_TEXT_CAP = 256 * 1024;
+function readTextCapped(file) {
+  try {
+    const text = readFileSync(file, "utf8");
+    const truncated = Buffer.byteLength(text) > INSPECT_TEXT_CAP;
+    return { file, text: truncated ? text.slice(0, INSPECT_TEXT_CAP) : text, sha256: createHash("sha256").update(text).digest("hex"), truncated };
+  } catch { return { file, text: null, sha256: null, truncated: false }; }
+}
+const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "work", "type", "description"];
+function soulEntry(soul, root, { capability } = {}) {
+  const dir = soul._dir || soul.soulDir;
+  const soulDir = capability ? soul.soulDir : join(dir, "soul");
+  const packaged = !!capability;
+  return {
+    name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
+    type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
+    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, backend: soul.backend ?? null,
+    agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
+    editable: packaged
+      ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
+      : { fields: [...SOUL_FIELDS], instructions: true, reason: null },
+    instances: [],
+  };
+}
+function inspectCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const homeFlag = flag("home");
+  const home = homeFlag === true ? bail("E_BAD_ARGS", "--home needs an absolute instance home") : homeFlag;
+  let meta;
+  if (home) {
+    if (!isAbsolute(home)) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const metaFile = join(home, "instance.json");
+    if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
+    try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (e) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${e.message}`); }
+  }
+  const ctx = flag("dir") !== undefined ? dirFlag() : (meta?.repo && existsSync(meta.repo) ? resolve(meta.repo) : dirFlag());
+  const soulFlag = flag("soul");
+  if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
+  if (meta && soulFlag && soulFlag !== meta.agent) bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${home} (${meta.agent})`);
+  const soulName = soulFlag || meta?.agent || undefined;
+  const agentsRootFlag = flag("agents-root");
+  if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  let r;
+  try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  const chain = configChain(ctx);
+  const roots = (r.team ? teamAgentRoots(r.team.scope) : [findRoot(ctx)]).filter(Boolean).map((p) => resolve(p));
+
+  // Souls: every persistent and local soul of every root in scope, plus the
+  // souls capabilities package (read-only, reported as such).
+  let souls = [];
+  for (const root of roots) {
+    for (const a of listInstances(root)) {
+      const soul = findAgent(root, a.name) || a;
+      const e = soulEntry(soul, root);
+      e.instances = (a.instances || []).map((i) => i.instance);
+      souls.push(e);
+    }
+  }
+  let packagedDiagnostics = [];
+  try {
+    const packaged = listCapabilityAgents(ctx);
+    packagedDiagnostics = packaged.diagnostics || [];
+    for (const pa of packaged) {
+      let soul = {};
+      try { soul = stripInternalAnnotations(withConfigFile(join(pa.soulDir, "soul.yaml"), () => parseYamlNested(readFileSync(join(pa.soulDir, "soul.yaml"), "utf8")))); } catch { /* reported by name only */ }
+      souls.push(soulEntry({ ...soul, name: pa.name, description: pa.description ?? soul.description, soulDir: pa.soulDir }, roots[0] || ctx, { capability: pa.capability }));
+    }
+  } catch (e) { packagedDiagnostics.push({ code: e.code || "E_CAPABILITY_BROKEN", message: e.message }); }
+  let selectedSoul = null;
+  if (soulName) {
+    let matches = souls.filter((s) => s.name === soulName);
+    if (agentsRootFlag) matches = matches.filter((s) => resolve(s.agentsRoot) === resolve(agentsRootFlag));
+    if (!matches.length) bail("E_SOUL_UNKNOWN", `no soul ${JSON.stringify(soulName)} in the scope of ${ctx}${agentsRootFlag ? ` under ${agentsRootFlag}` : ""}`);
+    if (matches.length > 1) bail("E_SOUL_AMBIGUOUS", `soul ${JSON.stringify(soulName)} exists under ${matches.length} agents roots (${matches.map((m) => m.agentsRoot).join(", ")}); pass --agents-root <abs>`);
+    selectedSoul = matches[0];
+    selectedSoul.instructions = readTextCapped(selectedSoul.instructionsFile);
+    souls = [selectedSoul];
+  }
+
+  // Capabilities: installed state and health from the package engine (exactly
+  // what `oats list` reports), owned/path manifests beside them, and the
+  // ACTIVATION for the selected soul (or global) from the resolver.
+  const mans = capabilityManifests(ctx);
+  let lockError = null;
+  const byId = new Map();
+  try {
+    const pkgs = listInstalledPackages(ctx), locks = readPackageLocks(ctx);
+    for (const p of pkgs) {
+      const rows = levelRows(locks, p.level);
+      for (const c of p.capabilities) {
+        const h = capabilityHealth(p.level, c, rows.capabilities[c.id], rows.packages[p.package]);
+        byId.set(c.id, {
+          id: c.id, package: p.package, version: c.version || null, layer: c.manifest?.layer || null, command: c.manifest?.command || null,
+          origin: "installed", level: p.level, source: p.source || null, dir: h.dir,
+          health: { status: h.status, code: h.code, detail: h.detail, installed: !!c.installed, locked: true, trusted: c.trusted === true, integrity: c.integrity || null, installedIntegrity: h.integrity ?? null },
+        });
+      }
+    }
+  } catch (e) { lockError = { code: e.code || "invalid-lock", message: e.message }; }
+  for (const [id, m] of Object.entries(mans)) {
+    if (byId.has(id)) continue;
+    const trust = capabilityTrust(m, ctx);
+    const executable = Object.keys(m.commands || {}).length || Object.keys(m.hooks || {}).length || (m.environment?.length || 0);
+    let integrity = trust.integrity || null;
+    if (!integrity) { try { integrity = capabilityArtifactIntegrity(m._dir); } catch { integrity = null; } }
+    byId.set(id, {
+      id, package: m._package || null, version: m.version || null, layer: m.layer || null, command: m.command || null,
+      origin: String(m._origin || "").split(":")[0] || "unknown", level: String(m._origin || "").split(":").slice(1).join(":") || null, source: null, dir: m._dir,
+      health: { status: executable && !trust.trusted ? "untrusted" : "ok", code: executable && !trust.trusted ? "untrusted-surface" : null, detail: executable && !trust.trusted ? (trust.reason || null) : null, installed: true, locked: !!trust.lock, trusted: !!trust.trusted, integrity, installedIntegrity: integrity },
+    });
+  }
+  const declaredAt = (id) => chain.flatMap((cfg) => configCapabilityEntries(cfg).filter((e) => e.id === id).map((e) => ({ level: cfg._level, slot: e.slot || null, targets: [
+    ...(e.spec.global !== undefined ? [`global`] : []),
+    ...Object.keys(e.spec["agent-types"] || {}).map((t) => `type:${t}`),
+    ...Object.keys(e.spec.souls || {}).map((sn) => `soul:${sn}`),
+  ] })));
+  const capabilities = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)).map((entry) => {
+    const active = r.capabilities.find((c) => c.id === entry.id);
+    const m = mans[entry.id];
+    const disabledLayer = entry.layer && r.layerDisabled?.[entry.layer];
+    const declared = declaredAt(entry.id);
+    const activation = active
+      ? { enabled: true, target: [...active.provenance].map((p) => p.split(" @ ")[0]).sort((a, b) => (b.startsWith("soul:") ? 2 : b.startsWith("type:") ? 1 : 0) - (a.startsWith("soul:") ? 2 : a.startsWith("type:") ? 1 : 0))[0] || "global", level: active.level, provenance: active.provenance, settings: active.settings || {}, declaredAt: declared }
+      : { enabled: false, target: declared.length ? "declared" : "none", level: declared[0]?.level || null, provenance: [], settings: {}, declaredAt: declared, ...(disabledLayer ? { reason: `layer ${entry.layer} is disabled at ${disabledLayer.level}` } : {}) };
+    const operations = manifestOperations(m).map((op) => {
+      let reason = null;
+      if (!active) reason = disabledLayer ? `layer ${entry.layer} is disabled at ${disabledLayer.level}` : `${entry.id} is not activated for ${soulName ? `soul ${soulName}` : "this scope"}`;
+      else if (!entry.health.trusted) reason = `${entry.id} executable surface is not trusted (oats trust ${entry.id})`;
+      else if (entry.health.status !== "ok") reason = entry.health.detail || entry.health.status;
+      else if (op.context === "home" && !home) reason = "needs a running home (--home)";
+      return { ...op, argv: [entry.command, op.command], available: !reason, reason };
+    });
+    return { ...entry, activation, operations };
+  });
+  const layers = Object.fromEntries(LAYERS.map((l) => [l, r.layers[l]
+    ? { id: r.layers[l].id, level: r.layers[l].level, provenance: r.provenance[l] || null, disabled: false }
+    : { id: null, level: r.layerDisabled?.[l]?.level || null, provenance: r.provenance[l] || null, disabled: !!r.layerDisabled?.[l] }]));
+  const knowledgeCap = layers.knowledge.id ? capabilities.find((c) => c.id === layers.knowledge.id) : null;
+  const knowledge = knowledgeCap ? { provider: knowledgeCap.id, version: knowledgeCap.version, operations: knowledgeCap.operations.map((o) => ({ name: o.name, kind: o.kind, available: o.available, reason: o.reason })) } : { provider: null, version: null, operations: [] };
+
+  let snapshot = null;
+  if (meta) {
+    const runtimeById = new Map((meta.capabilityRuntime || []).map((c) => [c.id, c]));
+    const drift = [];
+    for (const c of meta.capabilities || []) {
+      const now = r.capabilities.find((x) => x.id === c.id);
+      if (!now) { drift.push({ id: c.id, field: "activation", snapshot: true, config: false }); continue; }
+      if (JSON.stringify(c.settings || {}) !== JSON.stringify(now.settings || {})) drift.push({ id: c.id, field: "settings", snapshot: c.settings || {}, config: now.settings || {} });
+      const then = runtimeById.get(c.id)?.trust?.integrity, cur = byId.get(c.id)?.health?.integrity;
+      if (then && cur && then !== cur) drift.push({ id: c.id, field: "integrity", snapshot: then, config: cur });
+    }
+    for (const now of r.capabilities) if (!(meta.capabilities || []).some((c) => c.id === now.id)) drift.push({ id: now.id, field: "activation", snapshot: false, config: true });
+    snapshot = {
+      home, instance: meta.instance, agent: meta.agent, runtime: meta.runtime || null, model: meta.model ?? null, yolo: meta.yolo ?? null, launched: !!meta.launched, createdAt: meta.createdAt || null,
+      layers: meta.layers || {}, capabilities: (meta.capabilities || []).map((c) => ({ id: c.id, level: c.level, settings: c.settings || {}, trusted: runtimeById.get(c.id)?.trust?.trusted ?? null })),
+      instructions: { ...readTextCapped(join(home, "AGENTS.md")), sources: meta.instructions || [] }, drift,
+    };
+  }
+  const result = {
+    operationsApi: 1, kernel: OATS_VERSION,
+    scope: { context: ctx, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
+    selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config" },
+    souls, layers, capabilities, knowledge, snapshot,
+    problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability }))],
+  };
+  if (JSON_MODE) { jsonOk(result); return; }
+  console.log(`oats inspect — ${shortPath(ctx)}${selectedSoul ? ` soul ${selectedSoul.name}` : ""}${home ? ` home ${shortPath(home)}` : ""}`);
+  for (const s of souls) console.log(`  soul ${s.name} [${s.kind}${s.capability ? ` ${s.capability}` : ""}] runtime ${s.runtime}${s.model ? ` model ${s.model}` : ""} work ${s.work}${s.editable.fields.length ? "" : " (read-only)"}`);
+  for (const l of LAYERS) console.log(`  layer ${l}: ${layers[l].id || (layers[l].disabled ? "disabled" : "none")}${layers[l].provenance ? `  (${layers[l].provenance})` : ""}`);
+  for (const c of capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.health.status}${c.activation.enabled ? ` active:${c.activation.target}` : " inactive"}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
+  for (const p of result.problems) console.log(`  ! ${p.code}: ${p.message}`);
 }
 
 function doctorJson(dir) {
@@ -3589,11 +3770,12 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule"].includes(cmd)) serverRouteCmd();
 else if (cmd === "server") serverCmd();
+else if (cmd === "inspect") inspectCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -3729,6 +3911,12 @@ Usage:
       [--self] [--delete-branch]            worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
                                             a detached external retirement runs
+  oats inspect [--dir <scope>] [--soul <name>   one authoritative JSON answer for a GUI: souls
+      [--agents-root <abs>]] [--home <abs>]   (runtime defaults, editability, instructions),
+      [--json]                              installed capabilities with health, effective
+                                            layer bindings and activation, declared
+                                            operations with availability; --home adds the
+                                            running home's snapshot and its drift from config
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
