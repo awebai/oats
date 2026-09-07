@@ -41,7 +41,7 @@ import {
 } from "../lib/packages.mjs";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
-import { listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
+import { scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 
 const args = process.argv.slice(2);
@@ -2764,7 +2764,13 @@ function spawnCmd() {
   try {
     const wakeFile = flag("wake-file");
     if (wakeFile === true) bail("E_BAD_ARGS", "--wake-file needs a path");
-    if (wakeFile) {
+    const wakeJson = flag("wake-json");
+    if (wakeJson === true) bail("E_BAD_ARGS", "--wake-json needs the wake object as JSON text");
+    if (wakeJson) {
+      let doc; try { doc = JSON.parse(wakeJson); } catch (e) { bail("E_SCHEDULE_INVALID", `--wake-json is not valid JSON: ${e.message}`); }
+      if (!doc || typeof doc !== "object") bail("E_SCHEDULE_INVALID", "--wake-json must hold {cron, tz, message, enabled}");
+      wake = { cron: doc.cron, tz: doc.tz, message: doc.message, enabled: doc.enabled === undefined ? true : doc.enabled };
+    } else if (wakeFile) {
       if (!existsSync(wakeFile)) bail("E_BAD_ARGS", `--wake-file not found: ${wakeFile}`);
       let doc; try { doc = JSON.parse(readFileSync(wakeFile, "utf8")); } catch (e) { bail("E_SCHEDULE_INVALID", `--wake-file is not valid JSON: ${e.message}`); }
       if (!doc || typeof doc !== "object") bail("E_SCHEDULE_INVALID", "--wake-file must hold {cron, tz, message, enabled}");
@@ -2798,7 +2804,7 @@ function spawnCmd() {
   // the full receipt, never hidden, and never causes a second spawn.
   let wakeSchedule, wakeScheduleError;
   if (wake) {
-    try { wakeSchedule = saveWakeForHome(workspaceOf(root), { instance: r.instance, home: r.home, wake }); }
+    try { wakeSchedule = saveWakeForHome(scheduleScopeOf(workspaceOf(root)), { instance: r.instance, home: r.home, wake }); }
     catch (e) { wakeScheduleError = { code: e.code || "E_SCHEDULE_FAILED", message: e.message }; r.warnings = [...(r.warnings || []), `wake schedule NOT saved: ${e.message}`]; }
   }
   if (JSON_MODE) {
@@ -2847,7 +2853,7 @@ function retireCmd() {
   const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
   // A retired home's wake jobs are forgotten (definitions only; nothing is
   // stopped by this); a deferred self-retire keeps them until the home is gone.
-  if (retiringHome && r.removedDir !== false && !r.deferred) { try { const gone = removeWakeForHome(workspaceOf(root), retiringHome); if (gone.length) r.wakeSchedulesRemoved = gone; } catch (e) { r.warnings = [...(r.warnings || []), `wake schedules not cleaned: ${e.message}`]; } }
+  if (retiringHome && r.removedDir !== false && !r.deferred) { try { const gone = removeWakeForHome(scheduleScopeOf(workspaceOf(root)), retiringHome); if (gone.length) r.wakeSchedulesRemoved = gone; } catch (e) { r.warnings = [...(r.warnings || []), `wake schedules not cleaned: ${e.message}`]; } }
   // Deferred self-retire: nothing has been inspected, run, or removed yet. The
   // caller's window dies first; a detached process then retires the instance
   // as an external operator and writes its outcome beside the home.
@@ -2891,7 +2897,9 @@ function retireCmd() {
 function scheduleCmd() {
   const sub = args[1];
   const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
-  const ws = resolve(dirFlag());
+  // One schedule-owning scope for a directory: the team workspace (the
+  // config level declaring the team), else the outermost config level.
+  const ws = scheduleScopeOf(dirFlag());
   const io = { hostStatus: () => hostUnitStatus() };
   const out = (result) => { if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2)); };
   const readSpec = () => {
@@ -3475,6 +3483,24 @@ function serverRouteCmd() {
       if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--task-file needs a path");
       if (!existsSync(f)) bail("E_BAD_ARGS", `task file not found: ${f}`);
       rest.push("--task", readFileSync(f, "utf8"));
+      continue;
+    }
+    // A wake spec for a routed spawn travels as validated JSON text; the
+    // host saves it in its own scope. Local files never travel as paths.
+    if (a === "--wake-file") {
+      const f = args[++i];
+      if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--wake-file needs a path");
+      if (!existsSync(f)) bail("E_BAD_ARGS", `wake file not found: ${f}`);
+      let doc; try { doc = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_SCHEDULE_INVALID", `--wake-file is not valid JSON: ${e.message}`); }
+      if (!doc || typeof doc !== "object" || !["cron", "tz", "message"].every((k) => typeof doc[k] === "string" && doc[k].trim())) bail("E_SCHEDULE_INVALID", "--wake-file must hold {cron, tz, message, enabled}");
+      rest.push("--wake-json", JSON.stringify({ cron: doc.cron, tz: doc.tz, message: doc.message, enabled: doc.enabled === undefined ? true : doc.enabled }));
+      continue;
+    }
+    if (a === "--wake-message-file") {
+      const f = args[++i];
+      if (!f || f.startsWith("--")) bail("E_BAD_ARGS", "--wake-message-file needs a path");
+      if (!existsSync(f)) bail("E_BAD_ARGS", `wake message file not found: ${f}`);
+      rest.push("--wake-message", readFileSync(f, "utf8"));
       continue;
     }
     rest.push(a);
