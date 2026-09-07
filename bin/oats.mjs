@@ -3424,7 +3424,7 @@ function retireCmd() {
     console.error(`Fix the cause and re-run \`oats retire ${r.retired}\`; the home holds the state that cleanup needs.`);
     process.exit(1);
   }
-  console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}${r.harvested?.length ? `, harvested: ${r.harvested.join(", ")}` : ""}`);
+  console.log(`Retired ${r.retired} (agent ${r.agent})${r.worktreeRemoved ? ", worktree removed" : ""}${r.branchDeleted ? ", branch deleted" : ""}`);
   // Preserving work and not saying so leaves the operator believing it is gone,
   // which is most of the harm of deleting it. Name the classes and the path.
   for (const recovery of r.workRecoveries || (r.workRecovery ? [r.workRecovery] : [])) {
