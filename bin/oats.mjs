@@ -4324,7 +4324,7 @@ Usage:
       ... [--dir <remote member>] [--home <abs>]  saved route (an explicit --dir travels as is; a --home
                                             is its own context; else the registered workspace);
                                             soul set --instructions-file streams the bytes; the
-                                            server must advertise operations (oats 0.22.15 or later)
+                                            server must advertise operations (oats 0.22.16 or later)
   oats session upload --server <id>          copy a local file into a remote instance's private
       --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
