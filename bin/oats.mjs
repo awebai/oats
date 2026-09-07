@@ -341,11 +341,23 @@ function doctorPackagesData(ctx, chain, { teamScope } = {}) {
  *  knowledge provider offers is what its manifest declares. */
 const INSPECT_TEXT_CAP = 256 * 1024;
 function readTextCapped(file) {
-  try {
-    const text = readFileSync(file, "utf8");
-    const truncated = Buffer.byteLength(text) > INSPECT_TEXT_CAP;
-    return { file, text: truncated ? text.slice(0, INSPECT_TEXT_CAP) : text, sha256: createHash("sha256").update(text).digest("hex"), truncated };
-  } catch { return { file, text: null, sha256: null, truncated: false }; }
+  let bytes;
+  try { bytes = readFileSync(file); }
+  catch (e) { return { file, text: null, sha256: null, truncated: false, error: `${e.code || "EIO"}: ${e.message}` }; }
+  const truncated = bytes.length > INSPECT_TEXT_CAP;
+  // The bound is bytes; a cut inside a multi-byte sequence is dropped, never
+  // rendered as a replacement character.
+  let text = truncated ? bytes.subarray(0, INSPECT_TEXT_CAP).toString("utf8") : bytes.toString("utf8");
+  if (truncated && text.endsWith("\uFFFD")) text = text.slice(0, -1);
+  return { file, text, sha256: createHash("sha256").update(bytes).digest("hex"), bytes: bytes.length, truncated, error: null };
+}
+/** The canonical agents root a home belongs to, from its path alone:
+ *  <root>/<agent>/instances/<instance>, or <workspace>/local-agents/<agent>/
+ *  instances/<instance> whose canonical root is the sibling agents/. */
+function agentsRootOfHome(home) {
+  const agentDir = dirname(dirname(home));
+  const base = dirname(agentDir);
+  return basename(base) === "local-agents" ? join(dirname(base), "agents") : base;
 }
 const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description"];
 function soulEntry(soul, root, { capability } = {}) {
@@ -374,13 +386,27 @@ function inspectCmd() {
     if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
     try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (e) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${e.message}`); }
   }
-  const ctx = flag("dir") !== undefined ? dirFlag() : (meta?.repo && existsSync(meta.repo) ? resolve(meta.repo) : dirFlag());
+  const real = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
+  let ctx;
+  if (meta) {
+    // The home is the identity: an explicit --dir must be its own context.
+    const recorded = meta.repo && existsSync(meta.repo) ? resolve(meta.repo) : undefined;
+    if (flag("dir") !== undefined) { ctx = dirFlag(); if (recorded && real(ctx) !== real(recorded)) bail("E_HOME_MISMATCH", `--dir ${ctx} is not the context of ${home} (${recorded}); omit --dir for a home`); }
+    else ctx = recorded || dirFlag();
+  } else ctx = dirFlag();
   const soulFlag = flag("soul");
   if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
   if (meta && soulFlag && soulFlag !== meta.agent) bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${home} (${meta.agent})`);
   const soulName = soulFlag || meta?.agent || undefined;
-  const agentsRootFlag = flag("agents-root");
+  let agentsRootFlag = flag("agents-root");
   if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  if (meta) {
+    // The soul is the home's own, under the home's own root; same-named souls
+    // in other member repositories are ordinary and never ambiguous here.
+    const homeRoot = agentsRootOfHome(real(home));
+    if (agentsRootFlag && real(agentsRootFlag) !== real(homeRoot)) bail("E_HOME_MISMATCH", `--agents-root ${agentsRootFlag} is not the agents root of ${home} (${homeRoot})`);
+    agentsRootFlag = homeRoot;
+  }
   let r;
   try { r = resolveOatsConfig(ctx, soulName); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
   const chain = configChain(ctx);
@@ -410,7 +436,7 @@ function inspectCmd() {
   let selectedSoul = null;
   if (soulName) {
     let matches = souls.filter((s) => s.name === soulName);
-    if (agentsRootFlag) matches = matches.filter((s) => resolve(s.agentsRoot) === resolve(agentsRootFlag));
+    if (agentsRootFlag) matches = matches.filter((s) => real(s.agentsRoot) === real(agentsRootFlag));
     if (!matches.length) bail("E_SOUL_UNKNOWN", `no soul ${JSON.stringify(soulName)} in the scope of ${ctx}${agentsRootFlag ? ` under ${agentsRootFlag}` : ""}`);
     if (matches.length > 1) bail("E_SOUL_AMBIGUOUS", `soul ${JSON.stringify(soulName)} exists under ${matches.length} agents roots (${matches.map((m) => m.agentsRoot).join(", ")}); pass --agents-root <abs>`);
     selectedSoul = matches[0];
@@ -450,22 +476,37 @@ function inspectCmd() {
       health: { status: executable && !trust.trusted ? "untrusted" : "ok", code: executable && !trust.trusted ? "untrusted-surface" : null, detail: executable && !trust.trusted ? (trust.reason || null) : null, installed: true, locked: !!trust.lock, trusted: !!trust.trusted, integrity, installedIntegrity: integrity },
     });
   }
+  // What is EFFECTIVE for the answer: a home's captured bindings and settings
+  // (with the currently acquired manifests and current trust); a soul's or
+  // scope's current config otherwise. The current config is reported
+  // separately for a home so a GUI can show both without confusing them.
+  const snapshotCaps = meta ? (meta.capabilities || []) : null;
+  const layerIdOf = (rec) => { const m = typeof rec === "string" ? /^([a-z0-9][a-z0-9._-]*)(?:\s|$)/.exec(rec) : null; return m && m[1] !== "none" ? m[1] : null; };
+  const effectiveLayers = meta
+    ? Object.fromEntries(LAYERS.map((l) => { const id = layerIdOf(meta.layers?.[l]) || snapshotCaps.find((c) => mans[c.id]?.layer === l)?.id || null; const rec = typeof meta.layers?.[l] === "string" ? meta.layers[l] : null; return [l, { id, level: snapshotCaps.find((c) => c.id === id)?.level || null, provenance: rec, disabled: !id && !!rec && rec.startsWith("none") }]; }))
+    : Object.fromEntries(LAYERS.map((l) => [l, r.layers[l]
+      ? { id: r.layers[l].id, level: r.layers[l].level, provenance: r.provenance[l] || null, disabled: false }
+      : { id: null, level: r.layerDisabled?.[l]?.level || null, provenance: r.provenance[l] || null, disabled: !!r.layerDisabled?.[l] }]));
+  const effectiveActive = (id) => meta
+    ? (() => { const c = snapshotCaps.find((x) => x.id === id); return c ? { id, level: c.level || null, provenance: c.provenance || [], settings: c.settings || {} } : undefined; })()
+    : r.capabilities.find((c) => c.id === id);
   const declaredAt = (id) => chain.flatMap((cfg) => configCapabilityEntries(cfg).filter((e) => e.id === id).map((e) => ({ level: cfg._level, slot: e.slot || null, targets: [
     ...(e.spec.global !== undefined ? [`global`] : []),
     ...Object.keys(e.spec["agent-types"] || {}).map((t) => `type:${t}`),
     ...Object.keys(e.spec.souls || {}).map((sn) => `soul:${sn}`),
   ] })));
+  const targetOf = (provenance) => [...provenance].map((p) => p.split(" @ ")[0]).sort((a, b) => (b.startsWith("soul:") ? 2 : b.startsWith("type:") ? 1 : 0) - (a.startsWith("soul:") ? 2 : a.startsWith("type:") ? 1 : 0))[0] || (meta ? "snapshot" : "global");
   const capabilities = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id)).map((entry) => {
-    const active = r.capabilities.find((c) => c.id === entry.id);
+    const active = effectiveActive(entry.id);
     const m = mans[entry.id];
-    const disabledLayer = entry.layer && r.layerDisabled?.[entry.layer];
+    const disabledLayer = entry.layer && (meta ? (effectiveLayers[entry.layer]?.disabled ? { level: null } : null) : r.layerDisabled?.[entry.layer]);
     const declared = declaredAt(entry.id);
     const activation = active
-      ? { enabled: true, target: [...active.provenance].map((p) => p.split(" @ ")[0]).sort((a, b) => (b.startsWith("soul:") ? 2 : b.startsWith("type:") ? 1 : 0) - (a.startsWith("soul:") ? 2 : a.startsWith("type:") ? 1 : 0))[0] || "global", level: active.level, provenance: active.provenance, settings: active.settings || {}, declaredAt: declared }
-      : { enabled: false, target: declared.length ? "declared" : "none", level: declared[0]?.level || null, provenance: [], settings: {}, declaredAt: declared, ...(disabledLayer ? { reason: `layer ${entry.layer} is disabled at ${disabledLayer.level}` } : {}) };
+      ? { enabled: true, source: meta ? "snapshot" : "config", target: targetOf(active.provenance || []), level: active.level, provenance: active.provenance || [], settings: active.settings || {}, declaredAt: declared }
+      : { enabled: false, source: meta ? "snapshot" : "config", target: declared.length ? "declared" : "none", level: declared[0]?.level || null, provenance: [], settings: {}, declaredAt: declared, ...(disabledLayer ? { reason: `layer ${entry.layer} is disabled${disabledLayer.level ? ` at ${disabledLayer.level}` : " for this home"}` } : {}) };
     const operations = manifestOperations(m).map((op) => {
       let reason = null;
-      if (!active) reason = disabledLayer ? `layer ${entry.layer} is disabled at ${disabledLayer.level}` : `${entry.id} is not activated for ${soulName ? `soul ${soulName}` : "this scope"}`;
+      if (!active) reason = disabledLayer ? `layer ${entry.layer} is disabled${disabledLayer.level ? ` at ${disabledLayer.level}` : " for this home"}` : `${entry.id} is not activated for ${meta ? `home ${basename(home)}` : soulName ? `soul ${soulName}` : "this scope"}`;
       else if (!entry.health.trusted) reason = `${entry.id} executable surface is not trusted (oats trust ${entry.id})`;
       else if (entry.health.status !== "ok") reason = entry.health.detail || entry.health.status;
       else if (op.context === "home" && !home) reason = "needs a running home (--home)";
@@ -473,9 +514,13 @@ function inspectCmd() {
     });
     return { ...entry, activation, operations };
   });
-  const layers = Object.fromEntries(LAYERS.map((l) => [l, r.layers[l]
-    ? { id: r.layers[l].id, level: r.layers[l].level, provenance: r.provenance[l] || null, disabled: false }
-    : { id: null, level: r.layerDisabled?.[l]?.level || null, provenance: r.provenance[l] || null, disabled: !!r.layerDisabled?.[l] }]));
+  const layers = effectiveLayers;
+  // For a home, the CURRENT config beside the captured bindings, so a GUI can
+  // show what future instances would get without mistaking it for the home's.
+  const currentConfig = meta ? {
+    layers: Object.fromEntries(LAYERS.map((l) => [l, r.layers[l] ? { id: r.layers[l].id, level: r.layers[l].level, provenance: r.provenance[l] || null, disabled: false } : { id: null, level: r.layerDisabled?.[l]?.level || null, provenance: r.provenance[l] || null, disabled: !!r.layerDisabled?.[l] }])),
+    activations: r.capabilities.map((c) => ({ id: c.id, target: targetOf(c.provenance), level: c.level, settings: c.settings || {} })),
+  } : null;
   const knowledgeCap = layers.knowledge.id ? capabilities.find((c) => c.id === layers.knowledge.id) : null;
   const knowledge = knowledgeCap ? { provider: knowledgeCap.id, version: knowledgeCap.version, operations: knowledgeCap.operations.map((o) => ({ name: o.name, kind: o.kind, available: o.available, reason: o.reason })) } : { provider: null, version: null, operations: [] };
 
@@ -501,8 +546,9 @@ function inspectCmd() {
     operationsApi: 1, kernel: OATS_VERSION,
     scope: { context: ctx, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
     selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config" },
-    souls, layers, capabilities, knowledge, snapshot,
-    problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability }))],
+    souls, layers, capabilities, knowledge, snapshot, currentConfig,
+    problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability })),
+      ...(meta ? snapshotCaps.filter((c) => !mans[c.id]).map((c) => ({ code: "captured-capability-missing", message: `${c.id} was active when this home was composed but no manifest for it is acquired now`, capability: c.id })) : [])],
   };
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`oats inspect — ${shortPath(ctx)}${selectedSoul ? ` soul ${selectedSoul.name}` : ""}${home ? ` home ${shortPath(home)}` : ""}`);

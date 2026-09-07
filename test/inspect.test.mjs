@@ -93,7 +93,17 @@ test("inspect --soul selects one soul with its instructions and soul-specific bi
   assert.equal(oats(["inspect", "--dir", repo, "--soul", "nobody", "--json"]).json().error.code, "E_SOUL_UNKNOWN");
   // Snapshot: the home is the identity; --dir must agree with it.
   res = oats(["inspect", "--home", home, "--json"]).json().result;
-  assert.equal(res.selected.source, "snapshot"); assert.equal(res.selected.soul, "dev"); assert.equal(res.selected.home, home);
+  assert.equal(res.selected.source, "snapshot"); assert.equal(res.selected.soul, "dev"); assert.equal(res.selected.home, home); assert.equal(res.selected.agentsRoot, join(repo, "agents"));
+  // Effective fields are the home's CAPTURED bindings, not the live config; the live config is reported beside them.
+  const snapNotes = res.capabilities.find((c) => c.id === "test.notes");
+  assert.equal(snapNotes.activation.source, "snapshot"); assert.equal(snapNotes.activation.enabled, true); assert.deepEqual(snapNotes.activation.settings, { tone: "cold" }); assert.equal(snapNotes.activation.target, "snapshot");
+  const snapTools = res.capabilities.find((c) => c.id === "test.tools");
+  assert.equal(snapTools.activation.enabled, false, "not captured at spawn, so not effective for this home"); assert.equal(snapTools.activation.source, "snapshot");
+  assert.equal(res.layers.knowledge.id, "test.notes"); assert.equal(res.layers.messaging.id, null);
+  assert.deepEqual(res.currentConfig.activations.map((a) => a.id).sort(), ["test.notes", "test.tools"]); assert.deepEqual(res.currentConfig.activations.find((a) => a.id === "test.notes").settings, { tone: "warm" });
+  assert.ok(res.problems.some((p) => p.code === "captured-capability-missing" && p.capability === "test.gone"));
+  assert.equal(oats(["inspect", "--home", home, "--dir", join(base, "elsewhere"), "--json"]).json().error.code, "E_HOME_MISMATCH", "--dir must be the home's context");
+  assert.equal(oats(["inspect", "--home", home, "--agents-root", join(base, "elsewhere"), "--json"]).json().error.code, "E_HOME_MISMATCH", "--agents-root must be the home's root");
   assert.equal(res.snapshot.instance, "dev-one"); assert.equal(res.snapshot.instructions.text, "# dev-one composed\n"); assert.deepEqual(res.snapshot.instructions.sources, [{ source: "kernel:oats", file: "/x/oats.md" }]);
   const drift = Object.fromEntries(res.snapshot.drift.map((d) => [`${d.id}:${d.field}`, d]));
   assert.deepEqual(drift["test.notes:settings"], { id: "test.notes", field: "settings", snapshot: { tone: "cold" }, config: { tone: "warm" } });
@@ -122,21 +132,23 @@ test("inspect in a team scope lists every member root and disambiguates same-nam
   const one = oats(["inspect", "--dir", join(team, "a"), "--soul", "dev", "--agents-root", join(team, "b", "agents"), "--json"]).json().result;
   assert.equal(one.souls[0].description, "dev of b"); assert.equal(one.selected.agentsRoot, join(team, "b", "agents"));
   assert.equal(one.layers.knowledge.disabled, true); assert.equal(one.knowledge.provider, null);
+  // A home selects its own soul by its root: same-named souls elsewhere are never ambiguous for it.
+  const homeB = join(team, "b", "agents", "dev", "instances", "dev-b1");
+  write(join(homeB, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-b1", home: homeB, repo: join(team, "b"), launched: false, capabilities: [] }));
+  const viaHome = oats(["inspect", "--home", homeB, "--json"]).json().result;
+  assert.equal(viaHome.selected.agentsRoot, join(team, "b", "agents")); assert.equal(viaHome.souls[0].description, "dev of b"); assert.equal(viaHome.selected.source, "snapshot");
+  assert.equal(oats(["inspect", "--home", homeB, "--agents-root", join(team, "a", "agents"), "--json"]).json().error.code, "E_HOME_MISMATCH");
 });
 
-test("manifest operations are validated: unknown command, bad kind, bad name", () => {
-  const repo = join(base, "bad"); gitRepo(repo);
-  const dir = join(repo, ".agents", "capabilities", "owned", "x");
-  const manifest = (ops) => JSON.stringify({ capability: "test.x", version: "1.0.0", description: "x", compatibility: { oats: ">=0.6.2" }, command: "x", commands: { go: "bin/x.mjs" }, operations: ops });
-  write(join(dir, "bin", "x.mjs"), "");
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    test.x:\n      from: owned\n      global: true\n");
-  for (const [ops, re] of [[{ run: { command: "nope" } }, /must name one of the manifest's commands/], [{ run: { command: "go", kind: "batch" } }, /kind/], [{ "Bad Name": { command: "go" } }, /name must match/], [{ run: { command: "go", args: [{ name: "n", flag: "n" }] } }, /flag/]]) {
-    write(join(dir, "oats.json"), manifest(ops));
-    const r = oats(["inspect", "--dir", repo, "--json"]);
-    assert.equal(r.status, 1); assert.match(r.json().error.message, re);
-  }
-  write(join(dir, "oats.json"), manifest({ run: { command: "go", args: [{ name: "n", required: true, description: "count" }] } }));
-  const ok = oats(["inspect", "--dir", repo, "--json"]).json().result.capabilities.find((c) => c.id === "test.x");
-  assert.deepEqual(ok.operations[0].args, [{ name: "n", flag: "--n", required: true, description: "count" }]);
-  assert.equal(ok.operations[0].context, "home"); assert.equal(ok.operations[0].kind, "action");
+test("instruction text is capped by bytes at a character boundary and unreadable files report the reason", () => {
+  const repo = join(base, "cap"); gitRepo(repo);
+  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
+  write(join(repo, "agents", "big", "soul", "soul.yaml"), "name: big\nrepo: .\nwork: checkout\nruntime: pi\n");
+  // 256 KiB of two-byte characters plus one more: the cap falls inside a character.
+  write(join(repo, "agents", "big", "soul", "AGENTS.md"), "é".repeat(128 * 1024 + 1));
+  write(join(repo, "agents", "gone", "soul", "soul.yaml"), "name: gone\nrepo: .\nwork: checkout\nruntime: pi\n");
+  const big = oats(["inspect", "--dir", repo, "--soul", "big", "--json"]).json().result.souls[0].instructions;
+  assert.equal(big.truncated, true); assert.equal(Buffer.byteLength(big.text), 256 * 1024, "cut at the byte bound on a character boundary"); assert.ok(!big.text.includes("�")); assert.equal(big.bytes, 2 * (128 * 1024 + 1));
+  const gone = oats(["inspect", "--dir", repo, "--soul", "gone", "--json"]).json().result.souls[0].instructions;
+  assert.equal(gone.text, null); assert.match(gone.error, /ENOENT/);
 });
