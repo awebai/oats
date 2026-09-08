@@ -9,6 +9,46 @@
 // offered. workspace:add canonicalizes, re-validates, persists to a recents
 // store (path-validated on read-back — never trusted blindly), and the
 // caller replaces only an app-OWNED backend server.
+import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
+
+/** Restore explicitly opened workspaces, independently of recent suggestions.
+ * Re-resolve identities on startup: moved/deleted workspaces are skipped and
+ * members/symlinks resolving to the same team scope open only once. */
+export function restoreWorkspaceDirs(startup, raw, validate) {
+  let saved;
+  try { saved = JSON.parse(raw); } catch { saved = []; }
+  const dirs = new Set();
+  for (const path of [startup, ...(Array.isArray(saved) ? saved : [])]) {
+    if (typeof path !== "string" || !path.startsWith("/")) continue;
+    try {
+      const workspace = validate(path);
+      if (workspace) dirs.add(workspace.path);
+    } catch { /* missing or no longer a workspace */ }
+  }
+  // Keep the existing empty-workspace/picker journey on first launch.
+  return dirs.size ? [...dirs] : [startup];
+}
+
+/** Reuse a backend only when it covers the whole restored open set. */
+export function matchWorkspaceDirs(dirs, workspaces) {
+  const matches = dirs.map((path) => workspaces.find((w) =>
+    path === w.id || path.startsWith(`${w.id}/`))?.id);
+  return matches.length && matches.every(Boolean) ? matches[0] : null;
+}
+
+/** Commit the open set atomically, so interrupted writes retain the last set. */
+export function saveWorkspaceDirs(file, dirs) {
+  mkdirSync(dirname(file), { recursive: true });
+  const temporary = `${file}.tmp`;
+  try {
+    writeFileSync(temporary, JSON.stringify(dirs, null, 2), { mode: 0o600 });
+    renameSync(temporary, file);
+  } catch (error) {
+    try { rmSync(temporary, { force: true }); } catch { /* preserve original error */ }
+    throw error;
+  }
+}
 
 /**
  * Validate a directory as an OATS workspace and resolve its identity.
