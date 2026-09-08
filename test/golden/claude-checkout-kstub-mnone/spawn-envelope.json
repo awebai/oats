@@ -20,6 +20,28 @@
     "sibling": null,
     "relation": null,
     "spawnOrigin": "operator",
-    "attach": "tmux attach -t oats-golden"
+    "attach": "tmux attach -t oats-golden",
+    "launchConfig": null,
+    "launch": {
+      "version": 1,
+      "runtime": "claude",
+      "launchConfig": null,
+      "launchConfigSource": null,
+      "executable": "<base>/bin/claude",
+      "executableDeclared": null,
+      "executableResolvedFrom": "PATH",
+      "args": [],
+      "env": {},
+      "model": null,
+      "hooks": {
+        "launch": {},
+        "env": {},
+        "contributions": []
+      },
+      "prompt": {
+        "kind": "task-file",
+        "file": "TASK.md"
+      }
+    }
   }
 }
