@@ -241,6 +241,65 @@ runs inside each fresh worktree after creation (a lot of teams prefer a
 script that sets up the environment: installs, .env copying, direnv/mise).
 Its failure warns without hiding the instance.
 
+### `launch-configs`
+
+A named way to start a harness, independent of any soul: which runtime, an
+executable (a wrapper, another binary), literal arguments, environment, a
+model and yolo. Souls keep their own defaults; a launch configuration is
+selected by name at spawn or when an existing instance is started or
+restarted, so the same home can move between configurations without
+being replaced.
+
+```yaml
+launch-configs:
+  personal:
+    runtime: claude
+    executable: ./bin/claude-personal      # relative: against THIS scope's directory
+    args:
+      - "--settings"
+      - "./claude/personal-settings.json"  # native config files are ordinary arguments
+    env:
+      ANTHROPIC_API_KEY:
+        fromEnv: PERSONAL_ANTHROPIC_KEY    # resolved on the execution host at start
+      CLAUDE_CONFIG_DIR: "/Users/me/.claude-personal"
+    model: claude-opus-5
+    yolo: true
+  fast:
+    runtime: codex
+    model: gpt-5.5
+```
+
+- The closest scope declaring a name provides the **whole** entry; a farther
+  declaration of the same name is shadowed, never merged into.
+- `executable`: a bare name is looked up on `PATH` on the execution host; a
+  path with a slash is resolved against the declaring scope when relative.
+  It must exist and be executable; it is never run just to probe it.
+- `args` and literal `env` values are passed byte-exact: spaces, quotes and
+  shell metacharacters are literal, never interpreted.
+- `env` values are either literals (non-secret by contract, but no answer ever
+  shows them: `oats launch-config list` and `preview` redact them) or
+  `{fromEnv: NAME}` references, which is the way to hand a secret to a
+  harness. Only the reference is recorded in an instance's launch recipe and
+  receipts; the value is read from the execution host's environment at start
+  time, and a missing reference refuses the start before anything stops.
+- `model` and `yolo` override the soul's defaults when the configuration is
+  selected; explicit `--model`/`--yolo` flags override the configuration.
+
+The CLI authors the block:
+
+```sh
+oats launch-config list [--dir <scope> | --home <abs> | --soul <name>] --json
+oats launch-config set personal --file personal.json [--keep-env] --dir <scope>
+oats launch-config remove personal --dir <scope>
+```
+
+`set` and `remove` rewrite only the `launch-configs` block of that scope's
+`oats-config.yaml`; every other byte stays. `--keep-env` keeps the
+environment the same scope already declares for that name (an editor that
+saw only redacted values omits `env` from its definition); it never copies an
+inherited entry's environment. `list --home` reads the home's recorded
+context; `list --soul` reads the soul's own member scope.
+
 ## Acquisition and lockfile
 
 External acquisition writes `oats-lock.json` beside the declaring config in
