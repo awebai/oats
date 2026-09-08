@@ -114,6 +114,19 @@ test('editing launch choices does not cancel loading configurations, but disabli
   } finally { u.close(); }
 });
 
+test('preview shows failed kernel preflight checks even when the request succeeds', async () => {
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [config] } : {
+    command: 'codex --profile personal', ok: false,
+    preflight: [{ check: 'environment', ok: false, detail: 'not set on this host: PERSONAL_KEY' }],
+  });
+  try {
+    await u.controller.load('personal'); u.el.querySelector('.launch-preview').click(); await tick();
+    assert.match(u.el.querySelector('pre').textContent, /Needs attention: environment — not set on this host: PERSONAL_KEY/);
+    assert.match(u.el.querySelector('.launch-config-status').textContent, /not ready/);
+    assert.deepEqual(u.calls.map(c => c.action), ['list', 'preview']);
+  } finally { u.close(); }
+});
+
 test('remove is tied to the selected saved name and save locks configuration edits until complete', async () => {
   let finish;
   const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [config] } : new Promise(resolve => { finish = resolve; }));

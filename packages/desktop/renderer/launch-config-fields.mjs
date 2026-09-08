@@ -91,8 +91,13 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
     try {
       const preview = await api({ action: "preview", selector: selector(), choices: { ...choices(), ...(select.value ? { launchConfig: select.value } : {}) } });
       if (!current() || id !== previewRequest) return;
-      output.textContent = typeof preview.command === "string" ? preview.command : JSON.stringify(preview, null, 2);
-      output.hidden = false; status.textContent = "Preview only. No agent was started or stopped.";
+      const checks = Array.isArray(preview.preflight) ? preview.preflight : [];
+      const command = typeof preview.command === "string" ? preview.command : JSON.stringify(preview, null, 2);
+      output.textContent = [command, ...checks.map(c => `${c.ok === false ? "Needs attention" : "Check"}: ${c.check || "launch"}${c.detail ? ` — ${c.detail}` : ""}`)].join("\n");
+      output.hidden = false;
+      status.textContent = preview.ok === false || checks.some(c => c.ok === false)
+        ? "This launch is not ready. Resolve the failed checks above. No agent was started or stopped."
+        : "Preview only. No agent was started or stopped.";
     } catch (e) { if (current() && id === previewRequest) { output.hidden = true; status.textContent = e.message; } }
   });
   field("new").addEventListener("click", () => { fillEditor(); field("name").focus(); });
