@@ -113,6 +113,8 @@ test("restart: a harness that ignores SIGTERM is reported still running after th
 
 test("legacy homes: a plain session-delivery command converts narrowly (environment attributed through the recorded capability declarations) and can switch runtime; unclassified arguments are refused", async () => {
   const capabilityRuntime = [{ id: "oats.aweb", layer: "messaging", level: repo, settings: { delivery: "session" }, hooks: {}, requiredHooks: [], environment: ["AWEB_DELIVERY"], environmentNamespaces: ["AWEB_"], missingRequires: [], trust: { trusted: true, integrity: "sha256-x" }, executable: true }];
+  // The captured provider is resolved by id in the scope: a stub oats.aweb (no hooks) stands in for the installed one.
+  write(join(repo, ".agents", "capabilities", "owned", "aweb", "oats.json"), JSON.stringify({ capability: "oats.aweb", version: "0.0.1", description: "stub", compatibility: { oats: ">=0.6.2" }, environment: ["AWEB_DELIVERY"], environmentNamespaces: ["AWEB_"] }));
   const name = "dev-legacy";
   const home = join(repo, "agents", "dev", "instances", name);
   makeHome(name, { command: renderFor(home, name, join(binDir, "polite"), " AWEB_DELIVERY='session'"), model: "claude-x", capabilityRuntime });
@@ -222,4 +224,49 @@ test("Herdr: the pane shell's verified process tree is signalled (never the shel
     try { child.kill("SIGKILL"); } catch { /* gone */ }
     try { process.kill(Number(readFileSync(join(home, "pid.txt"), "utf8").trim()), "SIGKILL"); } catch { /* gone */ }
   }
+});
+
+test("launch hooks: only capabilities captured for the home take part; a hook answers args + env under the captured settings with the same environment rules as spawn; its answer, even empty, replaces the provider's previous contribution", async () => {
+  const cap = join(repo, ".agents", "capabilities", "owned", "extra");
+  write(join(cap, "oats.json"), JSON.stringify({ capability: "test.extra", version: "0.1.0", description: "extra", compatibility: { oats: ">=0.6.2" }, hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR"], settings: { mode: { description: "m" } } }));
+  // Hook commands resolve inside the capability directory and run as node; the answer is read from a file the test rewrites.
+  write(join(cap, "bin", "launch.mjs"), `import { readFileSync, writeFileSync } from "node:fs"; import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";\nwriteFileSync(join(process.env.OATS_HOME, "hooked-settings"), process.env.OATS_SETTINGS);\nprocess.stdout.write(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "answer.json"), "utf8") + "\\n");\n`);
+  const hook = (answer) => write(join(cap, "bin", "answer.json"), JSON.stringify(answer));
+  hook({ launch: { codex: "--hooked" }, env: { TEST_NEWVAR: "1" } });
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.extra:\n      from: owned\n      global: true\n      settings:\n        mode: current\nlaunch-configs:\n"));
+  const name = "dev-newcap";
+  const home = join(repo, "agents", "dev", "instances", name);
+  makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  const preview = () => { const r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() }); const out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout + r.stderr); return out.result; };
+  // Not captured for this home: the newly bound provider's launch hook does not run.
+  let v = preview();
+  assert.equal(existsSync(join(home, "hooked-settings")), false, "the newly bound provider's launch hook did not run");
+  assert.ok(!v.argv.includes("--hooked"));
+  // Captured (recorded binding + a previous contribution with TEST_OLDVAR and a claude flag): the hook runs with the CAPTURED settings and its answer replaces the old contribution whole.
+  const meta = readJson(join(home, "instance.json"));
+  const previous = { capability: "test.extra", layer: null, level: repo, settings: { mode: "captured" }, trust: { trusted: true, integrity: null }, launch: { claude: "--old" }, env: ["TEST_OLDVAR"] };
+  write(join(home, "instance.json"), JSON.stringify({ ...meta, launch: { ...meta.launch, hooks: { launch: { claude: "--old" }, env: { TEST_OLDVAR: "old" }, contributions: [previous] } }, capabilityRuntime: [{ id: "test.extra", layer: null, level: repo, settings: { mode: "captured" }, hooks: { launch: "sh bin/launch.sh" }, requiredHooks: [], environment: ["TEST_NEWVAR", "TEST_OLDVAR"], environmentNamespaces: [], missingRequires: [], trust: { trusted: true, integrity: null }, executable: true }] }));
+  v = preview();
+  assert.deepEqual(JSON.parse(readFileSync(join(home, "hooked-settings"), "utf8")), { mode: "captured" }, "captured settings, not the scope's current ones");
+  assert.ok(v.argv.includes("--hooked") && !v.argv.includes("--old"), JSON.stringify(v.argv));
+  assert.deepEqual(v.environment.filter((e) => ["TEST_NEWVAR", "TEST_OLDVAR"].includes(e.name)).map((e) => e.name), ["TEST_NEWVAR"], "the provider's previous env name is gone, its new one is there");
+  assert.match(v.preflight.find((c) => c.check === "capabilities").detail, /refreshed by launch hooks: test.extra/);
+  // An empty answer is a replacement too: nothing of the provider's previous contribution remains.
+  hook({});
+  v = preview();
+  assert.ok(!v.argv.includes("--hooked") && !v.argv.includes("--old"), JSON.stringify(v.argv));
+  assert.deepEqual(v.environment.filter((e) => ["TEST_NEWVAR", "TEST_OLDVAR"].includes(e.name)), [], "no stale env from the provider");
+  assert.match(v.preflight.find((c) => c.check === "capabilities").detail, /refreshed by launch hooks: test.extra/, "the run is recorded even for an empty answer");
+  // An env name the provider did not declare is refused by the same rules as at spawn.
+  hook({ env: { TEST_UNDECLARED: "x" } });
+  let r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
+  let out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout);
+  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /TEST_UNDECLARED|environment contract/);
+  // A captured provider the scope no longer installs refuses the start (captured by id, current manifest and trust; scope bindings are not what counts).
+  hook({});
+  rmSync(cap, { recursive: true, force: true });
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.extra:\n      from: owned\n      global: true\n      settings:\n        mode: current\n/, ""));
+  r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
+  out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout);
+  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /test.extra contributed .*no longer installed/);
 });
