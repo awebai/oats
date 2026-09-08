@@ -144,10 +144,43 @@ test("capture lock: release checks the acquisition nonce, so an earlier release 
     const third = acquireCaptureLock(root, { io: failing });
     const r = third.release();
     assert.equal(r.released, false); assert.equal(r.reason, "remove-failed"); assert.equal(r.error, "EPERM: operation not permitted");
-    assert.match(r.recovery, new RegExp(`pid ${process.pid} .*rm -r -- `));
+    assert.match(r.recovery, new RegExp(`held by pid ${process.pid} \\(this pass, alive .*ps -p ${process.pid}.*rm -r -- `), r.recovery);
+    assert.equal(r.liveness, "alive"); assert.doesNotMatch(r.recovery, /dead/, "the holder is this live process; nothing asserts its death");
     assert.equal(existsSync(captureLockPath(root)), true);
+    // The record vanishes from under a live lock (an operator recovery in progress): unknown, with the recovery, not "released".
+    rmSync(join(captureLockPath(root), "owner.json"));
+    const unknown = third.release();
+    assert.equal(unknown.released, false); assert.equal(unknown.reason, "unknown-owner"); assert.match(unknown.recovery, /not written its owner record.*rm -r -- /);
     rmSync(captureLockPath(root), { recursive: true, force: true });
-    assert.deepEqual(second.release(), { released: false, reason: "not-owner", owner: undefined }, "a lock already gone is not reported as released by this holder");
+    assert.deepEqual(second.release(), { released: false, reason: "gone" }, "a lock already gone is reported as gone, not released by this holder");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture lock: a failed initialization never removes a replacement that appeared meanwhile (BeadHub's interleaving); a directory that is no longer ours is reported, not deleted", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-replace-"));
+  try {
+    const dir = captureLockPath(root);
+    let replacement;
+    // Between this call's mkdir and its owner write: an operator removes the
+    // directory and a newer pass (same pid, new nonce) takes the lock; then
+    // this call's write fails with the original error.
+    const interleave = () => {
+      rmSync(dir, { recursive: true, force: true });
+      replacement = acquireCaptureLock(root); assert.ok(replacement.release, "the newer pass acquired");
+      throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
+    };
+    let err;
+    try { acquireCaptureLock(root, { io: { writeFileSync: interleave } }); } catch (e) { err = e; }
+    assert.equal(err?.code, "ENOSPC", "the original failure is rethrown");
+    assert.equal(err.lockCleanup.removed, false); assert.equal(err.lockCleanup.reason, "replaced");
+    assert.equal(err.lockCleanup.owner.nonce, JSON.parse(readFileSync(join(dir, "owner.json"), "utf8")).nonce, "the replacement's record is what was reported");
+    assert.equal(existsSync(dir), true, "the replacement survives the failed initialization's cleanup");
+    assert.deepEqual(replacement.release(), { released: true }, "and its own holder still releases it");
+    // The directory removed (and not replaced) before the failed write: gone, nothing removed, no recovery needed.
+    err = undefined;
+    try { acquireCaptureLock(root, { io: { writeFileSync: () => { rmSync(dir, { recursive: true, force: true }); throw Object.assign(new Error("EIO"), { code: "EIO" }); } } }); } catch (e) { err = e; }
+    assert.equal(err?.code, "EIO"); assert.deepEqual(err.lockCleanup, { path: dir, removed: false, reason: "gone" });
+    assert.equal(existsSync(dir), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

@@ -12,7 +12,7 @@
 // message says exactly that. (A reclaim protocol was reviewed and rejected:
 // rename is not compare-and-swap, and stealing from a stalled live
 // initializer under memory pressure is the failure we are preventing.)
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
@@ -46,12 +46,15 @@ export function recoveryInstruction(dir, owner, liveness) {
  *
  *  Two failure points are reported rather than left behind. If the owner
  *  record cannot be written after THIS call created the directory (a full
- *  disk, say), the directory is this call's own initialization and nothing
- *  else can own it, so it is removed and the original error rethrown with
- *  `lockCleanup: { path, removed, error?, recovery? }` saying whether that
- *  removal happened. And `release()` never throws: it answers
+ *  disk, say), the directory is removed only while it is still the very
+ *  directory this call created (same inode) and carries no other owner's
+ *  record; a replacement that appeared meanwhile (operator recovery, then a
+ *  newer pass) is left alone. The original error is rethrown with
+ *  `lockCleanup: { path, removed, reason?, owner?, error?, recovery? }`
+ *  saying what happened. And `release()` never throws: it answers
  *  `{ released: true }` only when the lock is verifiably gone, otherwise
- *  `{ released: false, reason: "not-owner" | "remove-failed", ... }`.
+ *  `{ released: false, reason: "gone" | "unknown-owner" | "not-owner" |
+ *  "remove-failed", ... }` with the actual observation, never a guess.
  *
  *  The owner record carries a per-acquisition nonce, so a release kept from
  *  an earlier acquisition cannot erase a later one by the same pid (an
@@ -72,31 +75,45 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     return { path: dir, held: { pid: owner?.pid, startedAt: owner?.startedAt, liveness: live, recovery: recoveryInstruction(dir, owner, live) } };
   }
   const nonce = randomBytes(8).toString("hex");
+  const inode = (() => { try { return lstatSync(dir).ino; } catch { return undefined; } })();
   try {
     fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString() }));
   } catch (err) {
-    let cleanupError;
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e2) { cleanupError = e2; }
-    const removed = !existsSync(dir);
+    // Ownership was proven by the mkdir, not by the moment of cleanup: the
+    // directory is removed only if it is still ours (same inode) and holds
+    // no other pass's record. Anything else is reported, not deleted.
+    let cleanupError, reason;
+    const cur = readOwner(dir);
+    const same = (() => { try { return lstatSync(dir).ino === inode; } catch { return false; } })();
+    if (!existsSync(dir)) reason = "gone";
+    else if (!same || (cur && (cur.pid !== pid || cur.nonce !== nonce))) reason = "replaced";
+    else { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e2) { cleanupError = e2; } }
+    const removed = reason === undefined && !existsSync(dir);
     err.lockCleanup = {
       path: dir,
       removed,
+      ...(reason ? { reason } : {}),
+      ...(reason === "replaced" && cur ? { owner: cur } : {}),
       ...(cleanupError ? { error: cleanupError.message } : {}),
-      ...(removed ? {} : { recovery: recoveryInstruction(dir, undefined, "unknown") }),
+      ...(removed || reason === "gone" || reason === "replaced" ? {} : { recovery: recoveryInstruction(dir, undefined, "unknown") }),
     };
     throw err;
   }
   return {
     path: dir,
     release: () => {
+      if (!existsSync(dir)) return { released: false, reason: "gone" };
       const cur = readOwner(dir);
-      if (!cur || cur.pid !== pid || cur.nonce !== nonce) {
-        return { released: false, reason: "not-owner", owner: cur };
-      }
+      if (!cur) return { released: false, reason: "unknown-owner", recovery: recoveryInstruction(dir, undefined, "unknown") };
+      if (cur.pid !== pid || cur.nonce !== nonce) return { released: false, reason: "not-owner", owner: cur };
       let error;
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { error = e; }
       if (!existsSync(dir)) return { released: true };
-      return { released: false, reason: "remove-failed", ...(error ? { error: error.message } : {}), recovery: recoveryInstruction(dir, cur, "dead") };
+      // Our own lock could not be removed. We are the holder and, as far as
+      // this process can tell, alive; the operator gets a conditional line.
+      const live = pid === process.pid ? "alive" : liveness(pid);
+      const recovery = `${dir} is still held by pid ${pid} (this pass, ${live} when it reported this); its removal failed${error ? ` (${error.message})` : ""}; once that process has exited (ps -p ${pid}), remove the lock with: rm -r -- ${shellQuote(dir)}  and rerun`;
+      return { released: false, reason: "remove-failed", liveness: live, ...(error ? { error: error.message } : {}), recovery };
     },
   };
 }
