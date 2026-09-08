@@ -120,7 +120,7 @@ export function createSoulInspector(container, { ctx, launch, schedule, changed,
     const actions = node('div', undefined, 'inspector-actions');
     if (selection.agent.work !== 'attached') actions.append(button('Launch…', () => launch?.(selection.agent)), button('Schedule…', () => schedule?.(selection.agent)));
     content.append(actions, node('h3', 'Launch defaults'));
-    facts([['Runtime', soul.runtime], ['Model', soul.model || 'Runtime default'], ['Permissions', soul.yolo === null || soul.yolo === undefined ? 'Scope default' : soul.yolo ? 'YOLO enabled' : 'Ask for permission'], ['Session backend', soul.backend], ['Description', soul.description]]);
+    facts([['Runtime', soul.runtime], ['Launch configuration', soul['launch-config'] || 'None'], ['Model', soul.model || 'Runtime default'], ['Permissions', soul.yolo === null || soul.yolo === undefined ? 'Scope default' : soul.yolo ? 'YOLO enabled' : 'Ask for permission'], ['Session backend', soul.backend], ['Description', soul.description]]);
     const editable = soul.editable || {};
     if (editable.fields?.length) content.append(button('Edit defaults', () => editDefaults(soul)));
     else if (editable.reason) content.append(node('p', editable.reason, 'muted'));
@@ -139,10 +139,10 @@ export function createSoulInspector(container, { ctx, launch, schedule, changed,
   }
   function editDefaults(soul) {
     const form = editor('Edit launch defaults'); const inputs = {};
-    for (const key of ['runtime', 'model', 'backend', 'yolo', 'description']) {
+    for (const key of ['runtime', 'launch-config', 'model', 'backend', 'yolo', 'description']) {
       if (!soul.editable.fields.includes(key)) continue;
       const options = key === 'runtime' ? ['pi', 'claude', 'codex'].map(x => [x, x]) : key === 'backend' ? ['tmux', 'herdr'].map(x => [x, x]) : key === 'yolo' ? [...(soul.yolo === null || soul.yolo === undefined ? [['', 'Scope default']] : []), ['false', 'Ask for permission'], ['true', 'YOLO — skip permission prompts']] : null;
-      inputs[key] = field(form, key === 'yolo' ? 'Permissions' : key[0].toUpperCase() + key.slice(1), key, key === 'yolo' ? soul[key] == null ? '' : String(soul[key]) : soul[key], options);
+      inputs[key] = field(form, key === 'yolo' ? 'Permissions' : key === 'launch-config' ? 'Launch configuration' : key[0].toUpperCase() + key.slice(1), key, key === 'yolo' ? soul[key] == null ? '' : String(soul[key]) : soul[key], options);
     }
     form.append(node('p', 'Leave Model empty to use the runtime default. Changes apply when creating future instances.', 'muted'));
     const save = button('Save defaults', () => form.requestSubmit()); form.append(save, button('Cancel', render));

@@ -78,7 +78,8 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
       : (current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
     items[index].focus();
   });
-  for (const [action, label] of [["inspect", "Knowledge & capabilities…"], ["retire", "Retire instance"]]) {
+  const launchAction = instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
+  for (const [action, label] of [["inspect", "Knowledge & capabilities…"], ...launchAction, ["retire", "Retire instance"]]) {
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
     if (action === "inspect") item.autofocus = true;
     item.setAttribute("role", "menuitem"); item.dataset.action = action; item.textContent = label;

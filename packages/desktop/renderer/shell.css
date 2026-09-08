@@ -113,7 +113,18 @@ body {
 .instance-start-dialog label { display: grid; gap: 8px; margin-top: 20px; }
 .instance-start-dialog .start-context, .instance-start-dialog .start-model-help { font-size: 12px; color: var(--muted); }
 .start-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.instance-start-dialog > .start-buttons { position: sticky; bottom: -24px; padding: 16px 24px; margin: 12px -24px -24px;
+  background: var(--bg); border-top: 1px solid var(--border); z-index: 1; }
+.start-launch-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .start-status { min-height: 1.5em; }
+.start-launch-controls[hidden], .start-configurations[hidden], .launch-preview-output[hidden] { display: none; }
+.launch-config-fields { margin-top: 16px; }
+.launch-config-fields label { display: grid; gap: 6px; margin-top: 12px; }
+.launch-config-fields .field { width: 100%; box-sizing: border-box; }
+.launch-config-fields p { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.launch-config-editor { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+.launch-config-editor summary { cursor: pointer; }
+.launch-preview-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); max-height: 240px; overflow: auto; }
 .ctx-dot.unknown { background: var(--warn); }
 .ctx-inst { min-width: 0; flex: 1; height: 40px; display: flex; align-items: center; gap: 8px;
             padding: 4px 7px 4px 3px; border: 1px solid transparent;
