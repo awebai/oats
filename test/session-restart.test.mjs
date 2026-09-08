@@ -5,7 +5,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { recipeFromLegacyCommand, restartInstanceSession, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
+import { recipeFromLegacyCommand, restartInstanceSession, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
+import { spawn as spawnProcess } from "node:child_process";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -141,4 +142,84 @@ test("legacy homes: a plain session-delivery command converts narrowly (environm
   assert.deepEqual(conv.extras, ["--dangerously-load-development-channels", "plugin:aweb-channel@awebai-marketplace"]);
   assert.throws(() => restartInstanceSession(home2, { runtime: "codex", env: env() }), (e) => e.code === "E_LAUNCH_LEGACY" && /dangerously-load-development-channels/.test(e.message) && /launch hook/.test(e.message));
   assert.equal(existsSync(join(home2, ".oats-restart.json")), false);
+});
+
+test("every start of a recipe home goes through the planner: a missing recorded executable or an unknown recipe shape refuses an ordinary start before anything", () => {
+  const name = "dev-badrecipe";
+  const home = join(repo, "agents", "dev", "instances", name);
+  makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(base, "no-such-harness") }) });
+  assert.throws(() => startInstanceSession(home, { env: env() }), (e) => e.code === "E_LAUNCH_EXECUTABLE" && /no-such-harness/.test(e.message));
+  assert.throws(() => startInstanceSession(home, { model: "claude-x", env: env() }), (e) => e.code === "E_LAUNCH_EXECUTABLE", "model-only starts are planned too");
+  const meta = readJson(join(home, "instance.json"));
+  write(join(home, "instance.json"), JSON.stringify({ ...meta, launch: { ...meta.launch, version: 7 } }));
+  assert.throws(() => startInstanceSession(home, { env: env() }), (e) => e.code === "E_LAUNCH_RECIPE_UNSUPPORTED");
+  assert.equal(existsSync(join(home, ".oats-start-pending.json")), false, "nothing was allocated");
+  assert.ok(!windows().includes(name));
+});
+
+test("a restart to another runtime whose metadata write is interrupted is recovered by the next start with ONE allocation and the new recipe; a running recovered target refuses a new selection factually", async () => {
+  const name = "dev-recover";
+  const home = join(repo, "agents", "dev", "instances", name);
+  makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  startInstanceSession(home, { env: env() });
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  assert.throws(() => restartInstanceSession(home, { launchConfig: "codexy", env: env(), stopGraceMs: 5000, io: { failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
+  const pending = readJson(join(home, ".oats-start-pending.json"));
+  assert.deepEqual([pending.runtime, pending.launch.launchConfig, pending.launch.runtime, pending.model], ["codex", "codexy", "codex", null], "the receipt carries the new recipe");
+  assert.equal(readJson(join(home, "instance.json")).runtime, "claude", "metadata still says the old runtime");
+  assert.ok(await waitFor(() => runningPid(home) !== null), "the new harness is up");
+  const recovered = startInstanceSession(home, { env: env() });
+  assert.equal(recovered.reused, "adopted"); assert.equal(recovered.runtime, "codex"); assert.equal(recovered.launchConfig, "codexy"); assert.equal(recovered.model, null);
+  const meta = readJson(join(home, "instance.json"));
+  assert.deepEqual([meta.runtime, meta.launch.launchConfig, meta.launch.runtime, meta.model], ["codex", "codexy", "codex", undefined]);
+  assert.equal(windows().filter((w) => w === name).length, 1, "one allocation");
+  assert.equal(existsSync(join(home, ".oats-start-pending.json")), true, "the receipt stays until the command exits");
+  // A choice made now against the running recovered target is refused, not silently ignored.
+  assert.throws(() => startInstanceSession(home, { launchConfig: "polite", env: env({ RESTART_TEST_SRC: "x" }) }), (e) => e.code === "E_SESSION_RUNNING" && /was not applied/.test(e.message));
+  assert.throws(() => startInstanceSession(home, { runtime: "claude", env: env() }), (e) => e.code === "E_SESSION_RUNNING" && /was not applied/.test(e.message));
+  // A pending receipt whose recipe is not a shape this kernel starts from is refused before anything.
+  write(join(home, ".oats-start-pending.json"), JSON.stringify({ ...pending, launch: { ...pending.launch, version: 9 } }));
+  assert.throws(() => startInstanceSession(home, { env: env() }), (e) => e.code === "E_SESSION_UNKNOWN" && /invalid receipt/.test(e.message));
+  write(join(home, ".oats-start-pending.json"), JSON.stringify(pending));
+  process.kill(runningPid(home), "SIGTERM");
+});
+
+test("Herdr: the pane shell's verified process tree is signalled (never the shell itself, never a fabricated pid); exit is observed through Herdr; a timeout reports the process still running; an unverifiable pid refuses", async () => {
+  // A real launcher shell with a real polite harness child stands in for the pane (as Herdr's `exec /bin/sh -c` leaves it); Herdr's answers come from a fake transport.
+  const home = join(base, "herdr-home"); mkdirSync(home, { recursive: true });
+  const child = spawnProcess("/bin/sh", ["-c", `${JSON.stringify(join(binDir, "polite"))}; exit 0`], { stdio: "ignore", env: { ...process.env, OATS_INSTANCE_HOME: home } });
+  try {
+    assert.ok(await waitFor(() => existsSync(join(home, "pid.txt"))), "the harness child is up");
+    const harnessPid = Number(readFileSync(join(home, "pid.txt"), "utf8").trim());
+    const target = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "herdr.sock"), protocol: 20, workspaceId: "w0", paneId: "p0", terminalId: "t0" };
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    let info = () => ({ shell_pid: child.pid, foreground_process_group_id: child.pid, foreground_processes: [{ name: "sh", pid: alive(harnessPid) ? harnessPid : child.pid }] });
+    const calls = [];
+    const fakeExec = (binary, args, options) => {
+      if (binary === "ps") return execFileSync(binary, args, options);
+      calls.push(args.join(" "));
+      let result;
+      if (args.join(" ") === "api snapshot") result = { snapshot: { protocol: 20, panes: [{ pane_id: "p0", terminal_id: "t0", workspace_id: "w0" }], agents: alive(harnessPid) ? [{ terminal_id: "t0", agent_status: "working" }] : [] } };
+      else if (args[1] === "process-info") result = { process_info: info() };
+      else assert.fail(`unexpected Herdr call: ${args}`);
+      return JSON.stringify({ result });
+    };
+    const io = { exec: fakeExec };
+    // Timeout first: the injected kill withholds the signal, so the process stays and nothing is escalated.
+    let r = stopHarness(target, { graceMs: 600, io, kill: (pid, sig) => { if (sig === 0) return process.kill(pid, 0); calls.push(`kill ${pid} ${sig}`); } });
+    assert.equal(r.exited, false); assert.ok(r.requested.some((x) => x.pid === harnessPid) && !r.requested.some((x) => x.pid === child.pid), "the harness under the pane shell, not the shell");
+    assert.deepEqual(r.stillRunning.includes(harnessPid), true);
+    assert.ok(calls.includes(`kill ${harnessPid} SIGTERM`) && !calls.some((c) => /SIGKILL/.test(c)));
+    assert.ok(alive(harnessPid), "still there");
+    // The real SIGTERM: the harness ends, the launcher shell finishes, Herdr's snapshot loses the agent, exit is observed.
+    r = stopHarness(target, { graceMs: 5000, io });
+    assert.equal(r.exited, true); assert.ok(r.requested.some((x) => x.pid === harnessPid)); assert.ok(!alive(harnessPid));
+    // An unverifiable pane shell pid is refused before any signal.
+    info = () => ({ shell_pid: 999999, foreground_process_group_id: null, foreground_processes: [] });
+    const running = { exec: (b, a, o) => b === "ps" ? execFileSync(b, a, o) : a.join(" ") === "api snapshot" ? JSON.stringify({ result: { snapshot: { protocol: 20, panes: [{ pane_id: "p0", terminal_id: "t0", workspace_id: "w0" }], agents: [{ terminal_id: "t0", agent_status: "working" }] } } }) : fakeExec(b, a, o) };
+    assert.throws(() => stopHarness(target, { graceMs: 100, io: running }), (e) => e.code === "E_SESSION_UNKNOWN" && /no such process/.test(e.message));
+  } finally {
+    try { child.kill("SIGKILL"); } catch { /* gone */ }
+    try { process.kill(Number(readFileSync(join(home, "pid.txt"), "utf8").trim()), "SIGKILL"); } catch { /* gone */ }
+  }
 });

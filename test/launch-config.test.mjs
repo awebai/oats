@@ -202,3 +202,17 @@ test("an unrouted --server never reads or writes a local scope; a bad --file is 
   r = oats(["launch-config", "set", "g", "--file", join(base, "missing.json"), "--dir", scope]);
   assert.equal(r.json.error?.code, "E_BAD_ARGS"); assert.match(r.json.error.message, /no such file/);
 });
+
+test("a top-level comment after the launch-configs block is not part of it: set and remove leave it where it is", () => {
+  const scope = join(base, "comments"); mkdirSync(join(scope, "agents"), { recursive: true });
+  const doc = "name: c\nlaunch-configs:\n  a:\n    runtime: pi\n# trailing top-level comment\n\n# another one at the end\n";
+  write(join(scope, "oats-config.yaml"), doc);
+  write(join(base, "c-b.json"), JSON.stringify({ runtime: "codex" }));
+  assert.equal(oats(["launch-config", "set", "b", "--file", join(base, "c-b.json"), "--dir", scope]).json.ok, true);
+  let text = readFileSync(join(scope, "oats-config.yaml"), "utf8");
+  assert.ok(text.endsWith("\n# trailing top-level comment\n\n# another one at the end\n"), text);
+  assert.deepEqual(Object.keys(parseYamlNested(text)["launch-configs"]).sort(), ["a", "b"]);
+  assert.equal(oats(["launch-config", "remove", "a", "--dir", scope]).json.ok, true);
+  assert.equal(oats(["launch-config", "remove", "b", "--dir", scope]).json.ok, true);
+  assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), "name: c\n# trailing top-level comment\n\n# another one at the end\n");
+});
