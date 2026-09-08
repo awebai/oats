@@ -1310,10 +1310,10 @@ function launchPreview(bail) {
     home = selected.home;
     try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home}: ${e.message}`); }
     instance = meta.instance || basename(home);
-    if (!(meta.launch && typeof meta.launch === "object")) {
-      // A home that predates recipes: its frozen command is described as is;
-      // a selection needs the conversion that session restart brings.
-      if (selectionGiven) bail("E_LAUNCH_LEGACY", `${instance} predates launch recipes (no launch in instance.json); a selection needs oats session restart's conversion of its command; without one, preview describes the frozen command`);
+    if (!(meta.launch && typeof meta.launch === "object") && !selectionGiven) {
+      // A home that predates recipes, asked nothing: its frozen command is
+      // described as is. Under a selection it goes through the planner,
+      // whose narrow conversion is the one session restart uses.
       let d;
       try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
       jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, runtime: null, model: null, yolo: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; conversion on restart" }], ok: true });
