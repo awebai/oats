@@ -91,6 +91,7 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     const cur = readOwner(dir);
     const same = (() => { try { const current = lstatSync(dir); return identity && current.dev === identity.dev && current.ino === identity.ino; } catch { return false; } })();
     if (!existsSync(dir)) reason = "gone";
+    else if (!identity) reason = "unverified";
     else if (!same || (cur && (cur.pid !== pid || cur.nonce !== nonce))) reason = "replaced";
     else { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e2) { cleanupError = e2; } }
     const removed = reason === undefined && !existsSync(dir);

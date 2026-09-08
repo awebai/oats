@@ -167,6 +167,15 @@ test("capture lock: the initialization directory descriptor closes on success an
     assert.throws(() => acquireCaptureLock(root, { io: { ...io, writeFileSync: () => { throw Object.assign(new Error("EIO"), { code: "EIO" }); } } }), { code: "EIO" });
     assert.throws(() => fstatSync(fd), { code: "EBADF" });
     assert.equal(existsSync(captureLockPath(root)), false);
+    // No descriptor means ownership was never pinned: leave the directory,
+    // report that uncertainty and retain the operator's recovery guidance.
+    let error;
+    try { acquireCaptureLock(root, { io: { openSync: () => { throw Object.assign(new Error("EMFILE"), { code: "EMFILE" }); } } }); } catch (e) { error = e; }
+    assert.equal(error?.code, "EMFILE");
+    assert.equal(error.lockCleanup.removed, false);
+    assert.equal(error.lockCleanup.reason, "unverified");
+    assert.match(error.lockCleanup.recovery, /stop capture triggers.*pgrep -f capture\.mjs.*rm -r -- /);
+    assert.equal(existsSync(captureLockPath(root)), true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
