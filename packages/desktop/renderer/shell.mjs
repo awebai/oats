@@ -66,6 +66,7 @@ const ctx = {
   openFile: (path) => openViewTab("markdown", `≡ ${String(path).split("/").pop()}`, { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
   startInstance: (instance) => openInstanceStart(instance),
+  restartInstance: (instance) => openInstanceStart(instance, { restart: true }),
   openBrain: (agent) => openBrainTab(agent),
   // CLI degradation affordances (cli-status.mjs feature-detects both):
   // native binary picker (privileged; main persists the choice) and external
@@ -349,6 +350,7 @@ function renderContextRoster(instances) {
         rowWrap.append(instanceActions(document, i, {
           invoke: async (action, instance) => {
             if (currentWorkspace() !== ws) throw new Error("Workspace changed; select the instance again");
+            if (action === "start" || action === "restart") { openInstanceStart(instance, { restart: action === "restart" }); return; }
             if (action === "inspect") {
               const { preselectHome } = await import("./views/spawn.mjs");
               if (currentWorkspace() !== ws) return;
@@ -358,7 +360,7 @@ function renderContextRoster(instances) {
           },
           confirmRetire: (instance) => confirm(`Retire ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}? This stops its session and preserves outstanding work through OATS retirement.`),
           done: (result, action) => {
-            if (action === "inspect") return;
+            if (action !== "retire") return;
             { const summary = retirementSummary(result); if (summary) alert(summary); }
             refreshContextRoster();
           },

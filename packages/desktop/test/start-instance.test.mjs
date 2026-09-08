@@ -6,7 +6,7 @@ import { setWorkspace } from "../renderer/views/common.mjs";
 import { cliStart } from "../cli-adapter.mjs";
 
 const tick = () => new Promise((r) => setImmediate(r));
-function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true } = {}) {
+function setup({ running = false, cli = { ok: true, features: ["session-start"], remote: ["session-start"] }, start, ready = true, restart = false } = {}) {
   const dom = new JSDOM("<body><button id='opener'>Start</button></body>");
   setWorkspace("/workspace");
   const instance = { instance: "accountant-minerva", home: "/workspace/agents/accountant/instances/accountant-minerva", runtime: "claude", model: "sonnet", running };
@@ -16,12 +16,13 @@ function setup({ running = false, cli = { ok: true, features: ["session-start"],
     if (path === "/api/cli") return cli;
     if (path.startsWith("/api/panel")) return { instances: [instance] };
     if (path === "/api/models") return { models: [{ id: "opus" }] };
-    if (path.startsWith("/api/start/")) return start ? start() : { instance: instance.instance, home: instance.home };
+    if (path.startsWith("/api/launch-configs")) return { context: "/workspace", configurations: [{ name: "personal", runtime: "codex", source: "/workspace" }] };
+    if (path.startsWith("/api/start/") || path.startsWith("/api/restart/")) return start ? start() : { instance: instance.instance, home: instance.home };
     assert.fail(path);
   }, openTerminal: async (ref) => opened.push(ref) };
   const opener = dom.window.document.querySelector("#opener"); opener.focus();
   const open = createInstanceStarter(dom.window.document, ctx, { waitForReady: async () => ready });
-  const modal = open(instance);
+  const modal = open(instance, { restart });
   const submit = () => modal.querySelector("form").dispatchEvent(new dom.window.Event("submit", { cancelable: true }));
   const cleanup = () => { setWorkspace("/finished"); dom.window.close(); };
   return { dom, instance, calls, opened, modal, submit, cleanup, open };
@@ -43,6 +44,34 @@ test("Start chooses a model for the exact existing home then opens its terminal"
     assert.deepEqual(s.opened, [s.instance]);
     assert.equal(s.modal.isConnected, false);
     assert.equal(s.dom.window.document.activeElement.id, "opener");
+  } finally { s.cleanup(); }
+});
+
+test("explicit restart chooses a new configuration and permission setting in the same home", async () => {
+  const s = setup({ running: true, restart: true, cli: { ok: true, features: ['session-start', 'session-restart', 'launch-config'] } });
+  try {
+    await tick();
+    assert.equal(s.modal.querySelector('.start-submit').textContent, 'Restart');
+    assert.match(s.modal.querySelector('.start-status').textContent, /stops the current harness/);
+    const config = s.modal.querySelector('.launch-config-select'); config.value = 'personal';
+    config.dispatchEvent(new s.dom.window.Event('change'));
+    s.modal.querySelector('.start-yolo').value = 'true';
+    s.submit(); await tick();
+    const call = s.calls.find(c => c.path.startsWith('/api/restart/'));
+    assert.ok(call); assert.equal(new URL(call.path, 'http://localhost').searchParams.get('home'), s.instance.home);
+    assert.deepEqual(JSON.parse(call.opts.body), { launchConfig: 'personal', yolo: true });
+    assert.equal(s.calls.some(c => c.path.startsWith('/api/retire/') || c.path.startsWith('/api/spawn')), false);
+  } finally { s.cleanup(); }
+});
+
+test("restart is refused by the dialog on an old CLI even if the instance is running", async () => {
+  const s = setup({ running: true, restart: true });
+  try {
+    await tick(); s.submit(); await tick();
+    assert.equal(s.modal.querySelector('.start-submit').disabled, true);
+    assert.match(s.modal.querySelector('.start-status').textContent, /Update OATS/);
+    assert.equal(s.calls.some(c => c.path.startsWith('/api/restart/')), false);
+    assert.equal(s.opened.length, 0);
   } finally { s.cleanup(); }
 });
 
