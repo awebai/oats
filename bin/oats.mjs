@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -40,7 +40,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
@@ -359,7 +359,7 @@ function agentsRootOfHome(home) {
   const base = dirname(agentDir);
   return basename(base) === "local-agents" ? join(dirname(base), "agents") : base;
 }
-const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description"];
+const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description", "launch-config"];
 const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 /** Every soul of a scope: persistent and local souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
@@ -434,7 +434,7 @@ function soulEntry(soul, root, { capability } = {}) {
   return {
     name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
     type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
-    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, backend: soul.backend ?? null,
+    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
     agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
     editable: packaged
       ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
@@ -830,6 +830,9 @@ async function soulCmd() {
   if (has("yolo")) changes.yolo = true;
   if (has("no-yolo")) changes.yolo = false;
   if (has("backend")) { const v = val("backend"); if (!["tmux", "herdr"].includes(v)) bail("E_BAD_ARGS", "--backend must be tmux or herdr"); changes.backend = v; }
+  if (has("launch-config") && has("no-launch-config")) bail("E_BAD_ARGS", "choose --launch-config <name> or --no-launch-config, not both");
+  if (has("launch-config")) { const v = val("launch-config"); if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v)) bail("E_BAD_ARGS", "--launch-config needs a configuration name (letters, digits, dot, underscore, dash)"); changes["launch-config"] = v; }
+  if (has("no-launch-config")) changes["launch-config"] = null;
   if (has("description") && has("no-description")) bail("E_BAD_ARGS", "choose --description <d> or --no-description, not both");
   if (has("description")) changes.description = assertSafeConfigValue(val("description"), "--description");
   if (has("no-description")) changes.description = null;
@@ -855,9 +858,9 @@ async function soulCmd() {
     // the intent, and a TTY was refused above.
     instructions = bytes;
   }
-  if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --description/--no-description, --instructions-file");
+  if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --launch-config/--no-launch-config, --description/--no-description, --instructions-file");
   for (const f of Object.keys(changes)) if (!soul.editable.fields.includes(f)) bail("E_BAD_ARGS", `${f} is not an editable field of ${name}`);
-  const before = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, backend: soul.backend, description: soul.description };
+  const before = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, backend: soul.backend, description: soul.description, launchConfig: soul.launchConfig };
   // soul.yaml: replace or append `key: value` lines in place; a cleared
   // field's line is removed; nothing else in the file moves.
   let yamlText = "";
@@ -1173,6 +1176,255 @@ function replaceCapabilitiesBlock(text, caps) {
   }
   return [...lines.slice(0, start), ...serialized.replace(/\n$/, "").split("\n"), "", ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
 }
+/** Replace (or append, or drop with "") the top-level launch-configs block:
+ *  the span from its key line (bare, quoted, or the inline `launch-configs: {...}`
+ *  form) to the next top-level line is replaced; every byte before and after
+ *  that span stays exactly as it was. Two declarations of the key are refused
+ *  rather than guessed at. */
+function replaceLaunchConfigsBlock(text, serialized) {
+  const keyLine = /^(["']?)launch-configs\1:(\s*(?:#.*)?|\s+\S.*)?$/;
+  const lines = text.split("\n");
+  const starts = lines.map((l, i) => keyLine.test(l) ? i : -1).filter((i) => i >= 0);
+  if (starts.length > 1) throw Object.assign(new Error(`oats-config.yaml declares launch-configs ${starts.length} times (lines ${starts.map((i) => i + 1).join(", ")}); keep one`), { code: "E_CONFIG_BROKEN" });
+  const block = serialized ? serialized.replace(/\n$/, "").split("\n") : [];
+  if (!starts.length) {
+    if (!serialized) return text;
+    const sep = text === "" ? "" : text.endsWith("\n") ? "\n" : "\n\n"; // always its own blank separator, which removal takes back
+    return text + sep + serialized;
+  }
+  const start = starts[0];
+  // The block runs to the next real top-level key (a column-zero line that
+  // is not a comment). Blank lines and column-zero comments directly ahead
+  // of that key, or at the end of the file, are not part of it and stay
+  // where they are; a column-zero comment followed by more indented entries
+  // is inside the block (and is regenerated away with it).
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i] !== "" && !/^\s/.test(lines[i]) && !lines[i].startsWith("#")) { end = i; break; }
+  }
+  while (end > start + 1 && (lines[end - 1] === "" || lines[end - 1].startsWith("#"))) end--;
+  const tail = lines.slice(end);
+  if (!tail.length) tail.push(""); // the block ended the file: the result still ends with a newline
+  let prefixEnd = start;
+  // Dropping the block drops the one blank line that separated it (before it
+  // when it was appended, else after it); replacing it keeps one blank line
+  // between the block and what follows.
+  if (!block.length) { if (start > 0 && lines[start - 1] === "") prefixEnd = start - 1; else if (tail[0] === "" && tail.length > 1) tail.shift(); }
+  const replaced = [...lines.slice(0, prefixEnd), ...block];
+  if (block.length && tail[0] !== "") replaced.push("");
+  return [...replaced, ...tail].join("\n");
+}
+
+// ---------- launch configurations ----------
+const yamlQuoted = (v) => JSON.stringify(String(v));
+/** The `launch-configs:` block, names sorted, every string double-quoted
+ *  with JSON escapes (read back by the same rules), lists as block
+ *  sequences: spaces, quotes, commas and metacharacters round-trip exactly. */
+function serializeLaunchConfigs(map) {
+  const names = Object.keys(map).sort();
+  if (!names.length) return "";
+  const lines = ["launch-configs:"];
+  for (const name of names) {
+    const e = map[name];
+    lines.push(`  ${name}:`, `    runtime: ${e.runtime}`);
+    if (e.executable !== undefined) lines.push(`    executable: ${yamlQuoted(e.executable)}`);
+    if (e.args?.length) { lines.push("    args:"); for (const a of e.args) lines.push(`      - ${yamlQuoted(a)}`); }
+    const envNames = Object.keys(e.env || {}).sort();
+    if (envNames.length) {
+      lines.push("    env:");
+      for (const n of envNames) { const v = e.env[n]; if (typeof v === "string") lines.push(`      ${n}: ${yamlQuoted(v)}`); else lines.push(`      ${n}:`, `        fromEnv: ${v.fromEnv}`); }
+    }
+    if (e.model !== undefined) lines.push(`    model: ${yamlQuoted(e.model)}`);
+    if (e.yolo !== undefined) lines.push(`    yolo: ${e.yolo}`);
+  }
+  return lines.join("\n") + "\n";
+}
+/** Only the declared keys, in canonical order, from a validated entry. */
+function normalizeLaunchConfig(e) {
+  return {
+    runtime: e.runtime,
+    ...(e.executable !== undefined ? { executable: e.executable } : {}),
+    ...(e.args?.length ? { args: [...e.args] } : {}),
+    ...(e.env && Object.keys(e.env).length ? { env: Object.fromEntries(Object.keys(e.env).sort().map((n) => [n, typeof e.env[n] === "string" ? e.env[n] : { fromEnv: e.env[n].fromEnv }])) } : {}),
+    ...(e.model !== undefined ? { model: e.model } : {}),
+    ...(e.yolo !== undefined ? { yolo: e.yolo } : {}),
+  };
+}
+function readLaunchConfigsModel(file) {
+  if (!existsSync(file)) return {};
+  const cfg = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8")));
+  const map = cfg["launch-configs"] || {};
+  for (const [name, entry] of Object.entries(map)) validateLaunchConfig(name, entry, file);
+  const out = Object.create(null); // a name may be "constructor": membership is own only
+  for (const [n, e] of Object.entries(map)) out[n] = normalizeLaunchConfig(e);
+  return out;
+}
+/** What a GUI or an operator sees of one configuration. Environment values
+ *  never leave the file: a literal is answered as {redacted: true} (literals
+ *  are non-secret by contract, but no value is shown anywhere) and a
+ *  reference as {fromEnv: NAME}. An editor keeps a literal it cannot see with
+ *  `set --keep-env`. */
+function publicLaunchConfig(e, extra = {}) {
+  const env = Object.fromEntries(Object.keys(e.env || {}).sort().map((n) => [n, typeof e.env[n] === "string" ? { redacted: true } : { fromEnv: e.env[n].fromEnv }]));
+  return { runtime: e.runtime, executable: e.executable ?? null, args: [...(e.args || [])], env, model: e.model ?? null, yolo: e.yolo ?? null, ...extra };
+}
+/** The scope a launch-config command reads: --dir (or cwd), a running
+ *  home's recorded context (--home), or a soul's own member context
+ *  (--soul, with --dir/--agents-root as inspect takes them). */
+function launchConfigContext(bail) {
+  const homeFlag = flag("home");
+  const soulFlag = flag("soul");
+  if (homeFlag !== undefined && soulFlag !== undefined) bail("E_BAD_ARGS", "choose --home or --soul, not both");
+  if (homeFlag !== undefined) {
+    if (homeFlag === true || !isAbsolute(String(homeFlag))) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const home = realOrResolved(String(homeFlag));
+    let meta;
+    try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home} is not an OATS instance home (${e.message})`); }
+    const ctx = homeContexts(home, meta)[0];
+    return { context: ctx, selected: { home, instance: meta.instance || null } };
+  }
+  const ctx = dirFlag();
+  if (soulFlag !== undefined) {
+    if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
+    const agentsRootFlag = flag("agents-root");
+    if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+    let r;
+    try { r = resolveOatsConfig(ctx); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    let soul;
+    try { soul = selectSoul(scopeSouls(ctx, r).souls, String(soulFlag), agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    return { context: memberContextOf(soul, ctx, flag("dir") !== undefined, bail), selected: { soul: soul.name, agentsRoot: soul.agentsRoot } };
+  }
+  return { context: ctx, selected: null };
+}
+/** oats launch-config preview: what a start of a home (or a new instance of
+ *  a soul) would run under a selection, resolved against the current scoped
+ *  configuration, preflighted, read-only; environment values withheld and
+ *  the prompt named, never the TASK body. */
+function launchPreview(bail) {
+  const sel = { launchConfig: flag("launch-config"), runtime: flag("runtime"), model: flag("model"), yolo: yoloFlag() };
+  for (const k of ["launch-config", "runtime", "model"]) if (flag(k) === true) bail("E_BAD_ARGS", `--${k} needs a value`);
+  if (sel.runtime !== undefined && !LAUNCH_RUNTIMES.includes(sel.runtime)) bail("E_BAD_ARGS", `--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
+  const { context, selected } = launchConfigContext(bail);
+  if (!selected) bail("E_BAD_ARGS", "preview needs --home <abs> (an existing instance) or --soul <name> [--dir <scope>] (a new instance)");
+  const selectionGiven = sel.launchConfig !== undefined || sel.runtime !== undefined || sel.model !== undefined || sel.yolo !== undefined;
+  let meta = null, agentLike, home, instance;
+  if (selected.home) {
+    home = selected.home;
+    try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home}: ${e.message}`); }
+    instance = meta.instance || basename(home);
+    if (!(meta.launch && typeof meta.launch === "object") && !selectionGiven) {
+      // A home that predates recipes, asked nothing: its frozen command is
+      // described as is. Under a selection it goes through the planner,
+      // whose narrow conversion is the one session restart uses.
+      let d;
+      try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, runtime: null, model: null, yolo: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; conversion on restart" }], ok: true });
+      return;
+    }
+    const agentsRoot = agentsRootOfHome(home);
+    const agent = (() => { try { return findAgent(agentsRoot, meta.agent); } catch { return undefined; } })();
+    agentLike = agent || { runtime: meta.runtime, model: meta.model, yolo: meta.yolo };
+  } else {
+    let r0;
+    try { r0 = resolveOatsConfig(context); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    const soul = scopeSouls(context, r0).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
+    agentLike = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, "launch-config": soul.launchConfig };
+    instance = `${soul.name}-<purpose>`; home = join(selected.agentsRoot, soul.name, "instances", instance);
+  }
+  let r;
+  try { r = resolveOatsConfig(context, selected.soul || meta?.agent); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  // The same planner a start uses, in preview mode: failed checks are listed, nothing is touched.
+  let plan;
+  try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+  const { recipe } = plan;
+  const command = renderLaunchRecipe(recipe, { home, instance, redact: true });
+  const d = describeLaunchCommand(command);
+  const environment = d.environment.map((e) => e.reference && recipe.env[e.name]?.fromEnv ? { name: e.name, fromEnv: recipe.env[e.name].fromEnv } : e);
+  jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime: plan.runtime, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });
+}
+async function launchConfigCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  dropAmbientRoot();
+  const sub = args[1];
+  const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--runtime r] [--model m] [--yolo|--no-yolo] --json";
+  if (sub === "preview") { launchPreview(bail); return; }
+  if (!["list", "set", "remove"].includes(sub)) bail("E_USAGE", usage);
+  const { context: dir, selected } = sub === "list" ? launchConfigContext(bail) : { context: dirFlag(), selected: null };
+  if (sub !== "list" && (flag("home") !== undefined || flag("soul") !== undefined)) bail("E_BAD_ARGS", `launch-config ${sub} writes one scope's oats-config.yaml: address it with --dir, not --home or --soul`);
+  const level = levelOf(dir);
+  const file = join(dir, "oats-config.yaml");
+  const effective = () => {
+    const r = resolveOatsConfig(dir);
+    return Object.values(r.launchConfigs || {}).sort((a, b) => a.name.localeCompare(b.name)).map((e) => ({ name: e.name, ...publicLaunchConfig(e, { source: e.source, shadows: e.shadows }) }));
+  };
+  if (sub === "list") {
+    let configurations;
+    try { configurations = effective(); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    if (JSON_MODE) { jsonOk({ context: dir, level, file: existsSync(file) ? file : null, selected, configurations }); return; }
+    if (!configurations.length) { console.log(`No launch configurations are effective at ${dir}`); return; }
+    for (const c of configurations) {
+      const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
+      console.log(`${c.name}: ${c.runtime}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}  (${c.source}${c.shadows.length ? `; shadows ${c.shadows.join(", ")}` : ""})`);
+    }
+    return;
+  }
+  const name = args[2];
+  if (!name || name.startsWith("--")) bail("E_BAD_ARGS", `launch-config ${sub} needs a configuration name`);
+  const text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
+  let model;
+  try { model = readLaunchConfigsModel(file); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  const declaredHere = Object.hasOwn(model, name);
+  const before = declaredHere ? publicLaunchConfig(model[name]) : null;
+  if (sub === "remove") {
+    if (!declaredHere) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared at ${level} level (${shortPath(file)}); an inherited configuration is removed at the scope that declares it`);
+    delete model[name];
+  } else {
+    const f = flag("file");
+    if (!f || f === true) bail("E_BAD_ARGS", "launch-config set needs --file <json> (an object with runtime and optional executable, args, env, model, yolo)");
+    let entry;
+    // A parse error is reported without the parser's text: its message can
+    // quote the document, and a definition may carry environment literals.
+    let raw;
+    if (f === "-") {
+      // The routed form: the definition's bytes arrive on stdin (the ssh
+      // transport); no local file name crosses the wire.
+      if (process.stdin.isTTY) bail("E_BAD_ARGS", "--file - reads the definition from stdin");
+      try { raw = (await readStreamBounded(process.stdin, INSPECT_TEXT_CAP)).toString("utf8"); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    } else {
+      try { raw = readFileSync(f, "utf8"); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.code === "ENOENT" ? "no such file" : e.code || "cannot read"}`); }
+    }
+    try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with runtime and optional executable, args, env, model, yolo)`); }
+    if (args.includes("--keep-env")) {
+      // An editor that saw only redacted values keeps the environment of the
+      // definition EFFECTIVE at this scope for that name (this scope's own, or
+      // the inherited one it is overriding): a one-time copy into the complete
+      // replacement entry, not inheritance; whole-entry shadowing stays.
+      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the effective definition; omit env from --file");
+      let current;
+      try { const all = resolveOatsConfig(dir).launchConfigs || {}; current = Object.hasOwn(all, name) ? all[name] : undefined; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+      if (!current) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is effective at ${dir}, so there is no environment to keep; declare it with env`);
+      if (entry && typeof entry === "object" && Object.keys(current.env || {}).length) entry.env = { ...current.env };
+    }
+    try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
+    model[name] = normalizeLaunchConfig(entry);
+  }
+  let next;
+  try { next = replaceLaunchConfigsBlock(text, serializeLaunchConfigs(model)); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", `${e.message}; nothing was written`); }
+  // What is written must read back as exactly what was asked, by the kernel's
+  // own reader, before a byte of the file changes.
+  let readBack;
+  try { readBack = parseYamlNested(next)["launch-configs"] || {}; } catch (e) { bail("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
+  const canonical = (m) => JSON.stringify(Object.keys(m).sort().map((n) => [n, normalizeLaunchConfig(m[n])]));
+  const same = canonical(readBack) === canonical(model);
+  if (!same) bail("E_LAUNCH_CONFIG_INVALID", `${name} would not read back as written; nothing was written`);
+  writeFileAtomic(file, next);
+  let eff = null;
+  try { eff = effective().find((c) => c.name === name) || null; } catch (e) { eff = { error: e.message }; }
+  const receipt = { name, action: sub, level, file, before, after: Object.hasOwn(model, name) ? publicLaunchConfig(model[name]) : null, effective: eff };
+  if (JSON_MODE) { jsonOk(receipt); return; }
+  console.log(sub === "set" ? `Declared launch configuration ${name} at ${level} level (${shortPath(file)})` : `Removed launch configuration ${name} from ${level} level (${shortPath(file)})${eff ? `; ${eff.source} now provides it` : ""}`);
+}
+
 
 /** Load the parsed capabilities model of a config file ({layers:{}, additive:{}}). */
 function readCapabilitiesModel(file) {
@@ -3401,6 +3653,7 @@ function spawnCmd() {
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       repo: flag("repo") || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
       work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch: flag("branch"),
+      launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
     });
   } catch (e) {
@@ -3409,6 +3662,10 @@ function spawnCmd() {
     // consumer the spawn mechanism broke, when the fixable fact is a poisoned
     // document the message already names. The shared boundary renders it.
     if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
+    // A launch refusal (configuration, executable, environment reference,
+    // model, runtime) is a fact about the selection, not a spawn-mechanism
+    // failure: it keeps its own code so a GUI can act on it.
+    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_RUNTIME$/.test(e.code)) { bail(e.code, e.message); throw e; }
     bail(e.code === "E_RELATIVE_AMBIGUOUS" ? "E_RELATIVE_AMBIGUOUS" : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
@@ -3430,6 +3687,7 @@ function spawnCmd() {
       spawnOrigin: r.spawnOrigin, attach: r.attach,
       ...(r.sessionTarget ? { sessionTarget: r.sessionTarget } : {}),
       ...(r.yolo !== undefined ? { yolo: r.yolo } : {}),
+      launchConfig: r.launch?.launchConfig ?? null, launch: r.launch || null, // already redacted by the kernel
     });
     return;
   }
@@ -3437,7 +3695,7 @@ function spawnCmd() {
   console.log(`  home:   ${shortPath(r.home)}`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
-  if (!r.launched) console.log(`  launch: (cd ${shortPath(r.home)} && ${r.command})`);
+  if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
   console.log(`  attach: ${r.attach}`);
 }
@@ -3562,10 +3820,20 @@ async function sessionCmd() {
       return;
     }
     if (args[1] === "inspect") result = inspectInstanceSession(home);
-    else if (args[1] === "start") {
+    else if (args[1] === "start" || args[1] === "restart") {
+      const bad = (msg) => { throw Object.assign(new Error(msg), { code: "E_BAD_ARGS" }); };
       const model = flag("model");
-      if (model === true) throw Object.assign(new Error("--model needs a model id; omit it to keep the recorded model"), { code: "E_BAD_ARGS" });
-      result = startInstanceSession(home, { model: model || undefined });
+      if (model === true) bad("--model needs a model id; omit it to keep the recorded model");
+      const launchConfig = flag("launch-config");
+      if (launchConfig === true) bad("--launch-config needs a configuration name, or none");
+      const runtime = flag("runtime");
+      if (runtime === true || (runtime !== undefined && !LAUNCH_RUNTIMES.includes(runtime))) bad(`--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
+      const opts = { model: model || undefined, launchConfig, runtime, yolo: yoloFlag(), env: process.env };
+      if (args[1] === "restart") {
+        const grace = flag("stop-grace");
+        if (grace !== undefined) { if (grace === true || !/^\d+$/.test(String(grace)) || Number(grace) < 1 || Number(grace) > 300) bad("--stop-grace needs a number of seconds (1..300) to wait for the harness after SIGTERM"); opts.stopGraceMs = Number(grace) * 1000; }
+        result = restartInstanceSession(home, opts);
+      } else result = startInstanceSession(home, opts);
     } else if (args[1] === "input") {
       const file = flag("text-file");
       if (file === true) throw Object.assign(new Error("--text-file needs a path"), { code: "E_BAD_ARGS" });
@@ -3583,7 +3851,7 @@ async function sessionCmd() {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|receive|upload --home /absolute/home [--text-file path] [--model id] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--runtime pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
 }
@@ -3878,7 +4146,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4009,15 +4277,44 @@ function serverCmd() {
 /** `oats <spawn|retire|status> --server <id> ...`: run the command on the
  *  registered server's installed oats, same arguments, same envelope. The
  *  local side only routes and keeps the route snapshot per remote instance. */
-function serverRouteCmd() {
+async function serverRouteCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
   // The operations contract addresses an exact member context on the host,
   // so its explicit --dir travels; every other routed command takes its
   // scope from the registration.
-  const explicitScopeOk = ["inspect", "operation", "use", "soul"].includes(cmd);
+  const explicitScopeOk = ["inspect", "operation", "use", "soul", "launch-config"].includes(cmd);
   if (!explicitScopeOk && (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir=")))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  if (cmd === "launch-config") {
+    const action = args[1];
+    const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
+    if (!["list", "set", "remove", "preview"].includes(action)) bail("E_BAD_ARGS", "launch-config --server supports list, set, remove and preview");
+    const options = { action, name: args[2], context: value("dir"), home: value("home"), instance: value("instance"), soul: value("soul"), agentsRoot: value("agents-root") };
+    if (action === "preview") Object.assign(options, { launchConfig: value("launch-config"), runtime: value("runtime"), model: value("model"), yolo: yoloFlag() });
+    if (action === "set") {
+      const file = value("file");
+      if (!file) bail("E_BAD_ARGS", "launch-config set needs --file <local JSON file> (or - for stdin)");
+      let raw;
+      try {
+        if (file === "-") {
+          if (process.stdin.isTTY) bail("E_BAD_ARGS", "--file - reads the definition from stdin");
+          raw = await readStreamBounded(process.stdin, INSPECT_TEXT_CAP);
+        } else raw = readFileSync(file);
+      } catch (e) { bail("E_BAD_ARGS", `cannot read launch configuration file (${e.code || "read failed"})`); }
+      if (raw.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", "launch configuration file exceeds the input limit");
+      try { options.definition = JSON.parse(raw.toString("utf8")); }
+      catch { bail("E_BAD_ARGS", "launch configuration file is not valid JSON"); }
+      options.keepEnv = args.includes("--keep-env");
+    }
+    let out;
+    try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
+    if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+    if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "launch configuration request failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
+    console.log(JSON.stringify(out.envelope.result, null, 2));
+    return;
+  }
   // Interactive viewer: `oats session attach --server <id> --instance <name>`
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
@@ -4077,11 +4374,12 @@ function serverRouteCmd() {
       console.log(`${r.instance || r.home} on ${id}: ${r.present ? `present, ${r.state || "unknown"}` : "not present"}${r.backend ? ` (${r.backend})` : ""}`);
       return;
     }
-    if (args[1] === "start") {
-      const model = flag("model");
-      if (model === true) bail("E_BAD_ARGS", "--model needs a model id; omit it to keep the recorded model");
+    if (args[1] === "start" || args[1] === "restart") {
+      const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
+      const choices = { ...addr, model: value("model"), launchConfig: value("launch-config"), runtime: value("runtime"), yolo: yoloFlag() };
+      if (flag("stop-grace") !== undefined) bail("E_BAD_ARGS", "--stop-grace is currently supported on the execution host; omit it to use the remote restart's default wait");
       let out;
-      try { out = startRemote(id, { ...addr, model: model || undefined }); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
       if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "start failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -4101,7 +4399,7 @@ function serverRouteCmd() {
       console.log(`Uploaded ${r.name} (${r.bytes} bytes) to ${r.instance || r.home} on ${id}: ${r.path}`);
       return;
     }
-    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
+    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -4217,14 +4515,15 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul", "launch-config"].includes(cmd)) await serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
 else if (cmd === "soul") await soulCmd();
+else if (cmd === "launch-config") await launchConfigCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -4347,6 +4646,12 @@ Usage:
   oats session receive --home <abs> --name   store attachment bytes read from stdin (the routed
       <file> [--json]                       upload's remote half)
   oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
+      [--model m] [--launch-config n|none]  (recorded recipe as is; a selection re-resolves it
+      [--runtime r] [--yolo|--no-yolo]      against the scope; a named configuration is a unit)
+  oats session restart --home <abs-home>     stop the running harness (SIGTERM, bounded wait,
+      [same flags] [--stop-grace <s>]        never escalated) and start it again in place under
+                                            the same lock; a stop that is not observed is
+                                            reported and nothing is launched
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
@@ -4384,6 +4689,21 @@ Usage:
       [--yolo | --no-yolo] [--backend b]     --instructions-file); packaged souls are refused;
       [--description d | --no-description]  the receipt carries before/after and sha256s
       [--instructions-file <path>] [--json]
+  oats launch-config list [--dir <scope>     named launch configurations effective at a scope,
+      | --home <abs> | --soul <name>]       a home's recorded context or a soul's own scope:
+      [--agents-root <abs>] [--json]        runtime, executable, args, env (values redacted,
+                                            references shown), model, yolo; the closest
+                                            declaring scope provides the whole entry
+  oats launch-config set <name> --file <j>   declare or replace one at this scope from a JSON
+      [--keep-env] [--dir <scope>] [--json] file (only the launch-configs block is rewritten;
+                                            --keep-env copies the effective definition's env)
+  oats launch-config remove <name>           remove this scope's declaration; an ancestor's,
+      [--dir <scope>] [--json]              if any, becomes effective again
+  oats launch-config preview                 what a start would run: resolved runtime, model,
+      (--home <abs> | --soul <name>)        yolo, executable, argv, environment (redacted),
+      [--launch-config <name>|none]         command and preflight; read-only, nothing
+      [--runtime r] [--model m]             started; a named configuration is a unit, so
+      [--yolo | --no-yolo] --json           a disagreeing --runtime is refused
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and

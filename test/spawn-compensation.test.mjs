@@ -130,7 +130,10 @@ test("failed platform launch removes a window created before the failure and com
   const f = fixture({ launchFailure: true });
   const result = f.spawn();
   assert.notEqual(result.status, 0);
-  assert.match(result.stdout, /launch failed after creating window/);
+  // The backend's own output is withheld from the answer (it can carry the
+  // rendered command and reference values); the failure is named generically.
+  assert.match(result.stdout, /tmux new-window failed for dev-probe/);
+  assert.doesNotMatch(result.stdout, /launch failed after creating window/);
   assert.match(result.stdout, /spawn rolled back/);
   assert.equal(readFileSync(f.events, "utf8"), "spawn\nretire\n");
   assertClean(f);

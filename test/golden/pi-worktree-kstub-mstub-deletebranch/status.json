@@ -327,7 +327,53 @@
             "session": "oats-golden",
             "window": "dev-pi-worktree-kstub-mstub-deletebranch"
           },
-          "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-deletebranch' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-deletebranch' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub-deletebranch' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-deletebranch' '@TASK.md' --golden-channel stub",
+          "launch": {
+            "version": 1,
+            "runtime": "pi",
+            "launchConfig": null,
+            "launchConfigSource": null,
+            "executable": "<base>/bin/pi",
+            "executableDeclared": null,
+            "executableResolvedFrom": "PATH",
+            "args": [],
+            "env": {},
+            "model": null,
+            "hooks": {
+              "launch": {
+                "pi": "--golden-channel stub",
+                "claude": "--golden-channel stub"
+              },
+              "env": {
+                "GOLDEN_BROKER_ENDPOINT": {
+                  "redacted": true
+                }
+              },
+              "contributions": [
+                {
+                  "capability": "golden.messaging",
+                  "layer": "messaging",
+                  "level": "<base>/scope",
+                  "settings": {},
+                  "trust": {
+                    "trusted": true,
+                    "integrity": null
+                  },
+                  "launch": {
+                    "pi": "--golden-channel stub",
+                    "claude": "--golden-channel stub"
+                  },
+                  "env": [
+                    "GOLDEN_BROKER_ENDPOINT"
+                  ]
+                }
+              ]
+            },
+            "prompt": {
+              "kind": "task-file",
+              "file": "TASK.md"
+            }
+          },
+          "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-deletebranch' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-deletebranch' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-deletebranch/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-deletebranch' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false

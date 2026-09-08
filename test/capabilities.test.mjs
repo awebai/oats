@@ -352,6 +352,8 @@ test("spawn hook environment reaches exact Pi and Claude processes and overrides
     for (const runtime of ["pi", "claude"]) {
       const capture = join(base, `${runtime}.identity-home`);
       const result = spawnInstance(root, agent, { instance: `dev-env-${runtime}`, runtime, launch: false });
+      // The spawn answer's command is public (env values withheld); the persisted one runs.
+      result.command = JSON.parse(readFileSync(join(result.home, "instance.json"), "utf8")).command;
       execFileSync("/bin/sh", ["-c", result.command], {
         cwd: result.home,
         env: { ...process.env, AWEB_IDENTITY_HOME: join(base, "wrong ambient"), OATS_CAPTURE: capture },
@@ -537,7 +539,7 @@ test("hook environment is rejected outside the spawn event", () => {
     assert.deepEqual(result.failures.map((f) => ({ event: f.event, required: f.required, contract: f.contract })), [
       { event, required: true, contract: "environment" },
     ]);
-    assert.match(result.failures[0].message, new RegExp(`hook env is supported only for spawn, not ${event}`));
+    assert.match(result.failures[0].message, new RegExp(`hook env is supported only for spawn and launch, not ${event}`));
   }
 });
 
@@ -856,7 +858,7 @@ test("a hook may set a variable under a declared extra namespace at spawn, and t
   try {
     // the manifest permits it AND the runtime accepts it: the variable reaches the launch
     const r = spawnInstance(root, findAgent(root, "dev"), { instance: "dev-env", launch: false });
-    assert.match(r.command, /AWEB_DELIVERY='?session'?/, "the declared namespace variable is in the launch command");
+    assert.match(JSON.parse(readFileSync(join(r.home, "instance.json"), "utf8")).command, /AWEB_DELIVERY='?session'?/, "the declared namespace variable is in the launch command (persisted; the answer withholds env values)");
     retireInstance(root, "dev-env", { tmuxSession: "oats-test-nosuch" });
     // an undeclared namespace is refused at spawn even though the manifest loaded
     process.env.EMIT_NAME = "OTHER_THING";
