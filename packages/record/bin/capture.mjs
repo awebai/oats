@@ -160,9 +160,30 @@ function log(...parts) {
 
 /** Take the root's single-run lock, or say who holds it. A hook-triggered
  *  pass that finds it held exits 0: the holder's pass, or the next one,
- *  reconciles the same sessions. */
+ *  reconciles the same sessions.
+ *
+ *  `fn` must return or throw, never call process.exit: the lock is released
+ *  in the finally, and a release that did not happen is said so on stderr
+ *  with the operator recovery and a nonzero exit status. Likewise an owner
+ *  record that could not be written: the lock never silently outlives the
+ *  pass that created it. */
 function withCaptureLock(fn) {
-  const lock = acquireCaptureLock(root);
+  let lock;
+  try {
+    lock = acquireCaptureLock(root);
+  } catch (err) {
+    if (err.lockCleanup) {
+      const c = err.lockCleanup;
+      const outcome = c.removed ? "the initializing lock was removed"
+        : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
+        : c.reason === "replaced" ? (c.owner
+          ? `the lock now belongs to pid ${c.owner.pid} (started ${c.owner.startedAt || "?"}) and was left alone`
+          : "the lock directory changed or its identity could not be verified, no owner record was readable, and it was left alone")
+        : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
+      console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
+    }
+    throw err;
+  }
   if (lock.held) {
     // Never quiet: a stale lock after a killed pass needs the operator, and
     // the line says exactly what to check and what to remove.
@@ -170,13 +191,29 @@ function withCaptureLock(fn) {
     if (lock.held.liveness === "alive") log(line); else console.error(line);
     return { appended: 0, skipped: true };
   }
-  try { return fn(); } finally { lock.release(); }
+  try {
+    return fn();
+  } finally {
+    const r = lock.release();
+    if (!r.released) {
+      // Say what was observed: gone, unreadable (unknown), another owner, or
+      // our own lock that would not go away; never a guess about liveness.
+      const detail = r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
+        : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
+        : r.reason === "unknown-owner" ? `its owner record is missing or unreadable, so it may be an operator removal in progress or a newer pass initializing; left alone; ${r.recovery}`
+        : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
+      console.error(`capture: did not release ${lock.path} (${r.reason}): ${detail}`);
+      process.exitCode = 1;
+    }
+  }
 }
 
 function pass() {
+  // The privacy loader fails closed by exiting; it runs before the lock is
+  // taken so that exit never leaves the lock behind.
+  const ignore = loadIgnoreOrExit(root);
   return withCaptureLock(() => {
   const out = { appended: 0 };
-  const ignore = loadIgnoreOrExit(root);
   if (!args["aw-only"]) {
     for (const r of captureAllSessions(store, { owner, ignore })) {
       out.appended += r.appended;
@@ -307,11 +344,17 @@ if (args.home) {
     });
   }
   console.log(JSON.stringify({ home: args.home, owner, appended, sessions, ...(unattributed.length ? { unattributed } : {}) }, null, 2));
-  process.exit(0);
+  process.exit(process.exitCode ?? 0); // nonzero when the lock release had to be reported
 }
 
 warnOnStrangerOwner();
-pass();
+try {
+  pass();
+} catch (err) {
+  // The lock's finally has run by now; one line, then the status.
+  console.error(`capture pass failed: ${err.message}`);
+  process.exit(1);
+}
 
 if (args.watch) {
   const roots = [
