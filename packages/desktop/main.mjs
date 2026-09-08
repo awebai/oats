@@ -23,7 +23,7 @@ import { openHerdrTerm, herdrTargetKey } from "./herdr-target.mjs";
 import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "./terminal-registry.mjs";
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
-import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor } from "./workspace-registry.mjs";
+import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs } from "./workspace-registry.mjs";
 import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { startSingleInstance } from "./single-instance.mjs";
@@ -104,10 +104,9 @@ async function probeVersion() {
   } catch { return null; }
 }
 
-/** The workspace we were asked to show, as the server would scope it: our
- * requested path equals a workspace scope or lives underneath it. */
+/** The backend must cover every restored workspace before it can be reused. */
 function matchWorkspace(workspaces) {
-  return workspaces.find((w) => WORKSPACE === w.id || WORKSPACE.startsWith(`${w.id}/`))?.id || null;
+  return matchWorkspaceDirs(workspaceDirs, workspaces);
 }
 
 async function freePort(from) {
@@ -150,7 +149,7 @@ async function ensureServer() {
     const ws = await panelWorkspaces();
     if (ws) {
       const id = matchWorkspace(ws);
-      if (!id) throw new Error(`spawned backend serves ${ws.map((w) => w.id).join(", ")} — does not cover ${WORKSPACE}`);
+      if (!id) throw new Error(`spawned backend serves ${ws.map((w) => w.id).join(", ")} — does not cover ${workspaceDirs.join(", ")}`);
       wsId = id;
       return { spawned: true };
     }
@@ -178,6 +177,7 @@ function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted 
 // closed.
 const wsGens = createGenerations();
 const RECENTS_FILE = () => join(app.getPath("userData"), "workspace-recents.json");
+const OPEN_WORKSPACES_FILE = () => join(app.getPath("userData"), "workspace-open.json");
 
 const wsValidate = (p) => validateWorkspace(p, {
   resolveConfig: (path) => resolveDeployment(path),
@@ -210,7 +210,12 @@ let lastSuggested = new Set(); // canonical paths offered by the latest suggesti
 
 const executeAdd = createAddExecutor({
   getDirs: () => [...workspaceDirs],
-  commitDirs: (dirs) => { workspaceDirs.length = 0; workspaceDirs.push(...dirs); },
+  commitDirs: (dirs) => {
+    // Persistence failure leaves the old set intact; the executor restores
+    // the previous backend and reports the failed add to the user.
+    saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), dirs);
+    workspaceDirs.length = 0; workspaceDirs.push(...dirs);
+  },
   commitRecent: (p) => writeRecents(pushRecent(readRecents(), p)),
   replaceServer,
   refreshAdvertised: async () => (await panelWorkspaces()) !== null, // true only when the server ANSWERED
@@ -535,7 +540,14 @@ async function createWindow() {
 const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindows(), async () => {
   installAppMenu();
   sweepOrphanViewers(); // default socket now; saved sockets are swept when opened
-  try { await ensureServer(); }
+  let saved = "[]";
+  try { saved = readFileSync(OPEN_WORKSPACES_FILE(), "utf8"); } catch { /* first launch */ }
+  workspaceDirs.splice(0, workspaceDirs.length,
+    ...restoreWorkspaceDirs(WORKSPACE, saved, (p) => wsValidate(realpathSync(p))));
+  try {
+    await ensureServer();
+    if (serverHost.owned()) saveWorkspaceDirs(OPEN_WORKSPACES_FILE(), workspaceDirs);
+  }
   catch (e) { console.error(`oats-desktop: ${e.message}`); }
   await createWindow();
   // Contract re-probe trigger "app focus": notify the renderer, which calls
