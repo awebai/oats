@@ -27,7 +27,7 @@ test("soul set rewrites only the given soul.yaml fields, clears with --no-*, rep
   assert.equal(r.status, 0, r.stdout + r.stderr);
   let rc = r.json().result;
   assert.equal(rc.soul, "dev"); assert.equal(rc.kind, "persistent"); assert.equal(rc.file, soulYaml); assert.deepEqual(rc.changed.sort(), ["backend", "description", "model", "runtime", "yolo"]);
-  assert.deepEqual(rc.before, { runtime: "pi", model: "gpt", yolo: false, backend: null, description: "old words" });
+  assert.deepEqual(rc.before, { runtime: "pi", model: "gpt", yolo: false, backend: null, description: "old words", launchConfig: null });
   assert.deepEqual(rc.after, { runtime: "claude", model: null, yolo: true, backend: "herdr", description: "new words" }); assert.equal(rc.instructions, null);
   const text = readFileSync(soulYaml, "utf8");
   assert.equal(text, "name: dev\nkind: persistent\n# authored comment stays\nrole: release-coordinator\nrepo: .\nwork: worktree\nruntime: claude\ndescription: new words\nyolo: true\nbackend: herdr\n", "lines replaced in place, model line removed, unknown keys and comments kept, new key appended");

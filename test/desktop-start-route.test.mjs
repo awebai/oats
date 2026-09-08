@@ -16,12 +16,13 @@ const invoke = new Function("inst", "cliState", "readBody", "harvestHome", "adap
 test("start route passes only resolved home/model to CLI, with containment and feature gates", async () => {
   let call;
   const instance = { instance: "agent", home: "/trusted/agents/soul/instances/agent", agentsRoot: "/trusted/agents" };
-  const cli = { ok: true, features: ["session-start"], bin: "/installed/oats" };
+  const cli = { ok: true, features: ["session-start", "session-restart", "launch-config"], bin: "/installed/oats" };
   const body = async () => ({ home: "/other/home", model: "opus", command: "ignored", server: "ignored" });
   const adapter = { cliStart: async (bin, args) => { call = { bin, args }; return { ok: true, result: { launched: true } }; } };
   const run = (i = instance, c = cli, contained = () => instance.home) => invoke(i, c, body, contained, adapter, { requireRemoteSupport }, dirname);
   assert.equal((await run()).status, 200);
-  assert.deepEqual(call.args, { home: instance.home, model: "opus", workspaceDir: "/trusted", server: undefined });
+  // The route passes the launch choices it received (none here) and whether this is a restart; nothing from the body's home/command/server.
+  assert.deepEqual(call.args, { home: instance.home, model: "opus", launchConfig: undefined, runtime: undefined, yolo: undefined, restart: false, workspaceDir: "/trusted", server: undefined });
   call = null;
   assert.equal((await run(instance, { ...cli, features: [] })).status, 409);
   assert.equal(call, null);
@@ -32,4 +33,11 @@ test("start route passes only resolved home/model to CLI, with containment and f
   assert.equal((await run({ ...instance, server: "host", savedRoute: true }, { ...cli, remote: ["session-start"] })).status, 200);
   assert.equal(call.args.server, "host");
   assert.equal(call.args.workspaceDir, "/local");
+  // A launch choice needs the launch-config feature; an old CLI is refused before the adapter is called.
+  call = null;
+  const choose = async () => ({ model: "opus", launchConfig: "personal" });
+  assert.equal((await invoke(instance, { ...cli, features: ["session-start"] }, choose, () => instance.home, adapter, { requireRemoteSupport }, dirname)).status, 409);
+  assert.equal(call, null);
+  assert.equal((await invoke(instance, cli, choose, () => instance.home, adapter, { requireRemoteSupport }, dirname)).status, 200);
+  assert.equal(call.args.launchConfig, "personal");
 });
