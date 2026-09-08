@@ -247,6 +247,10 @@ the actual service/subscription coverage and share streams where supported.
 Do not create a GUI stream or model worker per team as the default design.
 Delivery across all configured memberships, with the GUI closed, is a required
 qualification; this document does not claim the current broker has passed it.
+The inspected `wakeStreamOpener` constructs its client through the selected
+membership's certificate-backed context. That code alone does not establish
+aggregation across every membership or service; verify the server event scope
+and the broker's behavior together before choosing subscription coverage.
 
 ### Membership, reach and visibility are separate
 
@@ -263,6 +267,11 @@ in aweb and qualify it. Do not reinstate removed address-visibility fields or
 introduce OATS-specific routing enforcement. Public address discoverability,
 message admission and access to team work/knowledge each need their own
 accurate explanation.
+
+There is a concrete compatibility trap: the current CLI accepts the old
+`contacts-only`/`contacts_only` spelling but normalizes it to
+`team_and_contacts`. An accepted command is therefore not evidence of strict
+contacts-only enforcement. Do not use that spelling to implement `reach: owner`.
 
 ### Lifecycle outcomes
 
@@ -355,6 +364,9 @@ establish source behavior, not new installed multi-team acceptance:
   `ensureTeamAcceptScopeAllowed`, `resolveGlobalIdentityForTeamAccept` and
   `acceptHostedTeamInviteWithDetails` enforce single-team local scope and
   reuse existing global identity material.
+- [Inbound mode normalization](https://github.com/awebai/aweb/blob/bfdb20886080e4ffe1f02b266f6116d12bd100fd/cli/go/cmd/aw/inbound_mode.go)
+  and [wake client construction](https://github.com/awebai/aweb/blob/bfdb20886080e4ffe1f02b266f6116d12bd100fd/cli/go/cmd/aw/wake.go):
+  compatibility spellings and the selected client behind broker streams.
 - OATS [aweb adapter](../../capabilities/oats-aweb/bin/oats-aweb.mjs),
   [OKF adapter](../../capabilities/oats-okf/bin/oats-okf.mjs),
   [configuration](../configuration.md) and [layers](../layers.md): current
