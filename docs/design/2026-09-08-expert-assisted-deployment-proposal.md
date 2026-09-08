@@ -201,6 +201,15 @@ Qualify those behaviors explicitly. Do not generalize the retained migration
 path's file-copy details into the permanent public identity-management API;
 use aweb's supported identity-home and lifecycle operations where available.
 
+Refresh the shipped instructions as part of this work. The current vendored
+[membership skill](../../capabilities/oats-aweb/skills/aweb-team-membership/SKILL.md),
+Hosted Path 3, still says `--address` creates a fresh global identity. The
+verified current CLI instead requires explicit `--global` and an existing
+self-custodial global identity. Its multi-membership explanation also needs the
+global-only qualification. Update and publish the provider skill from its
+owning source, then verify the materialized instructions; the stale recipe must
+not become the installation expert's onboarding procedure.
+
 ## Proposed workspace membership behavior
 
 Use the existing scoped capability configuration mechanism. The following are
