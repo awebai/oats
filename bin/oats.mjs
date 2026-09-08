@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -1160,19 +1160,168 @@ function serializeCapabilities(caps) {
   return lines.join("\n") + "\n";
 }
 
-/** Replace (or append) the top-level capabilities: block in config text. */
-function replaceCapabilitiesBlock(text, caps) {
-  const serialized = serializeCapabilities(caps);
+/** Replace (or append) ONE top-level `key:` block of config text with
+ *  `serialized` (its own complete block, or "" to drop the block); every other
+ *  byte of the file stays where it was. */
+function replaceTopLevelBlock(text, key, serialized) {
   const lines = text.replace(/\n*$/, "\n").split("\n");
-  const start = lines.findIndex((l) => /^capabilities:\s*(#.*)?$/.test(l));
-  if (start < 0) return text.replace(/\n*$/, "\n\n") + serialized;
+  const start = lines.findIndex((l) => new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}:\\s*(#.*)?$`).test(l));
+  if (start < 0) return serialized ? text.replace(/\n*$/, "\n\n") + serialized : text;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
     if (/^[^\s#]/.test(lines[i])) { end = i; break; }
     if (/^#/.test(lines[i]) && i + 1 < lines.length && /^[^\s]/.test(lines[i + 1] || "")) { end = i; break; }
   }
-  return [...lines.slice(0, start), ...serialized.replace(/\n$/, "").split("\n"), "", ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
+  const block = serialized ? [...serialized.replace(/\n$/, "").split("\n"), ""] : [];
+  return [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
 }
+/** Replace (or append) the top-level capabilities: block in config text. */
+function replaceCapabilitiesBlock(text, caps) { return replaceTopLevelBlock(text, "capabilities", serializeCapabilities(caps)); }
+
+// ---------- launch configurations ----------
+const yamlQuoted = (v) => JSON.stringify(String(v));
+/** The `launch-configs:` block, names sorted, every string double-quoted
+ *  with JSON escapes (read back by the same rules), lists as block
+ *  sequences: spaces, quotes, commas and metacharacters round-trip exactly. */
+function serializeLaunchConfigs(map) {
+  const names = Object.keys(map).sort();
+  if (!names.length) return "";
+  const lines = ["launch-configs:"];
+  for (const name of names) {
+    const e = map[name];
+    lines.push(`  ${name}:`, `    runtime: ${e.runtime}`);
+    if (e.executable !== undefined) lines.push(`    executable: ${yamlQuoted(e.executable)}`);
+    if (e.args?.length) { lines.push("    args:"); for (const a of e.args) lines.push(`      - ${yamlQuoted(a)}`); }
+    const envNames = Object.keys(e.env || {}).sort();
+    if (envNames.length) {
+      lines.push("    env:");
+      for (const n of envNames) { const v = e.env[n]; if (typeof v === "string") lines.push(`      ${n}: ${yamlQuoted(v)}`); else lines.push(`      ${n}:`, `        fromEnv: ${v.fromEnv}`); }
+    }
+    if (e.model !== undefined) lines.push(`    model: ${yamlQuoted(e.model)}`);
+    if (e.yolo !== undefined) lines.push(`    yolo: ${e.yolo}`);
+  }
+  return lines.join("\n") + "\n";
+}
+/** Only the declared keys, in canonical order, from a validated entry. */
+function normalizeLaunchConfig(e) {
+  return {
+    runtime: e.runtime,
+    ...(e.executable !== undefined ? { executable: e.executable } : {}),
+    ...(e.args?.length ? { args: [...e.args] } : {}),
+    ...(e.env && Object.keys(e.env).length ? { env: Object.fromEntries(Object.keys(e.env).sort().map((n) => [n, typeof e.env[n] === "string" ? e.env[n] : { fromEnv: e.env[n].fromEnv }])) } : {}),
+    ...(e.model !== undefined ? { model: e.model } : {}),
+    ...(e.yolo !== undefined ? { yolo: e.yolo } : {}),
+  };
+}
+function readLaunchConfigsModel(file) {
+  if (!existsSync(file)) return {};
+  const cfg = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8")));
+  const map = cfg["launch-configs"] || {};
+  for (const [name, entry] of Object.entries(map)) validateLaunchConfig(name, entry, file);
+  return Object.fromEntries(Object.entries(map).map(([n, e]) => [n, normalizeLaunchConfig(e)]));
+}
+/** What a GUI or an operator sees of one configuration. Environment values
+ *  never leave the file: a literal is answered as {redacted: true} (literals
+ *  are non-secret by contract, but no value is shown anywhere) and a
+ *  reference as {fromEnv: NAME}. An editor keeps a literal it cannot see with
+ *  `set --keep-env`. */
+function publicLaunchConfig(e, extra = {}) {
+  const env = Object.fromEntries(Object.keys(e.env || {}).sort().map((n) => [n, typeof e.env[n] === "string" ? { redacted: true } : { fromEnv: e.env[n].fromEnv }]));
+  return { runtime: e.runtime, executable: e.executable ?? null, args: [...(e.args || [])], env, model: e.model ?? null, yolo: e.yolo ?? null, ...extra };
+}
+/** The scope a launch-config command reads: --dir (or cwd), a running
+ *  home's recorded context (--home), or a soul's own member context
+ *  (--soul, with --dir/--agents-root as inspect takes them). */
+function launchConfigContext(bail) {
+  const homeFlag = flag("home");
+  const soulFlag = flag("soul");
+  if (homeFlag !== undefined && soulFlag !== undefined) bail("E_BAD_ARGS", "choose --home or --soul, not both");
+  if (homeFlag !== undefined) {
+    if (homeFlag === true || !isAbsolute(String(homeFlag))) bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    const home = realOrResolved(String(homeFlag));
+    let meta;
+    try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home} is not an OATS instance home (${e.message})`); }
+    const ctx = homeContexts(home, meta)[0];
+    return { context: ctx, selected: { home, instance: meta.instance || null } };
+  }
+  const ctx = dirFlag();
+  if (soulFlag !== undefined) {
+    if (soulFlag === true) bail("E_BAD_ARGS", "--soul needs a soul name");
+    const agentsRootFlag = flag("agents-root");
+    if (agentsRootFlag === true) bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+    let r;
+    try { r = resolveOatsConfig(ctx); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    let soul;
+    try { soul = selectSoul(scopeSouls(ctx, r).souls, String(soulFlag), agentsRootFlag, ctx); } catch (e) { bail(e.code || "E_SOUL_UNKNOWN", e.message); }
+    return { context: memberContextOf(soul, ctx, flag("dir") !== undefined, bail), selected: { soul: soul.name, agentsRoot: soul.agentsRoot } };
+  }
+  return { context: ctx, selected: null };
+}
+function launchConfigCmd() {
+  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  dropAmbientRoot();
+  const sub = args[1];
+  const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json]";
+  if (!["list", "set", "remove"].includes(sub)) bail("E_USAGE", usage);
+  const { context: dir, selected } = sub === "list" ? launchConfigContext(bail) : { context: dirFlag(), selected: null };
+  if (sub !== "list" && (flag("home") !== undefined || flag("soul") !== undefined)) bail("E_BAD_ARGS", `launch-config ${sub} writes one scope's oats-config.yaml: address it with --dir, not --home or --soul`);
+  const level = levelOf(dir);
+  const file = join(dir, "oats-config.yaml");
+  const effective = () => {
+    const r = resolveOatsConfig(dir);
+    return Object.values(r.launchConfigs || {}).sort((a, b) => a.name.localeCompare(b.name)).map((e) => ({ name: e.name, ...publicLaunchConfig(e, { source: e.source, shadows: e.shadows }) }));
+  };
+  if (sub === "list") {
+    let configurations;
+    try { configurations = effective(); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    if (JSON_MODE) { jsonOk({ context: dir, level, file: existsSync(file) ? file : null, selected, configurations }); return; }
+    if (!configurations.length) { console.log(`No launch configurations are effective at ${dir}`); return; }
+    for (const c of configurations) {
+      const env = Object.entries(c.env).map(([n, v]) => v.fromEnv ? `${n}=$${v.fromEnv}` : `${n}=<redacted>`).join(" ");
+      console.log(`${c.name}: ${c.runtime}${c.executable ? ` ${c.executable}` : ""}${c.args.length ? ` ${c.args.map((a) => JSON.stringify(a)).join(" ")}` : ""}${env ? ` [${env}]` : ""}${c.model ? ` model ${c.model}` : ""}${c.yolo !== null ? ` yolo ${c.yolo}` : ""}  (${c.source}${c.shadows.length ? `; shadows ${c.shadows.join(", ")}` : ""})`);
+    }
+    return;
+  }
+  const name = args[2];
+  if (!name || name.startsWith("--")) bail("E_BAD_ARGS", `launch-config ${sub} needs a configuration name`);
+  const text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
+  let model;
+  try { model = readLaunchConfigsModel(file); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  const before = model[name] ? publicLaunchConfig(model[name]) : null;
+  if (sub === "remove") {
+    if (!model[name]) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared at ${level} level (${shortPath(file)}); an inherited configuration is removed at the scope that declares it`);
+    delete model[name];
+  } else {
+    const f = flag("file");
+    if (!f || f === true) bail("E_BAD_ARGS", "launch-config set needs --file <json> (an object with runtime and optional executable, args, env, model, yolo)");
+    let entry;
+    try { entry = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.message}`); }
+    if (args.includes("--keep-env")) {
+      // An editor that saw only redacted values keeps THIS file's own entry's
+      // environment; an inherited entry is not copied (the editor declares an
+      // override with its own references instead). Nothing is guessed.
+      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment already declared here; omit env from --file");
+      if (!model[name]) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: ${name} is not declared at ${level} level (${shortPath(file)}), so there is no environment to keep; declare it with env, or address the scope that declares it`);
+      if (entry && typeof entry === "object" && model[name].env) entry.env = { ...model[name].env };
+    }
+    try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
+    model[name] = normalizeLaunchConfig(entry);
+  }
+  const next = replaceTopLevelBlock(text, "launch-configs", serializeLaunchConfigs(model));
+  // What is written must read back as exactly what was asked, by the kernel's
+  // own reader, before a byte of the file changes.
+  let readBack;
+  try { readBack = parseYamlNested(next)["launch-configs"] || {}; } catch (e) { bail("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
+  const same = JSON.stringify(Object.fromEntries(Object.entries(readBack).map(([n, e]) => [n, normalizeLaunchConfig(e)]))) === JSON.stringify(Object.fromEntries(Object.keys(model).sort().map((n) => [n, model[n]])));
+  if (!same) bail("E_LAUNCH_CONFIG_INVALID", `${name} would not read back as written; nothing was written`);
+  writeFileAtomic(file, next);
+  let eff = null;
+  try { eff = effective().find((c) => c.name === name) || null; } catch (e) { eff = { error: e.message }; }
+  const receipt = { name, action: sub, level, file, before, after: model[name] ? publicLaunchConfig(model[name]) : null, effective: eff };
+  if (JSON_MODE) { jsonOk(receipt); return; }
+  console.log(sub === "set" ? `Declared launch configuration ${name} at ${level} level (${shortPath(file)})` : `Removed launch configuration ${name} from ${level} level (${shortPath(file)})${eff ? `; ${eff.source} now provides it` : ""}`);
+}
+
 
 /** Load the parsed capabilities model of a config file ({layers:{}, additive:{}}). */
 function readCapabilitiesModel(file) {
@@ -4217,7 +4366,7 @@ try {
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul"].includes(cmd)) serverRouteCmd();
@@ -4225,6 +4374,7 @@ else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
 else if (cmd === "soul") await soulCmd();
+else if (cmd === "launch-config") launchConfigCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -4384,6 +4534,16 @@ Usage:
       [--yolo | --no-yolo] [--backend b]     --instructions-file); packaged souls are refused;
       [--description d | --no-description]  the receipt carries before/after and sha256s
       [--instructions-file <path>] [--json]
+  oats launch-config list [--dir <scope>     named launch configurations effective at a scope,
+      | --home <abs> | --soul <name>]       a home's recorded context or a soul's own scope:
+      [--agents-root <abs>] [--json]        runtime, executable, args, env (values redacted,
+                                            references shown), model, yolo; the closest
+                                            declaring scope provides the whole entry
+  oats launch-config set <name> --file <j>   declare or replace one at this scope from a JSON
+      [--keep-env] [--dir <scope>] [--json] file (only the launch-configs block is rewritten;
+                                            --keep-env keeps this scope's own env for the name)
+  oats launch-config remove <name>           remove this scope's declaration; an ancestor's,
+      [--dir <scope>] [--json]              if any, becomes effective again
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and

@@ -84,6 +84,34 @@
       "required": ["name"],
       "additionalProperties": false
     },
+    "launch-configs": {
+      "type": "object",
+      "description": "Named ways to start a harness, independent of any soul. The closest scope declaring a name provides the whole entry (no merging between scopes). Selected by name at spawn or session start/restart; explicit flags override its fields.",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runtime"],
+        "properties": {
+          "runtime": { "type": "string", "enum": ["pi", "claude", "codex"], "description": "The harness family this configuration starts; it decides the kernel's own baseline arguments (skills, instructions, task) and how model/yolo are expressed." },
+          "executable": { "type": "string", "minLength": 1, "description": "The program to run instead of the runtime's default binary: a bare name is looked up on PATH on the execution host; a path containing a slash is resolved against the declaring scope's directory when relative. Checked to exist and be executable before any start; never executed just to probe it." },
+          "args": { "type": "array", "items": { "type": "string" }, "description": "Extra arguments, each passed literally (no shell interpretation): native configuration files or profiles go here as ordinary arguments." },
+          "env": {
+            "type": "object",
+            "propertyNames": { "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+            "additionalProperties": {
+              "oneOf": [
+                { "type": "string" },
+                { "type": "object", "additionalProperties": false, "required": ["fromEnv"], "properties": { "fromEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" } } }
+              ]
+            },
+            "description": "Environment for the harness. A string is a literal (non-secret by contract; still redacted in every answer). {fromEnv: NAME} is resolved from the execution host's environment at start time; the reference, never the value, is recorded. A missing reference refuses the start before anything stops."
+          },
+          "model": { "type": "string", "minLength": 1, "description": "Model for this configuration's runtime; overrides the soul default when this configuration is selected." },
+          "yolo": { "type": "boolean", "description": "Permission bypass for this configuration; overrides scope and soul defaults when selected." }
+        }
+      }
+    },
     "agent-types": {
       "type": "object",
       "description": "Agent families declared by name; membership is `type: <name>` in each soul.yaml.",
