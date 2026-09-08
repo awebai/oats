@@ -24,6 +24,7 @@ test('launch configuration requests admit exact workspace targets and refuse uns
   assert.equal(calls[1].context, '/team/b');
   for (const selector of [{ home: '/foreign' }, { soul: 'dev' }, { home, context: '/team' }, { context: '/other' }]) await assert.rejects(launchConfigRequest({ action: 'preview', selector }, opts));
   await assert.rejects(launchConfigRequest({ action: 'set', selector: { home }, name: 'x' }, opts), /configuration scope/);
+  await assert.rejects(launchConfigRequest({ action: 'set', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot }, name: 'x' }, opts), /configuration scope/);
   await assert.rejects(launchConfigRequest({ action: 'list' }, { ...opts, cli: { ...cli, features: [] } }), /Update OATS/);
   await assert.rejects(launchConfigRequest({ action: 'list' }, { ...opts, workspace: { ...workspace, remote: true } }), /registered server/);
   await launchConfigRequest({ action: 'preview', selector: { home } }, { ...opts, workspace: { ...workspace, remote: true, server: 'host', registrationPresent: true } });
@@ -92,5 +93,41 @@ test('preview is text only and late replies cannot paint another selection or wo
     assert.equal(u.el.querySelector('img'), null); assert.match(u.el.querySelector('pre').textContent, /<img/);
     u.el.querySelector('.launch-preview').click(); setWorkspace('/elsewhere'); finish({ command: 'foreign' }); await tick();
     assert.doesNotMatch(u.el.querySelector('pre').textContent, /foreign/);
+  } finally { u.close(); }
+});
+
+test('editing launch choices does not cancel loading configurations, but disabling a launch cancels and reloads safely', async () => {
+  const replies = [];
+  const u = ui(() => new Promise(resolve => replies.push(resolve)));
+  try {
+    const loading = u.controller.load();
+    u.controller.invalidate(); // Model input invalidates a preview, not the configuration list.
+    replies.shift()({ context: '/team', configurations: [config] }); await loading;
+    assert.equal(u.el.querySelectorAll('.launch-config-select option').length, 2);
+    const pending = u.controller.load('personal'); u.controller.disabled(true);
+    replies.shift()({ context: '/team', configurations: [] }); await pending;
+    assert.equal(u.el.querySelectorAll('.launch-config-select option').length, 2);
+    assert.equal(u.el.querySelector('.launch-config-select').disabled, true);
+    u.controller.disabled(false);
+    replies.shift()({ context: '/team', configurations: [config] }); await tick();
+    assert.equal(u.el.querySelector('.launch-config-select').disabled, false);
+  } finally { u.close(); }
+});
+
+test('remove is tied to the selected saved name and save locks configuration edits until complete', async () => {
+  let finish;
+  const u = ui(body => body.action === 'list' ? { context: '/team', configurations: [config] } : new Promise(resolve => { finish = resolve; }));
+  try {
+    await u.controller.load('personal');
+    const name = u.el.querySelector('.lc-name'), remove = u.el.querySelector('.lc-remove');
+    name.value = 'different'; name.dispatchEvent(new u.dom.window.Event('input'));
+    assert.equal(remove.disabled, true); remove.click(); assert.equal(u.calls.some(c => c.action === 'remove'), false);
+    name.value = 'personal'; name.dispatchEvent(new u.dom.window.Event('input'));
+    assert.equal(remove.disabled, false);
+    u.el.querySelector('.lc-save').click();
+    assert.equal(u.controller.busy(), true); assert.equal(name.disabled, true);
+    assert.equal(u.el.querySelector('.launch-config-select').disabled, true);
+    finish({}); await tick();
+    assert.equal(u.controller.busy(), false); assert.equal(name.disabled, false);
   } finally { u.close(); }
 });

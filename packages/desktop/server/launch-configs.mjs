@@ -22,6 +22,8 @@ export async function launchConfigRequest(request, { workspace, cli, agents = []
     if (server && !matches[0].savedRoute) fail("This instance has no saved server route", "E_SNAPSHOT_UNKNOWN");
     home = matches[0].home; context = undefined;
   } else if (selector.soul !== undefined) {
+    if (selector.context !== undefined) fail("Select one home, soul or configuration scope");
+    if (!["list", "preview"].includes(action)) fail("Edit launch configurations in their configuration scope");
     const matches = agents.filter(a => a.name === selector.soul && a.agentsRoot === selector.agentsRoot);
     if (matches.length !== 1) fail("Select one soul and agents root in this workspace");
     soul = matches[0].name; agentsRoot = matches[0].agentsRoot; context = dirname(agentsRoot);

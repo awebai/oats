@@ -658,7 +658,7 @@ function openSpawnModal(s, a) {
   })();
   const f = modal; // field lookups span the whole modal
   const launchEl = f.querySelector(".spawn-launch-configurations");
-  let launchFields;
+  let launchFields, selectedConfig;
   if (cliStatus()?.features?.includes("launch-config") && (!a.server || cliStatus()?.remote?.includes("launch-config"))) {
     launchEl.hidden = false;
     launchFields = launchConfigFields(launchEl, {
@@ -666,10 +666,12 @@ function openSpawnModal(s, a) {
       owns: () => s.modalEl === modal,
       choices: () => ({ ...(f.querySelector(".fruntime").value ? { runtime: f.querySelector(".fruntime").value } : {}), ...(f.querySelector(".fmodel").value.trim() ? { model: f.querySelector(".fmodel").value.trim() } : {}), ...(f.querySelector(".fyolo").value !== "" ? { yolo: f.querySelector(".fyolo").value === "true" } : {}) }),
       changed: row => {
+        selectedConfig = row;
         f.querySelector(".fruntime").value = "";
         f.querySelector(".fruntime").disabled = !!row;
         f.querySelector(".fruntime option").textContent = row ? `Configuration harness (${row.runtime})` : `Agent default (${a.runtime || "pi"})`;
         f.querySelector(".fmodel").placeholder = row?.model || (row && row.runtime !== a.runtime ? "Harness default" : a.model || "Harness default");
+        void fillModelOptions();
       },
     });
     s.launchFields = launchFields;
@@ -679,6 +681,8 @@ function openSpawnModal(s, a) {
       launchFields.invalidate(); launchFields.disabled(otherServer);
       f.querySelector(".fruntime").disabled = !otherServer && !!launchFields.value();
       launchEl.querySelector(".launch-config-status").textContent = otherServer ? "Select the server workspace to choose or manage its launch configurations." : "";
+      f.querySelector(".fruntime option").textContent = !otherServer && selectedConfig ? `Configuration harness (${selectedConfig.runtime})` : `Agent default (${a.runtime || "pi"})`;
+      void fillModelOptions();
     });
   }
 
@@ -699,13 +703,14 @@ function openSpawnModal(s, a) {
   let modelReq = 0;
   const fillModelOptions = async () => {
     const myReq = ++modelReq;
+    const dl = f.querySelector("#spawn-model-options");
+    if (!dl) return;
+    dl.textContent = "";
+    if (serverSelect.value || selectedConfig) return; // The execution host or wrapper may have a different catalog.
     const runtime = f.querySelector(".fruntime").value || a.runtime || "pi";
     try {
       const d = await postJson(s.ctx, "/api/models", { runtime });
       if (myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
-      const dl = f.querySelector("#spawn-model-options");
-      if (!dl) return;
-      dl.textContent = "";
       for (const m of d.models || []) {
         const opt = doc.createElement("option");
         opt.value = m.id;
@@ -792,6 +797,7 @@ function openSpawnModal(s, a) {
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
     launchConfig: () => (serverSelect.value || "") === (a.server || "") ? launchFields?.value() : undefined,
+    configBusy: () => launchFields?.busy(),
     server: () => f.querySelector(".fserver")?.value || "",
     wake: () => wakeFields.read(),
     partial: (result) => {
@@ -924,6 +930,7 @@ export async function doSpawn(s, ui) {
     ui.status.textContent = `Spawn failed: the "${relation}" relation needs a reference instance.`;
     return;
   }
+  if (ui.configBusy?.()) { ui.status.textContent = "Wait for the launch configuration to finish saving."; return; }
   ui.btn.disabled = true; ui.btn.textContent = "Spawning…";
   ui.status.classList?.remove("err"); ui.status.textContent = "";
   try {

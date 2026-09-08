@@ -3,7 +3,7 @@ import { postJson, currentWorkspace, workspaceGeneration } from "./views/common.
 /** Shared launch configuration selector/editor. The kernel resolves every preview. */
 export function launchConfigFields(el, { ctx, selector, choices, owns = () => true, changed = () => {} }) {
   const doc = el.ownerDocument, ws = currentWorkspace(), generation = workspaceGeneration();
-  let request = 0, disposed = false, busy = false, configurations = [], context;
+  let listRequest = 0, previewRequest = 0, disposed = false, busy = false, disabled = false, loading = false, reload = false, configurations = [], context;
   const current = () => !disposed && owns() && ws === currentWorkspace() && generation === workspaceGeneration();
   const api = body => postJson(ctx, `/api/launch-configs?ws=${encodeURIComponent(ws)}`, body);
   el.classList.add("launch-config-fields");
@@ -34,7 +34,13 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
   });
   const field = name => el.querySelector(`.lc-${name}`);
   const selected = () => configurations.find(c => c.name === select.value);
-  const invalidate = () => { request++; output.hidden = true; output.textContent = ""; };
+  const invalidate = () => { previewRequest++; output.hidden = true; output.textContent = ""; };
+  const removable = () => selected()?.source === context && !!context && field("name").value.trim() === selected()?.name;
+  const updateControls = () => {
+    for (const control of el.querySelectorAll("input,select,textarea,button")) control.disabled = disabled || busy;
+    field("remove").disabled ||= !removable();
+    field("env").disabled ||= field("keep-env").checked;
+  };
   const fillEditor = row => {
     const def = row?.definition || row || {};
     field("name").value = row?.name || "";
@@ -48,24 +54,26 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
     field("keep-env").disabled = false;
     field("env").disabled = field("keep-env").checked;
     field("model").value = def.model || "";
-    field("yolo").value = def.yolo === undefined ? "" : String(def.yolo);
-    field("remove").disabled = !row || !context || row.source !== context;
+    field("yolo").value = def.yolo == null ? "" : String(def.yolo);
+    updateControls();
   };
-  const selectionChanged = () => {
+  const selectionChanged = (notify = true) => {
     invalidate(); const row = selected();
     el.querySelector(".launch-config-source").textContent = row ? `${row.runtime} · ${row.source || "Selected scope"}` : "Use the recorded launch for this home, or the soul defaults for a new instance.";
-    fillEditor(row); changed(row);
+    fillEditor(row); if (notify) changed(row);
   };
-  select.addEventListener("change", selectionChanged);
+  select.addEventListener("change", () => selectionChanged());
+  field("name").addEventListener("input", updateControls);
   field("keep-env").addEventListener("change", () => {
     field("env").disabled = field("keep-env").checked;
     if (!field("keep-env").checked) field("env").value = "{}";
   });
   const load = async (prefer = select.value) => {
-    const id = ++request; status.textContent = "Loading launch configurations…";
+    const id = ++listRequest; loading = true; reload = false; status.textContent = "Loading launch configurations…";
     try {
       const data = await api({ action: "list", selector: selector() });
-      if (!current() || id !== request) return;
+      if (!current() || id !== listRequest) return;
+      const previous = selected();
       configurations = data.configurations || []; context = data.context || data.scope?.context;
       select.replaceChildren();
       const option = doc.createElement("option"); option.value = ""; option.textContent = "Keep recorded / soul defaults"; select.append(option);
@@ -74,21 +82,22 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
       editor.hidden = !context;
       el.querySelector(".launch-config-scope").textContent = context ? `Configuration scope: ${context}` : "";
       status.textContent = configurations.length ? "" : "No named configurations in this scope yet.";
-      selectionChanged();
-    } catch (e) { if (current() && id === request) status.textContent = e.message; }
+      selectionChanged(!!previous || !!selected());
+    } catch (e) { if (current() && id === listRequest) status.textContent = e.message; }
+    finally { if (id === listRequest) loading = false; }
   };
   el.querySelector(".launch-preview").addEventListener("click", async () => {
-    const id = ++request; status.textContent = "Checking invocation…";
+    const id = ++previewRequest; status.textContent = "Checking invocation…";
     try {
       const preview = await api({ action: "preview", selector: selector(), choices: { ...choices(), ...(select.value ? { launchConfig: select.value } : {}) } });
-      if (!current() || id !== request) return;
+      if (!current() || id !== previewRequest) return;
       output.textContent = typeof preview.command === "string" ? preview.command : JSON.stringify(preview, null, 2);
       output.hidden = false; status.textContent = "Preview only. No agent was started or stopped.";
-    } catch (e) { if (current() && id === request) { output.hidden = true; status.textContent = e.message; } }
+    } catch (e) { if (current() && id === previewRequest) { output.hidden = true; status.textContent = e.message; } }
   });
   field("new").addEventListener("click", () => { fillEditor(); field("name").focus(); });
   const save = async action => {
-    if (!current() || busy || !context) return;
+    if (!current() || busy || disabled || !context || (action === "remove" && !removable())) return;
     const name = field("name").value.trim(); let definition;
     try {
       if (!/^[a-z0-9][a-z0-9._-]*$/i.test(name)) throw Error("Enter a configuration name using letters, numbers, dots, underscores or hyphens.");
@@ -103,17 +112,19 @@ export function launchConfigFields(el, { ctx, selector, choices, owns = () => tr
         for (const key of ["executable", "model"]) if (field(key).value.trim()) definition[key] = field(key).value.trim();
         if (field("yolo").value !== "") definition.yolo = field("yolo").value === "true";
       }
-      busy = true; field("save").disabled = field("remove").disabled = true;
+      busy = true; invalidate(); updateControls();
       status.textContent = action === "set" ? "Saving…" : "Removing configuration…";
       await api({ action, selector: { context }, name, ...(definition ? { definition, keepEnv: field("keep-env").checked } : {}) });
       if (current()) await load(action === "set" ? name : "");
     } catch (e) { if (current()) status.textContent = e.message; }
-    finally { busy = false; if (current()) { field("save").disabled = false; field("remove").disabled = !selected() || selected().source !== context; } }
+    finally { busy = false; if (current()) updateControls(); }
   };
   field("save").addEventListener("click", () => void save("set"));
   field("remove").addEventListener("click", () => void save("remove"));
-  return { load, invalidate, value: () => select.value || undefined, dispose: () => { disposed = true; request++; }, disabled(value) {
-    for (const control of el.querySelectorAll("input,select,textarea,button")) control.disabled = value;
-    if (!value) { field("remove").disabled = !selected() || selected().source !== context; field("env").disabled = field("keep-env").checked; }
+  return { load, invalidate, busy: () => busy, value: () => select.value || undefined, dispose: () => { disposed = true; listRequest++; previewRequest++; }, disabled(value) {
+    disabled = value;
+    if (value) { invalidate(); if (loading) { listRequest++; loading = false; reload = true; } }
+    updateControls();
+    if (!value && reload) void load();
   } };
 }

@@ -111,6 +111,7 @@ export function createInstanceStarter(doc, ctx, { waitForReady = waitForInstance
       if (!owns() || submit.disabled || starting || started) return;
       if (live && !restart) { close(); await ctx.openTerminal(instance, { quiet: true }); return; }
       if (!canStart || pending.has(key)) return;
+      if (launchFields.busy()) { status.textContent = "Wait for the launch configuration to finish saving."; return; }
       const chosen = model.value.trim();
       if (chosen.startsWith("-") || chosen.includes("\0")) { status.textContent = "Enter a model name, not a command-line option."; return; }
       const path = instanceApiPath(restart ? "restart" : "start", instance);
