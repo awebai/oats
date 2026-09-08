@@ -149,6 +149,27 @@
             "session": "oats-golden",
             "window": "dev-claude-checkout-knone-mnone"
           },
+          "launch": {
+            "version": 1,
+            "runtime": "claude",
+            "launchConfig": null,
+            "launchConfigSource": null,
+            "executable": "<base>/bin/claude",
+            "executableDeclared": null,
+            "executableResolvedFrom": "PATH",
+            "args": [],
+            "env": {},
+            "model": null,
+            "hooks": {
+              "launch": {},
+              "env": {},
+              "contributions": []
+            },
+            "prompt": {
+              "kind": "task-file",
+              "file": "TASK.md"
+            }
+          },
           "command": "OATS_INSTANCE='dev-claude-checkout-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-checkout-knone-mnone' PI_AGENT_INSTANCE='dev-claude-checkout-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-checkout-knone-mnone' '<base>/bin/claude' -- \"$(cat TASK.md)\"",
           "createdAt": "<createdAt>",
           "launched": false,

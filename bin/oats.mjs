@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -359,7 +359,7 @@ function agentsRootOfHome(home) {
   const base = dirname(agentDir);
   return basename(base) === "local-agents" ? join(dirname(base), "agents") : base;
 }
-const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description"];
+const SOUL_FIELDS = ["runtime", "model", "yolo", "backend", "description", "launch-config"];
 const realOrResolved = (p) => { try { return realpathSync(p); } catch { return resolve(p); } };
 /** Every soul of a scope: persistent and local souls of every agents root in
  *  scope, plus packaged souls (read-only). One enumeration for inspect and
@@ -434,7 +434,7 @@ function soulEntry(soul, root, { capability } = {}) {
   return {
     name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
     type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
-    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, backend: soul.backend ?? null,
+    runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
     agentsRoot: root, dir: packaged ? soulDir : dir, soulFile: join(soulDir, "soul.yaml"), instructionsFile: join(soulDir, "AGENTS.md"),
     editable: packaged
       ? { fields: [], instructions: false, reason: `packaged soul from capability ${capability}: edit the package and update it; scoped bindings still apply through oats use` }
@@ -830,6 +830,9 @@ async function soulCmd() {
   if (has("yolo")) changes.yolo = true;
   if (has("no-yolo")) changes.yolo = false;
   if (has("backend")) { const v = val("backend"); if (!["tmux", "herdr"].includes(v)) bail("E_BAD_ARGS", "--backend must be tmux or herdr"); changes.backend = v; }
+  if (has("launch-config") && has("no-launch-config")) bail("E_BAD_ARGS", "choose --launch-config <name> or --no-launch-config, not both");
+  if (has("launch-config")) { const v = val("launch-config"); if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v)) bail("E_BAD_ARGS", "--launch-config needs a configuration name (letters, digits, dot, underscore, dash)"); changes["launch-config"] = v; }
+  if (has("no-launch-config")) changes["launch-config"] = null;
   if (has("description") && has("no-description")) bail("E_BAD_ARGS", "choose --description <d> or --no-description, not both");
   if (has("description")) changes.description = assertSafeConfigValue(val("description"), "--description");
   if (has("no-description")) changes.description = null;
@@ -855,9 +858,9 @@ async function soulCmd() {
     // the intent, and a TTY was refused above.
     instructions = bytes;
   }
-  if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --description/--no-description, --instructions-file");
+  if (!Object.keys(changes).length && !instructions) bail("E_BAD_ARGS", "nothing to set: pass at least one of --runtime, --model/--no-model, --yolo/--no-yolo, --backend, --launch-config/--no-launch-config, --description/--no-description, --instructions-file");
   for (const f of Object.keys(changes)) if (!soul.editable.fields.includes(f)) bail("E_BAD_ARGS", `${f} is not an editable field of ${name}`);
-  const before = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, backend: soul.backend, description: soul.description };
+  const before = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, backend: soul.backend, description: soul.description, launchConfig: soul.launchConfig };
   // soul.yaml: replace or append `key: value` lines in place; a cleared
   // field's line is removed; nothing else in the file moves.
   let yamlText = "";
@@ -1290,14 +1293,82 @@ function launchConfigContext(bail) {
   }
   return { context: ctx, selected: null };
 }
-function launchConfigCmd() {
+/** oats launch-config preview: what a start of a home (or a new instance of
+ *  a soul) would run under a selection, resolved against the current scoped
+ *  configuration, preflighted, read-only; environment values withheld and
+ *  the prompt named, never the TASK body. */
+function launchPreview(bail) {
+  const sel = { launchConfig: flag("launch-config"), runtime: flag("runtime"), model: flag("model"), yolo: yoloFlag() };
+  for (const k of ["launch-config", "runtime", "model"]) if (flag(k) === true) bail("E_BAD_ARGS", `--${k} needs a value`);
+  if (sel.runtime !== undefined && !LAUNCH_RUNTIMES.includes(sel.runtime)) bail("E_BAD_ARGS", `--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
+  const { context, selected } = launchConfigContext(bail);
+  if (!selected) bail("E_BAD_ARGS", "preview needs --home <abs> (an existing instance) or --soul <name> [--dir <scope>] (a new instance)");
+  const selectionGiven = sel.launchConfig !== undefined || sel.runtime !== undefined || sel.model !== undefined || sel.yolo !== undefined;
+  let meta = null, frozen = null, agentLike, home, instance, agentsRoot;
+  if (selected.home) {
+    home = selected.home;
+    try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home}: ${e.message}`); }
+    instance = meta.instance || basename(home);
+    frozen = meta.launch && typeof meta.launch === "object" ? meta.launch : null;
+    if (!frozen) {
+      // A home that predates recipes: its frozen command is described as is;
+      // a selection needs the conversion that session restart brings.
+      if (selectionGiven) bail("E_LAUNCH_LEGACY", `${instance} predates launch recipes (no launch in instance.json); a selection needs oats session restart's conversion of its command; without one, preview describes the frozen command`);
+      let d;
+      try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
+      const redacted = (() => { const { tokens } = parseLaunchCommand(meta.command); return tokens.map((t) => t.kind === "env" ? `${t.name}='<redacted>'` : t.text).join(" "); })();
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redacted, prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; conversion on restart" }], ok: true });
+      return;
+    }
+    agentsRoot = agentsRootOfHome(home);
+    const agent = (() => { try { return findAgent(agentsRoot, meta.agent); } catch { return undefined; } })();
+    agentLike = agent || { runtime: meta.runtime, model: meta.model, yolo: meta.yolo };
+  } else {
+    let r0;
+    try { r0 = resolveOatsConfig(context); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    const souls = scopeSouls(context, r0).souls;
+    const soul = souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
+    agentLike = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, "launch-config": soul.launchConfig };
+    agentsRoot = selected.agentsRoot; instance = `${soul.name}-<purpose>`; home = join(agentsRoot, soul.name, "instances", instance);
+  }
+  let r;
+  try { r = resolveOatsConfig(context, selected.soul || meta?.agent); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+  let chosen;
+  try { chosen = resolveLaunchSelection({ launchConfigs: r.launchConfigs || {}, agent: agentLike, frozen, selection: sel }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+  const { config, runtime, model, modelSource } = chosen;
+  let yolo;
+  try { yolo = resolveYolo(sel.yolo ?? chosen.configuredYolo ?? (frozen ? frozen.yolo : agentLike.yolo ?? r.yolo)); } catch (e) { bail("E_BAD_ARGS", e.message); }
+  const executable = resolveLaunchExecutable({ runtime, declared: config?.executable, declaringDir: config?.source, contextDir: context });
+  const preflight = [];
+  const exeProblem = executable.path ? checkLaunchExecutable(executable.path) : executable.missing;
+  preflight.push({ check: "executable", ok: !exeProblem, detail: exeProblem || `${executable.path} (${executable.resolvedFrom})` });
+  const missing = missingLaunchEnvRefs(config?.env || {}, process.env);
+  preflight.push({ check: "environment", ok: !missing.length, detail: missing.length ? `not set on this host: ${missing.join(", ")}` : `${Object.keys(config?.env || {}).length} value(s), references resolved on the execution host at start` });
+  preflight.push({ check: "model", ok: true, detail: model ? `${model} (${modelSource})` : `native default (${modelSource})` });
+  // Capability contributions: recorded at spawn with provenance; a runtime
+  // switch needs the new runtime's launch args from the same capabilities.
+  let hooks = { launch: {}, env: {}, contributions: [], pending: true };
+  if (frozen) {
+    hooks = { launch: { ...(frozen.hooks?.launch || {}) }, env: { ...(frozen.hooks?.env || {}) }, contributions: frozen.hooks?.contributions || [] };
+    if (runtime !== frozen.runtime) {
+      const unprepared = hooks.contributions.filter((c) => c.launch && c.launch[frozen.runtime] !== undefined && c.launch[runtime] === undefined).map((c) => c.capability);
+      preflight.push({ check: "capabilities", ok: !unprepared.length, detail: unprepared.length ? `${unprepared.join(", ")} contributed ${frozen.runtime} launch arguments and none for ${runtime}; change that capability's delivery setting, or the provider must declare a launch hook (E_LAUNCH_PREPARATION)` : `recorded contributions carry over (env is runtime-neutral)` });
+    } else preflight.push({ check: "capabilities", ok: true, detail: "recorded contributions reused" });
+  } else preflight.push({ check: "capabilities", ok: true, detail: "decided by the capabilities' spawn hooks" });
+  const recipe = { version: LAUNCH_RECIPE_VERSION, runtime, launchConfig: config?.name || null, launchConfigSource: config?.source || null, executable: executable.path || executable.declared || runtime, executableDeclared: executable.declared, executableResolvedFrom: executable.resolvedFrom, args: [...(config?.args || [])], env: { ...(config?.env || {}) }, model: model || null, ...(yolo !== undefined ? { yolo } : {}), hooks, prompt: { kind: "task-file", file: "TASK.md" } };
+  const command = renderLaunchRecipe(recipe, { home, instance, redact: true });
+  const d = describeLaunchCommand(command);
+  jsonOk({ context, selected, selection: { source: frozen ? (selectionGiven ? "config" : "frozen") : "config", launchConfig: config?.name || null, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime, model: model || null, modelSource, yolo: yolo ?? null, launchConfig: config?.name || null, launchConfigSource: config?.source || null, executable: { path: executable.path, declared: executable.declared, resolvedFrom: executable.resolvedFrom }, argv: d.argv, environment: d.environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight, ok: preflight.every((c) => c.ok) });
+}
+async function launchConfigCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   // Until the remote gate routes these commands, a --server must never fall
   // through to a LOCAL read or write of a scope the caller did not mean.
   if (flag("server") !== undefined) bail("E_REMOTE_UNSUPPORTED", "launch-config --server is not routed by this kernel; nothing was read or written locally");
   dropAmbientRoot();
   const sub = args[1];
-  const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json]";
+  const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--runtime r] [--model m] [--yolo|--no-yolo] --json";
+  if (sub === "preview") { launchPreview(bail); return; }
   if (!["list", "set", "remove"].includes(sub)) bail("E_USAGE", usage);
   const { context: dir, selected } = sub === "list" ? launchConfigContext(bail) : { context: dirFlag(), selected: null };
   if (sub !== "list" && (flag("home") !== undefined || flag("soul") !== undefined)) bail("E_BAD_ARGS", `launch-config ${sub} writes one scope's oats-config.yaml: address it with --dir, not --home or --soul`);
@@ -1335,7 +1406,14 @@ function launchConfigCmd() {
     // A parse error is reported without the parser's text: its message can
     // quote the document, and a definition may carry environment literals.
     let raw;
-    try { raw = readFileSync(f, "utf8"); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.code === "ENOENT" ? "no such file" : e.code || "cannot read"}`); }
+    if (f === "-") {
+      // The routed form: the definition's bytes arrive on stdin (the ssh
+      // transport); no local file name crosses the wire.
+      if (process.stdin.isTTY) bail("E_BAD_ARGS", "--file - reads the definition from stdin");
+      try { raw = (await readStreamBounded(process.stdin, INSPECT_TEXT_CAP)).toString("utf8"); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+    } else {
+      try { raw = readFileSync(f, "utf8"); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.code === "ENOENT" ? "no such file" : e.code || "cannot read"}`); }
+    }
     try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with runtime and optional executable, args, env, model, yolo)`); }
     if (args.includes("--keep-env")) {
       // An editor that saw only redacted values keeps the environment of the
@@ -3596,6 +3674,7 @@ function spawnCmd() {
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       repo: flag("repo") || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
       work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch: flag("branch"),
+      launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
     });
   } catch (e) {
@@ -3604,6 +3683,10 @@ function spawnCmd() {
     // consumer the spawn mechanism broke, when the fixable fact is a poisoned
     // document the message already names. The shared boundary renders it.
     if (TYPED_CLI_FAILURES.has(e?.code)) throw e;
+    // A launch refusal (configuration, executable, environment reference,
+    // model, runtime) is a fact about the selection, not a spawn-mechanism
+    // failure: it keeps its own code so a GUI can act on it.
+    if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_RUNTIME$/.test(e.code)) { bail(e.code, e.message); throw e; }
     bail(e.code === "E_RELATIVE_AMBIGUOUS" ? "E_RELATIVE_AMBIGUOUS" : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
@@ -4420,7 +4503,7 @@ else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
 else if (cmd === "soul") await soulCmd();
-else if (cmd === "launch-config") launchConfigCmd();
+else if (cmd === "launch-config") await launchConfigCmd();
 else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
@@ -4590,6 +4673,11 @@ Usage:
                                             --keep-env copies the effective definition's env)
   oats launch-config remove <name>           remove this scope's declaration; an ancestor's,
       [--dir <scope>] [--json]              if any, becomes effective again
+  oats launch-config preview                 what a start would run: resolved runtime, model,
+      (--home <abs> | --soul <name>)        yolo, executable, argv, environment (redacted),
+      [--launch-config <name>|none]         command and preflight; read-only, nothing
+      [--runtime r] [--model m]             started; a named configuration is a unit, so
+      [--yolo | --no-yolo] --json           a disagreeing --runtime is refused
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
