@@ -33,6 +33,13 @@ that cannot be confirmed does not authorize another launch. Save in-progress
 work before restarting; the old harness conversation is not transferred to
 another harness.
 
+Restart requests termination and waits for the current process to stop before
+launching its replacement. If stopping times out, it leaves the instance for
+inspection instead of forcing a kill or launching a second harness. OATS
+preserves the home and work; it cannot guarantee that a harness or custom
+wrapper saves all of its in-flight conversation state. Wrappers should
+`exec` the harness or forward termination signals correctly.
+
 **Preview invocation** asks the execution host for the resolved command and
 displays it as text, with environment values redacted. It never launches an
 agent. **Manage launch configurations** in the dialog creates or updates named
