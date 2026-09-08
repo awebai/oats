@@ -25,6 +25,9 @@ write(join(binDir, "polite"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$OATS_INSTANCE_
 write(join(binDir, "stubborn"), `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\ntrap '' TERM\nwhile :; do sleep 0.2; done\n`);
 for (const n of ["polite", "stubborn", "claude", "codex", "pi"]) chmodSync(join(binDir, n === "claude" || n === "codex" || n === "pi" ? "polite" : n), 0o755);
 for (const n of ["claude", "codex", "pi"]) { write(join(binDir, n), readFileSync(join(binDir, "polite"), "utf8")); chmodSync(join(binDir, n), 0o755); }
+// In-process starts resolve a runtime's default binary on THIS process's PATH (`which`), not on the
+// environment passed to them: the fakes go first here too, so a host without the real harnesses plans alike.
+process.env.PATH = `${binDir}:${process.env.PATH}`;
 const env = (extra = {}) => { const e = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), ...extra }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 function oats(args, extra = {}) { const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: env(extra) }); let json; try { json = JSON.parse(r.stdout.trim()); } catch { throw new Error(`no JSON envelope: ${r.stdout}\n${r.stderr}`); } return { ...r, json }; }
