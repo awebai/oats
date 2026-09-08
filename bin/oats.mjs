@@ -1292,6 +1292,9 @@ function launchConfigContext(bail) {
 }
 function launchConfigCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  // Until the remote gate routes these commands, a --server must never fall
+  // through to a LOCAL read or write of a scope the caller did not mean.
+  if (flag("server") !== undefined) bail("E_REMOTE_UNSUPPORTED", "launch-config --server is not routed by this kernel; nothing was read or written locally");
   dropAmbientRoot();
   const sub = args[1];
   const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json]";
@@ -1329,7 +1332,11 @@ function launchConfigCmd() {
     const f = flag("file");
     if (!f || f === true) bail("E_BAD_ARGS", "launch-config set needs --file <json> (an object with runtime and optional executable, args, env, model, yolo)");
     let entry;
-    try { entry = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.message}`); }
+    // A parse error is reported without the parser's text: its message can
+    // quote the document, and a definition may carry environment literals.
+    let raw;
+    try { raw = readFileSync(f, "utf8"); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.code === "ENOENT" ? "no such file" : e.code || "cannot read"}`); }
+    try { entry = JSON.parse(raw); } catch { bail("E_BAD_ARGS", `--file ${f} is not valid JSON (one object with runtime and optional executable, args, env, model, yolo)`); }
     if (args.includes("--keep-env")) {
       // An editor that saw only redacted values keeps the environment of the
       // definition EFFECTIVE at this scope for that name (this scope's own, or

@@ -184,3 +184,21 @@ test("the launch-configs block replacement leaves every other byte alone and han
   r = oats(["launch-config", "set", "b", "--file", join(base, "b.json"), "--dir", scope]);
   assert.equal(r.json.ok, false); assert.match(r.json.error.message, /declares launch-configs 2 times/);
 });
+
+test("an unrouted --server never reads or writes a local scope; a bad --file is refused without echoing its text", () => {
+  const scope = join(base, "guard"); mkdirSync(join(scope, "agents"), { recursive: true });
+  write(join(scope, "oats-config.yaml"), "name: g\n");
+  write(join(base, "g.json"), JSON.stringify({ runtime: "pi" }));
+  for (const sub of [["list"], ["set", "g", "--file", join(base, "g.json")], ["remove", "g"]]) {
+    const r = oats(["launch-config", ...sub, "--server", "somewhere", "--dir", scope]);
+    assert.equal(r.json.error?.code, "E_REMOTE_UNSUPPORTED", `${sub[0]}: ${r.stdout}`);
+  }
+  assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), "name: g\n", "nothing was written");
+  const secret = "SECRET-LITERAL-0xC0FFEE";
+  write(join(base, "bad.json"), `{"runtime": "pi", "env": {"K": "${secret}"} trailing`);
+  let r = oats(["launch-config", "set", "g", "--file", join(base, "bad.json"), "--dir", scope]);
+  assert.equal(r.json.error?.code, "E_BAD_ARGS"); assert.ok(!JSON.stringify(r.json).includes(secret), "the parser's quote of the document is not relayed");
+  assert.match(r.json.error.message, /not valid JSON/);
+  r = oats(["launch-config", "set", "g", "--file", join(base, "missing.json"), "--dir", scope]);
+  assert.equal(r.json.error?.code, "E_BAD_ARGS"); assert.match(r.json.error.message, /no such file/);
+});
