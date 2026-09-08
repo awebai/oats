@@ -57,7 +57,12 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
     const expanded = event.newState === "open";
     menu.dataset.instanceMenuOpen = String(expanded);
     trigger.setAttribute("aria-expanded", String(expanded));
-    if (expanded) queueMicrotask(() => { if (menu.isConnected && menu.dataset.instanceMenuOpen === "true") position(); });
+    // A native pointer activation can run a microtask checkpoint before the
+    // popover's default action makes it measurable. Position before the next
+    // paint, when the open menu has its actual width (not a hidden width of 0).
+    if (expanded) doc.defaultView.requestAnimationFrame(() => {
+      if (menu.isConnected && menu.dataset.instanceMenuOpen === "true") position();
+    });
   });
   trigger.addEventListener("keydown", (event) => {
     if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;

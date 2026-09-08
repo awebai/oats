@@ -7,7 +7,7 @@ import { cliRetire, parseRetireEnvelope } from "../cli-adapter.mjs";
 // jsdom has no top-layer API. Model only its open/close events here; native
 // light-dismiss and rendering are Chromium's behavior, not this test's claim.
 function menuDom() {
-  const dom = new JSDOM("<body></body>");
+  const dom = new JSDOM("<body></body>", { pretendToBeVisual: true });
   for (const [method, newState] of [["showPopover", "open"], ["hidePopover", "closed"]]) {
     dom.window.HTMLElement.prototype[method] = function () {
       const event = new dom.window.Event("beforetoggle");
