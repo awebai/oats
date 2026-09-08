@@ -48,3 +48,28 @@ test("the OKF package declares inspect (view) and harvest (action); its inspect 
   r = spawnSync(process.execPath, [CLI, "operation", "run", "knowledge:inspect", "--home", empty, "--json"], { encoding: "utf8", env: env(), cwd: base });
   assert.equal(r.status, 0, r.stdout + r.stderr); out = JSON.parse(r.stdout.trim()).result; assert.deepEqual(out.result.documents, []); assert.match(out.result.summary, /no working memory/);
 });
+
+test("a view larger than a pipe buffer arrives whole: the provider's answer through an actual pipe, directly and through oats operation run", () => {
+  // The first test installed the bundled package as an owned capability in
+  // `repo`; this home carries a STATE.md bigger than the 64 KiB a macOS pipe
+  // holds while the writer exits (BeadHub's reproduction of the 1.6.0 defect:
+  // exactly 65536 bytes, invalid JSON, exit 0).
+  const repo = join(base, "repo");
+  const home = join(repo, "agents", "dev", "instances", "dev-big");
+  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-big", home, repo, launched: false, capabilities: [{ id: "oats.okf", level: repo, settings: {} }], layers: {} }));
+  const state = "# state\n\n" + "a line of working state that repeats until the document is long enough to matter\n".repeat(2500);
+  assert.ok(Buffer.byteLength(state) > 128 * 1024 && Buffer.byteLength(state) < 256 * 1024, "over one pipe buffer, under the provider's own cap");
+  write(join(home, "STATE.md"), state); write(join(home, "log.md"), "# log\n");
+  // Directly, stdout a pipe (spawnSync's default), as the kernel and a Desktop read it.
+  let r = spawnSync(process.execPath, [join(OKF, "bin", "oats-okf.mjs"), "inspect", "--json"], { encoding: "utf8", env: { ...env(), OATS_HOME: home }, cwd: home, maxBuffer: 16 * 1024 * 1024 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(Buffer.byteLength(r.stdout) > 128 * 1024, `whole answer left the pipe (${Buffer.byteLength(r.stdout)} bytes)`);
+  let out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true);
+  assert.equal(out.result.documents[0].text, state, "STATE.md text is byte-exact"); assert.equal(out.result.documents[0].truncated, undefined);
+  // Through the kernel's generic runner into a JSON envelope on ITS stdout (a second pipe).
+  r = spawnSync(process.execPath, [CLI, "operation", "run", "knowledge:inspect", "--home", home, "--json"], { encoding: "utf8", env: env(), cwd: base, maxBuffer: 16 * 1024 * 1024 });
+  assert.equal(r.status, 0, r.stdout.slice(0, 500) + r.stderr);
+  out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, String(JSON.stringify(out.error ?? null)).slice(0, 300));
+  assert.equal(out.result.result.documents[0].text, state, "the runner relays the whole document");
+  assert.match(out.result.result.summary, /2 documents: state, log, 0 pending notes/);
+});

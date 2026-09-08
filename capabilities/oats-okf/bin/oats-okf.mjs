@@ -23,29 +23,44 @@
  *      OATS_TASK (spawn), OATS_REPO/OATS_BRANCH/OATS_WORK (spawn), OATS_META (retire).
  * Output: JSON { meta, brief, warning } on stdout. Failures warn, never block.
  */
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, readdirSync, realpathSync, rmSync, writeSync } from "node:fs";
 import { join, isAbsolute, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile, spawnSync } from "node:child_process";
 import { reclaimHarvestBranch } from "../lib/harvest-branch.mjs";
 
-const out = (o) => { process.stdout.write(JSON.stringify(o) + "\n"); process.exit(0); };
+// Every answer leaves through here: written whole, then exit. stdout is a
+// pipe when the kernel's operation runner, a Desktop or a test reads it, and
+// on macOS Node writes to a pipe asynchronously: process.exit right after
+// process.stdout.write drops whatever has not left Node's buffer (64 KiB,
+// so a view of one long STATE.md arrived cut). fs.writeSync on fd 1 blocks
+// until the OS has the bytes; EAGAIN (a non-blocking fd whose reader is
+// slower than us) is retried after a short wait. The exit stays synchronous,
+// which the call sites below rely on to end their flow.
+const emit = (text, code) => {
+  const buf = Buffer.from(text, "utf8");
+  for (let off = 0; off < buf.length;) {
+    try { off += writeSync(1, buf, off, buf.length - off); }
+    catch (e) { if (e.code !== "EAGAIN") throw e; Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5); }
+  }
+  process.exit(code);
+};
+const out = (o) => emit(JSON.stringify(o) + "\n", 0);
 const warn = (m) => out({ warning: `oats-okf: ${String(m).slice(0, 300)}` });
 // A reported failure must not exit 0: callers and hooks read the status.
-const warnFail = (m) => { process.stdout.write(JSON.stringify({ warning: `oats-okf: ${String(m).slice(0, 300)}` }) + "\n"); process.exit(1); };
+const warnFail = (m) => emit(JSON.stringify({ warning: `oats-okf: ${String(m).slice(0, 300)}` }) + "\n", 1);
 
 // Desktop CLI API v1: `oats okf harvest --json` emits EXACTLY ONE envelope
 // object on stdout — {schemaVersion:1,ok,result|error} — and a nonzero exit
 // on failure. Ordinary (non---json) output keeps the hook JSON shape above.
 const JSON_MODE = process.argv.includes("--json");
-const jsonOk = (result) => { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result }) + "\n"); process.exit(0); };
-const jsonFail = (code, message) => { process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message).slice(0, 300) } }) + "\n"); process.exit(1); };
+const jsonOk = (result) => emit(JSON.stringify({ schemaVersion: 1, ok: true, result }) + "\n", 0);
+const jsonFail = (code, message) => emit(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message).slice(0, 300) } }) + "\n", 1);
 
 // --help/-h never runs a command here either (the kernel answers it from the
 // manifest since 0.22.6; this keeps an older kernel from spawning a harvester).
 if (process.argv.slice(2).some((a) => a === "--help" || a === "-h")) {
-  process.stdout.write("oats okf harvest [--json] [--from-record] [--force]  promote this instance's pending notes (and record windows) into its soul by spawning a memory-harvest worker; --help never runs it\noats okf inspect [--json]  answer this instance's working knowledge (STATE.md, log.md, pending notes) as labeled documents\n");
-  process.exit(0);
+  emit("oats okf harvest [--json] [--from-record] [--force]  promote this instance's pending notes (and record windows) into its soul by spawning a memory-harvest worker; --help never runs it\noats okf inspect [--json]  answer this instance's working knowledge (STATE.md, log.md, pending notes) as labeled documents\n", 0);
 }
 const event = process.env.OATS_EVENT || process.argv[2];
 const instance = process.env.OATS_INSTANCE;
@@ -493,9 +508,9 @@ _(the single next action — keep this current; a fresh session on any model res
     const notes = existsSync(notesDir) ? readdirSync(notesDir).filter((f) => f.endsWith(".md")).sort() : [];
     for (const f of notes) { const d = doc(`Pending note: ${f}`, join(notesDir, f)); if (d) documents.push(d); }
     const summary = documents.length ? `${documents.length} document${documents.length === 1 ? "" : "s"}: ${existsSync(join(home, "STATE.md")) ? "state" : "no state"}, ${existsSync(join(home, "log.md")) ? "log" : "no log"}, ${notes.length} pending note${notes.length === 1 ? "" : "s"}` : "no working memory in this home yet (STATE.md, log.md and notes/ are written by the instance)";
-    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { summary, documents } }) + "\n"); process.exit(0);
+    jsonOk({ summary, documents });
   } catch (e) {
-    process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_INSPECT_FAILED", message: String(e.message || e).slice(0, 300) } }) + "\n"); process.exit(1);
+    jsonFail("E_INSPECT_FAILED", e.message || e);
   }
 } else if (event === "retire") {
   // Retirement is intentionally a no-op for knowledge (for now): promotion happens
