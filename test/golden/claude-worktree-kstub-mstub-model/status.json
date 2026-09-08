@@ -325,6 +325,50 @@
             "session": "oats-golden",
             "window": "dev-claude-worktree-kstub-mstub-model"
           },
+          "launch": {
+            "version": 1,
+            "runtime": "claude",
+            "launchConfig": null,
+            "launchConfigSource": null,
+            "executable": "<base>/bin/claude",
+            "executableDeclared": null,
+            "executableResolvedFrom": "PATH",
+            "args": [],
+            "env": {},
+            "model": "claude-sonnet-4-5",
+            "hooks": {
+              "launch": {
+                "pi": "--golden-channel stub",
+                "claude": "--golden-channel stub"
+              },
+              "env": {
+                "GOLDEN_BROKER_ENDPOINT": "stub://broker/dev-claude-worktree-kstub-mstub-model"
+              },
+              "contributions": [
+                {
+                  "capability": "golden.messaging",
+                  "layer": "messaging",
+                  "level": "<base>/scope",
+                  "settings": {},
+                  "trust": {
+                    "trusted": true,
+                    "integrity": null
+                  },
+                  "launch": {
+                    "pi": "--golden-channel stub",
+                    "claude": "--golden-channel stub"
+                  },
+                  "env": [
+                    "GOLDEN_BROKER_ENDPOINT"
+                  ]
+                }
+              ]
+            },
+            "prompt": {
+              "kind": "task-file",
+              "file": "TASK.md"
+            }
+          },
           "command": "OATS_INSTANCE='dev-claude-worktree-kstub-mstub-model' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-model' PI_AGENT_INSTANCE='dev-claude-worktree-kstub-mstub-model' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mstub-model' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-claude-worktree-kstub-mstub-model' '<base>/bin/claude' --model 'claude-sonnet-4-5' --golden-channel stub -- \"$(cat TASK.md)\"",
           "createdAt": "<createdAt>",
           "launched": false,
