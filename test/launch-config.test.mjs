@@ -189,9 +189,11 @@ test("an unrouted --server never reads or writes a local scope; a bad --file is 
   const scope = join(base, "guard"); mkdirSync(join(scope, "agents"), { recursive: true });
   write(join(scope, "oats-config.yaml"), "name: g\n");
   write(join(base, "g.json"), JSON.stringify({ runtime: "pi" }));
+  // --server routes (the lead's remote library): an unregistered server is refused there; the local scope is never read or written.
   for (const sub of [["list"], ["set", "g", "--file", join(base, "g.json")], ["remove", "g"]]) {
     const r = oats(["launch-config", ...sub, "--server", "somewhere", "--dir", scope]);
-    assert.equal(r.json.error?.code, "E_REMOTE_UNSUPPORTED", `${sub[0]}: ${r.stdout}`);
+    assert.equal(r.json.ok, false, `${sub[0]}: ${r.stdout}`);
+    assert.equal(r.json.error?.code, "E_SERVER_UNKNOWN", `${sub[0]}: ${r.stdout}`);
   }
   assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), "name: g\n", "nothing was written");
   const secret = "SECRET-LITERAL-0xC0FFEE";
