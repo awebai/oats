@@ -1193,14 +1193,16 @@ function replaceLaunchConfigsBlock(text, serialized) {
     return text + sep + serialized;
   }
   const start = starts[0];
-  // The block is its key line plus the indented (or blank) lines under it:
-  // a top-level line of any kind, a top-level comment included, ends it and
-  // stays where it is; trailing blank lines are left to the tail.
+  // The block runs to the next real top-level key (a column-zero line that
+  // is not a comment). Blank lines and column-zero comments directly ahead
+  // of that key, or at the end of the file, are not part of it and stay
+  // where they are; a column-zero comment followed by more indented entries
+  // is inside the block (and is regenerated away with it).
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (lines[i] !== "" && !/^\s/.test(lines[i])) { end = i; break; }
+    if (lines[i] !== "" && !/^\s/.test(lines[i]) && !lines[i].startsWith("#")) { end = i; break; }
   }
-  while (end > start + 1 && lines[end - 1] === "") end--;
+  while (end > start + 1 && (lines[end - 1] === "" || lines[end - 1].startsWith("#"))) end--;
   const tail = lines.slice(end);
   if (!tail.length) tail.push(""); // the block ended the file: the result still ends with a newline
   let prefixEnd = start;

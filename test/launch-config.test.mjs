@@ -217,4 +217,13 @@ test("a top-level comment after the launch-configs block is not part of it: set 
   assert.equal(oats(["launch-config", "remove", "a", "--dir", scope]).json.ok, true);
   assert.equal(oats(["launch-config", "remove", "b", "--dir", scope]).json.ok, true);
   assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), "name: c\n# trailing top-level comment\n\n# another one at the end\n");
+  // A column-zero comment INSIDE the block (indented entries follow it) does not end the block: the entry after it is editable.
+  const inner = "name: x\nlaunch-configs:\n# configurations\n  personal:\n    runtime: claude\n\n# after the block\nyolo: true\n";
+  write(join(scope, "oats-config.yaml"), inner);
+  write(join(base, "c-personal.json"), JSON.stringify({ runtime: "codex" }));
+  let r = oats(["launch-config", "set", "personal", "--file", join(base, "c-personal.json"), "--dir", scope]);
+  assert.equal(r.json.ok, true, r.stdout);
+  text = readFileSync(join(scope, "oats-config.yaml"), "utf8");
+  assert.equal(text, "name: x\nlaunch-configs:\n  personal:\n    runtime: codex\n\n# after the block\nyolo: true\n", text);
+  assert.deepEqual(parseYamlNested(text)["launch-configs"], { personal: { runtime: "codex" } });
 });
