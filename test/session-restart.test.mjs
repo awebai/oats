@@ -27,6 +27,7 @@ for (const n of ["polite", "stubborn", "claude", "codex", "pi"]) chmodSync(join(
 for (const n of ["claude", "codex", "pi"]) { write(join(binDir, n), readFileSync(join(binDir, "polite"), "utf8")); chmodSync(join(binDir, n), 0o755); }
 const env = (extra = {}) => { const e = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), ...extra }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
+function oats(args, extra = {}) { const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: env(extra) }); let json; try { json = JSON.parse(r.stdout.trim()); } catch { throw new Error(`no JSON envelope: ${r.stdout}\n${r.stderr}`); } return { ...r, json }; }
 
 // A scope with a soul and two configurations; homes are written the way spawn writes them (recipe or legacy command).
 const repo = join(base, "repo"); mkdirSync(join(repo, "agents", "dev", "soul"), { recursive: true });
@@ -228,7 +229,7 @@ test("Herdr: the pane shell's verified process tree is signalled (never the shel
 
 test("launch hooks: only capabilities captured for the home take part; a hook answers args + env under the captured settings with the same environment rules as spawn; its answer, even empty, replaces the provider's previous contribution", async () => {
   const cap = join(repo, ".agents", "capabilities", "owned", "extra");
-  write(join(cap, "oats.json"), JSON.stringify({ capability: "test.extra", version: "0.1.0", description: "extra", compatibility: { oats: ">=0.6.2" }, hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR"], settings: { mode: { description: "m" } } }));
+  write(join(cap, "oats.json"), JSON.stringify({ capability: "test.extra", version: "0.1.0", description: "extra", compatibility: { oats: ">=0.6.2" }, hooks: { launch: "bin/launch.mjs" }, environment: ["TEST_NEWVAR", "TEST_OLDVAR", "TEST_SHARED"], settings: { mode: { description: "m" } } }));
   // Hook commands resolve inside the capability directory and run as node; the answer is read from a file the test rewrites.
   write(join(cap, "bin", "launch.mjs"), `import { readFileSync, writeFileSync } from "node:fs"; import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";\nwriteFileSync(join(process.env.OATS_HOME, "hooked-settings"), process.env.OATS_SETTINGS);\nprocess.stdout.write(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "answer.json"), "utf8") + "\\n");\n`);
   const hook = (answer) => write(join(cap, "bin", "answer.json"), JSON.stringify(answer));
@@ -262,11 +263,65 @@ test("launch hooks: only capabilities captured for the home take part; a hook an
   let r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
   let out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout);
   assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /TEST_UNDECLARED|environment contract/);
+  // Ownership across retained and refreshed contributions: test.two retains TEST_SHARED from spawn (no launch hook); test.extra's hook may not take it.
+  write(join(repo, ".agents", "capabilities", "owned", "two", "oats.json"), JSON.stringify({ capability: "test.two", version: "0.1.0", description: "two", compatibility: { oats: ">=0.6.2" }, environment: ["TEST_SHARED"] }));
+  const meta2 = readJson(join(home, "instance.json"));
+  const two = { capability: "test.two", layer: null, level: repo, settings: {}, trust: { trusted: true, integrity: null }, launch: {}, env: ["TEST_SHARED"] };
+  write(join(home, "instance.json"), JSON.stringify({ ...meta2, launch: { ...meta2.launch, hooks: { ...meta2.launch.hooks, env: { ...meta2.launch.hooks.env, TEST_SHARED: "owned-by-two" }, contributions: [...meta2.launch.hooks.contributions, two] } } }));
+  hook({ env: { TEST_SHARED: "replacement-from-one" } });
+  r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
+  out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout);
+  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /TEST_SHARED, which test.two contributed at spawn and retains/);
+  write(join(home, "instance.json"), JSON.stringify(meta2));
   // A captured provider the scope no longer installs refuses the start (captured by id, current manifest and trust; scope bindings are not what counts).
   hook({});
   rmSync(cap, { recursive: true, force: true });
   write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.extra:\n      from: owned\n      global: true\n      settings:\n        mode: current\n/, ""));
   r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
   out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout);
-  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /test.extra contributed .*no longer installed/);
+  assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /test.extra was part of .*no longer installed/);
+});
+
+test("a captured provider with no contribution at spawn still takes part (launch hook, conditional requirement); package probes run under the launch's effective environment, not the ambient one", async () => {
+  // A wrapper that answers claude's plugin list only under the SELECTED environment; otherwise it is the polite harness.
+  const wrapper = join(binDir, "claude-wrapper"); write(wrapper, `#!/bin/sh\nif [ "$1" = "plugin" ] && [ "$2" = "list" ]; then\n  if [ "$TEST_PROBE_TOKEN" = "selected" ]; then printf '[{"id":"chan@acme-marketplace","scope":"user","enabled":true}]'; else printf '[]'; fi\n  exit 0\nfi\nexec ${JSON.stringify(join(binDir, "polite"))} "$@"\n`); chmodSync(wrapper, 0o755);
+  // A captured provider (recorded binding only, no contribution at spawn) declaring a launch hook and a requirement conditional on its captured settings.
+  const cap = join(repo, ".agents", "capabilities", "owned", "req");
+  write(join(cap, "oats.json"), JSON.stringify({ capability: "test.req", version: "0.1.0", description: "req", compatibility: { oats: ">=0.6.2" }, hooks: { launch: "bin/launch.mjs" }, requires: [{ runtime: "claude", package: "chan@acme-marketplace", marketplace: "acme/claude-plugins", when: { mode: "on" } }], settings: { mode: { description: "m" } } }));
+  write(join(cap, "bin", "launch.mjs"), `process.stdout.write(JSON.stringify({ launch: { claude: "--req-hook" }, env: {} }) + "\\n");\n`);
+  write(join(base, "probed.json"), JSON.stringify({ runtime: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: "selected" } }));
+  assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed.json"), "--dir", repo]).json.ok, true);
+  const name = "dev-captured";
+  const home = join(repo, "agents", "dev", "instances", name);
+  makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }), capabilityRuntime: [{ id: "test.req", layer: null, level: repo, settings: { mode: "on" }, hooks: { launch: "bin/launch.mjs" }, requiredHooks: [], environment: [], environmentNamespaces: [], missingRequires: [], trust: { trusted: true, integrity: null }, executable: true }] });
+  const preview = (extra = {}, args = []) => { const r = spawnSync(process.execPath, [CLI, "launch-config", "preview", "--home", home, "--launch-config", "probed", ...args, "--json"], { encoding: "utf8", env: env(extra) }); const out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, r.stdout + r.stderr); return out.result; };
+  // The captured provider took part although it contributed nothing at spawn: its hook's args are in, its requirement was probed under the selected env and found.
+  let v = preview();
+  assert.ok(v.argv.includes("--req-hook"), JSON.stringify(v.argv));
+  const pk = (x) => x.preflight.find((c) => c.check === "runtime-packages");
+  assert.equal(pk(v).ok, true, JSON.stringify(pk(v))); assert.match(pk(v).detail, /verified with .*claude-wrapper/);
+  assert.equal(v.ok, true);
+  // The configuration's environment wins over the ambient one: ambient says selected, the configuration says wrong -> the probe fails.
+  write(join(base, "probed2.json"), JSON.stringify({ runtime: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: "wrong" } }));
+  assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed2.json"), "--dir", repo]).json.ok, true);
+  v = preview({ TEST_PROBE_TOKEN: "selected" });
+  assert.equal(pk(v).ok, false, JSON.stringify(pk(v))); assert.match(pk(v).detail, /chan@acme-marketplace/);
+  // A reference to the source variable: resolved from the base for the probe; unset -> the environment check fails and nothing is probed.
+  write(join(base, "probed3.json"), JSON.stringify({ runtime: "claude", executable: wrapper, env: { TEST_PROBE_TOKEN: { fromEnv: "PROBE_SRC" } } }));
+  assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed3.json"), "--dir", repo]).json.ok, true);
+  v = preview({ PROBE_SRC: "selected" });
+  assert.equal(pk(v).ok, true, JSON.stringify(pk(v)));
+  v = preview();
+  assert.equal(v.preflight.find((c) => c.check === "environment").ok, false); assert.equal(pk(v), undefined, "no probe without the reference");
+  // The conditional requirement follows the CAPTURED settings: mode off -> no requirement, nothing probed.
+  const meta = readJson(join(home, "instance.json"));
+  write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [{ ...meta.capabilityRuntime[0], settings: { mode: "off" } }] }));
+  v = preview({ PROBE_SRC: "wrong" });
+  assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  // A merely newly bound provider (not captured) does not take part, even with a launch hook and a requirement.
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\nlaunch-configs:\n"));
+  write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [] }));
+  v = preview({ PROBE_SRC: "wrong" });
+  assert.ok(!v.argv.includes("--req-hook"), JSON.stringify(v.argv)); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n/, ""));
 });
