@@ -40,7 +40,7 @@ import {
   assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
   runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
 } from "../lib/packages.mjs";
-import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
+import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
@@ -1342,9 +1342,6 @@ function launchPreview(bail) {
 }
 async function launchConfigCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
-  // Until the remote gate routes these commands, a --server must never fall
-  // through to a LOCAL read or write of a scope the caller did not mean.
-  if (flag("server") !== undefined) bail("E_REMOTE_UNSUPPORTED", "launch-config --server is not routed by this kernel; nothing was read or written locally");
   dropAmbientRoot();
   const sub = args[1];
   const usage = "usage: oats launch-config list [--dir <scope> | --home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]] [--json] | set <name> --file <json> [--keep-env] [--dir <scope>] [--json] | remove <name> [--dir <scope>] [--json] | preview (--home <abs> | --soul <name> [--dir <scope>]) [--launch-config <name>|none] [--runtime r] [--model m] [--yolo|--no-yolo] --json";
@@ -4147,7 +4144,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4278,15 +4275,44 @@ function serverCmd() {
 /** `oats <spawn|retire|status> --server <id> ...`: run the command on the
  *  registered server's installed oats, same arguments, same envelope. The
  *  local side only routes and keeps the route snapshot per remote instance. */
-function serverRouteCmd() {
+async function serverRouteCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
   const id = flag("server");
   if (id === true || !id) bail("E_BAD_ARGS", "--server needs a registered server id (oats server list)");
   // The operations contract addresses an exact member context on the host,
   // so its explicit --dir travels; every other routed command takes its
   // scope from the registration.
-  const explicitScopeOk = ["inspect", "operation", "use", "soul"].includes(cmd);
+  const explicitScopeOk = ["inspect", "operation", "use", "soul", "launch-config"].includes(cmd);
   if (!explicitScopeOk && (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir=")))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
+  if (cmd === "launch-config") {
+    const action = args[1];
+    const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
+    if (!["list", "set", "remove", "preview"].includes(action)) bail("E_BAD_ARGS", "launch-config --server supports list, set, remove and preview");
+    const options = { action, name: args[2], context: value("dir"), home: value("home"), instance: value("instance"), soul: value("soul"), agentsRoot: value("agents-root") };
+    if (action === "preview") Object.assign(options, { launchConfig: value("launch-config"), runtime: value("runtime"), model: value("model"), yolo: yoloFlag() });
+    if (action === "set") {
+      const file = value("file");
+      if (!file) bail("E_BAD_ARGS", "launch-config set needs --file <local JSON file> (or - for stdin)");
+      let raw;
+      try {
+        if (file === "-") {
+          if (process.stdin.isTTY) bail("E_BAD_ARGS", "--file - reads the definition from stdin");
+          raw = await readStreamBounded(process.stdin, INSPECT_TEXT_CAP);
+        } else raw = readFileSync(file);
+      } catch (e) { bail("E_BAD_ARGS", `cannot read launch configuration file (${e.code || "read failed"})`); }
+      if (raw.length > INSPECT_TEXT_CAP) bail("E_BAD_ARGS", "launch configuration file exceeds the input limit");
+      try { options.definition = JSON.parse(raw.toString("utf8")); }
+      catch { bail("E_BAD_ARGS", "launch configuration file is not valid JSON"); }
+      options.keepEnv = args.includes("--keep-env");
+    }
+    let out;
+    try { out = launchConfigRemote(id, options); } catch (e) { bail(e.code || "E_SSH", e.message); }
+    if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
+    if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
+    if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "launch configuration request failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
+    console.log(JSON.stringify(out.envelope.result, null, 2));
+    return;
+  }
   // Interactive viewer: `oats session attach --server <id> --instance <name>`
   // (or --home </abs/remote/home>) runs the execution host's own attach
   // through an ssh PTY with this terminal's stdio; nothing is captured.
@@ -4346,12 +4372,12 @@ function serverRouteCmd() {
       console.log(`${r.instance || r.home} on ${id}: ${r.present ? `present, ${r.state || "unknown"}` : "not present"}${r.backend ? ` (${r.backend})` : ""}`);
       return;
     }
-    if (args[1] === "start") {
-      const model = flag("model");
-      if (model === true) bail("E_BAD_ARGS", "--model needs a model id; omit it to keep the recorded model");
-      if (flag("launch-config") !== undefined || flag("runtime") !== undefined || args.includes("--yolo") || args.includes("--no-yolo")) bail("E_REMOTE_UNSUPPORTED", "launch choices (--launch-config, --runtime, --yolo) are not routed to a server by this kernel; nothing was sent");
+    if (args[1] === "start" || args[1] === "restart") {
+      const value = (name) => { const v = flag(name); if (v === true) bail("E_BAD_ARGS", `--${name} needs a value`); return v; };
+      const choices = { ...addr, model: value("model"), launchConfig: value("launch-config"), runtime: value("runtime"), yolo: yoloFlag() };
+      if (flag("stop-grace") !== undefined) bail("E_BAD_ARGS", "--stop-grace is currently supported on the execution host; omit it to use the remote restart's default wait");
       let out;
-      try { out = startRemote(id, { ...addr, model: model || undefined }); } catch (e) { bail(e.code || "E_SSH", e.message); }
+      try { out = (args[1] === "restart" ? restartRemote : startRemote)(id, choices); } catch (e) { bail(e.code || "E_SSH", e.message); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
       if (JSON_MODE) { console.log(JSON.stringify(out.envelope, null, 2)); if (!out.envelope.ok) process.exit(1); return; }
       if (!out.envelope.ok) die(`${id}: ${out.envelope.error?.message || "start failed"} (${out.envelope.error?.code || "E_REMOTE"})`);
@@ -4371,8 +4397,7 @@ function serverRouteCmd() {
       console.log(`Uploaded ${r.name} (${r.bytes} bytes) to ${r.instance || r.home} on ${id}: ${r.path}`);
       return;
     }
-    if (args[1] === "restart") bail("E_REMOTE_UNSUPPORTED", "session restart is not routed to a server by this kernel; nothing was sent");
-    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
+    if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session restart`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
     catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
@@ -4491,7 +4516,7 @@ try {
 const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul"].includes(cmd)) serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul", "launch-config"].includes(cmd)) await serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
