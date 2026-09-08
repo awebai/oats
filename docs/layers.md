@@ -73,8 +73,8 @@ global, then by config closeness.
   knowledge (a harvester is a type permitted to write);
 - its communication **reach**, in both directions.
 
-`reach` is one field with a monotone ladder, each level including the ones
-below:
+The proposed `reach` field is a monotone ladder, each level including the
+ones below. This is an intended contract, not a currently enforced setting:
 
 ```text
 reach: owner     # only agents owned by the same human
@@ -84,8 +84,19 @@ reach: external  # agents outside the organization
 ```
 
 "No communication" is not a level; it is the communication slot set to
-`none`. `reach` governs whom an instance may address and who may address it;
-the communication implementation enforces both sides.
+`none`. The intended `reach` contract covers whom an instance may address
+and who may address it; implementation and qualification of enforcement in
+both directions are still required.
+
+**Current limitation.** The aweb implementation does not enforce this ladder.
+In particular, `reach: owner` is not implementable through its current inbound
+settings: `team_and_contacts` admits verified same-team senders as well as
+contacts, and the compatibility spellings `contacts-only` and `contacts_only`
+normalize to that mode. They do not enforce owner-only access. Neither a type
+declaration nor acceptance of a configuration command proves message admission,
+outbound restrictions, or knowledge visibility. See the
+[identity and membership amendment](design/2026-09-08-expert-assisted-deployment-proposal.md#membership-reach-and-visibility-are-separate)
+for the current provider boundary and required qualification.
 
 **Proposed.** The type is exported to hooks and dispatched commands as
 `OATS_SOUL_TYPE`; packages may ship types; a type may declare `reach`.
