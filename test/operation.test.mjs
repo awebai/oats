@@ -189,6 +189,18 @@ test("a provider's ordinary ok:false answer with a partial receipt keeps that re
   const rec = S.reconcile(ws, "r", { io }); assert.equal(rec.reconciled, "adopted"); assert.equal(rec.schedule.lastRun.instance, "notes-harvester-3");
 });
 
+test("operation run relays a provider's view whole when it exceeds a pipe buffer (generic runner, any provider)", () => {
+  const { home } = scope("bigview");
+  const memory = "# remembered\n" + "one remembered line, long enough that the document outgrows a pipe buffer many times over\n".repeat(4000);
+  assert.ok(Buffer.byteLength(memory) > 256 * 1024);
+  write(join(home, "MEMORY.md"), memory);
+  const r = oats(["operation", "run", "knowledge:inspect", "--home", home, "--json"]);
+  assert.equal(r.status, 0, r.stdout.slice(0, 300) + r.stderr);
+  const out = JSON.parse(r.stdout.trim());
+  assert.equal(out.ok, true, String(JSON.stringify(out.error ?? null)).slice(0, 300));
+  assert.equal(out.result.result.documents[0].text, memory, "the whole document, byte-exact, through two pipes");
+});
+
 test("operation run for a soul resolves the provider at the soul's own member context under a team scope", () => {
   const team = join(base, "opteam"); mkdirSync(team, { recursive: true });
   write(join(team, "oats-config.yaml"), "team:\n  name: t\ncapabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n");
