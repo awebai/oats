@@ -14,6 +14,10 @@ function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync
 // Fake harness binaries on PATH: spawn resolves them even under --no-launch.
 const binDir = join(base, "bin"); mkdirSync(binDir);
 for (const n of ["pi", "claude", "codex", "tmux"]) { writeFileSync(join(binDir, n), "#!/bin/sh\nexit 0\n"); chmodSync(join(binDir, n), 0o755); }
+// The in-process planner resolves a runtime's default binary on THIS process's PATH (`which`), not on the
+// environment handed to spawned CLIs: the fakes go first here too, so a host without the real harnesses
+// (the hosted runner) plans exactly like one with them.
+process.env.PATH = `${binDir}:${process.env.PATH}`;
 const env = (extra = {}) => { const e = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, OATS_HOME_DIR: join(base, "oats-home"), PI_AGENTS_TMUX_SESSION: "oats-launch-recipe-test", ...extra }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
 function oats(args, { cwd = base, extra = {} } = {}) {
   const r = spawnSync(process.execPath, [CLI, ...args, "--json"], { encoding: "utf8", env: env(extra), cwd });
@@ -49,8 +53,13 @@ test("configuration args and environment render literally, references by referen
   // NAME="$A" form saw the literal; the alias form cannot, because nothing in the prefix can assign the alias.
   const shadow = { runtime: "claude", executable: "/usr/bin/printenv", args: [], env: { A: "override", B: { fromEnv: "A" } }, model: null, hooks: hooks({}, { A: "hook" }) };
   const prefix = renderLaunchRecipe(shadow, { home, instance: "n" }).split(" '/usr/bin/printenv'")[0];
-  for (const sh of ["/bin/zsh", "/bin/bash", "/bin/sh"]) {
+  // Every shell the host installs is exercised; /bin/sh is required (the pane command runs under it), the others
+  // (zsh on macOS, bash on Linux runners) are covered where present rather than assumed.
+  const shells = ["/bin/zsh", "/bin/bash", "/bin/sh"].filter((sh) => existsSync(sh));
+  assert.ok(shells.includes("/bin/sh"), "/bin/sh is present on every supported host");
+  for (const sh of shells) {
     const out = spawnSync(sh, ["-c", `${prefix} /usr/bin/printenv B`], { encoding: "utf8", env: { A: "original", PATH: process.env.PATH, ...Object.fromEntries(launchEnvRefs(shadow, { A: "original" }).map((r) => [r.name, r.value])) } });
+    assert.equal(out.error, undefined, `${sh}: ran`);
     assert.equal(out.stdout.trim(), "original", `${sh}: B carries the SOURCE value, not the literal beside it`);
   }
   assert.deepEqual(parsed.tokens.filter((t) => t.kind === "word" && t.value === hostile).length, 1, "the hostile argument is one literal token");
