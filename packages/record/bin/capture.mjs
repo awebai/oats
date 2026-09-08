@@ -176,7 +176,9 @@ function withCaptureLock(fn) {
       const c = err.lockCleanup;
       const outcome = c.removed ? "the initializing lock was removed"
         : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
-        : c.reason === "replaced" ? `the lock now belongs to ${c.owner ? `pid ${c.owner.pid} (started ${c.owner.startedAt || "?"})` : "a newer pass"} and was left alone`
+        : c.reason === "replaced" ? (c.owner
+          ? `the lock now belongs to pid ${c.owner.pid} (started ${c.owner.startedAt || "?"}) and was left alone`
+          : "the lock directory changed or its identity could not be verified, no owner record was readable, and it was left alone")
         : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
       console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
     }

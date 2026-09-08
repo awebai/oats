@@ -176,6 +176,12 @@ test("capture lock: a failed initialization never removes a replacement that app
     assert.equal(err.lockCleanup.owner.nonce, JSON.parse(readFileSync(join(dir, "owner.json"), "utf8")).nonce, "the replacement's record is what was reported");
     assert.equal(existsSync(dir), true, "the replacement survives the failed initialization's cleanup");
     assert.deepEqual(replacement.release(), { released: true }, "and its own holder still releases it");
+    // The directory swapped for another with no readable record: identity changed, no owner observed, left alone.
+    err = undefined;
+    try { acquireCaptureLock(root, { io: { writeFileSync: () => { rmSync(dir, { recursive: true, force: true }); mkdirSync(dir); throw Object.assign(new Error("EIO"), { code: "EIO" }); } } }); } catch (e) { err = e; }
+    assert.equal(err?.code, "EIO"); assert.deepEqual(err.lockCleanup, { path: dir, removed: false, reason: "replaced" }, "replaced without an owner: nothing claims a newer pass");
+    assert.equal(existsSync(dir), true, "the changed directory is left alone");
+    rmSync(dir, { recursive: true, force: true });
     // The directory removed (and not replaced) before the failed write: gone, nothing removed, no recovery needed.
     err = undefined;
     try { acquireCaptureLock(root, { io: { writeFileSync: () => { rmSync(dir, { recursive: true, force: true }); throw Object.assign(new Error("EIO"), { code: "EIO" }); } } }); } catch (e) { err = e; }
