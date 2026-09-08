@@ -211,8 +211,23 @@ test("spawn records the recipe: a configuration's executable, args and reference
   r = oats(["launch-config", "preview", "--home", legacy]);
   v = r.json.result; assert.deepEqual([v.selection.source, v.executable.path, v.model, v.argv], ["frozen-command", "/opt/homebrew/bin/claude", "claude-x", ["--model", "claude-x", "--", '"$(cat TASK.md)"']]);
   assert.ok(v.command.includes("AWEB_DELIVERY='<redacted>'") && !v.command.includes("'session'"));
+  // Under a selection the same narrow conversion session restart uses: the recorded env is attributed and carried, the runtime switches, nothing is written.
+  const legacyBytes = readFileSync(join(legacy, "instance.json"), "utf8");
   r = oats(["launch-config", "preview", "--home", legacy, "--runtime", "codex"]);
-  assert.equal(r.json.error?.code, "E_LAUNCH_LEGACY");
+  assert.equal(r.json.ok, true, r.stdout);
+  v = r.json.result;
+  assert.deepEqual([v.selection.source, v.runtime, v.model, v.modelSource, v.launchConfig, v.ok], ["config", "codex", null, "native default (runtime changed)", null, true]);
+  assert.ok(v.executable.path.endsWith("/codex") && v.argv.includes("--cd") && !v.argv.includes("--dangerously-skip-permissions"), JSON.stringify(v.argv));
+  assert.deepEqual(v.environment.find((e) => e.name === "AWEB_DELIVERY"), { name: "AWEB_DELIVERY", redacted: true }, "the session-delivery environment is carried, redacted");
+  assert.ok(v.command.includes("AWEB_DELIVERY='<redacted>'") && !v.command.includes("'session'"), v.command);
+  assert.equal(readFileSync(join(legacy, "instance.json"), "utf8"), legacyBytes, "preview writes nothing");
+  // A legacy home carrying arguments the kernel cannot attribute: the preview lists the refusal instead of pretending.
+  const channel = join(instancesDir, "dev-channel"); mkdirSync(channel, { recursive: true });
+  write(join(channel, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-channel", home: channel, repo, runtime: "claude", launched: false, command: `OATS_INSTANCE='dev-channel' OATS_INSTANCE_HOME=${shq(channel)} '/opt/homebrew/bin/claude' --dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace -- "$(cat TASK.md)"` }));
+  r = oats(["launch-config", "preview", "--home", channel, "--runtime", "codex"]);
+  assert.equal(r.json.ok, true, r.stdout);
+  assert.equal(r.json.result.ok, false);
+  assert.match(r.json.result.preflight.find((c) => c.check === "capabilities").detail, /dangerously-load-development-channels.*launch hook/);
 });
 
 test("an UNNAMED frozen recipe starts exactly as recorded: its wrapper, args and references, whatever the scope says now; an unknown recipe shape is refused before anything", () => {
