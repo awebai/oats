@@ -345,7 +345,9 @@
                 "claude": "--golden-channel stub"
               },
               "env": {
-                "GOLDEN_BROKER_ENDPOINT": "stub://broker/dev-pi-worktree-kstub-mstub-model"
+                "GOLDEN_BROKER_ENDPOINT": {
+                  "redacted": true
+                }
               },
               "contributions": [
                 {
@@ -372,7 +374,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-model' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-model' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-worktree-kstub-mstub-model' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-model' --model 'anthropic/claude-sonnet-4-5' '@TASK.md' --golden-channel stub",
+          "command": "OATS_INSTANCE='dev-pi-worktree-kstub-mstub-model' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' PI_AGENT_INSTANCE='dev-pi-worktree-kstub-mstub-model' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-model/AGENTS.md' --approve --name 'dev-pi-worktree-kstub-mstub-model' --model 'anthropic/claude-sonnet-4-5' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false

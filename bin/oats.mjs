@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -1304,61 +1304,40 @@ function launchPreview(bail) {
   const { context, selected } = launchConfigContext(bail);
   if (!selected) bail("E_BAD_ARGS", "preview needs --home <abs> (an existing instance) or --soul <name> [--dir <scope>] (a new instance)");
   const selectionGiven = sel.launchConfig !== undefined || sel.runtime !== undefined || sel.model !== undefined || sel.yolo !== undefined;
-  let meta = null, frozen = null, agentLike, home, instance, agentsRoot;
+  let meta = null, agentLike, home, instance;
   if (selected.home) {
     home = selected.home;
     try { meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8")); } catch (e) { bail("E_HOME_UNKNOWN", `${home}: ${e.message}`); }
     instance = meta.instance || basename(home);
-    frozen = meta.launch && typeof meta.launch === "object" ? meta.launch : null;
-    if (!frozen) {
+    if (!(meta.launch && typeof meta.launch === "object")) {
       // A home that predates recipes: its frozen command is described as is;
       // a selection needs the conversion that session restart brings.
       if (selectionGiven) bail("E_LAUNCH_LEGACY", `${instance} predates launch recipes (no launch in instance.json); a selection needs oats session restart's conversion of its command; without one, preview describes the frozen command`);
       let d;
       try { d = describeLaunchCommand(meta.command); } catch (e) { bail(e.code || "E_LAUNCH_COMMAND_UNSUPPORTED", e.message); }
-      const redacted = (() => { const { tokens } = parseLaunchCommand(meta.command); return tokens.map((t) => t.kind === "env" ? `${t.name}='<redacted>'` : t.text).join(" "); })();
-      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redacted, prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; conversion on restart" }], ok: true });
+      jsonOk({ context, selected, selection: { source: "frozen-command", launchConfig: null, runtime: null, model: null, yolo: null }, runtime: meta.runtime, model: meta.model || null, modelSource: meta.model ? "recorded" : "native default", yolo: meta.yolo ?? null, launchConfig: null, launchConfigSource: null, executable: { path: d.executable, declared: null, resolvedFrom: "recorded" }, argv: d.argv, environment: d.environment, command: redactLaunchCommand(meta.command), prompt: { kind: "task-file", file: "TASK.md" }, hooks: null, preflight: [{ check: "recipe", ok: true, detail: "frozen command; conversion on restart" }], ok: true });
       return;
     }
-    agentsRoot = agentsRootOfHome(home);
+    const agentsRoot = agentsRootOfHome(home);
     const agent = (() => { try { return findAgent(agentsRoot, meta.agent); } catch { return undefined; } })();
     agentLike = agent || { runtime: meta.runtime, model: meta.model, yolo: meta.yolo };
   } else {
     let r0;
     try { r0 = resolveOatsConfig(context); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-    const souls = scopeSouls(context, r0).souls;
-    const soul = souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
+    const soul = scopeSouls(context, r0).souls.find((x) => x.name === selected.soul && x.agentsRoot === selected.agentsRoot);
     agentLike = { runtime: soul.runtime, model: soul.model, yolo: soul.yolo, "launch-config": soul.launchConfig };
-    agentsRoot = selected.agentsRoot; instance = `${soul.name}-<purpose>`; home = join(agentsRoot, soul.name, "instances", instance);
+    instance = `${soul.name}-<purpose>`; home = join(selected.agentsRoot, soul.name, "instances", instance);
   }
   let r;
   try { r = resolveOatsConfig(context, selected.soul || meta?.agent); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-  let chosen;
-  try { chosen = resolveLaunchSelection({ launchConfigs: r.launchConfigs || {}, agent: agentLike, frozen, selection: sel }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
-  const { config, runtime, model, modelSource } = chosen;
-  let yolo;
-  try { yolo = resolveYolo(sel.yolo ?? chosen.configuredYolo ?? (frozen ? frozen.yolo : agentLike.yolo ?? r.yolo)); } catch (e) { bail("E_BAD_ARGS", e.message); }
-  const executable = resolveLaunchExecutable({ runtime, declared: config?.executable, declaringDir: config?.source, contextDir: context });
-  const preflight = [];
-  const exeProblem = executable.path ? checkLaunchExecutable(executable.path) : executable.missing;
-  preflight.push({ check: "executable", ok: !exeProblem, detail: exeProblem || `${executable.path} (${executable.resolvedFrom})` });
-  const missing = missingLaunchEnvRefs(config?.env || {}, process.env);
-  preflight.push({ check: "environment", ok: !missing.length, detail: missing.length ? `not set on this host: ${missing.join(", ")}` : `${Object.keys(config?.env || {}).length} value(s), references resolved on the execution host at start` });
-  preflight.push({ check: "model", ok: true, detail: model ? `${model} (${modelSource})` : `native default (${modelSource})` });
-  // Capability contributions: recorded at spawn with provenance; a runtime
-  // switch needs the new runtime's launch args from the same capabilities.
-  let hooks = { launch: {}, env: {}, contributions: [], pending: true };
-  if (frozen) {
-    hooks = { launch: { ...(frozen.hooks?.launch || {}) }, env: { ...(frozen.hooks?.env || {}) }, contributions: frozen.hooks?.contributions || [] };
-    if (runtime !== frozen.runtime) {
-      const unprepared = hooks.contributions.filter((c) => c.launch && c.launch[frozen.runtime] !== undefined && c.launch[runtime] === undefined).map((c) => c.capability);
-      preflight.push({ check: "capabilities", ok: !unprepared.length, detail: unprepared.length ? `${unprepared.join(", ")} contributed ${frozen.runtime} launch arguments and none for ${runtime}; change that capability's delivery setting, or the provider must declare a launch hook (E_LAUNCH_PREPARATION)` : `recorded contributions carry over (env is runtime-neutral)` });
-    } else preflight.push({ check: "capabilities", ok: true, detail: "recorded contributions reused" });
-  } else preflight.push({ check: "capabilities", ok: true, detail: "decided by the capabilities' spawn hooks" });
-  const recipe = { version: LAUNCH_RECIPE_VERSION, runtime, launchConfig: config?.name || null, launchConfigSource: config?.source || null, executable: executable.path || executable.declared || runtime, executableDeclared: executable.declared, executableResolvedFrom: executable.resolvedFrom, args: [...(config?.args || [])], env: { ...(config?.env || {}) }, model: model || null, ...(yolo !== undefined ? { yolo } : {}), hooks, prompt: { kind: "task-file", file: "TASK.md" } };
+  // The same planner a start uses, in preview mode: failed checks are listed, nothing is touched.
+  let plan;
+  try { plan = planLaunch({ home, instance, meta, contextDir: context, agentLike, selection: sel, resolvedCfg: r, preview: true }); } catch (e) { bail(e.code || "E_BAD_ARGS", e.message); }
+  const { recipe } = plan;
   const command = renderLaunchRecipe(recipe, { home, instance, redact: true });
   const d = describeLaunchCommand(command);
-  jsonOk({ context, selected, selection: { source: frozen ? (selectionGiven ? "config" : "frozen") : "config", launchConfig: config?.name || null, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime, model: model || null, modelSource, yolo: yolo ?? null, launchConfig: config?.name || null, launchConfigSource: config?.source || null, executable: { path: executable.path, declared: executable.declared, resolvedFrom: executable.resolvedFrom }, argv: d.argv, environment: d.environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight, ok: preflight.every((c) => c.ok) });
+  const environment = d.environment.map((e) => e.reference && recipe.env[e.name]?.fromEnv ? { name: e.name, fromEnv: recipe.env[e.name].fromEnv } : e);
+  jsonOk({ context, selected, selection: { source: plan.selectionSource, launchConfig: recipe.launchConfig, runtime: sel.runtime ?? null, model: sel.model ?? null, yolo: sel.yolo ?? null }, runtime: plan.runtime, model: recipe.model, modelSource: plan.modelSource, yolo: recipe.yolo ?? null, launchConfig: recipe.launchConfig, launchConfigSource: recipe.launchConfigSource, executable: { path: plan.executable.path, declared: plan.executable.declared ?? null, resolvedFrom: plan.executable.resolvedFrom }, argv: d.argv, environment, command, prompt: recipe.prompt, hooks: redactLaunchRecipe(recipe).hooks, preflight: plan.preflight, ok: plan.ok });
 }
 async function launchConfigCmd() {
   const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
@@ -3708,6 +3687,7 @@ function spawnCmd() {
       spawnOrigin: r.spawnOrigin, attach: r.attach,
       ...(r.sessionTarget ? { sessionTarget: r.sessionTarget } : {}),
       ...(r.yolo !== undefined ? { yolo: r.yolo } : {}),
+      launchConfig: r.launch?.launchConfig ?? null, launch: r.launch || null, // already redacted by the kernel
     });
     return;
   }
@@ -3715,7 +3695,7 @@ function spawnCmd() {
   console.log(`  home:   ${shortPath(r.home)}`);
   if (wakeSchedule) console.log(`  wake:   schedule ${wakeSchedule.id} (${wakeSchedule.cron} ${wakeSchedule.tz}), next ${wakeSchedule.nextRun || "disabled"}`);
   if (wakeScheduleError) console.error(`  wake:   NOT saved — ${wakeScheduleError.message} (the instance is created and launched; add the wake by hand with oats schedule add)`);
-  if (!r.launched) console.log(`  launch: (cd ${shortPath(r.home)} && ${r.command})`);
+  if (!r.launched) console.log(`  launch: oats session start --home ${shellQuote(r.home)}`);
   for (const w of r.warnings || []) console.log(`  WARNING: ${w}`);
   console.log(`  attach: ${r.attach}`);
 }

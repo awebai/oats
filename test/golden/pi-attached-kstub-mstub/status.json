@@ -344,7 +344,9 @@
                 "claude": "--golden-channel stub"
               },
               "env": {
-                "GOLDEN_BROKER_ENDPOINT": "stub://broker/dev-owner"
+                "GOLDEN_BROKER_ENDPOINT": {
+                  "redacted": true
+                }
               },
               "contributions": [
                 {
@@ -371,7 +373,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-owner' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-owner' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-owner/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md' --golden-channel stub",
+          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-owner' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-owner/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false
@@ -711,7 +713,9 @@
                 "claude": "--golden-channel stub"
               },
               "env": {
-                "GOLDEN_BROKER_ENDPOINT": "stub://broker/dev-pi-attached-kstub-mstub"
+                "GOLDEN_BROKER_ENDPOINT": {
+                  "redacted": true
+                }
               },
               "contributions": [
                 {
@@ -738,7 +742,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-pi-attached-kstub-mstub' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub' PI_AGENT_INSTANCE='dev-pi-attached-kstub-mstub' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-attached-kstub-mstub' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-attached-kstub-mstub' '@TASK.md' --golden-channel stub",
+          "command": "OATS_INSTANCE='dev-pi-attached-kstub-mstub' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub' PI_AGENT_INSTANCE='dev-pi-attached-kstub-mstub' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-attached-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-attached-kstub-mstub' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false

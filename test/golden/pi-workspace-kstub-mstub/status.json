@@ -343,7 +343,9 @@
                 "claude": "--golden-channel stub"
               },
               "env": {
-                "GOLDEN_BROKER_ENDPOINT": "stub://broker/dev-pi-workspace-kstub-mstub"
+                "GOLDEN_BROKER_ENDPOINT": {
+                  "redacted": true
+                }
               },
               "contributions": [
                 {
@@ -370,7 +372,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-pi-workspace-kstub-mstub' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub' PI_AGENT_INSTANCE='dev-pi-workspace-kstub-mstub' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub' GOLDEN_BROKER_ENDPOINT='stub://broker/dev-pi-workspace-kstub-mstub' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-workspace-kstub-mstub' '@TASK.md' --golden-channel stub",
+          "command": "OATS_INSTANCE='dev-pi-workspace-kstub-mstub' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub' PI_AGENT_INSTANCE='dev-pi-workspace-kstub-mstub' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub' GOLDEN_BROKER_ENDPOINT='<redacted>' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-workspace-kstub-mstub/AGENTS.md' --approve --name 'dev-pi-workspace-kstub-mstub' '@TASK.md' --golden-channel stub",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false
