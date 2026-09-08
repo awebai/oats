@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand,
+  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
@@ -3820,10 +3820,20 @@ async function sessionCmd() {
       return;
     }
     if (args[1] === "inspect") result = inspectInstanceSession(home);
-    else if (args[1] === "start") {
+    else if (args[1] === "start" || args[1] === "restart") {
+      const bad = (msg) => { throw Object.assign(new Error(msg), { code: "E_BAD_ARGS" }); };
       const model = flag("model");
-      if (model === true) throw Object.assign(new Error("--model needs a model id; omit it to keep the recorded model"), { code: "E_BAD_ARGS" });
-      result = startInstanceSession(home, { model: model || undefined });
+      if (model === true) bad("--model needs a model id; omit it to keep the recorded model");
+      const launchConfig = flag("launch-config");
+      if (launchConfig === true) bad("--launch-config needs a configuration name, or none");
+      const runtime = flag("runtime");
+      if (runtime === true || (runtime !== undefined && !LAUNCH_RUNTIMES.includes(runtime))) bad(`--runtime must be one of ${LAUNCH_RUNTIMES.join(", ")}`);
+      const opts = { model: model || undefined, launchConfig, runtime, yolo: yoloFlag(), env: process.env };
+      if (args[1] === "restart") {
+        const grace = flag("stop-grace");
+        if (grace !== undefined) { if (grace === true || !/^\d+$/.test(String(grace)) || Number(grace) < 1 || Number(grace) > 300) bad("--stop-grace needs a number of seconds (1..300) to wait for the harness after SIGTERM"); opts.stopGraceMs = Number(grace) * 1000; }
+        result = restartInstanceSession(home, opts);
+      } else result = startInstanceSession(home, opts);
     } else if (args[1] === "input") {
       const file = flag("text-file");
       if (file === true) throw Object.assign(new Error("--text-file needs a path"), { code: "E_BAD_ARGS" });
@@ -3841,7 +3851,7 @@ async function sessionCmd() {
       const file = flag("file");
       if (!file || file === true) throw Object.assign(new Error("session upload needs --file <local path>"), { code: "E_BAD_ARGS" });
       result = uploadAttachment({ file, home: home === true ? undefined : home });
-    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|receive|upload --home /absolute/home [--text-file path] [--model id] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
+    } else throw Object.assign(new Error("usage: oats session inspect|input|attach|start|restart|receive|upload --home /absolute/home [--text-file path] [--model id] [--launch-config name|none] [--runtime pi|claude|codex] [--yolo|--no-yolo] [--stop-grace seconds] [--name file] [--file path] [--json]"), { code: "E_BAD_ARGS" });
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (e) { cmdFail(e.code || "E_SESSION_FAILED", e.message); }
 }
@@ -4338,6 +4348,7 @@ function serverRouteCmd() {
     if (args[1] === "start") {
       const model = flag("model");
       if (model === true) bail("E_BAD_ARGS", "--model needs a model id; omit it to keep the recorded model");
+      if (flag("launch-config") !== undefined || flag("runtime") !== undefined || args.includes("--yolo") || args.includes("--no-yolo")) bail("E_REMOTE_UNSUPPORTED", "launch choices (--launch-config, --runtime, --yolo) are not routed to a server by this kernel; nothing was sent");
       let out;
       try { out = startRemote(id, { ...addr, model: model || undefined }); } catch (e) { bail(e.code || "E_SSH", e.message); }
       if (out.stderr?.trim()) process.stderr.write(out.stderr.endsWith("\n") ? out.stderr : out.stderr + "\n");
@@ -4359,6 +4370,7 @@ function serverRouteCmd() {
       console.log(`Uploaded ${r.name} (${r.bytes} bytes) to ${r.instance || r.home} on ${id}: ${r.path}`);
       return;
     }
+    if (args[1] === "restart") bail("E_REMOTE_UNSUPPORTED", "session restart is not routed to a server by this kernel; nothing was sent");
     if (args[1] !== "attach") bail("E_USAGE", "--server routes `session inspect`, `session start`, `session upload` and `session attach`; input runs on the execution host (the wake broker calls it there)");
     let route;
     try { route = attachArgv(id, addr, { skipVersionCheck: args.includes("--print") }); }
@@ -4606,6 +4618,12 @@ Usage:
   oats session receive --home <abs> --name   store attachment bytes read from stdin (the routed
       <file> [--json]                       upload's remote half)
   oats session start --home <absolute-home>  start a STOPPED instance again in its existing home
+      [--model m] [--launch-config n|none]  (recorded recipe as is; a selection re-resolves it
+      [--runtime r] [--yolo|--no-yolo]      against the scope; a named configuration is a unit)
+  oats session restart --home <abs-home>     stop the running harness (SIGTERM, bounded wait,
+      [same flags] [--stop-grace <s>]        never escalated) and start it again in place under
+                                            the same lock; a stop that is not observed is
+                                            reported and nothing is launched
       [--model <m>] [--json]                 (same identity, worktree, notes and launch env; no
                                             spawn hooks); --model replaces the recorded model
                                             for this and later starts; a live harness is refused
