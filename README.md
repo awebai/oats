@@ -307,6 +307,7 @@ forms. Do not hand-edit the lock or installed stores.
 - [Migration from OAS](docs/migration-from-oas.md)
 - [Release notes](docs/release-notes/)
 - [Architecture proposal, 2026-09-03](docs/2026-09-03-architecture-proposal.md): components, contracts, and what may be replaced (proposal, not shipped behavior)
+- [Expert-assisted deployment proposal, 2026-09-08](docs/design/2026-09-08-expert-assisted-deployment-proposal.md): setup/repair skills, packaged preparation, live maintenance, and implementation handoff (proposal, not shipped behavior)
 - [iPhone agent management proposal](docs/design/2026-09-07-mobile-agent-management-proposal.md): private server access through Tailscale, mobile UX, and delivery phases (proposal, not shipped behavior)
 
 ## Contributing
