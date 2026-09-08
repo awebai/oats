@@ -174,8 +174,11 @@ function withCaptureLock(fn) {
   } catch (err) {
     if (err.lockCleanup) {
       const c = err.lockCleanup;
-      console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${
-        c.removed ? "the initializing lock was removed" : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`}`);
+      const outcome = c.removed ? "the initializing lock was removed"
+        : c.reason === "gone" ? "the initializing lock was already gone (removed by another party)"
+        : c.reason === "replaced" ? `the lock now belongs to ${c.owner ? `pid ${c.owner.pid} (started ${c.owner.startedAt || "?"})` : "a newer pass"} and was left alone`
+        : `the initializing lock could NOT be removed${c.error ? ` (${c.error})` : ""}; ${c.recovery}`;
+      console.error(`capture: could not write the owner record of ${c.path}: ${err.message}; ${outcome}`);
     }
     throw err;
   }
@@ -191,7 +194,13 @@ function withCaptureLock(fn) {
   } finally {
     const r = lock.release();
     if (!r.released) {
-      console.error(`capture: did not release ${lock.path} (${r.reason}${r.error ? `: ${r.error}` : ""})${r.recovery ? `; ${r.recovery}` : "; it now belongs to a newer pass"}`);
+      // Say what was observed: gone, unreadable (unknown), another owner, or
+      // our own lock that would not go away; never a guess about liveness.
+      const detail = r.reason === "gone" ? "it was already removed by another party (an operator recovery?); nothing to release"
+        : r.reason === "not-owner" ? `it now belongs to pid ${r.owner.pid} (started ${r.owner.startedAt || "?"}); left alone`
+        : r.reason === "unknown-owner" ? `its owner record is missing or unreadable, so it may be an operator removal in progress or a newer pass initializing; left alone; ${r.recovery}`
+        : `${r.error ? `${r.error}; ` : ""}${r.recovery}`;
+      console.error(`capture: did not release ${lock.path} (${r.reason}): ${detail}`);
       process.exitCode = 1;
     }
   }
