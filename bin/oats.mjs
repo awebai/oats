@@ -1160,23 +1160,54 @@ function serializeCapabilities(caps) {
   return lines.join("\n") + "\n";
 }
 
-/** Replace (or append) ONE top-level `key:` block of config text with
- *  `serialized` (its own complete block, or "" to drop the block); every other
- *  byte of the file stays where it was. */
-function replaceTopLevelBlock(text, key, serialized) {
+/** Replace (or append) the top-level capabilities: block in config text. */
+function replaceCapabilitiesBlock(text, caps) {
+  const serialized = serializeCapabilities(caps);
   const lines = text.replace(/\n*$/, "\n").split("\n");
-  const start = lines.findIndex((l) => new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}:\\s*(#.*)?$`).test(l));
-  if (start < 0) return serialized ? text.replace(/\n*$/, "\n\n") + serialized : text;
+  const start = lines.findIndex((l) => /^capabilities:\s*(#.*)?$/.test(l));
+  if (start < 0) return text.replace(/\n*$/, "\n\n") + serialized;
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
     if (/^[^\s#]/.test(lines[i])) { end = i; break; }
     if (/^#/.test(lines[i]) && i + 1 < lines.length && /^[^\s]/.test(lines[i + 1] || "")) { end = i; break; }
   }
-  const block = serialized ? [...serialized.replace(/\n$/, "").split("\n"), ""] : [];
-  return [...lines.slice(0, start), ...block, ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
+  return [...lines.slice(0, start), ...serialized.replace(/\n$/, "").split("\n"), "", ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
 }
-/** Replace (or append) the top-level capabilities: block in config text. */
-function replaceCapabilitiesBlock(text, caps) { return replaceTopLevelBlock(text, "capabilities", serializeCapabilities(caps)); }
+/** Replace (or append, or drop with "") the top-level launch-configs block:
+ *  the span from its key line (bare, quoted, or the inline `launch-configs: {...}`
+ *  form) to the next top-level line is replaced; every byte before and after
+ *  that span stays exactly as it was. Two declarations of the key are refused
+ *  rather than guessed at. */
+function replaceLaunchConfigsBlock(text, serialized) {
+  const keyLine = /^(["']?)launch-configs\1:(\s*(?:#.*)?|\s+\S.*)?$/;
+  const lines = text.split("\n");
+  const starts = lines.map((l, i) => keyLine.test(l) ? i : -1).filter((i) => i >= 0);
+  if (starts.length > 1) throw Object.assign(new Error(`oats-config.yaml declares launch-configs ${starts.length} times (lines ${starts.map((i) => i + 1).join(", ")}); keep one`), { code: "E_CONFIG_BROKEN" });
+  const block = serialized ? serialized.replace(/\n$/, "").split("\n") : [];
+  if (!starts.length) {
+    if (!serialized) return text;
+    const sep = text === "" ? "" : text.endsWith("\n") ? "\n" : "\n\n"; // always its own blank separator, which removal takes back
+    return text + sep + serialized;
+  }
+  const start = starts[0];
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^[^\s#]/.test(lines[i]) || /^["']/.test(lines[i])) { end = i; break; }
+  }
+  // A comment line directly ahead of the next top-level key belongs to that
+  // key, as the capabilities helper reads it; a trailing blank line is kept.
+  while (end > start + 1 && /^#/.test(lines[end - 1])) end--;
+  const tail = lines.slice(end);
+  if (!tail.length) tail.push(""); // the block ended the file: the result still ends with a newline
+  let prefixEnd = start;
+  // Dropping the block drops the one blank line that separated it (before it
+  // when it was appended, else after it); replacing it keeps one blank line
+  // between the block and what follows.
+  if (!block.length) { if (start > 0 && lines[start - 1] === "") prefixEnd = start - 1; else if (tail[0] === "" && tail.length > 1) tail.shift(); }
+  const replaced = [...lines.slice(0, prefixEnd), ...block];
+  if (block.length && tail[0] !== "") replaced.push("");
+  return [...replaced, ...tail].join("\n");
+}
 
 // ---------- launch configurations ----------
 const yamlQuoted = (v) => JSON.stringify(String(v));
@@ -1218,7 +1249,9 @@ function readLaunchConfigsModel(file) {
   const cfg = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8")));
   const map = cfg["launch-configs"] || {};
   for (const [name, entry] of Object.entries(map)) validateLaunchConfig(name, entry, file);
-  return Object.fromEntries(Object.entries(map).map(([n, e]) => [n, normalizeLaunchConfig(e)]));
+  const out = Object.create(null); // a name may be "constructor": membership is own only
+  for (const [n, e] of Object.entries(map)) out[n] = normalizeLaunchConfig(e);
+  return out;
 }
 /** What a GUI or an operator sees of one configuration. Environment values
  *  never leave the file: a literal is answered as {redacted: true} (literals
@@ -1287,9 +1320,10 @@ function launchConfigCmd() {
   const text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
   let model;
   try { model = readLaunchConfigsModel(file); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
-  const before = model[name] ? publicLaunchConfig(model[name]) : null;
+  const declaredHere = Object.hasOwn(model, name);
+  const before = declaredHere ? publicLaunchConfig(model[name]) : null;
   if (sub === "remove") {
-    if (!model[name]) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared at ${level} level (${shortPath(file)}); an inherited configuration is removed at the scope that declares it`);
+    if (!declaredHere) bail("E_LAUNCH_CONFIG_UNKNOWN", `${name} is not declared at ${level} level (${shortPath(file)}); an inherited configuration is removed at the scope that declares it`);
     delete model[name];
   } else {
     const f = flag("file");
@@ -1303,24 +1337,26 @@ function launchConfigCmd() {
       // replacement entry, not inheritance; whole-entry shadowing stays.
       if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the effective definition; omit env from --file");
       let current;
-      try { current = resolveOatsConfig(dir).launchConfigs?.[name]; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+      try { const all = resolveOatsConfig(dir).launchConfigs || {}; current = Object.hasOwn(all, name) ? all[name] : undefined; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
       if (!current) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is effective at ${dir}, so there is no environment to keep; declare it with env`);
       if (entry && typeof entry === "object" && Object.keys(current.env || {}).length) entry.env = { ...current.env };
     }
     try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
     model[name] = normalizeLaunchConfig(entry);
   }
-  const next = replaceTopLevelBlock(text, "launch-configs", serializeLaunchConfigs(model));
+  let next;
+  try { next = replaceLaunchConfigsBlock(text, serializeLaunchConfigs(model)); } catch (e) { bail(e.code || "E_CONFIG_BROKEN", `${e.message}; nothing was written`); }
   // What is written must read back as exactly what was asked, by the kernel's
   // own reader, before a byte of the file changes.
   let readBack;
   try { readBack = parseYamlNested(next)["launch-configs"] || {}; } catch (e) { bail("E_LAUNCH_CONFIG_INVALID", `the rewritten block does not parse: ${e.message}; nothing was written`); }
-  const same = JSON.stringify(Object.fromEntries(Object.entries(readBack).map(([n, e]) => [n, normalizeLaunchConfig(e)]))) === JSON.stringify(Object.fromEntries(Object.keys(model).sort().map((n) => [n, model[n]])));
+  const canonical = (m) => JSON.stringify(Object.keys(m).sort().map((n) => [n, normalizeLaunchConfig(m[n])]));
+  const same = canonical(readBack) === canonical(model);
   if (!same) bail("E_LAUNCH_CONFIG_INVALID", `${name} would not read back as written; nothing was written`);
   writeFileAtomic(file, next);
   let eff = null;
   try { eff = effective().find((c) => c.name === name) || null; } catch (e) { eff = { error: e.message }; }
-  const receipt = { name, action: sub, level, file, before, after: model[name] ? publicLaunchConfig(model[name]) : null, effective: eff };
+  const receipt = { name, action: sub, level, file, before, after: Object.hasOwn(model, name) ? publicLaunchConfig(model[name]) : null, effective: eff };
   if (JSON_MODE) { jsonOk(receipt); return; }
   console.log(sub === "set" ? `Declared launch configuration ${name} at ${level} level (${shortPath(file)})` : `Removed launch configuration ${name} from ${level} level (${shortPath(file)})${eff ? `; ${eff.source} now provides it` : ""}`);
 }

@@ -257,7 +257,9 @@ launch-configs:
     executable: ./bin/claude-personal      # relative: against THIS scope's directory
     args:
       - "--settings"
-      - "./claude/personal-settings.json"  # native config files are ordinary arguments
+      - "/Users/me/.claude-personal/settings.json"  # a native config file is an ordinary
+                                                     # argument the harness reads from the
+                                                     # INSTANCE HOME it starts in: absolute
     env:
       ANTHROPIC_API_KEY:
         fromEnv: PERSONAL_ANTHROPIC_KEY    # resolved on the execution host at start
@@ -275,7 +277,9 @@ launch-configs:
   path with a slash is resolved against the declaring scope when relative.
   It must exist and be executable; it is never run just to probe it.
 - `args` and literal `env` values are passed byte-exact: spaces, quotes and
-  shell metacharacters are literal, never interpreted.
+  shell metacharacters are literal, never interpreted. A path among them is
+  read by the harness from the instance home it starts in, not from the
+  declaring scope: write native configuration paths absolute.
 - `env` values are either literals (non-secret by contract, but no answer ever
   shows them: `oats launch-config list` and `preview` redact them) or
   `{fromEnv: NAME}` references, which is the way to hand a secret to a

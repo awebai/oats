@@ -129,3 +129,58 @@ test("launch-config set/list/remove rewrite only the launch-configs block, round
   r = oats(["launch-config", "list", "--dir", join(base, "broken")]);
   assert.equal(r.json.ok, false); assert.match(r.json.error.message, /needs runtime/);
 });
+
+test("inline collections keep commas, empty strings and # inside elements; a comment after the bracket is dropped", () => {
+  assert.deepEqual(parseYamlNested('a: ["--arg", "a,b", "", "x # y"] # c\nb: {k: "v, w", "q k": 2}\nc: []\nd: [x, y]\ne: [""]\nf: {}\n'), { a: ["--arg", "a,b", "", "x # y"], b: { k: "v, w", "q k": 2 }, c: [], d: ["x", "y"], e: [""], f: {} });
+  assert.deepEqual(parseYamlNested("launch-configs:\n  x:\n    runtime: pi\n    args: [\"a # b\", \"c\"]\n")["launch-configs"].x, { runtime: "pi", args: ["a # b", "c"] });
+});
+
+test("configuration names that are Object.prototype properties work everywhere: merge, set, list, keep-env, remove", () => {
+  const scope = join(base, "proto"); mkdirSync(join(scope, "agents"), { recursive: true });
+  write(join(scope, "oats-config.yaml"), "name: p\n");
+  for (const name of ["constructor", "toString", "__proto__".replace("__proto__", "hasOwnProperty")]) {
+    write(join(base, `${name}.json`), JSON.stringify({ runtime: "pi", env: { A: "1" } }));
+    let r = oats(["launch-config", "set", name, "--file", join(base, `${name}.json`), "--dir", scope]);
+    assert.equal(r.json.ok, true, `${name}: ${r.stdout}`); assert.equal(r.json.result.before, null);
+    r = oats(["launch-config", "list", "--dir", scope]);
+    assert.ok(r.json.result.configurations.some((c) => c.name === name && c.source === scope), `${name} listed`);
+    write(join(base, `${name}2.json`), JSON.stringify({ runtime: "codex" }));
+    r = oats(["launch-config", "set", name, "--file", join(base, `${name}2.json`), "--keep-env", "--dir", scope]);
+    assert.equal(r.json.ok, true, `${name} keep-env: ${r.stdout}`); assert.deepEqual(r.json.result.after.env, { A: { redacted: true } });
+    r = oats(["launch-config", "remove", name, "--dir", scope]);
+    assert.equal(r.json.ok, true, `${name} remove: ${r.stdout}`);
+  }
+  assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), "name: p\n");
+  const merged = launchConfigsOf([{ _level: "/t", "launch-configs": { constructor: { runtime: "pi" } } }, { _level: "/", "launch-configs": { constructor: { runtime: "claude" } } }]);
+  assert.deepEqual([merged.constructor.source, merged.constructor.shadows], ["/t", ["/"]]);
+  assert.equal(Object.getPrototypeOf(merged), null);
+});
+
+test("the launch-configs block replacement leaves every other byte alone and handles inline and quoted key forms", () => {
+  const scope = join(base, "bytes"); mkdirSync(join(scope, "agents"), { recursive: true });
+  const original = "name: b\n\n\n# three blank-ish lines above stay\ncapabilities:\n  layers:\n    knowledge: none\n\n\n\nyolo: true\n# trailing comment\n\n\n";
+  write(join(scope, "oats-config.yaml"), original);
+  write(join(base, "b.json"), JSON.stringify({ runtime: "pi" }));
+  let r = oats(["launch-config", "set", "b", "--file", join(base, "b.json"), "--dir", scope]);
+  assert.equal(r.json.ok, true, r.stdout);
+  let text = readFileSync(join(scope, "oats-config.yaml"), "utf8");
+  assert.ok(text.startsWith(original), "the whole original file, blank lines and trailing bytes included, is a prefix of the result");
+  assert.equal(text.slice(original.length), "\nlaunch-configs:\n  b:\n    runtime: pi\n", "appended after its own blank separator");
+  r = oats(["launch-config", "remove", "b", "--dir", scope]);
+  assert.equal(readFileSync(join(scope, "oats-config.yaml"), "utf8"), original, "removing the only entry restores the original bytes");
+  // An inline declaration and a quoted key are the same block, replaced in place, never duplicated.
+  for (const form of ["launch-configs: {}\n", "launch-configs: {x: {runtime: codex}}\n", "\"launch-configs\":\n  x:\n    runtime: codex\n"]) {
+    const doc = `name: b\n${form}yolo: false\n`;
+    write(join(scope, "oats-config.yaml"), doc);
+    r = oats(["launch-config", "set", "b", "--file", join(base, "b.json"), "--dir", scope]);
+    assert.equal(r.json.ok, true, `${JSON.stringify(form)}: ${r.stdout}`);
+    text = readFileSync(join(scope, "oats-config.yaml"), "utf8");
+    assert.equal((text.match(/launch-configs/g) || []).length, 1, `one declaration: ${text}`);
+    assert.ok(text.startsWith("name: b\n") && text.endsWith("yolo: false\n"), text);
+    const back = parseYamlNested(text)["launch-configs"];
+    assert.deepEqual(back.b, { runtime: "pi" }); if (form.includes("x")) assert.deepEqual(back.x, { runtime: "codex" });
+  }
+  write(join(scope, "oats-config.yaml"), "name: b\nlaunch-configs:\n  a:\n    runtime: pi\nyolo: true\nlaunch-configs:\n  c:\n    runtime: pi\n");
+  r = oats(["launch-config", "set", "b", "--file", join(base, "b.json"), "--dir", scope]);
+  assert.equal(r.json.ok, false); assert.match(r.json.error.message, /declares launch-configs 2 times/);
+});
