@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { describeLaunchCommand, launchEnvRefs, parseLaunchCommand, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, validateLaunchConfig } from "../lib/core.mjs";
+import { describeLaunchCommand, launchEnvRefs, parseLaunchCommand, planLaunch, redactLaunchCommand, renderLaunchCommand, renderLaunchRecipe, resolveLaunchSelection, validateLaunchConfig } from "../lib/core.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-launch-recipe-")));
@@ -213,4 +213,21 @@ test("spawn records the recipe: a configuration's executable, args and reference
   assert.ok(v.command.includes("AWEB_DELIVERY='<redacted>'") && !v.command.includes("'session'"));
   r = oats(["launch-config", "preview", "--home", legacy, "--runtime", "codex"]);
   assert.equal(r.json.error?.code, "E_LAUNCH_LEGACY");
+});
+
+test("an UNNAMED frozen recipe starts exactly as recorded: its wrapper, args and references, whatever the scope says now; an unknown recipe shape is refused before anything", () => {
+  const home = join(base, "unnamed-home"); mkdirSync(home, { recursive: true });
+  const meta = { instance: "u", agent: "dev", home, runtime: "claude", launch: { version: 1, runtime: "claude", launchConfig: null, launchConfigSource: null, executable: "/usr/bin/true", executableDeclared: null, executableResolvedFrom: "oats-claude-config", args: ["--saved"], env: { KEY: { fromEnv: "MISSING_REVIEW_ENV" } }, hooks: { launch: {}, env: {}, contributions: [] }, model: null, yolo: false, prompt: { kind: "task-file", file: "TASK.md" } } };
+  const plan = planLaunch({ home, meta, contextDir: base, agentLike: { runtime: "claude" }, selection: {}, launchConfigs: Object.create(null), env: {}, preview: true });
+  assert.equal(plan.selectionSource, "frozen");
+  assert.deepEqual([plan.recipe.executable, plan.recipe.args, plan.recipe.env, plan.recipe.yolo, plan.executable.resolvedFrom], ["/usr/bin/true", ["--saved"], { KEY: { fromEnv: "MISSING_REVIEW_ENV" } }, false, "oats-claude-config"], "the recorded wrapper, args and references, not the scope's current default");
+  assert.equal(plan.preflight.find((c) => c.check === "environment").ok, false, "the recorded reference is checked");
+  assert.ok(plan.command.includes("'/usr/bin/true' '--saved'") && plan.command.includes(`KEY="$OATS_LAUNCH_REF_KEY"`), plan.command);
+  const yoloOnly = planLaunch({ home, meta, contextDir: base, agentLike: { runtime: "claude" }, selection: { yolo: true }, launchConfigs: Object.create(null), env: { MISSING_REVIEW_ENV: "v" }, preview: true });
+  assert.deepEqual([yoloOnly.selectionSource, yoloOnly.recipe.executable, yoloOnly.recipe.yolo, yoloOnly.ok], ["frozen", "/usr/bin/true", true, true], "a yolo-only override keeps everything else recorded");
+  const switched = planLaunch({ home, meta, contextDir: base, agentLike: { runtime: "claude" }, selection: { runtime: "codex" }, launchConfigs: Object.create(null), env: {}, preview: true });
+  assert.deepEqual([switched.selectionSource, switched.recipe.executable.endsWith("/codex"), switched.recipe.args, switched.recipe.env], ["config", true, [], {}], "--runtime alone deliberately leaves the recorded wrapper behind (the runtime's own binary, resolved in this process's PATH)");
+  for (const broken of [{ ...meta.launch, version: 2 }, { ...meta.launch, runtime: "bash" }, { ...meta.launch, args: "x" }, { ...meta.launch, hooks: undefined }]) {
+    assert.throws(() => planLaunch({ home, meta: { ...meta, launch: broken }, contextDir: base, agentLike: { runtime: "claude" }, selection: {}, launchConfigs: Object.create(null), env: {}, preview: true }), (e) => e.code === "E_LAUNCH_RECIPE_UNSUPPORTED", JSON.stringify(broken).slice(0, 80));
+  }
 });
