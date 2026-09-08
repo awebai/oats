@@ -117,3 +117,19 @@ test('unreadable instructions are explained and never offered as an empty editab
     assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Edit instructions'), false);
   } finally { view.close(); }
 });
+
+test('soul launchConfig inspection populates its editor and is changed only explicitly', async () => {
+  const value = inspection(); value.souls[0].launchConfig = 'personal';
+  value.souls[0].editable.fields.push('launch-config');
+  const view = ui(() => value);
+  try {
+    await view.controller.show(selection); assert.match(view.el.textContent, /personal/);
+    view.click('Edit defaults');
+    assert.equal(view.el.querySelector('[name="launch-config"]').value, 'personal');
+    view.el.querySelector('[name="model"]').value = 'sonnet'; view.click('Save defaults'); await tick();
+    assert.deepEqual(view.calls.find(c => c.action === 'set').fields, { model: 'sonnet' });
+    view.click('Edit defaults'); view.el.querySelector('[name="launch-config"]').value = '';
+    view.click('Save defaults'); await tick();
+    assert.deepEqual(view.calls.filter(c => c.action === 'set').at(-1).fields, { 'launch-config': '' });
+  } finally { view.close(); }
+});
