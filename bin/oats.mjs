@@ -1297,12 +1297,15 @@ function launchConfigCmd() {
     let entry;
     try { entry = JSON.parse(readFileSync(f, "utf8")); } catch (e) { bail("E_BAD_ARGS", `--file ${f}: ${e.message}`); }
     if (args.includes("--keep-env")) {
-      // An editor that saw only redacted values keeps THIS file's own entry's
-      // environment; an inherited entry is not copied (the editor declares an
-      // override with its own references instead). Nothing is guessed.
-      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment already declared here; omit env from --file");
-      if (!model[name]) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: ${name} is not declared at ${level} level (${shortPath(file)}), so there is no environment to keep; declare it with env, or address the scope that declares it`);
-      if (entry && typeof entry === "object" && model[name].env) entry.env = { ...model[name].env };
+      // An editor that saw only redacted values keeps the environment of the
+      // definition EFFECTIVE at this scope for that name (this scope's own, or
+      // the inherited one it is overriding): a one-time copy into the complete
+      // replacement entry, not inheritance; whole-entry shadowing stays.
+      if (entry && typeof entry === "object" && entry.env !== undefined) bail("E_BAD_ARGS", "--keep-env keeps the environment of the effective definition; omit env from --file");
+      let current;
+      try { current = resolveOatsConfig(dir).launchConfigs?.[name]; } catch (e) { bail(e.code || "E_CONFIG_BROKEN", e.message); }
+      if (!current) bail("E_LAUNCH_CONFIG_UNKNOWN", `--keep-env: no launch configuration ${name} is effective at ${dir}, so there is no environment to keep; declare it with env`);
+      if (entry && typeof entry === "object" && Object.keys(current.env || {}).length) entry.env = { ...current.env };
     }
     try { validateLaunchConfig(name, entry, `--file ${f}`); } catch (e) { bail(e.code || "E_LAUNCH_CONFIG_INVALID", e.message); }
     model[name] = normalizeLaunchConfig(entry);
@@ -4541,7 +4544,7 @@ Usage:
                                             declaring scope provides the whole entry
   oats launch-config set <name> --file <j>   declare or replace one at this scope from a JSON
       [--keep-env] [--dir <scope>] [--json] file (only the launch-configs block is rewritten;
-                                            --keep-env keeps this scope's own env for the name)
+                                            --keep-env copies the effective definition's env)
   oats launch-config remove <name>           remove this scope's declaration; an ancestor's,
       [--dir <scope>] [--json]              if any, becomes effective again
   oats doctor [dir] [--soul <name>] [--json] resolved targets, trust, requirements;
