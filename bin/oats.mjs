@@ -1193,13 +1193,14 @@ function replaceLaunchConfigsBlock(text, serialized) {
     return text + sep + serialized;
   }
   const start = starts[0];
+  // The block is its key line plus the indented (or blank) lines under it:
+  // a top-level line of any kind, a top-level comment included, ends it and
+  // stays where it is; trailing blank lines are left to the tail.
   let end = lines.length;
   for (let i = start + 1; i < lines.length; i++) {
-    if (/^[^\s#]/.test(lines[i]) || /^["']/.test(lines[i])) { end = i; break; }
+    if (lines[i] !== "" && !/^\s/.test(lines[i])) { end = i; break; }
   }
-  // A comment line directly ahead of the next top-level key belongs to that
-  // key, as the capabilities helper reads it; a trailing blank line is kept.
-  while (end > start + 1 && /^#/.test(lines[end - 1])) end--;
+  while (end > start + 1 && lines[end - 1] === "") end--;
   const tail = lines.slice(end);
   if (!tail.length) tail.push(""); // the block ended the file: the result still ends with a newline
   let prefixEnd = start;
