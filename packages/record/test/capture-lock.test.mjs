@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { acquireCaptureLock, captureLockPath, shellQuote } from "../lib/capture-lock.mjs";
@@ -153,6 +153,20 @@ test("capture lock: release checks the acquisition nonce, so an earlier release 
     assert.equal(unknown.released, false); assert.equal(unknown.reason, "unknown-owner"); assert.match(unknown.recovery, /not written its owner record.*rm -r -- /);
     rmSync(captureLockPath(root), { recursive: true, force: true });
     assert.deepEqual(second.release(), { released: false, reason: "gone" }, "a lock already gone is reported as gone, not released by this holder");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("capture lock: the initialization directory descriptor closes on success and write failure", () => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-fd-"));
+  let fd;
+  const io = { openSync: (...args) => (fd = openSync(...args)) };
+  try {
+    const lock = acquireCaptureLock(root, { io });
+    assert.throws(() => fstatSync(fd), { code: "EBADF" });
+    assert.deepEqual(lock.release(), { released: true });
+    assert.throws(() => acquireCaptureLock(root, { io: { ...io, writeFileSync: () => { throw Object.assign(new Error("EIO"), { code: "EIO" }); } } }), { code: "EIO" });
+    assert.throws(() => fstatSync(fd), { code: "EBADF" });
+    assert.equal(existsSync(captureLockPath(root)), false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
