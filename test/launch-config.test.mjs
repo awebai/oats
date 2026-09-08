@@ -100,6 +100,14 @@ test("launch-config set/list/remove rewrite only the launch-configs block, round
   assert.equal(r.json.ok, true, r.stdout);
   r = oats(["launch-config", "list", "--dir", member]);
   assert.deepEqual(r.json.result.configurations.map((c) => [c.name, c.runtime, c.args, c.source, c.shadows]), [["fast", "pi", ["--member"], member, [scope]]]);
+  // Overriding an INHERITED entry with --keep-env: the effective (scope's) env is copied once into the member's complete entry.
+  const member2 = join(scope, "member2"); mkdirSync(join(member2, "agents"), { recursive: true });
+  write(join(member2, "oats-config.yaml"), "name: member2\n");
+  write(join(base, "override.json"), JSON.stringify({ runtime: "codex", args: ["--o"] }));
+  r = oats(["launch-config", "set", "fast", "--file", join(base, "override.json"), "--keep-env", "--dir", member2]);
+  assert.equal(r.json.ok, true, r.stdout); assert.equal(r.json.result.before, null, "nothing was declared locally before");
+  assert.deepEqual(parseYamlNested(readFileSync(join(member2, "oats-config.yaml"), "utf8"))["launch-configs"].fast, { runtime: "codex", args: ["--o"], env: { FOO: "lit # val", KEY: { fromEnv: "SRC" } } });
+  assert.deepEqual(r.json.result.effective.env, { FOO: { redacted: true }, KEY: { fromEnv: "SRC" } });
   r = oats(["launch-config", "list", "--soul", "dev", "--dir", member]);
   assert.equal(r.json.result.context, member); assert.deepEqual(r.json.result.selected, { soul: "dev", agentsRoot: join(member, "agents") });
   const home = join(member, "agents", "dev", "instances", "dev-one");

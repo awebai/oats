@@ -294,11 +294,13 @@ oats launch-config remove personal --dir <scope>
 ```
 
 `set` and `remove` rewrite only the `launch-configs` block of that scope's
-`oats-config.yaml`; every other byte stays. `--keep-env` keeps the
-environment the same scope already declares for that name (an editor that
-saw only redacted values omits `env` from its definition); it never copies an
-inherited entry's environment. `list --home` reads the home's recorded
-context; `list --soul` reads the soul's own member scope.
+`oats-config.yaml`; every other byte stays. `--keep-env` copies the
+environment of the definition effective at that scope for the name (its own,
+or the inherited one being overridden) into the complete new entry, once: an
+editor that saw only redacted values omits `env` from its definition. It is a
+copy at save time, not inheritance; the new entry shadows whole. `list --home`
+reads the home's recorded context; `list --soul` reads the soul's own member
+scope.
 
 ## Acquisition and lockfile
 
