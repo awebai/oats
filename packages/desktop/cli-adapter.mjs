@@ -52,6 +52,7 @@ const SPAWN_ARG_RULES = {
   work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace)$/ },
   backend: { flag: "--backend", re: /^(tmux|herdr)$/ },
   runtime: { flag: "--runtime", re: /^(pi|claude|codex)$/ },
+  launchConfig: { flag: "--launch-config", re: /^[a-z0-9][a-z0-9._-]*$/i },
   server:  { flag: "--server",  re: /^[a-z0-9][a-z0-9-]{0,63}$/ },          // registered server id (remote route)
   model:   { flag: "--model",   re: /^[^-][^\0]*$/ },                       // model pattern — not option-shaped
   // Spawn-time agent relations (feature/agent-relations): the kernel links
@@ -223,17 +224,68 @@ export function cliRetire(bin, { instance, home, workspaceDir, server }, io = {}
   });
 }
 
-/** Launch an existing home through the kernel, with a model override only. */
-export function cliStart(bin, { home, workspaceDir, server, model }, io = {}) {
-  if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0")
-    || (server !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server))
-    || (model !== undefined && (typeof model !== "string" || !/^[^-][^\0]*$/.test(model)))) {
-    return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid start home, server or model" } });
+/** Shared explicit launch choices; every value remains one argv entry. */
+export function launchChoiceArgv({ launchConfig, runtime, model, yolo } = {}) {
+  const argv = [];
+  for (const [key, v] of Object.entries({ launchConfig, runtime, model })) {
+    if (v === undefined || v === "") continue;
+    const rule = SPAWN_ARG_RULES[key];
+    if (typeof v !== "string" || !rule.re.test(v)) throw Object.assign(new Error(`Invalid ${key}`), { code: "E_BAD_ARGS" });
+    argv.push(rule.flag, v);
   }
-  return runJson(bin, ["session", "start", "--home", home,
-    ...(server ? ["--server", server] : []), ...(model ? ["--model", model] : []), "--json"], {
+  if (yolo !== undefined) {
+    if (typeof yolo !== "boolean") throw Object.assign(new Error("Invalid permission setting"), { code: "E_BAD_ARGS" });
+    argv.push(yolo ? "--yolo" : "--no-yolo");
+  }
+  return argv;
+}
+
+/** Start/restart is owned by the kernel, never a GUI stop-then-spawn pair. */
+export function cliStart(bin, { home, workspaceDir, server, restart = false, ...choices }, io = {}) {
+  if (typeof home !== "string" || !home.startsWith("/") || home.includes("\0")
+    || (server !== undefined && (typeof server !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(server)))
+    || typeof restart !== "boolean") {
+    return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: "E_BAD_ARGS", message: "Invalid start home, server or action" } });
+  }
+  let options;
+  try { options = launchChoiceArgv(choices); }
+  catch (e) { return Promise.resolve({ schemaVersion: 1, ok: false, error: { code: e.code, message: e.message } }); }
+  return runJson(bin, ["session", restart ? "restart" : "start", "--home", home,
+    ...(server ? ["--server", server] : []), ...options, "--json"], {
     cwd: workspaceDir, exec: io.exec, timeout: io.timeout,
   });
+}
+
+/** Named configuration data travels in private JSON files, not shell text. */
+export async function cliLaunchConfig(bin, { action, name, definition, keepEnv, context, server, home, soul, agentsRoot, choices, localCwd }, io = {}) {
+  let temporary;
+  const bad = message => { throw Object.assign(new Error(message), { code: "E_BAD_ARGS" }); };
+  const value = (v, label) => {
+    if (typeof v !== "string" || !v || v.startsWith("-") || v.includes("\0")) bad(`Invalid ${label}`);
+    return v;
+  };
+  try {
+    if (!["list", "set", "remove", "preview"].includes(action)) bad("Unknown launch configuration action");
+    const argv = ["launch-config", action];
+    if (["set", "remove"].includes(action)) {
+      if (typeof name !== "string" || !SPAWN_ARG_RULES.launchConfig.re.test(name)) bad("Invalid configuration name");
+      argv.push(name);
+    }
+    if (action === "set") {
+      if (!definition || typeof definition !== "object" || Array.isArray(definition)) bad("Specify a launch configuration object");
+      temporary = writeTaskFile(JSON.stringify(definition), io); argv.push("--file", temporary.file);
+      if (keepEnv !== undefined && typeof keepEnv !== "boolean") bad("Invalid environment preservation setting");
+      if (keepEnv) argv.push("--keep-env");
+    }
+    if (context) argv.push("--dir", value(context, "scope"));
+    if (server) argv.push("--server", value(server, "server"));
+    if (home) argv.push("--home", value(home, "home"));
+    if (soul) argv.push("--soul", value(soul, "soul"));
+    if (agentsRoot) argv.push("--agents-root", value(agentsRoot, "agents root"));
+    if (action === "preview") argv.push(...launchChoiceArgv(choices));
+    return await runJson(bin, [...argv, "--json"], { cwd: localCwd, exec: io.exec, timeout: io.timeout });
+  } catch (e) { return { schemaVersion: 1, ok: false, error: { code: e.code || "E_BAD_ARGS", message: e.message } }; }
+  finally { temporary?.cleanup(); }
 }
 
 /** Inspection, scoped activation and provider operations share one CLI boundary. */
@@ -279,7 +331,8 @@ export async function cliCapability(bin, { action, context, server, soul, agents
           argv.push(v ? '--yolo' : '--no-yolo');
         } else if (key === 'model' && v === '') argv.push('--no-model');
         else if (key === 'description' && v === '') argv.push('--no-description');
-        else if (['runtime', 'backend', 'model', 'description'].includes(key)) {
+        else if (key === 'launch-config' && v === '') argv.push('--no-launch-config');
+        else if (['runtime', 'backend', 'model', 'description', 'launch-config'].includes(key)) {
           const allowed = key === 'runtime' ? ['pi', 'claude', 'codex'] : key === 'backend' ? ['tmux', 'herdr'] : null;
           if (allowed && !allowed.includes(v)) bad(`Invalid ${key}`);
           argv.push(`--${key}`, value(v, key));

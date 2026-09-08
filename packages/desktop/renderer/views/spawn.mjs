@@ -18,6 +18,7 @@ import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, 
 import { distinguishingRootTags } from "../instance-tree.mjs";
 import { preselectSchedule } from "./schedules.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
+import { launchConfigFields } from "../launch-config-fields.mjs";
 
 /** Required-version label for the disabled relation note. The floor is the
  * LOCATOR's (RELATIONS_MIN, served as `relationsMin`); restating a number here
@@ -491,6 +492,7 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   const hadModal = !!s.modalEl;
   const agentName = s.sel;
   s.sel = null; s.selAgent = null;
+  s.launchFields?.dispose(); s.launchFields = null;
   s.modalEl?.remove(); s.modalEl = null;
   s.syncModalRelations = null;
   if (!hadModal || !repaint || s.alive === false) return;
@@ -608,6 +610,7 @@ function openSpawnModal(s, a) {
         <label>Model (optional — defaults to the agent's definition${a.model ? `: ${escapeHtml(a.model)}` : ""})
           <input class="field fmodel" autocomplete="off" list="spawn-model-options"></label>
         <datalist id="spawn-model-options"></datalist>
+        <div class="spawn-launch-configurations" hidden></div>
         <label>Run on
           <select class="field fserver" aria-label="Execution server">
             <option value="" selected>this machine</option>
@@ -654,6 +657,34 @@ function openSpawnModal(s, a) {
     } catch { /* local only */ }
   })();
   const f = modal; // field lookups span the whole modal
+  const launchEl = f.querySelector(".spawn-launch-configurations");
+  let launchFields, selectedConfig;
+  if (cliStatus()?.features?.includes("launch-config") && (!a.server || cliStatus()?.remote?.includes("launch-config"))) {
+    launchEl.hidden = false;
+    launchFields = launchConfigFields(launchEl, {
+      ctx: s.ctx, selector: () => ({ soul: a.name, agentsRoot: a.agentsRoot }),
+      owns: () => s.modalEl === modal,
+      choices: () => ({ ...(f.querySelector(".fruntime").value ? { runtime: f.querySelector(".fruntime").value } : {}), ...(f.querySelector(".fmodel").value.trim() ? { model: f.querySelector(".fmodel").value.trim() } : {}), ...(f.querySelector(".fyolo").value !== "" ? { yolo: f.querySelector(".fyolo").value === "true" } : {}) }),
+      changed: row => {
+        selectedConfig = row;
+        f.querySelector(".fruntime").value = "";
+        f.querySelector(".fruntime").disabled = !!row;
+        f.querySelector(".fruntime option").textContent = row ? `Configuration harness (${row.runtime})` : `Agent default (${a.runtime || "pi"})`;
+        f.querySelector(".fmodel").placeholder = row?.model || (row && row.runtime !== a.runtime ? "Harness default" : a.model || "Harness default");
+        void fillModelOptions();
+      },
+    });
+    s.launchFields = launchFields;
+    for (const input of f.querySelectorAll(".fruntime, .fmodel, .fyolo")) input.addEventListener("input", () => launchFields.invalidate());
+    serverSelect.addEventListener("change", () => {
+      const otherServer = (serverSelect.value || "") !== (a.server || "");
+      launchFields.invalidate(); launchFields.disabled(otherServer);
+      f.querySelector(".fruntime").disabled = !otherServer && !!launchFields.value();
+      launchEl.querySelector(".launch-config-status").textContent = otherServer ? "Select the server workspace to choose or manage its launch configurations." : "";
+      f.querySelector(".fruntime option").textContent = !otherServer && selectedConfig ? `Configuration harness (${selectedConfig.runtime})` : `Agent default (${a.runtime || "pi"})`;
+      void fillModelOptions();
+    });
+  }
 
   // Model dropdown (datalist): advisory options from POST /api/models for
   // the EFFECTIVE runtime (the override select, else the agent default).
@@ -672,13 +703,14 @@ function openSpawnModal(s, a) {
   let modelReq = 0;
   const fillModelOptions = async () => {
     const myReq = ++modelReq;
+    const dl = f.querySelector("#spawn-model-options");
+    if (!dl) return;
+    dl.textContent = "";
+    if (serverSelect.value || selectedConfig) return; // The execution host or wrapper may have a different catalog.
     const runtime = f.querySelector(".fruntime").value || a.runtime || "pi";
     try {
       const d = await postJson(s.ctx, "/api/models", { runtime });
       if (myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
-      const dl = f.querySelector("#spawn-model-options");
-      if (!dl) return;
-      dl.textContent = "";
       for (const m of d.models || []) {
         const opt = doc.createElement("option");
         opt.value = m.id;
@@ -764,6 +796,8 @@ function openSpawnModal(s, a) {
     backend: () => f.querySelector(".fbackend").value,
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
+    launchConfig: () => (serverSelect.value || "") === (a.server || "") ? launchFields?.value() : undefined,
+    configBusy: () => launchFields?.busy(),
     server: () => f.querySelector(".fserver")?.value || "",
     wake: () => wakeFields.read(),
     partial: (result) => {
@@ -790,6 +824,7 @@ function openSpawnModal(s, a) {
   s.modalEl = modal;
   s.el.querySelector(".souls").append(modal);
   f.querySelector(".fpurpose").focus?.();
+  if (launchFields) void launchFields.load();
   return modal;
 }
 
@@ -895,6 +930,7 @@ export async function doSpawn(s, ui) {
     ui.status.textContent = `Spawn failed: the "${relation}" relation needs a reference instance.`;
     return;
   }
+  if (ui.configBusy?.()) { ui.status.textContent = "Wait for the launch configuration to finish saving."; return; }
   ui.btn.disabled = true; ui.btn.textContent = "Spawning…";
   ui.status.classList?.remove("err"); ui.status.textContent = "";
   try {
@@ -913,6 +949,7 @@ export async function doSpawn(s, ui) {
       backend: (ui.backend ? ui.backend() : "") || undefined,
       runtime: (ui.runtime ? ui.runtime() : "") || undefined,
       model: (ui.model ? ui.model() : "") || undefined,
+      launchConfig: ui.launchConfig?.(),
       wake: ui.wake?.(),
     });
     if (myGen !== workspaceGeneration()) {

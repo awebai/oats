@@ -685,9 +685,11 @@ function openPop(s, id) {
     </div>
     <div class="pacts">
       <button class="act pterm"${(i.running === true || (i.running === false && s.ctx.startInstance)) && (!i.server || i.savedRoute) ? "" : " disabled"}>${i.running === false ? "Start…" : "Terminal"}</button>
+      ${i.running === true && s.ctx.restartInstance ? `<button class="act prestart"${i.server && !i.savedRoute ? " disabled" : ""}>Restart with…</button>` : ""}
       <button class="act pbrain"${i.server ? ' disabled title="Use the remote terminal to read brain files"' : ""}>Brain</button>
     </div>`;
   pop.querySelector(".pterm").addEventListener("click", () => i.running === false ? s.ctx.startInstance?.(i) : openTerm(s, id));
+  pop.querySelector(".prestart")?.addEventListener("click", () => s.ctx.restartInstance(i));
   pop.querySelector(".pbrain").addEventListener("click", () => { if (!i.server) s.ctx.openBrain?.(i.agent); });
   if (!s.ctx.openBrain) pop.querySelector(".pbrain").style.display = "none";
   // append inside the node's group so the popover sits by its (dragged) box

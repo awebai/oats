@@ -34,6 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
+import { launchConfigRequest } from "./launch-configs.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -286,7 +287,7 @@ function spawnErrorPayload(e) {
 }
 /* OATSWEB_SPAWNERR_END */
 
-async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, serverId, wake }) {
+async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
   const server = serverId ? String(serverId) : undefined;
@@ -316,7 +317,11 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // is held to what the REMOTE advertises by the router (checkRemoteSupport),
   // and the local guard only needs the remote surface itself.
   if (server) locator.requireRemoteSupport(cliState, "spawn");
-  else locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
+  else if (!launchConfig && !def?.["launch-config"]) locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
+  if (launchConfig !== undefined || def?.["launch-config"]) {
+    if (!cliState.features?.includes("launch-config")) throw Object.assign(new Error("Update OATS to choose a launch configuration"), { code: "cli-no-launch-config" });
+    if (server) locator.requireRemoteSupport(cliState, "launch-config");
+  }
   if (wake !== undefined) {
     if (!cliState.features?.includes("schedule")) throw Object.assign(new Error("Update oats to configure recurring wake-ups"), { code: "cli-no-schedule" });
     if (server) locator.requireRemoteSupport(cliState, "schedule");
@@ -345,6 +350,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
     runtime: runtime ? String(runtime) : undefined,
     backend: backend ? String(backend) : undefined,
     yolo,
+    launchConfig,
     model: model ? String(model) : undefined,
     server,
     wake,
@@ -995,6 +1001,17 @@ const server = createServer(async (req, res) => {
       return send(res, 200, d || panelData(url.searchParams.get("ws") || undefined));
     }
     if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
+    if (path === "/api/launch-configs" && req.method === "POST") {
+      const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+      try {
+        const result = await launchConfigRequest(await readBody(req), {
+          workspace, cli: cliState, localCwd: ctxs[0],
+          agents: workspace ? agentsData(workspace.id).agents : [],
+          instances: workspace ? panelData(workspace.id).instances : [],
+        });
+        return send(res, 200, result);
+      } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+    }
     if (path === "/api/capabilities" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
@@ -1061,7 +1078,7 @@ const server = createServer(async (req, res) => {
       try { return send(res, 200, { spawned: true, ...(await spawnAgent(body)) }); }
       catch (e) { const { status, body: b } = spawnErrorPayload(e); return send(res, status, b); }
     }
-    const hm = path.match(/^\/api\/(harvest|retire|start)\/([A-Za-z0-9._-]+)$/);
+    const hm = path.match(/^\/api\/(harvest|retire|start|restart)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
       // Desktop v1 mutation 2: the active provider’s harvest operation, cwd FIXED by this
       // privileged backend to the RESOLVED instance home — the caller only
@@ -1071,14 +1088,22 @@ const server = createServer(async (req, res) => {
       const inst = r.inst;
       if (!cliState.ok) return send(res, 503, { error: `${hm[1]} requires a compatible installed oats CLI`, code: "cli-unavailable" });
       /* OATSWEB_START_BEGIN — resolved instance start, exercised without launching a harness. */
-      if (hm[1] === "start") {
+      if (hm[1] === "start" || hm[1] === "restart") {
         if (!cliState.features?.includes("session-start")) return send(res, 409, { error: "Starting an existing instance requires an updated OATS CLI", code: "unsupported-start-option" });
         if (inst.server) {
           if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
           locator.requireRemoteSupport(cliState, "session-start");
         } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
         const body = await readBody(req);
+        const restart = hm[1] === "restart";
+        if (restart && !cliState.features?.includes("session-restart")) return send(res, 409, { error: "Update OATS to restart an existing instance", code: "unsupported-start-option" });
+        if ([body.launchConfig, body.runtime, body.yolo].some(v => v !== undefined)) {
+          if (!cliState.features?.includes("launch-config")) return send(res, 409, { error: "Update OATS to change the launch configuration", code: "unsupported-start-option" });
+          if (inst.server) locator.requireRemoteSupport(cliState, "launch-config");
+        }
+        if (restart && inst.server) locator.requireRemoteSupport(cliState, "session-restart");
         const env = await adapter.cliStart(cliState.bin, { home: inst.home, model: body.model,
+          launchConfig: body.launchConfig, runtime: body.runtime, yolo: body.yolo, restart,
           workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
         refreshSnapshot(); void refreshRemoteSnapshot();
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });

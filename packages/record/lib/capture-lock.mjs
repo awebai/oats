@@ -12,7 +12,7 @@
 // message says exactly that. (A reclaim protocol was reviewed and rejected:
 // rename is not compare-and-swap, and stealing from a stalled live
 // initializer under memory pressure is the failure we are preventing.)
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 
@@ -63,7 +63,7 @@ export function recoveryInstruction(dir, owner, liveness) {
  *
  *  `io` exists for fault injection in tests only. */
 export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, io = {} } = {}) {
-  const fs = { writeFileSync, rmSync, ...io };
+  const fs = { writeFileSync, rmSync, openSync, closeSync, ...io };
   const dir = captureLockPath(root);
   mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
   try {
@@ -75,8 +75,13 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     return { path: dir, held: { pid: owner?.pid, startedAt: owner?.startedAt, liveness: live, recovery: recoveryInstruction(dir, owner, live) } };
   }
   const nonce = randomBytes(8).toString("hex");
-  const inode = (() => { try { return lstatSync(dir).ino; } catch { return undefined; } })();
+  let directoryFd, identity;
   try {
+    // Keep the directory alive until initialization or its cleanup finishes.
+    // Otherwise Linux can reuse its inode immediately after an unlink, making
+    // a record-less replacement look like the directory we created.
+    directoryFd = fs.openSync(dir, "r");
+    identity = fstatSync(directoryFd);
     fs.writeFileSync(join(dir, "owner.json"), JSON.stringify({ pid, nonce, startedAt: new Date(now()).toISOString() }));
   } catch (err) {
     // Ownership was proven by the mkdir, not by the moment of cleanup: the
@@ -84,8 +89,9 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
     // no other pass's record. Anything else is reported, not deleted.
     let cleanupError, reason;
     const cur = readOwner(dir);
-    const same = (() => { try { return lstatSync(dir).ino === inode; } catch { return false; } })();
+    const same = (() => { try { const current = lstatSync(dir); return identity && current.dev === identity.dev && current.ino === identity.ino; } catch { return false; } })();
     if (!existsSync(dir)) reason = "gone";
+    else if (!identity) reason = "unverified";
     else if (!same || (cur && (cur.pid !== pid || cur.nonce !== nonce))) reason = "replaced";
     else { try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e2) { cleanupError = e2; } }
     const removed = reason === undefined && !existsSync(dir);
@@ -98,6 +104,8 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
       ...(removed || reason === "gone" || reason === "replaced" ? {} : { recovery: recoveryInstruction(dir, undefined, "unknown") }),
     };
     throw err;
+  } finally {
+    if (directoryFd !== undefined) fs.closeSync(directoryFd);
   }
   return {
     path: dir,
