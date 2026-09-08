@@ -318,6 +318,25 @@ test("a captured provider with no contribution at spawn still takes part (launch
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [{ ...meta.capabilityRuntime[0], settings: { mode: "off" } }] }));
   v = preview({ PROBE_SRC: "wrong" });
   assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  // An applicable requirement plus configuration arguments: the probe cannot carry the arguments, so the launch is not reported verified (planner, and spawn before any side effect); without an applicable requirement, arguments are fine and nothing is probed.
+  write(join(home, "instance.json"), JSON.stringify(meta));
+  write(join(base, "probed-args.json"), JSON.stringify({ runtime: "claude", executable: wrapper, args: ["--settings", "/abs/native.json"], env: { TEST_PROBE_TOKEN: "selected" } }));
+  assert.equal(oats(["launch-config", "set", "probed", "--file", join(base, "probed-args.json"), "--dir", repo]).json.ok, true);
+  v = preview();
+  assert.equal(pk(v).ok, false, JSON.stringify(pk(v))); assert.match(pk(v).detail, /cannot carry.*test.req's requirement chan@acme-marketplace cannot be verified.*wrapper executable or the environment/); assert.equal(pk(v).code, "E_LAUNCH_PROBE_UNSUPPORTED");
+  assert.throws(() => restartInstanceSession(home, { launchConfig: "probed", env: env() }), (e) => e.code === "E_LAUNCH_PROBE_UNSUPPORTED", "start/restart refuse before anything");
+  write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [{ ...meta.capabilityRuntime[0], settings: { mode: "off" } }] }));
+  v = preview();
+  assert.equal(pk(v).ok, true); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
+  // Spawn: the scope binds the provider with an applicable requirement; a new instance under the args configuration is refused before a home exists; with the requirement off, it spawns.
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\nlaunch-configs:\n"));
+  let sp = oats(["spawn", "dev", "--purpose", "args1", "--launch-config", "probed", "--no-launch", "--dir", repo]);
+  assert.equal(sp.json.error?.code, "E_LAUNCH_PROBE_UNSUPPORTED", sp.stdout); assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-args1")), false);
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("        mode: on\n", "        mode: off\n"));
+  sp = oats(["spawn", "dev", "--purpose", "args1", "--launch-config", "probed", "--no-launch", "--dir", repo]);
+  assert.equal(sp.json.ok, true, sp.stdout);
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: off\n/, ""));
+  write(join(home, "instance.json"), JSON.stringify(meta));
   // A merely newly bound provider (not captured) does not take part, even with a launch hook and a requirement.
   write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\nlaunch-configs:\n"));
   write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityRuntime: [] }));
