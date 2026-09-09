@@ -85,6 +85,29 @@ test("an offset cache ahead of the journal is distrusted, not obeyed", (t) => {
   assert.deepEqual(turns.map((x) => x.provenance.origin.line), [1, 2]);
 });
 
+test("lost offsets recover byte positions across chunks and preserve the carried timestamp", (t) => {
+  const { base, store } = setup(t);
+  const projects = join(base, "projects", "-p");
+  mkdirSync(projects, { recursive: true });
+  const file = join(projects, "recovery.jsonl");
+  const roots = [join(base, "projects")];
+  const stamp = "2026-02-22T10:00:00Z";
+  const history = sessionEvent("user", "é".repeat(40000), stamp) + "\n\n";
+  writeFileSync(file, history);
+  captureSessions(store, { owner: "mac", roots });
+  rmSync(join(store.root, "index", "capture-offsets.json"));
+  appendFileSync(file, "unstamped continuation\n");
+  const fresh = new RecordStore(store.root, { owner: "mac" });
+  const result = captureSessions(fresh, { owner: "mac", roots });
+  assert.equal(result.appended, 1, "historical lines are not duplicated");
+  const turns = fresh.readStream("mac~cc.recovery");
+  assert.deepEqual(turns.map((turn) => turn.provenance.origin.line), [1, 2, 3]);
+  assert.equal(turns[2].ts, stamp);
+  assert.equal(turns.map((turn) => turn.body.line).join("\n") + "\n", readFileSync(file, "utf8"));
+  const offsets = JSON.parse(readFileSync(join(store.root, "index", "capture-offsets.json")));
+  assert.equal(offsets[`mac~cc.recovery:${file}`].bytes, Buffer.byteLength(history + "unstamped continuation\n"));
+});
+
 test("blank lines are turns too: reconstruction is byte-exact", (t) => {
   const { base, store } = setup(t);
   const projects = join(base, "projects", "-p");

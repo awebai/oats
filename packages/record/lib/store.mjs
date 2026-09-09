@@ -548,12 +548,13 @@ export class RecordStore {
     }
     const path = this.journalPath(streamId);
     this.withStreamLock(streamId, () => {
-      // First append to this stream in this instance: parse the whole
-      // journal, so interior corruption throws here instead of silently
-      // collecting appends behind the damage. A torn tail is tolerated
-      // (parseJournal treats it as final-line-torn) and repaired below.
+      // First append to this stream in this instance: validate every turn
+      // without retaining the historical journal. Interior corruption must
+      // throw before appending; the iterator tolerates a torn final line,
+      // which is repaired below under the same stream lock.
       if (!this.validatedStreams.has(streamId) && existsSync(path)) {
-        parseJournal(readFileSync(path));
+        const validation = this.iterateStream(streamId);
+        while (!validation.next().done) { /* discard each validated turn */ }
       }
       this.validatedStreams.add(streamId);
       repairTail(path);

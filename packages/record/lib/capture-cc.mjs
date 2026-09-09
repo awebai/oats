@@ -153,18 +153,32 @@ function lastJournalLine(store, streamId) {
 // detected (only growth is; a shrink triggers a rescan via the size
 // check in the caller). Transcript writers are append-only in practice.
 function offsetFromJournal(store, streamId, sourcePath) {
-  const turns = store.readStream(streamId);
-  if (turns.length === 0) return { bytes: 0, line: 0, lastTs: "" };
-  const last = turns[turns.length - 1];
+  // Validate the journal's history, retaining only its final complete turn.
+  let last;
+  for (const turn of store.iterateStream(streamId)) last = turn;
+  if (last === undefined) return { bytes: 0, line: 0, lastTs: "" };
   const lastLine = last.provenance?.origin?.line ?? 0;
-  const bytes = readFileSync(sourcePath);
   let line = 0;
   let offset = 0;
-  while (line < lastLine && offset < bytes.length) {
-    const nl = bytes.indexOf(10, offset);
-    if (nl === -1) break;
-    line++;
-    offset = nl + 1;
+  let scanned = 0;
+  const fd = openSync(sourcePath, "r");
+  try {
+    const bytes = Buffer.allocUnsafe(65536);
+    while (line < lastLine) {
+      const n = readSync(fd, bytes, 0, bytes.length, null);
+      if (n === 0) break;
+      let from = 0;
+      while (line < lastLine) {
+        const nl = bytes.indexOf(10, from);
+        if (nl === -1 || nl >= n) break;
+        line++;
+        from = nl + 1;
+        offset = scanned + from;
+      }
+      scanned += n;
+    }
+  } finally {
+    closeSync(fd);
   }
   return { bytes: offset, line, lastTs: last.ts ?? "" };
 }
