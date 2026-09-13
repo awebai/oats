@@ -21,6 +21,11 @@ the append-only, searchable **turn record** captures supported local transcripts
 and aw client logs. It outlives models, harnesses, and this repository's own
 designs.
 
+> **Source checkout note:** OKF v2 integration and the optional theory catalog are
+> prepared for framework v0.23.1, pending final standalone OKF 2.0.0 source/tag
+> and dependency publication. See [release gates](docs/release-notes/v0.23.1.md);
+> these docs do not claim a live upgrade or published release.
+
 ## Contents
 
 - [Highlights](#highlights)
@@ -41,9 +46,9 @@ designs.
 ## Highlights
 
 - **Specialists are project assets.** A soul is reviewed Markdown, YAML,
-  skills, and knowledge that travel with the repository. It can be
-  instantiated many times without losing its identity or accumulated
-  expertise.
+  skills and capability-owned declarations that travel with the repository.
+  It can be instantiated many times without losing its identity or access
+  to accumulated expertise.
 - **Instances are real sessions, not hidden subagent calls.** Each instance is
   a disposable incarnation with a full Pi, Claude Code, or Codex session hosted in
   tmux, an explicit task, its own home, and a repository or workspace view.
@@ -55,8 +60,9 @@ designs.
   resources stop the launch before an incomplete agent starts.
 - **Expertise compounds.** With the official `oats.okf` knowledge package, an
   instance keeps resumable working state and captures non-obvious lessons. A
-  memory-harvest agent promotes durable knowledge back into the soul, so
-  future instances begin where earlier ones finished.
+  separate directory worker judges notes and captured record evidence into
+  external owned knowledge nodes. Git delivery is PR-only; plain directories
+  use recoverable publication. Future instances read accepted snapshots.
 - **Hash-locked distribution.** Capabilities ship in Git-acquired packages
   with exact locks, integrity, dependency closure, and explicit executable
   trust. Acquisition never implies activation.
@@ -73,10 +79,10 @@ designs.
 
 ## Quick start
 
-Follow [Run your first OATS team](docs/first-team.md) for the tested path:
-install the kernel and runtimes, adopt a development configuration, select
-an available harvester model, connect your team, and complete a real task
-through review, harvest, and retirement.
+Follow [Run your first OATS team](docs/first-team.md) for the v2 setup path:
+install matching released kernel/runtime packages, adopt a development config,
+provision external knowledge and explicit owners, connect your team if desired,
+and complete a real task through review, independent judgment and retirement.
 
 ```bash
 npm install -g @awebai/oats@latest
@@ -85,12 +91,13 @@ cd /path/to/project
 oats init --package oats.dev --config default
 ```
 
-Continue with the guide's model, team, and executable-trust setup before
-spawning. Initialization acquires packages; it does not authenticate a
-runtime or join a messaging team.
+Once the prepared versions are published, continue with the guide's bindings,
+base provisioning, model, team and executable-trust setup before spawning.
+Initialization acquires packages; it does not authenticate a runtime or join a
+messaging team.
 
-See [the first-team example](docs/first-team-demo.md) for the real Pi and
-Claude tasks behind the guide. Existing OAS users: start with
+See [the first-team example](docs/first-team-demo.md) for historical v1 Pi and
+Claude qualification, not v2 acceptance evidence. Existing OAS users: start with
 [the migration command](docs/migration-from-oas.md).
 
 ## How it works
@@ -104,7 +111,7 @@ Claude tasks behind the guide. Existing OAS users: start with
 | **Config template** | A complete reference `oats-config.yaml` a package ships. You adopt one explicitly, and it becomes your ordinary local config. |
 | **Adopted base** | The exact template recorded at adoption, kept commit-safe so guided sync can compare against it. |
 | **Config** | Local authority: selects layers, targets capabilities to agent types and souls, applies settings, exclusions, and overrides. |
-| **Soul** | Durable specialist identity, curriculum, and accumulated knowledge. |
+| **Soul** | Durable specialist identity and curriculum; the knowledge capability determines storage and ownership. |
 | **Instance** | One disposable incarnation and provider-native working session. |
 
 ### Souls and instances
@@ -115,7 +122,7 @@ agents/backend-expert/soul/
   AGENTS.md
   CLAUDE.md -> AGENTS.md
   skills/
-  knowledge/
+  okf.json                 # when using OKF v2: external owns/reads, not a bundle
 ```
 
 Every instance has two operational surfaces. The **instance home** is the
@@ -215,12 +222,21 @@ kernel's bundled catalog:
 
 | Package | Provides |
 | --- | --- |
-| [`oats-okf`](https://github.com/awebai/oats-okf) | `oats.okf` knowledge layer and memory harvesting |
+| [`oats-okf`](https://github.com/awebai/oats-okf) | `oats.okf` external knowledge, durable capture and independent judgment |
 | [`oats-aweb`](https://github.com/awebai/oats-aweb) | `oats.aweb` messaging and identity layer |
 | [`oats-authoring`](https://github.com/awebai/oats-authoring) | capability, skill, soul, and integration authoring craft |
 | [`oats-jira`](https://github.com/awebai/oats-jira) | adopter-selected Jira tasks layer |
 | [`oats-linear`](https://github.com/awebai/oats-linear) | adopter-selected Linear tasks layer |
 | [`oats-dev`](https://github.com/awebai/oats-dev) | OATS development config template plus `oats.review` |
+
+The optional [`oats.knowledge-theory`](docs/knowledge-capability-authoring.md)
+authoring package lives in this repository's `oats-package/` Git payload; its
+catalog entry is prepared at v0.23.1. It is not a runtime knowledge layer.
+
+Acquire OKF through the catalog Git payload. Its bundled npm mirror is not a
+self-contained distribution: npm drops the source worker's canonical `CLAUDE.md`
+symlink. The optional theory payload is excluded from npm entirely. Neither
+limitation is permission to synthesize source aliases or weaken integrity checks.
 
 External CLIs and runtime plugins are separate informed-consent requirements.
 Spawn verifies them and never installs them implicitly.
@@ -275,6 +291,12 @@ It preserves config files and capability ids, leaves custom, owned, and path
 capabilities untouched, never transfers executable trust silently, and prints
 exact follow-ups. `oats doctor` reports readiness and cutover state.
 
+**From OKF v1 to v2.** This is a separate, breaking capability migration, not
+a kernel lock conversion. Preserve legacy soul knowledge and live source
+state/cursors, configure external bases and owners, accept provider delivery,
+then deliberately cut over. See [knowledge migration](docs/knowledge-migration.md).
+Updating npm or installing a package performs none of those live steps.
+
 ## CLI essentials
 
 ```bash
@@ -292,6 +314,11 @@ oats doctor --json
 
 oats setup | capture | recall "<query>"
 ```
+
+With OKF v2 configured, use `oats okf inspect --json` for identity-guarded live
+memory plus durable receipts, and `oats okf read`/`refresh` for accepted knowledge.
+After retirement, select the durable source descriptor from deployment context.
+See [knowledge commands](docs/knowledge.md#inspection-and-operator-commands).
 
 Package, config, and lock operations have deterministic CLI and stable JSON
 forms. Do not hand-edit the lock or installed stores.

@@ -1,4 +1,8 @@
-# Optional OATS knowledge theory — 1.0.0
+# Optional OATS knowledge theory — 1.0.1
+
+This source patch updates authoring references alongside framework 0.23.1.
+The initial catalog entry remains pinned to the already-published 1.0.0 payload
+at framework v0.23.0; installing the v0.23.1 Git source selects this 1.0.1 payload.
 
 `oats.knowledge-theory` is an optional distribution exporting one additive
 capability, `oats.knowledge-theory`. It provides `knowledge-theory-expert` and

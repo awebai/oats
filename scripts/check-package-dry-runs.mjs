@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage, treeFiles } from "./check-knowledge-theory-package.mjs";
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -52,6 +55,7 @@ export function checkKernelPackFiles(pack, root = ROOT) {
   // Keep its strict source alias/closure gate; never bless npm's partial copy
   // by checking only regular files or by manufacturing a missing source alias.
   checkKnowledgeTheoryPackage({ repoRoot: root });
+  const inventory = checkOkfMirror({ repoRoot: root });
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.ok(!manifest.files.some((path) => /^\/?oats-package(?:\/|$)/.test(path)), "npm files must not include the Git-only oats-package payload");
   const canonicalFiles = ["docs/knowledge-capability-authoring.md", ...treeFiles(join(root, "docs/knowledge-reference")).map((f) => `docs/knowledge-reference/${f}`)];
@@ -60,6 +64,7 @@ export function checkKernelPackFiles(pack, root = ROOT) {
     "capabilities/oats-authoring/oats.json", "docs/capabilities.md", "docs/capability-manifest.schema.json",
     "package-catalog.json", "package.json", "packages/record/bin/capture.mjs", "packages/record/bin/recall.mjs",
     ...canonicalFiles,
+    ...inventory.entries.filter((entry) => entry.type === "file").map((entry) => `capabilities/oats-okf/${entry.path}`),
   ]);
   for (const path of files) {
     if (path === "oats-package" || path.startsWith("oats-package/")) {
@@ -70,8 +75,45 @@ export function checkKernelPackFiles(pack, root = ROOT) {
       throw new Error(`kernel tarball leaks non-runtime file ${path}`);
     }
   }
+  const expected = inventory.entries.filter((entry) => entry.type === "file");
+  assert.deepEqual([...files].filter((path) => path.startsWith("capabilities/oats-okf/")).sort(),
+    expected.map((entry) => `capabilities/oats-okf/${entry.path}`).sort(),
+    "npm OKF regular file-set drift; source symlinks must be omitted, never synthesized");
+  const sizes = new Map(pack.files.map((entry) => [entry.path, entry.size]));
+  for (const entry of expected) assert.equal(sizes.get(`capabilities/oats-okf/${entry.path}`), entry.size, `npm OKF size drift: ${entry.path}`);
   return files;
 }
+
+// npm deliberately drops the canonical source symlink. Compare its complete
+// regular-file projection to the verified standalone inventory, WITHOUT calling
+// that projection a self-contained distribution or manufacturing the alias.
+export function checkNpmOkfPayload(capRoot, inventory = checkOkfMirror()) {
+  const expected = inventory.entries.filter((entry) => entry.type === "file");
+  assert.deepEqual(treeFiles(capRoot), expected.map((entry) => entry.path).sort(), "npm OKF regular file-set drift");
+  for (const entry of expected) {
+    const path = join(capRoot, entry.path);
+    assert.ok(lstatSync(path).isFile(), `npm OKF requires regular bytes: ${entry.path}`);
+    const bytes = readFileSync(path);
+    assert.equal(bytes.length, entry.size, `npm OKF size drift: ${entry.path}`);
+    assert.equal(createHash("sha256").update(bytes).digest("hex"), entry.sha256, `npm OKF byte drift: ${entry.path}`);
+  }
+  return { regularFiles: expected.length,
+    omittedSourceSymlinks: inventory.entries.filter((entry) => entry.type === "symlink").map((entry) => entry.path),
+    selfContainedGitPayload: false };
+}
+
+function checkPackedOkfBytes(root) {
+  const inventory = checkOkfMirror({ repoRoot: root });
+  const scratch = mkdtempSync(join(tmpdir(), "oats-pack-byte-check-"));
+  try {
+    const [pack] = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", scratch], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+    checkKernelPackFiles(pack, root);
+    const unpacked = join(scratch, "unpacked"); mkdirSync(unpacked);
+    execFileSync("tar", ["-xzf", join(scratch, pack.filename), "-C", unpacked, "package/capabilities/oats-okf"], { stdio: "pipe" });
+    return checkNpmOkfPayload(join(unpacked, "package/capabilities/oats-okf"), inventory);
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
+}
+
 export function checkReleaseVersions(root = ROOT) {
   const json = (file) => JSON.parse(readFileSync(join(root, file), "utf8"));
   const version = json("package.json").version;
@@ -90,13 +132,14 @@ export function checkPackages(root = ROOT) {
   requireFiles(adapter, ["extension/index.ts", "extension/core-loader.mjs", "README.md", "package.json"]);
   assert.equal(kernel.version, version);
   assert.equal(adapter.version, version);
-  return { version, kernelFiles: kernel.entryCount, adapterFiles: adapter.entryCount };
+  const okfNpm = checkPackedOkfBytes(root);
+  return { version, kernelFiles: kernel.entryCount, adapterFiles: adapter.entryCount, okfNpm };
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     assert.ok(process.argv.slice(2).every((arg) => arg === "--syntax-only"), "usage: node scripts/check-package-dry-runs.mjs [--syntax-only]");
     if (process.argv.includes("--syntax-only")) console.log(`JavaScript syntax passed: ${checkJavaScript()} shipped/support files.`);
-    else console.log(`Package dry runs passed: ${JSON.stringify(checkPackages())}; public curriculum present; Git-only optional package and workspace state excluded.`);
+    else console.log(`Package dry runs passed: ${JSON.stringify(checkPackages())}; public curriculum present; OKF regular bytes match the standalone inventory (npm omits source symlinks, not a self-contained Git payload); Git-only optional package and workspace state excluded.`);
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

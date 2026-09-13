@@ -1,75 +1,137 @@
-import test from "node:test";
-import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { cpSync as copyTree } from "node:fs";
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
+import { fixture, write, json, readJSON, CAP } from './helpers/okf-v2.mjs';
 
-const ROOT = resolve(new URL("..", import.meta.url).pathname);
-const CLI = join(ROOT, "bin", "oats.mjs");
-const OKF = join(ROOT, "capabilities", "oats-okf");
-const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-okf-inspect-")));
-test.after(() => rmSync(base, { recursive: true, force: true }));
-function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
-function gitRepo(dir) { mkdirSync(dir, { recursive: true }); execFileSync("git", ["init", "-q", dir]); execFileSync("git", ["-C", dir, "config", "user.email", "t@example.invalid"]); execFileSync("git", ["-C", dir, "config", "user.name", "T"]); write(join(dir, ".gitignore"), "\n"); execFileSync("git", ["-C", dir, "add", "."]); execFileSync("git", ["-C", dir, "commit", "-qm", "init"]); }
-const env = () => { const e = { ...process.env, OATS_HOME_DIR: join(base, "oats-home") }; for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_EVENT", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete e[k]; return e; };
-
-test("the OKF package declares inspect (view) and harvest (action); its inspect answers the home's working memory as documents, directly and through oats operation run", () => {
-  const manifest = JSON.parse(readFileSync(join(OKF, "oats.json"), "utf8"));
-  assert.equal(manifest.version, JSON.parse(readFileSync(join(ROOT, "package-catalog.json"), "utf8")).packages["oats.okf"].ref.replace(/^v/, ""));
-  assert.deepEqual(Object.keys(manifest.operations).sort(), ["harvest", "inspect"]);
-  assert.equal(manifest.operations.inspect.kind, "view"); assert.equal(manifest.operations.harvest.kind, "action"); assert.equal(manifest.commands.inspect, "bin/oats-okf.mjs inspect");
-  // A home with state, log and two notes.
-  const repo = join(base, "repo"); gitRepo(repo);
-  const home = join(repo, "agents", "dev", "instances", "dev-one");
-  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-one", home, repo, launched: false, capabilities: [{ id: "oats.okf", level: repo, settings: {} }], layers: {} }));
-  write(join(home, "STATE.md"), "# state\n\nworking\n"); write(join(home, "log.md"), "# log\n"); write(join(home, "notes", "b.md"), "note b\n"); write(join(home, "notes", "a.md"), "note a\n"); write(join(home, "notes", "skip.txt"), "x");
-  // Directly, as the kernel runs it (OATS_HOME = the home).
-  let r = spawnSync(process.execPath, [join(OKF, "bin", "oats-okf.mjs"), "inspect", "--json"], { encoding: "utf8", env: { ...env(), OATS_HOME: home }, cwd: home });
+const operation = f => f.cli(['operation', 'run', 'knowledge:inspect', '--home', f.home, '--json']);
+test('local execution ignores ambient installed-package roots and source identity', () => {
+  const helper = new URL('./helpers/okf-v2.mjs', import.meta.url).href;
+  const script = `
+    import assert from 'node:assert/strict';
+    import { fixture, write } from ${JSON.stringify(helper)};
+    import { join } from 'node:path';
+    let cleanup;
+    try {
+      const f = fixture({ after: fn => { cleanup = fn; } });
+      write(join(f.home, 'STATE.md'), 'isolated local inspection');
+      const out = f.direct(['inspect']).out.result;
+      assert.equal(out.liveMemory.available, true);
+      assert.equal(out.documents[0].text, 'isolated local inspection');
+      f.retire(f.source.instance);
+      assert.equal(f.inspect().liveMemory.reason, 'retired');
+    } finally { cleanup?.(); }
+  `;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    encoding: 'utf8', timeout: 90000,
+    env: { ...process.env, OATS_PKG_ROOT: '/must-not-use-installed-package',
+      OATS_OKF_CLI: '/must-not-use-installed-cli', OATS_CLI_BIN: '/must-not-use-runtime-cli',
+      OATS_INSTANCE_HOME: '/must-not-use-source-home', OATS_HOME: '/must-not-use-source-home',
+      OATS_PACKAGE_CATALOG: '/must-not-use-host-catalog', OATS_SETTINGS: '{broken' },
+  });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  let out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true);
-  assert.deepEqual(out.result.documents.map((d) => [d.label, d.kind, d.path]), [["Working state (STATE.md)", "markdown", join(home, "STATE.md")], ["Log (log.md)", "markdown", join(home, "log.md")], ["Pending note: a.md", "markdown", join(home, "notes", "a.md")], ["Pending note: b.md", "markdown", join(home, "notes", "b.md")]]);
-  assert.equal(out.result.documents[0].text, "# state\n\nworking\n"); assert.match(out.result.summary, /4 documents: state, log, 2 pending notes/);
-  // Through the kernel's generic operation runner, with the bundled package installed as an owned capability in the fixture.
-  copyTree(OKF, join(repo, ".agents", "capabilities", "owned", "okf"), { recursive: true });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      from: owned\n      global: true\n    messaging: none\n    tasks: none\n");
-  write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: checkout\nruntime: pi\n"); write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
-  r = spawnSync(process.execPath, [CLI, "inspect", "--home", home, "--json"], { encoding: "utf8", env: env(), cwd: base });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  const ins = JSON.parse(r.stdout.trim()).result;
-  assert.equal(ins.knowledge.provider, "oats.okf"); assert.deepEqual(ins.knowledge.operations.map((o) => [o.name, o.kind, o.available]).sort(), [["harvest", "action", true], ["inspect", "view", true]]);
-  r = spawnSync(process.execPath, [CLI, "operation", "run", "knowledge:inspect", "--home", home, "--json"], { encoding: "utf8", env: env(), cwd: base });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  out = JSON.parse(r.stdout.trim()).result;
-  assert.equal(out.capability, "oats.okf"); assert.deepEqual(out.argv, ["okf", "inspect"]); assert.equal(out.result.documents.length, 4); assert.equal(out.instance, undefined, "a view launches nothing");
-  // An empty home answers no documents and says so.
-  const empty = join(repo, "agents", "dev", "instances", "dev-two"); write(join(empty, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-two", home: empty, repo, launched: false, capabilities: [{ id: "oats.okf", level: repo, settings: {} }], layers: {} }));
-  r = spawnSync(process.execPath, [CLI, "operation", "run", "knowledge:inspect", "--home", empty, "--json"], { encoding: "utf8", env: env(), cwd: base });
-  assert.equal(r.status, 0, r.stdout + r.stderr); out = JSON.parse(r.stdout.trim()).result; assert.deepEqual(out.result.documents, []); assert.match(out.result.summary, /no working memory/);
+});
+test('OKF inspect exposes matching STATE/log/notes alongside durable evidence through direct and public operation pipes', t => {
+  const f = fixture(t);
+  const manifest = readJSON(join(CAP, 'oats.json'));
+  assert.deepEqual(Object.keys(manifest.operations).sort(), ['harvest', 'inspect']);
+  assert.equal(manifest.operations.inspect.kind, 'view');
+  write(join(f.home, 'STATE.md'), '# state\n\nworking\n'); write(join(f.home, 'log.md'), '# log\n');
+  write(join(f.home, 'notes/b.md'), 'note b\n'); write(join(f.home, 'notes/a.md'), 'note a\n');
+  write(join(f.home, 'notes/nested/c.md'), 'nested note\n'); write(join(f.home, 'notes/skip.txt'), 'not markdown');
+  const discovery = f.cli(['inspect', '--home', f.home, '--json']);
+  assert.equal(discovery.knowledge.provider, 'oats.okf');
+  assert.deepEqual(discovery.knowledge.operations.map(o => [o.name, o.kind, o.available]).sort(), [['harvest', 'action', true], ['inspect', 'view', true]]);
+  for (const out of [f.direct(['inspect']).out.result, operation(f).result, f.inspect()]) {
+    assert.equal(out.liveMemory.available, true);
+    assert.deepEqual(out.documents.map(d => d.label), ['Working state (STATE.md)', 'Log (log.md)', 'Pending note: a.md', 'Pending note: b.md', 'Pending note: nested/c.md', 'Durable processing receipts']);
+    assert.equal(out.documents[0].text, '# state\n\nworking\n');
+    assert.equal(out.documents[2].path, join(f.home, 'notes/a.md'));
+    assert.deepEqual(JSON.parse(out.documents.at(-1).text), out.status);
+    assert.ok(out.acceptedView.project.digest); assert.equal(out.bases.project.path, f.accepted);
+    assert.match(out.summary, /5 working-memory documents/);
+    assert.equal(out.status.activeRun, null, 'inspection never requests a worker');
+  }
+  assert.equal(operation(f).instance, undefined, 'a view launches nothing');
+  for (const p of ['STATE.md', 'log.md', 'notes']) fs.rmSync(join(f.home, p), { recursive: true });
+  const empty = operation(f).result;
+  assert.equal(empty.documents.length, 1, 'durable receipts remain even without live documents');
+  assert.equal(empty.liveMemory.available, true); assert.match(empty.summary, /0 working-memory documents/);
 });
 
-test("a view larger than a pipe buffer arrives whole: the provider's answer through an actual pipe, directly and through oats operation run", () => {
-  // The first test installed the bundled package as an owned capability in
-  // `repo`; this home carries a STATE.md bigger than the 64 KiB a macOS pipe
-  // holds while the writer exits (BeadHub's reproduction of the 1.6.0 defect:
-  // exactly 65536 bytes, invalid JSON, exit 0).
-  const repo = join(base, "repo");
-  const home = join(repo, "agents", "dev", "instances", "dev-big");
-  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-big", home, repo, launched: false, capabilities: [{ id: "oats.okf", level: repo, settings: {} }], layers: {} }));
-  const state = "# state\n\n" + "a line of working state that repeats until the document is long enough to matter\n".repeat(2500);
-  assert.ok(Buffer.byteLength(state) > 128 * 1024 && Buffer.byteLength(state) < 256 * 1024, "over one pipe buffer, under the provider's own cap");
-  write(join(home, "STATE.md"), state); write(join(home, "log.md"), "# log\n");
-  // Directly, stdout a pipe (spawnSync's default), as the kernel and a Desktop read it.
-  let r = spawnSync(process.execPath, [join(OKF, "bin", "oats-okf.mjs"), "inspect", "--json"], { encoding: "utf8", env: { ...env(), OATS_HOME: home }, cwd: home, maxBuffer: 16 * 1024 * 1024 });
-  assert.equal(r.status, 0, r.stderr);
-  assert.ok(Buffer.byteLength(r.stdout) > 128 * 1024, `whole answer left the pipe (${Buffer.byteLength(r.stdout)} bytes)`);
-  let out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true);
-  assert.equal(out.result.documents[0].text, state, "STATE.md text is byte-exact"); assert.equal(out.result.documents[0].truncated, undefined);
-  // Through the kernel's generic runner into a JSON envelope on ITS stdout (a second pipe).
-  r = spawnSync(process.execPath, [CLI, "operation", "run", "knowledge:inspect", "--home", home, "--json"], { encoding: "utf8", env: env(), cwd: base, maxBuffer: 16 * 1024 * 1024 });
-  assert.equal(r.status, 0, r.stdout.slice(0, 500) + r.stderr);
-  out = JSON.parse(r.stdout.trim()); assert.equal(out.ok, true, String(JSON.stringify(out.error ?? null)).slice(0, 300));
-  assert.equal(out.result.result.documents[0].text, state, "the runner relays the whole document");
-  assert.match(out.result.result.summary, /2 documents: state, log, 0 pending notes/);
+test('large pipe regression: three live documents over 128 KiB arrive byte-exact through both stdout pipes', t => {
+  const f = fixture(t);
+  const texts = ['# State\n' + 'Live α state: do not truncate this pipe.\n'.repeat(5000), '# Log\n' + 'Observed β limitation in the source.\n'.repeat(5000), '# Note\n' + 'A live γ note for inspection.\n'.repeat(6000)];
+  for (const [i, p] of ['STATE.md', 'log.md', 'notes/live.md'].entries()) {
+    assert.ok(Buffer.byteLength(texts[i]) > 128 * 1024 && Buffer.byteLength(texts[i]) < 256 * 1024);
+    write(join(f.home, p), texts[i]);
+  }
+  const direct = f.direct(['inspect']);
+  assert.ok(Buffer.byteLength(direct.stdout) > 3 * 128 * 1024);
+  for (const result of [direct.out.result, operation(f).result]) {
+    assert.deepEqual(result.documents.slice(0, 3).map(d => d.text), texts);
+    assert.ok(result.documents.slice(0, 3).every(d => d.truncated === undefined));
+    assert.equal(result.documents.at(-1).label, 'Durable processing receipts');
+  }
+});
+
+test('inspection announces its document preview cap without splitting UTF-8', t => {
+  const f = fixture(t), text = 'x'.repeat(256 * 1024 - 1) + 'α trailing bytes';
+  write(join(f.home, 'STATE.md'), text);
+  for (const result of [f.direct(['inspect']).out.result, operation(f).result]) {
+    const d = result.documents[0]; assert.equal(d.text, 'x'.repeat(256 * 1024 - 1));
+    assert.equal(d.truncated, true); assert.equal(d.bytes, Buffer.byteLength(text)); assert.doesNotMatch(d.text, /\uFFFD/);
+  }
+});
+
+for (const mode of ['retired', 'missing', 'reused', 'invalid-marker']) test(`descriptor inspection retains evidence but never exposes ${mode} live memory`, t => {
+  const f = fixture(t);
+  write(join(f.home, 'notes/decision.md'), 'Durable evidence before disappearance.\n');
+  if (mode === 'retired') f.retire(f.source.instance);
+  else {
+    // Capture through the real command, but never launch a model.
+    const run = f.run(); assert.equal(run.status, 'ready');
+    fs.renameSync(f.home, join(f.base, 'preserved-home'));
+    if (mode !== 'missing') {
+      write(join(f.home, 'STATE.md'), 'DO_NOT_EXPOSE_REUSED_HOME');
+      if (mode === 'reused') json(join(f.home, '.okf-source.json'), { version: 1, id: 'replacement', source: f.sourceFile });
+      else write(join(f.home, '.okf-source.json'), 'DO_NOT_EXPOSE_REUSED_HOME');
+    }
+  }
+  const out = f.inspect();
+  assert.equal(out.liveMemory.available, false); assert.equal(out.documents.length, 1);
+  assert.equal(out.status.captured.inputs.length, 1); assert.doesNotMatch(JSON.stringify(out), /DO_NOT_EXPOSE_REUSED_HOME/);
+  const refresh = f.cli(['okf', 'refresh', '--source', f.sourceFile, '--soul', 'source', '--json']);
+  assert.equal(dirname(refresh.path), join(dirname(f.sourceFile), 'views'));
+  assert.equal(fs.existsSync(join(f.home, 'knowledge-view')), false);
+});
+
+for (const mode of ['symlink', 'hardlink', 'directory', 'notes-file']) test(`inspection fails explicitly for unsafe live ${mode}, never returns partial success`, t => {
+  const f = fixture(t), secret = join(f.base, 'secret'); write(secret, 'DO_NOT_EXPOSE_UNSAFE_DOCUMENT');
+  const state = join(f.home, 'STATE.md');
+  if (mode === 'notes-file') { fs.rmSync(join(f.home, 'notes'), { recursive: true }); write(join(f.home, 'notes'), 'not a directory'); }
+  else { fs.unlinkSync(state); if (mode === 'symlink') fs.symlinkSync(secret, state); else if (mode === 'hardlink') fs.linkSync(secret, state); else fs.mkdirSync(state); }
+  const r = f.direct(['inspect'], { status: 1 });
+  assert.equal(r.out.ok, false); assert.equal(r.out.error.code, mode === 'notes-file' ? 'E_INSPECT_FAILED' : 'E_PATH');
+  assert.equal(r.out.result, undefined); assert.doesNotMatch(r.stdout, /DO_NOT_EXPOSE_UNSAFE_DOCUMENT/);
+});
+
+test('installed Git-source capability preserves the canonical soul and public dispatch through retirement and fresh-reader delivery', t => {
+  const f = fixture(t, { installed: true });
+  assert.equal(fs.readlinkSync(join(f.cap, 'agents/memory-harvest/CLAUDE.md')), 'AGENTS.md');
+  write(join(f.home, 'notes/one.md'), 'Accepted deployment-independent rationale.\n');
+  assert.equal(operation(f).result.liveMemory.available, true);
+  f.retire(f.source.instance);
+  const durable = f.inspect();
+  assert.equal(durable.liveMemory.reason, 'retired'); assert.equal(durable.status.captured.inputs.length, 1);
+  const run = f.run(); assert.equal(run.status, 'ready');
+  const metadata = readJSON(join(run.home, 'instance.json'));
+  assert.equal(metadata.work, 'directory'); assert.equal(metadata.launched, false);
+  assert.equal(metadata.parentInstance, undefined, 'retired source is not an attachment dependency');
+  assert.equal(f.complete(run).receipts.project.status, 'accepted');
+  f.retire(run.instance);
+  const reader = f.spawn('installed-reader');
+  assert.match(fs.readFileSync(join(reader.home, 'knowledge/bases/project/expert/decision.md'), 'utf8'), /avoids silent fallback/);
+  f.retire(reader.instance);
 });

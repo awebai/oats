@@ -4,6 +4,10 @@ On 2026-09-05 we installed the published OATS artifacts and used Pi and
 Claude Code workers to fix issues found during a fresh review. The first
 team's work was release preparation in this repository.
 
+> **Historical v1 qualification.** The results below remain evidence for the
+> named versions, not the prepared v2 runtime. Current setup, external ownership
+> and independent delivery are in [the first-team guide](first-team.md).
+
 ## The setup
 
 | Component | Qualified value |
@@ -82,6 +86,7 @@ The run found first-use problems that unit tests alone had not resolved:
 - A combined workspace roster did not make the workspace a spawn scope for
   every child repository. Commands select the owning repository explicitly.
 
-The [first-team guide](first-team.md) includes these setup details. The
+The [first-team guide](first-team.md) now describes the prepared v2 setup;
+these historical v1 outcomes are not v2 acceptance evidence. The
 package owners are responsible for improving their defaults; the kernel
 continues to resolve capabilities through the same replaceable contracts.

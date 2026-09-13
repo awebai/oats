@@ -1,6 +1,6 @@
 {
   "package": "oats.knowledge-theory",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Optional OATS reference knowledge theory and self-contained capability-authoring expert.",
   "compatibility": { "oats": ">=0.22.19" },
   "capabilities": ["capabilities/oats-knowledge-theory"]

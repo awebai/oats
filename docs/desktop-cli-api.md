@@ -18,7 +18,8 @@ prints exactly one JSON object on stdout:
 ```
 
 `version` is the installed package's exact semver (e.g. `0.20.0`).
-Desktop 0.22 accepts `desktopApi === 1` and semver `>=0.22.0 <0.23.0`.
+Desktop 0.23 accepts `desktopApi === 1` and semver `>=0.22.0 <0.24.0`
+(the earlier Desktop 0.22 band was `>=0.22.0 <0.23.0`).
 
 Optional features are negotiated from the probe's `features` array. Starting
 an existing home requires `session-start`; named launch configurations and
@@ -138,18 +139,66 @@ subcommand), `E_CAPABILITY_INACTIVE`, `E_CAPABILITY_BLOCKED` (untrusted),
 `E_CAPABILITY_BROKEN`, `E_DUPLICATE_NAMESPACE`, `E_CONFIG_BROKEN` — all still
 exactly one stdout envelope with a nonzero exit.
 
-### `oats okf harvest --json`
+### Knowledge operations and OKF v2
 
-Run with cwd fixed to the resolved instance home. `result` is one of:
+Discover provider-declared operations rather than assuming a particular memory
+format. The knowledge capability's version owns its result shape; CLI API v1
+does not freeze the old OKF v1 `harvest: spawned|skipped` body for every provider.
+See [knowledge](knowledge.md) for the prepared OKF 2.0.0 version scope.
 
-```json
-{"harvest":"spawned","instance":"memory-harvest-<slug>","window":"memory-harvest-<slug>"}
-{"harvest":"skipped","reason":"no pending notes"}
+```bash
+oats operation run knowledge:inspect --home /absolute/source-home --json
+oats operation run knowledge:harvest --home /absolute/source-home --json
 ```
 
-Failure: `{"schemaVersion":1,"ok":false,"error":{"code":"E_HARVEST_FAILED","message":"..."}}`
-with exit 1. Skip reasons are human-readable strings (loop guard, no notes,
-no root, no identity, harvester already running, workspace-mode soul not in a
-git repo).
+The operation runner preserves the provider view/action through the ordinary
+operations contract. Direct `oats okf inspect` returns the standard JSON-v1
+success/error envelope. Its result includes:
 
-Contract tests / canonical fixtures: `test/cli-json-contract.test.mjs`.
+- `summary`, durable `source`, frozen `owns`, `reads`, `bases`;
+- `acceptedView` (the registered snapshot, not a fresh read), `status` with
+  capture/processing/delivery/acceptance receipts, and `scheduler` diagnostics;
+- `liveMemory: {available, reason, observedAt}` and labeled `documents`.
+
+Live Markdown documents are `Working state (STATE.md)`, `Log (log.md)` and
+sorted `Pending note: <relative-name>`, including nested notes. Missing files
+are omitted; durable receipts follow as a text document. Only a live source
+whose pointer/metadata still matches may supply live memory. Retired, missing,
+reused or unverified homes return durable documents and explicit unavailability.
+Unsafe live documents fail instead of returning a partial success. Inspection is
+read-only and does not capture, refresh, schedule or launch a model.
+
+The explicit preview limit is **256 KiB per document**, with `truncated: true`
+and original `bytes` for larger files. Smaller files are byte-exact. The complete
+JSON envelope drains stdout; consumers must not clip it at a small output-buffer
+limit. Provider `read` returns full Markdown, not this inspection preview.
+
+After the home disappears, operate from durable deployment context:
+
+```bash
+oats okf inspect --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+oats okf refresh --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+```
+
+Every descriptor-selected read/refresh creates its new view under that source's
+state directory, not the invoking repository or a replacement home.
+
+Direct `oats okf harvest --json` captures notes and record and requests an
+independent directory worker. Representative result shapes (not exhaustive):
+
+```json
+{"status":"running","run":"<run-id>","instance":"<worker-instance>","home":"/absolute/worker-home"}
+```
+
+```json
+{"status":"empty","processed":true}
+```
+
+An explicit `--no-launch` request can return `status: "ready"` without starting
+a model; existing runs report their current status without starting duplicates.
+Nonzero errors use the ordinary JSON-v1 error envelope. `running`/`ready` are not
+successful knowledge delivery. Inspect and reconcile provider receipts; never
+infer acceptance from a launch or from a worker disappearing.
+
+Kernel envelope/dispatch tests live in `test/cli-json-contract.test.mjs`;
+provider-specific behavior is qualified against the exported OKF runtime.

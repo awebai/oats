@@ -282,7 +282,7 @@ test("same-version fixture bumps all three packages, then fails on nested shippe
   const write = (file, text) => { mkdirSync(join(repo, file, ".."), { recursive: true }); writeFileSync(join(repo, file), text); };
   for (const sub of ["", "packages/pi/", "packages/desktop/"]) write(`${sub}package.json`, JSON.stringify({ name: `fixture${sub.length}`, version: "1.2.3", private: true }));
   write("docs/release-notes/v1.2.3.md", "# Fixture notes\n");
-  for (const file of ["check-package-dry-runs.mjs", "check-knowledge-theory-package.mjs"]) {
+  for (const file of ["check-package-dry-runs.mjs", "check-knowledge-theory-package.mjs", "check-okf-mirror.mjs"]) {
     write(`scripts/${file}`, readFileSync(new URL(`../scripts/${file}`, import.meta.url)));
   }
   write("capabilities/provider/lib/deep/io.mjs", "export const = broken;\n");
