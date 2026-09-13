@@ -2,18 +2,42 @@
  * Markdown viewer — desktop-app view contract: mount(el, ctx) / unmount().
  *
  * ctx = { api(pathname, opts), openFile(path), openTerminal(instance),
- *         path: "<abs path of the file to open>" }   (path provided by the shell)
+ *         path: "<abs path of the file to open>",
+ *         pickedFile?: File, owns?: () => boolean }
+ * A pickedFile takes precedence over path and stays entirely in the renderer.
+ * Pass the chooser's owns predicate (plus tab lifetime) to guard pending reads.
  *
  * Renders a proper reader for markdown files (headings, lists, tables, fenced
  * code with syntax highlighting, blockquotes). Relative links to other .md
  * files re-open through ctx.openFile; plain non-markdown text files render
  * read-only with syntax highlighting (same view, cheap win).
  *
- * Data source: GET /api/file?path=<abs> on the backend server via ctx.api.
+ * Data source: pickedFile.text(), or legacy GET /api/file?path=<abs> via ctx.api.
+ * Browser picks have no absolute path: only basename/read-only provenance is
+ * shown, and local file navigation is unavailable rather than guessed.
  */
 import { Marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
+
+// Mirrors server/oats-web.mjs's fileData contract; pinned by renderer tests.
+export const FILE_MAX_BYTES = 2 * 1024 * 1024;
+const MARKDOWN_EXT = new Set(["md", "markdown", "mdown", "mkd"]);
+
+export async function readPickedFile(pickedFile) {
+  const { name, size } = pickedFile; // deliberately never inspect .path/.webkitRelativePath
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error("File size is unavailable.");
+  if (size > FILE_MAX_BYTES) throw new Error("File too large (maximum 2 MiB).");
+  let content;
+  try { content = await pickedFile.text(); }
+  catch { throw new Error("The selected file could not be read. Please choose it again."); }
+  // File is immutable in browsers. Also check the result for synthetic/adapted
+  // sources, and count UTF-8 bytes, not JavaScript string length.
+  if (typeof content !== "string") throw new Error("The selected file is not text.");
+  if (new TextEncoder().encode(content).byteLength > FILE_MAX_BYTES) throw new Error("File too large (maximum 2 MiB).");
+  if (content.includes("\u0000")) throw new Error("Binary files cannot be displayed as text (NUL byte found).");
+  return { name, size, content, markdown: MARKDOWN_EXT.has((name.split(".").pop() || "").toLowerCase()) };
+}
 
 const EXT_LANG = {
   mjs: "javascript", cjs: "javascript", js: "javascript", jsx: "javascript",
@@ -61,16 +85,24 @@ export function externalHref(href) {
  * other links must pass the external-scheme allowlist and are forced to
  * target="_blank" rel="noreferrer noopener" — raw-HTML anchors cannot keep
  * attacker-chosen target/rel (renderer navigation, tabnabbing). */
-export function sanitizeHtml(html, doc) {
+export function sanitizeHtml(html, doc, { localFiles = true } = {}) {
   const purify = typeof DOMPurify === "function" ? DOMPurify(doc.defaultView) : DOMPurify;
   const frag = purify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
     ADD_ATTR: ["data-open-file"],
-    FORBID_TAGS: ["style", "form", "input", "button"],
+    FORBID_TAGS: ["style", "form", "input", "button", ...(!localFiles
+      ? ["img", "picture", "video", "audio", "source", "track", "iframe", "object", "embed", "link", "svg", "math",
+        "textarea", "select", "option", "optgroup", "datalist"] : [])],
+    // A private picked document must not initiate resource requests (including
+    // CSS URLs). External links remain explicit, sanitized user actions.
+    FORBID_ATTR: localFiles ? [] : ["style", "src", "srcset", "poster", "background", "contenteditable", "autofocus"],
     ALLOWED_URI_REGEXP: /^(?:https?|mailto):|^#/i,
   });
   for (const a of frag.querySelectorAll("a")) {
     if (a.hasAttribute("data-open-file")) {
+      // Raw HTML can forge this attribute too; lack of a path is not authority
+      // to fetch arbitrary files from the current workspace or filesystem /.
+      if (!localFiles) { a.replaceWith(...a.childNodes); continue; }
       a.setAttribute("href", "#");
       a.removeAttribute("target");
       a.removeAttribute("rel");
@@ -114,6 +146,7 @@ function makeMarked(filePath) {
         // and route through ctx.openFile (wired via a delegated click handler)
         const clean = href.split("#")[0];
         if (!clean) return `<a href="${escapeHtml(href)}"${t}>${label}</a>`;
+        if (!filePath) return label; // browser pick: local links are plain text
         const abs = clean.startsWith("/") ? clean : resolveRelative(filePath, clean);
         return `<a href="#" data-open-file="${escapeHtml(abs)}"${t}>${label}</a>`;
       },
@@ -141,6 +174,25 @@ const STYLE = `
                             font: 11px -apple-system, sans-serif; padding: 3px 9px; cursor: pointer; }
 .mdv pre.md-code .md-copy:hover { color: var(--fg); border-color: var(--accent); }
 .mdv code { font: 13px/1.55 "SF Mono", ui-monospace, Menlo, monospace; }
+/* Shared by fenced Markdown and read-only code files. Semantic foregrounds
+   stay opaque; theme-contrast tests validate the composited md-code-bg. */
+.mdv .hljs { color: var(--fg); }
+.mdv .hljs-comment, .mdv .hljs-quote { color: var(--muted); }
+.mdv .hljs-keyword, .mdv .hljs-selector-tag, .mdv .hljs-doctag,
+.mdv .hljs-meta, .mdv .hljs-meta .hljs-keyword { color: var(--violet); }
+.mdv .hljs-title, .mdv .hljs-section, .mdv .hljs-name, .mdv .hljs-attr,
+.mdv .hljs-attribute, .mdv .hljs-selector-id, .mdv .hljs-selector-class,
+.mdv .hljs-selector-attr, .mdv .hljs-selector-pseudo, .mdv .hljs-link { color: var(--accent); }
+.mdv .hljs-string, .mdv .hljs-regexp, .mdv .hljs-addition,
+.mdv .hljs-meta .hljs-string { color: var(--ok); }
+.mdv .hljs-number, .mdv .hljs-literal, .mdv .hljs-type, .mdv .hljs-built_in,
+.mdv .hljs-symbol, .mdv .hljs-bullet, .mdv .hljs-variable,
+.mdv .hljs-template-variable, .mdv .hljs-deletion { color: var(--warn); }
+.mdv .hljs-subst, .mdv .hljs-params, .mdv .hljs-property,
+.mdv .hljs-punctuation, .mdv .hljs-operator, .mdv .hljs-tag,
+.mdv .hljs-template-tag, .mdv .hljs-code { color: var(--fg); }
+.mdv .hljs-emphasis { font-style: italic; }
+.mdv .hljs-strong { font-weight: 700; }
 .mdv :not(pre) > code { background: var(--md-code-bg); padding: .15em .4em; border-radius: 4px; }
 .mdv table { border-collapse: collapse; display: block; overflow-x: auto; }
 .mdv th, .mdv td { border: 1px solid var(--md-rule); padding: 5px 12px; }
@@ -177,58 +229,83 @@ export async function mount(el, ctx) {
   const style = doc0.createElement("style");
   style.textContent = STYLE;
   el.append(style, scroll);
+  const picked = ctx.pickedFile != null;
+  const alive = () => mounts.has(dispose);
+  const owns = () => alive() && (ctx.owns?.() ?? true);
+  const timers = new Set();
 
   const onClick = (e) => {
+    if (!alive()) return;
     const a = e.target.closest?.("a[data-open-file]");
     if (a) {
       e.preventDefault();
-      ctx.openFile(a.getAttribute("data-open-file"));
+      if (!picked) ctx.openFile(a.getAttribute("data-open-file"));
       return;
     }
     // heading anchors + in-document fragment links scroll locally
     const frag = e.target.closest?.('a[href^="#"]');
     if (frag) {
       e.preventDefault();
-      const id = decodeURIComponent(frag.getAttribute("href").slice(1));
-      scroll.querySelector(`[id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "start" });
+      let id;
+      try { id = decodeURIComponent(frag.getAttribute("href").slice(1)); } catch { return; }
+      [...scroll.querySelectorAll("[id]")].find(node => node.id === id)?.scrollIntoView?.({ block: "start" });
       return;
     }
     const copy = e.target.closest?.(".md-copy");
     if (copy) {
       const code = copy.parentElement.querySelector("code")?.textContent || "";
-      navigator.clipboard?.writeText(code).then(() => {
-        copy.textContent = "copied";
-        setTimeout(() => { copy.textContent = "copy"; }, 1200);
-      });
+      // Clipboard copying is explicit and read-only; never a terminal send.
+      try {
+        const writing = doc0.defaultView.navigator.clipboard?.writeText(code);
+        if (writing) Promise.resolve(writing).then(() => {
+          if (!alive()) return;
+          copy.textContent = "copied";
+          const timer = setTimeout(() => {
+            timers.delete(timer);
+            if (alive()) copy.textContent = "copy";
+          }, 1200);
+          timers.add(timer);
+        }).catch(() => { if (alive()) copy.textContent = "copy failed"; });
+      } catch { if (alive()) copy.textContent = "copy failed"; }
     }
   };
   scroll.addEventListener("click", onClick);
   const dispose = () => {
     if (!mounts.has(dispose)) return;
     mounts.delete(dispose);
+    for (const timer of timers) clearTimeout(timer);
+    timers.clear();
     scroll.removeEventListener("click", onClick);
     scroll.remove();
     style.remove();
   };
   mounts.add(dispose);
 
-  const path = ctx.path;
-  root.innerHTML = `<div class="mdv-loading"><span class="mdv-spinner"></span> Loading ${escapeHtml(String(path || "").split("/").pop())}…</div>`;
+  if (!owns()) { dispose(); return dispose; }
+  const path = picked ? null : ctx.path;
+  const label = picked ? ctx.pickedFile.name : path || "(no path)";
+  root.innerHTML = `<div class="mdv-loading"><span class="mdv-spinner"></span> Loading ${escapeHtml(picked ? label : String(path || "").split("/").pop())}…</div>`;
   let file;
   try {
-    const res = await ctx.api(`/api/file?path=${encodeURIComponent(path)}`);
-    file = res && res.json ? await res.json() : res; // ctx.api may return Response or parsed JSON
-    if (file.error) throw new Error(file.error);
+    if (picked) file = await readPickedFile(ctx.pickedFile);
+    else {
+      const res = await ctx.api(`/api/file?path=${encodeURIComponent(path)}`);
+      if (!owns()) return dispose;
+      file = res && res.json ? await res.json() : res; // Response or parsed JSON
+      if (file.error) throw new Error(file.error);
+    }
   } catch (e) {
-    root.innerHTML = `<div class="mdv-error">Could not open ${escapeHtml(path || "(no path)")}: ${escapeHtml(e.message || String(e))}</div>`;
+    if (!owns()) return dispose;
+    root.innerHTML = `<div class="mdv-error">Could not open ${escapeHtml(label)}: ${escapeHtml(e.message || String(e))}</div>`;
     return dispose;
   }
-  if (!mounts.has(dispose)) return dispose;   // closed while the file loaded
+  if (!owns()) return dispose;   // closed/superseded while the file loaded
   const kb = file.size >= 10240 ? `${(file.size / 1024).toFixed(1)} KB` : `${file.size} B`;
-  const meta = `<div class="mdv-meta"><span class="crumb">${escapeHtml(file.path)}</span><span>${kb}</span></div>`;
+  const provenance = picked ? "<span>Read-only · browser-selected file</span><span>Full path unavailable; local file links and embedded resources are disabled.</span>" : "";
+  const meta = `<div class="mdv-meta"><span class="crumb">${escapeHtml(picked ? file.name : file.path)}</span><span>${kb}</span>${provenance}</div>`;
   const doc = el.ownerDocument;
   if (file.markdown) {
-    root.innerHTML = meta + sanitizeHtml(makeMarked(file.path).parse(file.content), doc);
+    root.innerHTML = meta + sanitizeHtml(makeMarked(picked ? null : file.path).parse(file.content), doc, { localFiles: !picked });
     decorate(root, doc);
   } else {
     // plain/code file: read-only highlighted view

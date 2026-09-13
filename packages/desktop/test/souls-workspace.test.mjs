@@ -385,7 +385,7 @@ test("Soul roster: relation + reference instance pass through POST /api/spawn; u
   }
 });
 
-test("Spawn modal: every option always visible; runtime/model pass through; defaults omitted", async () => {
+test("Spawn modal: existing non-configuration options stay visible; runtime/model pass through; defaults omitted", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body><div id=host></div></body></html>", { url: "http://localhost" });
   const oldDocument = globalThis.document;
   const oldWindow = globalThis.window;
@@ -419,7 +419,7 @@ test("Spawn modal: every option always visible; runtime/model pass through; defa
     await tick(); await tick();
     const doc = dom.window.document;
     doc.querySelector(".spawn-act").click();
-    // the human requirement: ALL options visible in the modal, none hidden
+    // Existing non-configuration choices remain directly available.
     for (const cls of ["fpurpose", "ftask", "frelation", "frelto", "fruntime", "fmodel"]) {
       const el = doc.querySelector(`.spawn-dialog .${cls}`);
       assert.ok(el, `${cls} control present in the modal`);
@@ -491,16 +491,20 @@ test("Spawn modal: model dropdown offers the runtime's catalog, swaps on runtime
     const doc = dom.window.document;
     doc.querySelector(".spawn-act").click();
     await tick(); await tick();
-    // opening the modal fetched the catalog for the agent's DEFAULT runtime
-    assert.deepEqual(modelRequests, ["pi"], "catalog fetched for the agent default runtime");
+    // The roster runtime is not a resolved invocation (a soul can inherit a
+    // launch configuration). Only an explicit runtime requests its catalog.
+    assert.deepEqual(modelRequests, [], "soul defaults do not imply a catalog");
     const dl = doc.querySelector("#spawn-model-options");
     assert.ok(dl, "datalist present");
     const input = doc.querySelector(".fmodel");
     assert.equal(input.getAttribute("list"), "spawn-model-options", "model input wired to the datalist");
-    // RACE (review 9b1e3ff): flip the runtime while the initial pi request
-    // is STILL PENDING, then resolve claude FIRST and pi LAST — the stale
-    // pi response must never overwrite the later claude list.
     const fruntime = doc.querySelector(".fruntime");
+    fruntime.value = "pi";
+    fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    assert.deepEqual(modelRequests, ["pi"]);
+    // RACE (review 9b1e3ff): flip while the explicit pi request is STILL
+    // PENDING, then resolve claude FIRST and pi LAST — the stale pi response
+    // must never overwrite the later claude list.
     fruntime.value = "claude";
     fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     await tick();
@@ -513,14 +517,18 @@ test("Spawn modal: model dropdown offers the runtime's catalog, swaps on runtime
     await tick(); await tick();
     assert.deepEqual([...dl.querySelectorAll("option")].map((o) => o.value),
       ["opus", "claude-opus-4-5"], "out-of-order stale response never overwrites the latest list");
-    // a fresh runtime change still repopulates normally
+    // Restoring soul defaults clears suggestions without inventing a runtime.
     fruntime.value = "";
     fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-    await tick();
+    assert.equal(dl.children.length, 0);
+    assert.deepEqual(modelRequests, ["pi", "claude"]);
+    // A fresh explicit choice still repopulates normally.
+    fruntime.value = "pi";
+    fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     deferred[2].resolve();
     await tick(); await tick();
     assert.deepEqual([...dl.querySelectorAll("option")].map((o) => o.value),
-      ["anthropic/claude-opus-4-5", "openai/gpt-5.2"], "agent-default runtime (pi) catalog restored");
+      ["anthropic/claude-opus-4-5", "openai/gpt-5.2"], "explicit pi catalog restored");
     // free text remains valid — the field is advisory, never a hard select
     input.value = "anthropic/custom,openai/gpt-5.2";
     assert.equal(input.value, "anthropic/custom,openai/gpt-5.2");
@@ -1000,10 +1008,11 @@ test("Spawn modal picker: hostile paths stay inert; colliding root tags render d
     const doc = dom.window.document;
     doc.querySelector(".spawn-act").click();
     const ref = doc.querySelector(".frelto");
-    // hostile MODEL never escapes the attribute context: the placeholder is
-    // assigned as a DOM property, so no event handler attribute can exist
+    // A raw roster model is neither an effective-default promise nor markup.
     const fmodel = doc.querySelector(".fmodel");
-    assert.equal(fmodel.placeholder, `x" onpointerenter="window.__pwned=1`, "model preserved byte-for-byte as placeholder TEXT");
+    assert.equal(fmodel.placeholder, "Use soul defaults");
+    assert.equal(fmodel.value, "");
+    assert.ok(!doc.querySelector(".spawn-dialog").textContent.includes(agent.model));
     assert.equal(fmodel.getAttribute("onpointerenter"), null, "no event-handler attribute minted from a hostile model");
     assert.ok(![...doc.querySelectorAll("*")].some((el) => [...el.attributes].some((at) => at.name.startsWith("on"))),
       "no on* attribute anywhere in the modal from workspace-controlled data");

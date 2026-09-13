@@ -14,6 +14,8 @@ export function createTabChrome(document, id, title, isMac = false) {
   triggerEl.setAttribute("aria-controls", `tabpanel-${id}`);
   triggerEl.tabIndex = -1;
   triggerEl.textContent = title;
+  triggerEl.title = title;
+  triggerEl.setAttribute("aria-label", title);
 
   const closeEl = document.createElement("button");
   closeEl.type = "button";
@@ -22,6 +24,13 @@ export function createTabChrome(document, id, title, isMac = false) {
   closeEl.setAttribute("aria-label", `Close ${title}`);
   closeEl.title = `Close ${title} (Delete or ${isMac ? "⌘" : "Ctrl"}+W)`;
   tabEl.append(triggerEl, closeEl);
+  // Arrow/Home/End navigation focuses the trigger; Tab can focus Close. Reveal
+  // the focused control in either scrollable strip without focusing content or
+  // scrolling on passive activation/workspace restoration. Reveal the control,
+  // not the wrapper, which may itself be wider than a very narrow group.
+  for (const control of [triggerEl, closeEl]) {
+    control.addEventListener("focus", () => control.scrollIntoView?.({ block: "nearest", inline: "nearest" }));
+  }
 
   const paneEl = document.createElement("div");
   paneEl.className = "tab-pane";
@@ -37,7 +46,7 @@ export function tabKeyAction(event, index, count) {
   if (key === "Delete" || ((event.metaKey || event.ctrlKey) && key.toLowerCase() === "w")) {
     return { type: "close" };
   }
-  if (!count) return null;
+  if (!count || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.defaultPrevented) return null;
   if (key === "ArrowRight") return { type: "move", index: (index + 1) % count };
   if (key === "ArrowLeft") return { type: "move", index: (index - 1 + count) % count };
   if (key === "Home") return { type: "move", index: 0 };

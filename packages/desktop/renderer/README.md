@@ -110,20 +110,41 @@ workspace bus. Standalone brain views without that context still follow the bus.
 Open requests share a latest-selection token plus the workspace generation, so a
 slow earlier open cannot steal selection or land after an A → B → A switch.
 
+## Supporting read-only files
+
+**File: open read-only…** in the command palette, or **Mod+O**, opens a browser
+file chooser and adds a normal workspace-scoped tab. Markdown renders as a reader;
+code/plaintext renders with semantic syntax colors. There is no editor or save
+operation. The action is rebindable; Ctrl+O inside a Linux/Windows terminal still
+belongs to its program (the action is not terminal-allowlisted).
+
+`open-file.mjs` captures selection/workspace ownership before the chooser opens.
+Each selection gets a distinct identity, even for identical basenames. Once a tab
+exists, its immutable read belongs to the tab's lifetime, so selecting elsewhere
+does not strand it in Loading. Browser-selected files are limited to 2 MiB and
+reject NUL-bearing content. They have no authoritative absolute path; local links
+and embedded resources are disabled rather than guessed. Existing guarded
+`ctx.openFile(path)` links keep their path-backed behavior. Files stay alongside
+terminal/brain tabs without becoming a primary navigation surface.
+
+The agent-facing CLI command is **not implemented**; see the
+[proposed delivery contract](../docs/desktop-file-opening-contract.md).
+
 ## Terminal focus discipline (shell-level)
 
-Jumping to an instance terminal (palette instance row, sidebar roster row,
-post-spawn open) ends with the xterm textarea focused — on the fresh-open
-path (`term.focus()` inside the terminal tab's `onReady`) AND on the
-already-open activation path: `activateTab(id, { focusContent: true })`
-invokes the tab's `focusContent` callback (a terminal tab's is
-`term.focus()`). `focusContent` defaults to `false`, so side-effect
-activations — workspace-switch restoration, close-fallback — never steal
-focus; only user-initiated jumps pass it. `terminal.focusActive` is a
-rebindable, editor-visible global action that focuses the active terminal's
-input from anywhere; it ships with NO default chord (Ctrl chords belong to
-the pty on Linux/Windows and plain keys are guarded off editables — bind
-one in the shortcuts editor if wanted).
+`selectTab(id, { focusContent, intent })` is the explicit-selection boundary.
+Async opens reuse their dispatch ticket; pointer, keyboard and close actions
+supersede older foreground work. `activateTab()` only projects/restores state.
+`selection-ownership.mjs` binds focus permission to the selected tab, request and
+workspace generation. A delayed terminal attachment can initialize a retained
+terminal without stealing focus from a newer selection, sidebar or workspace.
+Only a current explicit content-focus request focuses its input when ready;
+workspace restoration and close fallback remain focus-neutral.
+
+`terminal.focusActive` is rebindable and editor-visible, with no default chord.
+Palette/Quick Open share one modal lifetime per document. Cancellation restores
+the logical opener even after roster repaint; activation hands focus to the
+chosen destination without a transient return to the old control.
 
 ## Developing without the shell
 

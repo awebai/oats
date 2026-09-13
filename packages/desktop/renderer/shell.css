@@ -226,8 +226,10 @@ body {
 #tab-actions button:hover:not(:disabled), #tab-actions button:focus-visible { color: var(--fg); background: var(--surface-2); }
 #tab-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #tab-actions button:disabled { color: var(--faint); cursor: default; }
+/* Strips scroll instead of compressing tab identity to a few characters.
+   Keep the existing long-label cap; full names remain in title/ARIA. */
 .tab {
-  display: flex; align-items: center; white-space: nowrap;
+  display: flex; flex: none; align-items: center; white-space: nowrap;
   background: var(--surface-2); border-right: 1px solid var(--border);
   color: var(--muted); max-width: 240px;
 }
@@ -238,7 +240,7 @@ body {
 }
 .tab-trigger { align-self: stretch; min-width: 0; overflow: hidden; text-overflow: ellipsis;
                padding: 0 4px 0 12px; text-align: left; }
-.tab .close { color: var(--muted); margin: 0 8px 0 2px; padding: 2px 5px; border-radius: 4px; font-size: 15px; }
+.tab .close { flex: none; color: var(--muted); margin: 0 8px 0 2px; padding: 2px 5px; border-radius: 4px; font-size: 15px; }
 .tab .close:hover, .tab .close:focus-visible { color: var(--fg); background: var(--surface-2); }
 #tabhost { flex: 1; position: relative; min-height: 0; }
 /* ── editor groups: one .group-cell per group becomes a flex cell of #tabhost;

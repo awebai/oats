@@ -5,7 +5,8 @@ import { JSDOM } from 'jsdom';
 import { cliLaunchConfig, cliStart } from '../cli-adapter.mjs';
 import { launchConfigRequest } from '../server/launch-configs.mjs';
 import { launchConfigFields } from '../renderer/launch-config-fields.mjs';
-import { setWorkspace } from '../renderer/views/common.mjs';
+import { createInstanceStarter } from '../renderer/start-instance.mjs';
+import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 
 const envelope = result => ({ schemaVersion: 1, ok: true, result });
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -143,4 +144,61 @@ test('remove is tied to the selected saved name and save locks configuration edi
     finish({}); await tick();
     assert.equal(u.controller.busy(), false); assert.equal(name.disabled, false);
   } finally { u.close(); }
+});
+
+// Spawn no longer owns these controls. Exercise their actual surviving host,
+// not just the shared fields helper, so removal cannot silently reach Start.
+for (const restart of [false, true]) test(`${restart ? 'Restart' : 'Start'} retains configuration management, selection and invocation preview`, async () => {
+  const previousWs = currentWorkspace(); setWorkspace('/team');
+  const dom = new JSDOM('<body><button>Open</button></body>');
+  const calls = [], opened = [];
+  const instance = { instance: 'dev-one', home, agentsRoot: agents[1].agentsRoot, runtime: 'pi', running: restart };
+  let saved = [config];
+  const ctx = { api: async (path, opts = {}) => {
+    const body = opts.body ? JSON.parse(opts.body) : undefined;
+    calls.push({ path, body });
+    if (path === '/api/cli') return { ...cli, features: ['session-start', 'session-restart', 'launch-config'] };
+    if (path.startsWith('/api/panel')) return { instances: [instance] };
+    if (path === '/api/models') return { models: [] };
+    if (path.startsWith('/api/launch-configs')) {
+      if (body.action === 'list') return { context: '/team', configurations: saved };
+      if (body.action === 'preview') return { command: 'codex --profile personal', ok: true };
+      if (body.action === 'set') saved = [{ name: body.name, source: '/team', ...body.definition }];
+      if (body.action === 'remove') saved = [];
+      return {};
+    }
+    if (path.startsWith(`/api/${restart ? 'restart' : 'start'}/`)) return { instance: instance.instance, home };
+    throw new Error(`Unexpected request: ${path}`);
+  }, openTerminal: ref => opened.push(ref) };
+  try {
+    const modal = createInstanceStarter(dom.window.document, ctx, { waitForReady: async () => true })(instance, { restart });
+    await tick();
+    const fields = modal.querySelector('.start-configurations');
+    assert.equal(fields.hidden, false);
+    assert.equal(fields.querySelector('.launch-config-editor').hidden, false);
+    const select = fields.querySelector('.launch-config-select');
+    select.value = 'personal'; select.dispatchEvent(new dom.window.Event('change'));
+    fields.querySelector('.launch-preview').click(); await tick();
+    assert.match(fields.querySelector('.launch-preview-output').textContent, /codex --profile personal/);
+    assert.deepEqual(calls.find(c => c.body?.action === 'preview').body, {
+      action: 'preview', selector: { home }, choices: { launchConfig: 'personal' },
+    });
+    fields.querySelector('.lc-remove').click(); await tick();
+    fields.querySelector('.lc-name').value = 'replacement';
+    fields.querySelector('.lc-runtime').value = 'codex';
+    fields.querySelector('.lc-save').click(); await tick();
+    assert.equal(select.value, 'replacement');
+    assert.equal(modal.querySelector('.start-runtime').disabled, true);
+    modal.querySelector('.start-yolo').value = 'false';
+    modal.querySelector('form').dispatchEvent(new dom.window.Event('submit', { cancelable: true })); await tick();
+    const call = calls.find(c => c.path.startsWith(`/api/${restart ? 'restart' : 'start'}/`));
+    assert.ok(call);
+    assert.equal(new URL(call.path, 'http://localhost').searchParams.get('home'), home);
+    assert.equal(new URL(call.path, 'http://localhost').searchParams.get('ws'), '/team');
+    assert.deepEqual(call.body, { launchConfig: 'replacement', yolo: false });
+    assert.deepEqual(calls.filter(c => c.path.startsWith('/api/launch-configs')).map(c => c.body.action), ['list', 'preview', 'remove', 'list', 'set', 'list']);
+    assert.equal(calls.some(c => c.path === '/api/spawn'), false);
+    assert.deepEqual(opened, [instance]);
+    assert.equal(modal.isConnected, false);
+  } finally { setWorkspace(previousWs); dom.window.close(); }
 });

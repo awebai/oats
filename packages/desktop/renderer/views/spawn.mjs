@@ -18,7 +18,6 @@ import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, 
 import { distinguishingRootTags } from "../instance-tree.mjs";
 import { preselectSchedule } from "./schedules.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
-import { launchConfigFields } from "../launch-config-fields.mjs";
 
 /** Required-version label for the disabled relation note. The floor is the
  * LOCATOR's (RELATIONS_MIN, served as `relationsMin`); restating a number here
@@ -37,7 +36,7 @@ const cliProbePending = () => !cliStatus() && !cliKnownUnavailable();
 
 const CSS = `
 .souls { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
-.souls-bar { display: flex; align-items: center; gap: 10px; height: var(--bar-h, 48px); flex: none; padding: 0 14px;
+.souls-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; min-height: var(--bar-h, 48px); flex: none; padding: 8px 14px;
              border-bottom: 1px solid var(--border); background: var(--surface); }
 .souls-bar .filter { width: min(260px, 35%); min-width:100px; }
 .souls-sum { color: var(--muted); font-size: 12.5px; }
@@ -492,7 +491,6 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   const hadModal = !!s.modalEl;
   const agentName = s.sel;
   s.sel = null; s.selAgent = null;
-  s.launchFields?.dispose(); s.launchFields = null;
   s.modalEl?.remove(); s.modalEl = null;
   s.syncModalRelations = null;
   if (!hadModal || !repaint || s.alive === false) return;
@@ -588,9 +586,9 @@ function openSpawnModal(s, a) {
           <div class="freldesc" aria-live="polite"></div>
           <div class="frelnote" hidden></div>
         </fieldset>
-        <label>Runtime (optional — defaults to the agent's definition: ${escapeHtml(a.runtime || "pi")})
+        <label>Runtime (optional — uses soul defaults)
           <select class="field fruntime">
-            <option value="" selected>agent default (${escapeHtml(a.runtime || "pi")})</option>
+            <option value="" selected>Use soul defaults</option>
             <option value="pi">pi</option>
             <option value="claude">claude</option>
             <option value="codex">codex</option>
@@ -607,10 +605,9 @@ function openSpawnModal(s, a) {
             <option value="true">YOLO — skip permission prompts</option>
             <option value="false">Use native permission policy</option>
           </select></label>
-        <label>Model (optional — defaults to the agent's definition${a.model ? `: ${escapeHtml(a.model)}` : ""})
-          <input class="field fmodel" autocomplete="off" list="spawn-model-options"></label>
+        <label>Model (optional — uses soul defaults; suggestions require an explicit runtime)
+          <input class="field fmodel" autocomplete="off" list="spawn-model-options" placeholder="Use soul defaults"></label>
         <datalist id="spawn-model-options"></datalist>
-        <div class="spawn-launch-configurations" hidden></div>
         <label>Run on
           <select class="field fserver" aria-label="Execution server">
             <option value="" selected>this machine</option>
@@ -627,12 +624,6 @@ function openSpawnModal(s, a) {
   const wakeFields = wakeScheduleFields(doc);
   modal.querySelector(".soul-form").insertBefore(wakeFields.el, modal.querySelector(".frow"));
   buildRefOptions(modal.querySelector(".frelto")); // safe DOM construction (never innerHTML)
-  // SECURITY (merged-state review @3e76616): a.model is workspace-controlled
-  // and escapeHtml is TEXT-context only (it does not escape quotes) — an
-  // attribute interpolation lets `model: 'x" onpointerenter="...'` break out
-  // and run with the privileged bridge. Assign the placeholder as a DOM
-  // PROPERTY, never via innerHTML attribute text.
-  modal.querySelector(".fmodel").placeholder = a.model || "runtime default";
   // A remote soul belongs to its host even when server listing is unavailable.
   const serverSelect = modal.querySelector(".fserver");
   if (a.server) {
@@ -646,7 +637,7 @@ function openSpawnModal(s, a) {
     try {
       const d = await apiJson(s.ctx, "/api/servers");
       const sel = modal.querySelector(".fserver");
-      if (!sel) return;
+      if (!sel || s.modalEl !== modal) return;
       if (!d?.servers?.length) return;
       for (const srv of d.servers) {
         const o = document.createElement("option");
@@ -657,37 +648,9 @@ function openSpawnModal(s, a) {
     } catch { /* local only */ }
   })();
   const f = modal; // field lookups span the whole modal
-  const launchEl = f.querySelector(".spawn-launch-configurations");
-  let launchFields, selectedConfig;
-  if (cliStatus()?.features?.includes("launch-config") && (!a.server || cliStatus()?.remote?.includes("launch-config"))) {
-    launchEl.hidden = false;
-    launchFields = launchConfigFields(launchEl, {
-      ctx: s.ctx, selector: () => ({ soul: a.name, agentsRoot: a.agentsRoot }),
-      owns: () => s.modalEl === modal,
-      choices: () => ({ ...(f.querySelector(".fruntime").value ? { runtime: f.querySelector(".fruntime").value } : {}), ...(f.querySelector(".fmodel").value.trim() ? { model: f.querySelector(".fmodel").value.trim() } : {}), ...(f.querySelector(".fyolo").value !== "" ? { yolo: f.querySelector(".fyolo").value === "true" } : {}) }),
-      changed: row => {
-        selectedConfig = row;
-        f.querySelector(".fruntime").value = "";
-        f.querySelector(".fruntime").disabled = !!row;
-        f.querySelector(".fruntime option").textContent = row ? `Configuration harness (${row.runtime})` : `Agent default (${a.runtime || "pi"})`;
-        f.querySelector(".fmodel").placeholder = row?.model || (row && row.runtime !== a.runtime ? "Harness default" : a.model || "Harness default");
-        void fillModelOptions();
-      },
-    });
-    s.launchFields = launchFields;
-    for (const input of f.querySelectorAll(".fruntime, .fmodel, .fyolo")) input.addEventListener("input", () => launchFields.invalidate());
-    serverSelect.addEventListener("change", () => {
-      const otherServer = (serverSelect.value || "") !== (a.server || "");
-      launchFields.invalidate(); launchFields.disabled(otherServer);
-      f.querySelector(".fruntime").disabled = !otherServer && !!launchFields.value();
-      launchEl.querySelector(".launch-config-status").textContent = otherServer ? "Select the server workspace to choose or manage its launch configurations." : "";
-      f.querySelector(".fruntime option").textContent = !otherServer && selectedConfig ? `Configuration harness (${selectedConfig.runtime})` : `Agent default (${a.runtime || "pi"})`;
-      void fillModelOptions();
-    });
-  }
-
-  // Model dropdown (datalist): advisory options from POST /api/models for
-  // the EFFECTIVE runtime (the override select, else the agent default).
+  // Model dropdown (datalist): advisory options only for an explicitly
+  // chosen runtime. The raw roster runtime/model do not resolve inherited
+  // soul launch configurations; defaults must remain the CLI's decision.
   // POST, not GET: the endpoint runs a child process on cache miss and must
   // sit behind the server's Origin guard (review 9b1e3ff).
   // Free text stays valid — comma-separated preference lists and unknown
@@ -706,8 +669,8 @@ function openSpawnModal(s, a) {
     const dl = f.querySelector("#spawn-model-options");
     if (!dl) return;
     dl.textContent = "";
-    if (serverSelect.value || selectedConfig) return; // The execution host or wrapper may have a different catalog.
-    const runtime = f.querySelector(".fruntime").value || a.runtime || "pi";
+    const runtime = f.querySelector(".fruntime").value;
+    if (serverSelect.value || !runtime) return; // No local catalog for remote or unresolved defaults.
     try {
       const d = await postJson(s.ctx, "/api/models", { runtime });
       if (myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
@@ -721,6 +684,7 @@ function openSpawnModal(s, a) {
   };
   fillModelOptions();
   f.querySelector(".fruntime").addEventListener("change", fillModelOptions);
+  serverSelect.addEventListener("change", fillModelOptions);
 
   // One source of truth for the relation controls' render state, applied at
   // open AND on every CLI change while the modal is open (review 5526b70):
@@ -796,8 +760,6 @@ function openSpawnModal(s, a) {
     backend: () => f.querySelector(".fbackend").value,
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
-    launchConfig: () => (serverSelect.value || "") === (a.server || "") ? launchFields?.value() : undefined,
-    configBusy: () => launchFields?.busy(),
     server: () => f.querySelector(".fserver")?.value || "",
     wake: () => wakeFields.read(),
     partial: (result) => {
@@ -818,13 +780,13 @@ function openSpawnModal(s, a) {
       f.querySelector(".fruntime").value = "";
       f.querySelector(".fbackend").value = "";
       f.querySelector(".fmodel").value = "";
+      void fillModelOptions(); // restoring defaults also cancels any explicit-runtime catalog
     },
   }));
 
   s.modalEl = modal;
   s.el.querySelector(".souls").append(modal);
   f.querySelector(".fpurpose").focus?.();
-  if (launchFields) void launchFields.load();
   return modal;
 }
 
@@ -930,7 +892,6 @@ export async function doSpawn(s, ui) {
     ui.status.textContent = `Spawn failed: the "${relation}" relation needs a reference instance.`;
     return;
   }
-  if (ui.configBusy?.()) { ui.status.textContent = "Wait for the launch configuration to finish saving."; return; }
   ui.btn.disabled = true; ui.btn.textContent = "Spawning…";
   ui.status.classList?.remove("err"); ui.status.textContent = "";
   try {
@@ -949,7 +910,6 @@ export async function doSpawn(s, ui) {
       backend: (ui.backend ? ui.backend() : "") || undefined,
       runtime: (ui.runtime ? ui.runtime() : "") || undefined,
       model: (ui.model ? ui.model() : "") || undefined,
-      launchConfig: ui.launchConfig?.(),
       wake: ui.wake?.(),
     });
     if (myGen !== workspaceGeneration()) {

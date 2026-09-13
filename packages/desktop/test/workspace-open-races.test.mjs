@@ -5,9 +5,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
-import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
+import { prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
-import { terminalOpenOwnsWorkspace } from "../renderer/workspace-tabs.mjs";
+import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { fillEmptyGroup } from "../renderer/split-layout.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
@@ -19,10 +19,10 @@ function fixture(t, kind) {
   const requests = [], opened = [], activated = [];
   const context = {
     document: dom.window.document, console,
-    workspace: "A", generation: 0, tabOpenIntents: createIntentGate(),
+    workspace: "A", generation: 0,
     currentWorkspace: () => context.workspace, workspaceGeneration: () => context.generation,
     tabs: new Map([[1, { key: "first" }], [2, { key: "second" }]]), pendingTerms: new Set(), split: null,
-    terminalOpenOwnsWorkspace, fillEmptyGroup,
+    fillEmptyGroup,
     setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
     api() { const request = deferred(); requests.push(request); return request.promise; },
     whenKeyFree(key) {
@@ -39,9 +39,10 @@ function fixture(t, kind) {
       return { id, paneEl: dom.window.document.createElement("div") };
     },
     resolveTerminalOpen: instances => ({ inst: {}, key: instances[0] }),
-    activateTab: id => activated.push(id),
+    selectTab: id => activated.push(id),
     openTerminalTabInner: () => assert.fail("an existing tab must not attach another terminal"),
   };
+  context.tabOpenIntents = createSelectionOwnership(context);
   const run = runInNewContext(`(${extract(kind === "terminal" ? "openTerminalTabFlow" : "openViewTab")})`, context);
   return { context, requests, opened, activated, run: key => kind === "terminal" ? run(key, () => assert.fail("unexpected refusal"))
     : run("markdown", key, { path: "/same/path.md" }, "file:/same/path.md") };

@@ -18,6 +18,7 @@ import {
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
 import { createQuickOpen } from "./quick-open.mjs";
+import { createFileOpener } from "./open-file.mjs";
 import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction,
 } from "./keybindings.mjs";
@@ -28,6 +29,7 @@ import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
 import { createTerminalTab, terminalOptions } from "./terminal-tab.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "./tab-a11y.mjs";
 import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.mjs";
+import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import {
@@ -37,11 +39,11 @@ import {
 } from "./instance-tree.mjs";
 import {
   tabVisibleInContext, canActivateTab,
-  fallbackTabForContext, terminalOpenOwnsWorkspace, restoreTerminalTab,
+  fallbackTabForContext, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
 import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import {
-  requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, wireSplitPaneSelection, fillEmptyGroup, resizeSplitGroups,
+  requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, fillEmptyGroup, resizeSplitGroups,
 } from "./split-layout.mjs";
 import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
@@ -193,6 +195,13 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
 function initContextRoster() {
   contextRosterEl = document.getElementById("instance-roster");
   const input = contextRosterEl.querySelector(".ctx-filter");
+  // Native pointer/keyboard entry is a newer UI intent, even if no command
+  // ran (or the filter already had focus). Retained attachments stay alive.
+  const sidebar = document.getElementById("sidebar");
+  sidebar.addEventListener("pointerdown", () => tabOpenIntents.invalidate());
+  sidebar.addEventListener("focusin", () => {
+    if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();
+  });
   input.addEventListener("input", (e) => {
     contextFilter = e.target.value.toLowerCase();
     renderContextRoster(contextInstances);
@@ -256,7 +265,7 @@ function renderContextRoster(instances) {
   contextRosterEl.querySelector(".ctx-count").textContent = `${instances.filter((i) => i.running).length}/${instances.length}${unknown ? ` · ${unknown} unknown` : ""}`;
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
-    restoreTreeState();
+    tabOpenIntents.applyFocus(restoreTreeState);
     return;
   }
   // Sidebar groups by agent CLUSTER (connected relations), not per repo:
@@ -290,7 +299,7 @@ function renderContextRoster(instances) {
         // the final sibling stops at its elbow instead of implying another row.
         const guides = document.createElement("span");
         guides.className = "ctx-guides";
-        treeGuideSegments(items, i).forEach((segment, d) => {
+        treeGuideSegments(items, i, instances).forEach((segment, d) => {
           if (segment === "none") return;
           const guide = document.createElement("span");
           guide.className = `ctx-guide ${segment}`;
@@ -376,8 +385,12 @@ function renderContextRoster(instances) {
       }
     }
   }
-  restoreTreeState();
-  restoreActionMenu();
+  // Polling restores the same logical focus; it must not cancel a pending
+  // terminal open from that row as if the user had re-entered the sidebar.
+  tabOpenIntents.applyFocus(() => {
+    restoreTreeState();
+    restoreActionMenu();
+  });
   // roving tabindex: exactly one row enters the tab order — the focused row
   // when it survived the rebuild, else the first enabled one
   const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
@@ -396,6 +409,7 @@ function onRosterRowKey(e) {
     collapsed: btn.dataset.rosterCollapsed === "1",
   });
   if (!action) return;
+  tabOpenIntents.invalidate(); // keyboard tree navigation is explicit, not a polling restoration
   e.preventDefault();
   const listEl = contextRosterEl.querySelector(".ctx-list");
   const rows = [...listEl.querySelectorAll(".ctx-inst")];
@@ -465,9 +479,17 @@ let activeTab = null;
 const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab key
 const brainIntents = createIntentGate();
 // Terminal and artifact opens compete for the same foreground selection.
-const tabOpenIntents = createIntentGate();
+const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
 const workspaceTabMemory = createWorkspaceTabMemory();
 let tabWorkspace = currentWorkspace();
+let nextPickedFileId = 0;
+const fileOpener = createFileOpener({
+  document,
+  beginIntent: () => tabOpenIntents.begin(),
+  report: message => alert(message),
+  openFile: (pickedFile, owns) => openViewTab("markdown", `≡ ${pickedFile.name}`,
+    { pickedFile }, `picked-file:${++nextPickedFileId}`, "file", undefined, owns),
+});
 
 // ── editor groups: a split of the tab LAYER into persistent groups ─────
 // Pure transitions live in split-layout.mjs; the shell owns the DOM through
@@ -530,6 +552,7 @@ function splitPane(orientation) {
   const r = requestSplit(split, orientation, seed, activeTab);
   split = r.split;
   if (!r.changed) return;
+  tabOpenIntents.invalidate();
   // Re-render WITHOUT moving group focus: requestSplit just focused the new
   // empty group (VS Code: the created group is the active one — the next
   // terminal opens THERE); a plain activateTab would focusTab the source
@@ -540,6 +563,7 @@ function splitPane(orientation) {
 }
 
 function closeSplit() {
+  tabOpenIntents.invalidate();
   if (!split) return;
   split = null;
   if (activeTab != null) activateTab(activeTab);
@@ -564,15 +588,18 @@ function onTabKeydown(e, id) {
   const action = tabKeyAction(e, at, visible.length);
   if (!action) return;
   e.preventDefault();
-  tabOpenIntents.invalidate();
   if (action.type === "close") { closeTab(id, true); return; }
   const [nextId, tab] = visible[action.index];
-  if (activateTab(nextId)) tab.triggerEl.focus();
+  if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), onClose, onShow, focusContent = null, focusOnActivate = false }) {
+function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), onClose, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
   if (key) {
-    for (const [tid, t] of tabs) if (t.key === key) { activateTab(tid, { focusContent: focusOnActivate }); return null; }
+    for (const [tid, t] of tabs) if (t.key === key) {
+      if (intent) selectTab(tid, { intent, focusContent: focusOnActivate });
+      else activateTab(tid);
+      return null;
+    }
   }
   const id = nextTabId++;
   const { tabEl, triggerEl, closeEl, paneEl } = createTabChrome(
@@ -580,33 +607,42 @@ function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(),
   );
   tabbar.append(tabEl);
   tabhost.append(paneEl);
-  triggerEl.addEventListener("click", () => { tabOpenIntents.invalidate(); activateTab(id); });
+  triggerEl.addEventListener("click", () => selectTab(id));
   triggerEl.addEventListener("keydown", (e) => onTabKeydown(e, id));
   closeEl.addEventListener("click", (e) => { e.stopPropagation(); closeTab(id, true); });
-  // Split panes: clicking or focusing INTO a visible non-selected member
-  // pane selects its tab (without moving DOM focus — activateTab never
-  // focuses itself; focusContent stays a user-initiated jump), so
-  // tabs.close / further splits target the terminal the user is actually
-  // interacting with.
-  wireSplitPaneSelection(paneEl, {
-    isMember: () => isSplitMember(split, id),
-    isActive: () => activeTab === id,
-    select: () => activateTab(id),
+  // Pane interaction supersedes pending opens, including an already-active
+  // pane. Selection does not force focus: xterm owns native pointer focus.
+  wirePaneSelection(paneEl, {
+    isVisible: () => tabLayerVisible && !paneEl.hidden && canActivateTab(tabs.get(id), currentWorkspace()),
+    isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
+    select: () => selectTab(id),
   });
   tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, onClose, onShow, focusContent });
-  activateTab(id);
+  if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
+  else activateTab(id);
   return { id, paneEl };
 }
 
-/** Activate a tab. opts.focusContent distinguishes USER-INITIATED jumps
- * (palette instance jump, roster row Enter/click, quick-open) — which end
- * with the tab's content focused (a terminal's xterm textarea, via the
- * tab's focusContent callback) — from side-effect activations (workspace-
- * switch restoration, close-fallback), which must NOT steal focus.
- * opts.keepGroupFocus re-renders around a model transition that already
- * placed group focus (splitPane: the freshly created empty group must stay
- * focused so the next terminal opens there). */
-function activateTab(id, { focusContent = false, keepGroupFocus = false } = {}) {
+/** Explicit selection seam for tab/group commands. Omit intent for a new
+ * user action; async opens pass their dispatch ticket (never mint on arrival).
+ * focusContent opts into input focus, including a terminal still attaching.
+ * Strip/pane navigation leaves DOM focus to its caller/native event. */
+function selectTab(id, { focusContent = false, intent = tabOpenIntents.begin() } = {}) {
+  if (!intent() || !canActivateTab(tabs.get(id), currentWorkspace())) return false;
+  if (focusContent) tabOpenIntents.focus(id, intent);
+  // Projection can restore DOM focus after moving a retained pane. Like
+  // term.focus(), that synchronous focusin is not a second user selection.
+  return tabOpenIntents.applyFocus(() => {
+    if (!activateTab(id)) return false;
+    if (focusContent) tabs.get(id)?.focusContent?.();
+    return true;
+  });
+}
+
+/** Projection/restoration only — does not create explicit selection or focus
+ * intent. keepGroupFocus preserves the destination chosen by a model transition
+ * (e.g. the new empty group after splitting). User commands use selectTab. */
+function activateTab(id, { keepGroupFocus = false } = {}) {
   const current = tabs.get(id);
   // Hidden is not security: reject every cross-workspace artifact activation at
   // the mutation boundary before its pane can become active/receive input.
@@ -628,9 +664,15 @@ function activateTab(id, { focusContent = false, keepGroupFocus = false } = {}) 
     setSidebarMode("instances");
     setNavActive(null);
     refreshContextRoster();
-  } else if (current?.kind === "brain" || current?.kind === "file") {
+  } else if (current?.kind === "brain") {
     setSidebarMode("souls");
     setNavActive("spawn");
+  } else if (current?.kind === "file") {
+    if (sidebarMode !== "instances" && sidebarMode !== "souls") setSidebarMode("instances");
+    // Workspace restoration sets the remembered context BEFORE activation.
+    // Project its nav even when the mode already fits, rather than retaining
+    // the stage highlight left by the workspace we just departed.
+    setNavActive(sidebarMode === "souls" ? "spawn" : null);
   }
   showTabLayer(true);
   // The split renders while the ACTIVE tab is a terminal (the split is a
@@ -656,11 +698,13 @@ function activateTab(id, { focusContent = false, keepGroupFocus = false } = {}) 
   renderSplit(splitVisible);
   updateSplitControls();
   tabs.get(id)?.onShow?.();
-  if (focusContent) tabs.get(id)?.focusContent?.();
   return true;
 }
 
-function closeTab(id, restoreFocus = false) {
+function closeTab(id, restoreFocus = false, { explicit = true } = {}) {
+  // All public close paths supersede foreground work, even for inactive tabs.
+  // Internal replacement (brain open) is part of its enclosing open intent.
+  if (explicit) tabOpenIntents.invalidate();
   const t = tabs.get(id);
   if (!t) return;
   // onClose may return a promise (deferred cleanup while a mount is pending);
@@ -716,17 +760,16 @@ async function openBrainTab(agent) {
   // One brain tab per workspace; other workspaces keep their own mounted
   // selection. Supersede earlier opens before deferred cleanup/module loading.
   const owns = brainIntents.begin();
-  for (const [id, t] of tabs) if (t.kind === "brain" && t.workspace === currentWorkspace()) closeTab(id);
+  for (const [id, t] of tabs) if (t.kind === "brain" && t.workspace === currentWorkspace()) closeTab(id, false, { explicit: false });
   return openViewTab("brain", `◈ ${agent}`, { agent }, "view:brain", "brain", owns);
 }
 
 async function openViewTab(name, title, extra = {}, key = `view:${name}`,
-  kind = name === "markdown" ? "file" : "artifact", parentOwns = () => true) {
+  kind = name === "markdown" ? "file" : "artifact", parentOwns = () => true, selectionOwns = null) {
   const workspace = currentWorkspace();
-  const generation = workspaceGeneration();
-  const latest = tabOpenIntents.begin();
-  const owns = () => parentOwns() && latest() && generation === workspaceGeneration()
-    && workspace === currentWorkspace();
+  const latest = selectionOwns ?? tabOpenIntents.begin();
+  const owns = () => parentOwns() && latest();
+  if (!owns()) return;
   key = JSON.stringify([workspace, key]);
   let mod;
   try {
@@ -738,7 +781,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
     if (!mod) return;
   } catch (e) {
     if (!owns()) return;
-    const made = addTab({ title: `${title} (missing)`, key, kind, workspace });
+    const made = addTab({ title: `${title} (missing)`, key, kind, workspace, intent: owns });
     if (made) made.paneEl.innerHTML = `<div class="placeholder"><h2>${name}</h2><div>view module failed to load: ${e.message}</div></div>`;
     return;
   }
@@ -748,6 +791,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
     key,
     kind,
     workspace,
+    intent: owns,
     // Close is safe at any time — including while the async mount is still
     // pending: the lifecycle defers cleanup until mount settles and then
     // runs THAT mount's disposer (never the module-wide unmount mid-flight,
@@ -764,6 +808,10 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
     const visibleOwner = () => tabs.has(made.id) && currentWorkspace() === workspace;
     await life.mounted(el, {
       ...ctx, ...extra, workspace,
+      // Once created, an immutable file belongs to its tab, not foreground
+      // selection. Hidden reads may finish without activating/focusing it;
+      // returning to the tab must not leave a permanently stale Loading state.
+      owns: () => tabs.has(made.id),
       openFile: path => visibleOwner() && ctx.openFile(path),
       openBrain: agent => visibleOwner() && ctx.openBrain(agent),
       openTerminal: (instance, opts) => visibleOwner() && ctx.openTerminal(instance, opts),
@@ -809,10 +857,7 @@ async function openTerminalTabFlow(ref, notify) {
   // same-named instance in another workspace — or another agents root
   // (review 46f3fdc) — is a different terminal.
   const ws = currentWorkspace();
-  const generation = workspaceGeneration();
-  const latest = tabOpenIntents.begin();
-  const owns = () => latest() && generation === workspaceGeneration()
-    && terminalOpenOwnsWorkspace(ws, currentWorkspace());
+  const owns = tabOpenIntents.begin();
   let panel;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
@@ -840,7 +885,7 @@ async function openTerminalTabFlow(ref, notify) {
   // terminal input so the user can type into tmux immediately.
   for (const [tid, t] of tabs) if (t.key === key) {
     split = fillEmptyGroup(split, tid);
-    activateTab(tid, { focusContent: true }); return;
+    selectTab(tid, { intent: owns, focusContent: true }); return;
   }
   if (pendingTerms.has(key)) return; // an open for this key is already in flight
   pendingTerms.add(key);
@@ -889,6 +934,12 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     remote: inst.server ? { serverId: inst.server, instance: inst.instance, home: inst.home } : undefined,
     wrap,
     isActive: () => made.paneEl.classList.contains("active"),
+    // Visibility is a fit concern, not permission to focus. Consult the
+    // CURRENT explicit intent so re-focusing a pending retained tab works.
+    ownsFocus: () => tabLayerVisible && activeTab === made.id
+      && canActivateTab(tabs.get(made.id), currentWorkspace())
+      && tabOpenIntents.ownsFocus(made.id),
+    focusInput: () => tabOpenIntents.applyFocus(() => term.focus()),
     fit: () => fit.fit(),
     // Terminal-allowlisted shortcuts (engine policy: app.palette, tabs.*)
     // must be intercepted BEFORE xterm writes to the pty — its capture-phase
@@ -908,12 +959,13 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     key,
     kind: "terminal",
     workspace: ws,
+    intent: owns,
     // close() resolves when cleanup (incl. a late-materializing pty detach)
     // actually ran — closeTab reserves the key on this promise.
     onClose: () => { offTheme(); offTypography(); return tab.close(); },
     onShow: () => { requestAnimationFrame(() => { try { fit.fit(); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
-    focusContent: () => { try { term.focus(); } catch {} },
+    focusContent: () => tab.focus(),
     focusOnActivate: true, // addTab's own dedup here is a user jump too
   });
   if (!made) { offTheme(); offTypography(); term.dispose(); return; } // lost a race to an identical tab
@@ -973,6 +1025,7 @@ const palette = createPalette({
     // can never be palette-invisible (review 8441961 nit).
     ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStage(v.name) })),
     { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => quickOpen.open() },
+    { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
     { label: "Theme: toggle light/dark", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
@@ -1006,10 +1059,26 @@ const quickOpen = createQuickOpen({
     return api(`/api/agents${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   },
   onPick: async (soul) => {
-    const { preselectSoul } = await import("./views/spawn.mjs");
-    preselectSoul(soul);
+    // Capture before module loading: a new tab/stage/sidebar intent or an
+    // A→B→A workspace visit must not turn this old callback into a new pick.
+    const owns = tabOpenIntents.begin();
+    let mod;
+    try { mod = await import("./views/spawn.mjs"); }
+    catch (e) {
+      if (!owns()) return;
+      ctx.notify(`Could not open soul: ${e.message || e}`);
+      return;
+    }
+    if (!owns()) return;
+    mod.preselectSoul(soul);
     showStage("spawn");
   },
+});
+// Both pickers contain workspace-scoped references. Close synchronously on
+// every workspace visit; their own lifetimes discard late lists and row clicks.
+onWorkspaceChange(() => {
+  quickOpen.close();
+  palette.close();
 });
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
@@ -1017,6 +1086,7 @@ const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
 function openShortcutsEditor() { shortcutsEditor.open(); }
 
 function focusRoster() {
+  tabOpenIntents.invalidate(); // also when the filter already has DOM focus
   contextRosterEl?.querySelector(".ctx-filter")?.focus();
 }
 
@@ -1049,7 +1119,7 @@ try { if (localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1") setSidebarHidden(tru
  * who want one bind it in the shortcuts editor. */
 function focusActiveTerminal() {
   const t = activeTab != null ? tabs.get(activeTab) : null;
-  if (t?.kind === "terminal") t.focusContent?.();
+  if (t?.kind === "terminal") selectTab(activeTab, { focusContent: true });
 }
 
 function visibleTabEntries() {
@@ -1061,7 +1131,7 @@ function cycleTab(delta) {
   if (!vis.length) return;
   const at = Math.max(0, vis.findIndex(([tid]) => tid === activeTab));
   const [nextId] = vis[(at + delta + vis.length) % vis.length];
-  activateTab(nextId);
+  selectTab(nextId);
 }
 
 // ── action registry: every mouse affordance, one keyboard action ────────
@@ -1070,6 +1140,8 @@ function cycleTab(delta) {
 registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => palette.toggle() });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => quickOpen.toggle() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
+const unregisterOpenFile = registerAction({ id: "app.openFile", label: "File: open read-only…", context: "global", defaultChord: "Mod+O", run: () => fileOpener.choose() });
+window.addEventListener("pagehide", () => { unregisterOpenFile(); fileOpener.dispose(); }, { once: true });
 // stage-switch actions derive from the nav manifest (same rule as the
 // palette): a new rail destination can never be shortcut-invisible.
 NAV.forEach((v) => registerAction({

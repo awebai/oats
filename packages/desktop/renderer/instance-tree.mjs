@@ -308,21 +308,38 @@ export function rosterGroupKey(workspace, ...parts) {
 /** VS Code-style guide segments for one row in a flattened parent-first tree.
  * `continue` is an ancestor/sibling vertical; `branch` has a later sibling and
  * an elbow; `end` is the final sibling, stopping at its elbow; `none` suppresses
- * an exhausted ancestor line through deeper descendants. */
-export function treeGuideSegments(items, item) {
-  const byName = new Map(items.map((candidate) => [candidate.instance, candidate]));
+ * an exhausted ancestor line through deeper descendants.
+ * Pass the full roster as allInstances when items is a cluster/filtered subset:
+ * resolve parent names there first, using the same identity rules as clustering.
+ * Then walk only visible ancestry and count only visible siblings — a hidden
+ * parent stops the path, never falling back to a visible same-named twin. */
+export function treeGuideSegments(items, item, allInstances = items) {
+  const byName = new Map();
+  for (const candidate of allInstances) {
+    if (!byName.has(candidate.instance)) byName.set(candidate.instance, []);
+    byName.get(candidate.instance).push(candidate);
+  }
+  const parentIdOf = new Map();
+  for (const candidate of allInstances) {
+    const id = instanceId(candidate);
+    const pid = candidate.parentInstance ? resolveLinkId(candidate, candidate.parentInstance, byName) : null;
+    if (pid && pid !== id) parentIdOf.set(id, pid);
+  }
+  const positions = new Map(items.map((candidate, index) => [instanceId(candidate), index]));
   const chain = [];
   const seen = new Set();
-  let cursor = item;
-  while (cursor?.parentInstance && byName.has(cursor.parentInstance) && !seen.has(cursor.instance)) {
-    seen.add(cursor.instance);
+  let cursor = instanceId(item);
+  while (positions.has(cursor) && !seen.has(cursor)) {
+    seen.add(cursor);
+    const pid = parentIdOf.get(cursor);
+    if (!pid || !positions.has(pid)) break;
     chain.unshift(cursor);
-    cursor = byName.get(cursor.parentInstance);
+    cursor = pid;
   }
   return chain.map((branch, index) => {
-    const at = items.indexOf(branch);
+    const at = positions.get(branch);
     const hasLaterSibling = items.slice(at + 1)
-      .some((candidate) => candidate.parentInstance === branch.parentInstance);
+      .some((candidate) => parentIdOf.get(instanceId(candidate)) === parentIdOf.get(branch));
     const current = index === chain.length - 1;
     if (!current) return hasLaterSibling ? "continue" : "none";
     return hasLaterSibling ? "branch" : "end";

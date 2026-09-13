@@ -1,7 +1,8 @@
 # Desktop UX modernization — audit and delivery plan
 
-Status: proposed design direction; first workspace correctness increment implemented
-on the Desktop branch, pending independent review and live app verification.
+Status: proposed design direction; workspace correctness and read-only file-viewing
+increments implemented on the Desktop branch. Workflow reviews and partial browser
+verification completed; broader UX work and real Electron/PTY verification remain.
 Owner: Desktop engineering. Visual/interaction sign-off: ux-designer.
 
 ## Product brief
@@ -182,9 +183,69 @@ changes are not part of this increment.
   listener; it was neither restarted nor replaced. Passing DOM tests is not a
   substitute for live terminal evidence.
 
+## Second increment — dynamic workflow implementation and browser evidence
+
+The user explicitly requested dynamic workflows, clarified that ORCA is a UI
+reference rather than a product model, and requested supporting read-only file
+tabs plus a future agent-facing CLI open command.
+
+Implemented in this increment:
+
+- Removed all launch-configuration UI/bindings from **Spawn** while retaining
+  CLI-owned inheritance, explicit non-configuration overrides and empty tasks.
+  Start/Restart configuration behavior is unchanged. The remaining Spawn fields
+  are not yet the proposed task-only/progressive-disclosure redesign.
+- Added **File: open read-only… / Mod+O**, a native browser File chooser feeding
+  ordinary workspace-scoped Markdown/code tabs. No file editor, file sidebar,
+  new IPC/endpoint, filesystem writes or basename-based identity guessing.
+- Added visible syntax colors using existing semantic tokens and contrast tests
+  against the composited Markdown code-block background.
+- Unified explicit selection/focus ownership across tab, pane, cycle, close,
+  sidebar and deferred attachment paths. Picker handoffs retain one modal and
+  recover logical focus after roster DOM replacement.
+- Fixed identity-safe ancestry guides, file-restoration navigation projection,
+  and compressed tab chrome using the existing scrollable-strip behavior.
+- Made the Souls toolbar wrap after a live narrow-width overflow observation.
+  This last CSS correction is unit-tested but **not recaptured in the browser**.
+
+Verification of the current increment:
+
+- **833 Desktop tests passed**; renderer syntax and AA inventory included.
+- Root check/check:pi/validate/validate:okf/pack:check/smoke:tarball passed.
+- Full root suite: **1,818 passed, 5 failed, 1 skipped**. Failures remain in the
+  unchanged CLI JSON/harvest, remote-server and session start/restart suites.
+- Two live runs used the real renderer and existing dev harness with synthetic
+  roster/CLI/terminal bridges, plus a real confined read-only backend observation.
+  The corrected run captured **29 screenshots**, including actual Spawn dialogs
+  in both themes, native File objects, syntax colors, keyboard focus and A/B
+  workspace layouts. It is **not real Electron/PTY/tmux verification**.
+- Corrected run: 446/448 assertions passed, 13/15 scenarios completed. Two narrow
+  toolbar checks failed before the CSS follow-up; narrow-tab scenarios also hit a
+  driver-side `innerWidth` error. DPR/viewport reflow is not native 200% zoom.
+- The apparent terminal nav highlight in the first run was diagnosed as **hover**,
+  not active selection. A separate file-restoration highlight bug was reproduced
+  and fixed; no blanket asynchronous nav reset was added.
+- Capture environment incident: isolated Google Chrome launched its updater,
+  which recorded host updater-directory writes and an external update-service
+  POST despite isolation flags. Owned capture processes were reaped; operator
+  process identities remained present. No host repair was attempted. Further
+  browser runs are on hold pending containment review. Renderer/API mutation
+  attempts were zero, which does not imply host-wide containment.
+
+Private screenshots, driver scripts, measurements, logs, source hashes and cleanup
+records remain under instance-home `artifacts/desktop-ux/`, not in the package.
+See `live-corrected/REPORT.md` and `live-corrected/runs/run-NSLJ4n/REPORT.md` there.
+
+Still not implemented: generalized tab moves/nested or mixed-content splits,
+restart layout persistence, scoped Pi/provider picker, broad dropdown/sidebar
+redesign, and external CLI file-open delivery. The latter has a separate
+[proposed boundary](desktop-file-opening-contract.md), not an executable command.
+
 ## Coordination needed
 
-The UX designer/coordinator are not active in this instance's roster and aweb is
-not initialized here. Request permission to enlist them rather than starting
-unrequested instances or repairing messaging infrastructure. Pending review does
-not block the existing-contract workspace correctness fixes above.
+The user declined enlisting new OATS agents and authorized dynamic workflows.
+Independent workflow audits/reviews have been used; no OATS instances or messaging
+configuration were created. Role-owned new UX decisions and privileged/CLI changes
+remain proposals requiring their prescribed review; explicit requirements and
+existing-contract correctness work have proceeded. Aweb/OKF integration is absent
+here. Do not repair infrastructure or bypass those boundaries to fill the gaps.

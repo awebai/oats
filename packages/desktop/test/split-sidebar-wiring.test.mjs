@@ -1,18 +1,22 @@
 // Split panes + hideable sidebar — shell wiring pins (keybindings-wiring
 // house style: source-level assertions without booting Electron) plus the
-// engine's default chords for the new actions.
+// engine's default chords and shipped pane-selection behavior.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
+import { runInNewContext } from "node:vm";
+import { createSelectionOwnership, wirePaneSelection } from "../renderer/selection-ownership.mjs";
+import { createTabChrome } from "../renderer/tab-a11y.mjs";
+import { canActivateTab } from "../renderer/workspace-tabs.mjs";
 import {
   DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, parseChord, matchEvent, registerAction,
   setActiveContexts,
 } from "../renderer/keybindings.mjs";
 import {
-  isSplitMember, wireSplitPaneSelection, requestSplit, openTabInFocusedGroup,
+  requestSplit, openTabInFocusedGroup,
 } from "../renderer/split-layout.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -123,39 +127,23 @@ test("split default chords match REAL key events — Shift+\\ arrives as event.k
   ), "split.horizontal");
 });
 
-test("clicking or focusing a visible non-selected split pane selects ITS tab (review 8443068)", () => {
-  const dom = new JSDOM(`<div id="tabhost"><div id="a"></div><div id="b"></div></div>`);
-  const { document } = dom.window;
-  const paneA = document.getElementById("a");
-  const paneB = document.getElementById("b");
-  let split = { orientation: "row", nextId: 3, groups: [{ id: 1, tabs: [1], activeTab: 1 }, { id: 2, tabs: [2], activeTab: 2 }], focusedGroup: 2 };
-  let activeTab = 2;
-  const wire = (paneEl, id) => wireSplitPaneSelection(paneEl, {
-    isMember: () => isSplitMember(split, id),
-    isActive: () => activeTab === id,
-    select: () => { activeTab = id; },
-  });
-  const offA = wire(paneA, 1);
-  wire(paneB, 2);
-  // pane B is selected; pointerdown into pane A must select tab 1 — so a
-  // subsequent tabs.close/split action targets the terminal being used
-  paneA.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
-  assert.equal(activeTab, 1, "pointer into pane A selects tab 1");
-  // keyboard path: focus entering pane B selects tab 2
-  paneB.dispatchEvent(new dom.window.Event("focusin", { bubbles: true }));
-  assert.equal(activeTab, 2, "focus into pane B selects tab 2");
-  // an already-active pane is a no-op; a non-member pane never selects
-  paneB.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
-  assert.equal(activeTab, 2);
-  split = { orientation: "row", nextId: 3, groups: [{ id: 2, tabs: [2], activeTab: 2 }], focusedGroup: 2 };
-  paneA.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
-  assert.equal(activeTab, 2, "non-member pane does not select");
-  // disposer removes the listeners
-  split = { orientation: "row", nextId: 3, groups: [{ id: 1, tabs: [1], activeTab: 1 }, { id: 2, tabs: [2], activeTab: 2 }], focusedGroup: 2 };
-  offA();
-  activeTab = 2;
-  paneA.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
-  assert.equal(activeTab, 2, "disposed pane no longer selects");
+test("pane-selection disposer removes pointer and focus entry listeners", () => {
+  const dom = new JSDOM(`<div id="pane"><input></div>`);
+  try {
+    const pane = dom.window.document.getElementById("pane");
+    let selected = 0;
+    const off = wirePaneSelection(pane, {
+      isVisible: () => true, isApplyingFocus: () => false, select: () => selected++,
+    });
+    pane.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
+    pane.querySelector("input").focus();
+    assert.equal(selected, 2);
+    off();
+    pane.querySelector("input").blur();
+    pane.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
+    pane.querySelector("input").focus();
+    assert.equal(selected, 2);
+  } finally { dom.window.close(); }
 });
 
 test("closing the active split member activates the model-chosen successor, not the newest tab", () => {
@@ -166,11 +154,57 @@ test("closing the active split member activates the model-chosen successor, not 
     "split successor wins over fallbackTabForContext");
 });
 
-test("shell wires pane selection on every tab pane through activateTab", () => {
-  const src = read("renderer/shell.mjs");
-  assert.match(src, /wireSplitPaneSelection\(paneEl, \{/);
-  assert.match(src, /isActive: \(\) => activeTab === id/);
-  assert.match(src, /select: \(\) => activateTab\(id\)/);
+test("shipped addTab wires visible pane entry through selectTab, without treating programmatic focus as user intent", () => {
+  const dom = new JSDOM(`<div id="bar"></div><div id="host"></div>`);
+  try {
+    const { document } = dom.window;
+    const c = {
+      document, navigator: { platform: "MacIntel" }, tabs: new Map(), nextTabId: 1,
+      activeTab: null, tabLayerVisible: true,
+      currentWorkspace: () => "A", workspaceGeneration: () => 0,
+      tabbar: document.getElementById("bar"), tabhost: document.getElementById("host"),
+      createTabChrome, canActivateTab, wirePaneSelection,
+      onTabKeydown() {}, closeTab() {},
+      // Projection is covered in selection-ownership.test.mjs. Keep two
+      // panes visible here (a split) and record the real selection boundary.
+      activateTab(id) { c.activeTab = id; c.tabs.get(id).paneEl.hidden = false; return true; },
+    };
+    c.tabOpenIntents = createSelectionOwnership(c);
+    const src = read("renderer/shell.mjs");
+    const functions = ["addTab", "selectTab"].map(name => {
+      const match = src.match(new RegExp(`function ${name}\\([^]*?\\n\\}`));
+      assert.ok(match, `exercise shipped ${name}`); return match[0];
+    });
+    const { addTab } = runInNewContext(`${functions.join("\n")}\n({ addTab });`, c);
+    const a = addTab({ title: "a", workspace: "A" });
+    const b = addTab({ title: "b", workspace: "A" });
+    const inputA = document.createElement("input"), inputB = document.createElement("input");
+    a.paneEl.append(inputA); b.paneEl.append(inputB);
+    const pointer = pane => pane.dispatchEvent(new dom.window.Event("pointerdown", { bubbles: true }));
+    let older = c.tabOpenIntents.begin();
+    pointer(a.paneEl);
+    assert.equal(c.activeTab, a.id); assert.equal(older(), false, "pane entry uses explicit selection");
+    older = c.tabOpenIntents.begin(); inputB.focus();
+    assert.equal(c.activeTab, b.id); assert.equal(older(), false, "native keyboard focus selects its visible pane");
+    older = c.tabOpenIntents.begin(); pointer(b.paneEl);
+    assert.equal(older(), false, "already-selected pane still supersedes an older open");
+
+    older = c.tabOpenIntents.begin();
+    c.tabOpenIntents.applyFocus(() => inputA.focus());
+    assert.equal(c.activeTab, b.id); assert.equal(older(), true, "programmatic focus must not mint another selection ticket");
+    inputA.blur(); inputA.focus();
+    assert.equal(c.activeTab, a.id); assert.equal(older(), false, "later actual focus is not suppressed");
+
+    for (const guard of ["layer", "pane", "workspace"]) {
+      c.tabLayerVisible = guard !== "layer";
+      b.paneEl.hidden = guard === "pane";
+      c.tabs.get(b.id).workspace = guard === "workspace" ? "B" : "A";
+      older = c.tabOpenIntents.begin();
+      inputB.blur(); pointer(b.paneEl); inputB.focus();
+      assert.equal(c.activeTab, a.id, `${guard}: hidden/foreign pane cannot select`);
+      assert.equal(older(), true, `${guard}: ignored events must not cancel the live intent`);
+    }
+  } finally { dom.window.close(); }
 });
 
 test("activateTab keeps single-selection a11y per surface: one aria-selected per tablist", () => {

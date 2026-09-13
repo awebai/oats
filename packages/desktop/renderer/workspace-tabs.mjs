@@ -7,6 +7,9 @@ export function terminalTabsForWorkspace(entries, ws) {
 
 export function tabVisibleInContext(tab, mode, ws) {
   if (!canActivateTab(tab, ws)) return false;
+  // Files are supporting artifacts in either working context, never a new
+  // primary destination or a reason to hide the terminals they were opened beside.
+  if (tab.kind === "file") return mode === "instances" || mode === "souls";
   if (mode === "instances") return tab.kind === "terminal";
   if (mode === "souls") return tab.kind === "brain" || tab.kind === "file";
   return false;
