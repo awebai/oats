@@ -88,13 +88,15 @@ and complete a real task through review, independent judgment and retirement.
 npm install -g @awebai/oats@latest
 pi install npm:@awebai/oats-pi@latest
 cd /path/to/project
-oats init --package oats.dev --config default
+oats init --raw
+oats install git:github.com/awebai/oats-okf@v2.0.0
 ```
 
-Once the prepared versions are published, continue with the guide's bindings,
-base provisioning, model, team and executable-trust setup before spawning.
-Initialization acquires packages; it does not authenticate a runtime or join a
-messaging team.
+Continue with the guide's bindings, base provisioning, model and executable-trust
+setup before spawning. Raw initialization leaves integrations disabled; the
+explicit installation acquires published OKF 2.0.0 without depending on an older
+template/catalog pin. Neither step authenticates a runtime or joins a messaging
+team. The v0.23.1 framework release integrates that published package into its catalog.
 
 See [the first-team example](docs/first-team-demo.md) for historical v1 Pi and
 Claude qualification, not v2 acceptance evidence. Existing OAS users: start with
@@ -231,7 +233,8 @@ kernel's bundled catalog:
 
 The optional [`oats.knowledge-theory`](docs/knowledge-capability-authoring.md)
 authoring package lives in this repository's `oats-package/` Git payload; its
-catalog entry is prepared at v0.23.1. It is not a runtime knowledge layer.
+catalog entry in framework v0.23.1 selects the already-published v0.23.0 Git
+source, containing theory package 1.0.0. It is not a runtime knowledge layer.
 
 Acquire OKF through the catalog Git payload. Its bundled npm mirror is not a
 self-contained distribution: npm drops the source worker's canonical `CLAUDE.md`

@@ -43,13 +43,14 @@ artifact**: npm drops the source worker's `CLAUDE.md -> AGENTS.md` symlink.
 Acquire the catalog Git payload; do not install a copied npm mirror as a local
 package or repair missing aliases in installed artifacts.
 
-After the prepared release and its dependencies are published, from the
+With a released OATS >=0.23.0 kernel, acquire published OKF 2.0.0 from the
 intended deployment configuration context in an operator shell without inherited
 instance identity (an explicit `--soul` does not override an invoking instance's
-saved settings):
+saved settings). The explicit Git source works before and after the v0.23.1
+framework catalog integration:
 
 ```bash
-oats install oats.okf
+oats install git:github.com/awebai/oats-okf@v2.0.0
 oats trust oats.okf
 oats use oats.okf --soul domain-expert --settings bindings-file=/absolute/config/okf-bindings.json
 oats doctor --soul domain-expert --json

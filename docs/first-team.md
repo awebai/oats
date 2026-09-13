@@ -25,16 +25,18 @@ node --version
 tmux -V
 oats version
 cd /path/to/project
-oats init --package oats.dev --config default
+oats init --raw
+oats install git:github.com/awebai/oats-okf@v2.0.0
 oats list
 ```
 
-Use a repository with an initial commit. Initialization acquires a package
-closure, writes editable configuration and an exact lock, but does not approve
-hooks, authenticate a runtime or join a team. Inspect the acquired versions:
-a development template may still pin OKF v1. Once v2 is published, an explicit
-`oats update oats.okf` is needed to advance such a lock. Do not use a v1 template's
-knowledge settings unchanged with v2.
+Use a repository with an initial commit for this coding-worktree example.
+Raw initialization writes editable configuration with integrations disabled;
+installation separately acquires the published OKF 2.0.0 closure and exact lock.
+Neither step approves hooks, authenticates a runtime or joins a team. Inspect
+the acquired version before continuing. An existing development template or
+lock may still select v1: follow explicit preservation/update/cutover instead
+of applying fresh initialization or carrying v1 knowledge settings into v2.
 
 For several repositories initialize their common workspace, then select the
 repository owning the soul with `--dir /path/to/workspace/project` for
