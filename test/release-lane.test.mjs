@@ -264,3 +264,37 @@ test("tag creates the annotated tag at the recorded SHA and does not push withou
   const { stage: other } = stagedBuild(t, { sha: run("rev-parse", "HEAD") });
   assert.match(lane(["tag", "--tag", "v1.2.3", "--stage", other], { cwd: repo }).stderr, /already exists at .* but the staged build is/);
 });
+
+test("runnerless and hosted builds use the same recursive syntax and validation gates", () => {
+  const source = readFileSync(LANE, "utf8");
+  assert.match(source, /\["scripts\/check-package-dry-runs\.mjs", "--syntax-only"\]/);
+  assert.doesNotMatch(source, /const SHIPPED_JS|git\(exportDir, \["ls-files"/);
+  assert.match(source, /\["version", this\.version, "--no-git-tag-version", "--allow-same-version"\]/);
+  assert.doesNotMatch(source, /if \(current === this\.version\)/, "same-version lock roots still get npm's alignment step");
+  const build = source.slice(source.indexOf("async build()"), source.indexOf("async desktop()"));
+  for (const command of ["npm run check:pi", "npm run validate", "npm run pack:check", "npm run smoke:tarball"]) {
+    assert.ok(build.indexOf(command) > 0 && build.indexOf(command) < build.indexOf('this.recordPhase("build"'), `${command} gates build completion`);
+  }
+});
+
+test("same-version fixture bumps all three packages, then fails on nested shipped syntax before install/publication", (t) => {
+  const { repo, run } = fixtureRepo(t);
+  const write = (file, text) => { mkdirSync(join(repo, file, ".."), { recursive: true }); writeFileSync(join(repo, file), text); };
+  for (const sub of ["", "packages/pi/", "packages/desktop/"]) write(`${sub}package.json`, JSON.stringify({ name: `fixture${sub.length}`, version: "1.2.3", private: true }));
+  write("docs/release-notes/v1.2.3.md", "# Fixture notes\n");
+  for (const file of ["check-package-dry-runs.mjs", "check-knowledge-theory-package.mjs"]) {
+    write(`scripts/${file}`, readFileSync(new URL(`../scripts/${file}`, import.meta.url)));
+  }
+  write("capabilities/provider/lib/deep/io.mjs", "export const = broken;\n");
+  run("add", "."); run("commit", "-qm", "same-version syntax fixture");
+  const stage = join(scratch(t, "stage"), "v1.2.3");
+  const exportDir = join(scratch(t, "export"), "v1.2.3");
+  const npm = fakeNpm(t);
+  const r = lane(["build", "--tag", "v1.2.3", "--stage", stage, "--export", exportDir, "--allow-off-main"], { cwd: repo, env: npm.env });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout + r.stderr, /syntax error in capabilities\/provider\/lib\/deep\/io\.mjs/);
+  assert.equal(npm.calls().filter((c) => c === "version 1.2.3 --no-git-tag-version --allow-same-version").length, 3);
+  assert.ok(!npm.calls().some((c) => /^(ci|test|pack|publish)\b/.test(c)), "syntax failure precedes install/test/pack/publish");
+  assert.deepEqual(JSON.parse(readFileSync(join(stage, "MANIFEST.json"), "utf8")).phases, {});
+  assert.equal(run("status", "--porcelain"), "", "source fixture checkout untouched");
+});

@@ -49,7 +49,7 @@ export function parseEnvelope(stdout) {
 const SPAWN_ARG_RULES = {
   purpose: { flag: "--purpose", re: /^[a-z0-9][a-z0-9-]*$/i },              // instance-name slug
   repo:    { flag: "--repo",    re: /^[^-][^\0]*$/ },                       // path — anything not option-shaped
-  work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace)$/ },
+  work:    { flag: "--work",    re: /^(worktree|checkout|attached|workspace|directory)$/ },
   backend: { flag: "--backend", re: /^(tmux|herdr)$/ },
   runtime: { flag: "--runtime", re: /^(pi|claude|codex)$/ },
   launchConfig: { flag: "--launch-config", re: /^[a-z0-9][a-z0-9._-]*$/i },

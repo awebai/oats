@@ -20,12 +20,14 @@
 // ignore.mjs) are skipped before being opened: no turn, no offset entry —
 // un-ignoring a file later makes the next pass capture it normally.
 
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { isUtf8 } from "node:buffer";
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { finishTurn } from "./canonical.mjs";
 import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
+import { assertIdentity, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
@@ -49,7 +51,7 @@ export function scanTranscript(bytes) {
     if (text === null) continue;
     try {
       const d = JSON.parse(text);
-      if (typeof d.timestamp === "string") ts = d.timestamp;
+      if (typeof d?.timestamp === "string") ts = d.timestamp;
     } catch {
       /* verbatim content; nothing to extract */
     }
@@ -83,8 +85,11 @@ function offsetsPath(store) {
 function loadOffsets(store) {
   try {
     return JSON.parse(readFileSync(offsetsPath(store), "utf8"));
-  } catch {
-    return {};
+  } catch (err) {
+    // This cache is derived, so malformed JSON can be rebuilt. An I/O
+    // failure is different: never hide an unreadable cache as missing.
+    if (err.code === "ENOENT" || err instanceof SyntaxError) return {};
+    throw err;
   }
 }
 
@@ -102,7 +107,7 @@ function readFrom(path, start, size) {
     let done = 0;
     while (done < buf.length) {
       const n = readSync(fd, buf, done, buf.length - done, start + done);
-      if (n === 0) break;
+      if (n === 0) throw new Error(`short read of session/journal source: ${path}`);
       done += n;
     }
     return buf.subarray(0, done);
@@ -119,8 +124,9 @@ function lastJournalLine(store, streamId) {
   let size;
   try {
     size = statSync(path).size;
-  } catch {
-    return 0;
+  } catch (err) {
+    if (err.code === "ENOENT") return 0;
+    throw err;
   }
   let window = 64 * 1024;
   while (true) {
@@ -152,12 +158,12 @@ function lastJournalLine(store, streamId) {
 // Honest limit: an in-place REWRITE of already-captured lines is not
 // detected (only growth is; a shrink triggers a rescan via the size
 // check in the caller). Transcript writers are append-only in practice.
-function offsetFromJournal(store, streamId, sourcePath) {
+function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
   const turns = store.readStream(streamId);
   if (turns.length === 0) return { bytes: 0, line: 0, lastTs: "" };
   const last = turns[turns.length - 1];
   const lastLine = last.provenance?.origin?.line ?? 0;
-  const bytes = readFileSync(sourcePath);
+  const bytes = sourceBytes ?? readFileSync(sourcePath);
   let line = 0;
   let offset = 0;
   while (line < lastLine && offset < bytes.length) {
@@ -166,6 +172,7 @@ function offsetFromJournal(store, streamId, sourcePath) {
     line++;
     offset = nl + 1;
   }
+  if (final && line < lastLine) throw new Error(`session source is shorter than its captured journal: ${sourcePath}`);
   return { bytes: offset, line, lastTs: last.ts ?? "" };
 }
 
@@ -173,7 +180,14 @@ function offsetFromJournal(store, streamId, sourcePath) {
 // of every session file under `roots`. Unstamped leading lines are held
 // until the file shows its first timestamp (then they carry it forward),
 // so every turn is stamped and ts stays a pure function of the source.
-export function captureSessions(store, { owner, roots, format = "cc", ignore = null }) {
+// `files` accepts discovery entries (including their attribution snapshot) or
+// explicit paths for callers not making home-attribution claims. It pins a set,
+// rather than rescanning directories
+// and silently losing disappeared sources (or sweeping in other homes).
+// `final` also verifies unchanged offsets against journals and checks source
+// stability through the pass. The caller must quiesce writers for retirement;
+// a performed pass is a snapshot, not a promise about future writes.
+export function captureSessions(store, { owner, roots, files, format = "cc", ignore = null, final = false }) {
   const fmt = SESSION_FORMATS[format];
   if (!fmt) throw new Error(`unknown session format ${format}`);
   const ign = ignore ?? loadIgnore(store.root);
@@ -183,21 +197,35 @@ export function captureSessions(store, { owner, roots, format = "cc", ignore = n
   let unchanged = 0;
   let held = 0;
   let ignored = 0;
+  let incomplete = 0;
+  const issues = []; // source metadata only, never native record contents
   const streams = new Set();
 
-  for (const path of fmt.listFiles(roots)) {
+  for (const file of files ?? fmt.listFiles(roots)) {
+    const path = typeof file === "string" ? file : file.path;
+    const expected = typeof file === "string" ? null : file.snapshot;
     sessions++;
     const sessionId = fmt.sessionId(path);
-    if (ign.ignores(path, [basename(path), sessionId])) {
+    if (ign.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
       ignored++;
       continue; // never opened: nothing stored, nothing remembered
     }
-    let stat;
+    const fd = openSync(path, "r");
     try {
-      stat = statSync(path);
-    } catch {
-      continue; // vanished between listing and stat; next pass catches it
+    const stat = fstatSync(fd);
+    const snapshot = identity(stat);
+    if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
+    // Final home capture stages a descriptor-pinned snapshot. All attribution
+    // and stability checks precede the first append, never a post-write alarm.
+    const sourceBytes = final || expected ? readRange(fd, 0, stat.size, path) : undefined;
+    if (expected && digest(sourceBytes.subarray(0, expected.size)) !== expected.hash) {
+      throw new Error(`session source content changed since attribution: ${path}`);
     }
+    if (sourceBytes) snapshot.hash = digest(sourceBytes);
+    const verifySource = () => {
+      if (sourceBytes) verifySnapshot(fd, path, snapshot);
+    };
+    verifySource();
     const streamId = `${owner}~${fmt.source}.${sessionId}`;
     // Keyed by stream, not by source path: the same source captured under
     // two owners must not share offset state (owner is part of the stream).
@@ -210,37 +238,54 @@ export function captureSessions(store, { owner, roots, format = "cc", ignore = n
     // saved offsets for appends that landed in an unlinked inode (skipping
     // would lose lines — this happened during the live migration). The
     // journal is the truth; before appending anything, any disagreement
-    // rebuilds the offset from it (checked only when the source grew:
-    // an unchanged file appends nothing, so its cache cannot mislead).
-    if (state && stat.size > state.bytes && state.line !== lastJournalLine(store, streamId)) {
+    // rebuilds the offset from it. Background passes check on growth;
+    // final passes also verify unchanged files before confirming capture.
+    if (state && (final || stat.size > state.bytes) && state.line !== lastJournalLine(store, streamId)) {
       state = null;
     }
-    if (!state) state = offsetFromJournal(store, streamId, path);
+    if (!state) state = offsetFromJournal(store, streamId, path, final, sourceBytes);
     if (stat.size <= state.bytes) {
       unchanged++;
       offsets[offKey] = state;
+      verifySource();
       continue;
     }
 
-    const chunk = readFrom(path, state.bytes, stat.size);
+    const chunk = sourceBytes ? sourceBytes.subarray(state.bytes) : readRange(fd, state.bytes, stat.size, path);
     // Phase 1: collect the COMPLETE lines of the chunk with their stamps.
     const lines = [];
     let scanned = 0;
-    for (const { text } of jsonlLines(chunk)) {
-      if (text === null) break; // over-string-limit line: retry later
-      const lineBytes = Buffer.byteLength(text, "utf8") + 1;
-      if (scanned + lineBytes > chunk.length) break; // no trailing newline yet
+    let reason;
+    while (scanned < chunk.length) {
+      const nl = chunk.indexOf(10, scanned);
+      if (nl === -1) { reason = "torn-tail"; break; }
+      const bytes = chunk.subarray(scanned, nl);
+      // Decoding replacement characters would change both the verbatim line
+      // and its byte offset, possibly treating a later fragment as a record.
+      if (!isUtf8(bytes)) { reason = "invalid-utf8"; break; }
+      let text;
+      try { text = bytes.toString("utf8"); }
+      catch (err) {
+        if (err.code !== "ERR_STRING_TOO_LONG") throw err;
+        reason = "oversized-line";
+        break;
+      }
+      const lineBytes = nl - scanned + 1;
       let ts = "";
       if (text.trim() !== "") {
         try {
           const d = JSON.parse(text);
-          if (typeof d.timestamp === "string") ts = d.timestamp;
+          if (typeof d?.timestamp === "string") ts = d.timestamp;
         } catch {
           /* unparseable native line: captured verbatim below */
         }
       }
       lines.push({ text, ts, bytes: lineBytes });
       scanned += lineBytes;
+    }
+    if (reason) {
+      incomplete++;
+      issues.push({ source: fmt.source, path, reason, offset: state.bytes + scanned });
     }
     // Phase 2: every turn needs a stamp. Leading lines before the file's
     // first stamp carry it backward (deterministic: the file's first
@@ -250,11 +295,16 @@ export function captureSessions(store, { owner, roots, format = "cc", ignore = n
     if (!lastTs) {
       const first = lines.find((l) => l.ts);
       if (!first) {
-        if (lines.length > 0) held++;
+        if (lines.length > 0) {
+          held++;
+          issues.push({ source: fmt.source, path, reason: "unstamped", offset: state.bytes });
+        }
+        verifySource();
         continue; // do not advance; retry when a stamp exists
       }
       lastTs = first.ts;
     }
+    verifySource(); // parsing/recovery may take time; still no journal write yet
     // Turns flush to the journal in bounded batches, so memory stays flat
     // however large the backlog (a first capture of a huge transcript is
     // one file's worth of NEW lines). A crash between flushes cannot
@@ -295,6 +345,8 @@ export function captureSessions(store, { owner, roots, format = "cc", ignore = n
     // re-appends duplicate turn lines — logically deduped by id, but
     // wasted append-only bytes).
     if (grew) saveOffsets(store, offsets);
+    verifySource();
+    } finally { closeSync(fd); }
   }
   saveOffsets(store, offsets);
   return {
@@ -303,6 +355,9 @@ export function captureSessions(store, { owner, roots, format = "cc", ignore = n
     unchanged,
     held,
     ignored,
+    incomplete,
+    complete: held === 0 && incomplete === 0,
+    issues,
     streams: streams.size,
     stream: `${owner}~${fmt.source}.*`,
   };

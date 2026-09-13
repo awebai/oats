@@ -209,3 +209,22 @@ into an orphaned inode until it restarts.
 
 - Deletion via tombstone is eventual: an offline replica retains bytes until
   it reconnects. The SOT says this plainly; so do we.
+
+## Per-home source authority
+
+`capture --home <dir>` defaults to the kernel's independent managed-launch
+record-location history, retained beside the home under `.oats-native-record/`.
+It does not re-resolve old `fromEnv` references using the capturing process.
+Missing history (legacy/standalone), pending launches, and missing historical
+roots fail closed instead of certifying empty observer storage. Runtime switches
+and resumed starts retain earlier roots. A managed scaffold with no starts has
+an empty managed-launch inventory; executing a saved recipe by hand is not a
+managed start.
+
+For a deliberately observer-time inventory, explicitly pass `--current-roots`.
+The JSON labels this `sourceRoots: "current-env"`, rather than `"launch-history"`;
+completion then applies only to the chosen current inventory, not historical
+source custody. The library alternative is `sessionsForHome(home, { roots })`:
+unspecified formats are excluded, and missing supplied roots fail. Synthetic
+standalone tests must choose one of these explicitly, not masquerade as a
+managed native launch. Background capture without `--home` is unchanged.

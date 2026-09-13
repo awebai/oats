@@ -3,7 +3,7 @@ type: Reference
 title: Repo state — the living picture of the OATS repo
 description: Always-current snapshot of what is on main, what is in flight (PRs, features, running instances), recent deliveries, and open threads. Every oats-expert instance updates the relevant subsection whenever it changes that reality (merge, release, spawn, retire, delivery).
 tags: [stewardship, repo-state, living]
-timestamp: 2026-07-30
+timestamp: 2026-09-13
 ---
 # Repo state — the living picture
 
@@ -186,6 +186,9 @@ than letting the file grow stale.
 
 ## In flight
 
+- **After implementation: expert roster and curated knowledge repository (2026-09-13)** — [accepted rebuild direction](/decisions/expert-souls-and-knowledge-rebuild.md): create a separate OATS knowledge Git repository; domain-expert souls rather than engineer roles; distinguish overall OATS stewardship, kernel depth, Desktop, market research and user onboarding. Audit all existing knowledge and pending notes against current OATS; retain useful expertise only, not code descriptions or obsolete OAS material. Repository creation, roster cutover and source cleanup wait until the implementation is complete and verified.
+
+- **Knowledge/memory implementation (2026-09-13)** — the human authorized main pushes/releases and adversarial review approximately every two commits. Plan: `docs/design/2026-09-13-knowledge-implementation.md`; [reference theory](/decisions/provider-neutral-knowledge-and-harvest.md) remains adoptable, not mandatory kernel policy. Initial custody is Git/directory OKF with native user access, no ACL/public-private system. The standalone baseline corrections in `03364e4` passed independent re-review; OKF v2 candidate `077eff6` includes iteratively reviewed custody fixes and requires >=0.23.0. The framework prerequisite candidate advertises 0.23.0 while preserving bundled/catalog OKF 1.6.1. Optional theory tooling is a Git-distributed package, deliberately not a partial npm payload. Full prerequisite suite is green (1682 pass, zero fail, one opt-in skip); installed real-model learning after source deletion and actual GitHub PR merge/reconciliation/fresh visibility passed. Final exact-commit PR/CI, release publication and deployment remain open; candidates are not published releases. Curation inventory is prepared, not migrated. Older release/workstream entries below are not re-verified by this update.
 - **Post-v0.20 official package and local cutover** — framework v0.20.0 is published; `dev-coordinator-capability-finalization` owns dedicated-root/config-template revisions and immutable releases for all six official packages (leaf packages first, `oats.dev` last), catalog follow-up, normal global npm/Pi installation, supported local workspace rebuild (no transitional-v2 migration), three-workspace source Desktop restart, and safe branch/worktree cleanup. The five leaf instances are live on unchanged clean launch bases after bounded recovery from Claude trust/onboarding prompt exits; the coordinator checkout is restored, and package work is in progress. `oats.dev` and catalog remain frozen until the five leaf tags are immutable. No credential deletion or old-v2 compatibility subsystem.
 - Historical open PRs #37, #43, and #48 remain outside this feature scope and require separate owner decisions.
 

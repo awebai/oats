@@ -1,3 +1,4 @@
+import { fixtureEnv } from "./fixture-env.mjs";
 // Shippability: the packed tarball must install and run standalone,
 // outside the monorepo, with no dependencies and no network.
 
@@ -31,7 +32,7 @@ test("npm pack tarball installs and runs in a clean room", { timeout: 120_000 },
   const run = (args, extraEnv = {}) =>
     spawnSync(bin, args, {
       encoding: "utf8",
-      env: { ...process.env, TURN_RECORD_ROOT: join(room, "record"), ...extraEnv },
+      env: { ...fixtureEnv(), HOME: room, TURN_RECORD_ROOT: join(room, "record"), ...extraEnv },
     });
 
   const help = run([]);

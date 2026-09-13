@@ -930,6 +930,8 @@ test("marketplace automatic trust discloses environment before authority persist
   write(join(framework, "bin", "oats.mjs"), readFileSync(join(packageRoot, "bin", "oats.mjs")));
   write(join(framework, "package.json"), readFileSync(join(packageRoot, "package.json")));
   cpSync(join(packageRoot, "lib"), join(framework, "lib"), { recursive: true });
+  // Core now integrates execution-side native record custody.
+  cpSync(join(packageRoot, "packages", "record", "lib"), join(framework, "packages", "record", "lib"), { recursive: true });
   for (const dep of Object.keys(JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).dependencies || {})) {
     if (existsSync(join(packageRoot, "node_modules", dep))) cpSync(join(packageRoot, "node_modules", dep), join(framework, "node_modules", dep), { recursive: true });
   }

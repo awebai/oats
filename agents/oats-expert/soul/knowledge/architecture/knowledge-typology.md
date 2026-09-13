@@ -3,8 +3,10 @@ type: Area Guide
 title: Knowledge typology
 description: How OKF types map to souls vs instances — incarnation-invariance vs indexicality, types as consolidation stages, and the core/role-grown split.
 tags: [memory, okf, types, core]
-timestamp: 2026-07-08
+timestamp: 2026-09-13
 ---
+
+> **Placement update (2026-09-13):** [External knowledge custody](/decisions/external-knowledge-custody.md) accepts moving all knowledge outside souls. The invariance/indexicality and consolidation rationale below survives; references to knowledge physically inside a soul describe the earlier convention, not the new target. Migration has not shipped.
 
 Why each knowledge type lives where it does, derived from the ontology in
 [what OATS is](/architecture/what-oats-is.md) rather than asserted.

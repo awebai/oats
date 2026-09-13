@@ -3,8 +3,10 @@ type: Area Guide
 title: Memory design
 description: Three memory kinds — skills (how), knowledge (what/why), state (where am I) — with OKF bundles for souls and STATE.md/log.md/notes/ for instances.
 tags: [memory, okf, core]
-timestamp: 2026-07-10
+timestamp: 2026-09-13
 ---
+
+> **Direction update (2026-09-13):** [External knowledge custody](/decisions/external-knowledge-custody.md) supersedes this concept's physical soul-bundle and attached/direct-commit harvest model as the target. All knowledge will leave souls; Git-backed harvests will be independent PRs. The new location contract is still under design, not implemented. The capture/judgment distinction below remains relevant.
 
 Memory is the heart of specialization. Three kinds, cleanly separated:
 **skills = procedural, knowledge = declarative, state = episodic.**

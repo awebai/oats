@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-07-28
+timestamp: 2026-09-13
 ---
 
 # Delivery log
@@ -23,6 +23,17 @@ Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
 ---
+
+## Knowledge implementation R1/custody convergence and live acceptance (2026-09-13)
+- verdict: REVIEW FINDINGS CLOSED in the candidate through iterative independent review: retryable directory cleanup and start authority, historically attributed capture roots, piped/bounded record reads, migration binding drift, alias isolation, exact Git content/mode/push custody and directory crash/rejudgment recovery. R0 export validation gaps independently verified closed. Default OKF v2 is committed at `077eff6`; framework prerequisite candidate remains pending final commit/PR/release.
+- owner: oats-expert maintainer · delivery: feature branches and PRs, per the human's explicit clarification.
+- evidence: real Pi source→retired source/transcript→independent model harvester→fresh KB-only reader passed on installed candidate artifacts. Actual private GitHub delivery opened a knowledge-only PR, then maintainer review/merge and the same run's reconciliation verified accepted commit `68d1ce773d7147f05cd7ebbd81512a07da1499f7` and fresh visibility; this was a scripted transport probe, not the separate model-learning test. Full prerequisite suite after deterministic history goldens: 1682 pass, zero fail, one existing opt-in skip; packing/installed Git-authoring closure passed. Publication/deployment remains a separate gate.
+- taught us: delivery must verify actual Git objects and modes rather than just staged bytes, and native capture authority belongs to execution-time history rather than an observer's current environment. New history is persistent custody and must remain represented in post-retirement golden tests.
+
+## Knowledge implementation checkpoint R0 — exact two-commit foundation review (2026-09-13)
+- verdict: RETURNED for standalone OKF baseline validation gaps at `88c09c6` (framework design commit `3d12e5a2` passed direction review): escaping root package manifest accepted, essential skill exports could disappear with tests green, and manifest command/operation fixed argv was not actually exercised. Corrections committed as `03364e4`; 92 tests pass, independent re-review pending. No publication occurred.
+- owner: oats-expert maintainer · delivery: direct-main implementation explicitly authorized by the human, with adversarial workflow checkpoints instead of a feature PR for this work.
+- taught us: a passing baseline must reject broken export mutations, not only validate the payload that happened to be present. Review also found a pre-existing generated-shell quoting vulnerability in v1 harvest instructions; its v2 removal still requires adversarial verification before release.
 
 ## PR #68 — v0.20.0 manifest bump after complete publication (2026-07-30)
 - verdict: MERGED as `c6d92da04b6c06c4da2987790d423e8b736744dd` from exact automated head `3f6805ec142537276b9a3c305ace10295adc8434`. Release run `30548558607` had already passed build/test/tarball, all three Desktop installer build+smoke legs, npm publication of OATS/Pi 0.20.0, checksums/provenance, and GitHub Release creation; only the known organization policy blocked Actions from creating its version-bump PR. Maintainer created and squash-merged the rescue PR manually.

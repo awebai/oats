@@ -25,7 +25,7 @@ A soul is durable and committed. It is the part you review, improve, and keep.
 | `kind` | `persistent` for committed agents, `local` for full local souls under `local-agents/` (legacy `tmp` reads as `local`). |
 | `description` | Short role description. |
 | `repo` | Target repo, absolute or relative to the agents root's parent. |
-| `work` | `worktree` or `checkout`. |
+| `work` | `worktree`, `checkout`, `attached`, `workspace`, or `directory`. |
 | `runtime` | `pi` or `claude` — the harness new instances launch on; a spawn can override with `--runtime`. For `claude`, the binary is `claude` unless a local-only `oats-claude-config` file (closest one walking up from the repo; one line naming the binary, e.g. `claude-personal`) selects another — a personal machine preference for account selection, never committed. With the aweb messaging integration active, claude sessions get the `aweb-channel` plugin wired at spawn for real-time push events. |
 | `model` | Optional default model — a `provider/id[:thinking]` pattern or a comma-separated preference list (`github-copilot/x:high, anthropic/x:high`); at spawn the first entry whose provider/model is available wins (pi models probed via `pi --list-models`). For the `claude` runtime the value is translated to what the claude CLI accepts: `anthropic/<id>[:thinking]` becomes the bare `<id>`, aliases and bare `claude-*` ids pass through, other providers' entries are dropped, and nothing usable falls back to claude's own default. A spawn can override it. |
 | `launch-config` | Optional default launch configuration for new instances (a name declared under `launch-configs:` in the scope's config; see docs/design/launch-configurations.md). `oats spawn --launch-config <name|none>` overrides it; `oats soul set --launch-config <name>` / `--no-launch-config` edit it. |
@@ -255,6 +255,22 @@ Attached agents are guests: never switch branches or rewrite history, touch
 only what the briefing names, keep commits small and attributable. Retiring
 an attached instance never removes the shared tree. The packaged
 `work-attached` instruction source carries this discipline into each generated instance AGENTS.md.
+
+### `directory` — independent execution
+
+`work/` is a new instance-owned directory, not a Git repo or a link to a source.
+Use it explicitly for capability workers that need private execution space
+without Git. `repo` (or `--repo`) supplies configuration context only and may be
+an ordinary directory; without it, the deployment scope is used. An
+`oats-config.yaml` below laptop scope supports package-only deployments before
+any local souls exist. No implicit fallback changes the other modes.
+
+`--work-dir` and `--branch` are rejected. Canonical instructions, skill
+composition, provider trust and runtime preflight still apply. No worktree setup
+runs. Retirement preserves nonempty work in verified recovery storage beside the
+home (`workRecovery.path/work`) before deleting it, including files created by
+hooks; directory work has no disposable-root exemptions. The work-root cannot be
+exchanged for a symlink. Recovery does not replace the worker's delivery protocol.
 
 ### `workspace` — cross-repo coordinator
 

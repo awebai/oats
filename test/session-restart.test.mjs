@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { recipeFromLegacyCommand, restartInstanceSession, startInstanceSession, inspectInstanceSession, stopHarness } from "../lib/core.mjs";
 import { spawn as spawnProcess } from "node:child_process";
+import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
@@ -14,15 +15,16 @@ const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-session-restart-")));
 const socket = join(base, "tmux.sock");
 const session = "r";
-const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const restoreEnvironment = isolateSessionEnvironment(base, socket);
+const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const windows = () => { try { return tmux("list-windows", "-t", session, "-F", "#{window_name}").split("\n").filter(Boolean); } catch { return []; } };
-test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } rmSync(base, { recursive: true, force: true }); });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { restoreEnvironment(); rmSync(base, { recursive: true, force: true }); } });
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 // A harness that records argv and environment, then idles; `polite` exits on TERM, `stubborn` ignores it.
 const binDir = join(base, "bin"); mkdirSync(binDir);
-write(join(binDir, "polite"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$OATS_INSTANCE_HOME/argv.txt"\nenv > "$OATS_INSTANCE_HOME/env.txt"\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\ntrap 'exit 0' TERM\nwhile :; do sleep 0.2; done\n`);
-write(join(binDir, "stubborn"), `#!/bin/sh\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\ntrap '' TERM\nwhile :; do sleep 0.2; done\n`);
+// Publish readiness LAST, after output and signal handlers are installed.
+write(join(binDir, "polite"), `#!/bin/sh\nprintf '%s\\n' "$@" > "$OATS_INSTANCE_HOME/argv.txt"\nenv > "$OATS_INSTANCE_HOME/env.txt"\ntrap 'exit 0' TERM\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nwhile :; do sleep 0.2; done\n`);
+write(join(binDir, "stubborn"), `#!/bin/sh\ntrap '' TERM\necho $$ > "$OATS_INSTANCE_HOME/pid.txt"\nwhile :; do sleep 0.2; done\n`);
 for (const n of ["polite", "stubborn", "claude", "codex", "pi"]) chmodSync(join(binDir, n === "claude" || n === "codex" || n === "pi" ? "polite" : n), 0o755);
 for (const n of ["claude", "codex", "pi"]) { write(join(binDir, n), readFileSync(join(binDir, "polite"), "utf8")); chmodSync(join(binDir, n), 0o755); }
 // In-process starts resolve a runtime's default binary on THIS process's PATH (`which`), not on the
@@ -50,8 +52,18 @@ function makeHome(name, { command, launch, runtime = "claude", model, capability
 }
 const recipeFor = (home, name, { executable, args = [], env = {}, hooksEnv = {}, contributions = [] } = {}) => ({ version: 1, runtime: "claude", launchConfig: null, launchConfigSource: null, executable, executableDeclared: null, executableResolvedFrom: "PATH", args, env, model: null, yolo: true, hooks: { launch: {}, env: hooksEnv, contributions }, prompt: { kind: "task-file", file: "TASK.md" } });
 const renderFor = (home, name, exe, extraEnv = "") => `OATS_INSTANCE=${shq(name)} OATS_INSTANCE_HOME=${shq(home)} PI_AGENT_INSTANCE=${shq(name)} PI_AGENT_HOME=${shq(home)}${extraEnv} ${shq(exe)} --dangerously-skip-permissions -- "$(cat TASK.md)"`;
-async function waitFor(pred, ms = 8000) { const t = Date.now(); while (Date.now() - t < ms) { if (pred()) return true; await sleep(100); } return pred(); }
-const runningPid = (home) => { try { const pid = Number(readFileSync(join(home, "pid.txt"), "utf8").trim()); process.kill(pid, 0); return pid; } catch { return null; } };
+const waitFor = (pred, description = "harness readiness") => waitUntil(pred, description);
+const runningPid = (home) => {
+  try {
+    const text = readFileSync(join(home, "pid.txt"), "utf8").trim();
+    const pid = Number(text);
+    // A marker being rewritten can briefly be empty: never turn that into
+    // PID 0 and accidentally signal the test runner's entire process group.
+    if (!/^\d+$/.test(text) || !Number.isSafeInteger(pid) || pid <= 1) return null;
+    process.kill(pid, 0);
+    return pid;
+  } catch { return null; }
+};
 
 test("restart: every preflight before the stop; a polite harness ends on SIGTERM and the new configuration starts in place with literal args and the reference under its alias", async () => {
   const name = "dev-polite";
@@ -85,8 +97,8 @@ test("restart: every preflight before the stop; a polite harness ends on SIGTERM
   assert.ok(!JSON.stringify(receipt).includes("s3cret"));
   assert.deepEqual(windows().filter((w) => w === name), [name], "one window for the home");
   // A model-only start later keeps the recorded configuration and re-checks its references.
-  process.kill(runningPid(home), "SIGTERM"); await waitFor(() => runningPid(home) === null);
-  await waitFor(() => inspectInstanceSession(home).state === "shell");
+  process.kill(runningPid(home), "SIGTERM"); await waitFor(() => runningPid(home) === null, "polite harness exit");
+  await waitFor(() => existsSync(join(home, ".oats-start-exited")) && inspectInstanceSession(home).state === "shell", "completed command and idle fallback shell");
   assert.throws(() => startInstanceSession(home, { model: "claude-sonnet-5", env: env() }), (e) => e.code === "E_LAUNCH_ENV_MISSING", "the recorded reference is re-checked on a model-only start");
   const again = startInstanceSession(home, { model: "claude-sonnet-5", env: env({ RESTART_TEST_SRC: "again" }) });
   assert.equal(again.model, "claude-sonnet-5"); assert.equal(again.launchConfig, "polite");
@@ -128,8 +140,8 @@ test("legacy homes: a plain session-delivery command converts narrowly (environm
   assert.deepEqual([recipe.runtime, recipe.executable, recipe.yolo, recipe.model, recipe.args, recipe.env, recipe.hooks.env, recipe.legacy], ["claude", join(binDir, "polite"), true, "claude-x", [], {}, { AWEB_DELIVERY: "session" }, { convertedFrom: "command", unclassified: [] }]);
   assert.deepEqual(recipe.hooks.contributions.map((c) => [c.capability, c.env, c.trust.trusted, c.settings]), [["oats.aweb", ["AWEB_DELIVERY"], true, { delivery: "session" }]], "the environment is attributed to the capability that declared it");
   // The switch to a codex configuration, from the command line: no stop needed (stopped home), conversion recorded, env carried.
-  tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec ${SHELL:-/bin/zsh}");
-  await sleep(300);
+  tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec /bin/sh");
+  await waitFor(() => inspectInstanceSession(home).state === "shell", "legacy idle pane shell");
   const r = spawnSync(process.execPath, [CLI, "session", "restart", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() });
   const out = JSON.parse(r.stdout.trim());
   assert.equal(out.ok, true, r.stdout + r.stderr);
@@ -169,11 +181,12 @@ test("a restart to another runtime whose metadata write is interrupted is recove
   makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
   startInstanceSession(home, { env: env() });
   assert.ok(await waitFor(() => runningPid(home) !== null));
+  const oldPid = runningPid(home);
   assert.throws(() => restartInstanceSession(home, { launchConfig: "codexy", env: env(), stopGraceMs: 5000, io: { failBeforeMetadataWrite: true } }), (e) => e.code === "E_SESSION_START_INCOMPLETE");
   const pending = readJson(join(home, ".oats-start-pending.json"));
   assert.deepEqual([pending.runtime, pending.launch.launchConfig, pending.launch.runtime, pending.model], ["codex", "codexy", "codex", null], "the receipt carries the new recipe");
   assert.equal(readJson(join(home, "instance.json")).runtime, "claude", "metadata still says the old runtime");
-  assert.ok(await waitFor(() => runningPid(home) !== null), "the new harness is up");
+  assert.ok(await waitFor(() => runningPid(home) !== null && runningPid(home) !== oldPid, "replacement harness PID"), "the new harness is up");
   const recovered = startInstanceSession(home, { env: env() });
   assert.equal(recovered.reused, "adopted"); assert.equal(recovered.runtime, "codex"); assert.equal(recovered.launchConfig, "codexy"); assert.equal(recovered.model, null);
   const meta = readJson(join(home, "instance.json"));
@@ -195,8 +208,8 @@ test("Herdr: the pane shell's verified process tree is signalled (never the shel
   const home = join(base, "herdr-home"); mkdirSync(home, { recursive: true });
   const child = spawnProcess("/bin/sh", ["-c", `${JSON.stringify(join(binDir, "polite"))}; exit 0`], { stdio: "ignore", env: { ...process.env, OATS_INSTANCE_HOME: home } });
   try {
-    assert.ok(await waitFor(() => existsSync(join(home, "pid.txt"))), "the harness child is up");
-    const harnessPid = Number(readFileSync(join(home, "pid.txt"), "utf8").trim());
+    assert.ok(await waitFor(() => runningPid(home) !== null), "the harness child is up");
+    const harnessPid = runningPid(home);
     const target = { backend: "herdr", binary: "/fake/herdr", socket: join(base, "herdr.sock"), protocol: 20, workspaceId: "w0", paneId: "p0", terminalId: "t0" };
     const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
     let info = () => ({ shell_pid: child.pid, foreground_process_group_id: child.pid, foreground_processes: [{ name: "sh", pid: alive(harnessPid) ? harnessPid : child.pid }] });
@@ -226,7 +239,7 @@ test("Herdr: the pane shell's verified process tree is signalled (never the shel
     assert.throws(() => stopHarness(target, { graceMs: 100, io: running }), (e) => e.code === "E_SESSION_UNKNOWN" && /no such process/.test(e.message));
   } finally {
     try { child.kill("SIGKILL"); } catch { /* gone */ }
-    try { process.kill(Number(readFileSync(join(home, "pid.txt"), "utf8").trim()), "SIGKILL"); } catch { /* gone */ }
+    try { const pid = runningPid(home); if (pid) process.kill(pid, "SIGKILL"); } catch { /* gone */ }
   }
 });
 

@@ -63,7 +63,8 @@
         {
           "type": "object",
           "properties": {
-            "setup": { "type": "string", "description": "Env-bootstrap command run inside each new worktree after creation (path relative to this config's directory)." }
+            "setup": { "type": "string", "description": "Env-bootstrap command run inside each new worktree after creation (path relative to this config's directory). Only worktree mode runs setup." },
+            "retirement-disposable": { "type": "array", "items": { "type": "string" }, "description": "Relative disposable roots for worktree retirement. Directory mode has no disposable exemptions." }
           },
           "additionalProperties": false
         }
@@ -160,7 +161,9 @@
       "properties": {
         "worktree": { "$ref": "#/$defs/workMode" },
         "checkout": { "$ref": "#/$defs/workMode" },
-        "attached": { "$ref": "#/$defs/workMode" }
+        "attached": { "$ref": "#/$defs/workMode" },
+        "workspace": { "$ref": "#/$defs/workMode" },
+        "directory": { "$ref": "#/$defs/workMode" }
       },
       "additionalProperties": false
     }

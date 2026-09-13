@@ -1,9 +1,23 @@
-# What belongs in a soul, and what belongs in an instance
+# OATS reference knowledge theory
 
-The knowledge layer's *format* is pluggable in OATS. The ideas below are not.
-They come from asking what memory means for an agent that outlives its
-sessions, and they apply whatever format or tooling you bind — OKF, plain
-markdown, or something else entirely.
+> **Direction update (2026-09-13):** in the default model, all durable knowledge
+> will live outside souls. The incarnation-invariant versus task-local
+> distinction below still applies, but physical placement in a soul is the
+> earlier convention. The [current design proposal](design/2026-09-13-knowledge-location-contract.md)
+> separates reference theory, capability authoring and runtime implementation.
+> Neither a physical soul bundle nor Git is a theoretical requirement.
+
+This is OATS's opinionated reference theory, followed by the default OKF
+capability. Other knowledge capabilities may adopt it, adapt it or choose a
+different model. Both knowledge tools and theoretical approaches are pluggable;
+the kernel does not force the theory below into a capability's runtime.
+
+The ideas come from asking what memory means for an agent that outlives its
+sessions. Authors can apply them using OKF, a non-Git store or a CLI-backed
+system. OATS will provide canonical injection/skill authoring guidance and a
+`knowledge-theory-expert` agent to help that work. Each capability supplies its
+complete runtime instructions, skills, memory conventions and harvesting
+machinery; it is not merely a tool adapter under a mandatory shared judge.
 
 ## The derivation
 

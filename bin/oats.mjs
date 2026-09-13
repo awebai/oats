@@ -21,7 +21,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
 import {
-  LAYERS, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
+  LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath,
   readCapabilityLocks, writeCapabilityLock,
@@ -988,7 +988,7 @@ function doctor(dir) {
   if (r.injects.length === 0) console.log("  (none)");
   for (const inj of r.injects) console.log(`  ${inj.source}: ${shortPath(inj.file)}`);
 
-  for (const mode of ["worktree", "checkout", "attached", "workspace"]) {
+  for (const mode of WORK_MODES) {
     const wm = resolveWorkMode(ctx, mode);
     console.log(`\nWork mode ${mode}: inject ${wm.inject ? shortPath(wm.inject) : "none"}${wm.setup ? `, setup ${shortPath(wm.setup)}` : ""}`);
   }
@@ -3532,8 +3532,14 @@ function spawnCmd() {
   const yolo = yoloFlag();
   const backend = valueFlag("backend"), herdrSocket = valueFlag("herdr-socket");
   if (backend !== undefined && !["tmux", "herdr"].includes(backend)) bail("E_BAD_ARGS", "--backend must be tmux or herdr");
+  const requestedWork = valueFlag("work");
+  const workDir = valueFlag("work-dir"), branch = valueFlag("branch"), repo = valueFlag("repo");
+  const checkDirectoryOptions = (work) => {
+    if (work === "directory" && (workDir !== undefined || branch !== undefined)) bail("E_BAD_ARGS", "--work directory owns only <home>/work; --work-dir and --branch are not allowed");
+  };
+  checkDirectoryOptions(requestedWork); // before a local soul could be upserted
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect — including root discovery and local-agent upsert (an
   // --instructions-file spawn must not scaffold/overwrite a local soul before
@@ -3566,6 +3572,7 @@ function spawnCmd() {
       note(`(cross-repo: soul "${name}" found at ${shortPath(root)} — instance homes there)`);
     }
   }
+  checkDirectoryOptions(requestedWork || agent?.work);
   // local agents: create/update from raw instructions or a single-file def
   if (instrFile || defFile || !agent) {
     if (!agent && !instrFile && !defFile) {
@@ -3651,8 +3658,11 @@ function spawnCmd() {
   try {
     r = spawnInstance(root, agent, {
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
-      repo: flag("repo") || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
-      work: flag("work"), workDir: flag("work-dir"), runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch: flag("branch"),
+      // Directory execution uses deployment configuration, not an ambient Git
+      // checkout (especially when invoked via --dir from a source instance).
+      repo: (requestedWork || agent.work) === "directory"
+        ? (repo ?? agent.repo) : repo || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
+      work: requestedWork, workDir, runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
     });
@@ -3666,7 +3676,7 @@ function spawnCmd() {
     // model, runtime) is a fact about the selection, not a spawn-mechanism
     // failure: it keeps its own code so a GUI can act on it.
     if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_RUNTIME$/.test(e.code)) { bail(e.code, e.message); throw e; }
-    bail(e.code === "E_RELATIVE_AMBIGUOUS" ? "E_RELATIVE_AMBIGUOUS" : "E_SPAWN_FAILED", e.message || e); throw e;
+    bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
   // the full receipt, never hidden, and never causes a second spawn.
@@ -3863,7 +3873,7 @@ async function paneCmd() {
 function createCmd() {
   const yolo = yoloFlag();
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace] [--runtime pi|claude|codex] [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]");
+  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--runtime pi|claude|codex] [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]");
   const local = args.includes("--local");
   const startDir = dirFlag();
   // `create` BOOTSTRAPS a deployment: with no agents/ or local-agents/ yet,
@@ -3873,14 +3883,16 @@ function createCmd() {
   // `oats init` (a raw stack trace from ensureRoot). Local and committed souls
   // anchor the same way; writeSoul creates the directories.
   let root = findRoot(startDir);
-  let bootstrapped = false;
+  // A configured package-only scope may resolve its future agents root before
+  // that directory exists. Preserve create's bootstrap receipt/message.
+  let bootstrapped = !!root && !existsSync(root) && !existsSync(join(dirname(root), "local-agents"));
   if (!root) {
     root = join(defaultRepo(startDir) || resolve(startDir), "agents");
     bootstrapped = true;
   }
   const instrFile = flag("instructions-file");
   const r = coreCreateAgent(root, {
-    name, local, description: flag("description"), type: flag("type"), repo: flag("repo") || defaultRepo(process.cwd()),
+    name, local, description: flag("description"), type: flag("type"), repo: flag("repo") || (flag("work") === "directory" ? undefined : defaultRepo(process.cwd())),
     work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo,
     instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
   });
@@ -4661,11 +4673,13 @@ Usage:
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
-      [--work worktree|checkout|attached|workspace]  = sugar for --relative-to X --relation
+      [--work worktree|checkout|attached|workspace|directory]  = sugar for --relative-to X --relation
       [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>]  child (default: unrelated, top-level)
       [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]
                                             with team: declared, unknown local souls
                                             resolve across the team scope's repos
+                                            directory: owned home/work, config context may
+                                            be non-Git; rejects --work-dir and --branch
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self] [--delete-branch]            worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then
