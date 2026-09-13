@@ -3,7 +3,7 @@ type: Reference
 title: Repo state — the living picture of the OATS repo
 description: Always-current snapshot of what is on main, what is in flight (PRs, features, running instances), recent deliveries, and open threads. Every oats-expert instance updates the relevant subsection whenever it changes that reality (merge, release, spawn, retire, delivery).
 tags: [stewardship, repo-state, living]
-timestamp: 2026-07-30
+timestamp: 2026-09-13
 ---
 # Repo state — the living picture
 
@@ -186,6 +186,7 @@ than letting the file grow stale.
 
 ## In flight
 
+- **Knowledge/memory architecture scoping (2026-09-13)** — [external knowledge custody](/decisions/external-knowledge-custody.md) records the human-accepted target: all knowledge external to souls, instructional write prohibition for now, source-independent harvesting, and PR-only Git-backed knowledge delivery. The initial access model now relies on users' GitHub accounts, with all workspace/team agents assumed able to read the configured bases; public/private classification and disclosure routing are explicitly deferred. [Reference theory and capability autonomy](/decisions/provider-neutral-knowledge-and-harvest.md) retains working non-Git support alongside Git-backed OKF but clarifies that OATS's doctrine is an adoptable reference, not mandatory policy for every provider. Canonical injection/skill authoring docs and a `knowledge-theory-expert` agent are planned; each capability supplies its complete runtime material, and the expert has not been scaffolded or spawned. The concrete non-Git backend, binding semantics, reader refresh, and independent delivery remain under design in `docs/design/2026-09-13-knowledge-location-contract.md`; directory-backed OKF is recommended, while Omnigraph is a motivating alternative not yet researched or selected. The human subsequently authorized implementation, main pushes and framework/OKF releases with adversarial review approximately every two commits. The execution plan is `docs/design/2026-09-13-knowledge-implementation.md`: start with Git/directory OKF and ship the optional authoring expert from a new self-contained package in the OATS repository, avoiding an unapproved third-repository release. This entry does not re-verify older release/workstream entries below.
 - **Post-v0.20 official package and local cutover** — framework v0.20.0 is published; `dev-coordinator-capability-finalization` owns dedicated-root/config-template revisions and immutable releases for all six official packages (leaf packages first, `oats.dev` last), catalog follow-up, normal global npm/Pi installation, supported local workspace rebuild (no transitional-v2 migration), three-workspace source Desktop restart, and safe branch/worktree cleanup. The five leaf instances are live on unchanged clean launch bases after bounded recovery from Claude trust/onboarding prompt exits; the coordinator checkout is restored, and package work is in progress. `oats.dev` and catalog remain frozen until the five leaf tags are immutable. No credential deletion or old-v2 compatibility subsystem.
 - Historical open PRs #37, #43, and #48 remain outside this feature scope and require separate owner decisions.
 
