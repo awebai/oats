@@ -1,3 +1,4 @@
+import { fixtureEnv } from "./fixture-env.mjs";
 // capture --home and recall --thread --json --after/--until: the seam the
 // OKF harvester uses. Boundaries are turn ids in capture sequence.
 
@@ -32,7 +33,7 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   writeFileSync(f, ccLine(home, "s1", "user", "first", "2026-09-05T10:00:00Z") + ccLine(home, "s1", "assistant", "second", "2026-09-05T10:00:01Z"));
   writeFileSync(join(theirs, "s2.jsonl"), ccLine(other, "s2", "user", "not mine", "2026-09-05T10:00:00Z"));
   const root = join(base, "record");
-  const env = { ...process.env, HOME: fakeHome, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "mac" };
+  const env = { ...fixtureEnv(), HOME: fakeHome, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "mac" };
   const run = (bin, args) => execFileSync(process.execPath, [bin, ...args], { encoding: "utf8", env });
 
   const r1 = JSON.parse(run(CAPTURE, ["--home", home, "--quiet"]));
@@ -125,7 +126,7 @@ function captureFixture(t) {
   const project = join(user, ".claude", "projects", "-instance");
   mkdirSync(home); mkdirSync(project, { recursive: true }); mkdirSync(root);
   const file = join(project, "s1.jsonl");
-  const env = { ...process.env, HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+  const env = { ...fixtureEnv(), HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
   // No --quiet: native --home stdout must remain a single JSON document.
   const run = (argv = [CAPTURE], extra = ["--no-index"]) => spawnSync(process.execPath,
     [...argv, "--home", home, ...extra], { env, cwd: home, encoding: "utf8" });
@@ -190,3 +191,37 @@ for (const [name, bin] of [["oats", "../../../bin/oats.mjs"], ["turn-record", ".
     assert.equal(out.home, home);
   });
 }
+
+
+test("real oats recall drains a >21 MB native JSON window through piped stdout", { timeout: 30000 }, (t) => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "turn-record-large-pipe-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const home = join(base, "instance"), user = join(base, "user"), root = join(base, "record");
+  const project = join(user, ".claude", "projects", "fixture");
+  mkdirSync(home); mkdirSync(project, { recursive: true });
+  const texts = Array.from({ length: 60 }, (_, i) => `${i}:` + "x".repeat(350000) + ":complete");
+  writeFileSync(join(project, "large.jsonl"), texts.map(text => ccLine(home, "large", "assistant", text, "2026-09-13T10:00:00Z")).join(""));
+  const env = { ...fixtureEnv(), HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "fixture" };
+  const oats = new URL("../../../bin/oats.mjs", import.meta.url).pathname;
+  const run = args => spawnSync(process.execPath, [oats, ...args], { cwd: home, env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 20000 });
+  const capture = run(["capture", "--home", home]);
+  assert.equal(capture.status, 0, capture.stderr);
+  const receipt = JSON.parse(capture.stdout); assert.equal(receipt.complete, true);
+  const session = receipt.sessions[0]; assert.equal(session.turns, 60);
+  // spawnSync's default stdout is a real pipe, NOT an output file or TTY.
+  // Its maxBuffer exceeds the answer, separating consumer limits from the
+  // producer's prior process.exit(0) truncation at the OS pipe buffer size.
+  const recall = run(["recall", "--thread", session.thread, "--until", session.lastTurnId, "--limit", "60", "--json"]);
+  assert.equal(recall.status, 0, recall.stderr); assert.equal(recall.error, undefined);
+  assert.ok(Buffer.byteLength(recall.stdout) > 21_000_000);
+  const result = JSON.parse(recall.stdout);
+  assert.equal(result.remaining, 0); assert.equal(result.turns.length, 60);
+  assert.equal(result.turns.at(-1).id, session.lastTurnId);
+  assert.deepEqual(result.turns.map(t => t.text[0].text), texts);
+  // --show used another immediate-exit branch; a single large turn must
+  // drain too, and the finally path must close its derived index normally.
+  const show = run(["recall", "--show", session.lastTurnId]);
+  assert.equal(show.status, 0, show.stderr);
+  assert.ok(Buffer.byteLength(show.stdout) > 350000);
+  assert.equal(JSON.parse(JSON.parse(show.stdout).body.line).message.content[0].text, texts.at(-1));
+});

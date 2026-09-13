@@ -326,7 +326,7 @@ if (args.home) {
     const formats = new Map(); // exact files, not their shared directories
     for (const s of found) {
       if (!formats.has(s.source)) formats.set(s.source, []);
-      formats.get(s.source).push(s.path);
+      formats.get(s.source).push(s);
     }
     Object.assign(outcome, withCaptureLock(() => {
       for (const [format, files] of formats) {
@@ -384,8 +384,8 @@ if (args.home) {
   console.log(JSON.stringify({ home: args.home, owner, ...outcome, status, complete: status === "complete", sessions,
     ...(error ? { error } : {}), ...(issues.length ? { issues } : {}), ...(unattributed.length ? { unattributed } : {}),
   }, null, 2));
-  process.exit(process.exitCode ?? 0); // lock skips/held sessions remain nonfatal
-}
+  // Let stdout drain naturally, including large session-boundary receipts.
+} else {
 
 warnOnStrangerOwner();
 try {
@@ -422,4 +422,6 @@ if (args.watch) {
     }
   }
   setInterval(schedule, 15 * 60 * 1000); // reconcile even if events were missed
+}
+
 }

@@ -12,11 +12,13 @@
 // instance's own, and nothing outside it — not the parent workspace, not a
 // sibling home — is ever swept in.
 
-import { closeSync, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { basename, resolve, sep } from "node:path";
 import { isUtf8 } from "node:buffer";
 
 import { SESSION_FORMATS } from "./formats.mjs";
+import { hashPrefix, identity, sameVersion, verifySnapshot } from "./session-snapshot.mjs";
+import { sourceSessionEnvironment } from "./session-roots.mjs";
 
 // A session's first lines can be large (Claude Code queue operations and
 // file-history snapshots run to 100 KB and more) and the first cwd-bearing
@@ -27,37 +29,31 @@ import { SESSION_FORMATS } from "./formats.mjs";
 const CHUNK_BYTES = 64 * 1024;
 export const CWD_SCAN_BOUND_BYTES = 8 * 1024 * 1024;
 
-function* wholeLines(path, bound) {
-  const fd = openSync(path, "r");
-  try {
-    if (!fstatSync(fd).isFile()) throw new Error(`session source is not a regular file: ${path}`);
-    const buf = Buffer.alloc(CHUNK_BYTES);
-    let pieces = [], size = 0; // keep raw bytes across UTF-8/chunk boundaries
-    let offset = 0;
-    while (offset < bound) {
-      const n = readSync(fd, buf, 0, Math.min(CHUNK_BYTES, bound - offset), offset);
-      if (n === 0) break;
-      offset += n;
-      let from = 0;
-      for (let nl = buf.indexOf(10, from); nl >= 0 && nl < n; nl = buf.indexOf(10, from)) {
-        const tail = buf.subarray(from, nl);
-        const bytes = pieces.length ? Buffer.concat([...pieces, tail], size + tail.length) : tail;
-        // Replacement decoding could fabricate a cwd. Leave corrupt lines
-        // unattributed; capture will report incomplete bytes if a later
-        // valid line supplies the attribution.
-        yield isUtf8(bytes) ? bytes.toString("utf8") : null;
-        pieces = []; size = 0; from = nl + 1;
-      }
-      if (from < n) {
-        const piece = Buffer.from(buf.subarray(from, n)); // buf is reused
-        pieces.push(piece); size += piece.length;
-      }
+function* wholeLines(fd, bound) {
+  const buf = Buffer.alloc(CHUNK_BYTES);
+  let pieces = [], size = 0; // keep raw bytes across UTF-8/chunk boundaries
+  let offset = 0;
+  while (offset < bound) {
+    const n = readSync(fd, buf, 0, Math.min(CHUNK_BYTES, bound - offset), offset);
+    if (n === 0) break;
+    offset += n;
+    let from = 0;
+    for (let nl = buf.indexOf(10, from); nl >= 0 && nl < n; nl = buf.indexOf(10, from)) {
+      const tail = buf.subarray(from, nl);
+      const bytes = pieces.length ? Buffer.concat([...pieces, tail], size + tail.length) : tail;
+      // Replacement decoding could fabricate a cwd. Leave corrupt lines
+      // unattributed; capture will report incomplete bytes if a later
+      // valid line supplies the attribution.
+      yield isUtf8(bytes) ? bytes.toString("utf8") : null;
+      pieces = []; size = 0; from = nl + 1;
     }
-    // A JSON-shaped EOF fragment is still an uncommitted native record.
-    // Never attribute a source using a line its writer has not terminated.
-  } finally {
-    closeSync(fd);
+    if (from < n) {
+      const piece = Buffer.from(buf.subarray(from, n)); // buf is reused
+      pieces.push(piece); size += piece.length;
+    }
   }
+  // A JSON-shaped EOF fragment is still an uncommitted native record.
+  // Never attribute a source using a line its writer has not terminated.
 }
 
 function cwdOfLine(source, line) {
@@ -74,15 +70,34 @@ function cwdOfLine(source, line) {
   return undefined;
 }
 
-/** The working directory a session file records, scanning whole lines from
- *  the start until the first one that carries it, or undefined when none
- *  does within `bound` bytes (unknown format, torn file, no cwd at all). */
-export function sessionCwd(source, path, { bound = CWD_SCAN_BOUND_BYTES } = {}) {
-  for (const line of wholeLines(path, bound)) {
-    const cwd = cwdOfLine(source, line);
-    if (cwd) return cwd;
-  }
-  return undefined;
+/** Descriptor-derived attribution and (for accepted cwd) content witness.
+ *  No cwd within `bound` means unknown format, torn input or no attribution. */
+export function sessionAttribution(source, path, { bound = CWD_SCAN_BOUND_BYTES, acceptCwd = () => true } = {}) {
+  const fd = openSync(path, "r");
+  try {
+    const snapshot = identity(fstatSync(fd));
+    let cwd;
+    for (const line of wholeLines(fd, Math.min(bound, snapshot.size))) {
+      cwd = cwdOfLine(source, line);
+      if (cwd) break;
+    }
+    // Never hash/read the body of an unrelated or unattributable session.
+    if (cwd && acceptCwd(cwd)) snapshot.hash = hashPrefix(fd, snapshot.size, path);
+    // Never combine attribution read from an old prefix with a new witness.
+    // Discovery requires a stable read; append growth between discovery and
+    // capture is supported by the witness's prefix hash.
+    const after = identity(fstatSync(fd));
+    if (!sameVersion(after, snapshot)) {
+      throw new Error(`session source changed during attribution: ${path}`);
+    }
+    verifySnapshot(fd, path, snapshot);
+    return { cwd, snapshot };
+  } finally { closeSync(fd); }
+}
+
+/** Scan complete lines for the first native cwd; never attribute EOF fragments. */
+export function sessionCwd(source, path, options) {
+  return sessionAttribution(source, path, { ...options, acceptCwd: () => false }).cwd;
 }
 
 function canonical(p) {
@@ -105,30 +120,32 @@ function within(child, parent) {
  *  within the scan bound, so a caller can report it instead of losing it.
  *  Read/scan failures throw; they are not unattributed or empty scans.
  *  `ignore` excludes files BEFORE reading, with optional `onIgnored`.
- *  Each entry: { source, sessionId, thread, path, cwd, bytes, mtime }. */
-export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, onIgnored } = {}) {
+ *  Each entry includes a descriptor-derived `snapshot` witness; pass the
+ *  entries intact as captureSessions({ files }) to retain attribution. */
+export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, onIgnored, env = process.env } = {}) {
   const target = canonical(home);
   const out = [];
+  const context = sourceSessionEnvironment(home, env);
   for (const fmt of Object.values(SESSION_FORMATS)) {
-    const rs = roots?.[fmt.source] ?? fmt.defaultRoots();
+    const rs = roots?.[fmt.source] ?? fmt.defaultRoots(context.home, context.env, { cwd: home });
     for (const path of fmt.listFiles(rs, { strict: !roots?.[fmt.source] })) {
       const sessionId = fmt.sessionId(path);
-      if (ignore?.ignores(path, [basename(path), sessionId])) {
+      if (ignore?.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
         onIgnored?.(fmt.source, path);
         continue;
       }
-      const cwd = sessionCwd(fmt.source, path, bound ? { bound } : {});
+      const { cwd, snapshot } = sessionAttribution(fmt.source, path, { bound, acceptCwd: cwd => within(canonical(cwd), target) });
       if (!cwd) { if (onUnattributed) onUnattributed(fmt.source, path); continue; }
       if (!within(canonical(cwd), target)) continue;
-      const stat = statSync(path); // disappearance is a failed scan, never an empty result
       out.push({
         source: fmt.source,
         sessionId,
         thread: `${fmt.source}:session:${sessionId}`,
         path,
         cwd,
-        bytes: stat.size,
-        mtime: stat.mtime.toISOString(),
+        bytes: snapshot.size,
+        mtime: new Date(snapshot.mtimeMs).toISOString(),
+        snapshot,
       });
     }
   }

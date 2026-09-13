@@ -203,13 +203,49 @@ a final pass must check `complete === true`, not exit status or the presence of
 boundaries alone; older results lacking that field cannot certify a pass.
 
 **Snapshot boundary:** completion describes a performed pass over the exact
-attributed source files, not a promise about future appends. Discovery/read
+attributed source files, not a promise about future appends. Discovery carries
+an open-descriptor-derived identity and content witness through capture-lock
+acquisition. Capture stages bytes from one descriptor and validates that witness
+and source stability **before appending**: replacement, truncation and prefix
+rewrites fail without appending the replacement's bytes. Same-inode append
+growth is allowed only when the witnessed prefix is unchanged. Discovery/read
 failures and files disappearing during the pass fail closed; pending trailing
 records and unattributed candidates cannot certify completion. A retirement
 consumer must first quiesce its writers and then preserve the captured evidence
 under its own durable-input protocol. `complete:true` alone does not mean a
 harvest was delivered or that a consumer stored those inputs. Configured privacy
 exclusions remain exclusions, not an invitation to copy excluded source bytes.
+
+**Native roots:** discovery honors `CLAUDE_CONFIG_DIR/projects`,
+`PI_CODING_AGENT_DIR/sessions`, and `CODEX_HOME/sessions`, with the native
+home-directory defaults when unset. Pi's `PI_CODING_AGENT_SESSION_DIR` and
+recorded `--session-dir` override its session root; Pi tilde paths are expanded.
+For `--home`, recorded `instance.json` launch-hook environment and launch
+configuration environment (including `HOME`) override the capturing process's
+values, in launch precedence order. Recorded `fromEnv` references resolve from
+the invoking environment, not from adjacent launch assignments. Relative paths
+resolve from the source instance home, not the capturing worker's directory.
+Missing/unreadable configured roots, dangling default roots, malformed metadata,
+unresolved recorded references and unsupported location-changing launch forms
+fail closed rather than certifying empty evidence. Truly absent optional default
+runtimes remain valid empty inventories. This is native-layout discovery, not
+an inference of arbitrary wrapper scripts' storage behavior.
+
+**Claude children:** discovery also enumerates the native
+`<project>/<sessionId>/subagents/*.jsonl` layout, including children whose parent
+transcript is absent. Each child requires its own cwd attribution; neither its
+parent's cwd nor its directory supplies missing attribution. Child streams use
+`cc.<sessionId>.<child-file-stem>` (threads
+`cc:session:<sessionId>.<child-file-stem>`) so identical child filenames under
+different sessions cannot collide. Complete native lines are preserved verbatim;
+torn, unstamped or unattributed child evidence blocks certification, and child
+read/discovery failures fail the pass. Ignore rules run before child opens and
+can match its path, filename, qualified id, native child id or parent session id.
+
+**Piped recall:** native `oats recall` JSON responses drain stdout before process
+termination, including large thread windows and individual `--show` records.
+Consumers must still bound their own reads/buffers (use `--ids-only` for sizing);
+a successful producer does not imply an unbounded consumer buffer.
 
 ### Consumer fixture
 

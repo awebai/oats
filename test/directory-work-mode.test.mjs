@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { acquirePackage, approveCapability, createAgent, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance } from "../lib/core.mjs";
+import { acquirePackage, approveCapability, createAgent, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance, startInstanceSession } from "../lib/core.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const HOST_PATH = process.env.PATH;
@@ -434,4 +434,227 @@ test("keep-dir retirement retains the owned directory as well as a recovery rece
   assert.equal(retired.removedDir, false);
   assert.equal(readFileSync(join(result.home, "work", "authored"), "utf8"), "keep");
   assert.equal(readFileSync(join(retired.workRecovery.path, "work", "authored"), "utf8"), "keep");
+});
+
+for (const phase of ["before", "after-incomplete", "after-complete"]) {
+  test(`failed directory spawn: recovery failure ${phase} compensation retains original cleanup authority without instance.json`, (t) => {
+    const f = fixture(t, { hook: true });
+    const manifest = readJson(join(f.cap, "oats.json"));
+    manifest.hooks.spawn = { command: "spawn.mjs", required: true };
+    write(join(f.cap, "oats.json"), JSON.stringify(manifest));
+    const home = join(f.root, "worker/instances/worker-recovery-fail");
+    const recovery = join(dirname(home), ".oats-retirement/recovery");
+    const events = join(f.context, "compensation.jsonl");
+    write(join(f.cap, "spawn.mjs"), `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/result.txt', 'before compensation');
+console.log(JSON.stringify({meta: {receipt: 'original-external-id'}}));
+process.exitCode = 1;`);
+    write(join(f.cap, "retire.mjs"), `import { appendFileSync, existsSync, renameSync, writeFileSync } from 'node:fs';
+appendFileSync(${JSON.stringify(events)}, process.env.OATS_META + '\\n');
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/result.txt', 'after compensation');
+const retry = existsSync(process.env.OATS_CONTEXT + '/retry-ready');
+if (${phase !== "before"} && !retry) {
+  renameSync(${JSON.stringify(recovery)}, ${JSON.stringify(recovery + "-first")});
+  writeFileSync(${JSON.stringify(recovery)}, 'storage temporarily unavailable');
+}
+console.log(JSON.stringify({meta: {retired: retry || ${phase === "after-complete"}, receipt: 'not-the-spawn-receipt'}}));`);
+    if (phase === "before") write(recovery, "storage temporarily unavailable");
+    assert.throws(() => f.spawn("recovery-fail"), (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /home is RETAINED/.test(e.message));
+    assert.equal(existsSync(join(home, "instance.json")), false);
+    const markerPath = join(home, ".oats-rollback-incomplete.json");
+    const marker = readJson(markerPath);
+    assert.deepEqual(marker.cleanup.capabilityMeta, { "example.worker": { receipt: "original-external-id" } });
+    assert.deepEqual(marker.cleanup.outstanding, { hooks: ["example.worker"], git: [], directory: true });
+    assert.equal(marker.cleanup.work, "directory");
+    assert.equal(marker.cleanup.launched, false);
+    assert.ok(marker.cleanup.capabilityRuntime[0].hooks.retire);
+    if (phase !== "before") assert.equal(marker.compensationReported["example.worker"].receipt, "not-the-spawn-receipt");
+    const baselines = join(dirname(home), ".oats-retirement/baselines");
+    const baseline = readJson(join(baselines, readdirSync(baselines)[0]));
+    assert.equal(baseline.home, home);
+    assert.equal(baseline.directoryWork, true);
+    assert.deepEqual(baseline.runtime, { launched: false });
+    // A retry while storage is still broken must keep the receipt and must not
+    // run the destructive hook ahead of preserving the outstanding work bytes.
+    assert.throws(() => retireInstance(f.root, "worker-recovery-fail"));
+    assert.deepEqual(readJson(markerPath), marker);
+    assert.equal(existsSync(events), phase !== "before");
+    assert.equal(readFileSync(join(home, "work/result.txt"), "utf8"), phase === "before" ? "before compensation" : "after compensation");
+    rmSync(recovery);
+    if (phase !== "before") renameSync(recovery + "-first", recovery);
+    write(join(f.context, "retry-ready"), "ready");
+    const retired = retireInstance(f.root, "worker-recovery-fail");
+    assert.equal(retired.rollbackIncomplete, undefined);
+    assert.equal(retired.removedDir, true);
+    assert.equal(existsSync(home), false);
+    const receipts = readFileSync(events, "utf8").trim().split("\n").map(JSON.parse);
+    assert.deepEqual(receipts, Array(phase === "before" ? 1 : 2).fill({ receipt: "original-external-id" }));
+    const copies = readdirSync(recovery).map((entry) => readFileSync(join(recovery, entry, "work/result.txt"), "utf8"));
+    assert.ok(copies.includes("before compensation"));
+    assert.ok(copies.includes("after compensation"));
+  });
+}
+
+for (const launch of [false, true]) for (const kind of ["symlink", "dangling", "missing", "file"]) {
+  test(`post-spawn hook work root ${kind} cannot succeed or reach backend (launch=${launch})`, (t) => {
+    const f = fixture(t, { hook: true });
+    const events = join(f.base, "backend.jsonl");
+    write(join(f.base, "bin/tmux"), `#!${process.execPath}
+const { appendFileSync } = require('node:fs');
+appendFileSync(${JSON.stringify(events)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+if (process.argv[2] === 'display-message') console.log(${JSON.stringify(join(f.base, "fake.sock"))});
+`);
+    chmodSync(join(f.base, "bin/tmux"), 0o755);
+    write(join(f.context, "sentinel"), "not owned");
+    const untouched = readdirSync(f.context).sort();
+    write(join(f.cap, "spawn.mjs"), `import { renameSync, symlinkSync, writeFileSync } from 'node:fs';
+const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(home + '/work/authored', 'keep original work');
+renameSync(home + '/work', home + '/original-work');
+if (${kind === "symlink" || kind === "dangling"}) symlinkSync(process.env.OATS_CONTEXT + ${JSON.stringify(kind === "dangling" ? "/absent" : "")}, home + '/work');
+if (${kind === "file"}) writeFileSync(home + '/work', 'not a directory');
+console.log(JSON.stringify({meta: {receipt: 'original-hook-receipt'}}));`);
+    write(join(f.cap, "retire.mjs"), `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_CONTEXT + '/retired.json', process.env.OATS_META);
+console.log(JSON.stringify({meta: {retired: true}}));`);
+    const home = join(f.root, "worker/instances/worker-substituted");
+    assert.throws(() => f.spawn("substituted", { launch, tmuxSession: "inert-fixture-only" }), (e) => e.code === "E_WORK_INSPECTION_FAILED" && /RETAINED/.test(e.message));
+    assert.equal(existsSync(events), false, "no backend command may run with the substituted root");
+    assert.equal(existsSync(join(home, "instance.json")), false);
+    assert.equal(existsSync(join(home, "TASK.md")), false);
+    assert.deepEqual(readdirSync(f.context).sort(), untouched, "must not compensate through or write into the substituted target");
+    const marker = readJson(join(home, ".oats-rollback-incomplete.json"));
+    assert.deepEqual(marker.cleanup.capabilityMeta, { "example.worker": { receipt: "original-hook-receipt" } });
+    assert.deepEqual(marker.cleanup.outstanding.hooks, ["example.worker"]);
+    assert.equal(marker.cleanup.outstanding.directory, true);
+    assert.throws(() => retireInstance(f.root, "worker-substituted", { force: true, deleteBranch: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
+    assert.equal(readFileSync(join(f.context, "sentinel"), "utf8"), "not owned");
+    if (kind !== "missing") rmSync(join(home, "work")); // unlink only; never recurse through a target
+    renameSync(join(home, "original-work"), join(home, "work"));
+    const retired = retireInstance(f.root, "worker-substituted");
+    assert.equal(retired.rollbackIncomplete, undefined);
+    assert.equal(readFileSync(join(retired.workRecovery.path, "work/authored"), "utf8"), "keep original work");
+    assert.deepEqual(readJson(join(f.context, "retired.json")), { receipt: "original-hook-receipt" });
+    assert.equal(existsSync(home), false);
+    assert.equal(existsSync(events), false);
+  });
+}
+
+for (const kind of ["symlink", "missing", "file"]) {
+  test(`post-spawn hook ${kind} home keeps cleanup beside it without following the replacement`, (t) => {
+    const f = fixture(t, { hook: true });
+    const savedHome = join(f.base, "original-home");
+    write(join(f.context, "sentinel"), "keep");
+    const untouched = readdirSync(f.context).sort();
+    write(join(f.cap, "spawn.mjs"), `import { renameSync, symlinkSync, writeFileSync } from 'node:fs';
+const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(home + '/work/authored', 'keep');
+renameSync(home, ${JSON.stringify(savedHome)});
+if (${kind === "symlink"}) symlinkSync(process.env.OATS_CONTEXT, home);
+if (${kind === "file"}) writeFileSync(home, 'not the home');
+console.log(JSON.stringify({meta: {receipt: 'original-home-receipt'}}));`);
+    write(join(f.cap, "retire.mjs"), `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_CONTEXT + '/retired.json', process.env.OATS_META);
+console.log(JSON.stringify({meta: {retired: true}}));`);
+    const home = join(f.root, "worker/instances/worker-home-replaced");
+    assert.throws(() => f.spawn("home-replaced"), (e) => e.code === "E_WORK_INSPECTION_FAILED");
+    assert.deepEqual(readdirSync(f.context).sort(), untouched);
+    const markerPath = join(dirname(home), ".oats-directory-rollback-worker-home-replaced.json");
+    const marker = readJson(markerPath);
+    assert.deepEqual(marker.cleanup.capabilityMeta, { "example.worker": { receipt: "original-home-receipt" } });
+    assert.deepEqual(marker.cleanup.outstanding, { hooks: ["example.worker"], git: [], directory: true });
+    if (kind === "missing") assert.throws(() => f.spawn("home-replaced"), /cleanup is still owed/);
+    assert.throws(() => retireInstance(f.root, "worker-home-replaced", { force: true }));
+    assert.throws(() => startInstanceSession(home), (e) => e.code === "E_INSTANCE_RETIRING");
+    assert.deepEqual(readdirSync(f.context).sort(), untouched);
+    if (kind !== "missing") rmSync(home);
+    renameSync(savedHome, home);
+    assert.ok(listInstances(f.root)[0].instances[0].rollbackIncomplete);
+    assert.throws(() => startInstanceSession(home), (e) => e.code === "E_INSTANCE_RETIRING");
+    const retired = retireInstance(f.root, "worker-home-replaced");
+    assert.equal(retired.removedDir, true);
+    assert.equal(retired.rollbackIncomplete, undefined);
+    assert.equal(existsSync(markerPath), false);
+    assert.deepEqual(readJson(join(f.context, "retired.json")), { receipt: "original-home-receipt" });
+    assert.equal(readFileSync(join(retired.workRecovery.path, "work/authored"), "utf8"), "keep");
+  });
+}
+
+test("directory preservation alone is retryable debt; it does not invent a missing retire hook", (t) => {
+  const f = fixture(t, { hook: true });
+  const manifest = readJson(join(f.cap, "oats.json"));
+  delete manifest.hooks.retire;
+  write(join(f.cap, "oats.json"), JSON.stringify(manifest));
+  write(join(f.cap, "spawn.mjs"), `import { mkdirSync, writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/authored', 'keep');
+mkdirSync(process.env.OATS_INSTANCE_HOME + '/TASK.md');`);
+  const home = join(f.root, "worker/instances/worker-preservation-only");
+  const recovery = join(dirname(home), ".oats-retirement/recovery");
+  write(recovery, "temporarily unavailable");
+  assert.throws(() => f.spawn("preservation-only"), /RETAINED/);
+  const marker = readJson(join(home, ".oats-rollback-incomplete.json"));
+  assert.deepEqual(marker.cleanup.outstanding, { hooks: [], git: [], directory: true });
+  assert.equal(existsSync(join(home, "instance.json")), false);
+  rmSync(recovery);
+  const retired = retireInstance(f.root, "worker-preservation-only");
+  assert.equal(retired.rollbackIncomplete, undefined);
+  assert.equal(retired.removedDir, true);
+  assert.equal(readFileSync(join(retired.workRecovery.path, "work/authored"), "utf8"), "keep");
+});
+
+test("compensation cannot substitute the directory root or replace the original retry receipt", (t) => {
+  const f = fixture(t, { hook: true });
+  const manifest = readJson(join(f.cap, "oats.json"));
+  manifest.hooks.spawn = { command: "spawn.mjs", required: true };
+  write(join(f.cap, "oats.json"), JSON.stringify(manifest));
+  write(join(f.context, "sentinel"), "not owned");
+  write(join(f.cap, "spawn.mjs"), `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/authored', 'keep');
+console.log(JSON.stringify({meta: {receipt: 'original'}}));
+process.exitCode = 1;`);
+  write(join(f.cap, "retire.mjs"), `import { appendFileSync, existsSync, renameSync, symlinkSync } from 'node:fs';
+appendFileSync(process.env.OATS_CONTEXT + '/receipts.jsonl', process.env.OATS_META + '\\n');
+const retry = existsSync(process.env.OATS_CONTEXT + '/retry-ready');
+if (!retry) {
+  renameSync(process.env.OATS_INSTANCE_HOME + '/work', process.env.OATS_INSTANCE_HOME + '/original-work');
+  symlinkSync(process.env.OATS_CONTEXT, process.env.OATS_INSTANCE_HOME + '/work');
+}
+console.log(JSON.stringify({meta: {retired: retry, receipt: 'compensation-report-only'}}));`);
+  const home = join(f.root, "worker/instances/worker-compensation-swap");
+  assert.throws(() => f.spawn("compensation-swap"), (e) => e.code === "E_REQUIRED_HOOK_FAILED" && /prior work recovery/.test(e.message));
+  const marker = readJson(join(home, ".oats-rollback-incomplete.json"));
+  assert.deepEqual(marker.cleanup.capabilityMeta, { "example.worker": { receipt: "original" } });
+  assert.equal(marker.compensationReported["example.worker"].receipt, "compensation-report-only");
+  assert.throws(() => retireInstance(f.root, "worker-compensation-swap", { force: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
+  assert.equal(readFileSync(join(f.context, "sentinel"), "utf8"), "not owned");
+  rmSync(join(home, "work"));
+  renameSync(join(home, "original-work"), join(home, "work"));
+  write(join(f.context, "retry-ready"), "ready");
+  const retired = retireInstance(f.root, "worker-compensation-swap");
+  assert.equal(retired.removedDir, true);
+  assert.equal(retired.rollbackIncomplete, undefined);
+  assert.deepEqual(readFileSync(join(f.context, "receipts.jsonl"), "utf8").trim().split("\n").map(JSON.parse), [{ receipt: "original" }, { receipt: "original" }]);
+  assert.equal(readFileSync(join(retired.workRecovery.path, "work/authored"), "utf8"), "keep");
+});
+
+test("directory preservation debt never clears an external receipt with no retire hook", (t) => {
+  const f = fixture(t, { hook: true });
+  const manifest = readJson(join(f.cap, "oats.json"));
+  manifest.hooks.spawn = { command: "spawn.mjs", required: true };
+  delete manifest.hooks.retire;
+  write(join(f.cap, "oats.json"), JSON.stringify(manifest));
+  write(join(f.cap, "spawn.mjs"), `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.OATS_INSTANCE_HOME + '/work/authored', 'keep');
+console.log(JSON.stringify({meta: {receipt: 'external-state'}}));
+process.exitCode = 1;`);
+  const home = join(f.root, "worker/instances/worker-missing-cleanup");
+  const recovery = join(dirname(home), ".oats-retirement/recovery");
+  write(recovery, "blocked");
+  assert.throws(() => f.spawn("missing-cleanup"), (e) => e.code === "E_REQUIRED_HOOK_FAILED");
+  rmSync(recovery);
+  const retired = retireInstance(f.root, "worker-missing-cleanup");
+  assert.equal(retired.removedDir, false);
+  assert.match(retired.rollbackIncomplete.join("\n"), /declares no retire hook/);
+  assert.equal(readFileSync(join(home, "work/authored"), "utf8"), "keep");
+  assert.deepEqual(readJson(join(home, ".oats-rollback-incomplete.json")).cleanup.capabilityMeta, { "example.worker": { receipt: "external-state" } });
 });

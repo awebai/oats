@@ -1,3 +1,4 @@
+import { fixtureEnv } from "./fixture-env.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -81,7 +82,7 @@ test("capture CLI: a locked root (live holder) skips quietly; an interrupted own
   const child = spawn("sleep", ["30"]);
   try {
     const home = join(root, "home"); mkdirSync(join(home, ".claude", "projects"), { recursive: true });
-    const env = { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+    const env = { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
     mkdirSync(captureLockPath(root)); writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: child.pid, startedAt: new Date().toISOString() }));
     let r = spawnSync(process.execPath, [CAPTURE, "--sessions-only"], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr + r.stdout); assert.match(r.stdout, /another pass holds .*let it finish/);
@@ -218,7 +219,7 @@ test("capture CLI: an unreadable ignore file stops the pass with one line and ex
   try {
     const home = join(root, "home"); mkdirSync(join(home, ".claude", "projects"), { recursive: true });
     mkdirSync(join(root, "ignore")); // a directory where the ignore FILE is expected: EISDIR, fail closed
-    const env = { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+    const env = { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
     const r = spawnSync(process.execPath, [CAPTURE, "--sessions-only", "--no-index"], { encoding: "utf8", env });
     assert.equal(r.status, 1, r.stderr + r.stdout);
     assert.match(r.stderr, /ignore/); assert.doesNotMatch(r.stderr, /\n\s+at /, "one line, not a stack trace");
@@ -241,7 +242,7 @@ test("an append-only hook pass (--no-index) is indexed by the next plain pass ev
     const root = join(base, "record"), home = join(base, "home");
     const project = join(home, ".claude", "projects", "-tmp-proj"); mkdirSync(project, { recursive: true });
     writeFileSync(join(project, "s1.jsonl"), JSON.stringify({ type: "user", timestamp: "2026-08-25T10:00:00.000Z", message: { content: [{ type: "text", text: "the rare word zebrafish" }] }, sessionId: "s1" }) + "\n");
-    const env = { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+    const env = { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
     let r = spawnSync(process.execPath, [CAPTURE, "--sessions-only", "--no-index", "--quiet"], { encoding: "utf8", env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     const searchable = () => { const i = new RecordIndex(new RecordStore(root, { owner: "tester" })); try { return i.search("zebrafish").length; } finally { i.close(); } };
@@ -262,7 +263,7 @@ test("capture --home lock collision returns one JSON document with stale boundar
   const file = join(project, "s1.jsonl");
   const line = (text) => JSON.stringify({ type: "user", cwd: home, sessionId: "s1", timestamp: "2026-09-13T10:00:00Z", message: { content: text } }) + "\n";
   writeFileSync(file, line("first"));
-  const env = { ...process.env, HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+  const env = { ...fixtureEnv(), HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
   const run = (...args) => spawnSync(process.execPath, [CAPTURE, "--no-index", ...args], { env, encoding: "utf8" });
   const first = run("--home", home); assert.equal(first.status, 0, first.stderr);
   const boundary = JSON.parse(first.stdout).sessions[0].lastTurnId;
@@ -309,7 +310,7 @@ fs.rmSync = (path, ...args) => {
 };
 syncBuiltinESMExports();`);
   const r = spawnSync(process.execPath, ["--import", preload, CAPTURE, "--home", home, "--no-index"], {
-    env: { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" }, encoding: "utf8",
+    env: { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" }, encoding: "utf8",
   });
   assert.equal(r.status, 1, r.stderr + r.stdout);
   const out = JSON.parse(r.stdout);

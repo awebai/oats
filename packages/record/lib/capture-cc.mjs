@@ -21,12 +21,13 @@
 // un-ignoring a file later makes the next pass capture it normally.
 
 import { isUtf8 } from "node:buffer";
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { finishTurn } from "./canonical.mjs";
 import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
+import { assertIdentity, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
@@ -157,12 +158,12 @@ function lastJournalLine(store, streamId) {
 // Honest limit: an in-place REWRITE of already-captured lines is not
 // detected (only growth is; a shrink triggers a rescan via the size
 // check in the caller). Transcript writers are append-only in practice.
-function offsetFromJournal(store, streamId, sourcePath, final) {
+function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
   const turns = store.readStream(streamId);
   if (turns.length === 0) return { bytes: 0, line: 0, lastTs: "" };
   const last = turns[turns.length - 1];
   const lastLine = last.provenance?.origin?.line ?? 0;
-  const bytes = readFileSync(sourcePath);
+  const bytes = sourceBytes ?? readFileSync(sourcePath);
   let line = 0;
   let offset = 0;
   while (line < lastLine && offset < bytes.length) {
@@ -179,7 +180,9 @@ function offsetFromJournal(store, streamId, sourcePath, final) {
 // of every session file under `roots`. Unstamped leading lines are held
 // until the file shows its first timestamp (then they carry it forward),
 // so every turn is stamped and ts stays a pure function of the source.
-// `files` pins an already discovered set, rather than rescanning directories
+// `files` accepts discovery entries (including their attribution snapshot) or
+// explicit paths for callers not making home-attribution claims. It pins a set,
+// rather than rescanning directories
 // and silently losing disappeared sources (or sweeping in other homes).
 // `final` also verifies unchanged offsets against journals and checks source
 // stability through the pass. The caller must quiesce writers for retirement;
@@ -198,22 +201,31 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
   const issues = []; // source metadata only, never native record contents
   const streams = new Set();
 
-  for (const path of files ?? fmt.listFiles(roots)) {
+  for (const file of files ?? fmt.listFiles(roots)) {
+    const path = typeof file === "string" ? file : file.path;
+    const expected = typeof file === "string" ? null : file.snapshot;
     sessions++;
     const sessionId = fmt.sessionId(path);
-    if (ign.ignores(path, [basename(path), sessionId])) {
+    if (ign.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
       ignored++;
       continue; // never opened: nothing stored, nothing remembered
     }
-    const stat = statSync(path); // a disappeared/unreadable source is a failure
-    if (!stat.isFile()) throw new Error(`session source is not a regular file: ${path}`);
+    const fd = openSync(path, "r");
+    try {
+    const stat = fstatSync(fd);
+    const snapshot = identity(stat);
+    if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
+    // Final home capture stages a descriptor-pinned snapshot. All attribution
+    // and stability checks precede the first append, never a post-write alarm.
+    const sourceBytes = final || expected ? readRange(fd, 0, stat.size, path) : undefined;
+    if (expected && digest(sourceBytes.subarray(0, expected.size)) !== expected.hash) {
+      throw new Error(`session source content changed since attribution: ${path}`);
+    }
+    if (sourceBytes) snapshot.hash = digest(sourceBytes);
     const verifySource = () => {
-      if (!final) return;
-      const after = statSync(path);
-      if (after.dev !== stat.dev || after.ino !== stat.ino || after.size !== stat.size || after.mtimeMs !== stat.mtimeMs || after.ctimeMs !== stat.ctimeMs) {
-        throw new Error(`session source changed during final capture: ${path}`);
-      }
+      if (sourceBytes) verifySnapshot(fd, path, snapshot);
     };
+    verifySource();
     const streamId = `${owner}~${fmt.source}.${sessionId}`;
     // Keyed by stream, not by source path: the same source captured under
     // two owners must not share offset state (owner is part of the stream).
@@ -231,7 +243,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     if (state && (final || stat.size > state.bytes) && state.line !== lastJournalLine(store, streamId)) {
       state = null;
     }
-    if (!state) state = offsetFromJournal(store, streamId, path, final);
+    if (!state) state = offsetFromJournal(store, streamId, path, final, sourceBytes);
     if (stat.size <= state.bytes) {
       unchanged++;
       offsets[offKey] = state;
@@ -239,7 +251,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       continue;
     }
 
-    const chunk = readFrom(path, state.bytes, stat.size);
+    const chunk = sourceBytes ? sourceBytes.subarray(state.bytes) : readRange(fd, state.bytes, stat.size, path);
     // Phase 1: collect the COMPLETE lines of the chunk with their stamps.
     const lines = [];
     let scanned = 0;
@@ -292,6 +304,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       }
       lastTs = first.ts;
     }
+    verifySource(); // parsing/recovery may take time; still no journal write yet
     // Turns flush to the journal in bounded batches, so memory stays flat
     // however large the backlog (a first capture of a huge transcript is
     // one file's worth of NEW lines). A crash between flushes cannot
@@ -333,6 +346,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     // wasted append-only bytes).
     if (grew) saveOffsets(store, offsets);
     verifySource();
+    } finally { closeSync(fd); }
   }
   saveOffsets(store, offsets);
   return {
