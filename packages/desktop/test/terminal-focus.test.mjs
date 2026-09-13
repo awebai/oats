@@ -13,6 +13,7 @@ import { runInNewContext } from "node:vm";
 import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 import { fillEmptyGroup, requestSplit } from "../renderer/split-layout.mjs";
 import { terminalOpenOwnsWorkspace } from "../renderer/workspace-tabs.mjs";
+import { createIntentGate } from "../renderer/open-intent.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(PKG, f), "utf8");
@@ -46,7 +47,8 @@ test("existing-terminal jumps focus input, fill an empty split without another a
     const context = {
       split: initial, tabs: new Map([[1, { key: "other" }], [2, { key: "selected" }]]),
       setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
-      currentWorkspace: () => workspace, terminalOpenOwnsWorkspace, fillEmptyGroup,
+      currentWorkspace: () => workspace, workspaceGeneration: () => 0,
+      tabOpenIntents: createIntentGate(), terminalOpenOwnsWorkspace, fillEmptyGroup,
       api: async () => ({ instances: [] }),
       resolveTerminalOpen: () => ({ inst: {}, key: "selected" }),
       whenKeyFree: async () => { if (scenario === "workspace-changed") workspace = "workspace-b"; },

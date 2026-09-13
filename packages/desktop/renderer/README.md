@@ -94,6 +94,22 @@ via `split-controls.mjs` `splitControlsState`. One chrome per tab means the
 tab-a11y roving/aria/close semantics hold PER GROUP (each group strip is a
 tablist with a single selected, tabbable trigger; arrows walk the group).
 
+### Workspace-local tab memory
+
+`workspace-tab-memory.mjs` retains each workspace's group membership/order,
+orientation, proportions, selected tabs and focused group for the current app
+session. Workspace switches hide all outgoing panes synchronously and park their
+DOM nodes before restoring the destination layout; existing terminal attachments
+are retained, not recreated. A workspace with no remembered tabs shows the stage.
+Restart restoration of tab layouts is not implemented yet.
+
+All artifact tabs (terminal, brain, file) are workspace-scoped, including their
+activation boundary and deduplication keys. A retained brain tab has a pinned
+`ctx.workspace` and per-mount lifecycle instead of changing identity with the
+workspace bus. Standalone brain views without that context still follow the bus.
+Open requests share a latest-selection token plus the workspace generation, so a
+slow earlier open cannot steal selection or land after an A → B → A switch.
+
 ## Terminal focus discipline (shell-level)
 
 Jumping to an instance terminal (palette instance row, sidebar roster row,

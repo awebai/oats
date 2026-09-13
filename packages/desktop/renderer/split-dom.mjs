@@ -84,7 +84,7 @@ function setClass(el, name, o) {
  *   entries — the shell's ordered tab list: [id, { tabEl, paneEl }] in
  *             tab-creation order (the flat strip's order) */
 export function projectSplitDom(els, split, on, entries) {
-  const { tabhost, tabstrip, tabbar, actionsEl, actionsHome, emptyEl } = els;
+  const { tabhost, tabstrip, tabbar, actionsEl, actionsHome, emptyEl, onResize } = els;
   const doc = tabbar.ownerDocument;
   const focused = doc.activeElement;
   const active = on && !!split;
@@ -115,6 +115,7 @@ export function projectSplitDom(els, split, on, entries) {
   let cellAnchor = null;
   for (const group of split.groups) {
     const cell = ensureCell(tabhost, cellAnchor, group);
+    if (Number.isFinite(group.weight) && group.weight > 0) cell.style.flexGrow = String(group.weight);
     cellAnchor = cell;
     const bar = cell.querySelector(":scope > .group-tabbar");
     let tabAnchor = null;
@@ -151,7 +152,7 @@ export function projectSplitDom(els, split, on, entries) {
     if (!live.has(c.dataset.group)) c.remove();
   }
   const cells = [...tabhost.querySelectorAll(":scope > .group-cell")];
-  cells.forEach((cell, i) => updateSplitHandle(tabhost, cell, split.orientation, i < cells.length - 1));
+  cells.forEach((cell, i) => updateSplitHandle(tabhost, cell, split.orientation, i < cells.length - 1, onResize));
   if (focused && doc.activeElement !== focused
       && (tabhost.contains(focused) || tabbar.contains(focused))) focused.focus();
 }

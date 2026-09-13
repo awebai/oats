@@ -71,6 +71,17 @@ export function requestSplit(split, orientation, seedTabs, activeId) {
   };
 }
 
+/** Persist relative group sizes independently of their DOM lifetime. Ignore
+ * stale/non-member or malformed updates rather than corrupting the layout. */
+export function resizeSplitGroups(split, sizes) {
+  if (!split || !Array.isArray(sizes) || !sizes.length || sizes.some(s =>
+    !split.groups.some(g => g.id === s.id) || !Number.isFinite(s.weight) || s.weight <= 0)) return split;
+  return { ...split, groups: split.groups.map(g => {
+    const size = sizes.find(s => s.id === g.id);
+    return size ? { ...g, weight: size.weight } : g;
+  }) };
+}
+
 /** The group holding tab `id`, or null. */
 export function groupOfTab(split, id) {
   return split?.groups.find((g) => g.tabs.includes(id)) ?? null;

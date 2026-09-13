@@ -67,7 +67,7 @@ test("shell registers the split and sidebar actions and exposes them in the pale
   assert.match(src, /id: "split\.vertical", label: [^\n]*context: "tabs"/, "split actions live in the tabs context");
 });
 
-test("splits are terminal-only, route through editor-group transitions, and clean up on close/workspace switch", () => {
+test("splits are terminal-only, route through editor-group transitions, and restore per workspace", () => {
   const src = read("renderer/shell.mjs");
   assert.match(src, /if \(!t \|\| t\.kind !== "terminal"\) return; \/\/ splits are terminal-only/);
   // activation routes through the SAME tab path every open uses — identity
@@ -76,7 +76,8 @@ test("splits are terminal-only, route through editor-group transitions, and clea
   assert.match(src, /\? focusTab\(split, id\)\.split/);
   assert.match(src, /: openTabInFocusedGroup\(split, id\)\.split/);
   assert.match(src, /const removed = removeSplitTab\(split, id\)/);
-  assert.match(src, /split = null; \/\/ splits are per-workspace/);
+  assert.match(src, /onWorkspaceChange\(restoreWorkspaceTabs\)/);
+  assert.match(src, /split = restored\.split/);
 });
 
 test("sidebar toggle is class-driven and persisted like other shell prefs", () => {

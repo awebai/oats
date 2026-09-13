@@ -1,6 +1,8 @@
 // Resize adjacent editor groups without moving their terminals or attaching
-// another viewer. Group DOM nodes retain their sizes across focus changes.
-export function updateSplitHandle(host, cell, orientation, hasNext) {
+// another viewer. Notify the model as well as updating DOM styles so sizes
+// survive covering the split or switching workspaces.
+const ON_RESIZE = Symbol("on-resize");
+export function updateSplitHandle(host, cell, orientation, hasNext, onResize) {
   let handle = cell.querySelector(':scope > .split-resizer');
   if (!hasNext) { handle?.remove(); return; }
   if (!handle) {
@@ -21,9 +23,14 @@ export function updateSplitHandle(host, cell, orientation, hasNext) {
         weight: (Number(cell.style.flexGrow) || 1) + (Number(next.style.flexGrow) || 1) };
     };
     const resize = (m, value) => {
+      if (!host.contains(cell) || cell.nextElementSibling !== m.next) return;
       const ratio = Math.max(.1, Math.min(.9, value));
       cell.style.flexGrow = String(m.weight * ratio); m.next.style.flexGrow = String(m.weight * (1 - ratio));
       handle.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+      handle[ON_RESIZE]?.([
+        { id: Number(cell.dataset.group), weight: m.weight * ratio },
+        { id: Number(m.next.dataset.group), weight: m.weight * (1 - ratio) },
+      ]);
     };
     handle.addEventListener('pointerdown', e => {
       if (e.button !== 0) return;
@@ -47,6 +54,7 @@ export function updateSplitHandle(host, cell, orientation, hasNext) {
     });
     handle.addEventListener('dblclick', () => { const m = measure(); if (m) resize(m, .5); });
   }
+  handle[ON_RESIZE] = onResize;
   handle.dataset.orientation = orientation;
   handle.setAttribute('aria-orientation', orientation === 'row' ? 'vertical' : 'horizontal');
   const next = cell.nextElementSibling;

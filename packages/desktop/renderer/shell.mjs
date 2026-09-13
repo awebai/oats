@@ -8,7 +8,7 @@
 // chrome stays a thin rail so nothing is duplicated.
 // (groupInstances is not imported here: the feature branch renders the
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
-import { currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
+import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
@@ -39,8 +39,9 @@ import {
   tabVisibleInContext, canActivateTab,
   fallbackTabForContext, terminalOpenOwnsWorkspace, restoreTerminalTab,
 } from "./workspace-tabs.mjs";
+import { createWorkspaceTabMemory } from "./workspace-tab-memory.mjs";
 import {
-  requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, wireSplitPaneSelection, fillEmptyGroup,
+  requestSplit, focusTab, openTabInFocusedGroup, removeSplitTab, isSplitMember, groupOfTab, wireSplitPaneSelection, fillEmptyGroup, resizeSplitGroups,
 } from "./split-layout.mjs";
 import { splitControlsState } from "./split-controls.mjs";
 import { projectSplitDom } from "./split-dom.mjs";
@@ -90,6 +91,7 @@ let stage = null;           // { name, life, el }
 let stageOp = 0;            // switch generation — a slow mount must not paint over a newer switch
 
 async function showStage(name) {
+  tabOpenIntents.invalidate(); // navigating away supersedes pending tab selections
   const v = NAV.find((x) => x.name === name);
   setSidebarMode(stageSidebarMode(name));
   setNavActive(name);
@@ -138,6 +140,7 @@ function showTabLayer(on) {
       t.tabEl.classList.remove("active");
       t.triggerEl.setAttribute("aria-selected", "false");
       t.triggerEl.tabIndex = -1;
+      t.paneEl.classList.remove("active");
       t.paneEl.hidden = true;
     }
   } else {
@@ -224,7 +227,10 @@ async function refreshContextRoster() {
   }
   const resolvedWs = panel.workspace?.id || ws;
   if (!owns(resolvedWs)) return;
-  if (!currentWorkspace() && resolvedWs) adoptWorkspace(resolvedWs);
+  if (!currentWorkspace() && resolvedWs) {
+    adoptWorkspace(resolvedWs);
+    tabWorkspace = resolvedWs;
+  }
   commitWorkspaceLabel(panel.workspace, panel.workspaces);
   contextWorkspace = resolvedWs;
   contextInstances = panel.instances || [];
@@ -458,6 +464,10 @@ let nextTabId = 1;
 let activeTab = null;
 const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab key
 const brainIntents = createIntentGate();
+// Terminal and artifact opens compete for the same foreground selection.
+const tabOpenIntents = createIntentGate();
+const workspaceTabMemory = createWorkspaceTabMemory();
+let tabWorkspace = currentWorkspace();
 
 // ── editor groups: a split of the tab LAYER into persistent groups ─────
 // Pure transitions live in split-layout.mjs; the shell owns the DOM through
@@ -478,10 +488,14 @@ const splitEmptyEl = (() => {
 })();
 
 function renderSplit(splitVisible) {
+  const generation = workspaceGeneration();
   projectSplitDom({
     tabhost, tabstrip: document.getElementById("tabstrip"), tabbar,
     actionsEl: tabActionsEl, actionsHome: document.getElementById("tabbar-row"),
     emptyEl: splitEmptyEl,
+    onResize: sizes => {
+      if (generation === workspaceGeneration()) split = resizeSplitGroups(split, sizes);
+    },
   }, split, splitVisible, [...tabs]);
 }
 
@@ -550,12 +564,13 @@ function onTabKeydown(e, id) {
   const action = tabKeyAction(e, at, visible.length);
   if (!action) return;
   e.preventDefault();
+  tabOpenIntents.invalidate();
   if (action.type === "close") { closeTab(id, true); return; }
   const [nextId, tab] = visible[action.index];
   if (activateTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ title, key, kind = "artifact", workspace = null, onClose, onShow, focusContent = null, focusOnActivate = false }) {
+function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), onClose, onShow, focusContent = null, focusOnActivate = false }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) { activateTab(tid, { focusContent: focusOnActivate }); return null; }
   }
@@ -565,7 +580,7 @@ function addTab({ title, key, kind = "artifact", workspace = null, onClose, onSh
   );
   tabbar.append(tabEl);
   tabhost.append(paneEl);
-  triggerEl.addEventListener("click", () => activateTab(id));
+  triggerEl.addEventListener("click", () => { tabOpenIntents.invalidate(); activateTab(id); });
   triggerEl.addEventListener("keydown", (e) => onTabKeydown(e, id));
   closeEl.addEventListener("click", (e) => { e.stopPropagation(); closeTab(id, true); });
   // Split panes: clicking or focusing INTO a visible non-selected member
@@ -593,7 +608,7 @@ function addTab({ title, key, kind = "artifact", workspace = null, onClose, onSh
  * focused so the next terminal opens there). */
 function activateTab(id, { focusContent = false, keepGroupFocus = false } = {}) {
   const current = tabs.get(id);
-  // Hidden is not security: reject cross-workspace terminal activation at
+  // Hidden is not security: reject every cross-workspace artifact activation at
   // the mutation boundary before its pane can become active/receive input.
   if (!canActivateTab(current, currentWorkspace())) return false;
   activeTab = id;
@@ -613,7 +628,7 @@ function activateTab(id, { focusContent = false, keepGroupFocus = false } = {}) 
     setSidebarMode("instances");
     setNavActive(null);
     refreshContextRoster();
-  } else if (current?.kind === "brain") {
+  } else if (current?.kind === "brain" || current?.kind === "file") {
     setSidebarMode("souls");
     setNavActive("spawn");
   }
@@ -630,7 +645,7 @@ function activateTab(id, { focusContent = false, keepGroupFocus = false } = {}) 
     // GROUP (the group's active tab is selected/tabbable in its strip).
     // Flat state keeps the classic single-selection strip.
     const groupActive = splitVisible && groupOfTab(split, tid)?.activeTab === tid;
-    const on = splitVisible ? groupActive : selected;
+    const on = canActivateTab(t, currentWorkspace()) && (splitVisible ? groupActive : selected);
     t.tabEl.classList.toggle("active", on);
     t.triggerEl.setAttribute("aria-selected", String(on));
     t.triggerEl.tabIndex = on ? 0 : -1;
@@ -698,15 +713,21 @@ function closeTab(id, restoreFocus = false) {
 
 // ── view host: load ./views/<name>.mjs, mount into a tab ─────────────────
 async function openBrainTab(agent) {
-  // brain.mjs is intentionally one live mount. Each click supersedes every
-  // earlier async open BEFORE waiting for deferred cleanup/module loading.
+  // One brain tab per workspace; other workspaces keep their own mounted
+  // selection. Supersede earlier opens before deferred cleanup/module loading.
   const owns = brainIntents.begin();
-  for (const [id, t] of tabs) if (t.kind === "brain") closeTab(id);
+  for (const [id, t] of tabs) if (t.kind === "brain" && t.workspace === currentWorkspace()) closeTab(id);
   return openViewTab("brain", `◈ ${agent}`, { agent }, "view:brain", "brain", owns);
 }
 
 async function openViewTab(name, title, extra = {}, key = `view:${name}`,
-  kind = name === "markdown" ? "file" : "artifact", owns = () => true) {
+  kind = name === "markdown" ? "file" : "artifact", parentOwns = () => true) {
+  const workspace = currentWorkspace();
+  const generation = workspaceGeneration();
+  const latest = tabOpenIntents.begin();
+  const owns = () => parentOwns() && latest() && generation === workspaceGeneration()
+    && workspace === currentWorkspace();
+  key = JSON.stringify([workspace, key]);
   let mod;
   try {
     mod = await prepareOwnedOpen({
@@ -717,7 +738,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
     if (!mod) return;
   } catch (e) {
     if (!owns()) return;
-    const made = addTab({ title: `${title} (missing)`, key });
+    const made = addTab({ title: `${title} (missing)`, key, kind, workspace });
     if (made) made.paneEl.innerHTML = `<div class="placeholder"><h2>${name}</h2><div>view module failed to load: ${e.message}</div></div>`;
     return;
   }
@@ -726,6 +747,7 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
     title,
     key,
     kind,
+    workspace,
     // Close is safe at any time — including while the async mount is still
     // pending: the lifecycle defers cleanup until mount settles and then
     // runs THAT mount's disposer (never the module-wide unmount mid-flight,
@@ -737,7 +759,15 @@ async function openViewTab(name, title, extra = {}, key = `view:${name}`,
   el.style.height = "100%";
   made.paneEl.append(el);
   try {
-    await life.mounted(el, { ...ctx, ...extra });
+    // Retained artifacts never change identity with the global workspace bus.
+    // Late events from a hidden/closed artifact cannot open work in another scope.
+    const visibleOwner = () => tabs.has(made.id) && currentWorkspace() === workspace;
+    await life.mounted(el, {
+      ...ctx, ...extra, workspace,
+      openFile: path => visibleOwner() && ctx.openFile(path),
+      openBrain: agent => visibleOwner() && ctx.openBrain(agent),
+      openTerminal: (instance, opts) => visibleOwner() && ctx.openTerminal(instance, opts),
+    });
     if (!owns()) return;
   }
   catch (e) {
@@ -779,7 +809,10 @@ async function openTerminalTabFlow(ref, notify) {
   // same-named instance in another workspace — or another agents root
   // (review 46f3fdc) — is a different terminal.
   const ws = currentWorkspace();
-  const owns = () => terminalOpenOwnsWorkspace(ws, currentWorkspace());
+  const generation = workspaceGeneration();
+  const latest = tabOpenIntents.begin();
+  const owns = () => latest() && generation === workspaceGeneration()
+    && terminalOpenOwnsWorkspace(ws, currentWorkspace());
   let panel;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
@@ -799,7 +832,8 @@ async function openTerminalTabFlow(ref, notify) {
       : `unknown instance "${r.name}"`);
   }
   const { inst, key } = r;
-  await whenKeyFree(key);
+  try { await whenKeyFree(key); }
+  catch (e) { if (!owns()) return; throw e; }
   if (!owns()) return;
   // Every jump path through here is user-initiated (palette, roster row,
   // quick-open, post-spawn open) — activating an existing tab focuses its
@@ -1110,17 +1144,34 @@ applyChordTitles();
 // Persistent recursive instance tree: always available below the three nav
 // surfaces, with no second/contextual sidebar and no width jump.
 initContextRoster();
-onWorkspaceChange(() => {
+onWorkspaceChange(restoreWorkspaceTabs);
+function restoreWorkspaceTabs() {
   contextRosterGen++;
   brainIntents.invalidate();
+  tabOpenIntents.invalidate();
   workspaceLabel.reset();
+  workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible });
+  // Hide synchronously and park ALL nodes before replacing group identities.
+  // Workspace-local group ids can overlap; deleting old cells first would
+  // otherwise orphan their retained tabs/panes (and live terminals).
+  showTabLayer(false);
+  renderSplit(false);
+  tabWorkspace = currentWorkspace();
+  const restored = workspaceTabMemory.recall(tabWorkspace, tabs);
+  split = restored.split;
   contextInstances = [];
-  contextWorkspace = currentWorkspace();
-  split = null; // splits are per-workspace arrangements of its terminal tabs
+  contextWorkspace = tabWorkspace;
+  renderContextRoster([]);
+  if (restored.tabLayerVisible) {
+    setSidebarMode(restored.sidebarMode);
+    activateTab(restored.activeTab, { keepGroupFocus: true });
+  } else {
+    setSidebarMode(stageSidebarMode(stage?.name));
+    setNavActive(stage?.name || "hierarchy");
+  }
   updateContextTabs();
-  if (sidebarMode === "instances") showTerminalContext();
-  else refreshContextRoster();
-});
+  refreshContextRoster();
+}
 setInterval(() => refreshContextRoster(), 4000);
 
 // Contract re-probe triggers: launch (initial refresh) and app focus. The

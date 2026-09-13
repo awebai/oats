@@ -1,19 +1,19 @@
-// Pure workspace scoping for shell terminal tabs.
-// Same-named instances may exist in several workspaces; a terminal tab is
-// only visible/eligible for auto-activation in the workspace that resolved
-// its tmux target.
+// Pure workspace scoping for every shell artifact. Same-named instances,
+// souls and files may exist in several workspaces; a tab is only visible
+// and eligible for activation in the workspace that opened it.
 export function terminalTabsForWorkspace(entries, ws) {
   return [...entries].filter(([, tab]) => tab.kind === "terminal" && tab.workspace === ws);
 }
 
 export function tabVisibleInContext(tab, mode, ws) {
-  if (mode === "instances") return tab.kind === "terminal" && tab.workspace === ws;
+  if (!canActivateTab(tab, ws)) return false;
+  if (mode === "instances") return tab.kind === "terminal";
   if (mode === "souls") return tab.kind === "brain" || tab.kind === "file";
   return false;
 }
 
 export function canActivateTab(tab, ws) {
-  return !!tab && (tab.kind !== "terminal" || tab.workspace === ws);
+  return !!tab && tab.workspace === ws;
 }
 
 export function fallbackTabForContext(entries, mode, ws) {
