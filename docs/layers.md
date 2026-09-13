@@ -340,21 +340,22 @@ bundle.
 
 ## The work target contract
 
-**Shipped.** Four modes decide what `<instance-home>/work` is and what
+**Shipped.** Five modes decide what `<instance-home>/work` is and what
 discipline the instance follows: `worktree` (an isolated branch), `checkout`
-(the shared current branch), `attached` (another instance's tree), and
-`workspace` (the whole team scope, read-only). A config may run a setup
-script inside each fresh worktree. Retirement preserves ordinary work,
+(the shared current branch), `attached` (another instance's tree),
+`workspace` (the whole team scope, read-only), plus explicit `directory`
+(instance-owned non-Git execution for independent workers). A config may run a
+setup script inside each fresh worktree. Retirement preserves ordinary work,
 quarantines incomplete cleanup, and never removes a shared tree. The
 generated instructions state the home/work boundary before the mode block.
 
 **Contract.** The work target is a parameter of instantiation independent of
 where the soul is stored. Each mode is a module that prepares the view,
 states its discipline, and knows how to retire it safely, with the
-retirement baseline and inspection alongside. The four modes stay exactly as
-they are.
+retirement baseline and inspection alongside. The four Git/context modes retain
+their existing semantics; directory execution never acts as an implicit fallback.
 
-**Proposed.** A fifth target, `none`, for instances that operate on nothing
+**Proposed.** An additional target, `none`, for instances that operate on nothing
 (a mail-only agent). It replaces no mode.
 
 **Test.** An instance of one soul spawned with each target, the same soul

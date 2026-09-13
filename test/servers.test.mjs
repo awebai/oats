@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { linkExecutables } from "./helpers/host-fixture.mjs";
 import { dirname, join, resolve } from "node:path";
 
 import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
@@ -21,7 +22,8 @@ function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync
 /** A PATH dir with: a fake ssh that logs its argv and runs the command
  *  locally through sh -c; fake pi/claude/tmux so spawn preflight passes. */
 function fakeBin(base) {
-  const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
+  const bin = join(base, "bin");
+  linkExecutables(bin, ["node", "sh", "git", "which", "ps", "sed", "sleep"]);
   const log = join(base, "ssh.log");
   write(join(bin, "ssh"), `#!/bin/sh
 printf '%s\\n' "$@" >> ${JSON.stringify(log)}
@@ -133,9 +135,9 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
   try {
     const { bin, log, tools } = fakeBin(base);
     const repo = remoteWorkspace(base);
-    // A minimal PATH, like a non-interactive login shell: the fake ssh, node,
-    // git and the system dirs; no locally installed runtime can leak in.
-    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    // Only enumerated tools and fake ssh/tmux, not even node's parent bin
+    // directory: it may contain globally installed model runtimes.
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
@@ -167,8 +169,9 @@ test("oats server + --server: registry, check, remote spawn with a hostile task,
     // Without --path the remote preflight cannot find the runtime: a typed
     // failure from the remote kernel, relayed as its own envelope.
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "probe", "--task-file", taskFile, "--no-launch", "--json"]);
-    assert.notEqual(r.status, 0);
+    assert.notEqual(r.status, 0, r.stdout);
     assert.match(r.json().error.message, /pi binary not found/);
+    assert.equal(existsSync(join(repo, "agents", "dev", "instances", "dev-probe")), false, "missing runtime refuses before creating a home");
     r = oats(env, ["server", "add", "build", "--ssh", "build-host", "--workspace", repo, "--oats", CLI, "--path", tools, "--replace", "--json"]);
     assert.equal(r.status, 0, r.stderr);
     r = oats(env, ["spawn", "dev", "--server", "build", "--purpose", "probe", "--task-file", taskFile, "--no-launch", "--json"]);
@@ -257,7 +260,7 @@ test("oats server roster, okf harvest --server, and the changed-registration gua
   try {
     const { bin, log, tools } = fakeBin(base);
     const repo = remoteWorkspace(base);
-    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
 
@@ -394,7 +397,7 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     write(join(repo, "agents", "dev-foo", "soul", "AGENTS.md"), "You are dev-foo.\n");
     execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]);
     execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "twin soul"]);
-    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
     const prevHomeDir = process.env.OATS_HOME_DIR; process.env.OATS_HOME_DIR = env.OATS_HOME_DIR;
@@ -517,7 +520,7 @@ test("roster budget: slow targets are bounded, healthy results survive, unreache
   try {
     const { bin, tools } = fakeBin(base);
     const repo = remoteWorkspace(base);
-    const env = { ...process.env, PATH: `${bin}:${dirname(process.execPath)}:/usr/bin:/bin`, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
+    const env = { ...process.env, PATH: bin, OATS_HOME_DIR: join(base, "oats-home"), HOME: join(base, "home") };
     mkdirSync(env.HOME, { recursive: true }); mkdirSync(env.OATS_HOME_DIR, { recursive: true });
     for (const k of Object.keys(env)) if (/^(OATS_INSTANCE|PI_AGENT)/.test(k)) delete env[k];
     // A "host" whose oats never answers: the remote command word runs this.

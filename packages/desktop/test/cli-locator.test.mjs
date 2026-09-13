@@ -24,7 +24,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
     [{ ...PROBE(), desktopApi: 2 }, /desktopApi 2/],
     [{ ...PROBE(), desktopApi: undefined }, /desktopApi missing/],
     [PROBE("0.21.9"), /outside/],
-    [PROBE("0.23.0"), /outside/],
+    [PROBE("0.24.0"), /outside/],
     [PROBE("1.0.0"), /outside/],
     [PROBE("not-a-version"), /unparsable/],
   ];
@@ -72,26 +72,26 @@ test("the accepted band admits the kernel version this Desktop ships with", () =
 
 test("the human-readable band is derived from the enforced numbers", () => {
   assert.equal(ACCEPT_RANGE_TEXT, `>=${ACCEPT_RANGE.min.join(".")} <${ACCEPT_RANGE.maxExclusive.join(".")}`);
-  assert.match(acceptProbe(PROBE("0.23.0")).reason, new RegExp(ACCEPT_RANGE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(acceptProbe(PROBE("0.24.0")).reason, new RegExp(ACCEPT_RANGE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-// v0.22.0 band contract, spelled with LITERALS on purpose. The tests above
+// v0.23.0 band contract, spelled with LITERALS on purpose. The tests above
 // derive from ACCEPT_RANGE (so they follow any widening); these pin the exact
 // edges this release promises, so a stray re-narrowing — or a widening past
 // the v1 surface without a deliberate DESKTOP_API decision — fails here.
-test("band edges: released 0.22.x is accepted, 0.23.0 and the pre-0.22 floor are not", () => {
-  assert.deepEqual(ACCEPT_RANGE, { min: [0, 22, 0], maxExclusive: [0, 23, 0] });
-  assert.equal(ACCEPT_RANGE_TEXT, ">=0.22.0 <0.23.0");
-  assert.equal(DESKTOP_API, 1, "Desktop API stays v1 across the v0.22.0 kernel bump");
+test("band edges: released 0.22.x and 0.23.x are accepted, 0.24.0 and the pre-0.22 floor are not", () => {
+  assert.deepEqual(ACCEPT_RANGE, { min: [0, 22, 0], maxExclusive: [0, 24, 0] });
+  assert.equal(ACCEPT_RANGE_TEXT, ">=0.22.0 <0.24.0");
+  assert.equal(DESKTOP_API, 1, "Desktop API stays v1 across the v0.23.0 kernel bump");
   // inside — including both edges of the newly admitted minor
-  for (const v of ["0.22.0", "0.22.1", "0.22.12"]) {
+  for (const v of ["0.22.0", "0.22.1", "0.22.12", "0.23.0", "0.23.1", "0.23.99"]) {
     assert.equal(acceptProbe(PROBE(v)).ok, true, `${v} must be accepted`);
   }
   // outside — the exclusive ceiling and everything above it
-  for (const v of ["0.21.9", "0.23.0", "0.23.1", "0.24.0", "1.0.0"]) {
+  for (const v of ["0.21.9", "0.24.0", "0.24.1", "1.0.0"]) {
     const r = acceptProbe(PROBE(v));
     assert.equal(r.ok, false, `${v} must be rejected`);
-    assert.match(r.reason, /outside >=0\.22\.0 <0\.23\.0/, v);
+    assert.match(r.reason, /outside >=0\.22\.0 <0\.24\.0/, v);
   }
   // a PRERELEASE of the new minor is still not a released kernel
   const pre = acceptProbe(PROBE("0.22.0-rc.1"));
