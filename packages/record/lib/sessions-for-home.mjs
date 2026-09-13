@@ -19,6 +19,7 @@ import { isUtf8 } from "node:buffer";
 import { SESSION_FORMATS } from "./formats.mjs";
 import { hashPrefix, identity, sameVersion, verifySnapshot } from "./session-snapshot.mjs";
 import { sourceSessionEnvironment } from "./session-roots.mjs";
+import { historicalSessionRoots } from "./native-history.mjs";
 
 // A session's first lines can be large (Claude Code queue operations and
 // file-history snapshots run to 100 KB and more) and the first cwd-bearing
@@ -114,21 +115,29 @@ function within(child, parent) {
 }
 
 /** Session files whose recorded cwd is `home` or below it, oldest first.
- *  `roots` may override the per-format search roots ({ cc, pi, codex }),
- *  otherwise each format's default roots under the current HOME are used.
+ *  By default uses independent managed-launch history, never observer env.
+ *  `roots` is an explicit inventory ({ cc, pi, codex }; omitted formats are
+ *  excluded). `fallback: "current-env"` explicitly chooses observer-time
+ *  recipe/env discovery for standalone or legacy sources. All supplied or
+ *  historical roots must be readable; missing roots are not optional.
  *  `onUnattributed(source, path)` is called for a file that carries no cwd
  *  within the scan bound, so a caller can report it instead of losing it.
  *  Read/scan failures throw; they are not unattributed or empty scans.
  *  `ignore` excludes files BEFORE reading, with optional `onIgnored`.
  *  Each entry includes a descriptor-derived `snapshot` witness; pass the
  *  entries intact as captureSessions({ files }) to retain attribution. */
-export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, onIgnored, env = process.env } = {}) {
+export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, onIgnored, env = process.env, fallback } = {}) {
   const target = canonical(home);
   const out = [];
-  const context = sourceSessionEnvironment(home, env);
+  // Explicit roots are a caller-owned inventory; unspecified formats are
+  // excluded, not filled from an unrelated observer. The opt-in fallback is
+  // for standalone/legacy inventories, never proof of historical completeness.
+  let context;
+  if (!roots && fallback !== "current-env") roots = historicalSessionRoots(home);
+  if (!roots) context = sourceSessionEnvironment(home, env);
   for (const fmt of Object.values(SESSION_FORMATS)) {
-    const rs = roots?.[fmt.source] ?? fmt.defaultRoots(context.home, context.env, { cwd: home });
-    for (const path of fmt.listFiles(rs, { strict: !roots?.[fmt.source] })) {
+    const rs = roots ? (roots[fmt.source] ?? []) : fmt.defaultRoots(context.home, context.env, { cwd: home });
+    for (const path of fmt.listFiles(rs, { strict: true })) {
       const sessionId = fmt.sessionId(path);
       if (ignore?.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
         onIgnored?.(fmt.source, path);

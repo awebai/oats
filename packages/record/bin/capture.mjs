@@ -53,6 +53,7 @@ const BOOL_FLAGS = new Set([
   "sessions-only",
   "aw-only",
   "no-index",
+  "current-roots",
 ]);
 
 const USAGE = `capture — land sessions and aw client logs in the turn record.
@@ -76,6 +77,10 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
                                shared directories. Unattributed non-ignored
                                sources conservatively block completion.
                                Tombstoned turns are never a boundary.
+  capture --current-roots --home <dir>
+                               explicit observer-time inventory for standalone
+                               or legacy sources lacking launch history. Not a
+                               certificate of all historical source locations.
   capture --install-hint       print the Claude Code hook snippet
   capture --help               this text
   capture --quiet              suppress per-pass progress
@@ -320,6 +325,7 @@ if (args.home) {
     const ignore = loadIgnore(root);
     found = sessionsForHome(args.home, {
       ignore,
+      ...(args["current-roots"] ? { fallback: "current-env" } : {}),
       onIgnored: () => outcome.ignored++,
       onUnattributed: (source, path) => unattributed.push({ source, path }),
     });
@@ -381,7 +387,7 @@ if (args.home) {
     error = "capture lock release failed; see stderr for recovery";
   }
   const status = outcome.failed ? "failed" : outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete || unattributed.length ? "incomplete" : "complete";
-  console.log(JSON.stringify({ home: args.home, owner, ...outcome, status, complete: status === "complete", sessions,
+  console.log(JSON.stringify({ home: args.home, owner, ...outcome, status, complete: status === "complete", sessions, sourceRoots: args["current-roots"] ? "current-env" : "launch-history",
     ...(error ? { error } : {}), ...(issues.length ? { issues } : {}), ...(unattributed.length ? { unattributed } : {}),
   }, null, 2));
   // Let stdout drain naturally, including large session-boundary receipts.

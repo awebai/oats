@@ -20,6 +20,18 @@ under that authorization; it does not impose OKF policy on other integrations.
 - Explicit migration with preservation and cutover, never silently discarding
   an old soul bundle or treating a missing base as empty knowledge.
 
+## Follow-on phase — after this implementation is complete
+
+The human additionally requested a dedicated OATS knowledge Git repository and
+an expertise-oriented soul reorganization. The [accepted follow-on plan](../../agents/oats-expert/soul/knowledge/decisions/expert-souls-and-knowledge-rebuild.md)
+records the intended overall/kernel/Desktop/market/onboarding roles, the ban on
+engineer-role souls, strict audit of existing knowledge and pending notes,
+rejection of obsolete OAS material and code duplication, and safe cutover.
+This is a curated rebuild, not a bulk migration. The human subsequently allowed
+the separate repository shell to be provisioned under temporary personal
+ownership pending organization transfer. Do not migrate the corpus, rename
+live souls, or remove source knowledge before implementation verification.
+
 ## Implementation choices
 
 1. **Capability-owned configuration.** Initially accept one absolute
@@ -57,6 +69,15 @@ under that authorization; it does not impose OKF policy on other integrations.
    `oats.authoring` changes its separately released catalog package. The new
    package supplies the expert and authoring skill/reference closure, has no
    knowledge-layer binding or mandatory injection, and does not depend on OKF.
+   **Release channel: Git, not npm.** The npm kernel ships public docs and the
+   CLI but excludes `oats-package/` entirely: npm omits symlinks and therefore
+   cannot carry the canonical source `CLAUDE.md -> AGENTS.md`. Do not ship a
+   partial copy, synthesize source aliases on acquisition, weaken the source
+   rule, or change generic installed-artifact integrity semantics. Acquire with
+   `oats install git:github.com/awebai/oats@v0.23.0`, then explicitly target
+   `oats.knowledge-theory` with `oats use ... --soul <author-soul>`. The default
+   Git package path selects the self-contained subtree and exact-locks its
+   commit. A catalog pin can follow only after that immutable tag exists.
 9. **Minimal generic fixes.** Hooks must receive the running kernel's absolute
    CLI path; scheduled dispatch must not inherit another instance's identity;
    final record capture must distinguish completion from a skipped/held pass.
@@ -86,7 +107,12 @@ correctness, security and release/merge readiness, not just test results.
   recovery. Failed/uncertain publication stays recoverable.
 - Source deletion and name reuse cannot lose or misattribute pending evidence.
 - Installed-artifact acquire/lock/trust/activate/scaffold/retire probes validate
-  the complete expert curriculum and OKF's real compatibility floor.
+  the complete expert curriculum and OKF's real compatibility floor. The kernel
+  tarball must exclude the optional Git package while retaining public docs.
+  Its installed CLI acquires the exact complete theory Git fixture via direct
+  and catalog sources, verifies the tracked alias survives unchanged, removes
+  the fixture checkout, and tests local reference closure and alternative-theory
+  isolation. Generated instance aliases remain ordinary kernel behavior.
 - A fresh selected-runtime instance must answer from delivered knowledge without
   the source home/transcript. Scaffolding alone is not this learning gate.
 - Run strict knowledge validation, all affected tests, full framework gates,
@@ -94,6 +120,8 @@ correctness, security and release/merge readiness, not just test results.
 
 Version targets are provisional: framework 0.23.0 for generic support, OKF 2.0.0
 for breaking external-knowledge custody, optional theory package 1.0.0, then a
-framework patch for catalog/payload updates if required. Publish dependency
+framework patch for catalog/payload updates if required. The prerequisite
+0.23.0 keeps bundled OKF and its catalog pin at 1.6.1; standalone OKF 2.0.0
+follows rather than creating a prerequisite release cycle. Publish dependency
 sources before advancing catalog pins; follow actual current release scripts,
 not historical instructions contradicted by the implemented release lane.

@@ -81,10 +81,9 @@ jobs:
           (cd packages/desktop && npm version "${{ steps.v.outputs.version }}" --no-git-tag-version --allow-same-version)
 
       - name: Syntax-check all shipped JS
-        run: |
-          for f in $(git ls-files 'bin/*.mjs' 'lib/*.mjs' 'capabilities/*/bin/*.mjs' 'capabilities/*/skills/*/scripts/*.mjs'); do
-            node --check "$f" || { echo "::error::syntax error in $f"; exit 1; }
-          done
+        # Shared with npm run check and the runnerless lane: recursive
+        # capability libs, record, optional package scripts and release tools.
+        run: node scripts/check-package-dry-runs.mjs --syntax-only
 
       - name: Test capability resolution and package commands
         run: |
@@ -92,6 +91,8 @@ jobs:
           # dev-installed pi binary through npm's node_modules/.bin PATH.
           npm ci --ignore-scripts
           npm run check
+          npm run check:pi
+          npm run validate
           # Root `npm test` discovers packages/desktop suites (jsdom/marked
           # imports) — install its dev deps like PR CI does; Electron binary
           # is not needed for tests.

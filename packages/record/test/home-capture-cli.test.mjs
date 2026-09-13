@@ -36,7 +36,7 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   const env = { ...fixtureEnv(), HOME: fakeHome, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "mac" };
   const run = (bin, args) => execFileSync(process.execPath, [bin, ...args], { encoding: "utf8", env });
 
-  const r1 = JSON.parse(run(CAPTURE, ["--home", home, "--quiet"]));
+  const r1 = JSON.parse(run(CAPTURE, ["--current-roots", "--home", home, "--quiet"]));
   assert.equal(r1.status, "complete");
   assert.equal(r1.complete, true);
   assert.equal(r1.skipped, false);
@@ -52,7 +52,7 @@ test("capture --home captures only that home's sessions and reports exact turn-i
 
   // The session grows: the boundary moves, the earlier ids stay.
   appendFileSync(f, ccLine(home, "s1", "user", "third", "2026-09-05T10:00:02Z"));
-  const r2 = JSON.parse(run(CAPTURE, ["--home", home, "--quiet"])).sessions[0];
+  const r2 = JSON.parse(run(CAPTURE, ["--current-roots", "--home", home, "--quiet"])).sessions[0];
   assert.equal(r2.turns, 3);
   assert.equal(r2.firstTurnId, s.firstTurnId);
   assert.notEqual(r2.lastTurnId, s.lastTurnId);
@@ -83,7 +83,7 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   store.append("mac~notes", finishTurn({ v: 1, ts: "2026-09-05T10:01:00Z", from: "mac", kind: "tombstone", body: { reason: "redacted" }, links: [{ rel: "tombstones", ref: secretId }] }));
   const after = JSON.parse(run(RECALL, ["--thread", "cc:session:s1", "--json"]));
   assert.deepEqual(after.turns.map((x) => x.text[0].text), ["first", "second"], "the redacted line is not emitted");
-  const r3 = JSON.parse(run(CAPTURE, ["--home", home, "--quiet"])).sessions[0];
+  const r3 = JSON.parse(run(CAPTURE, ["--current-roots", "--home", home, "--quiet"])).sessions[0];
   assert.equal(r3.turns, 2, "visible turns only");
   assert.equal(r3.lastTurnId, s.lastTurnId, "the boundary is the last VISIBLE turn, so a window bounded by it is never refused");
   // --json with a query and no matches is JSON too.
@@ -129,7 +129,7 @@ function captureFixture(t) {
   const env = { ...fixtureEnv(), HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
   // No --quiet: native --home stdout must remain a single JSON document.
   const run = (argv = [CAPTURE], extra = ["--no-index"]) => spawnSync(process.execPath,
-    [...argv, "--home", home, ...extra], { env, cwd: home, encoding: "utf8" });
+    [...argv, "--current-roots", "--home", home, ...extra], { env, cwd: home, encoding: "utf8" });
   return { home, root, file, run };
 }
 
@@ -204,7 +204,7 @@ test("real oats recall drains a >21 MB native JSON window through piped stdout",
   const env = { ...fixtureEnv(), HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "fixture" };
   const oats = new URL("../../../bin/oats.mjs", import.meta.url).pathname;
   const run = args => spawnSync(process.execPath, [oats, ...args], { cwd: home, env, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, timeout: 20000 });
-  const capture = run(["capture", "--home", home]);
+  const capture = run(["capture", "--current-roots", "--home", home]);
   assert.equal(capture.status, 0, capture.stderr);
   const receipt = JSON.parse(capture.stdout); assert.equal(receipt.complete, true);
   const session = receipt.sessions[0]; assert.equal(session.turns, 60);

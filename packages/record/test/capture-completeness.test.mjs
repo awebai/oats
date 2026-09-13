@@ -30,7 +30,7 @@ function fixture(t, format = "cc") {
   const stream = `tester~${format}.s1`;
   const run = ({ preload, native = false, background = false } = {}) => spawnSync(process.execPath,
     [...(preload ? ["--import", preload] : []), ...(native ? [OATS, "capture"] : [CAPTURE]),
-      ...(background ? ["--sessions-only"] : ["--home", home]), "--no-index"],
+      ...(background ? ["--sessions-only"] : ["--current-roots", "--home", home]), "--no-index"],
     { env, cwd: home, encoding: "utf8", timeout: 10000 });
   const inject = (code) => {
     const path = join(base, "fault.mjs");

@@ -216,20 +216,56 @@ under its own durable-input protocol. `complete:true` alone does not mean a
 harvest was delivered or that a consumer stored those inputs. Configured privacy
 exclusions remain exclusions, not an invitation to copy excluded source bytes.
 
-**Native roots:** discovery honors `CLAUDE_CONFIG_DIR/projects`,
-`PI_CODING_AGENT_DIR/sessions`, and `CODEX_HOME/sessions`, with the native
-home-directory defaults when unset. Pi's `PI_CODING_AGENT_SESSION_DIR` and
-recorded `--session-dir` override its session root; Pi tilde paths are expanded.
-For `--home`, recorded `instance.json` launch-hook environment and launch
-configuration environment (including `HOME`) override the capturing process's
-values, in launch precedence order. Recorded `fromEnv` references resolve from
-the invoking environment, not from adjacent launch assignments. Relative paths
-resolve from the source instance home, not the capturing worker's directory.
-Missing/unreadable configured roots, dangling default roots, malformed metadata,
-unresolved recorded references and unsupported location-changing launch forms
-fail closed rather than certifying empty evidence. Truly absent optional default
-runtimes remain valid empty inventories. This is native-layout discovery, not
-an inference of arbitrary wrapper scripts' storage behavior.
+**Native roots:** managed `--home` capture uses independent execution history,
+not the observer's environment or the latest relaunch recipe. New scaffolds
+initialize `<instances>/.oats-native-record/<sha256(canonical-home)>/history.json`.
+Each managed spawn/start/restart writes a separate pending receipt before
+backend dispatch. Inside the backend shell, under the exact environment prefix
+and cwd that will exec the harness, the native recorder atomically replaces
+that receipt with the effective absolute **record locations** and runtime. Only
+these allowlisted locations, home, start id/time and custody state are saved;
+no environment map, credential reference value, task or argv is persisted.
+The saved `instance.json` command/recipe remains a relaunch **template**, not
+execution evidence: use `oats session start`, not a manual shell replay of it.
+
+Location rules at execution are `CLAUDE_CONFIG_DIR/projects` (default exactly
+`$HOME/.claude/projects`), `PI_CODING_AGENT_DIR/sessions` (default
+`$HOME/.pi/agent/sessions`), and `CODEX_HOME/sessions` (default
+`$HOME/.codex/sessions`). Pi's `--session-dir` wins over
+`PI_CODING_AGENT_SESSION_DIR`, which wins over its agent-dir location; Pi tilde
+paths expand against the effective HOME. Relative paths resolve from the source
+home. Existing symlinks resolve at recording time, including existing ancestors
+of not-yet-created roots. Inherited overrides and resolved `fromEnv` location
+inputs are thereby retained **after backend shell startup**, independently of
+later observer/config/reference changes. The recorder runs before the native
+exec; unsupported explicit Pi `--session` or a receipt write failure refuses
+that exec and leaves pending custody, rather than claiming a default root.
+Wrappers must preserve this native storage contract: arbitrary scripts which
+change storage internally cannot be inferred from their executable name.
+
+History is never replaced by a newer runtime selection, truncated with the
+bounded restart log, or deleted with the source home. Capture unions all
+historically recorded locations for each runtime and still attributes every
+file by its own cwd. Missing/unreadable historical roots, unreadable/invalid
+receipts, and pending/unfinished launches fail closed. A newly scaffolded home
+with no managed launches has an authoritative empty managed-launch inventory.
+A legacy home without that scaffold authority cannot acquire proof of its
+**earlier** roots merely by restarting: later starts retain new locations but
+its history remains incomplete. Do not remove pending/history receipts just
+to get a green capture; recovery requires establishing the source inventory.
+
+Standalone fixtures and explicit legacy inventories can opt into
+`capture --home <dir> --current-roots` (`sourceRoots: "current-env"` in JSON),
+or use `sessionsForHome(home, {roots: {cc: [...], pi: [...], codex: [...]}})`.
+Explicit API roots exclude unspecified formats, and every supplied root must
+exist. The CLI fallback uses current environment plus recorded hook/config
+location overrides; `fromEnv` resolves from that **current** base environment.
+Its `complete:true` certifies only that chosen observer-time inventory, **not**
+all historical roots; do not enable it implicitly for final-capture consumers.
+Normal managed reports say `sourceRoots: "launch-history"`. Background capture
+without `--home` retains observer-time discovery (including `.claude*` profiles)
+and optional absent native defaults. Neither fallback introduces knowledge
+policy into the kernel.
 
 **Claude children:** discovery also enumerates the native
 `<project>/<sessionId>/subagents/*.jsonl` layout, including children whose parent

@@ -30,6 +30,8 @@
 //
 //   node --test test/golden-fixtures.test.mjs           # verify
 //   UPDATE_GOLDEN=1 node --test test/golden-fixtures.test.mjs   # re-approve
+// Add UPDATE_GOLDEN_ARTIFACT=after-retire.txt to update only that artifact;
+// every other artifact is still verified, not rewritten.
 //
 // The committed goldens under test/golden/ were produced by that second path on
 // this branch, so they are exactly what this kernel emits today.
@@ -88,6 +90,11 @@
 //     baselines/<64 hex>.json` is a hash of a temp path and can never be stable
 //     across machines. The hex is replaced by <retirement-key>; that the file
 //     EXISTS, and where, is what the fixture freezes.
+//   - retained native history directory names are also sha256 of source homes.
+//     Register each spawned home before retirement and replace only its known
+//     hash with <history-INSTANCE>. Sort those entries by normalized identity,
+//     not the random hash order (attached cases retain both child and owner).
+//     Unknown keys stay visible; no directories, files or duplicates are elided.
 //   - git object ids in `git worktree list --porcelain` — replaced by <sha>.
 //   - tmux socket: absent by construction. meta.tmux.socket is only written on
 //     the launch path (lib/core.mjs:5791), and every case here is --no-launch.
@@ -150,12 +157,13 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 const KERNEL_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const CLI = join(KERNEL_ROOT, "bin", "oats.mjs");
 const GOLDEN_ROOT = join(KERNEL_ROOT, "test", "golden");
 const UPDATE = process.env.UPDATE_GOLDEN === "1";
+const UPDATE_ARTIFACT = process.env.UPDATE_GOLDEN_ARTIFACT || "";
 
 // One fixed task string for every case: the task text is an INPUT, so varying it
 // would only make the goldens differ from each other for no reason.
@@ -401,7 +409,7 @@ exit 0
   ], { encoding: "utf8", env, cwd: tmpdir() });
   assert.equal(created.status, 0, `oats create failed: ${created.stderr}${created.stdout}`);
 
-  return { base, scope, repo, root, env };
+  return { base, scope, repo, root, env, nativeHistoryKeys: new Map() };
 }
 
 function cli(f, argv) {
@@ -419,10 +427,27 @@ function spawnEnvelope(f, argv) {
   assert.equal(r.stdout.trim(), JSON.stringify(doc), "stdout is exactly one JSON document");
   assert.equal(doc.schemaVersion, 1);
   assert.equal(doc.ok, true, r.stdout);
+  rememberNativeHistory(f, doc.result.home);
   return doc;
 }
 
 // ---------- normalization ----------
+
+/** Freeze source identity BEFORE retirement removes the home. The production
+ *  key canonicalizes the parent, not the source-home leaf. Do not discover keys
+ *  from surviving history files: missing/extra custody must remain a mismatch.
+ *  All homes in these fixtures are siblings; reject ambiguous leaf labels rather
+ *  than silently collapsing two different source identities. */
+function rememberNativeHistory(f, home) {
+  const source = join(realpathSync(dirname(home)), basename(home));
+  const key = createHash("sha256").update(source).digest("hex");
+  const label = `<history-${basename(home)}>`;
+  for (const [knownKey, knownLabel] of f.nativeHistoryKeys) {
+    assert.ok(knownKey === key || knownLabel !== label, `ambiguous native history identity: ${label}`);
+  }
+  f.nativeHistoryKeys.set(key, label);
+  return key;
+}
 
 /** Path substitutions for one case, longest pattern first so a prefix can never
  *  eat a longer match. Every path contributes BOTH its lexical and its realpath
@@ -448,6 +473,9 @@ function normalize(text, f) {
   out = out.replace(/("createdAt":\s*)"[^"]*"/g, '$1"<createdAt>"');
   // sha256 of the instance home path — see the header note on retirementKey().
   out = out.replace(/baselines\/[0-9a-f]{64}\.json/g, "baselines/<retirement-key>.json");
+  // Only registered source hashes in the native custody namespace are volatile.
+  out = out.replace(/(\.oats-native-record\/)([0-9a-f]{64})(?=\/|$)/gm,
+    (_, prefix, key) => prefix + (f.nativeHistoryKeys?.get(key) ?? key));
   // git object ids from `git worktree list --porcelain`.
   out = out.replace(/\b[0-9a-f]{40}\b/g, "<sha>");
   return out;
@@ -465,10 +493,14 @@ function normalize(text, f) {
  *  worse than no golden. (The kernel's own skill ordering does use
  *  localeCompare, lib/core.mjs:5735; that is kernel behavior this suite freezes
  *  rather than works around, and its inputs are all lowercase.) */
-function treeOf(dir) {
+function treeOf(dir, f = {}) {
   const lines = [];
-  const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
   const walk = (d, rel) => {
+    // Hash order changes with the temp home. Reorder ONLY native history
+    // siblings, by their registered source identity; retain every entry.
+    const name = (e) => basename(d) === ".oats-native-record"
+      ? (f.nativeHistoryKeys?.get(e.name) ?? e.name) : e.name;
+    const byName = (a, b) => (name(a) < name(b) ? -1 : name(a) > name(b) ? 1 : 0);
     for (const e of readdirSync(d, { withFileTypes: true }).sort(byName)) {
       const path = join(d, e.name);
       const child = rel ? `${rel}/${e.name}` : e.name;
@@ -572,20 +604,96 @@ function unifiedDiff(expected, actual, label) {
 
 function golden(caseId, name, actual) {
   const file = join(GOLDEN_ROOT, caseId, name);
-  if (UPDATE) { write(file, actual); return; }
+  if (UPDATE && (!UPDATE_ARTIFACT || name === UPDATE_ARTIFACT)) { write(file, actual); return; }
   assert.ok(existsSync(file), `missing golden ${relative(KERNEL_ROOT, file)} — regenerate with UPDATE_GOLDEN=1`);
   const expected = readFileSync(file, "utf8");
   if (expected === actual) return;
   assert.fail(`golden mismatch: ${caseId}/${name}\n${unifiedDiff(expected, actual, `${caseId}/${name}`)}\n\nIf this change is intended, re-approve it with UPDATE_GOLDEN=1 and review the diff in the commit.`);
 }
 
-// UPDATE_GOLDEN rewrites from scratch so a case removed from the matrix cannot
-// leave an orphan golden behind, silently still "passing".
-if (UPDATE) rmSync(GOLDEN_ROOT, { recursive: true, force: true });
+// A full UPDATE_GOLDEN rewrites from scratch so a removed case cannot leave an
+// orphan. An artifact-scoped update must not delete or rewrite other goldens.
+if (UPDATE && !UPDATE_ARTIFACT) rmSync(GOLDEN_ROOT, { recursive: true, force: true });
 
 test.after(() => {
   for (const b of BASES.splice(0)) rmSync(b, { recursive: true, force: true });
   rmSync(HERMETIC_HOME, { recursive: true, force: true });
+});
+
+// ---------- normalization regressions (no CLI or runtime) ----------
+
+function nativeHistoryFixture() {
+  const base = mkdtempSync(join(tmpdir(), "oats-golden-history-"));
+  BASES.push(base);
+  const f = { base, nativeHistoryKeys: new Map() };
+  const instances = join(base, "instances");
+  for (const instance of ["dev-case", "dev-owner"]) {
+    const home = join(instances, instance);
+    mkdirSync(home, { recursive: true });
+    const key = rememberNativeHistory(f, home);
+    assert.equal(rememberNativeHistory(f, realpathSync(home)), key, "parent aliases share a key");
+    write(join(instances, ".oats-native-record", key, "history.json"), "{}\n");
+    rmSync(home, { recursive: true });
+  }
+  return f;
+}
+
+const HISTORY_TREE = "instances/\ninstances/.oats-native-record/\n"
+  + ["dev-case", "dev-owner"].map((name) =>
+    `instances/.oats-native-record/<history-${name}>/\n`
+    + `instances/.oats-native-record/<history-${name}>/history.json\n`).join("");
+const historyTree = (f) => normalize(treeOf(f.base, f), f);
+
+test("normalization: native history source identities survive temp roots and removed homes", () => {
+  const first = nativeHistoryFixture();
+  const second = nativeHistoryFixture();
+  assert.notDeepEqual([...first.nativeHistoryKeys.keys()], [...second.nativeHistoryKeys.keys()]);
+  assert.equal(historyTree(first), HISTORY_TREE);
+  assert.equal(historyTree(second), HISTORY_TREE);
+  assert.equal(first.nativeHistoryKeys.size, 2, "child and owner are distinct identities");
+});
+
+test("normalization: opposite hash order still sorts history siblings by source identity", () => {
+  const f = nativeHistoryFixture();
+  const custody = join(f.base, "instances", ".oats-native-record");
+  rmSync(custody, { recursive: true });
+  const low = "1".repeat(64), high = "e".repeat(64);
+  for (const key of [low, high]) write(join(custody, key, "history.json"), "{}\n");
+  for (const keys of [[low, high], [high, low]]) {
+    f.nativeHistoryKeys = new Map([[keys[0], "<history-dev-case>"], [keys[1], "<history-dev-owner>"]]);
+    assert.equal(historyTree(f), HISTORY_TREE);
+  }
+});
+
+test("normalization: missing, extra and duplicate native custody remain observable", () => {
+  const f = nativeHistoryFixture();
+  const custody = join(f.base, "instances", ".oats-native-record");
+  const key = [...f.nativeHistoryKeys.keys()][0];
+  const history = join(custody, key, "history.json");
+  assert.equal(historyTree(f), HISTORY_TREE);
+  rmSync(history);
+  assert.notEqual(historyTree(f), HISTORY_TREE, "missing history.json is not hidden");
+  rmSync(dirname(history), { recursive: true });
+  assert.notEqual(historyTree(f), HISTORY_TREE, "missing source directory is not hidden");
+  write(history, "{}\n");
+  write(join(dirname(history), "unexpected.json"), "{}\n");
+  assert.notEqual(historyTree(f), HISTORY_TREE, "extra receipt is not hidden");
+  rmSync(join(dirname(history), "unexpected.json"));
+  const unknown = "f".repeat(64);
+  assert.ok(!f.nativeHistoryKeys.has(unknown));
+  write(join(custody, unknown, "history.json"), "{}\n");
+  assert.notEqual(historyTree(f), HISTORY_TREE, "extra source history is not hidden");
+  assert.ok(historyTree(f).includes(`.oats-native-record/${unknown}/history.json`), "unknown hashes stay visible");
+  const line = `instances/.oats-native-record/${key}/history.json\n`;
+  assert.equal(normalize(line.repeat(2), f), normalize(line, f).repeat(2), "no deduplication");
+  assert.equal(normalize(`other/${key}/history.json`, f), `other/${key}/history.json`, "other namespaces are untouched");
+});
+
+test("normalization: ambiguous source labels are rejected rather than merged", () => {
+  const f = nativeHistoryFixture();
+  const other = join(f.base, "other", "dev-case");
+  mkdirSync(other, { recursive: true });
+  assert.throws(() => rememberNativeHistory(f, other), /ambiguous native history identity/);
 });
 
 // ---------- the cases ----------
@@ -672,6 +780,6 @@ for (const kase of CASES) {
     // 8. what retirement left: the agent directory, and the repository's
     //    worktree and branch lists.
     golden(kase.id, "after-retire.txt", normalize(
-      `# tree of <base>/scope/agents/dev\n${treeOf(join(f.root, "dev"))}\n${gitStateOf(f)}`, f));
+      `# tree of <base>/scope/agents/dev\n${treeOf(join(f.root, "dev"), f)}\n${gitStateOf(f)}`, f));
   });
 }

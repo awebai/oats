@@ -265,13 +265,13 @@ test("capture --home lock collision returns one JSON document with stale boundar
   writeFileSync(file, line("first"));
   const env = { ...fixtureEnv(), HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
   const run = (...args) => spawnSync(process.execPath, [CAPTURE, "--no-index", ...args], { env, encoding: "utf8" });
-  const first = run("--home", home); assert.equal(first.status, 0, first.stderr);
+  const first = run("--current-roots", "--home", home); assert.equal(first.status, 0, first.stderr);
   const boundary = JSON.parse(first.stdout).sessions[0].lastTurnId;
   writeFileSync(file, line("first") + line("second"));
   const lock = acquireCaptureLock(root); assert.ok(lock.release);
   try {
     for (const extra of [[], ["--quiet"]]) {
-      const r = run("--home", home, ...extra); assert.equal(r.status, 0, r.stderr + r.stdout);
+      const r = run("--current-roots", "--home", home, ...extra); assert.equal(r.status, 0, r.stderr + r.stdout);
       const out = JSON.parse(r.stdout);
       assert.equal(out.status, "skipped"); assert.equal(out.complete, false); assert.equal(out.skipped, true);
       assert.equal(out.held, 0, "a lock skip is distinct from unstamped held sessions");
@@ -283,14 +283,14 @@ test("capture --home lock collision returns one JSON document with stale boundar
     const background = run("--sessions-only", "--quiet");
     assert.equal(background.status, 0, background.stderr); assert.equal(background.stdout, "");
   } finally { assert.deepEqual(lock.release(), { released: true }); }
-  const complete = run("--home", home); assert.equal(complete.status, 0, complete.stderr);
+  const complete = run("--current-roots", "--home", home); assert.equal(complete.status, 0, complete.stderr);
   const out = JSON.parse(complete.stdout);
   assert.equal(out.complete, true); assert.equal(out.skipped, false); assert.equal(out.appended, 1);
   assert.equal(out.sessions[0].turns, 2); assert.notEqual(out.sessions[0].lastTurnId, boundary);
   // The dead-owner form is also native JSON, with actionable diagnostics.
   mkdirSync(captureLockPath(root));
   writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: "2026-09-13T10:00:00Z" }));
-  const stale = run("--home", home, "--quiet"); assert.equal(stale.status, 0);
+  const stale = run("--current-roots", "--home", home, "--quiet"); assert.equal(stale.status, 0);
   assert.equal(JSON.parse(stale.stdout).complete, false); assert.match(stale.stderr, /now dead.*rm -r/);
 });
 
@@ -309,7 +309,7 @@ fs.rmSync = (path, ...args) => {
   return rm(path, ...args);
 };
 syncBuiltinESMExports();`);
-  const r = spawnSync(process.execPath, ["--import", preload, CAPTURE, "--home", home, "--no-index"], {
+  const r = spawnSync(process.execPath, ["--import", preload, CAPTURE, "--current-roots", "--home", home, "--no-index"], {
     env: { ...fixtureEnv(), HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" }, encoding: "utf8",
   });
   assert.equal(r.status, 1, r.stderr + r.stdout);

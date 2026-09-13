@@ -1,3 +1,4 @@
+// Explicit observer-time fallback only; managed capture uses native-history.
 // Resolve only transcript-location inputs. Never execute recorded launch
 // commands or disclose unrelated environment values (which may be secrets).
 import { readFileSync } from "node:fs";
@@ -63,4 +64,27 @@ export function nativeDirectory(value, { home = homedir(), cwd = process.cwd(), 
     value = join(home, value.slice(2));
   }
   return resolve(cwd, value);
+}
+
+/** Native execution-side locations, without existence filtering. Unlike a
+ * background observer scan, Claude's native default is exactly ~/.claude,
+ * not every .claude* profile found under an observer's HOME. */
+export function nativeLaunchLocations(runtime, { cwd, env = process.env, args = [] } = {}) {
+  const home = env.HOME || homedir();
+  if (!isAbsolute(home)) throw new Error("native launch HOME must be absolute");
+  if (!Array.isArray(args) || args.some(a => typeof a !== "string")) throw new Error("invalid native launch arguments");
+  if (runtime === "claude") return [join(nativeDirectory(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), { home, cwd }), "projects")];
+  if (runtime === "codex") return [join(nativeDirectory(env.CODEX_HOME || join(home, ".codex"), { home, cwd }), "sessions")];
+  if (runtime !== "pi") throw new Error("unsupported native record runtime");
+  let sessionDir = env.PI_CODING_AGENT_SESSION_DIR;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--session" || arg.startsWith("--session=")) throw new Error("explicit Pi --session has no supported directory custody; capture explicit roots instead");
+    if (arg === "--session-dir" || arg.startsWith("--session-dir=")) {
+      sessionDir = arg === "--session-dir" ? args[++i] : arg.slice("--session-dir=".length);
+      if (!sessionDir || sessionDir.startsWith("--")) throw new Error("invalid native --session-dir");
+    }
+  }
+  return [sessionDir ? nativeDirectory(sessionDir, { home, cwd, tilde: true })
+    : join(nativeDirectory(env.PI_CODING_AGENT_DIR || join(home, ".pi", "agent"), { home, cwd, tilde: true }), "sessions")];
 }
