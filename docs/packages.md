@@ -391,12 +391,14 @@ for it.
 ### Catalog shape
 
 The official catalog is data (`package-catalog.json`, or the file named by
-`OATS_PACKAGE_CATALOG`):
+`OATS_PACKAGE_CATALOG`). The v0.23.1 integration selects these already-published
+sources; installing a kernel does not advance existing package locks:
 
 ```json
 {
   "packages": {
-    "oats.okf": { "url": "https://github.com/awebai/oats-okf.git", "ref": "v1.4.1", "path": "oats-package" },
+    "oats.okf": { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.0.0", "path": "oats-package" },
+    "oats.knowledge-theory": { "url": "https://github.com/awebai/oats.git", "ref": "v0.23.0", "path": "oats-package" },
     "oats.dev": { "url": "https://github.com/awebai/oats-dev.git", "ref": "v1.0.0", "path": "oats-package" }
   },
   "capabilities": { "oats.review": "oats.dev" }
@@ -411,6 +413,28 @@ Existing v1 locks and artifacts remain supported until you run guided migration.
 `capabilities` is the legacy-capability → package alias map the guided migration
 reads; identity mappings need no entry. An alias value may also be spelled
 `{ "package": "<id>" }`.
+
+### OKF v2 and optional theory distribution
+
+The standalone OKF package exports only `oats-package/capabilities/oats-okf/`.
+Use its catalog Git payload after [release gates](release-notes/v0.23.1.md) pass.
+The framework's bundled npm mirror is not a self-contained distribution:
+npm drops the source worker soul's `CLAUDE.md -> AGENTS.md`. It must not be
+advertised as a complete local package or repaired after acquisition to evade
+integrity checks. Git transport preserves the canonical source alias.
+
+The optional `oats.knowledge-theory` package is a separate Git payload in this
+repository's `oats-package/`, excluded from the kernel npm tarball. The catalog
+entry selects published framework v0.23.0, which contains package 1.0.0.
+The source reference patch 1.0.1 is separately available through an explicit
+v0.23.1 Git source after that framework tag is published. It supplies an authoring skill and
+`knowledge-theory-expert`, not a default knowledge-layer binding, runtime judge
+or OKF dependency. Acquiring it does not activate it.
+
+Updating OKF v1 to v2 is a breaking capability change. Preserve existing
+knowledge and source state/cursors, explicitly bind/provision external owners,
+accept provider delivery and perform deliberate cutover. Kernel package/lock
+migration does none of this. See [knowledge migration](knowledge-migration.md).
 
 ## Doctor
 

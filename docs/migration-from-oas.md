@@ -11,6 +11,12 @@ kernel does not read `oas-*` configuration names or `oas.*` capability IDs.
 An unchanged agent-directory layout can make an old scope look familiar
 while its knowledge and messaging configuration remains unmigrated.
 
+> **Separate knowledge cutover:** OAS/package name migration does not migrate
+> soul knowledge, source memory or v1 watermarks to OKF v2. If the selected
+> catalog update acquires OKF 2.0.0, plan [knowledge preservation and cutover](knowledge-migration.md)
+> before activation/spawn. The v2 integration is [prepared](release-notes/v0.23.1.md),
+> not a claim that those dependencies or any deployment have already changed.
+
 ## Upgrade one scope
 
 Finish or preserve active work before changing a daily-use deployment.
@@ -83,4 +89,4 @@ requirement to wait for OATS publication.
 
 See the [0.22.0 release notes](release-notes/v0.22.0.md) for the rename,
 package versions, and compatibility changes, and the
-[first-team qualification](first-team-demo.md) for current operating evidence.
+[first-team qualification](first-team-demo.md) for historical v1 operating evidence.

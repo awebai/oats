@@ -14,7 +14,7 @@ A soul is durable and committed. It is the part you review, improve, and keep.
   AGENTS.md            # canonical operating doc
   CLAUDE.md → AGENTS.md
   skills/              # skills specific to this expert
-  knowledge/           # optional, created by the knowledge integration
+  okf.json             # OKF v2 owner/owns/reads declaration, when selected
 ```
 
 `soul.yaml` keys:
@@ -31,15 +31,16 @@ A soul is durable and committed. It is the part you review, improve, and keep.
 | `launch-config` | Optional default launch configuration for new instances (a name declared under `launch-configs:` in the scope's config; see docs/design/launch-configurations.md). `oats spawn --launch-config <name|none>` overrides it; `oats soul set --launch-config <name>` / `--no-launch-config` edit it. |
 
 A soul is model-agnostic as an artifact. Its files are plain operating docs,
-skills, and knowledge. `model` is only the default choice for new instances,
-not part of the expert's identity.
+skills and capability-owned declarations. `model` is only the default choice
+for new instances, not part of the expert's identity.
 
 A soul never runs by itself. It is incarnated as an instance. Editing a soul
 is a code change.
 
-Today the core soul artifacts are `AGENTS.md`, `skills/`, and any knowledge
-bundle the knowledge integration creates. Future integrations may add other
-expert-specific artifacts, such as Claude Code-like rule files or
+Core soul artifacts are `AGENTS.md` and `skills/`, plus any declarations the
+selected knowledge integration needs. OKF v2 stores knowledge externally, not
+in a soul bundle; see [knowledge](knowledge.md) for its prepared version scope.
+Future integrations may add expert-specific artifacts such as rule files or
 runtime-specific guidance, while keeping `AGENTS.md` canonical.
 
 ## Instance anatomy
@@ -73,13 +74,14 @@ collide because they are local runtime state, not shared soul state.
   STATE.md, log.md, notes/         # optional, from the knowledge integration
 ```
 
-Why some knowledge belongs in the soul (incarnation-invariant) and some in
-the instance (this task, this branch, now) — regardless of which integration
-or format you use — is covered in [knowledge theory](knowledge-theory.md).
+Why durable expertise must be incarnation-invariant while task state is local
+to this branch and moment is covered in [knowledge theory](knowledge-theory.md).
+This distinction does not require knowledge bytes to live in the soul.
 
-The kernel does not define memory files. If the config resolves `knowledge:
-okf`, the okf integration creates `STATE.md`, `log.md`, and `notes/`. If the
-config resolves `knowledge: none`, those files do not exist.
+The kernel does not define memory files. With `oats.okf` selected under
+`capabilities.layers.knowledge`, v2 creates `STATE.md`, `log.md`, `notes/` and an
+immutable external-knowledge snapshot. `knowledge: none` creates none of these;
+it does not erase pre-existing memory.
 
 ## Lifecycle
 
@@ -94,7 +96,10 @@ own home and tools.
 
 Examples of spawn hooks:
 
-- `oats-okf` creates episodic memory files.
+- `oats.okf` v2 requires explicit bindings and owner declarations, validates
+  accepted bases, creates episodic files and an immutable reader view, and
+  registers a durable source plus its per-source schedule definition. Missing
+  knowledge is an error, not permission to bootstrap an empty substitute.
 - `oats-aweb` mints a messaging identity.
 
 ### Work
@@ -103,29 +108,26 @@ The instance works in `./work`. With oats-okf it also keeps `STATE.md` current,
 appends milestones to `log.md`, and captures non-obvious insights in
 `notes/`.
 
-After committing with pending notes, the instance runs `oats okf harvest`
-(its okf briefing says so). oats-okf spawns a memory-harvest agent attached to
-the same work tree. The harvester promotes, merges, or drops notes, commits a
-`memory-harvest:` change, deletes processed notes, and retires itself. This is
-how long-lived instances feed their souls while still alive.
+It reads accepted external knowledge through `./knowledge/view.json` and
+`./knowledge/bases/<alias>/`, index-first. It never writes accepted knowledge;
+this is instruction, not an OS sandbox. `oats okf read`/`refresh` obtains a new
+accepted view while old snapshots remain stable. Git PRs are unread as accepted
+knowledge until their merge is visible; pending directory publication blocks
+fresh reads rather than exposing partial bytes.
 
-Instances that write few notes still feed their souls. With no notes pending,
-`oats okf harvest` asks the turn record for the instance's own captured
-sessions (the transcripts whose working directory is the instance home), and
-spawns the harvester on the turns captured since the last harvest, bounded by
-exact turn ids. The harvester extracts candidates from them, judges each under
-the same promotion bar as a note, and once its judgement is complete writes the
-watermark `.okf-harvest-record.json` in the instance home, whether or not it
-promoted anything; only a failed harvest leaves the watermark alone, so the same
-window is read again. `oats okf harvest --from-record` consults the record even
-when notes are pending. Windows are sized to one tool-output read (60 turns
-or 96 KB of JSON by default; okf settings `record-window-turns` and
-`record-window-bytes`), so a long backlog drains over several harvests, each
-advancing the watermark only over what was read; the package prepares the next
-watermark as `.okf-harvest-record.next.json` and the harvester's delivery is
-one rename, so an abandoned harvest leaves that file beside the current one.
-oats.okf 1.5.0 requires kernel 0.22.2 (the `capture --home` and `recall --json`
-surfaces); the compatibility floor refuses to activate it on an older kernel.
+An independent worker judges durable **notes and full record windows**, not only
+notes or a watermark left in the live home. V2 working-agent instructions do not
+require after-commit harvesting. Each source has a command job rooted in durable
+deployment context; the operator may also request `oats okf harvest`. Timer
+installation is explicit, and no-launch sources cannot schedule model launches.
+
+Workers use their own `work: directory`, never the source branch or an attached
+worktree. Validated Git output goes through real PR delivery; non-Git output
+uses recoverable directory publication. Workers leave live notes and soul skills
+untouched. Captured, processed, delivered and accepted are distinct receipts;
+spawning a worker is not successful learning. See [knowledge](knowledge.md) for
+inspection, completion and recovery, and [migration](knowledge-migration.md) for
+preserving v1 bundles and source cursors before owner/source cutover.
 
 ### Spawning and coordinating with other agents
 
@@ -171,8 +173,11 @@ task layer can provide shared work state while messaging provides conversation.
 ### Retire
 
 Retirement runs active capability retire hooks in reverse spawn order before the home disappears. The aweb
-integration self-deletes the instance identity here. For oats-okf, retirement
-is a knowledge no-op because harvest already happens after commits.
+integration self-deletes the instance identity here. OKF v2 performs final
+notes-and-record capture into durable external custody. An incomplete or
+uncertified capture retains the home for retry. Successful retirement enqueues
+evidence but never waits for a model or GitHub: independent processing and
+source-targeted inspection continue after the home disappears.
 
 `oats retire <instance> --self` lets an instance retire itself when the human
 or briefing says it is done. A live runtime cannot give a stable final
@@ -206,7 +211,8 @@ instructions state first (`injects/instance-boundary.md`):
   extent the mode below permits.
 - The home's `soul` link is to be treated as read-only: writes through it bypass
   the branch and review path. Durable soul edits go through tracked paths under
-  `work/`, or through the harvester when the soul lives outside the repo.
+  `work/` under the applicable review rules. OKF v2 harvest edits external
+  owned knowledge, not canonical soul files or skills.
 
 Agents move between the two as the task needs; the boundary is what each
 directory is for, not a place to settle in.
@@ -247,8 +253,7 @@ Rules:
 `work/` points at **another instance's work tree** — same branch, same
 uncommitted state. Spawning attached requires `workDir` (the owning
 instance's `<home>/work`); it is usually a spawn-time choice for service
-agents (the memory-harvest agent uses it so its promotion commit lands on
-the source instance's branch), but a soul whose role is always-attached
+agents such as reviewers, but a soul whose role is always-attached
 service work may declare it as identity too.
 
 Attached agents are guests: never switch branches or rewrite history, touch
@@ -289,10 +294,10 @@ Rules:
 - Read freely across member repos; **never edit or commit inside them** —
   route changes to the owning repo's agents or the human.
 - No git state operations in any member repo.
-- The one exception is the soul's own home repo: knowledge promotion writes
-  there via the knowledge layer's harvest, **as a PR on a branch**, never a
-  direct push (the OKF integration does this automatically for
-  workspace-mode instances).
+- Knowledge promotion follows the selected capability's custody protocol,
+  never direct edits through the workspace view. In OKF v2 an independent
+  worker publishes external knowledge through PRs for every Git base,
+  irrespective of the source's work mode or the soul's repository.
 
 Spawning workspace mode requires a declared boundary (a `team:` block or a
 workspace-scope config); the instance records no branch — the workspace is
@@ -370,8 +375,8 @@ Default layout:
 ```
 
 `local-agents/` sits BESIDE `agents/` at the scope level and holds **full local
-souls**: complete souls (memory, skills, knowledge, instances) that are not
-committed to the repo. `oats create <name> --local` creates one — the directory
+souls**: complete definitions with instructions, skills, capability declarations
+and instances, not committed to the repo. `oats create <name> --local` creates one — the directory
 is created on first use, and when the scope is a git repo the kernel adds
 `local-agents/` to its `.gitignore` automatically. A scope with only
 `local-agents/` is fully operable: people can use OATS with local agents alone.
@@ -382,7 +387,9 @@ for compatibility.
 Instances of a local soul receive a `local-soul` briefing: work and commits
 are normal, but soul updates are plain file edits (nothing to commit), and
 durability is the machine's — promote the soul to `agents/` when it starts to
-matter beyond one machine.
+matter beyond one machine. That concerns soul artifacts, not a knowledge
+provider's custody: a local soul using OKF v2 still reads external bases and
+uses PR-only delivery for any Git base.
 
 Alternative agents-root layouts are planned but not built. Today the default
 layout is the only implemented layout.

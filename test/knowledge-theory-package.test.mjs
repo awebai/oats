@@ -68,7 +68,7 @@ function fixtureEnv(base) {
 async function installedFixture() {
   const base = process.env.OATS_THEORY_FIXTURE;
   assert.ok(base && process.cwd() === base, "fixture must run only in its isolated cwd");
-  const core = await import("../lib/core.mjs");
+  const core = await import("@awebai/oats");
   const source = copyPackage(base);
   const sourceManifest = core.loadPackageManifestAt(source);
   assert.equal(sourceManifest.package, "oats.knowledge-theory");
@@ -92,7 +92,7 @@ async function installedFixture() {
   assert.equal(lock.lockfileVersion, 2);
   assert.deepEqual(Object.keys(lock.packages), ["oats.knowledge-theory"]);
   assert.deepEqual(Object.keys(lock.capabilities), ["oats.knowledge-theory"]);
-  assert.equal(lock.packages["oats.knowledge-theory"].version, "1.0.0");
+  assert.equal(lock.packages["oats.knowledge-theory"].version, "1.0.1");
   const trust = core.capabilityTrust(scope, "oats.knowledge-theory");
   assert.equal(trust.trusted, true, JSON.stringify(trust));
   assert.deepEqual(trust.executableSurface, { commands: [], hooks: [], environment: [] });
@@ -191,7 +191,7 @@ if (process.argv.includes("--isolated-fixture")) {
   await installedFixture();
 } else {
   test("theory distribution has valid manifests, additive-only resources and canonical relative soul alias", () => {
-    assert.deepEqual(checkKnowledgeTheoryPackage(), { ok: true, package: "oats.knowledge-theory", version: "1.0.0", references: 8 });
+    assert.deepEqual(checkKnowledgeTheoryPackage(), { ok: true, package: "oats.knowledge-theory", version: "1.0.1", references: 8 });
     // The isolated acquisition test also runs the kernel's real manifest and
     // self-containment validators. No schema-only or string-only acceptance.
     const frontmatter = readFileSync(join(CAP_ROOT, SKILL_PATH, "SKILL.md"), "utf8");

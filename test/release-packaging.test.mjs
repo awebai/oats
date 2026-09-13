@@ -5,9 +5,10 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
-  ROOT, checkJavaScript, checkKernelPackFiles, checkReleaseVersions, shippedJavaScript,
+  ROOT, checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload, checkReleaseVersions, shippedJavaScript,
 } from "../scripts/check-package-dry-runs.mjs";
 import { CAPABILITY_PATH, EXPERT_PATH, checkKnowledgeTheoryPackage, treeFiles } from "../scripts/check-knowledge-theory-package.mjs";
+import { checkOkfMirror } from "../scripts/check-okf-mirror.mjs";
 import { acceptProbe } from "../packages/desktop/cli-locator.mjs";
 
 function scratch(t) {
@@ -41,10 +42,12 @@ test("release alignment rejects stale lock metadata even when all three manifest
   assert.throws(() => checkReleaseVersions(root), /root entry version differs/);
 });
 
-test("prerequisite release retains bundled OKF and its catalog pin at 1.6.1", () => {
-  assert.equal(json("capabilities/oats-okf/oats.json").version, "1.6.1");
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v1.6.1");
-  assert.ok(!json("package-catalog.json").packages["oats.knowledge-theory"], "no unpublished official pin");
+test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
+  assert.equal(json("capabilities/oats-okf/oats.json").version, "2.0.0");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.0.0");
+  const theory = json("package-catalog.json").packages["oats.knowledge-theory"];
+  assert.equal(theory.ref, "v0.23.0", "catalog uses the already published theory source, not this pending release tag");
+  assert.equal(theory.path, "oats-package");
 });
 
 test("syntax inventory recurses through new capability libs, record and package scripts without Git", (t) => {
@@ -68,7 +71,7 @@ test("actual npm inventory ships public docs but no partial optional package; om
   const [pack] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json"], { cwd: ROOT, encoding: "utf8" }));
   const files = checkKernelPackFiles(pack);
   const canonical = ["docs/knowledge-capability-authoring.md", ...treeFiles(join(ROOT, "docs/knowledge-reference")).map((file) => `docs/knowledge-reference/${file}`)];
-  for (const file of ["bin/oats.mjs", ...canonical]) {
+  for (const file of ["bin/oats.mjs", "capabilities/oats-okf/lib/inspection.mjs", "capabilities/oats-okf/lib/worker.mjs", ...canonical]) {
     assert.ok(files.has(file));
     assert.throws(() => checkKernelPackFiles({ ...pack, files: pack.files.filter((f) => f.path !== file) }), (error) => error.message.includes(`missing ${file}`));
   }
@@ -85,4 +88,37 @@ test("actual npm inventory ships public docs but no partial optional package; om
   const soul = join(ROOT, "oats-package", CAPABILITY_PATH, EXPERT_PATH);
   assert.equal(readlinkSync(join(soul, "CLAUDE.md")), "AGENTS.md");
   assert.equal(lstatSync(join(soul, "AGENTS.md")).isFile(), true);
+});
+
+
+test("actual npm OKF regular bytes match inventory; symlink omission is explicit, drift never blessed", { timeout: 60_000 }, (t) => {
+  const root = scratch(t);
+  const inventory = checkOkfMirror();
+  const [pack] = JSON.parse(execFileSync("npm", ["pack", "--json", "--pack-destination", root], { cwd: ROOT, encoding: "utf8" }));
+  checkKernelPackFiles(pack);
+  execFileSync("tar", ["-xzf", join(root, pack.filename), "-C", root, "package/capabilities/oats-okf"]);
+  const cap = join(root, "package/capabilities/oats-okf");
+  const result = checkNpmOkfPayload(cap, inventory);
+  assert.equal(result.selfContainedGitPayload, false);
+  assert.deepEqual(result.omittedSourceSymlinks, ["agents/memory-harvest/CLAUDE.md"]);
+  assert.ok(!existsSync(join(cap, result.omittedSourceSymlinks[0])), "npm did not ship the source alias; no repair");
+  assert.equal(result.regularFiles, inventory.entries.filter((entry) => entry.type === "file").length);
+  const file = join(cap, "lib/inspection.mjs");
+  const original = readFileSync(file);
+  const corrupt = Buffer.from(original); corrupt[0] ^= 1;
+  writeFileSync(file, corrupt);
+  assert.throws(() => checkNpmOkfPayload(cap, inventory), /byte drift/, "equal-size corruption must fail actual-byte verification");
+  writeFileSync(file, original);
+  rmSync(file);
+  assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
+  writeFileSync(file, original);
+  const extra = join(cap, "obsolete-v1.mjs"); writeFileSync(extra, "obsolete");
+  assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
+  rmSync(extra);
+  // Regular compatibility copies are no more acceptable than unexpected links.
+  const alias = join(cap, "agents/memory-harvest/CLAUDE.md");
+  writeFileSync(alias, readFileSync(join(cap, "agents/memory-harvest/AGENTS.md")));
+  assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
+  rmSync(alias);
+  assert.deepEqual(checkNpmOkfPayload(cap, inventory), result);
 });

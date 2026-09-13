@@ -1,21 +1,22 @@
 # Run your first OATS team
 
-Start with one repository and one small, real task. An OATS soul keeps the
-role and knowledge; an instance gets a working session and a Git worktree.
-Review its work, let it promote useful notes, then retire the instance.
+Start with one repository and one small, real task. A soul keeps the role and
+curated skills; an instance gets a working session and repository view. With OKF
+v2, expertise lives in external owned nodes, not the soul or task branch.
 
-This guide follows the published **0.22.0** path exercised on 2026-09-05
-with `oats.dev` 1.0.0, `oats.okf` 1.4.1, `oats.aweb` 1.8.0, and
-`oats.authoring` 1.0.0. The [qualification example](first-team-demo.md)
-records the actual tasks and outcomes. Existing OAS users should follow
-[the migration guide](migration-from-oas.md) first.
+> This guide targets the **v0.23.1 integration of published OKF 2.0.0**, whose
+> published kernel prerequisite is OATS >=0.23.0. Check the matching framework
+> release availability before installation; see [release notes](release-notes/v0.23.1.md).
+> The [qualification example](first-team-demo.md) records real **v1** tasks on
+> earlier versions, not v2 acceptance. Existing knowledge needs
+> [v1 preservation and cutover](knowledge-migration.md), not fresh initialization.
 
 ## Install and choose a scope
 
-Have Node.js 22+, Git, tmux, and an authenticated agent runtime available.
-Launch Pi or Claude Code once yourself to confirm that your chosen model
-works. The current OKF package runs its harvester in **Pi**, including when
-its working agent uses Claude Code, so this configuration needs Pi too.
+Install matching published kernel and Pi adapter releases. Have Node.js 22+, Git, tmux and an authenticated working runtime
+available. OKF's independent worker can use Pi, Claude or Codex; authenticate
+that selected runtime too. Plain-directory knowledge needs no Git/gh, although
+this guide's coding worktree does need Git.
 
 ```bash
 npm install -g @awebai/oats@latest
@@ -23,150 +24,186 @@ pi install npm:@awebai/oats-pi@latest
 node --version
 tmux -V
 oats version
-```
-
-Install matching kernel and adapter versions from the same release.
-
-Use a repository with an initial Git commit. Keep your normal working
-changes committed or otherwise accounted for before giving an agent work.
-The commands below run from that repository:
-
-```bash
 cd /path/to/project
-oats init --package oats.dev --config default
+oats init --raw
+oats install git:github.com/awebai/oats-okf@v2.0.0
 oats list
 ```
 
-Initialization acquires the package closure and writes an editable
-`oats-config.yaml` plus an exact lock. It does not create a team account or
-approve executable hooks. `oats.dev` is our reference development policy;
-edit its team name and provider choices for your own project.
+Use a repository with an initial commit for this coding-worktree example.
+Raw initialization writes editable configuration with integrations disabled;
+installation separately acquires the published OKF 2.0.0 closure and exact lock.
+Neither step approves hooks, authenticates a runtime or joins a team. Inspect
+the acquired version before continuing. An existing development template or
+lock may still select v1: follow explicit preservation/update/cutover instead
+of applying fresh initialization or carrying v1 knowledge settings into v2.
 
-For several repositories, initialize their common workspace directory
-instead. Run create/spawn/retire with `--dir /path/to/workspace/project` for
-the repository that owns the soul. `oats status --team` at the workspace
-shows the combined roster, but that does not select a repository for spawn.
+For several repositories initialize their common workspace, then select the
+repository owning the soul with `--dir /path/to/workspace/project` for
+create/spawn/retire. A team roster does not select a work repository for spawn.
 
-## Set the model and connect messaging
+## Configure explicit knowledge and optional messaging
 
 Edit the existing entries in `oats-config.yaml`; do not append a second
-`capabilities` block. Set `team.name` to your own team. If you already use
-aw, set `team.id` to its exact existing ID so instances join that team.
-
-Under `capabilities.layers`, configure the model your Pi installation can
-actually use. This example was used in our qualification; replace the
-model if you authenticate through another provider:
+`capabilities` map. This example targets only the source soul for knowledge:
 
 ```yaml
-knowledge:
-  capability: oats.okf
-  from: installed
-  settings:
-    harvest-model: openai-codex/gpt-5.5
-messaging:
-  capability: oats.aweb
-  from: installed
-  global: true
-  souls:
-    memory-harvest: false
-tasks: none
+agent-types:
+  developers:
+    description: Coding experts
+capabilities:
+  layers:
+    knowledge:
+      capability: oats.okf
+      from: installed
+      souls:
+        backend-expert:
+          enabled: true
+          settings:
+            bindings-file: /absolute/config/okf-bindings.json
+            harvest-runtime: pi
+    messaging: none
+    tasks: none
 ```
 
-The `oats.okf` 1.4.1 default harvester model is
-`github-copilot/gpt-5.5`; it will not work without that provider. The
-messaging exclusion above keeps temporary harvesters from creating aliases
-while an identity-retirement issue is being corrected. Workers still get
-messaging identities. With a `souls` exclusion, state `global: true`
-explicitly so scope-level commands such as `oats aweb setup` stay active.
+There is no hardcoded required harvester model in v2: omitted `harvest-model`
+uses the selected runtime's configured default. Choose a model explicitly if
+needed. Source and worker runtimes are independent.
 
-Review and approve the executable capabilities, then check onboarding:
+Review the acquired Git payload and approve executable surfaces:
 
 ```bash
 oats trust oats.okf
-oats trust oats.aweb
-oats aweb setup
-oats doctor
 ```
 
-`oats aweb setup` prints the next step: install the `aw` CLI if needed,
-initialize an identity with `aw init`, then create or join your team. Follow
-that output and rerun setup until it confirms membership. For an existing
-team, join it rather than creating another with the same name. Setup's exit
-status alone does not establish that onboarding finished.
+Use the catalog Git package, not the bundled npm mirror: npm omits the source
+worker's `CLAUDE.md` symlink, so the mirror is not a self-contained distribution.
+Acquisition alone is not activation or trust.
 
-Messaging is optional. To work without it, set `messaging: none`, omit the
-aweb trust/setup commands, and keep the knowledge configuration above.
-Packages, souls, Git worktrees, and local knowledge do not require hosted
-messaging. See [configuration](configuration.md) for other providers.
+Messaging is optional. If desired, retain/configure the template's `oats.aweb`
+layer, set `team.name` and any existing `team.id`, then review/trust it and run
+`oats aweb setup`. Follow its install, initialization and create/join instructions
+until it confirms membership. Join an existing team rather than duplicating it;
+setup's exit status alone does not establish onboarding completion. A source-only
+knowledge target does not require the service worker to have a messaging identity.
 
-## Give an instance a real task
-
-On 0.22.0, create the roster directory first; a fresh-scope creation fix is
-included in 0.22.1.
+## Create the soul and provision an external base
 
 ```bash
-mkdir -p agents
 oats create backend-expert --type developers --repo . --work worktree --runtime pi
 ```
 
-Edit `agents/backend-expert/soul/AGENTS.md` to describe the role, repository
-conventions, and the checks that matter. Review and commit the new soul,
-configuration, lock, generated ignore rules, and adopted template base under
-`.agents/config-templates/adopted/`. A worktree starts from a Git commit;
-uncommitted soul changes are not present on the worker's branch. Keep aw
-credentials out of Git.
+Edit `agents/backend-expert/soul/AGENTS.md` for the role and required checks.
+V2 does not scaffold knowledge in the soul. For a small local first base, create
+`/absolute/config/okf-bindings.json`:
 
-Then launch one bounded task:
+```json
+{"version":1,"stateDir":"../durable-okf-state","bases":{"team":{"id":"team-knowledge","kind":"directory","path":"../team-knowledge"}}}
+```
+
+Those paths resolve from `/absolute/config`, not the project. Choose durable,
+physical paths outside the source home/worktree and **outside every Git working
+tree**, including ignored directories. State, accepted bases and bindings must
+not overlap. Review [full placement rules](knowledge.md#bindings-document).
+
+Create `/absolute/config/team-nodes.json`:
+
+```json
+{"backend":{"path":"backend","owner":"backend-expert-stable-id"}}
+```
+
+Explicitly provision the new base, refusing any existing destination:
 
 ```bash
-oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run the relevant checks, commit the change, and report what changed. Capture any reusable lesson and harvest it before finishing."
+oats okf init --base team --nodes /absolute/config/team-nodes.json --confirm --soul backend-expert --json
+```
+
+Write `agents/backend-expert/soul/okf.json`:
+
+```json
+{"version":1,"owner":"backend-expert-stable-id","owns":["team/backend"],"reads":[]}
+```
+
+For team-shared Git knowledge instead, follow [Git provisioning](knowledge.md#owner-and-base-descriptors)
+and review/merge its initialization PR before spawning. Git knowledge always
+uses PR delivery, not commits on the coding instance's branch.
+
+Review and commit soul/configuration/lock changes, generated ignore rules and
+the adopted template base under `.agents/config-templates/adopted/`. Keep
+credentials and private durable evidence out of Git. Check `oats doctor --soul
+backend-expert --json`. Configuration and a successful doctor do not substitute
+for accepted-base validation by the required spawn hook.
+
+## Give an instance a real task
+
+```bash
+oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run the relevant checks, commit the code change, and report what changed. Read the relevant accepted knowledge indexes and capture non-obvious lessons in notes."
 oats status --team
 ```
 
-Choose `--runtime claude` at creation for a Claude Code worker. Today its
-first session can require **two interactive confirmations**: folder trust
-and the development-channels confirmation used by the aweb integration.
-Attach to the tmux session printed by spawn and answer them. A created
-window is not evidence that the agent has started working.
+Choose `--runtime claude` or `codex` if preferred. Complete any native folder
+trust, authentication or messaging-plugin confirmations in the printed session.
+A created window is not proof the agent is working.
 
-Each instance has a home under `agents/<soul>/instances/<instance>/`; its
-`work/` directory is the repository worktree. Read the instance's report
-and review its commits there. Agents using aw run coordination commands
-from their own home, which holds their identity.
+The instance home is under `agents/<soul>/instances/<instance>/`; `work/` is its
+Git worktree. `knowledge/view.json` identifies immutable accepted snapshots.
+The worker reads indexes selectively, maintains state/log/notes, and never edits
+accepted knowledge. This is instructional, not an OS filesystem sandbox.
+Review its code commits through the repository's ordinary PR workflow.
 
-## Harvest, review, and retire
+## Inspect, judge and retire
 
-With OKF active, the worker keeps state and notes in its home. After a
-commit it can run `oats okf harvest` there. If it reports pending notes but
-has not harvested, ask it to do so, or run the command from that instance's
-home yourself. Retirement does not initiate knowledge promotion.
+From the source home, read-only inspection shows identity-matching state/log/notes
+plus durable processing receipts:
 
-The harvester reviews notes, updates the soul's knowledge, and commits the
-promotion into the worker's branch. Let it finish before final review or
-retirement. Review **all** commits, including the promotion, and merge the
-accepted work into the repository's main branch through your normal
-workflow. Then, from the repository scope:
+```bash
+oats okf inspect --json
+```
+
+Spawn registered one per-source command job, but **did not install a host timer**.
+For this first task an operator may request one manual harvest from the source
+home; without `--no-launch` this starts the configured model worker:
+
+```bash
+oats okf harvest --json
+```
+
+The worker judges durable notes **and captured record**, in its own directory
+execution space. It leaves live notes and soul skills untouched. Directory
+delivery is recoverable publication with validation and receipts. Git delivery
+requires a real reviewed PR and merge-visible acceptance. Inspect receipts rather
+than equating a worker spawn with learning. See [operator commands](knowledge.md#inspection-and-operator-commands)
+for scaffold-only requests, completion and retry.
+
+Source retirement need not wait for a worker to finish: it must first certify
+final notes/record custody. From the repository scope:
 
 ```bash
 oats retire backend-expert-first-fix
 oats status --team
 ```
 
-Read the retirement result, including any retained home or recovery path.
-With aweb enabled, also inspect `oats aweb roster`: local retirement alone
-is not proof that a remote alias was removed. During the current hosted
-alias-retirement issue, use a fresh purpose for the next instance and have
-the team administrator clear any stale alias before reusing its name.
+Read the retirement result. An uncertified capture retains the home for retry;
+never delete it to bypass recovery. Durable descriptors, evidence and runs survive
+successful retirement. Use `oats okf inspect --source <absolute-source.json>
+--soul backend-expert --json` from deployment context afterward. If messaging is
+active, also verify its retirement receipt and roster rather than assuming local
+cleanup proves identity release.
 
-Start the same soul on the next useful task after its knowledge commit is
-on main. Check that the new instance can find and use the promoted lesson.
-That completes the first lifecycle: useful work, reviewed learning, clean
-local retirement, and a successor with the updated soul.
+For automatic future judgment, review [source jobs](schedules.md#okf-v2-source-jobs)
+and explicitly opt into host-timer installation. No-launch tests should never
+install it or enable live model launches.
 
-## Optional conversation record
+After provider acceptance, start a fresh instance of the same soul on a useful
+task. Check that it finds **and uses** the promoted lesson without the original
+source. That is the learning acceptance step; a no-launch reader only verifies
+scaffolding and references.
 
-Knowledge promotion and conversation capture are separate. To enable the
-local transcript record and query it:
+## Optional host-wide conversation capture
+
+Knowledge judgment and the native conversation record are separate. OKF uses
+source-targeted native capture through the CLI; host-wide watcher/hook setup is
+an additional deliberate operator action:
 
 ```bash
 oats setup
@@ -174,6 +211,5 @@ oats capture --status
 oats recall "a phrase from your completed task"
 ```
 
-Capture reads supported transcripts and aweb logs after setup, subject to
-ignore rules. Native turns are content-addressed; signed aweb messages
-retain their source signatures. See [the turn record](../README.md#the-turn-record).
+Capture respects privacy exclusions. Native turns are content-addressed; signed
+aweb messages retain their source signatures. See [the turn record](../README.md#the-turn-record).

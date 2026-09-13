@@ -44,9 +44,10 @@ and no queue.
 - **command** `{id, enabled, cron, tz, kind: "command", cwd, argv}` — runs
   an oats-only argv (`argv[0]` is `oats`, no shell) in `cwd`, which must be
   inside the workspace. The runner parses the command's envelope and tracks
-  any instance it names, so `["oats", "okf", "harvest"]` run in a source
-  instance's home is followed until the harvester it spawned is gone.
-  Command return is not task completion.
+  any instance it names. A provider can return an independent worker launched
+  from durable context; the job follows that worker until its home is gone.
+  Command return is not task completion. Avoid binding durable work to a
+  disposable source-home cwd; see [OKF v2 source jobs](#okf-v2-source-jobs).
 - **wake** `{id, enabled, cron, tz, kind: "wake", home, message}` — every
   due minute inspects the instance at `home` through its session receipts.
   Running: `message` is delivered once with `session input`. Not running
@@ -150,3 +151,41 @@ saves a wake job `wake-<instance>` bound to the new home after the spawn
 succeeded. If the spawn succeeds but the save fails, the spawn result still
 carries the full instance receipt, plus `wakeScheduleError` and a warning;
 the instance is neither hidden nor spawned again.
+
+## OKF v2 source jobs
+
+The [prepared OKF v2 runtime](knowledge.md) registers **one command job per
+source**, not a fleet sweep or a home-bound operation job. It runs from stable
+deployment context with argv equivalent to:
+
+```text
+oats okf run-source --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+```
+
+The descriptor and captured evidence live outside the disposable source.
+Registration (including explicit harvest after source migration) idempotently
+creates/verifies the definition; setup failures are reported for retry. A
+pre-existing disabled job is not silently re-enabled. Command execution clears
+invoking-instance identity and still passes normal capability activation/trust
+gates after source retirement.
+
+No timer is installed by registering a source or its job. An operator can
+inspect or explicitly install one from deployment context:
+
+```bash
+oats okf inspect --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+oats okf setup --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
+# Explicit host change; never part of a scaffold-only test:
+oats okf setup --source /absolute/state/sources/UUID/source.json --install-host --soul domain-expert --json
+# Definition-only disable; does not stop a worker or reconcile an executing job:
+oats okf setup --source /absolute/state/sources/UUID/source.json --disable --soul domain-expert --json
+```
+
+Retirement captures/enqueues final evidence and does not synchronously remove
+its job under the scheduler's host lock or wait for a model/GitHub. A drained
+retired source returns empty; disable its job explicitly when appropriate.
+Source no-launch guards prevent automatic model starts, and final capture of
+a no-launch source disables its automatic processing. `inspect` distinguishes
+job definition from actual timer activity; an absent or inactive timer is not
+reported as enabled automation. The scheduler's launch/liveness receipts do not
+replace OKF's processing, delivery and merge-visible acceptance receipts.

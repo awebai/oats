@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-13
+* **Delivery**: [Delivery log](/stewardship/delivery-log.md) records published OATS/Pi/Desktop v0.23.0 and OKF v2.0.0, successful released-minimum consumer CI, and the remaining final catalog/deployment step. The source snapshot inventory now verifies the immutable published OKF tag and full payload rather than a pending working tree.
 * **Update**: [Delivery log](/stewardship/delivery-log.md) records closed adversarial findings, real installed-model learning after source deletion, actual GitHub PR acceptance/reader visibility, and the green prerequisite suite. These are candidate acceptance results, not a published release or completed deployment.
 * **Creation**: [Expert souls and curated knowledge rebuild](/decisions/expert-souls-and-knowledge-rebuild.md) records the post-implementation phase: a dedicated OATS knowledge Git repository; overall, kernel, Desktop and market expertise plus a user-facing onboarding assistant; no engineer-role roster; strict selection from all existing knowledge/notes against current OATS, no code duplication or unwanted OAS legacy, and no bulk copy/legacy attic.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record implementation progress and the adversarial foundation RETURN. Generic/runtime and OKF v2 changes remain uncommitted and unreleased; fixture gates are not fresh-model learning or publication evidence.

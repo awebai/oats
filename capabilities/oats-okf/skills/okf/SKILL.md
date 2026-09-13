@@ -16,8 +16,9 @@ description: >-
 An OKF **bundle** is a directory tree of markdown files. Each non-reserved `.md`
 file is **one concept**; links between files form the knowledge graph. No
 database, no SDK — plain git-versionable text. Spec: OKF v0.1 (Google Cloud).
-In this fleet: `soul/knowledge/` is a bundle; instance `notes/` files are
-concepts that will be harvested into one.
+An external base is one bundle and link namespace. Owned nodes are
+nonoverlapping subdirectories, not separate root-link namespaces. Instance
+`notes/` files are task-local concepts; no knowledge lives in the soul.
 
 ## The format in one screen
 
@@ -32,7 +33,7 @@ concepts that will be harvested into one.
   and skimming agents see), `resource` (URI, only if a real asset backs the
   concept), `tags` (YAML list), `timestamp` (ISO date of last meaningful change).
 - **Links** are ordinary markdown, keep the `.md`, prefer bundle-root-absolute:
-  `[clearing playbook](/playbooks/clearing-fields.md)`. Links are untyped
+  `[clearing playbook](/node/playbooks/clearing-fields.md)`. Links are untyped
   directed edges; the surrounding prose carries the relationship's meaning.
 - **Reserved files** at any level: `index.md` (navigation) and `log.md`
   (history). They carry **no `type`**; only the bundle-root `index.md` may
@@ -86,7 +87,7 @@ navigation, not content — keep them to listings.
    open bodies only for concepts that survive the filter.
 3. `log.md` answers "what changed recently" — check it when freshness matters.
 4. Cite concepts by path when reporting answers.
-5. Tolerate imperfection: unknown types, broken links, missing indexes are
+5. Tolerate imperfect concepts: unknown types and stale links are
    never a reason to reject or ignore a bundle — that permissiveness is spec.
 
 ## Validating
@@ -105,3 +106,11 @@ node <skill-dir>/scripts/okf-validate.mjs <bundle-dir> --strict   # + producer l
   unreachable from any index.md, missing `title`/`description`.
 
 Lints in a bundle you're *consuming* are noise — read on regardless.
+
+## External bases and native tools
+
+Ordinary working agents consult `oats okf read --base ALIAS --path node/index.md`
+and `oats okf refresh`. Staged writers use native file tools only under roots
+listed in work/staging.json. Always validate the WHOLE base, not an isolated
+node: absolute Markdown links can cross node boundaries. Complete performs this
+validation again and refuses any errors or producer warnings.

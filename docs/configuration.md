@@ -58,7 +58,9 @@ capabilities:
       capability: oats.okf
       from: installed
       settings:
-        harvest-model: github-copilot/gpt-5.5
+        bindings-file: /absolute/config/okf-bindings.json
+        harvest-runtime: pi
+        # harvest-model: provider/model   # optional; default is runtime-selected
       # injection-override: .agents/injections/capabilities/oats.okf.md
     messaging: none
     tasks:
@@ -477,6 +479,12 @@ are structural only in first position, so `expr=2 > 1`, `tag=v1.0#build`,
 
 ### All souls use OKF; only developers use Linear
 
+For OKF v2, every working soul needs an explicit `okf.json` owner declaration
+and provisioned external nodes. A `bindings-file` alone is not initialization.
+See [knowledge setup](knowledge.md#acquire-bind-and-provision-explicitly) and
+[v1 migration](knowledge-migration.md); target only ready souls if the rest of
+the scope is not yet configured. These examples describe the prepared v2 path.
+
 ```yaml
 agent-types:
   developers:
@@ -486,6 +494,8 @@ capabilities:
     knowledge:
       capability: oats.okf
       from: installed
+      settings:
+        bindings-file: /absolute/config/okf-bindings.json
     tasks:
       capability: oats.linear
       from: installed

@@ -3,7 +3,8 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseYamlNested } from "../lib/core.mjs";
+import { parseYamlNested } from "@awebai/oats";
+import { checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage } from "./check-knowledge-theory-package.mjs";
 import { checkReleaseVersions } from "./check-package-dry-runs.mjs";
 
@@ -40,6 +41,7 @@ const validatePackage = ajv.compile(json(packageSchemaPath));
 const theoryManifest = join(root, "oats-package/oats-package.json");
 if (!validatePackage(json(theoryManifest))) fail(`oats-package/oats-package.json: ${ajv.errorsText(validatePackage.errors)}`);
 try { checkKnowledgeTheoryPackage({ repoRoot: root }); } catch (error) { fail(`optional knowledge theory: ${error.message}`); }
+try { checkOkfMirror({ repoRoot: root }); } catch (error) { fail(`standalone OKF mirror: ${error.message}`); }
 try { checkReleaseVersions(root); } catch (error) { fail(`release manifests: ${error.message}`); }
 let manifests = 0;
 for (const path of [

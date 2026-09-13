@@ -1,69 +1,34 @@
 ## Knowledge: OKF
 
-Your knowledge layer is **OKF** (Open Knowledge Format). Long-term knowledge
-lives in your soul's OKF bundle (`./soul/knowledge/`, index-first); episodic
-state lives in `STATE.md`/`log.md`/`notes/`.
+Your knowledge is external to the soul. Your task identifies accepted reader
+views at ./knowledge/ (or a later explicit view). Read view.json for each
+base's relative path (bases/<alias>/), then the indexes of your owned and read nodes at session start, after compaction, and
+when resuming. Follow only links relevant to the task: do not bulk-load bases.
+Each base is one link namespace: `/node/concept.md` resolves from that base's
+root, not the filesystem root. All configured bases are discoverable; owns
+means responsibility and reads means starting context, neither is an ACL.
 
-**Before working — every session, no exceptions:**
+Consult prior decisions before re-deriving them. Cite base/node/concept paths.
+Views are immutable snapshots, not live mounts; `oats okf read --base ALIAS
+--path node/index.md` retrieves current accepted text. `oats okf refresh`
+returns a fresh view path and provider freshness receipts; re-read its indexes.
+A Git PR is not accepted knowledge until merge is visible on the accepted
+branch. A directory publication in progress blocks fresh views rather than
+showing partially published knowledge. Report missing configuration or blocked
+reads; do not create an empty substitute.
 
-1. **Load the okf skill.** It is the protocol for both reading and writing
-   your knowledge — do not work your bundle from memory.
-2. Read `./STATE.md` and recent `./log.md` — if STATE.md has a plan/progress
-   you are resuming, continue from its `# Next`.
-3. **Check your knowledge for the task at hand**: open
-   `./soul/knowledge/index.md` and follow the links relevant to what you are
-   about to do — index-first and selective (frontmatter `type`/`tags`/
-   `description` filters what to open; never bulk-read). Prior decisions,
-   lessons, and playbooks are binding context — re-deriving what the soul
-   already knows is a bug. Repeat this check before each new non-trivial
-   task, not just at session start.
+**Never write accepted knowledge or soul knowledge.** This is an instruction
+boundary, not a filesystem sandbox. Read through the provided views, not by
+editing the base behind them. Skills remain curated soul artifacts.
 
-Keep STATE.md current as you work (the test: could a fresh session resume
-from files alone? its `# Next` names the single next action). Append dated
-milestones to `./log.md` (newest first).
+Keep your task-local memory in instance home, not ./work:
+- STATE.md: rewrite the current task and progress; # Next names one next step.
+- log.md: append dated significant events; never rewrite history.
+- notes/: one Markdown concept per non-obvious insight, with type, title,
+  description and observed provenance. Capture without judging importance.
+  Record decisions, rejected alternatives, limitations and conclusions as
+  they happen. Never include credentials or third-party messages verbatim.
 
-**Write down what you learn.** Anything you figured out that was not obvious
-— a gotcha, a decision and its why, a procedure that worked — goes in
-`./notes/`, one OKF concept per insight, as you go. Do not judge whether it
-is "important enough"; that is someone else's job. Just capture it
-faithfully.
-
-**Before every commit, bring memory up to date**: STATE.md current, log.md
-milestone appended, fresh insights in `./notes/`.
-
-**After committing with pending notes, launch the harvester yourself**: run
-
-```bash
-oats okf harvest
-```
-
-from your instance home. It spawns the memory-harvest agent attached to your
-work tree to promote your notes into the soul (it skips cleanly when there
-are no notes or a harvester is already running — calling it "too often" is
-safe; not calling it means your insights never reach the soul, and unwritten
-or unharvested notes are lost when your home is retired).
-
-**If you write few notes** (a coordinating or reviewing role, a standing
-session): still run `oats okf harvest` at task boundaries, and at least once
-a day. With no notes pending it harvests your own captured session turns
-since the last harvest instead; the harvester judges them under the same
-bar. It skips when nothing is new. `oats okf harvest --from-record` asks for
-the record even when notes are pending.
-
-**Workspace-mode instances**: your soul lives in its own home repo, and your
-`./work` (the workspace) is not where it commits. `oats okf harvest` handles
-this — it promotes your notes in a worktree of the soul's home repo and
-delivers the update **as a PR to that repo**, never a direct push and never
-a commit into member repos. Your job is unchanged: write notes, commit
-nothing yourself, call the harvester.
-
-**Local-soul instances**: your soul is uncommitted by design (it lives in
-`local-agents/`, gitignored). The harvester edits your soul directly — no
-commit, no PR. Your job is still unchanged: write notes, commit your WORK
-normally, call the harvester.
-
-The okf skill you loaded at session start also governs writing: notes,
-concepts, index.md, and log.md follow its format craft (concepts,
-frontmatter, index/log discipline, validation). Re-read the relevant section
-before authoring if you have not written OKF this session — notes written
-from memory tend to fail validation and stall the harvest.
+After compaction re-read STATE.md and the relevant knowledge indexes before
+continuing. Update memory before task boundaries. These files are not a second
+code manual: code and repository documentation remain truth about code.
