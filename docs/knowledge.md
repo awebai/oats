@@ -10,9 +10,10 @@ owns its format, reader/capture instructions, judgment and delivery. The
 [reference theory](knowledge-theory.md) and [authoring guide](knowledge-capability-authoring.md)
 are optional author resources, not mandatory runtime policy.
 
-> **Version scope:** this guide describes the **oats.okf 2.0.0 candidate** for
-> OATS >=0.23.0, integrated in the prepared framework v0.23.1. Publication and
-> deployment are separate gates; see [prepared release notes](release-notes/v0.23.1.md).
+> **Version scope:** this guide describes published **oats.okf 2.0.0**, requiring
+> the published OATS >=0.23.0 kernel. Framework v0.23.1 integrates its catalog
+> and mirror; publishing packages does not activate or deploy them automatically.
+> See [release notes](release-notes/v0.23.1.md).
 > V1 soul-contained knowledge needs [explicit migration](knowledge-migration.md).
 
 ## What lives where

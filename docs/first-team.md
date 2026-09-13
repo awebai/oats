@@ -4,16 +4,16 @@ Start with one repository and one small, real task. A soul keeps the role and
 curated skills; an instance gets a working session and repository view. With OKF
 v2, expertise lives in external owned nodes, not the soul or task branch.
 
-> This guide describes the **prepared v0.23.1 / OKF 2.0.0 path**, pending final
-> source/tag and dependency publication. See [release gates](release-notes/v0.23.1.md).
+> This guide targets the **v0.23.1 integration of published OKF 2.0.0**, whose
+> published kernel prerequisite is OATS >=0.23.0. Check the matching framework
+> release availability before installation; see [release notes](release-notes/v0.23.1.md).
 > The [qualification example](first-team-demo.md) records real **v1** tasks on
 > earlier versions, not v2 acceptance. Existing knowledge needs
 > [v1 preservation and cutover](knowledge-migration.md), not fresh initialization.
 
 ## Install and choose a scope
 
-After the prepared versions are published, install matching kernel and Pi
-adapter releases. Have Node.js 22+, Git, tmux and an authenticated working runtime
+Install matching published kernel and Pi adapter releases. Have Node.js 22+, Git, tmux and an authenticated working runtime
 available. OKF's independent worker can use Pi, Claude or Codex; authenticate
 that selected runtime too. Plain-directory knowledge needs no Git/gh, although
 this guide's coding worktree does need Git.

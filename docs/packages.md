@@ -391,14 +391,14 @@ for it.
 ### Catalog shape
 
 The official catalog is data (`package-catalog.json`, or the file named by
-`OATS_PACKAGE_CATALOG`). This excerpt shows the **prepared v0.23.1** targets,
-not proof that their tags/dependencies have been published:
+`OATS_PACKAGE_CATALOG`). The v0.23.1 integration selects these already-published
+sources; installing a kernel does not advance existing package locks:
 
 ```json
 {
   "packages": {
     "oats.okf": { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.0.0", "path": "oats-package" },
-    "oats.knowledge-theory": { "url": "https://github.com/awebai/oats.git", "ref": "v0.23.1", "path": "oats-package" },
+    "oats.knowledge-theory": { "url": "https://github.com/awebai/oats.git", "ref": "v0.23.0", "path": "oats-package" },
     "oats.dev": { "url": "https://github.com/awebai/oats-dev.git", "ref": "v1.0.0", "path": "oats-package" }
   },
   "capabilities": { "oats.review": "oats.dev" }
@@ -424,8 +424,10 @@ advertised as a complete local package or repaired after acquisition to evade
 integrity checks. Git transport preserves the canonical source alias.
 
 The optional `oats.knowledge-theory` package is a separate Git payload in this
-repository's `oats-package/`, excluded from the kernel npm tarball. The prepared
-catalog entry selects framework v0.23.1. It supplies an authoring skill and
+repository's `oats-package/`, excluded from the kernel npm tarball. The catalog
+entry selects published framework v0.23.0, which contains package 1.0.0.
+The source reference patch 1.0.1 is separately available through an explicit
+v0.23.1 Git source after that framework tag is published. It supplies an authoring skill and
 `knowledge-theory-expert`, not a default knowledge-layer binding, runtime judge
 or OKF dependency. Acquiring it does not activate it.
 

@@ -21,10 +21,10 @@ the append-only, searchable **turn record** captures supported local transcripts
 and aw client logs. It outlives models, harnesses, and this repository's own
 designs.
 
-> **Source checkout note:** OKF v2 integration and the optional theory catalog are
-> prepared for framework v0.23.1, pending final standalone OKF 2.0.0 source/tag
-> and dependency publication. See [release gates](docs/release-notes/v0.23.1.md);
-> these docs do not claim a live upgrade or published release.
+> **Knowledge version scope:** framework v0.23.1 integrates the published
+> OKF 2.0.0 package on the published OATS >=0.23.0 prerequisite. The optional
+> theory catalog uses the published v0.23.0 source. See [release notes](docs/release-notes/v0.23.1.md);
+> package acquisition, activation and live knowledge cutover remain separate operations.
 
 ## Contents
 
