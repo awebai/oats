@@ -14,7 +14,7 @@
 
 import { watch } from "node:fs";
 import { homedir, hostname } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import process from "node:process";
 
 import { RecordStore } from "../lib/store.mjs";
@@ -65,10 +65,17 @@ const USAGE = `capture — land sessions and aw client logs in the turn record.
   capture --status             show store/stream summary, capture nothing
   capture --home <dir>         capture the sessions that ran inside <dir> (an
                                OATS instance home) and print them as JSON:
-                               thread, stream, turn count, first/last turn id.
-                               Tombstoned turns are never a boundary. Codex
-                               keeps a day's rollouts in one directory, so the
-                               pass captures that day; the list is filtered.
+                               thread, stream, turn count, first/last turn id;
+                               status, complete, skipped, held, incomplete,
+                               failed, ignored (explicit privacy exclusions).
+                               Only complete:true confirms a performed pass
+                               with no holds, incomplete tails, unattributed
+                               sources or errors. Lock skips/holds exit 0 but
+                               report complete:false; failures exit 1.
+                               Only attributed files are captured, even in
+                               shared directories. Unattributed non-ignored
+                               sources conservatively block completion.
+                               Tombstoned turns are never a boundary.
   capture --install-hint       print the Claude Code hook snippet
   capture --help               this text
   capture --quiet              suppress per-pass progress
@@ -188,8 +195,9 @@ function withCaptureLock(fn) {
     // Never quiet: a stale lock after a killed pass needs the operator, and
     // the line says exactly what to check and what to remove.
     const line = `capture: another pass holds ${root}: ${lock.held.recovery}; skipping this pass`;
-    if (lock.held.liveness === "alive") log(line); else console.error(line);
-    return { appended: 0, skipped: true };
+    if (args.home) { if (!quiet || lock.held.liveness !== "alive") console.error(line); }
+    else if (lock.held.liveness === "alive") log(line); else console.error(line);
+    return { appended: 0, skipped: true, lock: lock.held };
   }
   try {
     return fn();
@@ -217,7 +225,7 @@ function pass() {
   if (!args["aw-only"]) {
     for (const r of captureAllSessions(store, { owner, ignore })) {
       out.appended += r.appended;
-      const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : ""]
+      const extras = [r.ignored ? `${r.ignored} ignored` : "", r.held ? `${r.held} held` : "", r.incomplete ? `${r.incomplete} incomplete` : ""]
         .filter(Boolean)
         .join(", ");
       log(
@@ -300,51 +308,83 @@ if (args.status) {
 // exists for programs.
 if (args.home) {
   warnOnStrangerOwner();
-  const ignore = loadIgnoreOrExit(root);
   const unattributed = [];
-  const found = sessionsForHome(args.home, { onUnattributed: (source, path) => unattributed.push({ source, path }) });
+  let found = [];
   const sessions = [];
-  const dirs = new Map(); // one capture pass per (format, directory)
-  for (const s of found) dirs.set(`${s.source}\0${dirname(s.path)}`, { format: s.source, dir: dirname(s.path) });
-  let appended = 0;
-  const homePass = withCaptureLock(() => {
-    let n = 0;
-    for (const { format, dir } of dirs.values()) {
-      n += captureSessions(store, { owner, roots: [dir], format, ignore }).appended;
-    }
-    if (!args["no-index"]) { // same as pass(): an earlier append-only pass may have left unindexed turns
-      const index = new RecordIndex(store);
-      try {
-        index.update();
-      } finally {
-        index.close();
-      }
-    }
-    return { appended: n };
-  });
-  appended = homePass.appended;
-  // A tombstoned turn is hidden everywhere; a boundary naming one would be
-  // refused by recall, so boundaries come from the visible turns only.
-  const claims = store.tombstoneClaims();
-  for (const s of found) {
-    const stream = `${owner}~${s.source}.${s.sessionId}`;
-    const turns = store.readStream(stream).filter((t) => !store.claimHides(claims, t));
-    if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
-    sessions.push({
-      thread: s.thread,
-      source: s.source,
-      sessionId: s.sessionId,
-      path: s.path,
-      cwd: s.cwd,
-      stream,
-      turns: turns.length,
-      firstTurnId: turns[0].id,
-      lastTurnId: turns[turns.length - 1].id,
-      lastTs: turns[turns.length - 1].ts,
+  const outcome = { appended: 0, skipped: false, held: 0, incomplete: 0, failed: 0, ignored: 0 };
+  const issues = [];
+  let error;
+  try {
+    // Unlike background passes, --home always answers JSON, including errors.
+    // Do not exit from inside the lock callback: its finally owns release.
+    const ignore = loadIgnore(root);
+    found = sessionsForHome(args.home, {
+      ignore,
+      onIgnored: () => outcome.ignored++,
+      onUnattributed: (source, path) => unattributed.push({ source, path }),
     });
+    const formats = new Map(); // exact files, not their shared directories
+    for (const s of found) {
+      if (!formats.has(s.source)) formats.set(s.source, []);
+      formats.get(s.source).push(s.path);
+    }
+    Object.assign(outcome, withCaptureLock(() => {
+      for (const [format, files] of formats) {
+        const r = captureSessions(store, { owner, files, format, ignore, final: true });
+        outcome.appended += r.appended;
+        outcome.held += r.held;
+        outcome.incomplete += r.incomplete;
+        outcome.ignored += r.ignored;
+        issues.push(...r.issues);
+      }
+      if (!args["no-index"]) { // an earlier append-only pass may have left unindexed turns
+        const index = new RecordIndex(store);
+        try {
+          index.update();
+        } finally {
+          index.close();
+        }
+      }
+      return outcome;
+    }));
+    // A tombstoned turn is hidden everywhere; a boundary naming one would be
+    // refused by recall, so boundaries come from the visible turns only.
+    const claims = store.tombstoneClaims();
+    for (const s of found) {
+      const stream = `${owner}~${s.source}.${s.sessionId}`;
+      const turns = store.readStream(stream).filter((t) => !store.claimHides(claims, t));
+      if (!turns.length) continue; // ignored by rule, nothing capturable yet, or all hidden
+      sessions.push({
+        thread: s.thread,
+        source: s.source,
+        sessionId: s.sessionId,
+        path: s.path,
+        cwd: s.cwd,
+        stream,
+        turns: turns.length,
+        firstTurnId: turns[0].id,
+        lastTurnId: turns[turns.length - 1].id,
+        lastTs: turns[turns.length - 1].ts,
+      });
+    }
+  } catch (err) {
+    error = err.message || String(err);
+    console.error(`capture pass failed: ${error}`);
+    outcome.failed++;
+    // captureSessions can throw after appending part of a directory. Do not
+    // claim zero (or a complete count) for a partially performed failed pass.
+    outcome.appended = null;
+    process.exitCode = 1;
   }
-  console.log(JSON.stringify({ home: args.home, owner, appended, sessions, ...(unattributed.length ? { unattributed } : {}) }, null, 2));
-  process.exit(process.exitCode ?? 0); // nonzero when the lock release had to be reported
+  if (process.exitCode && !outcome.failed) {
+    outcome.failed++;
+    error = "capture lock release failed; see stderr for recovery";
+  }
+  const status = outcome.failed ? "failed" : outcome.skipped ? "skipped" : outcome.held ? "held" : outcome.incomplete || unattributed.length ? "incomplete" : "complete";
+  console.log(JSON.stringify({ home: args.home, owner, ...outcome, status, complete: status === "complete", sessions,
+    ...(error ? { error } : {}), ...(issues.length ? { issues } : {}), ...(unattributed.length ? { unattributed } : {}),
+  }, null, 2));
+  process.exit(process.exitCode ?? 0); // lock skips/held sessions remain nonfatal
 }
 
 warnOnStrangerOwner();

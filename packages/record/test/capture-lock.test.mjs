@@ -252,3 +252,93 @@ test("an append-only hook pass (--no-index) is indexed by the next plain pass ev
     assert.equal(searchable(), 1, "the earlier appended turn is searchable after the plain pass");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("capture --home lock collision returns one JSON document with stale boundaries explicitly incomplete; background skips stay nonfatal", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "capture-home-lock-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, "record"), user = join(base, "user"), home = join(base, "instance");
+  const project = join(user, ".claude", "projects", "-instance");
+  mkdirSync(project, { recursive: true }); mkdirSync(home);
+  const file = join(project, "s1.jsonl");
+  const line = (text) => JSON.stringify({ type: "user", cwd: home, sessionId: "s1", timestamp: "2026-09-13T10:00:00Z", message: { content: text } }) + "\n";
+  writeFileSync(file, line("first"));
+  const env = { ...process.env, HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+  const run = (...args) => spawnSync(process.execPath, [CAPTURE, "--no-index", ...args], { env, encoding: "utf8" });
+  const first = run("--home", home); assert.equal(first.status, 0, first.stderr);
+  const boundary = JSON.parse(first.stdout).sessions[0].lastTurnId;
+  writeFileSync(file, line("first") + line("second"));
+  const lock = acquireCaptureLock(root); assert.ok(lock.release);
+  try {
+    for (const extra of [[], ["--quiet"]]) {
+      const r = run("--home", home, ...extra); assert.equal(r.status, 0, r.stderr + r.stdout);
+      const out = JSON.parse(r.stdout);
+      assert.equal(out.status, "skipped"); assert.equal(out.complete, false); assert.equal(out.skipped, true);
+      assert.equal(out.held, 0, "a lock skip is distinct from unstamped held sessions");
+      assert.equal(out.failed, 0); assert.equal(out.appended, 0);
+      assert.equal(out.lock.pid, process.pid); assert.equal(out.lock.liveness, "alive");
+      assert.equal(out.sessions[0].lastTurnId, boundary, "old boundaries are visible but not a performed capture receipt");
+      assert.equal(out.sessions[0].turns, 1);
+    }
+    const background = run("--sessions-only", "--quiet");
+    assert.equal(background.status, 0, background.stderr); assert.equal(background.stdout, "");
+  } finally { assert.deepEqual(lock.release(), { released: true }); }
+  const complete = run("--home", home); assert.equal(complete.status, 0, complete.stderr);
+  const out = JSON.parse(complete.stdout);
+  assert.equal(out.complete, true); assert.equal(out.skipped, false); assert.equal(out.appended, 1);
+  assert.equal(out.sessions[0].turns, 2); assert.notEqual(out.sessions[0].lastTurnId, boundary);
+  // The dead-owner form is also native JSON, with actionable diagnostics.
+  mkdirSync(captureLockPath(root));
+  writeFileSync(join(captureLockPath(root), "owner.json"), JSON.stringify({ pid: 999999999, startedAt: "2026-09-13T10:00:00Z" }));
+  const stale = run("--home", home, "--quiet"); assert.equal(stale.status, 0);
+  assert.equal(JSON.parse(stale.stdout).complete, false); assert.match(stale.stderr, /now dead.*rm -r/);
+});
+
+test("capture --home reports lock release failure as failed JSON and nonzero even when capture appended", (t) => {
+  const base = mkdtempSync(join(tmpdir(), "capture-home-release-"));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = join(base, "record"), home = join(base, "home"); mkdirSync(home);
+  const project = join(home, ".claude", "projects", "-home"); mkdirSync(project, { recursive: true });
+  writeFileSync(join(project, "s1.jsonl"), JSON.stringify({ cwd: home, sessionId: "s1", timestamp: "2026-09-13T10:00:00Z", type: "user", message: { content: "captured before release failure" } }) + "\n");
+  const preload = join(base, "release-failure.mjs");
+  writeFileSync(preload, `import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
+const rm = fs.rmSync;
+fs.rmSync = (path, ...args) => {
+  if (String(path) === ${JSON.stringify(captureLockPath(root))}) throw new Error('simulated lock removal failure');
+  return rm(path, ...args);
+};
+syncBuiltinESMExports();`);
+  const r = spawnSync(process.execPath, ["--import", preload, CAPTURE, "--home", home, "--no-index"], {
+    env: { ...process.env, HOME: home, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" }, encoding: "utf8",
+  });
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.status, "failed"); assert.equal(out.complete, false); assert.equal(out.failed, 1);
+  assert.equal(out.skipped, false); assert.equal(out.appended, 1); assert.equal(out.sessions[0].turns, 1);
+  assert.match(out.error, /release failed/); assert.match(r.stderr, /did not release/);
+  assert.equal(existsSync(captureLockPath(root)), true, "failed cleanup is never claimed as released");
+});
+
+test("capture lock: a removal error is still a failure when the lock was removed before throwing", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-partial-remove-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const lock = acquireCaptureLock(root, { io: { rmSync: (path, options) => {
+    rmSync(path, options);
+    throw Object.assign(new Error("simulated I/O failure after removal"), { code: "EIO" });
+  } } });
+  const outcome = lock.release();
+  assert.equal(outcome.released, false); assert.equal(outcome.reason, "remove-failed");
+  assert.match(outcome.error, /I\/O failure/); assert.match(outcome.recovery, /now absent/);
+  assert.equal(existsSync(captureLockPath(root)), false);
+});
+
+test("capture lock: failure to verify removal cannot be reported as released", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "capture-lock-verify-remove-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const lock = acquireCaptureLock(root, { io: { lstatSync: () => {
+    throw Object.assign(new Error("simulated removal verification failure"), { code: "EACCES" });
+  } } });
+  const outcome = lock.release();
+  assert.equal(outcome.released, false); assert.equal(outcome.reason, "remove-failed");
+  assert.match(outcome.error, /verification failure/); assert.match(outcome.recovery, /could not verify/);
+});

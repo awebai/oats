@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseLaunchCommand, renderLaunchCommand, withLaunchModel, startInstanceSession, inspectInstanceSession } from "../lib/core.mjs";
 import { startRemote } from "../lib/servers.mjs";
+import { isolateSessionEnvironment, waitUntil } from "./helpers/host-fixture.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const bin = join(here, "..", "bin", "oats.mjs");
@@ -62,15 +63,27 @@ test("commands OATS did not render are refused, never rewritten by substring", (
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-session-start-")));
 const socket = join(base, "tmux.sock");
 const session = "t";
-const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+const restoreEnvironment = isolateSessionEnvironment(base, socket);
+const tmux = (...args) => execFileSync("tmux", ["-u", "-S", socket, ...args], { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "pipe"] }).trim();
 const windows = () => { try { return tmux("list-windows", "-t", session, "-F", "#{window_name}").split("\n").filter(Boolean); } catch { return []; } };
-test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } rmSync(base, { recursive: true, force: true }); });
+test.after(() => { try { tmux("kill-server"); } catch { /* gone */ } finally { restoreEnvironment(); rmSync(base, { recursive: true, force: true }); } });
 
 function makeHome(name, { launched = true, withSocket = true } = {}) {
   const home = join(base, "agents", "dev", "instances", name);
   mkdirSync(home, { recursive: true });
   const harness = join(base, "fakeharness");
-  if (!existsSync(harness)) { writeFileSync(harness, "#!/bin/sh\nsleep 2\n"); chmodSync(harness, 0o755); }
+  if (!existsSync(harness)) {
+    // A real process with explicit ready/release markers. It cannot exit just
+    // because a busy test runner took longer than an arbitrary sleep.
+    writeFileSync(harness, `#!/usr/bin/env node
+const { existsSync, writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const home = process.env.OATS_INSTANCE_HOME;
+writeFileSync(join(home, "harness-ready"), String(process.pid));
+setInterval(() => { if (existsSync(join(home, "release-" + process.pid))) process.exit(0); }, 25);
+`);
+    chmodSync(harness, 0o755);
+  }
   writeFileSync(join(home, "TASK.md"), "task\n");
   const command = `OATS_INSTANCE=${shq(name)} OATS_INSTANCE_HOME=${shq(home)} ${shq(harness)} --dangerously-skip-permissions -- "$(cat TASK.md)"`;
   const tmuxMeta = { session, window: name, ...(withSocket ? { socket } : {}) };
@@ -84,12 +97,18 @@ function makeHome(name, { launched = true, withSocket = true } = {}) {
   return { home, meta, baselinePath, command };
 }
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
-async function waitUntil(predicate, description) {
-  const deadline = Date.now() + 10000;
-  while (!predicate()) {
-    assert.ok(Date.now() < deadline, `timed out waiting for ${description}`);
-    await new Promise((r) => setTimeout(r, 50));
-  }
+const releaseHarness = (home) => writeFileSync(join(home, `release-${readFileSync(join(home, "harness-ready"), "utf8")}`), "");
+const harnessReady = (f, window = f.meta.instance) => waitUntil(() => {
+  try {
+    const pid = Number(readFileSync(join(f.home, "harness-ready"), "utf8"));
+    if (!Number.isSafeInteger(pid) || pid <= 1) return false;
+    process.kill(pid, 0);
+    return true;
+  } catch { return false; }
+}, `${window} fixture harness ready`);
+function heldWindow(f, window = f.meta.instance) {
+  tmux("new-window", "-t", session, "-n", window, "-c", f.home, f.command);
+  return harnessReady(f, window);
 }
 const pendingFor = (f, target, fields = {}) => ({ id: `test-${f.meta.instance}`, target, command: f.command, model: null, startedAt: "2026-09-06T00:00:00.000Z", ...fields });
 
@@ -124,9 +143,10 @@ test("refusals happen before any mutation", () => {
 test("a live harness is refused; a stopped instance starts in its recorded session on its recorded socket", async () => {
   tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base);
   const f = makeHome("live");
-  tmux("new-window", "-t", session, "-n", "live", "-c", f.home, "sleep 30");
+  await heldWindow(f);
   assert.throws(() => startInstanceSession(f.home), (e) => e.code === "E_SESSION_RUNNING");
   tmux("kill-window", "-t", `=${session}:=live`);
+  rmSync(join(f.home, "harness-ready"));
   assert.equal(inspectInstanceSession(f.home).present, false);
   const before = readJson(f.baselinePath);
   const r = startInstanceSession(f.home, { model: "claude-x" });
@@ -145,18 +165,19 @@ test("a live harness is refused; a stopped instance starts in its recorded sessi
   assert.deepEqual({ ...after, runtime: undefined }, { ...before, runtime: undefined }, "fingerprints and receipts untouched");
   assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true, "launch evidence survives until the startup shell can be distinguished");
   assert.equal(existsSync(join(f.home, ".oats-start.lock")), false);
-  // The receipts the broker and retire read resolve the new target (the
-  // harness needs a moment to exec its first non-shell process).
-  await waitUntil(() => inspectInstanceSession(f.home).state === "unknown", "fake harness to run");
+  // The receipts the broker and retire read resolve the new target only
+  // once the harness has published readiness (not just started its shell).
+  await harnessReady(f);
   const live = inspectInstanceSession(f.home);
   assert.equal(live.present, true);
   assert.equal(live.state, "unknown", "a running non-shell process is a harness");
-  // The fake harness exits after 2s; the window drops to a fallback shell,
+  // Explicitly finish the harness; the window drops to a fallback shell,
   // which is a stopped instance that restarts IN PLACE, never a second window.
+  releaseHarness(f.home);
   await waitUntil(() => existsSync(join(f.home, ".oats-start-exited")) && inspectInstanceSession(f.home).state === "shell", "harness exit");
   assert.equal(inspectInstanceSession(f.home).state, "shell");
   tmux("send-keys", "-t", `=${session}:=live`, `cd ${shq(base)}`, "Enter");
-  await new Promise((r2) => setTimeout(r2, 100));
+  await waitUntil(() => tmux("display-message", "-p", "-t", `=${session}:=live`, "#{pane_current_path}") === base, "fallback shell navigation");
   const again = startInstanceSession(f.home);
   assert.equal(again.reused, "pane");
   assert.equal(again.model, "claude-x", "omitted model keeps the recorded one");
@@ -179,8 +200,7 @@ test("a lost tmux server on the recorded socket is a stopped instance: the sessi
 
 test("a start that allocated but could not record is adopted by the next start, never duplicated", async () => {
   const f = makeHome("pending");
-  tmux("new-window", "-t", session, "-n", "pending", "-c", f.home, "sleep 30");
-  await new Promise((r) => setTimeout(r, 100));
+  await heldWindow(f);
   // Simulate the partial failure: the actual target is in the pending receipt, metadata still says stopped.
   writeFileSync(join(f.home, ".oats-start-pending.json"), JSON.stringify(pendingFor(f, { backend: "tmux", session, window: "pending", socket })));
   const r = startInstanceSession(f.home);
@@ -207,7 +227,7 @@ test("an injected metadata write failure after allocation is recovered by the ne
   assert.deepEqual(readJson(join(f.home, "instance.json")), f.meta);
   assert.equal(existsSync(join(f.home, ".oats-start-pending.json")), true);
   assert.equal(existsSync(join(f.home, ".oats-start.lock")), false, "the guard is released even when recording fails");
-  await waitUntil(() => inspectInstanceSession(f.home).state === "unknown", "fake harness to run");
+  await harnessReady(f);
   const r = startInstanceSession(f.home);
   assert.equal(r.reused, "adopted", "the running session is recorded, not duplicated");
   assert.deepEqual(windows().filter((w) => w === "crash"), ["crash"]);
@@ -220,8 +240,7 @@ test("a recorded pending target that differs from the metadata is reconciled bef
   // The shape a Herdr reallocation (new pane) leaves after a metadata write failure:
   // receipt and pending name the new target, metadata still names the old one.
   const f = makeHome("diverged");
-  tmux("new-window", "-t", session, "-n", "diverged-2", "-c", f.home, "sleep 30");
-  await new Promise((r) => setTimeout(r, 100));
+  await heldWindow(f, "diverged-2");
   const target = { backend: "tmux", session, window: "diverged-2", socket };
   const baseline = readJson(f.baselinePath);
   writeFileSync(f.baselinePath, JSON.stringify({ ...baseline, runtime: { launched: true, tmux: { session, window: "diverged-2", socket: resolve(socket) } } }));
@@ -247,8 +266,9 @@ test("a pending target that cannot be observed is kept and the start refuses; a 
   rmSync(join(f.home, ".oats-start-pending.json"));
   // Dead pane: the harness exited and tmux retained the pane (remain-on-exit).
   const d = makeHome("deadpane");
-  tmux("new-window", "-t", session, "-n", "deadpane", "-c", d.home, "sleep 1");
+  await heldWindow(d);
   tmux("set-option", "-w", "-t", `=${session}:=deadpane`, "remain-on-exit", "on");
+  releaseHarness(d.home);
   await waitUntil(() => inspectInstanceSession(d.home).state === "stopped", "retained dead pane");
   const st = inspectInstanceSession(d.home);
   assert.equal(st.present, false);
@@ -296,8 +316,7 @@ test("recovery preserves the actual model and reconciles even an exited allocati
   const target = { backend: "tmux", session, window: "model-recovery-new", socket };
   const pending = pendingFor(f, target, { command: withLaunchModel(f.command, "claude-old"), model: "claude-old" });
   const receipt = join(f.home, ".oats-start-pending.json");
-  tmux("new-window", "-t", session, "-n", target.window, "sleep 30");
-  await new Promise((r) => setTimeout(r, 100)); // the fixture shell execs sleep
+  await heldWindow(f, target.window);
   writeFileSync(receipt, JSON.stringify(pending));
   assert.throws(() => startInstanceSession(f.home, { model: "claude-new" }), (e) => e.code === "E_SESSION_RUNNING" && /not applied/.test(e.message));
   assert.equal(readJson(join(f.home, "instance.json")).model, "claude-old");
@@ -399,29 +418,25 @@ test("a never-launched Herdr home without an endpoint cannot silently switch to 
 });
 
 test("a live startup shell is protected until its command actually exits", async () => {
-  // This private session must not run the operator's interactive startup
-  // files after command completion: their transient children are unrelated
-  // to the launch under test and legitimately read as active processes.
-  // Also support running this regression alone, before any earlier test
-  // has created the private server.
-  if (!windows().length) tmux("-f", "/dev/null", "new-session", "-d", "-s", session, "-n", "hq", "-c", base, "/bin/sh");
-  tmux("set-option", "-t", session, "default-shell", "/bin/sh");
-  tmux("set-environment", "-t", session, "SHELL", "/bin/sh");
-  for (const key of ["ENV", "BASH_ENV"]) tmux("set-environment", "-r", "-t", session, key);
+  // Support running this regression alone, before any earlier test has
+  // created the private server. All launches use the isolated shell fixture.
+  if (!windows().length) tmux("new-session", "-d", "-s", session, "-n", "hq", "-c", base, "/bin/sh");
   const f = makeHome("slow-shell");
   const harness = join(base, "slow-shell-wrapper");
   // Builtins only. macOS reports the interpreter as a shell; Linux may
   // report the script name as an active process. Both must refuse a retry.
   // The injected transient-child test below pins the shell-only branch.
-  writeFileSync(harness, '#!/bin/bash\nSECONDS=0\nwhile (( SECONDS < 2 )); do :; done\nexit 0\n');
+  writeFileSync(harness, '#!/bin/bash\nprintf ready > "$OATS_INSTANCE_HOME/slow-ready"\nwhile [[ ! -e "$OATS_INSTANCE_HOME/slow-release" ]]; do :; done\nexit 0\n');
   chmodSync(harness, 0o755);
-  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, command: shq(harness) }));
+  writeFileSync(join(f.home, "instance.json"), JSON.stringify({ ...f.meta, command: `OATS_INSTANCE_HOME=${shq(f.home)} ${shq(harness)}` }));
   const first = startInstanceSession(f.home);
   const pane = tmux("display-message", "-p", "-t", `=${session}:=slow-shell`, "#{pane_id}");
   assert.equal(first.reused, "new");
+  await waitUntil(() => existsSync(join(f.home, "slow-ready")), "startup shell ready");
   assert.throws(() => startInstanceSession(f.home), (e) => ["E_SESSION_START_BUSY", "E_SESSION_RUNNING"].includes(e.code));
   assert.equal(tmux("display-message", "-p", "-t", `=${session}:=slow-shell`, "#{pane_id}"), pane);
   assert.equal(readJson(join(f.home, "instance.json")).restartCount, 1);
+  writeFileSync(join(f.home, "slow-release"), "");
   await waitUntil(() => existsSync(join(f.home, ".oats-start-exited")) && inspectInstanceSession(f.home).state === "shell", "slow shell completion marker");
   assert.equal(inspectInstanceSession(f.home).state, "shell");
   assert.equal(startInstanceSession(f.home).reused, "pane", "the matching exit marker permits a real restart");

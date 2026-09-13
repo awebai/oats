@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { RecordStore } from "../lib/store.mjs";
 import { finishTurn } from "../lib/canonical.mjs";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
@@ -36,6 +36,11 @@ test("capture --home captures only that home's sessions and reports exact turn-i
   const run = (bin, args) => execFileSync(process.execPath, [bin, ...args], { encoding: "utf8", env });
 
   const r1 = JSON.parse(run(CAPTURE, ["--home", home, "--quiet"]));
+  assert.equal(r1.status, "complete");
+  assert.equal(r1.complete, true);
+  assert.equal(r1.skipped, false);
+  assert.equal(r1.held, 0);
+  assert.equal(r1.failed, 0);
   assert.equal(r1.sessions.length, 1);
   const s = r1.sessions[0];
   assert.equal(s.thread, "cc:session:s1");
@@ -112,3 +117,76 @@ test("direct thread recall works while the search index has an exclusive writer"
     writer.close();
   }
 });
+
+function captureFixture(t) {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "turn-record-outcome-")));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const home = join(base, "instance"), user = join(base, "user"), root = join(base, "record");
+  const project = join(user, ".claude", "projects", "-instance");
+  mkdirSync(home); mkdirSync(project, { recursive: true }); mkdirSync(root);
+  const file = join(project, "s1.jsonl");
+  const env = { ...process.env, HOME: user, TURN_RECORD_ROOT: root, TURN_RECORD_OWNER: "tester" };
+  // No --quiet: native --home stdout must remain a single JSON document.
+  const run = (argv = [CAPTURE], extra = ["--no-index"]) => spawnSync(process.execPath,
+    [...argv, "--home", home, ...extra], { env, cwd: home, encoding: "utf8" });
+  return { home, root, file, run };
+}
+
+test("capture --home reports held unstamped sessions, then a performed pass and an unchanged complete pass", (t) => {
+  const { home, file, run } = captureFixture(t);
+  writeFileSync(file, JSON.stringify({ cwd: home, type: "user", message: { content: "awaiting timestamp" } }) + "\n");
+  const held = run(); assert.equal(held.status, 0, held.stderr);
+  const h = JSON.parse(held.stdout);
+  assert.equal(h.status, "held"); assert.equal(h.complete, false); assert.equal(h.held, 1);
+  assert.equal(h.skipped, false); assert.equal(h.failed, 0); assert.equal(h.appended, 0);
+  assert.deepEqual(h.sessions, []);
+  appendFileSync(file, ccLine(home, "s1", "assistant", "timestamp arrived", "2026-09-13T10:00:00Z"));
+  const done = run(); assert.equal(done.status, 0, done.stderr);
+  const d = JSON.parse(done.stdout);
+  assert.equal(d.status, "complete"); assert.equal(d.complete, true); assert.equal(d.held, 0);
+  assert.equal(d.appended, 2); assert.equal(d.sessions[0].turns, 2);
+  const unchanged = JSON.parse(run().stdout);
+  assert.equal(unchanged.status, "complete"); assert.equal(unchanged.complete, true);
+  assert.equal(unchanged.appended, 0); assert.deepEqual(unchanged.sessions, d.sessions);
+});
+
+test("capture --home keeps privacy exclusions distinct from a skipped pass", (t) => {
+  const { home, root, file, run } = captureFixture(t);
+  writeFileSync(file, ccLine(home, "s1", "user", "private", "2026-09-13T10:00:00Z"));
+  writeFileSync(join(root, "ignore"), "s1\n");
+  const r = run(); assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.complete, true); assert.equal(out.skipped, false); assert.equal(out.ignored, 1);
+  assert.equal(out.appended, 0); assert.deepEqual(out.sessions, []);
+});
+
+test("capture --home failures answer JSON with unknown appended count, never a false complete result", (t) => {
+  const { home, root, file, run } = captureFixture(t);
+  writeFileSync(file, ccLine(home, "s1", "user", "cannot save offsets", "2026-09-13T10:00:00Z"));
+  // A real I/O failure, after capture can have appended turns.
+  writeFileSync(join(root, "index"), "not a directory");
+  let r = run(); assert.equal(r.status, 1);
+  let out = JSON.parse(r.stdout);
+  assert.equal(out.complete, false); assert.equal(out.status, "failed");
+  assert.equal(out.failed, 1); assert.equal(out.appended, null); assert.equal(out.skipped, false);
+  assert.ok(out.error); assert.doesNotMatch(r.stderr, /\n\s+at /);
+  rmSync(join(root, "index"));
+  // The privacy loader also fails closed with a structured --home answer.
+  mkdirSync(join(root, "ignore"));
+  r = run(); assert.equal(r.status, 1);
+  out = JSON.parse(r.stdout); assert.equal(out.failed, 1); assert.equal(out.complete, false);
+  assert.match(out.error, /ignore/); assert.doesNotMatch(r.stderr, /\n\s+at /);
+});
+
+for (const [name, bin] of [["oats", "../../../bin/oats.mjs"], ["turn-record", "../bin/turn-record.mjs"]]) {
+  test(`${name} capture exposes the native --home outcome, not a schema-v1 envelope`, (t) => {
+    const { home, file, run } = captureFixture(t);
+    writeFileSync(file, ccLine(home, "s1", "user", "native command", "2026-09-13T10:00:00Z"));
+    const argv = [new URL(bin, import.meta.url).pathname, "capture"];
+    const r = run(argv); assert.equal(r.status, 0, r.stderr + r.stdout);
+    const out = JSON.parse(r.stdout);
+    assert.equal(out.schemaVersion, undefined); assert.equal(out.status, "complete");
+    assert.equal(out.complete, true); assert.equal(out.sessions[0].turns, 1);
+    assert.equal(out.home, home);
+  });
+}

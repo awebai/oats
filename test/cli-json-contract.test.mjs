@@ -39,6 +39,10 @@ function gitRepo(dir) {
 function fakeRuntimes(base) {
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   for (const name of ["pi", "claude"]) { write(join(bin, name), "#!/bin/sh\nexit 0\n"); execFileSync("chmod", ["+x", join(bin, name)]); }
+  // Contract fixtures must never create real terminal sessions. Launch failure
+  // is asserted below; scaffold-only tests do not need a terminal backend.
+  write(join(bin, "tmux"), "#!/bin/sh\nexit 1\n");
+  execFileSync("chmod", ["+x", join(bin, "tmux")]);
   return `${bin}:${process.env.PATH}`;
 }
 function fixtureSoul(base) {
@@ -164,7 +168,7 @@ test("okf harvest --json: spawned envelope carries instance and window, through 
   write(join(home, "notes", "a-note.md"), "---\ntype: Lesson\n---\n\n# a note\n");
   write(join(home, "soul", "knowledge", "index.md"), "# kb\n");
   mkdirSync(join(home, "soul", "skills"), { recursive: true });
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENT_HOME: home, OATS_HOME: home, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
+  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENT_HOME: home, OATS_HOME: home, OATS_INSTANCE: inst, OATS_AGENT: "dev", OATS_ROOT: root, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
   delete env.PI_AGENTS_ROOT;
   const r = spawnSync(process.execPath, [CLI, "okf", "harvest", "--json"], { cwd: home, encoding: "utf8", env });
   const doc = parseOnly(r.stdout);

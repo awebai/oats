@@ -137,8 +137,11 @@ workspace view where reading, editing, Git, builds, tests, and commits happen.
 
 Work modes: `worktree` (isolated branch for implementation), `checkout` (the
 repository's shared checkout), `attached` (another instance's tree, for
-service agents and reviewers), and `workspace` (read-only multi-repository
-context). Placement that cannot be proved fails closed.
+service agents and reviewers), `workspace` (read-only multi-repository context),
+and explicit `directory` (owned non-Git execution for independent workers;
+`repo` supplies configuration only). Directory mode rejects `--work-dir` and
+`--branch`, and retirement preserves nonempty work in verified recovery storage.
+Placement that cannot be proved fails closed.
 
 Provider behavior stays deliberate. Pi runs with ambient skill, context, and
 template discovery curtailed while operator-configured extensions remain

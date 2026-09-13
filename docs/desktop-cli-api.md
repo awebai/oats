@@ -113,7 +113,7 @@ See [launch configuration syntax](configuration.md) and
 | `instance` | string          | new instance name                          |
 | `agent`    | string          | soul/agent name                            |
 | `home`     | string          | absolute instance home path                |
-| `work`     | string          | work mode (worktree/checkout/attached/workspace) |
+| `work`     | string          | work mode (worktree/checkout/attached/workspace/directory) |
 | `branch`   | string \| null  | work branch when applicable                |
 | `launched` | boolean         | whether a tmux window was started          |
 | `warnings` | string[]        | non-fatal warnings (always an array)       |

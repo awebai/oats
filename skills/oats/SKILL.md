@@ -38,7 +38,9 @@ oats status [--json]
 oats status --team [--json]   # whole-team roster when config declares team: (all repos in the team scope)
 # with the aweb messaging integration active, `oats aweb roster` adds the
 # cross-machine view: aweb team members, where OATS aliases are instance names
-oats create <name> [--description ...] [--type <agent-type>] [--repo ...] [--work worktree|checkout|attached|workspace]
+oats create <name> [--description ...] [--type <agent-type>] [--repo ...] [--work worktree|checkout|attached|workspace|directory]
+# directory mode = owned execution directory; repo is config context (no Git
+# required); --work-dir and --branch are rejected; retirement preserves work.
 # workspace mode = cross-repo coordinator: ./work is the whole team scope; read
 # all member repos, edit none; if a knowledge layer is active, IT defines how
 # soul updates are delivered (see that capability's own instructions)

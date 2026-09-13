@@ -12,9 +12,9 @@
 // instance's own, and nothing outside it — not the parent workspace, not a
 // sibling home — is ever swept in.
 
-import { closeSync, openSync, readSync, realpathSync, statSync } from "node:fs";
-import { resolve, sep } from "node:path";
-import { StringDecoder } from "node:string_decoder";
+import { closeSync, fstatSync, openSync, readSync, realpathSync, statSync } from "node:fs";
+import { basename, resolve, sep } from "node:path";
+import { isUtf8 } from "node:buffer";
 
 import { SESSION_FORMATS } from "./formats.mjs";
 
@@ -30,39 +30,47 @@ export const CWD_SCAN_BOUND_BYTES = 8 * 1024 * 1024;
 function* wholeLines(path, bound) {
   const fd = openSync(path, "r");
   try {
+    if (!fstatSync(fd).isFile()) throw new Error(`session source is not a regular file: ${path}`);
     const buf = Buffer.alloc(CHUNK_BYTES);
-    const decoder = new StringDecoder("utf8"); // a multi-byte character may straddle two chunks
-    let carry = "";
+    let pieces = [], size = 0; // keep raw bytes across UTF-8/chunk boundaries
     let offset = 0;
     while (offset < bound) {
       const n = readSync(fd, buf, 0, Math.min(CHUNK_BYTES, bound - offset), offset);
       if (n === 0) break;
       offset += n;
-      carry += decoder.write(buf.subarray(0, n));
-      let nl;
-      while ((nl = carry.indexOf("\n")) >= 0) {
-        yield carry.slice(0, nl);
-        carry = carry.slice(nl + 1);
+      let from = 0;
+      for (let nl = buf.indexOf(10, from); nl >= 0 && nl < n; nl = buf.indexOf(10, from)) {
+        const tail = buf.subarray(from, nl);
+        const bytes = pieces.length ? Buffer.concat([...pieces, tail], size + tail.length) : tail;
+        // Replacement decoding could fabricate a cwd. Leave corrupt lines
+        // unattributed; capture will report incomplete bytes if a later
+        // valid line supplies the attribution.
+        yield isUtf8(bytes) ? bytes.toString("utf8") : null;
+        pieces = []; size = 0; from = nl + 1;
+      }
+      if (from < n) {
+        const piece = Buffer.from(buf.subarray(from, n)); // buf is reused
+        pieces.push(piece); size += piece.length;
       }
     }
-    // The remainder is a fragment unless the file ended exactly there.
-    if (carry && offset < bound) yield carry;
+    // A JSON-shaped EOF fragment is still an uncommitted native record.
+    // Never attribute a source using a line its writer has not terminated.
   } finally {
     closeSync(fd);
   }
 }
 
 function cwdOfLine(source, line) {
-  if (!line.trim()) return undefined;
+  if (line === null || !line.trim()) return undefined;
   let d;
   try {
     d = JSON.parse(line);
   } catch {
     return undefined; // a non-JSON native line
   }
-  if (source === "cc" && typeof d.cwd === "string") return d.cwd;
-  if (source === "pi" && d.type === "session" && typeof d.cwd === "string") return d.cwd;
-  if (source === "codex" && d.type === "session_meta" && typeof d.payload?.cwd === "string") return d.payload.cwd;
+  if (source === "cc" && typeof d?.cwd === "string") return d.cwd;
+  if (source === "pi" && d?.type === "session" && typeof d?.cwd === "string") return d.cwd;
+  if (source === "codex" && d?.type === "session_meta" && typeof d.payload?.cwd === "string") return d.payload.cwd;
   return undefined;
 }
 
@@ -70,13 +78,9 @@ function cwdOfLine(source, line) {
  *  the start until the first one that carries it, or undefined when none
  *  does within `bound` bytes (unknown format, torn file, no cwd at all). */
 export function sessionCwd(source, path, { bound = CWD_SCAN_BOUND_BYTES } = {}) {
-  try {
-    for (const line of wholeLines(path, bound)) {
-      const cwd = cwdOfLine(source, line);
-      if (cwd) return cwd;
-    }
-  } catch {
-    return undefined;
+  for (const line of wholeLines(path, bound)) {
+    const cwd = cwdOfLine(source, line);
+    if (cwd) return cwd;
   }
   return undefined;
 }
@@ -84,7 +88,8 @@ export function sessionCwd(source, path, { bound = CWD_SCAN_BOUND_BYTES } = {}) 
 function canonical(p) {
   try {
     return realpathSync(p);
-  } catch {
+  } catch (err) {
+    if (err.code !== "ENOENT") throw err;
     return resolve(p); // a retired home's cwd no longer exists; compare the lexical path
   }
 }
@@ -98,23 +103,24 @@ function within(child, parent) {
  *  otherwise each format's default roots under the current HOME are used.
  *  `onUnattributed(source, path)` is called for a file that carries no cwd
  *  within the scan bound, so a caller can report it instead of losing it.
+ *  Read/scan failures throw; they are not unattributed or empty scans.
+ *  `ignore` excludes files BEFORE reading, with optional `onIgnored`.
  *  Each entry: { source, sessionId, thread, path, cwd, bytes, mtime }. */
-export function sessionsForHome(home, { roots, onUnattributed, bound } = {}) {
+export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, onIgnored } = {}) {
   const target = canonical(home);
   const out = [];
   for (const fmt of Object.values(SESSION_FORMATS)) {
     const rs = roots?.[fmt.source] ?? fmt.defaultRoots();
-    for (const path of fmt.listFiles(rs)) {
+    for (const path of fmt.listFiles(rs, { strict: !roots?.[fmt.source] })) {
+      const sessionId = fmt.sessionId(path);
+      if (ignore?.ignores(path, [basename(path), sessionId])) {
+        onIgnored?.(fmt.source, path);
+        continue;
+      }
       const cwd = sessionCwd(fmt.source, path, bound ? { bound } : {});
       if (!cwd) { if (onUnattributed) onUnattributed(fmt.source, path); continue; }
       if (!within(canonical(cwd), target)) continue;
-      let stat;
-      try {
-        stat = statSync(path);
-      } catch {
-        continue; // vanished between listing and stat
-      }
-      const sessionId = fmt.sessionId(path);
+      const stat = statSync(path); // disappearance is a failed scan, never an empty result
       out.push({
         source: fmt.source,
         sessionId,

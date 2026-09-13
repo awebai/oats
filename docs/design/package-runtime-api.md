@@ -81,7 +81,7 @@ this contract remains authoritative).
 2. **Spawn** — `oats spawn <agent> ... --json` with the EXISTING flags:
    `--purpose <slug>` (deterministic derived naming
    `<agent>-<purpose>`; no raw instance-name authority), `--parent`,
-   `--repo`, `--work attached|worktree|checkout|workspace`, `--work-dir`,
+   `--repo`, `--work attached|worktree|checkout|workspace|directory`, `--work-dir`,
    `--branch`, `--model`, `--task`/`--task-file` (owner-only tempfiles:
    mode 0600, removed on every outcome). Existing validation and error codes
    (`E_BAD_ARGS`, `E_PARENT_NOT_FOUND`, `E_SPAWN_FAILED`, ...) are part of
@@ -96,8 +96,8 @@ this contract remains authoritative).
    read their settings (e.g. oats.okf's `harvest-model`) from `OATS_SETTINGS`;
    there is NO public resolved-config read command.
 4. **Consumer rules**: a package command executes the CLI at the exact
-   absolute path the dispatcher provides in the **`OATS_CLI_BIN`** environment
-   variable (part of the dispatch env contract, beside `OATS_SETTINGS`), via
+   absolute path the dispatcher or lifecycle runner provides in the
+   **`OATS_CLI_BIN`** environment variable (beside `OATS_SETTINGS`), via
    `execFile` on that path — **never** by resolving `oats` from `PATH` and
    never through a shell: PATH is not a trusted runtime boundary, and package
    commands run in worktrees where it can be shadowed. The consumer parses
@@ -108,6 +108,108 @@ Error codes are part of the contract: `E_USAGE`, `E_BAD_ARGS`,
 `E_UNKNOWN_COMMAND`, `E_SPAWN_FAILED`, `E_PARENT_NOT_FOUND`,
 `E_RELATIVE_NOT_FOUND`, `E_RELATIVE_AMBIGUOUS`, `E_CAPABILITY_BLOCKED`,
 `E_CAPABILITY_INACTIVE`.
+
+### Directory execution for capability workers
+
+A worker may explicitly select `work: directory` in its packaged `soul.yaml`,
+pass `--work directory` to spawn, or use `spawnInstance(..., {work: "directory"})`.
+This is a generic execution mode, independent of any knowledge provider.
+Consumers using it must declare the directory-mode release as their
+`compatibility.oats` floor, not the older boundary-v1 floor alone.
+
+- `repo` / `--repo` is an **existing config context directory** in this mode,
+  not a Git requirement or an edit target. Relative paths resolve from the
+  agents root's parent; absent a selector it defaults to that deployment scope.
+  The CLI does not substitute its ambient Git checkout. A configured workspace
+  can discover and spawn declared package agents before it has an `agents/` or
+  `local-agents/` directory. Laptop config alone does not declare a deployment.
+- `<home>/work` is a new, owned directory, not a symlink and not a fake Git
+  repository. The kernel creates no branch, copies no source tree, and does not
+  require Git in a non-Git deployment. Git-owned deployment placement still
+  requires readable Git metadata to establish the canonical home location.
+- `--work-dir` / `workDir` and `--branch` / `branch` are contradictory and
+  rejected with `E_BAD_ARGS`, even if empty or inherited from a caller bug.
+  Directory execution never takes ownership of a caller-selected filesystem
+  path. Existing modes retain their Git/context requirements and semantics;
+  failed Git operations never implicitly fall back to directory execution.
+- Canonical `AGENTS.md` / `CLAUDE.md`, skill composition, provider trust,
+  lifecycle hooks, frozen launch recipes, runtime preflight and no-launch
+  metadata are unchanged. Hooks receive `OATS_WORK=directory`, an empty
+  `OATS_BRANCH`, and the context in `OATS_REPO` / `OATS_CONTEXT` at spawn.
+  Worktree-only setup scripts are not run in this mode.
+- Retirement authenticates directory ownership against the independent spawn
+  baseline. Nonempty execution work is preserved in verified recovery custody
+  (`workRecovery.path/work`, with home bytes under `home/`) before removal;
+  post-hook changes produce another verified snapshot. No work is designated
+  disposable in this initial mode, including hook-created work. Symlinks inside
+  work are copied as links, never followed; an exchanged work-root symlink,
+  unsupported filesystem entry, or unverifiable copy fails closed. Recovery is
+  not provider delivery or publication, and retains the existing single-host,
+  quiesced-runtime safety model rather than a hostile-filesystem atomicity claim.
+
+### Lifecycle and scheduled-command context
+
+Lifecycle hooks receive `OATS_CLI_BIN` as the real, absolute `bin/oats.mjs`
+path belonging to the **running kernel**. This is authored by
+`runLifecycleHooks` itself, including direct core callers; neither ambient
+`OATS_CLI_BIN` nor a caller's `extraEnv.OATS_CLI_BIN` can override it. Spawn
+hooks also receive the known agents root as `OATS_ROOT`, rather than an empty
+value or the ambient caller's root.
+
+Scheduled command execution starts without the invoking instance's identity:
+`OATS_INSTANCE`, `OATS_INSTANCE_HOME`, legacy `OATS_HOME`, the `PI_AGENT_*`
+aliases and `PI_AGENTS_ROOT`, plus kernel-authored soul, root, context, work,
+team, capability, operation, settings and lifecycle metadata are removed.
+The command's explicit cwd and selectors (for example `--soul`) determine
+its dispatch; a scheduler invoked from another home must not select that
+home's frozen capabilities/settings. Host configuration (`HOME`,
+`OATS_HOME_DIR`, package catalog configuration) and ordinary credentials are
+preserved. No job schema or knowledge-provider policy is implied by this
+isolation.
+
+### Native record capture result
+
+`oats capture --home <dir>` (also `turn-record capture --home <dir>` and the
+standalone `capture.mjs`) answers **native JSON**, not a Desktop schema-v1
+`{ok,result}` envelope. Do not add `--json`: `--home` already selects JSON.
+Diagnostics go to stderr, including lock contention without `--quiet`.
+Existing home/owner/appended/session boundary fields remain; the outcome adds:
+
+- `status`: `complete`, `skipped`, `held`, `incomplete`, or `failed` (failure
+  takes priority, then skip/held/incomplete).
+- `complete`: true only for a performed pass with no holds, incomplete source
+  records, unattributed candidates or reported errors.
+  An unchanged performed pass may be complete with `appended: 0`.
+- `skipped`: true when another pass owns the capture lock. `lock` then carries
+  holder/liveness/recovery details; no capture or indexing was performed.
+- `held`: count of sessions the underlying pass held pending a timestamp.
+- `incomplete`: count of source files with pending torn, oversized, invalid
+  UTF-8 or otherwise incomplete records; later complete input can recover.
+- `issues`: optional metadata-only diagnostics identifying source paths and
+  reasons; no record bodies are embedded. `unattributed` candidates also make
+  the pass incomplete rather than silently certifying missing source evidence.
+- `failed`: zero on success, nonzero for a capture/read/index/lock-release
+  failure; `error` describes the failure. `appended: null` on a thrown failure
+  means the number appended before the failure is unknown, not zero.
+- `ignored`: count excluded by configured privacy rules, distinct from a
+  whole-pass skip. Home capture pins exactly attributed source files; sharing
+  a Codex day directory does not authorize capturing unrelated records.
+
+Lock skips, held sessions and incomplete input retain exit status 0 (background reconciliation
+must stay nonfatal on contention); errors and failed lock release exit 1.
+Previously captured visible boundaries may still be returned on a skipped or
+held pass. They are **not** evidence that final capture ran. Consumers requiring
+a final pass must check `complete === true`, not exit status or the presence of
+boundaries alone; older results lacking that field cannot certify a pass.
+
+**Snapshot boundary:** completion describes a performed pass over the exact
+attributed source files, not a promise about future appends. Discovery/read
+failures and files disappearing during the pass fail closed; pending trailing
+records and unattributed candidates cannot certify completion. A retirement
+consumer must first quiesce its writers and then preserve the captured evidence
+under its own durable-input protocol. `complete:true` alone does not mean a
+harvest was delivered or that a consumer stored those inputs. Configured privacy
+exclusions remain exclusions, not an invitation to copy excluded source bytes.
 
 ### Consumer fixture
 
