@@ -16,6 +16,7 @@ import { createTerminalTab, terminalOptions } from "../renderer/terminal-tab.mjs
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
+import { splitControlsState } from "../renderer/split-controls.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { runtimeState } from "../renderer/instance-presentation.mjs";
@@ -77,7 +78,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), contextRosterEl: null,
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
-    tabActionsEl: document.getElementById("tab-actions"), splitEmptyEl: document.createElement("div"),
+    tabActionsEl: document.getElementById("tab-actions"),
     stageHost: document.getElementById("stagehost"), stage: { name: "spawn" }, navEl: document.getElementById("nav"),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
@@ -102,7 +103,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     },
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
-    createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom,
+    createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
     ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, rosterKeyAction, moveTarget,
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
@@ -122,7 +123,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
       onTermData: () => () => {}, onTermExit: () => () => {},
     },
   };
-  const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "splitPane", "closeSplit", "onTabKeydown",
+  const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups", "onTabKeydown",
     "addTab", "selectTab", "activateTab", "closeTab", "openViewTab", "restoreWorkspaceTabs", "showTerminalContext",
     "initContextRoster", "renderContextRoster", "onRosterRowKey", "setRovingRow", "focusRoster", "openTerminalTabFlow", "openTerminalTabInner"];
   const functions = names.map(name => fn(shellSource, name)).join("\n")

@@ -16,6 +16,7 @@ import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/ta
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 import * as layout from "../renderer/split-layout.mjs";
+import { splitControlsState } from "../renderer/split-controls.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as instanceTree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
@@ -24,7 +25,7 @@ import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const names = [
-  "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "showStage",
+  "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
   "visibleTabEntries", "cycleTab", "restoreWorkspaceTabs", "showTerminalContext",
@@ -49,7 +50,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
-    tabActionsEl: document.getElementById("tab-actions"), splitEmptyEl: document.createElement("div"),
+    tabActionsEl: document.getElementById("tab-actions"),
     stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" },
     navEl: document.getElementById("nav"), contextRosterEl: null,
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
@@ -66,7 +67,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     resolveTerminalOpen: (instances, ref, ws) => ({ inst: { instance: ref, running: true, tmux: { session: "synthetic", window: ref } }, key: `${ws}:${ref}` }),
     ctx: {}, reserveKey, whenKeyFree, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     createSelectionOwnership: ownership, wirePaneSelection, terminalOptions,
-    ...workspaceTabs, ...layout, projectSplitDom,
+    ...workspaceTabs, ...layout, projectSplitDom, splitControlsState,
     registerAction: action => actions.set(action.id, action.run),
     terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {},

@@ -243,6 +243,36 @@ restart layout persistence, scoped Pi/provider picker, broad dropdown/sidebar
 redesign, and external CLI file-open delivery. The latter has a separate
 [proposed boundary](desktop-file-opening-contract.md), not an executable command.
 
+## Reported split reopen and crowded-roster correction
+
+The user's real-app sequence (open terminal → split → close terminal tab → select
+empty destination → reopen instance) failed with both one and several initial
+tabs. Closing discarded an empty layout or fallback selection pulled focus back
+to the source group; empty cells had no independent selection handler.
+
+The correction makes panels persist until explicit **Close split**. Every empty
+panel has a stable focusable placeholder, selecting it sets the focused group and
+clears the globally active tab, and reopening uses that destination. Existing
+terminal tabs can fill an empty panel without creating another PTY. Empty panels,
+proportions and selection survive workspace/stage round-trips; a palette action
+returns to a covered terminal layout without adding a new default shortcut.
+
+The sidebar now has 56px minimum auto-height rows, 48px minimum auto-height
+instance controls, 4px internal/gap spacing and 8px filter separation. Guide elbows
+track row centers instead of the former fixed offset. Typography scale, identity,
+menus and semantic colors are unchanged; fixed-height label clipping is removed.
+The selected group uses an existing-accent inset outline.
+
+- **857/857 Desktop tests pass**, including exact shipped-shell reproductions,
+  stale success/rejection, cleanup, empty controls, workspace recall and AA checks.
+- Root gates check/check:pi/validate/validate:okf/pack:check/smoke:tarball pass.
+- Full root run: **1,843 passed, 4 failed, 1 skipped**; failures remain in unchanged
+  CLI JSON/harvest, servers, session-restart and session-start suites.
+- Workflow integration review found no concrete blockers. This correction has
+  not yet been exercised through native CDP/tmux or recaptured in screenshots.
+- Both the main-checkout and isolated Development app/server remain running;
+  permission to reload only the Development window was requested.
+
 ## Coordination needed
 
 The user declined enlisting new OATS agents and authorized dynamic workflows.

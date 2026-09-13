@@ -45,7 +45,7 @@ function shell(t, shellSource = source) {
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "overview", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextRosterEl: null,
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
-    tabActionsEl: document.getElementById("tab-actions"), splitEmptyEl: document.createElement("div"),
+    tabActionsEl: document.getElementById("tab-actions"),
     wsActiveTerminal: new Map(), workspaceTabMemory: createWorkspaceTabMemory(), brainIntents: createIntentGate(),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     setActiveContexts: value => contexts.splice(0, contexts.length, ...value),
@@ -56,7 +56,7 @@ function shell(t, shellSource = source) {
     ctx: {},
   };
   const names = ["showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
-    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
+    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

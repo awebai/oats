@@ -23,9 +23,15 @@ export function createWorkspaceTabMemory() {
         const tab = tabs.get(id);
         if (tab?.kind !== "terminal" || !canActivateTab(tab, workspace)) split = removeSplitTab(split, id).split;
       }
+      const focused = split?.groups.find(g => g.id === split.focusedGroup);
       const activeTab = canActivateTab(tabs.get(saved.activeTab), workspace) ? saved.activeTab
-        : saved.tabLayerVisible ? fallbackTabForContext(tabs, saved.sidebarMode, workspace)?.[0] ?? null : null;
-      return { ...saved, split, activeTab, tabLayerVisible: saved.tabLayerVisible && activeTab != null };
+        : !saved.tabLayerVisible ? null
+        : focused ? focused.activeTab
+        : fallbackTabForContext(tabs, saved.sidebarMode, workspace)?.[0] ?? null;
+      // An empty terminal layout is a real, restorable surface, not a missing
+      // tab that should fall back to a different group or to the stage.
+      return { ...saved, split, activeTab,
+        tabLayerVisible: saved.tabLayerVisible && (activeTab != null || !!focused) };
     },
   };
 }

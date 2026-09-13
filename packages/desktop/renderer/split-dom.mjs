@@ -15,9 +15,8 @@
 //                                     the shell shows only the group-active
 //                                     one (FitAddon refit rides its pane's
 //                                     ResizeObserver when the cell resizes)
-//     (or `emptyEl`)                ← the placeholder while the group is
-//                                     empty — the model allows at most one
-//                                     empty group, so one element suffices
+//     .split-empty                 ← a stable, focusable placeholder owned
+//                                     by THIS group (several may be empty)
 //
 // The top-level #tabstrip row is HIDDEN while the split is visible: every
 // visible tab lives in a group strip, so keeping the old row would render
@@ -37,6 +36,29 @@
 // group strip, so the restore is byte-identical (whitespace preserved).
 import { updateSplitHandle } from "./split-resize.mjs";
 const MARKER = Symbol("flat-slot-marker");
+const EMPTY = Symbol("empty-group-placeholder");
+const SELECT_EMPTY = Symbol("select-empty-group");
+
+function projectEmpty(cell, group, { tabhost, onSelectEmpty, isApplyingFocus }) {
+  let empty = cell[EMPTY];
+  if (!empty) {
+    empty = cell[EMPTY] = cell.ownerDocument.createElement("div");
+    empty.className = "split-empty";
+    empty.tabIndex = 0;
+    empty.setAttribute("role", "group");
+    empty.setAttribute("aria-label", `Empty terminal group ${group.id}`);
+    empty.textContent = "Select an instance from the sidebar (or the palette) to fill this group";
+    const select = () => {
+      if (cell.parentNode === tabhost && empty.parentNode === cell) cell[SELECT_EMPTY]?.();
+    };
+    empty.addEventListener("pointerdown", select);
+    empty.addEventListener("focusin", () => { if (!isApplyingFocus?.()) select(); });
+  }
+  cell[SELECT_EMPTY] = () => onSelectEmpty?.(group.id, cell);
+  if (!group.tabs.length) {
+    if (empty.parentNode !== cell) cell.append(empty);
+  } else empty.remove();
+}
 
 function ensureCell(host, before, group) {
   let cell = host.querySelector(`:scope > .group-cell[data-group="${group.id}"]`);
@@ -78,13 +100,14 @@ function setClass(el, name, o) {
 
 /** Project the editor-group `split` into the shell chrome, or restore the
  * flat single-strip layout.
- *   els     — { tabhost, tabstrip, tabbar, actionsEl, actionsHome, emptyEl }
+ *   els     — { tabhost, tabstrip, tabbar, actionsEl, actionsHome,
+ *               onSelectEmpty(groupId, cell), isApplyingFocus(), onResize(sizes) }
  *             (actionsHome is #tab-actions' flat-state parent, #tabbar-row)
  *   on      — whether the split is the visible surface (false = flat)
  *   entries — the shell's ordered tab list: [id, { tabEl, paneEl }] in
  *             tab-creation order (the flat strip's order) */
 export function projectSplitDom(els, split, on, entries) {
-  const { tabhost, tabstrip, tabbar, actionsEl, actionsHome, emptyEl, onResize } = els;
+  const { tabhost, tabstrip, tabbar, actionsEl, actionsHome, onResize } = els;
   const doc = tabbar.ownerDocument;
   const focused = doc.activeElement;
   const active = on && !!split;
@@ -98,7 +121,6 @@ export function projectSplitDom(els, split, on, entries) {
       actionsEl[MARKER].replaceWith(actionsEl);
       actionsEl[MARKER] = null;
     } else if (actionsEl.parentNode !== actionsHome) actionsHome.append(actionsEl);
-    emptyEl.remove();
     const cells = tabhost.querySelectorAll(":scope > .group-cell");
     if (cells.length) {
       for (const [, t] of entries) {
@@ -115,6 +137,7 @@ export function projectSplitDom(els, split, on, entries) {
   let cellAnchor = null;
   for (const group of split.groups) {
     const cell = ensureCell(tabhost, cellAnchor, group);
+    setClass(cell, "focused-group", group.id === split.focusedGroup);
     if (Number.isFinite(group.weight) && group.weight > 0) cell.style.flexGrow = String(group.weight);
     cellAnchor = cell;
     const bar = cell.querySelector(":scope > .group-tabbar");
@@ -141,9 +164,7 @@ export function projectSplitDom(els, split, on, entries) {
       if (!inPlace) paneAnchor.after(t.paneEl);
       paneAnchor = t.paneEl;
     }
-    if (!group.tabs.length) {
-      if (emptyEl.parentNode !== cell) cell.append(emptyEl);
-    } else if (emptyEl.parentNode === cell) emptyEl.remove();
+    projectEmpty(cell, group, els);
   }
   // groups that no longer exist: their cells disappear (panes/tabs of the
   // survivors were re-homed above; a closed tab's nodes are already gone)

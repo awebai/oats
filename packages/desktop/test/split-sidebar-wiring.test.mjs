@@ -73,7 +73,9 @@ test("shell registers the split and sidebar actions and exposes them in the pale
 
 test("splits are terminal-only, route through editor-group transitions, and restore per workspace", () => {
   const src = read("renderer/shell.mjs");
-  assert.match(src, /if \(!t \|\| t\.kind !== "terminal"\) return; \/\/ splits are terminal-only/);
+  assert.match(src, /const controls = splitControlsState\(split, activeTab, t\?\.kind \?\? null, tabLayerVisible\)/);
+  assert.match(src, /if \(!\(orientation === "row" \? controls\.splitRow : controls\.splitCol\)\) return/,
+    "actions share terminal/empty-group gating with controls");
   // activation routes through the SAME tab path every open uses — identity
   // resolution and dedup are untouched (soul invariant): members focus
   // their group; NEW terminal tabs open into the FOCUSED group.
@@ -149,9 +151,10 @@ test("pane-selection disposer removes pointer and focus entry listeners", () => 
 test("closing the active split member activates the model-chosen successor, not the newest tab", () => {
   const src = read("renderer/shell.mjs");
   assert.match(src, /const splitSuccessor = activeTab === id \? removed\.successor : null/,
-    "successor comes from the model's removeSplitTab (adjacent in the group, else neighbor group's active)");
-  assert.match(src, /if \(splitSuccessor != null && tabs\.has\(splitSuccessor\)\) \{\n\s*activateTab\(splitSuccessor\)/,
-    "split successor wins over fallbackTabForContext");
+    "successor comes from the model's removeSplitTab (adjacent within the group only)");
+  assert.match(src, /const next = activeTab === id \? splitSuccessor : activeTab/);
+  assert.match(src, /activateTab\(next, \{ keepGroupFocus: true \}\)/,
+    "in-group successor or empty selection wins without resetting the chosen destination");
 });
 
 test("shipped addTab wires visible pane entry through selectTab, without treating programmatic focus as user intent", () => {
@@ -214,7 +217,7 @@ test("activateTab keeps single-selection a11y per surface: one aria-selected per
     "shown group-active panes stay .active so their ResizeObservers refit");
 });
 
-test("splitPane → activateTab → open terminal fills the NEW group (review ddbbe3b blocker)", () => {
+test("splitPane → empty selection → open terminal fills the NEW group (review ddbbe3b blocker)", () => {
   // Reproduce the shell's REAL sequence with the model transitions the
   // wiring pins bind it to: splitPane runs requestSplit (focuses the new
   // empty group) and then re-renders via activateTab with keepGroupFocus —
@@ -222,14 +225,14 @@ test("splitPane → activateTab → open terminal fills the NEW group (review dd
   // source member and the next terminal opens in the ORIGINAL group,
   // leaving the empty group unreachable.
   const src = read("renderer/shell.mjs");
-  assert.match(src, /activateTab\(activeTab, \{ keepGroupFocus: true \}\)/,
+  assert.match(src, /activateTab\(focused\.activeTab, \{ keepGroupFocus: true \}\)/,
     "splitPane re-renders without moving group focus");
   assert.match(src, /split && !keepGroupFocus\) \{/,
     "activateTab honors keepGroupFocus before focusTab/openTabInFocusedGroup");
   // model-level replay of the full sequence
   let split = requestSplit(null, "row", [1, 2], 1).split;
   const newGroup = split.focusedGroup;
-  // splitPane's re-render: activateTab(activeTab, { keepGroupFocus: true })
+  // splitPane's re-render: activateTab(focused.activeTab, { keepGroupFocus: true })
   // skips the member transition entirely — group focus stays on the new group
   assert.equal(split.focusedGroup, newGroup);
   // the next terminal the user opens (roster/palette/quick-open → addTab →

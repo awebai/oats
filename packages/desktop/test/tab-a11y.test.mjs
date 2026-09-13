@@ -101,7 +101,7 @@ for (const grouped of [false, true]) test(`${grouped ? "grouped" : "flat"} tab k
     }
   }
   const context = {
-    activeTab: 1, tabs, tabKeyAction, groupOfTab,
+    activeTab: 1, tabLayerVisible: true, tabs, tabKeyAction, groupOfTab,
     split: grouped ? { orientation: "row", focusedGroup: 1, groups: [
       { id: 1, tabs: [1, 2, 3], activeTab: 1 }, { id: 2, tabs: [4], activeTab: 4 },
     ] } : null,

@@ -7,6 +7,7 @@ import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { canActivateTab, tabVisibleInContext } from "../renderer/workspace-tabs.mjs";
 import { createTabChrome } from "../renderer/tab-a11y.mjs";
 import { createIntentGate } from "../renderer/open-intent.mjs";
+import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import {
   requestSplit, openTabInFocusedGroup, focusTab, groupOfTab, isSplitMember, resizeSplitGroups,
@@ -34,12 +35,12 @@ function shell(t) {
   const context = {
     document, tabs, tabbar, tabhost, focusCalls,
     stageHost: document.getElementById("stagehost"), stage: { name: "hierarchy" },
-    tabActionsEl: document.getElementById("tab-actions"), splitEmptyEl: document.createElement("div"),
+    tabActionsEl: document.getElementById("tab-actions"),
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     split: null, activeTab: null, sidebarMode: "overview", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [],
     workspaceTabMemory: createWorkspaceTabMemory(), wsActiveTerminal: new Map(),
-    brainIntents: createIntentGate(), tabOpenIntents: createIntentGate(),
+    brainIntents: createIntentGate(),
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview",
     setNavActive() {}, refreshContextRoster() {}, renderContextRoster(list) { assert.equal(list.length, 0); },
     updateSplitControls() {},
@@ -48,8 +49,9 @@ function shell(t) {
     canActivateTab, tabVisibleInContext, projectSplitDom, resizeSplitGroups,
     isSplitMember, groupOfTab, focusTab, openTabInFocusedGroup,
   };
+  context.tabOpenIntents = createSelectionOwnership(context);
   const api = runInNewContext([
-    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "activateTab", "restoreWorkspaceTabs",
+    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "restoreWorkspaceTabs",
   ].map(shellFunction).join("\n") + "\n({ activateTab, restoreWorkspaceTabs, renderSplit });", context);
   return { ...api, context, document, tabs, switchTo(workspace) {
     context.workspace = workspace; context.generation++;
@@ -120,9 +122,12 @@ test("memory snapshots do not alias callers and never resurrect closed/foreign t
   split.groups[0].tabs.push(999);
   const entries = new Map([[1, { kind: "terminal", workspace: "A" }], [2, { kind: "terminal", workspace: "B" }]]);
   const state = memory.recall("A", entries);
-  assert.equal(state.activeTab, 1); assert.equal(state.split, null);
+  assert.equal(state.activeTab, null, "pruned active tab leaves its destination empty, not a different terminal selected");
+  assert.deepEqual(state.split.groups.map(g => g.tabs), [[1], []]);
+  assert.equal(state.split.focusedGroup, 2);
   assert.equal(state.tabLayerVisible, true);
   const empty = memory.recall("A", []);
-  assert.equal(empty.activeTab, null); assert.equal(empty.tabLayerVisible, false);
+  assert.equal(empty.activeTab, null); assert.equal(empty.tabLayerVisible, true);
+  assert.deepEqual(empty.split.groups.map(g => g.tabs), [[], []]);
   assert.equal(memory.recall("B", entries).split, null);
 });

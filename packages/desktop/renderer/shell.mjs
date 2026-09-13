@@ -460,6 +460,10 @@ function showTerminalContext() {
   // Per-workspace active-tab memory: switching back to a workspace restores
   // the terminal that was active there (stale/foreign keys fall back to the
   // most recently opened terminal of the workspace).
+  if (split) {
+    const focused = split.groups.find(g => g.id === split.focusedGroup);
+    if (activateTab(focused?.activeTab ?? null, { keepGroupFocus: true })) return;
+  }
   const ws = currentWorkspace();
   const restored = restoreTerminalTab(tabs, ws, wsActiveTerminal.get(ws));
   if (restored) { activateTab(restored[0]); return; }
@@ -501,24 +505,36 @@ const fileOpener = createFileOpener({
 // Terminal FitAddon refit is automatic: each tab's ResizeObserver fires
 // when its pane is resized by the layout.
 let split = null; // editor-group model (split-layout.mjs) | null
-const splitEmptyEl = (() => {
-  const el = document.createElement("div");
-  el.className = "split-empty";
-  el.setAttribute("role", "note");
-  el.textContent = "Select an instance from the sidebar (or the palette) to fill this group";
-  return el;
-})();
-
 function renderSplit(splitVisible) {
   const generation = workspaceGeneration();
-  projectSplitDom({
+  let cells;
+  // Reprojection may restore a moved trigger/input/placeholder's DOM focus.
+  // That focusin is not a second selection (including side-effect restores).
+  tabOpenIntents.applyFocus(() => projectSplitDom({
     tabhost, tabstrip: document.getElementById("tabstrip"), tabbar,
     actionsEl: tabActionsEl, actionsHome: document.getElementById("tabbar-row"),
-    emptyEl: splitEmptyEl,
-    onResize: sizes => {
-      if (generation === workspaceGeneration()) split = resizeSplitGroups(split, sizes);
+    isApplyingFocus: tabOpenIntents.isApplyingFocus,
+    onSelectEmpty: (groupId, cell) => {
+      if (generation !== workspaceGeneration() || !tabLayerVisible || !splitVisible
+          || cell.parentNode !== tabhost) return;
+      selectEmptyGroup(groupId); // validates LIVE model membership/emptiness
     },
-  }, split, splitVisible, [...tabs]);
+    onResize: sizes => {
+      if (generation === workspaceGeneration() && tabLayerVisible && splitVisible && cells?.length
+          && cells.every(cell => cell.parentNode === tabhost
+          && split?.groups.some(g => String(g.id) === cell.dataset.group))) split = resizeSplitGroups(split, sizes);
+    },
+  }, split, splitVisible, [...tabs]));
+  cells = [...tabhost.querySelectorAll(":scope > .group-cell")];
+}
+
+/** Explicit empty-destination selection. Never leave terminal commands aimed
+ * at the previously active tab; projection and native focus are separate. */
+function selectEmptyGroup(groupId) {
+  if (!tabLayerVisible || !split?.groups.some(g => g.id === groupId && !g.tabs.length)) return false;
+  tabOpenIntents.invalidate();
+  split = { ...split, focusedGroup: groupId };
+  return activateTab(null, { keepGroupFocus: true });
 }
 
 // ── tab-strip split controls: clickable twins of the split.* actions ──
@@ -542,7 +558,8 @@ function updateSplitControls() {
 
 function splitPane(orientation) {
   const t = tabs.get(activeTab);
-  if (!t || t.kind !== "terminal") return; // splits are terminal-only
+  const controls = splitControlsState(split, activeTab, t?.kind ?? null, tabLayerVisible);
+  if (!(orientation === "row" ? controls.splitRow : controls.splitCol)) return; // terminal layer only
   // The first split seeds group 1 with ALL of the layer's current terminal
   // tabs (they stay together — human requirement) and creates a focused
   // empty group; further splits add a group after the focused one.
@@ -553,20 +570,38 @@ function splitPane(orientation) {
   split = r.split;
   if (!r.changed) return;
   tabOpenIntents.invalidate();
-  // Re-render WITHOUT moving group focus: requestSplit just focused the new
-  // empty group (VS Code: the created group is the active one — the next
-  // terminal opens THERE); a plain activateTab would focusTab the source
-  // member and steal the focus back (review ddbbe3b blocker).
-  activateTab(activeTab, { keepGroupFocus: true });
+  // A newly focused empty group has no active terminal. Reproject without
+  // re-selecting the source tab and silently stealing the destination back.
+  const focused = split.groups.find(g => g.id === split.focusedGroup);
+  activateTab(focused.activeTab, { keepGroupFocus: true });
   // an empty focused group is filled by picking an instance — take the user there
-  if (split?.groups.some((g) => !g.tabs.length)) focusRoster();
+  if (!focused.tabs.length) focusRoster();
 }
 
 function closeSplit() {
   tabOpenIntents.invalidate();
   if (!split) return;
   split = null;
+  renderSplit(false); // also clears cells/controls when activeTab is null
+  if (!tabLayerVisible) { updateSplitControls(); return; }
   if (activeTab != null) activateTab(activeTab);
+  else {
+    showTerminalContext(); // join surviving terminals, or return to the stage
+    if (activeTab != null) tabs.get(activeTab)?.triggerEl.focus();
+    else focusAfterLastTab("terminal", { instancesEntry: contextRosterEl?.querySelector(".ctx-filter") });
+  }
+  updateSplitControls();
+}
+
+/** Return from a stage/file without opening an instance just to recover empty
+ * destinations. Explicit, palette-discoverable; no new default shortcut. */
+function restoreTerminalGroups() {
+  if (!split) return;
+  tabOpenIntents.invalidate();
+  showTerminalContext();
+  if (activeTab == null) tabOpenIntents.applyFocus(() => {
+    tabhost.querySelector(".focused-group > .split-empty")?.focus();
+  });
 }
 
 /** key: optional dedup key — activating an existing tab instead of opening a
@@ -579,7 +614,8 @@ function onTabKeydown(e, id) {
   // Per-group keyboard navigation: while the split renders, arrows/Home/End
   // walk the CLOSED SET of the tab's own group strip (each .group-tabbar is
   // its own tablist); the flat strip walks all context-visible tabs.
-  const group = tabs.get(activeTab)?.kind === "terminal" ? groupOfTab(split, id) : null;
+  const group = tabLayerVisible && (activeTab == null || tabs.get(activeTab)?.kind === "terminal")
+    ? groupOfTab(split, id) : null;
   const visible = group
     ? group.tabs.map((tid) => [tid, tabs.get(tid)]).filter(([, t]) => t)
     : [...tabs].filter(([, t]) => !t.tabEl.hidden);
@@ -646,7 +682,8 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   const current = tabs.get(id);
   // Hidden is not security: reject every cross-workspace artifact activation at
   // the mutation boundary before its pane can become active/receive input.
-  if (!canActivateTab(current, currentWorkspace())) return false;
+  const emptyFocused = id == null && !!split?.groups.some(g => g.id === split.focusedGroup && !g.tabs.length);
+  if (!emptyFocused && !canActivateTab(current, currentWorkspace())) return false;
   activeTab = id;
   if (current?.kind === "terminal" && split && !keepGroupFocus) {
     // Editor-group semantics: an existing member activation moves its
@@ -660,7 +697,7 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   if (current?.kind === "terminal" && current.workspace) {
     wsActiveTerminal.set(current.workspace, current.key);
   }
-  if (current?.kind === "terminal") {
+  if (current?.kind === "terminal" || emptyFocused) {
     setSidebarMode("instances");
     setNavActive(null);
     refreshContextRoster();
@@ -675,11 +712,11 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
     setNavActive(sidebarMode === "souls" ? "spawn" : null);
   }
   showTabLayer(true);
-  // The split renders while the ACTIVE tab is a terminal (the split is a
-  // terminal-layer arrangement); activating a non-terminal tab (file/brain)
+  // The split renders for a terminal OR its empty focused destination;
+  // activating a non-terminal tab (file/brain)
   // COVERS it without destroying the group state — the split re-materializes
   // when the user returns to a terminal tab.
-  const splitVisible = !!split && current?.kind === "terminal";
+  const splitVisible = !!split && (current?.kind === "terminal" || emptyFocused);
   for (const [tid, t] of tabs) {
     const selected = tid === id;
     // Per-group a11y: while the split renders, each .group-tabbar is its
@@ -718,19 +755,22 @@ function closeTab(id, restoreFocus = false, { explicit = true } = {}) {
   t.paneEl.remove();
   tabs.delete(id);
   const wasSplitMember = isSplitMember(split, id);
-  // The model chooses the successor (adjacent tab IN THE CLOSED TAB'S GROUP,
-  // else the neighbor group's active tab when the group collapses) — a
-  // surviving split tab must win over the generic most-recent-tab fallback,
-  // or an unrelated newer terminal covers the split (review 156cbc7).
+  // Closing a tab never closes a destination. If the terminal layer is
+  // visible, stay in its focused group even when it (or every group) is empty.
   const removed = removeSplitTab(split, id);
   const splitSuccessor = activeTab === id ? removed.successor : null;
-  split = removed.split; // collapses to flat when one group remains
+  split = removed.split;
+  if (wasSplitMember && tabLayerVisible
+      && (activeTab == null || activeTab === id || tabs.get(activeTab)?.kind === "terminal")) {
+    const next = activeTab === id ? splitSuccessor : activeTab;
+    activateTab(next, { keepGroupFocus: true });
+    if (restoreFocus) tabOpenIntents.applyFocus(() => {
+      if (next != null) tabs.get(next)?.triggerEl.focus();
+      else tabhost.querySelector(".focused-group > .split-empty")?.focus();
+    });
+    return;
+  }
   if (activeTab === id) {
-    if (splitSuccessor != null && tabs.has(splitSuccessor)) {
-      activateTab(splitSuccessor);
-      if (restoreFocus) tabs.get(splitSuccessor).triggerEl.focus();
-      return;
-    }
     const fallback = fallbackTabForContext(tabs, sidebarMode, currentWorkspace());
     if (fallback) {
       activateTab(fallback[0]);
@@ -752,7 +792,7 @@ function closeTab(id, restoreFocus = false, { explicit = true } = {}) {
     tabs.get(activeTab)?.triggerEl.focus();
   }
   // a member closed while another member stayed active: re-render the layout
-  if (wasSplitMember && activeTab != null && activeTab !== id) activateTab(activeTab);
+  if (wasSplitMember && activeTab != null && activeTab !== id) activateTab(activeTab, { keepGroupFocus: true });
 }
 
 // ── view host: load ./views/<name>.mjs, mount into a tab ─────────────────
@@ -1033,6 +1073,7 @@ const palette = createPalette({
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
     { label: "Split: terminal right (side by side)", detail: chordDetail("split.vertical"), run: () => splitPane("row") },
     { label: "Split: terminal down (stacked)", detail: chordDetail("split.horizontal"), run: () => splitPane("col") },
+    { label: "Split: return to terminal groups", detail: chordDetail("split.restore"), run: () => restoreTerminalGroups() },
     { label: "Split: close (back to single pane)", detail: chordDetail("split.close"), run: () => closeSplit() },
     { label: "Terminal: focus the active terminal input", detail: chordDetail("terminal.focusActive"), run: () => focusActiveTerminal() },
     { label: "Terminal: increase font size", detail: chordDetail("terminal.fontBigger"), run: () => setTerminalFontSize(terminalTypography().fontSize + 1) },
@@ -1157,6 +1198,8 @@ registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "gl
 registerAction({ id: "split.vertical", label: "Split terminal right (side by side)", context: "tabs", run: () => splitPane("row") });
 registerAction({ id: "split.horizontal", label: "Split terminal down (stacked)", context: "tabs", run: () => splitPane("col") });
 registerAction({ id: "split.close", label: "Close the split (single pane)", context: "tabs", run: () => closeSplit() });
+// Recovery must also work from the stage. No new default keyboard binding.
+registerAction({ id: "split.restore", label: "Return to terminal groups", context: "global", run: () => restoreTerminalGroups() });
 // No defaultChord (documented): safe candidates are exhausted — rebindable in the editor.
 registerAction({ id: "terminal.focusActive", label: "Focus the active terminal input", context: "global", run: () => focusActiveTerminal() });
 registerAction({ id: "terminal.fontBigger", label: "Terminal: increase font size", context: "global", run: () => setTerminalFontSize(terminalTypography().fontSize + 1) });

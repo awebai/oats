@@ -29,15 +29,12 @@ function dom() {
 }
 
 function shellEls(doc) {
-  const emptyEl = doc.createElement("div");
-  emptyEl.className = "split-empty";
   return {
     tabhost: doc.getElementById("tabhost"),
     tabstrip: doc.getElementById("tabstrip"),
     tabbar: doc.getElementById("tabbar"),
     actionsEl: doc.getElementById("tab-actions"),
     actionsHome: doc.getElementById("tabbar-row"),
-    emptyEl,
   };
 }
 
@@ -84,7 +81,8 @@ test("splitting projects one group-cell per group: group strip with the REAL tab
   for (const id of [1, 2, 3]) assert.equal(tabs.get(id).paneEl.parentNode, cells[0]);
   assert.equal(doc.getElementById("tabbar").querySelector(".tab"), null, "flat strip emptied");
   // the new (focused) empty group shows the placeholder, no tabs
-  assert.equal(els.emptyEl.parentNode, cells[1]);
+  assert.ok(cells[1].querySelector(":scope > .split-empty"));
+  assert.equal(cells[1].querySelector(".split-empty").tabIndex, 0);
   // the split controls ride the FOCUSED group's strip
   assert.equal(els.actionsEl.parentNode, cells[1].querySelector(".group-tabbar"));
 });
@@ -104,7 +102,7 @@ test("new tab opens into the FOCUSED group's strip; the old flat strip stays hid
   const cells = [...els.tabhost.querySelectorAll(":scope > .group-cell")];
   assert.equal(cells[1].querySelector(".tab"), tabs.get(2).tabEl, "tab 2 opened into the focused group");
   assert.equal(tabs.get(2).paneEl.parentNode, cells[1]);
-  assert.equal(els.emptyEl.parentNode, null, "placeholder leaves once the group fills");
+  assert.equal(els.tabhost.querySelector(".split-empty"), null, "placeholder leaves once the group fills");
 });
 
 test("projection is idempotent — an in-place node is never re-inserted (pointerdown-tear guard)", () => {
@@ -144,7 +142,7 @@ test("switching the active tab within a group re-projects without dismantling th
   assert.equal(els.actionsEl.parentNode, cells[0].querySelector(".group-tabbar"));
 });
 
-test("collapsing to one group restores the flat layout byte-identical to the pre-split DOM (regression guard)", () => {
+test("explicit Close split restores the flat layout byte-identical to the pre-split DOM (regression guard)", () => {
   const { window } = dom();
   const doc = window.document;
   const tabs = makeTabs(doc, [1, 2, 3]);
@@ -178,7 +176,7 @@ test("covering the split (non-member tab active) hides it without destroying gro
   assert.equal(els.tabhost.querySelectorAll(":scope > .group-cell").length, 2, "split re-materializes");
 });
 
-test("a removed group's cell disappears; survivors keep their cells (stable data-group identity)", () => {
+test("closing a group's last tab retains its empty cell and every other cell (stable data-group identity)", () => {
   const { window } = dom();
   const doc = window.document;
   const tabs = makeTabs(doc, [1, 2, 3]);
@@ -188,14 +186,14 @@ test("a removed group's cell disappears; survivors keep their cells (stable data
   split = requestSplit(split, "row", null, null).split;
   split = openTabInFocusedGroup(split, 3).split; // [1] [2] [3]
   projectSplitDom(els, split, true, [...tabs]);
-  const keepCell = els.tabhost.querySelector('.group-cell[data-group="1"]');
+  const before = [...els.tabhost.querySelectorAll(":scope > .group-cell")];
   ({ split } = removeSplitTab(split, 2));
   // tab 2's nodes leave the DOM the way closeTab removes them
   tabs.get(2).tabEl.remove(); tabs.get(2).paneEl.remove(); tabs.delete(2);
   projectSplitDom(els, split, true, [...tabs]);
   const cells = [...els.tabhost.querySelectorAll(":scope > .group-cell")];
-  assert.equal(cells.length, 2);
-  assert.equal(cells[0], keepCell, "surviving group keeps its cell node");
+  assert.deepEqual(cells, before, "every group keeps its cell node");
+  assert.ok(cells[1].querySelector(".split-empty"), "closed last tab leaves its own placeholder");
 });
 
 test("projection preserves keyboard focus on the focused tab trigger across regrouping (a11y)", () => {

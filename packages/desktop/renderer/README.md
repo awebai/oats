@@ -69,8 +69,8 @@ GROUPS on the tab layer: each group owns an ordered tab list and its own
 active tab, and renders its own tab strip (`.group-tabbar`, a per-group
 tablist holding the group's REAL tab elements) above its pane inside a
 `.group-cell` flex cell of `#tabhost`. The first split seeds group 1 with
-ALL of the layer's current terminal tabs (the current tab stays active) and
-creates a new empty group that takes focus — the next terminal opened from
+ALL of the layer's current terminal tabs (its selected tab stays visible) and
+creates a new empty group that takes focus with no globally active tab — the next terminal opened from
 any path (sidebar roster, palette, quick-open) lands in the FOCUSED group
 (`openTabInFocusedGroup`); group focus follows the active tab (`focusTab`).
 Switching tabs within a group, or focusing another group, never dismantles
@@ -80,12 +80,17 @@ focused group with a placeholder plays that role directly. While the split
 is visible the top `#tabstrip` row is hidden (each group has its own strip;
 keeping the old row would render an empty phantom chrome bar) and the split
 controls (`#tab-actions`) ride the focused group's strip. Activating a
-non-terminal tab covers the split without destroying group state; closing a
-group's last tab collapses the group, and down to one group the flat
-single-strip layout returns byte-identical to the non-split shell
-(regression-pinned). Closing a group's active tab activates its adjacent
-group-mate (else the neighbor group's active tab) — never an unrelated
-newer terminal. Clickable controls mirror the chords with no duplicated
+non-terminal tab covers the split without destroying group state. Closing a tab
+**does not close its panel**: empty panels retain their identities and proportions.
+Each has an independent focusable placeholder; selecting it clears `activeTab`,
+so tab/terminal commands cannot accidentally target the previous instance.
+Reopening an instance enters that selected panel; selecting an already-open
+instance into it moves the existing tab without another attachment. Closing an
+active tab selects its adjacent group-mate, or leaves that panel empty.
+
+**Close split** explicitly joins back to the flat strip. **Split: return to terminal
+groups** in the palette restores a covered layout, including an all-empty one.
+There is no new default shortcut. Clickable controls mirror the chords with no duplicated
 logic: the split buttons and the sidebar toggles (rail-footer button + the
 thin `#sidebar-restore` edge button shown while hidden) all dispatch the
 registered actions through `runAction(id)` — context-gated exactly like
@@ -100,8 +105,9 @@ tablist with a single selected, tabbable trigger; arrows walk the group).
 orientation, proportions, selected tabs and focused group for the current app
 session. Workspace switches hide all outgoing panes synchronously and park their
 DOM nodes before restoring the destination layout; existing terminal attachments
-are retained, not recreated. A workspace with no remembered tabs shows the stage.
-Restart restoration of tab layouts is not implemented yet.
+are retained, not recreated. Empty layouts and their focused destinations are
+remembered too; only a workspace with neither open tabs nor a retained layout
+falls back to the stage. Restart restoration of tab layouts is not implemented yet.
 
 All artifact tabs (terminal, brain, file) are workspace-scoped, including their
 activation boundary and deduplication keys. A retained brain tab has a pinned

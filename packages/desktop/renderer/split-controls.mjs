@@ -12,13 +12,15 @@ import { requestSplit } from "./split-layout.mjs";
  *   tabLayerOn — whether the tab layer is the visible surface
  * Returns { visible, splitRow, splitCol, close } where splitRow/splitCol/
  * close are booleans: whether that control is enabled. The controls are
- * visible only while the tab layer shows a TERMINAL tab (splits are
- * terminal-only, same guard as splitPane); enablement mirrors the model:
+ * visible for a terminal OR a focused empty terminal group (never for
+ * files/brains or the stage). Enablement mirrors the model:
  * a split request that would not change the model (an empty group already
  * waiting with the same orientation, MAX_SPLIT_GROUPS reached) renders
  * disabled, and close is enabled only while a split exists. */
 export function splitControlsState(split, activeId, activeKind, tabLayerOn) {
-  const visible = !!tabLayerOn && activeKind === "terminal" && activeId != null;
+  const emptyFocused = activeId == null && !!split?.groups.some(g =>
+    g.id === split.focusedGroup && !g.tabs.length);
+  const visible = !!tabLayerOn && ((activeKind === "terminal" && activeId != null) || emptyFocused);
   if (!visible) return { visible: false, splitRow: false, splitCol: false, close: false };
   const seed = [activeId]; // flat-state dry-run: any layer containing the active tab
   return {
