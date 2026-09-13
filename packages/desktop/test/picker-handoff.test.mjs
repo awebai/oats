@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createPalette } from "../renderer/palette.mjs";
 import { createQuickOpen } from "../renderer/quick-open.mjs";
+import { createKeybindingsEditor } from "../renderer/keybindings-editor.mjs";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function deferred() {
@@ -59,6 +60,30 @@ function setup(t, options = {}) {
   };
   return { dom, doc, opener, destination, palette, quickOpen, picks, key, handoff, openerFocuses: () => openerFocuses };
 }
+
+test("shortcuts editor takes over an open picker and returns its logical opener", async t => {
+  const f = setup(t);
+  const editor = createKeybindingsEditor({ doc: f.doc, isMac: true });
+  t.after(() => editor.close());
+  await f.palette.open();
+  f.doc.addEventListener("keydown", event => {
+    if (event.metaKey && event.key === ",") { event.preventDefault(); editor.open(); }
+  });
+  f.key(",", { metaKey: true });
+  const dialog = f.doc.querySelector(".kb-editor");
+  assert.ok(dialog);
+  assert.equal(f.doc.querySelectorAll(".palette-overlay").length, 1);
+  assert.equal(f.doc.querySelector(".palette-input"), null, "old picker and its trap are gone");
+  assert.ok(dialog.contains(f.doc.activeElement));
+  const buttons = [...dialog.querySelectorAll("button:not([disabled])")];
+  buttons.at(-1).focus();
+  f.key("Tab");
+  assert.equal(f.doc.activeElement, buttons[0], "Tab wraps in the editor, not the removed picker");
+  f.key("Escape");
+  assert.equal(f.doc.querySelector(".kb-editor"), null);
+  assert.equal(f.doc.activeElement, f.opener);
+  assert.equal(f.openerFocuses(), 1, "no transient opener focus during activation");
+});
 
 function modal(doc, name, { loading = false } = {}) {
   assert.equal(doc.querySelectorAll(".palette-overlay").length, 1, "only one picker can trap focus in a document");

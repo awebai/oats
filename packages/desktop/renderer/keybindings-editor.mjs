@@ -11,6 +11,7 @@ import {
   onKeymapChange, findConflict, formatChord, chordFromEvent, chordToString,
   isPlainChord, DEFAULT_KEYMAP,
 } from "./keybindings.mjs";
+import { takePickerFocusReturn } from "./overlay-picker.mjs";
 
 const CONTEXT_LABELS = {
   global: "Global",
@@ -57,13 +58,16 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
     endRecording(); // the capture listener must not outlive the dialog
     offKeymap?.(); offKeymap = null;
     overlay.remove(); overlay = null;
-    try { restoreFocus?.focus?.(); } catch { /* focus target may be gone */ }
+    try { restoreFocus?.restore(); } catch { /* focus target may be gone */ }
     restoreFocus = null;
   }
 
   function open() {
-    if (overlay) return;
-    restoreFocus = doc.activeElement;
+    // Direct Mod+, must release an existing picker exactly like a palette-row
+    // handoff, without leaving its document-level focus trap behind the editor.
+    const opener = takePickerFocusReturn(doc);
+    if (overlay) { overlay.querySelector(".kb-close").focus(); return; }
+    restoreFocus = opener;
     overlay = doc.createElement("div");
     overlay.className = "palette-overlay kb-overlay";
     overlay.innerHTML = `

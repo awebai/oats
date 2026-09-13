@@ -210,9 +210,11 @@ Implemented in this increment:
 
 Verification of the current increment:
 
-- **833 Desktop tests passed**; renderer syntax and AA inventory included.
+- **834 Desktop tests passed** after the final picker-to-shortcuts handoff fix;
+  renderer syntax and AA inventory included.
 - Root check/check:pi/validate/validate:okf/pack:check/smoke:tarball passed.
-- Full root suite: **1,818 passed, 5 failed, 1 skipped**. Failures remain in the
+- Last full root run (before that final handoff-only follow-up): **1,818 passed,
+  5 failed, 1 skipped**. Failures remain in the
   unchanged CLI JSON/harvest, remote-server and session start/restart suites.
 - Two live runs used the real renderer and existing dev harness with synthetic
   roster/CLI/terminal bridges, plus a real confined read-only backend observation.

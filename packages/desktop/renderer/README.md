@@ -52,11 +52,11 @@ light, WCAG AA); views style themselves against tokens only, scoped under
   negative), and the stale-load generation guard.
 - **quick-open.mjs** — Quick Open for souls (`Mod+P`, also “Souls: quick
   open…” in the palette): fuzzy-find a soul from the Spawn view's data
-  source and hand off to the Spawn view's own form flow —
-  `views/spawn.mjs` `preselectSoul()` opens the spawn modal for a
-  spawnable soul on a verified CLI, and otherwise (attached-only, CLI
-  pending/unavailable) focuses the soul's card so the existing degradation
-  UI explains the state. No second spawn form exists.
+  source and hand off to soul inspection through `views/spawn.mjs`
+  `preselectSoul()`. Inspection does not launch an instance or open the Spawn
+  dialog; **Launch…** is a separate explicit action. Attached-only and CLI
+  pending/unavailable states remain visible through the existing view. No
+  second spawn form exists.
 - **keybindings-editor.mjs** — the shortcuts editor dialog (`Mod+,`):
   actions grouped by context, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
