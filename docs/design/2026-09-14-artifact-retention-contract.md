@@ -57,6 +57,18 @@ disappear. Internal relative symlinks retain their spelling. The source director
 is copied with the package engine's catchable copy routine, not linked or moved.
 File permissions are preserved; this uses the existing artifact digest format,
 which hashes file bytes and symlink targets, not Unix mode bits.
+At the consumer-migration boundary, introduce a versioned digest covering file
+bytes, symlink targets and each regular file's executable flag, normalized from
+the owner-execute bit (`(mode & 0o100) !== 0`). Apply the same digest rule to Git
+and local-path sources. Group/other execute bits depend on the acquiring user's
+umask and are not part of artifact identity. This models execution by the
+deployment operator who owns the materialized files; it is not a guarantee for
+arbitrary other operating-system principals.
+Keep the old format explicitly verifiable for pre-migration evidence; never
+reinterpret an old digest as covering modes. Other mode bits remain outside
+identity. Do not rewrite modes during retention or infer executable entrypoints
+by parsing free-form command/hook strings. This format change is not implemented
+by the current primitive.
 
 An existing revision is verified and reused. A damaged existing tree is an error,
 never an invitation to overwrite it. Publishing another revision leaves the first
@@ -84,6 +96,42 @@ runtime/session identity. It needs:
 - Every managed helper, command/hook and runtime resource required for later
   dispatch. Resource references resolve against retained artifact roots.
 
+The following contract decisions incorporate the external expert's review:
+
+- Imported and member-repository souls produce the same record shape: upstream
+  soul identity, exact retained source revision and adopter-local alias. Keep the
+  canonical repository and exported path in the source reference; the local alias
+  is not a global identity.
+- Retain soul source artifacts separately from capability artifacts, under the
+  deployment, keyed by qualified source identity and content digest. Do not encode
+  a soul as a capability helper. A shared leaf module may implement the tree-copy,
+  digest and publication mechanics, with different provenance validation for each
+  kind. Retain all declared source resources needed after preparation, not just
+  `soul.yaml` or a symlink into the author's checkout.
+  Source retention inherits the same typed absence, invalid-shape and integrity
+  refusals, including never silently repairing a damaged retained tree.
+- Store captured resolutions independently of instance homes so queued work can
+  retain a reference after its originating home is removed. Each instance and
+  independent execution references its exact resolution; conservative retention
+  applies to both source trees and resolution records.
+- Record provenance per effective choice: a soul requirement/default, workspace
+  default, import-entry adoption default or explicit operator choice. Preserve the
+  hard constraints as well as the selected values.
+- Record resolved non-secret provider bindings with separate credential references.
+  The default knowledge provider's payload includes store-qualified read nodes and
+  owned-node destinations. The kernel envelope does not require other knowledge
+  providers to implement OKF's owns/reads model.
+- Record the responsible human/private-team key and chosen wider-team references
+  for messaging-enabled instances. These capture the choice, not immutable live
+  membership or permission to read earlier conversations.
+- Existing-instance migration records `reconstructed`, `partial` or `unknown`
+  status with evidence and unresolved inputs. A partial or unknown record cannot
+  pass for a complete captured resolution in CLI or Desktop readiness.
+
+The scope is an explicit deployment directory. A standalone repository or an
+isolated user-data deployment uses the same store and APIs; no workspace Git
+repository or parent-directory discovery is required by retention.
+
 The deployment lock records current choices for new preparation. A captured
 resolution is the authority for its instance or queued work; it must not look up
 an older package row by ID in today's lock and accidentally acquire a new one.
@@ -99,6 +147,8 @@ Independent queued work retains the resolution it will execute, even after the
 originating instance or source soul has been removed. Recurring schedules must
 state whether they capture a composition or explicitly prepare a new one on a
 future tick; an already queued execution cannot silently advance either way.
+The proposed default is to capture the composition; re-preparation on later ticks
+is an explicit policy. Messaging-disabled jobs do not acquire a private team.
 
 ## Consumer migration
 
@@ -122,9 +172,10 @@ This is one coordinated change, not a permanent pair of resolution engines:
 The compatibility boundary includes `core.mjs` acquisition, restoration, trust,
 discovery, spawn, launch and retirement; package diagnostics and CLI paths; and
 the scheduler/operation callers. Each is a consumer to check, not a reason to
-create another config parser. Before integration, decide whether a small extraction
-of shared artifact helpers is needed to preserve module dependency direction:
-the new retention module currently consumes existing helpers from `core.mjs`.
+create another config parser. Before wiring core consumers, extract the shared
+artifact helpers into a narrow leaf module: `core.mjs` must not acquire a circular dependency on the retention module
+that currently consumes its helpers. Keep policy and lifecycle logic out of the
+shared leaf module.
 
 ## Evidence and limits
 
