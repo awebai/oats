@@ -58,7 +58,12 @@ is copied with the package engine's catchable copy routine, not linked or moved.
 File permissions are preserved; this uses the existing artifact digest format,
 which hashes file bytes and symlink targets, not Unix mode bits.
 At the consumer-migration boundary, introduce a versioned digest covering file
-bytes, symlink targets and the three executable permission bits (`mode & 0o111`).
+bytes, symlink targets and each regular file's executable flag, normalized from
+the owner-execute bit (`(mode & 0o100) !== 0`). Apply the same digest rule to Git
+and local-path sources. Group/other execute bits depend on the acquiring user's
+umask and are not part of artifact identity. This models execution by the
+deployment operator who owns the materialized files; it is not a guarantee for
+arbitrary other operating-system principals.
 Keep the old format explicitly verifiable for pre-migration evidence; never
 reinterpret an old digest as covering modes. Other mode bits remain outside
 identity. Do not rewrite modes during retention or infer executable entrypoints
@@ -103,6 +108,8 @@ The following contract decisions incorporate the external expert's review:
   digest and publication mechanics, with different provenance validation for each
   kind. Retain all declared source resources needed after preparation, not just
   `soul.yaml` or a symlink into the author's checkout.
+  Source retention inherits the same typed absence, invalid-shape and integrity
+  refusals, including never silently repairing a damaged retained tree.
 - Store captured resolutions independently of instance homes so queued work can
   retain a reference after its originating home is removed. Each instance and
   independent execution references its exact resolution; conservative retention
@@ -165,9 +172,8 @@ This is one coordinated change, not a permanent pair of resolution engines:
 The compatibility boundary includes `core.mjs` acquisition, restoration, trust,
 discovery, spawn, launch and retirement; package diagnostics and CLI paths; and
 the scheduler/operation callers. Each is a consumer to check, not a reason to
-create another config parser. Before integration, decide whether a small extraction
-of shared artifact helpers can be kept narrow, then perform it before wiring core
-consumers: `core.mjs` must not acquire a circular dependency on the retention module
+create another config parser. Before wiring core consumers, extract the shared
+artifact helpers into a narrow leaf module: `core.mjs` must not acquire a circular dependency on the retention module
 that currently consumes its helpers. Keep policy and lifecycle logic out of the
 shared leaf module.
 
