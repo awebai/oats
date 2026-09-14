@@ -2,7 +2,7 @@
   "packages": {
     "oats.okf": {
       "url": "https://github.com/awebai/oats-okf.git",
-      "ref": "v1.6.1",
+      "ref": "v2.0.0",
       "path": "oats-package"
     },
     "oats.aweb": {
@@ -28,6 +28,11 @@
     "oats.dev": {
       "url": "https://github.com/awebai/oats-dev.git",
       "ref": "v1.0.0",
+      "path": "oats-package"
+    },
+    "oats.knowledge-theory": {
+      "url": "https://github.com/awebai/oats.git",
+      "ref": "v0.23.0",
       "path": "oats-package"
     }
   },

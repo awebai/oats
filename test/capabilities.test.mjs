@@ -1,4 +1,6 @@
 import test from "node:test";
+import { fixture as okfFixture, CAP as OKF_CAP, json as writeJSON } from "./helpers/okf-v2.mjs";
+import { linkExecutables } from "./helpers/host-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -7,7 +9,7 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, createAgent, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
   listInstances, resolveClaudeBinary, resolveWorkMode, retireInstance, runLifecycleHooks, spawnInstance, writeCapabilityLock,
-} from "../lib/core.mjs";
+} from "@awebai/oats/core";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
@@ -29,6 +31,26 @@ function gitRepo(dir) {
   execFileSync("git", ["-C", dir, "add", "."]);
   execFileSync("git", ["-C", dir, "commit", "-qm", "init"]);
 }
+
+function installFixtureOkf(base, repo) {
+  const source = join(base, "okf-source"), bin = join(base, "acquire-bin"), home = join(base, "acquire-home");
+  mkdirSync(home); linkExecutables(bin, ["node", "git"]);
+  const env = { HOME: home, PATH: bin, OATS_HOME_DIR: join(home, ".oats"), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
+  const git = (...args) => execFileSync(join(bin, "git"), ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { env, stdio: "pipe" });
+  git("init", "-q", "-b", "main", source);
+  cpSync(OKF_CAP, join(source, "capabilities/okf"), { recursive: true, verbatimSymlinks: true });
+  assert.equal(readlinkSync(join(source, "capabilities/okf/agents/memory-harvest/CLAUDE.md")), "AGENTS.md");
+  const manifest = JSON.parse(readFileSync(join(OKF_CAP, "oats.json"), "utf8"));
+  writeJSON(join(source, "oats-package.json"), { package: "oats.okf", version: manifest.version, description: "Fixture OKF source", compatibility: manifest.compatibility, capabilities: ["capabilities/okf"] });
+  git("-C", source, "add", "-A");
+  git("-C", source, "commit", "-qm", "fixture payload");
+  const catalog = join(base, "catalog.json");
+  writeJSON(catalog, { packages: { "oats.okf": { url: source, path: "." } } });
+  const result = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8", env: { ...env, OATS_PACKAGE_CATALOG: catalog } });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  return result;
+}
+
 function capability(repo, folder, manifest, files = {}) {
   const dir = join(repo, ".agents", "capabilities", "owned", folder);
   write(join(dir, "oats.json"), JSON.stringify({ version: "1.0.0", compatibility: { oats: ">=0.6.2" }, description: "Test capability.", ...manifest }, null, 2));
@@ -653,7 +675,7 @@ test("cross-repo spawn resolves a sibling repo's soul via the team scope and hom
 });
 
 test("model preference lists resolve to the first available provider/model", async () => {
-  const { resolveModelPreference } = await import("../lib/core.mjs");
+  const { resolveModelPreference } = await import("@awebai/oats/core");
   // single entries and empties pass through untouched (no probe)
   assert.equal(resolveModelPreference("", "pi"), "");
   assert.equal(resolveModelPreference("github-copilot/claude-fable-5:high", "pi"), "github-copilot/claude-fable-5:high");
@@ -685,7 +707,7 @@ test("capability-defined agents resolve when active, home locally, and keep the 
   });
   write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
   const { findCapabilityAgent, listCapabilityAgents } = { findCapabilityAgent: undefined, listCapabilityAgents: undefined };
-  return import("../lib/core.mjs").then((core) => {
+  return import("@awebai/oats/core").then((core) => {
     const listed = core.listCapabilityAgents(repo);
     assert.deepEqual(listed.map((a) => a.name), ["reviewer"]);
     const agent = core.findCapabilityAgent(repo, root, "reviewer");
@@ -714,7 +736,7 @@ test("capability agents carry their own capability's skills regardless of target
   });
   // Targeted at a type the checker does NOT belong to — its own skills must still compose.
   write(join(repo, "oats-config.yaml"), "agent-types:\n  devs:\n    description: devs\ncapabilities:\n  additive:\n    acme.rev2:\n      agent-types:\n        devs: true\n");
-  return import("../lib/core.mjs").then((core) => {
+  return import("@awebai/oats/core").then((core) => {
     const agent = core.findCapabilityAgent(repo, root, "checker");
     assert.ok(agent, "checker resolves on declaration despite type targeting");
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
@@ -773,7 +795,7 @@ test("oats use --soul on a layer set to none creates a targeted binding with glo
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  r = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8" });
+  r = installFixtureOkf(base, repo);
   assert.equal(r.status, 0, r.stderr);
   write(join(repo, "agents", "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
   write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
@@ -803,7 +825,7 @@ test("--settings accepts multiple pairs per flag, repeated flags, and rejects ma
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  r = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8" });
+  r = installFixtureOkf(base, repo);
   assert.equal(r.status, 0, r.stderr);
   // One flag, multiple consecutive k=v pairs — all pairs land, none silently dropped.
   r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "site=acme", "project=core", "--dir", repo], { encoding: "utf8" });
@@ -812,7 +834,7 @@ test("--settings accepts multiple pairs per flag, repeated flags, and rejects ma
   r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "depth=low", "--settings", "site=umbrella", "--dir", repo], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
   const okf = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
-  // The pinned oats.okf (1.5.1) declares a settings default (harvest-runtime:
+  // OKF declares a settings default (harvest-runtime:
   // pi) that the kernel merges into the effective settings beneath the scope's.
   assert.deepEqual(okf.settings, { site: "umbrella", project: "core", depth: "low", "harvest-runtime": "pi" });
   // Malformed pair (missing '=') dies loudly.
@@ -930,6 +952,8 @@ test("marketplace automatic trust discloses environment before authority persist
   write(join(framework, "bin", "oats.mjs"), readFileSync(join(packageRoot, "bin", "oats.mjs")));
   write(join(framework, "package.json"), readFileSync(join(packageRoot, "package.json")));
   cpSync(join(packageRoot, "lib"), join(framework, "lib"), { recursive: true });
+  // Core now integrates execution-side native record custody.
+  cpSync(join(packageRoot, "packages", "record", "lib"), join(framework, "packages", "record", "lib"), { recursive: true });
   for (const dep of Object.keys(JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).dependencies || {})) {
     if (existsSync(join(packageRoot, "node_modules", dep))) cpSync(join(packageRoot, "node_modules", dep), join(framework, "node_modules", dep), { recursive: true });
   }
@@ -1296,7 +1320,7 @@ test("--parent accepts capability-defined parent instances homing under local-ag
     "agents/reviewer/AGENTS.md": "# Reviewer\n",
   });
   write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.rev:\n      global: true\n");
-  return import("../lib/core.mjs").then((core) => {
+  return import("@awebai/oats/core").then((core) => {
     const capAgent = core.findCapabilityAgent(repo, root, "reviewer");
     const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
     try {
@@ -2312,7 +2336,7 @@ test("traversal names are rejected: --parent and retire cannot reach outside ins
   let real;
   try { real = spawnInstance(root, agent, { instance: "dev-real", launch: false }); }
   finally { process.env.PATH = oldPath; }
-  return import("../lib/core.mjs").then((core) => {
+  return import("@awebai/oats/core").then((core) => {
     // Kernel: traversal / separator / dotted names never resolve…
     for (const bad of ["../../dev/soul", "..", "dev/soul", "./dev-real", "dev-real/../../soul"]) {
       assert.equal(core.findInstanceHome(root, bad), undefined, `rejected: ${bad}`);
@@ -2371,7 +2395,7 @@ test("local souls: --local creates a full gitignored soul beside agents/, with m
   const gi = readFileSync(join(repo, ".gitignore"), "utf8");
   assert.equal(gi.match(/local-agents\//g).length, 1, "gitignore entry not duplicated");
   // Roster sees local souls (root resolves through the sibling layout).
-  return import("../lib/core.mjs").then((core) => {
+  return import("@awebai/oats/core").then((core) => {
     const root = core.ensureRoot(repo);
     const agents = core.listAgents(root);
     const helper = agents.find((a) => a.name === "helper");
@@ -2392,45 +2416,33 @@ test("local souls: --local creates a full gitignored soul beside agents/, with m
   });
 });
 
-test("local souls get memory scaffolding from oats-okf; capability agents stay memory-less and skip the okf injection", () => {
-  const base = temp(); const { repo, root } = fixtureSoul(base);
-  // Bind oats.okf from the real package tree (owned copy so no lock needed).
-  const okfSrc = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
-  const dest = join(repo, ".agents", "capabilities", "owned", "oats-okf");
-  mkdirSync(dirname(dest), { recursive: true });
-  execFileSync("cp", ["-R", okfSrc, dest]);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      global: true\n");
-  capability(repo, "rev", { capability: "acme.rev", agents: ["agents/reviewer"] }, {
-    "agents/reviewer/soul.yaml": "name: reviewer\nkind: capability\nwork: checkout\nruntime: pi\ndescription: Reviewer.\n",
-    "agents/reviewer/AGENTS.md": "# Reviewer\n",
-  });
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      global: true\n  additive:\n    acme.rev:\n      global: true\n");
-  return import("../lib/core.mjs").then((core) => {
-    const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
-    try {
-      // Local soul: full memory scaffold + okf injection.
-      const local = core.upsertLocalAgent(root, { name: "scratch", instructions: "# scratch\n", repo });
-      assert.equal(local.kind, "local");
-      assert.ok(local._dir.includes(join(base, "local-agents")) || local._dir.includes("local-agents"), "homes under local-agents/");
-      const res = core.spawnInstance(root, local, { instance: "scratch-1", launch: false, repo });
-      assert.ok(existsSync(join(res.home, "STATE.md")), "local soul instance gets STATE.md");
-      assert.ok(existsSync(join(res.home, "notes")), "and notes/");
-      const agentsMd = readFileSync(join(res.home, "AGENTS.md"), "utf8");
-      assert.match(agentsMd, /Knowledge: OKF/);
-      assert.match(agentsMd, /Local soul \(uncommitted\)/);
-      // Capability agent: no memory files, no okf injection block.
-      const cap = core.findCapabilityAgent(repo, root, "reviewer");
-      const rev = core.spawnInstance(root, { ...cap, repo }, { instance: "reviewer-1", launch: false });
-      assert.ok(!existsSync(join(rev.home, "STATE.md")), "capability agent gets no STATE.md");
-      assert.doesNotMatch(readFileSync(join(rev.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
-      core.retireInstance(root, "scratch-1", { tmuxSession: "oats-test-nosuch" });
-      core.retireInstance(root, "reviewer-1", { tmuxSession: "oats-test-nosuch" });
-    } finally { process.env.PATH = oldPath; }
-  });
+test("local souls explicitly bind external OKF; service agents stay memory-less", async t => {
+  const f = okfFixture(t, { register: false }), core = await import("@awebai/oats/core");
+  const root = join(f.context, "agents"), original = { ...process.env };
+  for (const k of Object.keys(process.env)) delete process.env[k];
+  Object.assign(process.env, f.env);
+  try {
+    const local = core.upsertLocalAgent(root, { name: "scratch", instructions: "# scratch\n", repo: f.context, work: "directory", runtime: "pi" });
+    const declaration = join(local._dir, "soul/okf.json");
+    // No v1 implicit soul knowledge scaffold and no missing-binding fallback.
+    assert.equal(existsSync(join(local._dir, "soul/knowledge")), false);
+    assert.throws(() => core.spawnInstance(root, local, { instance: "scratch-missing", launch: false, repo: f.context }), /okf.json|explicit/);
+    writeJSON(declaration, { version: 1, owner: "source-owner", owns: ["project/expert"], reads: ["project/peer"] });
+    const res = core.spawnInstance(root, local, { instance: "scratch-1", launch: false, repo: f.context });
+    assert.ok(existsSync(join(res.home, "STATE.md"))); assert.ok(existsSync(join(res.home, "notes")));
+    assert.ok(existsSync(join(res.home, "knowledge/bases/project/expert/index.md")));
+    assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
+    assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Local soul \(uncommitted\)/);
+    const service = core.findCapabilityAgent(f.context, root, "memory-harvest");
+    const worker = core.spawnInstance(root, { ...service, repo: f.context }, { instance: "memory-harvest-probe", launch: false, work: "directory" });
+    for (const p of ["STATE.md", "notes", ".okf-source.json"]) assert.equal(existsSync(join(worker.home, p)), false);
+    assert.doesNotMatch(readFileSync(join(worker.home, "AGENTS.md"), "utf8"), /Knowledge: OKF/);
+    core.retireInstance(root, res.instance); core.retireInstance(root, worker.instance);
+  } finally { for (const k of Object.keys(process.env)) delete process.env[k]; Object.assign(process.env, original); }
 });
 
 test("capability-agent trust isolates providers and preserves path/owned structural trust", async () => {
-  const core = await import("../lib/core.mjs");
+  const core = await import("@awebai/oats/core");
   const base = temp(); const { repo, root } = fixtureSoul(base);
 
   // Developer-owned path provider: instruction agents are structurally trusted
@@ -2503,7 +2515,7 @@ function repoWithWorktree(base) {
 }
 
 test("canonicalAgentsRoot maps a linked worktree's agents root onto the primary checkout", async () => {
-  const core = await import("../lib/core.mjs");
+  const core = await import("@awebai/oats/core");
   const base = temp();
   const { repo, root, wt, wtRoot } = repoWithWorktree(base);
   // The bug this exists to prevent: discovery from the worktree yields the
@@ -2525,7 +2537,7 @@ test("canonicalAgentsRoot maps a linked worktree's agents root onto the primary 
 });
 
 test("canonicalAgentsRoot leaves non-git and out-of-tree roots untouched", async () => {
-  const core = await import("../lib/core.mjs");
+  const core = await import("@awebai/oats/core");
   const base = temp();
   // Not a Git work tree at all: nothing to canonicalize, behavior unchanged.
   const plain = join(base, "plain", "agents"); mkdirSync(plain, { recursive: true });
@@ -2584,7 +2596,7 @@ test("spawnInstance validates the AGENT DIR, not just the root (reviewer-2366d09
 });
 
 test("a failed Git probe fails closed instead of passing as a non-Git scope (reviewer-2366d09)", async () => {
-  const core = await import("../lib/core.mjs");
+  const core = await import("@awebai/oats/core");
   const base = temp();
   const { repo, root, wt, wtRoot } = repoWithWorktree(base);
   // git unavailable / dubious ownership / unreadable metadata: rev-parse fails
@@ -4189,7 +4201,7 @@ test("a REAL spawned packaged reviewer gets the boundary and keeps its own repor
     // `await` INSIDE the try: returning the promise from the try block restores
     // PATH before the body ever runs, so the test silently used whatever `pi`
     // the machine happened to have installed (reviewer-focus-699fdb6).
-    const core = await import("../lib/core.mjs");
+    const core = await import("@awebai/oats/core");
     const agent = core.findCapabilityAgent(repo, root, "reviewer");
     assert.ok(agent, "the shipped reviewer resolves");
     const res = core.spawnInstance(root, { ...agent, repo }, { instance: "reviewer-boundary", work: "checkout", launch: false });
@@ -4294,39 +4306,32 @@ test("with the knowledge layer active, ONE block owns the protocol (reviewer-foc
   rmSync(base, { recursive: true, force: true });
 });
 
-test("every harvest spawn path briefs its own custody-specific finish (reviewer-focus-d357cee)", () => {
-  // The harvester's soul and skill accompany ALL THREE spawn paths, so neither
-  // may mandate a finish: oats-okf.mjs briefs a shared-tree commit, a worktree
-  // plus PR, or a direct edit with nothing to commit. Two of three harvesters
-  // were reading instructions that did not describe their situation.
-  const okf = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
-  const soul = readFileSync(join(okf, "agents", "memory-harvest", "AGENTS.md"), "utf8");
-  const skill = readFileSync(join(okf, "skills", "memory-harvest", "SKILL.md"), "utf8");
-  for (const [what, text] of [["soul", soul], ["skill", skill]]) {
-    assert.match(text, /briefing|TASK\.md/i, `the ${what} must defer to the briefing`);
-    assert.doesNotMatch(flat(text), /then commit on the shared work tree and retire|commit once with a `memory-harvest:` prefix, then/i,
-      `the ${what} must not mandate ONE finish for three custodies`);
-  }
-  // And the skill must actually describe all three deliveries.
-  for (const delivery of ["Attached to the source work tree", "Worktree of the soul's home repo", "Uncommitted local soul"]) {
-    assert.ok(skill.includes(delivery), `the skill must describe the "${delivery}" path`);
-  }
-  // Each briefing the spawner emits states its own finish.
-  const bin = readFileSync(join(okf, "bin", "oats-okf.mjs"), "utf8");
-  assert.match(bin, /Do NOT merge it/, "workspace path briefs PR delivery");
-  assert.match(bin, /commit your promotions there as a single commit/, "attached path briefs the shared-tree commit");
-  rmSync(join(okf, "..", "..", "nonexistent-cleanup-noop"), { recursive: true, force: true });
+test("harvest briefing and staged inputs give an actual independent worker its completion custody", t => {
+  const f = okfFixture(t);
+  write(join(f.home, "notes/lesson.md"), "A durable source observation.\n");
+  const run = f.run();
+  assert.equal(lstatSync(join(run.home, "work")).isSymbolicLink(), false);
+  const task = readFileSync(join(run.home, "TASK.md"), "utf8");
+  assert.match(task, /Never attach to or interview the source/);
+  assert.match(task, /'okf' 'complete' '--source'/);
+  assert.match(task, /On failure retain the worker/);
+  assert.ok(existsSync(join(run.home, "work/input.json")));
+  assert.ok(existsSync(join(run.home, "work/staging.json")));
+  const result = f.complete(run, f.judgment(run, { drop: true }));
+  assert.equal(result.processed, true); assert.equal(result.receipts.project.status, "no-change");
+  assert.ok(existsSync(join(f.home, "notes/lesson.md")), "completion never deletes source notes");
+  f.retire(run.instance); f.retire(f.source.instance);
 });
 
-test("no bundled capability imports the kernel (package-runtime boundary)", () => {
+test("bundled capabilities respect the actual public kernel module boundary", async () => {
   // docs/design/package-runtime-api.md: "independently released packages MUST
   // NOT import kernel-private lib/core.mjs (including via `oats root` + dynamic
   // import)". Everything under capabilities/ is a byte-identical copy of an
   // independently released package, so the rule applies to every file there.
   //
-  // This is checked as text over the whole tree rather than by loading modules:
-  // the violation that shipped was a DYNAMIC import built from a path computed
-  // at runtime, which no import graph walked at rest would have shown.
+  // Scan for private-file escapes, including dynamically assembled paths.
+  // Separately prove the actual package export boundary below: direct kernel
+  // unit tests may use public exports; capability execution stays on the CLI.
   const capsDir = resolve(new URL("../capabilities", import.meta.url).pathname);
   const files = [];
   const walk = (dir) => {
@@ -4346,13 +4351,17 @@ test("no bundled capability imports the kernel (package-runtime boundary)", () =
     // join(FRAMEWORK_ROOT, "lib", "core.mjs"), which a /lib\/core\.mjs/ pattern
     // reads straight past.
     assert.doesNotMatch(text, /core\.mjs/, `${relative(capsDir, f)} names the kernel-private module`);
-    assert.doesNotMatch(text, /@awebai\/oats/, `${relative(capsDir, f)} imports the kernel package`);
+    assert.doesNotMatch(text, /@awebai\/oats\/(?!(?:core|package\.json)["'`])[^"'`]+/, `${relative(capsDir, f)} imports a non-public kernel subpath`);
     assert.doesNotMatch(text, /\boats root\b/, `${relative(capsDir, f)} resolves kernel files through \`oats root\``);
   }
-  // And the one bundled command that does reach the kernel reaches it the only
-  // sanctioned way: the absolute path dispatch supplies in OATS_CLI_BIN.
-  const okfBin = readFileSync(join(capsDir, "oats-okf", "bin", "oats-okf.mjs"), "utf8");
-  assert.match(okfBin, /OATS_CLI_BIN/, "oats.okf executes the CLI through the dispatch-supplied absolute path");
+  // OKF execution reaches the kernel through dispatch-supplied OATS_CLI_BIN;
+  // inspecting a package export must never be substituted for runtime coverage.
+  const okfIO = readFileSync(join(capsDir, "oats-okf", "lib", "io.mjs"), "utf8");
+  assert.match(okfIO, /OATS_CLI_BIN/, "oats.okf executes the CLI through the dispatch-supplied absolute path");
+  const publicAPI = await import("@awebai/oats/core");
+  assert.equal(typeof publicAPI.spawnInstance, "function");
+  assert.equal((await import("@awebai/oats")).spawnInstance, publicAPI.spawnInstance);
+  await assert.rejects(import("@awebai/oats/lib/core.mjs"), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
 });
 
 test("bundled capabilities carry the versions package-catalog.json pins", () => {
@@ -4744,7 +4753,7 @@ console.log(JSON.stringify({ meta: { retired: false, reason: 'self-delete-failed
   write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.review:\n      global: true\n");
   const oldPath = process.env.PATH; process.env.PATH = fakeRuntimes(base);
   try {
-    const core = await import("../lib/core.mjs");
+    const core = await import("@awebai/oats/core");
     const agent = core.findCapabilityAgent(repo, root, "reviewer");
     assert.throws(() => spawnInstance(root, { ...agent, repo }, { instance: "reviewer-q", launch: false }),
       (e) => e.code === "E_REQUIRED_HOOK_FAILED");

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oats.dev/schemas/okf-bindings.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "stateDir",
+    "bases"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "stateDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "cron": {
+      "type": "string",
+      "default": "*/15 * * * *",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "tz": {
+      "type": "string",
+      "default": "UTC",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "bases": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "path"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+              },
+              "kind": {
+                "const": "directory"
+              },
+              "path": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "kind",
+              "repository",
+              "root",
+              "acceptedBranch",
+              "pr"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+              },
+              "kind": {
+                "const": "git"
+              },
+              "repository": {
+                "type": "string",
+                "minLength": 1
+              },
+              "root": {
+                "type": "string",
+                "minLength": 1
+              },
+              "acceptedBranch": {
+                "type": "string",
+                "minLength": 1
+              },
+              "pr": {
+                "type": "object",
+                "required": [
+                  "repository"
+                ],
+                "properties": {
+                  "repository": {
+                    "type": "string",
+                    "pattern": "^[\\w.-]+/[\\w.-]+$"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

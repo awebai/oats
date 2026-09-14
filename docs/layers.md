@@ -2,7 +2,9 @@
 
 Status: contracts on paper (migration step 2 of
 [the 2026-09-03 architecture proposal](2026-09-03-architecture-proposal.md)).
-Every section says what is **shipped** today and what is **proposed**. A
+Sections distinguish **shipped**, **prepared** and **proposed** behavior.
+The knowledge section describes the prepared OKF v2 integration; its release
+gates are explicit in [v0.23.1 notes](release-notes/v0.23.1.md). A
 proposed clause describes the contract the kernel will be refactored toward;
 it is not a claim about current behavior, and the shipped documents
 ([souls and instances](souls-and-instances.md),
@@ -127,65 +129,58 @@ kernel's code has no branch that names either.
 
 ## The knowledge contract
 
-**Shipped.** The `knowledge` slot. The bundled implementation is `oats.okf`:
-an OKF bundle under `soul/knowledge/`, per-instance `STATE.md`, `log.md`, and
-`notes/`, the `okf` and `memory-harvest` skills, and `oats okf harvest`, which
-spawns the capability-defined `memory-harvest` soul attached to the source
-instance's work tree. `knowledge: none` is valid and yields no memory files
-and no harvest.
+**Shipped kernel contract.** Zero or one knowledge capability per soul,
+selected under `capabilities.layers.knowledge`. `none` creates no
+provider memory or harvest flow and does not delete existing state. The kernel
+owns neither the format nor a mandatory promotion doctrine.
 
-**Contract.** Two sides.
+**Prepared reference implementation: oats.okf 2.0.0 / framework v0.23.1.**
+All accepted knowledge is external. Explicit bindings name Git or non-Git
+bases; `soul/okf.json` declares stable ownership and read references, while
+`okf-base.json` identifies accepted nodes. Missing configuration or knowledge
+fails working-source spawn, never creates an empty substitute.
 
-*Read.* An instance can find and consult organizational knowledge,
-index-first and selectively, and is told how by the implementation's injected
-block and skill. Prior decisions, lessons, and playbooks in scope are binding
-context; re-deriving what the soul already knows is a bug. **Proposed:** the
-scope of what an instance may read is decided by its soul type, which needs
-`OATS_SOUL_TYPE` (step 7) before an implementation can act on it.
+*Read.* Sources consult immutable accepted views, index-first and selectively.
+Prior rationale should be consulted rather than re-derived. OKF's `owns` routes
+responsibility and `reads` chooses starting context: neither is an ACL, and all
+configured bases are discoverable/readable. Cannot-write is instruction, not an
+OS sandbox. A directory publication journal blocks fresh views; Git readers see
+only the accepted branch, not an open PR.
 
-*Write.* A permitted soul (a harvester type) can promote into the store. The
-format is the implementation's. Delivery matches the soul's custody: a commit
-on the instance's branch for repository-resident souls, a pull request to
-the soul's home repository for workspace-mode souls, direct edits for local
-souls.
+*Capture and judgment.* Working agents capture state/log/notes; durable source
+custody also copies full native record windows through the public CLI. A separate
+worker judges from frozen input without needing the source home, worktree or
+model. Source retirement waits for certified capture, not a model or GitHub.
+Workers use independent `directory` execution and never edit source notes or
+soul skills. Existing hooks and per-source command schedules supply this flow;
+the proposed generic `harvest` event above is not implemented or required.
 
-*Custody, shipped.* Delivery custody is keyed by where the soul resides: a
-commit on the instance's branch for repository-resident souls, a pull request
-to the soul's home repository for workspace-mode souls, direct edits for local
-souls. That is the only custody the kernel and `oats.okf` implement today.
+*Delivery custody.* Knowledge placement, not soul residency or work mode,
+determines delivery. All Git bases use verified PR-only delivery with separate
+merge-visible acceptance. Genuine non-Git directories use cooperative locks,
+baseline comparison, journalled publication and validated receipts, without Git
+or gh. There is no direct Git fallback and no cross-base distributed transaction.
+Source descriptors, proposals and processing/delivery/acceptance receipts outlive
+source retirement. Inspection can show matching live Markdown plus durable
+receipts; missing/reused homes cannot supply live memory for an old source.
 
-*Custody scoping, proposed.* The requirement is that repository-specific
-facts never move into a broader scope by default and that a cross-repository
-soul never reads another repository's specifics. The design that meets it
-belongs to the knowledge package, not the kernel. Custody layers (soul-shared,
-workspace overlay, repository overlay) are one candidate; scoping by soul
-type plus residency is another. Nothing here is settled or shipped.
+*Reference promotion doctrine.* OKF accepts durable behavior-changing judgment
+that is not recoverable merely by reading code: rationale, rejected alternatives,
+discovered limits and maintained slow state. It rejects code descriptions, task
+residue, secrets and verbatim third-party messages. Human-accepted decisions keep
+acceptance evidence; maintained state needs an owner and freshness discipline.
+One canonical concept is preferable to copied claims. These are the default
+capability's choices, not a compulsory judge for every knowledge implementation.
 
-*Promotion doctrine.* What the write side accepts is a decision, not a
-format question. The line is decision versus description. Descriptions of
-how the code fits together go stale and compete with the code; the write
-side rejects them. Decisions, what was chosen, what was rejected, and why,
-cannot be derived from code and are accepted, as are inspiration genealogy
-("took this from X, rejected Y because Z"), process lessons, and maintained,
-timestamped, superseded-on-change slow state about an area. Slow state is
-accepted only with its maintenance discipline: a named owner and an
-update-on-change rule; a slow-state concept nobody maintains is
-indistinguishable from residue and is rejected as such. Task residue
-(pull-request numbers, half-done plans, point-in-time environment facts) dies
-with the instance. One home per decision; split-brain comes from copies. The
-homing rule: architecture facts that several roles need go in repository-
-visible docs and souls point to them; craft decisions scoped to one role go
-in that role's soul; product direction goes in the steward's bundle,
-consulted and never copied. For non-coding specialists none of their
-knowledge is re-derivable from a repository, so those souls are almost pure
-knowledge. See [knowledge theory](knowledge-theory.md) for the derivation.
+See [the runtime guide](knowledge.md) and [v1 migration](knowledge-migration.md)
+for current commands and constraints. The [reference theory](knowledge-theory.md)
+and [authoring curriculum](knowledge-capability-authoring.md) are optional;
+capabilities may adopt, adapt or replace them and own their complete runtime.
 
-**Proposed.** The harvester's input widens from the agent's own notes to the
-capture contract (below), so lessons reach the soul even when an agent wrote
-no notes; the promotion doctrine is unchanged, only the input channel widens.
-
-**Test.** A plain-Markdown or wiki-backed implementation beside `oats.okf`,
-each with its own harvester; a soul's `AGENTS.md` unchanged between them.
+**Test.** OKF's Git and directory providers exercise independent custody within
+one capability. A second knowledge capability with a different model remains a
+separate replaceability test; two OKF providers do not prove that test by
+renaming them as two integrations.
 
 ## The tasks contract
 
@@ -260,8 +255,8 @@ them.
 `packages/record` captures Claude Code, Pi, and Codex transcripts plus aw
 client logs. It skips sources matched by the local record's ignore list. It
 stores captured turns in an append-only, content-addressed record with a search
-index (`oats setup`, `oats capture`, `oats recall`). It is not a capability and
-no lifecycle hook knows about it.
+index (`oats setup`, `oats capture`, `oats recall`). It is not a capability. A knowledge capability may consume source-targeted
+capture/recall through the supported CLI boundary, as OKF v2 does.
 
 **Contract.** The format of ephemeral state. Two kinds satisfy it: an agent's
 own notes (its report of what mattered, today created by the knowledge
@@ -340,21 +335,22 @@ bundle.
 
 ## The work target contract
 
-**Shipped.** Four modes decide what `<instance-home>/work` is and what
+**Shipped.** Five modes decide what `<instance-home>/work` is and what
 discipline the instance follows: `worktree` (an isolated branch), `checkout`
-(the shared current branch), `attached` (another instance's tree), and
-`workspace` (the whole team scope, read-only). A config may run a setup
-script inside each fresh worktree. Retirement preserves ordinary work,
+(the shared current branch), `attached` (another instance's tree),
+`workspace` (the whole team scope, read-only), plus explicit `directory`
+(instance-owned non-Git execution for independent workers). A config may run a
+setup script inside each fresh worktree. Retirement preserves ordinary work,
 quarantines incomplete cleanup, and never removes a shared tree. The
 generated instructions state the home/work boundary before the mode block.
 
 **Contract.** The work target is a parameter of instantiation independent of
 where the soul is stored. Each mode is a module that prepares the view,
 states its discipline, and knows how to retire it safely, with the
-retirement baseline and inspection alongside. The four modes stay exactly as
-they are.
+retirement baseline and inspection alongside. The four Git/context modes retain
+their existing semantics; directory execution never acts as an implicit fallback.
 
-**Proposed.** A fifth target, `none`, for instances that operate on nothing
+**Proposed.** An additional target, `none`, for instances that operate on nothing
 (a mail-only agent). It replaces no mode.
 
 **Test.** An instance of one soul spawned with each target, the same soul

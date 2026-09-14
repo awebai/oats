@@ -16,9 +16,10 @@
 // snapshots, queue operations, mode flips) yields no docs — but its
 // native line is still stored verbatim in the turn, so nothing is lost.
 
-import { existsSync, readdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { lstatSync, readdirSync, statSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
+import { nativeDirectory } from "./session-roots.mjs";
 
 // Iterate JSONL lines of a buffer without materializing the whole file as
 // one string — real transcripts reach hundreds of MB (a 789 MB Codex
@@ -53,21 +54,24 @@ function* parsedLines(bytes) {
   }
 }
 
-function listJsonlFiles(root, maxDepth) {
+function listJsonlFiles(root, maxDepth, { strict = false } = {}) {
   const out = [];
   const walk = (dir, depth) => {
     let names;
     try {
       names = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
+    } catch (err) {
+      // An optional, absent root is normal; an unreadable directory or a
+      // subtree that disappeared during discovery is not an empty scan.
+      if (!strict && depth === 0 && err.code === "ENOENT") return;
+      throw err;
     }
     for (const entry of names.sort((a, b) => a.name.localeCompare(b.name))) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
+      if (entry.name.endsWith(".jsonl") && !entry.isDirectory()) {
+        out.push(path); // privacy rules precede opening/statting source links
+      } else if (entry.isDirectory() || (entry.isSymbolicLink() && statSync(path).isDirectory())) {
         if (depth < maxDepth) walk(path, depth + 1);
-      } else if (entry.name.endsWith(".jsonl")) {
-        out.push(path);
       }
     }
   };
@@ -75,16 +79,95 @@ function listJsonlFiles(root, maxDepth) {
   return out;
 }
 
+// Only absence makes a default root optional. existsSync also hides access
+// failures, which would turn an unperformed scan into a false empty result.
+function directoryExists(path) {
+  try {
+    if (!statSync(path).isDirectory()) throw new Error(`session root is not a directory: ${path}`);
+    return true;
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      // ENOENT through a dangling directory link is not an absent runtime.
+      for (let part = path; ; part = dirname(part)) {
+        try {
+          if (lstatSync(part).isSymbolicLink()) throw new Error(`unresolvable session root: ${path}`);
+          break;
+        } catch (e) { if (e.code !== "ENOENT") throw e; }
+        if (dirname(part) === part) break;
+      }
+      return false;
+    }
+    throw err;
+  }
+}
+
 // ------------------------------------------------------------ claude code
 
-function ccRoots(home = homedir()) {
+function configuredRoot(value, suffix, options) {
+  const root = join(nativeDirectory(value, options), suffix);
+  // Explicitly relocated storage is not an optional absent default. A
+  // missing/unreadable root means we cannot certify its evidence inventory.
+  if (!directoryExists(root)) throw new Error(`configured session root does not exist: ${root}`);
+  return [root];
+}
+
+function ccRoots(home = homedir(), env = process.env, options = {}) {
+  if (env.CLAUDE_CONFIG_DIR) return configuredRoot(env.CLAUDE_CONFIG_DIR, "projects", { home, ...options });
   const roots = [];
-  for (const name of readdirSync(home).sort()) {
-    if (!name.startsWith(".claude")) continue;
-    const projects = join(home, name, "projects");
-    if (existsSync(projects)) roots.push(projects);
+  for (const entry of readdirSync(home, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    if (!entry.name.startsWith(".claude")) continue;
+    // ~/.claude.json and its backups are normal config FILES, not roots.
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    if (entry.isSymbolicLink() && !statSync(join(home, entry.name)).isDirectory()) continue;
+    const projects = join(home, entry.name, "projects");
+    if (directoryExists(projects)) roots.push(projects);
   }
   return roots;
+}
+
+// Native Claude child transcripts live at
+// projects/<project>/<sessionId>/subagents/agent-*.jsonl, not beside the
+// parent's file. Enumerate only this layout, never arbitrary project files.
+function listCcFiles(root, { strict = false } = {}) {
+  const out = [];
+  const entries = (dir, optional = false) => {
+    try { return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); }
+    catch (err) { if (optional && err.code === "ENOENT") return []; throw err; }
+  };
+  const directory = (entry, path) => entry.isDirectory() || (entry.isSymbolicLink() && !entry.name.endsWith(".jsonl") && statSync(path).isDirectory());
+  for (const project of entries(root, !strict)) {
+    const projectPath = join(root, project.name);
+    if (!directory(project, projectPath)) {
+      if (project.name.endsWith(".jsonl")) out.push(projectPath);
+      continue;
+    }
+    for (const entry of entries(projectPath)) {
+      const path = join(projectPath, entry.name);
+      if (!directory(entry, path)) {
+        if (entry.name.endsWith(".jsonl")) out.push(path);
+        continue;
+      }
+      // Listing the session directory (rather than treating ENOENT at an
+      // assumed subagents path as optional) preserves disappearance errors.
+      for (const childDir of entries(path)) {
+        if (childDir.name !== "subagents") continue;
+        const children = join(path, childDir.name);
+        if (!directory(childDir, children)) throw new Error(`session subagents root is not a directory: ${children}`);
+        for (const child of entries(children)) {
+          if (child.name.endsWith(".jsonl")) out.push(join(children, child.name));
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function ccParentId(path) {
+  return basename(dirname(path)) === "subagents" ? basename(dirname(dirname(path))) : null;
+}
+function ccSessionId(path) {
+  const parent = ccParentId(path), id = basename(path, ".jsonl");
+  return parent ? `${parent}.${id}` : id;
 }
 
 // Cap for the unknown-part fallback: prefix stays searchable, the full
@@ -178,9 +261,11 @@ export function extractCcText(bytes) {
 
 // --------------------------------------------------------------------- pi
 
-function piRoots(home = homedir()) {
+function piRoots(home = homedir(), env = process.env, options = {}) {
+  if (env.PI_CODING_AGENT_SESSION_DIR) return configuredRoot(env.PI_CODING_AGENT_SESSION_DIR, "", { home, ...options, tilde: true });
+  if (env.PI_CODING_AGENT_DIR) return configuredRoot(env.PI_CODING_AGENT_DIR, "sessions", { home, ...options, tilde: true });
   const root = join(home, ".pi", "agent", "sessions");
-  return existsSync(root) ? [root] : [];
+  return directoryExists(root) ? [root] : [];
 }
 
 export function extractPiText(bytes) {
@@ -214,9 +299,10 @@ function piSessionId(path) {
 
 // ------------------------------------------------------------------ codex
 
-function codexRoots(home = homedir()) {
+function codexRoots(home = homedir(), env = process.env, options = {}) {
+  if (env.CODEX_HOME) return configuredRoot(env.CODEX_HOME, "sessions", { home, ...options });
   const root = join(home, ".codex", "sessions");
-  return existsSync(root) ? [root] : [];
+  return directoryExists(root) ? [root] : [];
 }
 
 export function extractCodexText(bytes) {
@@ -268,21 +354,22 @@ export const SESSION_FORMATS = {
   cc: {
     source: "cc",
     defaultRoots: ccRoots,
-    listFiles: (roots) => roots.flatMap((r) => listJsonlFiles(r, 1)),
-    sessionId: (path) => basename(path, ".jsonl"),
+    listFiles: (roots, options) => roots.flatMap((r) => listCcFiles(r, options)),
+    sessionId: ccSessionId,
+    ignoreKeys: (path) => [basename(path, ".jsonl"), ccParentId(path)].filter(Boolean),
     extractText: extractCcText,
   },
   pi: {
     source: "pi",
     defaultRoots: piRoots,
-    listFiles: (roots) => roots.flatMap((r) => listJsonlFiles(r, 1)),
+    listFiles: (roots, options) => roots.flatMap((r) => listJsonlFiles(r, 1, options)),
     sessionId: piSessionId,
     extractText: extractPiText,
   },
   codex: {
     source: "codex",
     defaultRoots: codexRoots,
-    listFiles: (roots) => roots.flatMap((r) => listJsonlFiles(r, 3)),
+    listFiles: (roots, options) => roots.flatMap((r) => listJsonlFiles(r, 3, options)),
     sessionId: codexSessionId,
     extractText: extractCodexText,
   },

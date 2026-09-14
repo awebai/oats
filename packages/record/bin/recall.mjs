@@ -43,12 +43,13 @@ const store = new RecordStore(root, {});
 let index;
 const getIndex = () => (index ??= new RecordIndex(store));
 
+async function main() {
 try {
   if (args.reindex) {
     const index = getIndex();
     index.rebuild();
     console.log(JSON.stringify(index.counts()));
-    process.exit(0);
+    return;
   }
 
   if (args.show) {
@@ -58,21 +59,21 @@ try {
     const turn = resolveTurn(store, index, args.show, byId);
     if (!turn) {
       console.error(`no turn ${args.show}`);
-      process.exit(1);
+      process.exitCode = 1; return;
     }
     // Tombstoned turns are hidden from tool output, id lookup included.
     if (store.hiddenIds(byId).has(args.show)) {
       console.error(`turn ${args.show} is tombstoned`);
-      process.exit(1);
+      process.exitCode = 1; return;
     }
     console.log(JSON.stringify(turn, null, 2));
-    process.exit(0);
+    return;
   }
 
   const query = args._.join(" ").trim();
   if (!query && !args.thread) {
     console.error("usage: recall [--kind k] [--thread t] [--from f] [--role r] [--limit n] <query>");
-    process.exit(2);
+    process.exitCode = 2; return;
   }
 
   // Thread turns straight from the journal, in capture SEQUENCE: the order a
@@ -100,12 +101,12 @@ try {
     let end = turns.length;
     if (args.after) {
       const i = ids.indexOf(args.after);
-      if (i < 0) { console.error(`--after: no turn ${args.after} in thread ${args.thread}`); process.exit(1); }
+      if (i < 0) { console.error(`--after: no turn ${args.after} in thread ${args.thread}`); process.exitCode = 1; return; }
       start = i + 1;
     }
     if (args.until) {
       const i = ids.indexOf(args.until);
-      if (i < 0) { console.error(`--until: no turn ${args.until} in thread ${args.thread}`); process.exit(1); }
+      if (i < 0) { console.error(`--until: no turn ${args.until} in thread ${args.thread}`); process.exitCode = 1; return; }
       end = i + 1;
     }
     const cap = args.limit ? Number(args.limit) : Infinity;
@@ -123,7 +124,7 @@ try {
       return full;
     });
     console.log(JSON.stringify({ thread: args.thread, total: turns.length, from: start, to: stop, remaining: end - stop, turns: out }, null, 2));
-    process.exit(0);
+    return;
   }
 
   const index = getIndex();
@@ -150,15 +151,15 @@ try {
 
   if (rows.length === 0 && args.json) {
     console.log("[]");
-    process.exit(0);
+    return;
   }
   if (rows.length === 0) {
     console.error("no matches");
-    process.exit(1);
+    process.exitCode = 1; return;
   }
   if (args.json) {
     console.log(JSON.stringify(rows, null, 2));
-    process.exit(0);
+    return;
   }
   for (const r of rows) {
     const where = r.loc ? ` @${r.loc}` : "";
@@ -170,3 +171,8 @@ try {
 } finally {
   index?.close();
 }
+
+}
+// Natural process termination drains piped stdout; process.exit after a JSON
+// write truncates large recall windows even though it reports exit status 0.
+await main();

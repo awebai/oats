@@ -9,9 +9,10 @@
 //      launched,warnings,tmux,...}} with no progress contamination on stdout.
 //   * every `--json` failure prints one envelope object
 //     {"schemaVersion":1,"ok":false,"error":{code,message}} on stdout, exits nonzero.
-//   * `oats okf harvest --json` distinguishes spawned/skipped via
-//     result.harvest, with instance/window or reason.
+//   * v2 `oats okf harvest --json` reports durable run status and worker identity;
+//     scaffold-only execution is a mandatory success path, never launch-or-fail.
 import test from "node:test";
+import { fixture as okfFixture } from "./helpers/okf-v2.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,8 +23,6 @@ const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const PKG_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 // The shipped oats.okf capability tree, byte-identical to the published
 // oats.okf payload the catalog pins (package-catalog.json → oats.okf).
-const OKF_SRC = resolve(new URL("../capabilities/oats-okf", import.meta.url).pathname);
-const OKF_BIN = join(OKF_SRC, "bin", "oats-okf.mjs");
 
 function temp() { return mkdtempSync(join(tmpdir(), "oats-json-contract-")); }
 function write(path, content) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
@@ -39,6 +38,10 @@ function gitRepo(dir) {
 function fakeRuntimes(base) {
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   for (const name of ["pi", "claude"]) { write(join(bin, name), "#!/bin/sh\nexit 0\n"); execFileSync("chmod", ["+x", join(bin, name)]); }
+  // Contract fixtures must never create real terminal sessions. Launch failure
+  // is asserted below; scaffold-only tests do not need a terminal backend.
+  write(join(bin, "tmux"), "#!/bin/sh\nexit 1\n");
+  execFileSync("chmod", ["+x", join(bin, "tmux")]);
   return `${bin}:${process.env.PATH}`;
 }
 function fixtureSoul(base) {
@@ -119,95 +122,36 @@ test("oats spawn --json failures are one stdout envelope, stable codes, nonzero 
   assert.equal(parseOnly(r.stdout).error.code, "E_NO_DEPLOYMENT");
 });
 
-test("okf harvest --json: skipped envelope carries a reason", () => {
-  const base = temp(); const { root } = fixtureSoul(base);
-  // An instance home with no notes → skipped.
-  const home = join(root, "dev", "instances", "dev-h1");
-  write(join(home, "instance.json"), JSON.stringify({ instance: "dev-h1", agent: "dev" }));
-  mkdirSync(join(home, "notes"), { recursive: true });
-  const r = spawnSync(process.execPath, [OKF_BIN, "harvest", "--json"], { cwd: home, encoding: "utf8", env: { ...process.env, OATS_HOME: home } });
-  assert.equal(r.status, 0, r.stderr);
-  const doc = parseOnly(r.stdout);
-  assert.deepEqual(doc, { schemaVersion: 1, ok: true, result: { harvest: "skipped", reason: "no pending notes" } });
+test("okf harvest --json: no unprocessed input reports an empty durable queue", t => {
+  const f = okfFixture(t);
+  const r = f.direct(["harvest", "--no-launch"]);
+  assert.deepEqual(parseOnly(r.stdout), { schemaVersion: 1, ok: true, result: { status: "empty", processed: true } });
 });
 
-/** A deployment whose agents root lives INSIDE the repo (the shipped layout),
- * with oats.okf activated from the real published capability tree as an owned
- * capability — owned origin is structurally trusted, so no lock is needed.
- * `oats okf harvest` must reach the harvester through capability dispatch,
- * which is what supplies OATS_CLI_BIN and OATS_SETTINGS. */
-function okfDeployment(base) {
-  const repo = join(base, "repo"); gitRepo(repo);
-  const root = join(repo, "agents");
-  write(join(root, "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-  write(join(root, "dev", "soul", "AGENTS.md"), "# dev\n");
-  mkdirSync(join(root, "dev", "instances"), { recursive: true });
-  const owned = join(repo, ".agents", "capabilities", "owned", "oats-okf");
-  mkdirSync(dirname(owned), { recursive: true });
-  execFileSync("cp", ["-R", OKF_SRC, owned]);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      global: true\n");
-  return { repo, root };
-}
-
-test("okf harvest --json: spawned envelope carries instance and window, through the CLI boundary", () => {
-  // The published oats.okf reaches the kernel ONLY through `oats spawn ... --json`
-  // at the absolute path capability dispatch hands it in OATS_CLI_BIN
-  // (docs/design/package-runtime-api.md). So the spawned envelope is only
-  // reachable through `oats okf harvest`, never by running the package's bin
-  // directly — which is the point of the boundary and is asserted below.
-  const base = temp(); const { repo, root } = okfDeployment(base);
-  // Unique instance name → unique harvester slug/window (tmux windows persist across runs).
-  const inst = `dev-h2-${base.slice(-6).replace(/[^a-z0-9]/gi, "")}`.toLowerCase();
-  const home = join(root, "dev", "instances", inst);
-  mkdirSync(join(home, "work"), { recursive: true });
-  write(join(home, "instance.json"), JSON.stringify({ instance: inst, agent: "dev", repo, work: "checkout", capabilities: [{ id: "oats.okf" }] }));
-  write(join(home, "notes", "a-note.md"), "---\ntype: Lesson\n---\n\n# a note\n");
-  write(join(home, "soul", "knowledge", "index.md"), "# kb\n");
-  mkdirSync(join(home, "soul", "skills"), { recursive: true });
-  const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENT_HOME: home, OATS_HOME: home, PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" };
-  delete env.PI_AGENTS_ROOT;
-  const r = spawnSync(process.execPath, [CLI, "okf", "harvest", "--json"], { cwd: home, encoding: "utf8", env });
+test("okf harvest --json: actual directory worker identity through the public CLI boundary", t => {
+  const f = okfFixture(t);
+  write(join(f.home, "notes/a-note.md"), "---\ntype: Lesson\n---\n\nA durable observation.\n");
+  const r = f.raw(["okf", "harvest", "--home", f.home, "--no-launch", "--soul", "source", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
   const doc = parseOnly(r.stdout);
-  assert.equal(doc.schemaVersion, 1);
-  if (doc.ok) {
-    assert.equal(r.status, 0, r.stderr);
-    assert.equal(doc.result.harvest, "spawned");
-    assert.match(doc.result.instance, /^memory-harvest-/);
-    assert.ok("window" in doc.result);
-    // clean up the tmux window the harvest launched
-    spawnSync("tmux", ["kill-window", "-t", `oats-test-nosuch:${doc.result.instance}`]);
-  } else {
-    // Environments without a workable tmux still honor the contract:
-    // one failure envelope, stable code, nonzero exit. The boundary itself must
-    // still have been crossed — a missing OATS_CLI_BIN would mean dispatch never
-    // supplied it, which is a defect here rather than a property of the host.
-    assert.notEqual(r.status, 0);
-    assert.equal(doc.error.code, "E_SPAWN_FAILED");
-    assert.doesNotMatch(doc.error.message, /OATS_CLI_BIN/, "dispatch supplied the CLI path; the failure is the launch, not the boundary");
-  }
+  assert.equal(doc.ok, true); assert.equal(doc.result.status, "ready");
+  assert.match(doc.result.instance, /^memory-harvest-/); assert.ok(doc.result.run);
+  const meta = JSON.parse(readFileSync(join(doc.result.home, "instance.json"), "utf8"));
+  assert.equal(meta.work, "directory"); assert.equal(meta.launched, false);
+  assert.ok(existsSync(join(doc.result.home, "work/input.json")));
+  assert.ok(existsSync(join(doc.result.home, "work/staging.json")));
+  f.complete(doc.result, f.judgment(doc.result, { drop: true }));
+  f.retire(doc.result.instance); f.retire(f.source.instance);
 });
 
-test("okf harvest --json: the package refuses to reach the kernel without OATS_CLI_BIN", () => {
-  // Run the package's own bin with no dispatcher in front of it. The package
-  // must NOT fall back to PATH, a relative kernel path, or an import of
-  // lib/core.mjs — it must fail closed with the boundary's own code, and the
-  // notes must stay on disk.
-  const base = temp(); const { repo, root } = okfDeployment(base);
-  const inst = "dev-nocli";
-  const home = join(root, "dev", "instances", inst);
-  mkdirSync(join(home, "work"), { recursive: true });
-  write(join(home, "instance.json"), JSON.stringify({ instance: inst, agent: "dev", repo, work: "checkout" }));
-  write(join(home, "notes", "a-note.md"), "---\ntype: Lesson\n---\n\n# a note\n");
-  mkdirSync(join(home, "soul", "skills"), { recursive: true });
-  const env = { ...process.env, PATH: fakeRuntimes(base), OATS_HOME: home };
-  delete env.OATS_CLI_BIN;
-  const r = spawnSync(process.execPath, [OKF_BIN, "harvest", "--json"], { cwd: home, encoding: "utf8", env });
-  assert.notEqual(r.status, 0);
+test("okf refuses a missing absolute OATS_CLI_BIN without private imports or PATH fallback", t => {
+  const f = okfFixture(t);
+  write(join(f.home, "notes/a-note.md"), "Preserve the source note.\n");
+  const r = f.direct(["harvest", "--no-launch"], { environment: { OATS_CLI_BIN: undefined }, status: 1 });
   const doc = parseOnly(r.stdout);
-  assert.equal(doc.ok, false);
-  assert.equal(doc.error.code, "E_SPAWN_FAILED");
-  assert.match(doc.error.message, /OATS_CLI_BIN/);
-  assert.ok(existsSync(join(home, "notes", "a-note.md")), "the note is still on disk");
+  assert.equal(doc.ok, false); assert.equal(doc.error.code, "E_RUNTIME");
+  assert.match(doc.error.message, /absolute OATS_CLI_BIN/);
+  assert.ok(existsSync(join(f.home, "notes/a-note.md")));
 });
 
 // ---- end-to-end capability dispatch: `oats <ns> <cmd> --json` boundary ----
@@ -329,24 +273,17 @@ test("capability dispatch --json: broken manifests and malformed command values 
   assert.equal(parseOnly(r.stdout).error.code, "E_UNKNOWN_COMMAND");
 });
 
-test("oats okf harvest --json end-to-end through the CLI dispatcher", () => {
-  const base = temp(); const { repo, root } = fixtureSoul(base);
-  // Activate oats.okf as a config-owned capability by pointing an owned package
-  // at the real oats-okf sources (owned origin ⇒ trusted without a lock).
-  const owned = join(repo, ".agents", "capabilities", "owned", "oats-okf");
-  mkdirSync(dirname(owned), { recursive: true });
-  execFileSync("cp", ["-R", OKF_SRC, owned]);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n");
-  const home = join(root, "dev", "instances", "dev-e2e");
-  write(join(home, "instance.json"), JSON.stringify({ instance: "dev-e2e", agent: "dev", repo, capabilities: [{ id: "oats.okf" }] }));
-  mkdirSync(join(home, "notes"), { recursive: true });
-  const env = { ...process.env, PI_AGENT_HOME: home, OATS_HOME: home };
-  // no notes → skipped envelope, through `oats okf harvest --json` (exit 0)
-  const r = spawnSync(process.execPath, [CLI, "okf", "harvest", "--json"], { cwd: home, encoding: "utf8", env });
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(parseOnly(r.stdout), { schemaVersion: 1, ok: true, result: { harvest: "skipped", reason: "no pending notes" } });
-  // malformed OATS_SETTINGS in the environment → envelope failure, not a stack trace
-  const r2 = spawnSync(process.execPath, [OKF_BIN, "harvest", "--json"], { cwd: home, encoding: "utf8", env: { ...env, OATS_SETTINGS: "{broken" } });
-  assert.notEqual(r2.status, 0);
-  assert.equal(parseOnly(r2.stdout).error.code, "E_HARVEST_FAILED");
+test("oats okf harvest --json end-to-end dispatch and explicit invalid settings", t => {
+  const f = okfFixture(t);
+  const r = f.raw(["okf", "harvest", "--home", f.home, "--no-launch", "--soul", "source", "--json"]);
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.deepEqual(parseOnly(r.stdout), { schemaVersion: 1, ok: true, result: { status: "empty", processed: true } });
+  // init reads settings even for an already registered source (harvest resumes
+  // frozen bindings by design, rather than trusting a changed environment).
+  const malformed = f.direct(["init", "--base", "project"], { environment: { OATS_SETTINGS: "{broken" }, status: 1 });
+  assert.equal(parseOnly(malformed.stdout).ok, false);
+  const unsupported = f.direct(["init", "--base", "project"], { environment: { OATS_SETTINGS: JSON.stringify({ "bindings-file": f.bindings, "harvest-runtime": "unsupported" }) }, status: 1 });
+  const diagnostic = parseOnly(unsupported.stdout).error;
+  assert.equal(diagnostic.code, "E_CONFIG");
+  assert.match(diagnostic.message, /invalid harvest-runtime/);
 });

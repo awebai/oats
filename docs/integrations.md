@@ -43,6 +43,8 @@ capabilities:
     knowledge:
       capability: oats.okf
       from: installed
+      settings:
+        bindings-file: /absolute/config/okf-bindings.json
     messaging:
       capability: oats.aweb
       from: installed
@@ -65,7 +67,7 @@ capabilities:
 CLI equivalents:
 
 ```bash
-oats use oats.okf --global
+oats use oats.okf --global --settings bindings-file=/absolute/config/okf-bindings.json
 oats use oats.aweb --type product-agents
 oats use oats.linear --type product-agents
 oats use none --layer tasks        # leave an inherited slot deliberately unfilled
@@ -78,11 +80,14 @@ is different from a soul whose type restricts its reach.
 
 ## Bundled integrations
 
-**`oats.okf`** fills `knowledge`: OKF soul bundles, instance `STATE.md`,
-`log.md`, and `notes/`, the `okf` and `memory-harvest` skills, and
-`oats okf harvest`, which promotes pending notes after a commit through the
-capability-defined `memory-harvest` soul. Its scaffold and spawn hooks own
-memory mechanics; the kernel stays knowledge-format agnostic.
+**`oats.okf` v2** fills `knowledge`: external owned OKF bases, immutable
+reader views, instance `STATE.md`/`log.md`/`notes/`, durable notes-and-record
+custody and an independent directory worker. Git delivery is PR-only; plain
+directory delivery is recoverable and needs no Git/gh. Explicit bindings,
+`soul/okf.json` and accepted base metadata are required before a working source
+can spawn. `owns`/`reads` are responsibility/context, not ACLs. See
+[knowledge](knowledge.md) for the **prepared** version scope, provisioning and
+commands, and [migration](knowledge-migration.md) before updating v1.
 
 **`oats.aweb`** fills `messaging`: mints an instance identity at spawn,
 removes it at retire, contributes the aweb messaging and team skills, wires
@@ -117,13 +122,15 @@ kernel only through `OATS_CLI_BIN` and the JSON envelope, never by importing
 kernel files. Never name target souls in the manifest; targeting belongs to
 configuration.
 
-**Knowledge.** Scaffold the soul's store on `soul-scaffold`; create instance
-ephemeral state on `spawn`; teach the read side (index-first, selective,
-binding) in the inject and skill; ship a harvester as a capability-defined
-soul and a command that spawns it attached to the source instance's tree;
-route promotions by custody (commit, pull request, or direct edit); apply the
-promotion doctrine in the contract; and, once the `harvest` event exists,
-declare it instead of relying on the instance to call the command.
+**Knowledge.** Each capability owns its complete runtime and format, including
+reader/capture instructions, judgment and provider-native delivery. Do not
+assume a soul bundle, attached worker, Git store or mandatory shared harvester.
+The optional [authoring guide](knowledge-capability-authoring.md) describes the
+reference model and how to adapt or replace it. OKF v2 is one implementation:
+explicit external ownership, instructional read-only sources, evidence custody
+outside disposable homes, independent workers, PR-only Git and recoverable
+non-Git publication. Existing lifecycle hooks and supported CLI/scheduler
+commands implement it; no proposed universal `harvest` event is required.
 
 **Communication.** Mint an address on `spawn` with a `required` hook and
 remove it on `retire`; supply the roster; teach send, reply, chat, and "read
@@ -140,40 +147,33 @@ Test an integration as a capability package: acquire, lock, trust, activate,
 spawn, retire, with the golden fixtures as the behavior oracle for the kernel
 side.
 
-## oats.okf harvest settings (1.5.1)
+## oats.okf v2 settings and recovery
 
-The harvester can use a different harness from the source instance. Select one
-that is installed and authenticated on the host where the harvest runs:
+V2 requires `bindings-file`, an absolute path to capability-owned JSON. Paths
+inside it resolve from that file's directory. The source soul needs stable
+`owner`, `owns` and `reads` declarations; every referenced accepted node must
+exist and match its owner. Acquisition/activation never bootstraps a knowledge
+base. If activating globally, provision each working soul first or target only
+ready sources.
 
 ```bash
-oats use oats.okf --settings harvest-runtime=claude
+oats use oats.okf --soul domain-expert --settings bindings-file=/absolute/config/okf-bindings.json harvest-runtime=claude
 ```
 
-- `harvest-runtime: pi | claude | codex` defaults to `pi`.
-- `harvest-model` is an optional pin, for example to use a cheaper model.
-  When omitted, each harness uses its configured default. Pi accepts
-  provider/model patterns. Claude and Codex require a native model name
-  (for example `sonnet` or `gpt-5.5`), without a Pi provider prefix.
+- `harvest-runtime: pi | claude | codex` defaults to `pi`, independently of the
+  source. Select an installed/authenticated runtime on the execution host.
+- `harvest-model` optionally pins its model. Omitted models use the harness
+  default; native Claude/Codex names are not Pi provider-prefixed patterns.
+- Old record-window settings and `--from-record --force` recovery are not v2
+  interfaces. Every capture takes notes **and** record; use durable run receipts
+  and explicit `retry`/`complete` reconciliation, never old watermark moves.
 
-These settings apply to note and record harvests, including deferred retirement
-and remote harvests. For a remote instance, configure its host's knowledge
-binding; the local viewer does not supply its own provider credentials.
-
-If a record harvester was spawned but did not advance its watermark, planning
-the same windows again warns with that instance and the boundary IDs and skips
-another spawn. Inspect the previous attempt first. `oats okf harvest
---from-record --force` retries those windows explicitly; it still refuses to
-start a second harvester while the first one's home exists. The check uses the
-existing prepared watermark file and does not treat a successful spawn as
-completed learning.
-
-## oats.okf 1.5.2
-
-`okf harvest` exits non-zero when it reports a failure (the plain and the
-`--json` forms alike). A leftover `memory-harvest/<slug>` branch from a merged
-promotion is deleted before the next workspace-mode harvest; an unmerged one
-refuses the harvest and names the remedy. `oats okf harvest --help` prints
-usage and never spawns.
+For remote sources, configure custody and credentials on their execution host,
+not the viewer. One source job continues from stable deployment context after
+retirement, subject to current activation/trust. Timer installation requires
+explicit consent. `inspect` is read-only and combines identity-guarded live
+memory with durable receipts; `--source` remains usable after home deletion.
+[Command and recovery details](knowledge.md#inspection-and-operator-commands).
 
 ## oats.aweb late joins (1.10.3)
 

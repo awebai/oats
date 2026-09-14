@@ -41,7 +41,6 @@ import { basename, join, resolve } from "node:path";
 
 const KERNEL = "@awebai/oats";
 const ADAPTER = "@awebai/oats-pi";
-const SHIPPED_JS = ["bin/*.mjs", "lib/*.mjs", "capabilities/*/bin/*.mjs", "capabilities/*/skills/*/scripts/*.mjs"];
 const DESKTOP_LEGS = [
   { os: "mac", arch: "arm64", exts: ["dmg", "zip"], host: "macOS (arm64 host)" },
   { os: "mac", arch: "x64", exts: ["dmg", "zip"], host: "macOS (x64 host, or arm64 host with Rosetta)" },
@@ -272,16 +271,14 @@ class Lane {
 
   /**
    * The three-manifest bump the workflow performs in every job (uncommitted,
-   * export only). A manifest that already reads the tag version is left alone:
-   * `npm version` exits 1 with "Version not changed" there, and the step's
-   * intent — every manifest reads X.Y.Z — is already met.
+   * export only). --allow-same-version also refreshes lockfile root metadata
+   * when a candidate's manifests already read the tag version, just as in CI.
    */
   async bumpManifests(exportDir) {
     for (const sub of [".", "packages/pi", "packages/desktop"]) {
       const name = sub === "." ? "root" : sub;
       const current = JSON.parse(readFileSync(join(exportDir, sub, "package.json"), "utf8")).version;
-      if (current === this.version) { say(`${name} package.json already at ${this.version} — no bump needed`); continue; }
-      await this.step(`bump ${name} ${current} -> ${this.version}`, "npm", ["version", this.version, "--no-git-tag-version"], { cwd: join(exportDir, sub) });
+      await this.step(`bump ${name} ${current} -> ${this.version}`, "npm", ["version", this.version, "--no-git-tag-version", "--allow-same-version"], { cwd: join(exportDir, sub) });
     }
   }
 
@@ -347,14 +344,17 @@ class Lane {
 
     await this.bumpManifests(exportDir);
 
-    // "Syntax-check all shipped JS" — same pathspecs, same node --check.
-    const shipped = git(exportDir, ["ls-files", ...SHIPPED_JS]).split("\n").filter(Boolean);
-    if (!shipped.length) throw new LaneError("git ls-files found no shipped .mjs files");
-    for (const file of shipped) await this.step(`node --check ${file}`, "node", ["--check", file], { cwd: exportDir, quiet: true });
+    // "Syntax-check all shipped JS" — the same recursive inventory as CI and
+    // npm run check, including capability libs, record and package scripts.
+    const syntax = await this.step("Syntax-check all shipped JS", "node", ["scripts/check-package-dry-runs.mjs", "--syntax-only"], { cwd: exportDir });
+    const syntaxCount = /JavaScript syntax passed: (\d+) shipped\/support files\./.exec(syntax.stdout);
+    if (!syntaxCount) throw new LaneError("syntax checker did not report a checked-file count");
 
     // "Test capability resolution and package commands"
     await this.step("npm ci --ignore-scripts", "npm", ["ci", "--ignore-scripts"], { cwd: exportDir });
     await this.step("npm run check", "npm", ["run", "check"], { cwd: exportDir });
+    await this.step("npm run check:pi", "npm", ["run", "check:pi"], { cwd: exportDir });
+    await this.step("npm run validate", "npm", ["run", "validate"], { cwd: exportDir });
     await this.step("desktop test deps", "npm", ["ci"], { cwd: join(exportDir, "packages/desktop"), env: { ELECTRON_SKIP_BINARY_DOWNLOAD: "1" } });
     await this.step("npm test", "npm", ["test"], { cwd: exportDir });
 
@@ -381,7 +381,7 @@ class Lane {
       this.manifest.npm.tarballs.push({ package: pkg, version: this.version, filename: info.filename, sha256: await sha256(path), size: statSync(path).size });
       say(`packed ${info.filename} (${info.entryCount} files)`);
     }
-    this.recordPhase("build", { export: exportDir, steps: this.stepCount, shippedJsChecked: shipped.length });
+    this.recordPhase("build", { export: exportDir, steps: this.stepCount, shippedJsChecked: Number(syntaxCount[1]) });
     say(`build complete — ${this.manifestPath}`);
     say(`export kept for the desktop phase: ${exportDir}`);
   }

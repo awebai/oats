@@ -3,7 +3,10 @@ import Ajv2020 from "ajv/dist/2020.js";
 import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseYamlNested } from "../lib/core.mjs";
+import { parseYamlNested } from "@awebai/oats";
+import { checkOkfMirror } from "./check-okf-mirror.mjs";
+import { checkKnowledgeTheoryPackage } from "./check-knowledge-theory-package.mjs";
+import { checkReleaseVersions } from "./check-package-dry-runs.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
@@ -34,8 +37,17 @@ for (const [path, schema] of [[manifestSchemaPath, manifestSchema], [configSchem
 }
 const validateManifest = ajv.compile(manifestSchema);
 const validateConfig = ajv.compile(configSchema);
+const validatePackage = ajv.compile(json(packageSchemaPath));
+const theoryManifest = join(root, "oats-package/oats-package.json");
+if (!validatePackage(json(theoryManifest))) fail(`oats-package/oats-package.json: ${ajv.errorsText(validatePackage.errors)}`);
+try { checkKnowledgeTheoryPackage({ repoRoot: root }); } catch (error) { fail(`optional knowledge theory: ${error.message}`); }
+try { checkOkfMirror({ repoRoot: root }); } catch (error) { fail(`standalone OKF mirror: ${error.message}`); }
+try { checkReleaseVersions(root); } catch (error) { fail(`release manifests: ${error.message}`); }
 let manifests = 0;
-for (const path of walk(join(root, "capabilities"), (p) => basename(p) === "oats.json")) {
+for (const path of [
+  ...walk(join(root, "capabilities"), (p) => basename(p) === "oats.json"),
+  ...walk(join(root, "oats-package"), (p) => basename(p) === "oats.json"),
+]) {
   manifests++;
   if (!validateManifest(json(path))) fail(`${relative(root, path)}: ${ajv.errorsText(validateManifest.errors)}`);
 }
@@ -46,6 +58,7 @@ if (!validateConfig(repoConfig)) fail(`oats-config.yaml: ${ajv.errorsText(valida
 const markdown = [join(root, "README.md"), ...walk(join(root, "docs"), (p) => extname(p) === ".md")];
 for (const dir of walk(join(root, "capabilities"), (p) => basename(p) === "README.md")) markdown.push(dir);
 markdown.push(join(root, "packages", "pi", "README.md"));
+markdown.push(...walk(join(root, "oats-package"), (p) => extname(p) === ".md"));
 const publicMarkdown = [...new Set(markdown.filter(existsSync))].sort();
 const exampleMarkdown = [...new Set([
   ...publicMarkdown,

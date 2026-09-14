@@ -159,6 +159,8 @@ capabilities:
     knowledge:
       capability: oats.okf
       from: installed
+      settings:
+        bindings-file: /absolute/config/okf-bindings.json
       # injection-override: .agents/injections/capabilities/oats.okf.md
     messaging: none
     tasks: none
@@ -401,7 +403,7 @@ under `.agents/capabilities/` are rejected — move them into `installed/` or
 ## Activation and exclusions
 
 ```bash
-oats use oats.okf --global --dir /path/to/repo
+oats use oats.okf --global --settings bindings-file=/absolute/config/okf-bindings.json --dir /path/to/repo
 oats use example.code-review --type developers --dir /path/to/repo
 oats use example.deploy --type reviewers --disable --dir /path/to/repo
 oats use example.deploy --soul release-reviewer --dir /path/to/repo
@@ -410,6 +412,10 @@ oats use example.deploy --soul release-reviewer --dir /path/to/repo
 `--global` is the default. Choose only one target. An integration's manifest
 declares its layer, so activation does not repeat it. Disable an inherited
 fundamental layer with `oats use none --layer <layer>`.
+
+OKF v2 also requires explicit soul owners and accepted external nodes before
+working-source spawn. Global activation is appropriate only when every source is
+ready; see [knowledge provisioning](knowledge.md#acquire-bind-and-provision-explicitly).
 
 ## Capability-defined agents
 
@@ -493,13 +499,18 @@ or last-writer-wins behavior.
 
 | Capability | Kind | Provides |
 |---|---|---|
-| `oats.okf` | knowledge integration | OKF bundles, instance memory, harvest skills and command |
+| `oats.okf` | knowledge integration | External owned OKF bases, durable notes/record custody, independent judgment and inspection |
 | `oats.aweb` | messaging integration | aweb identity lifecycle and messaging skills |
 | `oats.jira` | tasks integration | Jira task protocol via `acli` |
 | `oats.linear` | tasks integration | Linear GraphQL task commands and workflow |
 | `oats.authoring` | additive | capability, skill, and soul authoring guidance |
 
-The source packages live under `capabilities/`. Acquired packages live under
+Bundled mirrors live under `capabilities/`. The prepared OKF v2 mirror follows
+the standalone package's sole export, `oats-package/capabilities/oats-okf/`.
+Acquire it through the catalog Git package: the npm mirror is **not** a
+self-contained distribution, because npm drops the source worker's canonical
+`CLAUDE.md` symlink. Do not manufacture aliases to bypass package integrity.
+See [prepared release gates](release-notes/v0.23.1.md). Acquired packages live under
 `<level>/.agents/capabilities/installed/` (gitignored, restorable); packages
 authored at a scope live under `<level>/.agents/capabilities/owned/`
 (committed where the scope is a git repo). Within one scope `owned/` overrides `installed/` on ID collision.

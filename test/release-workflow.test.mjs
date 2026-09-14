@@ -301,3 +301,23 @@ test("build-installers workflow: own concurrency group (never release.yml's), no
   // its job name must not be the release matrix job name
   assert.ok(!/^\s*desktop-build:/m.test(bi), "distinct job name from release.yml's desktop-build");
 });
+
+test("release reuses the recursive syntax inventory and gates optional theory validation before publication", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  assert.equal(pkg.scripts.check, "node scripts/check-package-dry-runs.mjs --syntax-only");
+  const syntaxStep = yml.slice(yml.indexOf("- name: Syntax-check all shipped JS"), yml.indexOf("- name: Test capability resolution"));
+  assert.match(syntaxStep, /run: node scripts\/check-package-dry-runs\.mjs --syntax-only/);
+  assert.doesNotMatch(syntaxStep, /git ls-files/, "no narrower hand-maintained release-only pathspecs");
+  for (const command of ["npm run check:pi", "npm run validate"]) {
+    assert.ok(yml.indexOf(command) > 0 && yml.indexOf(command) < yml.indexOf("publish:\n"), `${command} gates publication`);
+  }
+  const validator = readFileSync(new URL("../scripts/validate-project.mjs", import.meta.url), "utf8");
+  assert.match(validator, /checkKnowledgeTheoryPackage\(\{ repoRoot: root \}\)/);
+});
+
+test("every tag-driven npm version invocation permits an already-versioned candidate", () => {
+  const commands = yml.split("\n").filter((line) => /npm version "/.test(line));
+  assert.equal(commands.length, 7, "three build, one Desktop and three publish bumps");
+  for (const command of commands) assert.match(command, /--no-git-tag-version --allow-same-version/);
+  assert.match(yml, /git diff --cached --quiet/, "an already-aligned tag does not require a no-op bump PR");
+});

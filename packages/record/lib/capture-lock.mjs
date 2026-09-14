@@ -63,7 +63,7 @@ export function recoveryInstruction(dir, owner, liveness) {
  *
  *  `io` exists for fault injection in tests only. */
 export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, liveness = holderLiveness, io = {} } = {}) {
-  const fs = { writeFileSync, rmSync, openSync, closeSync, ...io };
+  const fs = { writeFileSync, rmSync, openSync, closeSync, lstatSync, ...io };
   const dir = captureLockPath(root);
   mkdirSync(root, { recursive: true }); // the store creates the root lazily; the lock may come first
   try {
@@ -116,7 +116,20 @@ export function acquireCaptureLock(root, { now = Date.now, pid = process.pid, li
       if (cur.pid !== pid || cur.nonce !== nonce) return { released: false, reason: "not-owner", owner: cur };
       let error;
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) { error = e; }
-      if (!existsSync(dir)) return { released: true };
+      let remains;
+      try { fs.lstatSync(dir); remains = true; }
+      catch (err) {
+        if (err.code === "ENOENT") remains = false;
+        else return { released: false, reason: "remove-failed", error: err.message,
+          recovery: "could not verify capture lock removal; inspect the filesystem error and rerun capture" };
+      }
+      if (!remains) {
+        // A removal may throw after changing the filesystem. Absence does
+        // not erase that failure from a final-capture receipt.
+        if (error) return { released: false, reason: "remove-failed", error: error.message,
+          recovery: "the lock is now absent, but removal reported an error; inspect the failure and rerun capture" };
+        return { released: true };
+      }
       // Our own lock could not be removed. We are the holder and, as far as
       // this process can tell, alive; the operator gets a conditional line.
       const live = pid === process.pid ? "alive" : liveness(pid);

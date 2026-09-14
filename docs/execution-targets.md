@@ -148,6 +148,22 @@ and never silently applies a new model to an
 already-running harness. A never-launched legacy Herdr home without a saved
 server endpoint requires that endpoint to be configured before it can start;
 it does not fall back to tmux.
+Directory-mode starts and restarts also authenticate the home and owned work
+root against the independent spawn receipt (mode, canonical home, device/inode
+identities). Checks run before resolving mutable home contents, after **each**
+launch hook/preparation and immediately before backend observations, stops,
+allocations and launch-state writes. A missing/file/symlink/exchanged root or
+mode disagreement fails with `E_WORK_INSPECTION_FAILED`; substituted targets
+are neither followed for launch nor removed for lock cleanup. Restore the
+original owned roots before retrying; pending receipts remain with them.
+These pathname checks are not OS-level exclusion against a concurrent hostile
+filesystem mutation between validation and use.
+
+Managed execution also records independent native transcript-location history;
+the recipe remains a template, not provenance. See
+[Native roots](design/package-runtime-api.md)
+for the exact source and standalone-fallback semantics.
+
 The start opens a new harness conversation on the instance's `TASK.md`; the
 instance resumes its work from its own `STATE.md`, as the knowledge protocol
 prescribes.

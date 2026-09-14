@@ -60,7 +60,7 @@ test("sessionsForHome: the home is compared canonically, so a symlinked home pat
   const base = setup(t);
   const real = join(base, "real-home"); mkdirSync(real);
   const link = join(base, "linked-home"); symlinkSync(real, link);
-  const roots = { cc: [join(base, "cc")], pi: [join(base, "nope")], codex: [join(base, "nope")] };
+  const roots = { cc: [join(base, "cc")], pi: [], codex: [] };
   const d = join(roots.cc[0], "-real-home"); mkdirSync(d, { recursive: true });
   writeFileSync(join(d, "s.jsonl"), ccLines(real, "s"));
   assert.deepEqual(sessionsForHome(link, { roots }).map((s) => s.sessionId), ["s"]);
@@ -85,7 +85,7 @@ test("sessionCwd: a first line larger than 64 KB and a cwd past 100 KB of bookke
   writeFileSync(straddle, pad + "\n" + ccLines(home, "straddle"));
   assert.equal(sessionCwd("cc", straddle), home);
   // The unattributed hook fires for a file with no cwd within the bound.
-  const roots = { cc: [join(base, "cc")], pi: [join(base, "nope")], codex: [join(base, "nope")] };
+  const roots = { cc: [join(base, "cc")], pi: [], codex: [] };
   const d = join(roots.cc[0], "-x"); mkdirSync(d, { recursive: true });
   writeFileSync(join(d, "nocwd.jsonl"), JSON.stringify({ type: "summary" }) + "\n");
   writeFileSync(join(d, "ok.jsonl"), ccLines(home, "ok"));

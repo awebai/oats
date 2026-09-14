@@ -1,3 +1,4 @@
+import { fixtureEnv } from "./fixture-env.mjs";
 // The capture BINARY's argument handling — the one surface the rest of the
 // suite never touches, because it tests library functions directly.
 //
@@ -43,7 +44,7 @@ function seedSession(home) {
 function run(root, argv, { home, env } = {}) {
   // TURN_RECORD_OWNER must be ABSENT, not empty: the fallback chain is `??`,
   // so an empty string counts as a value and would set an empty owner.
-  const childEnv = { ...process.env, ...env, ...(home ? { HOME: home } : {}) };
+  const childEnv = { ...fixtureEnv(), ...env, ...(home ? { HOME: home } : {}) };
   if (!env || !("TURN_RECORD_OWNER" in env)) delete childEnv.TURN_RECORD_OWNER;
   return spawnSync(process.execPath, [BIN, "--root", root, ...argv], {
     encoding: "utf8",
