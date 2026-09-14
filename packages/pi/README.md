@@ -11,8 +11,8 @@ from the same release tag). This bridge registers no operational tools. It only:
 - contributes the instance-local `.agents/skills` set inside a spawned
   instance;
 - journals compaction summaries and sends resume nudges when the active
-  knowledge capability created `STATE.md`/`log.md` — the OKF session
-  protocol enforced at runtime.
+  knowledge capability created `STATE.md`/`log.md`. Knowledge ownership,
+  read/capture instructions, judgment and delivery remain capability-owned.
 
 Skill resolution itself is owned by the kernel: spawn materializes the exact
 kernel + soul + active-capability set into each instance's `.agents/skills`
@@ -31,3 +31,10 @@ install or upgrade.
 All lifecycle/config/package operations use the shell-visible CLI: `oats
 status`, `oats spawn`, `oats doctor`, `oats install`, `oats trust`, `oats use`, and
 `oats retire`.
+
+With [OKF v2](../../docs/knowledge.md), state/log/notes stay episodic while
+accepted expertise lives in external bases exposed as immutable reader views.
+The Pi bridge is not a harvester or knowledge store. Independent workers select
+their own runtime/model; source retirement relies on durable evidence custody,
+not this adapter's presence. V0.23.1 integration is
+[prepared, not yet a publication claim](../../docs/release-notes/v0.23.1.md).

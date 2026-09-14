@@ -3,22 +3,24 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, rmSync, writeFileSync,
+  chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 // Test-driver helpers only. Runtime imports resolve against installed bytes.
 // The optional Git payload is copied once into an isolated fixture repository;
 // all post-acquisition curriculum reads use installed bytes after its deletion.
 import { CAPABILITY_PATH, EXPERT_PATH, SKILL_PATH, checkKnowledgeTheoryPackage, checkReferenceClosure, treeFiles } from "./check-knowledge-theory-package.mjs";
-import { checkJavaScript, checkKernelPackFiles } from "./check-package-dry-runs.mjs";
+import { checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload } from "./check-package-dry-runs.mjs";
+import { checkOkfMirror, checkOkfPayload, materializeOkfGitPayload, payloadEntries } from "./check-okf-mirror.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const room = mkdtempSync(join(tmpdir(), "oats-packed-smoke-"));
+const room = realpathSync(mkdtempSync(join(tmpdir(), "oats-packed-smoke-")));
 const keep = process.env.OATS_KEEP_SMOKE === "1";
 const run = (command, args, options = {}) => execFileSync(command, args, {
-  encoding: "utf8", stdio: options.capture ? ["ignore", "pipe", "pipe"] : "ignore", ...options,
+  encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000, stdio: options.capture ? ["ignore", "pipe", "pipe"] : "ignore", ...options,
 });
 const write = (path, content) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
 
@@ -46,8 +48,18 @@ try {
   const oats = join(app, "node_modules", ".bin", "oats");
   const catalog = join(room, "catalog.json");
   const home = join(room, "home"); const fakeBin = join(room, "bin"); mkdirSync(home); mkdirSync(fakeBin);
-  for (const name of ["pi", "claude", "codex", "tmux", "herdr", "launchctl", "systemctl", "crontab", "schtasks"]) {
-    write(join(fakeBin, name), '#!/bin/sh\nprintf "%s\\n" "$0 $*" >> "$OATS_SMOKE_UNEXPECTED_EXEC"\nexit 97\n');
+  const unexpectedExec = join(room, "unexpected-exec");
+  const statusProbes = join(room, "stubbed-status-probes");
+  const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+  for (const name of ["pi", "claude", "codex", "tmux", "herdr", "gh", "launchctl", "systemctl", "crontab", "schtasks"]) {
+    // Public CLI discovery can query session/timer status even for no-launch.
+    // Answer only those read-only probes locally (inactive); every other
+    // invocation still fails the no-runtime/no-host-mutation marker. Embed the
+    // paths: capability cleanEnv intentionally strips arbitrary OATS_* vars.
+    const status = name === "tmux" ? '[ "$1" = has-session ]'
+      : name === "launchctl" ? '[ "$1" = print ]'
+      : name === "systemctl" ? '[ "$1" = --user ] && [ "$2" = is-active ]' : "false";
+    write(join(fakeBin, name), `#!/bin/sh\nif ${status}; then\n  printf "%s\\n" "$0 $*" >> ${quote(statusProbes)}\n  exit 1\nfi\nprintf "%s\\n" "$0 $*" >> ${quote(unexpectedExec)}\nexit 97\n`);
     chmodSync(join(fakeBin, name), 0o755);
   }
 
@@ -61,7 +73,7 @@ try {
     OATS_HOME_DIR: join(home, ".oats"),
     OATS_PKG_ROOT: kernelRoot,
     OATS_PACKAGE_CATALOG: catalog,
-    OATS_SMOKE_UNEXPECTED_EXEC: join(room, "unexpected-exec"),
+    OATS_SMOKE_UNEXPECTED_EXEC: unexpectedExec,
     CLAUDE_CONFIG_DIR: join(home, ".claude"), PI_CODING_AGENT_DIR: join(home, ".pi/agent"), CODEX_HOME: join(home, ".codex"),
     XDG_CONFIG_HOME: join(home, ".config"), XDG_DATA_HOME: join(home, ".local/share"),
     XDG_STATE_HOME: join(home, ".local/state"), XDG_CACHE_HOME: join(home, ".cache"), XDG_RUNTIME_DIR: join(home, "run"),
@@ -91,50 +103,39 @@ try {
   // After npm dependency installation, enforce offline Git acquisition.
   env.GIT_ALLOW_PROTOCOL = process.env.GIT_ALLOW_PROTOCOL = "file";
   assert.ok(!existsSync(join(kernelRoot, "oats-package")), "npm kernel must not ship a partial Git-only optional package");
-  // Without a bound catalog, `oats init` resolves
-  // its official layers through the real published catalog and fetches over
-  // the wire: a release machine behind a firewall would fail this smoke and
-  // the failure would look like a packaging defect. So the room publishes its
-  // own official package — the PACKED kernel's own bundled oats.okf, wrapped in
-  // a distribution manifest inside a local Git repository — and a catalog
-  // naming it. The materialization route is exercised for real, offline.
-  //
-  // Wrapping the bundled tree is only honest while the bundled tree IS the
-  // published payload. That parity was established by comparing the bundled
-  // trees byte for byte against the catalog-pinned payloads when they were
-  // synced; NOTHING here re-establishes it, and this check must not be read as
-  // doing so. Version equality is a weak signal on its own — the bundled
-  // oats.okf this replaced also claimed 1.4.1 while differing in content.
-  //
-  // What this check catches is exactly VERSION drift: the bundled manifest
-  // claiming a version the catalog does not pin. It is checked HERE, against
-  // the packed artifact, before anything is built on it. The architectural
-  // violation that made the old copy wrong — reaching into the kernel — is
-  // caught by the no-private-import assertion in test/capabilities.test.mjs,
-  // not by this.
+  // npm intentionally omits source symlinks. Its regular bytes must match the
+  // checked-in standalone inventory, but it is NOT a self-contained OKF Git
+  // distribution. Materialize the actual verified source payload instead;
+  // never wrap an npm copy, invent wrapper bytes or synthesize CLAUDE.md.
+  const inventory = checkOkfMirror({ repoRoot: repo });
+  const npmOkf = checkNpmOkfPayload(join(kernelRoot, "capabilities/oats-okf"), inventory);
   const officialRepo = join(room, "official", "oats-okf");
   const payload = join(officialRepo, "oats-package");
+  materializeOkfGitPayload(payload, { repoRoot: repo });
+  checkOkfPayload(join(payload, "capabilities/oats-okf"), inventory);
+  assert.equal(readFileSync(join(payload, "oats-package.json"), "utf8"), inventory.distributionManifestText);
+  assert.equal(readFileSync(join(payload, "LICENSE"), "utf8"), inventory.distributionLicenseText);
   const packedCatalog = JSON.parse(readFileSync(join(kernelRoot, "package-catalog.json"), "utf8"));
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
-  if (!pinnedRef) throw new Error("packed package-catalog.json does not pin a ref for oats.okf");
-  const pinnedVersion = String(pinnedRef).replace(/^v/, "");
-  const bundledVersion = JSON.parse(readFileSync(join(kernelRoot, "capabilities", "oats-okf", "oats.json"), "utf8")).version;
-  if (bundledVersion !== pinnedVersion) {
-    throw new Error(`bundled capabilities/oats-okf claims version ${bundledVersion} but package-catalog.json pins oats.okf at ${pinnedRef} — resync the bundled tree from the pinned payload, or move the pin`);
-  }
-  write(join(payload, "oats-package.json"), JSON.stringify({
-    package: "oats.okf", version: pinnedVersion, description: "clean-room official oats.okf",
-    compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/oats-okf"],
-  }, null, 2));
-  cpSync(join(kernelRoot, "capabilities", "oats-okf"), join(payload, "capabilities", "oats-okf"), { recursive: true });
+  const bundledVersion = JSON.parse(readFileSync(join(kernelRoot, "capabilities/oats-okf/oats.json"), "utf8")).version;
+  assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
+  assert.equal(bundledVersion, "2.0.0");
   gitRepo(officialRepo);
-  write(catalog, JSON.stringify({ packages: { "oats.okf": { url: `file://${officialRepo}`, path: "oats-package" } }, capabilities: {} }, null, 2));
+  const okfCommit = run("git", ["-C", officialRepo, "rev-parse", "HEAD"], { capture: true }).trim();
+  const okfAlias = "agents/memory-harvest/CLAUDE.md";
+  const trackedAlias = `oats-package/capabilities/oats-okf/${okfAlias}`;
+  assert.match(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", trackedAlias], { capture: true }), /^120000 blob /);
+  assert.equal(run("git", ["-C", officialRepo, "show", `${okfCommit}:${trackedAlias}`], { capture: true }), "AGENTS.md");
+  write(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(officialRepo).href, ref: okfCommit, path: "oats-package" } }, capabilities: {} }, null, 2));
 
   const adapterLoader = await import(pathToFileURL(join(adapterRoot, "extension", "core-loader.mjs")).href);
   if (adapterLoader.OATS_PKG_ROOT !== kernelRoot) throw new Error("packed pi adapter did not resolve packed kernel");
   const kernelPackage = JSON.parse(readFileSync(join(kernelRoot, "package.json"), "utf8"));
   if (adapterLoader.kernelVersion() !== kernelPackage.version) throw new Error("packed adapter/kernel version mismatch");
-  const core = await import(pathToFileURL(join(kernelRoot, "lib", "core.mjs")).href);
+  // Resolve the installed public export, not a private kernel filesystem path.
+  const installedRequire = createRequire(join(app, "package.json"));
+  assert.equal(installedRequire.resolve("@awebai/oats/package.json"), join(kernelRoot, "package.json"));
+  const core = await import(pathToFileURL(installedRequire.resolve("@awebai/oats")).href);
 
   const workspace = join(room, "workspace"); const agentsRoot = join(workspace, "agents");
   const modernRepo = join(workspace, "modern"); gitRepo(modernRepo); mkdirSync(agentsRoot, { recursive: true });
@@ -162,22 +163,163 @@ try {
   if (freshDoctor.lockError) throw new Error(`fresh scope has a lock the kernel refuses: ${freshDoctor.lockError.message}`);
   if (freshDoctor.legacyLockFiles.length || freshDoctor.officialMigration) throw new Error("packed doctor asked a fresh deployment to migrate");
 
+  const installedOkf = core.installedCapabilityDir(modernRepo, "oats.okf");
+  assert.equal(JSON.parse(readFileSync(join(installedOkf, "oats.json"), "utf8")).hooks.spawn.required, true);
+  // Installed acquisition adds only its provenance file; the source gate owns
+  // all source bytes, including the relative compatibility alias.
+  const checkInstalledOkf = () => {
+    const entries = payloadEntries(installedOkf);
+    const provenance = entries.filter((entry) => entry.path === ".oats-installation.json");
+    assert.equal(provenance.length, 1);
+    assert.equal(provenance[0].type, "file");
+    assert.equal(JSON.parse(readFileSync(join(installedOkf, ".oats-installation.json"), "utf8")).commit, okfCommit);
+    assert.deepEqual(entries.filter((entry) => entry.path !== ".oats-installation.json"), inventory.entries,
+      "installed Git source must match the entire inventory; only kernel-authored provenance is additional");
+  };
+  checkInstalledOkf();
+  assert.equal(initLock.packages["oats.okf"].commit, okfCommit);
+  assert.equal(initLock.packages["oats.okf"].path, "oats-package");
+  assert.equal(initLock.packages["oats.okf"].source, "catalog:oats.okf");
+  assert.ok(lstatSync(join(installedOkf, okfAlias)).isSymbolicLink());
+  assert.equal(readlinkSync(join(installedOkf, okfAlias)), "AGENTS.md");
+  rmSync(officialRepo, { recursive: true });
+  assert.ok(!existsSync(officialRepo), "all OKF runtime work must survive source fixture removal");
+  run(oats, ["trust", "oats.okf", "--dir", modernRepo], { env });
+  assert.equal(core.capabilityTrust(modernRepo, "oats.okf").trusted, true);
+
+  const bindings = join(room, "okf-bindings.json");
+  const accepted = join(room, "accepted");
+  write(bindings, JSON.stringify({ version: 1, stateDir: join(room, "okf-state"), bases: {
+    project: { id: "smoke-base", kind: "directory", path: accepted },
+  } }));
+  // Explicit bindings and stable owner, not legacy implicit soul/knowledge.
+  // Target the source soul so the independent service worker gets no source
+  // memory policy. Setup never installs a host backend or starts a runtime.
+  run(oats, ["use", "oats.okf", "--soul", "probe", "--settings", `bindings-file=${bindings}`, "--dir", modernRepo], { env });
   core.createAgent(agentsRoot, { name: "probe", repo: modernRepo, work: "checkout", runtime: "pi", instructions: "# Packed probe\n\nCanonical instructions.\n" });
   const agent = core.findAgent(agentsRoot, "probe");
+  write(join(agent._dir, "soul", "okf.json"), JSON.stringify({ version: 1, owner: "smoke-owner", owns: ["project/expert"], reads: [] }));
+  assert.ok(!existsSync(join(agent._dir, "soul", "knowledge")), "soul-scaffold must not create legacy knowledge");
   write(join(agent._dir, "soul", "skills", "private", "SKILL.md"), "---\nname: private\ndescription: Packed private smoke skill.\n---\n# Private\n");
   const canonical = readFileSync(join(agent._dir, "soul", "AGENTS.md"), "utf8");
+  const nodes = join(room, "okf-nodes.json");
+  write(nodes, JSON.stringify({ expert: { path: "expert", owner: "smoke-owner" } }));
+  const cliEnv = { ...env, PI_AGENTS_ROOT: agentsRoot };
+  const boundary = (args, cwd = modernRepo) => {
+    // Scaffold-only probes have no harness to supply the normal launch identity.
+    const identity = cwd === modernRepo ? {} : {
+      OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd,
+      PI_AGENT_INSTANCE: basename(cwd), PI_AGENT_HOME: cwd,
+    };
+    const text = run(oats, args, { cwd, env: { ...cliEnv, ...identity }, capture: true });
+    const answer = JSON.parse(text);
+    assert.equal(answer.schemaVersion, 1, text);
+    assert.equal(answer.ok, true, text);
+    return answer.result;
+  };
+  assert.equal(boundary(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"]).status, "accepted");
   const spawned = core.spawnInstance(agentsRoot, agent, { instance: "probe-packed", repo: modernRepo, launch: false });
   const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
   const skills = readdirSync(join(spawned.home, ".agents", "skills")).sort();
-  if (JSON.stringify(skills) !== JSON.stringify(["memory-harvest", "oats", "oats-config", "oats-packages", "okf", "private"])) throw new Error(`unexpected packed skills: ${skills.join(", ")}`);
-  if (lstatSync(join(spawned.home, "AGENTS.md")).isSymbolicLink()) throw new Error("instance AGENTS.md was not generated");
-  if (readlinkSync(join(spawned.home, "CLAUDE.md")) !== "AGENTS.md") throw new Error("instance CLAUDE.md is not canonical");
-  if (readFileSync(join(agent._dir, "soul", "AGENTS.md"), "utf8") !== canonical) throw new Error("spawn mutated packed canonical soul");
-  if (!meta.capabilities.some((cap) => cap.id === "oats.okf") || !/--skill /.test(meta.command)) throw new Error("packed instance metadata/isolation missing");
-  const doctor = JSON.parse(run(oats, ["doctor", modernRepo, "--soul", "probe", "--json"], { env: { ...env, PI_AGENTS_ROOT: agentsRoot }, capture: true }));
-  if (!doctor.composedInstructions.includes("Canonical instructions") || !doctor.composedInstructions.includes("Knowledge: OKF")) throw new Error("packed doctor composition incomplete");
-  core.retireInstance(agentsRoot, spawned.instance);
-  if (existsSync(spawned.home)) throw new Error("packed probe did not retire cleanly");
+  assert.deepEqual(skills, ["memory-harvest", "oats", "oats-config", "oats-packages", "okf", "private"]);
+  assert.equal(meta.launched, false);
+  assert.equal(lstatSync(join(spawned.home, "AGENTS.md")).isSymbolicLink(), false);
+  assert.equal(readlinkSync(join(spawned.home, "CLAUDE.md")), "AGENTS.md");
+  assert.equal(readFileSync(join(agent._dir, "soul", "AGENTS.md"), "utf8"), canonical);
+  assert.ok(meta.capabilities.some((cap) => cap.id === "oats.okf") && /--skill /.test(meta.command));
+  const marker = JSON.parse(readFileSync(join(spawned.home, ".okf-source.json"), "utf8"));
+  assert.ok(existsSync(marker.source), "required spawn hook registered durable source");
+  assert.ok(existsSync(join(spawned.home, "knowledge/view.json")), "required hook built immutable reader view");
+  const doctor = JSON.parse(run(oats, ["doctor", modernRepo, "--soul", "probe", "--json"], { env: cliEnv, capture: true }));
+  assert.ok(doctor.composedInstructions.includes("Canonical instructions") && doctor.composedInstructions.includes("Knowledge: OKF"));
+
+  // Both the provider's stdout and the kernel operation envelope cross real
+  // pipes. All documents exceed a pipe buffer but stay under the documented
+  // per-document preview cap; compare complete Unicode bodies, not prefixes.
+  const largeState = "# Working state\n" + "Live state α, not a processing receipt.\n".repeat(5000);
+  const largeLog = "# Log\n" + "Observed β limitation in the source.\n".repeat(5000);
+  const largeNote = "# Pending note\n" + "A live γ note for inspection.\n".repeat(6000);
+  for (const text of [largeState, largeLog, largeNote]) assert.ok(Buffer.byteLength(text) > 128 * 1024 && Buffer.byteLength(text) < 256 * 1024);
+  write(join(spawned.home, "STATE.md"), largeState);
+  write(join(spawned.home, "log.md"), largeLog);
+  write(join(spawned.home, "notes/live.md"), largeNote);
+  const inspectSource = () => boundary(["okf", "inspect", "--source", marker.source, "--soul", "probe", "--json"]);
+  const discovered = boundary(["inspect", "--home", spawned.home, "--json"]);
+  assert.equal(discovered.knowledge.provider, "oats.okf");
+  assert.equal(discovered.knowledge.operations.find((op) => op.name === "inspect").available, true);
+  for (const result of [
+    boundary(["okf", "inspect", "--json"], spawned.home),
+    boundary(["operation", "run", "knowledge:inspect", "--home", spawned.home, "--json"]).result,
+    inspectSource(),
+  ]) {
+    assert.equal(result.liveMemory.available, true);
+    assert.deepEqual(result.documents.slice(0, 3).map(({ label, kind, text, truncated }) => [label, kind, text, truncated]), [
+      ["Working state (STATE.md)", "markdown", largeState, undefined],
+      ["Log (log.md)", "markdown", largeLog, undefined],
+      ["Pending note: live.md", "markdown", largeNote, undefined],
+    ]);
+    assert.equal(result.documents.at(-1).label, "Durable processing receipts");
+    assert.ok(result.acceptedView.project.digest);
+  }
+  const preservedHome = join(room, "temporarily-missing-source");
+  renameSync(spawned.home, preservedHome);
+  assert.equal(inspectSource().liveMemory.reason, "missing-home");
+  write(join(spawned.home, "STATE.md"), "DO_NOT_EXPOSE_REUSED_HOME");
+  write(join(spawned.home, ".okf-source.json"), JSON.stringify({ version: 1, id: "00000000-0000-0000-0000-000000000000", source: marker.source }));
+  const reused = inspectSource();
+  assert.equal(reused.liveMemory.reason, "identity-mismatch");
+  assert.equal(reused.documents.length, 1);
+  assert.doesNotMatch(JSON.stringify(reused), /DO_NOT_EXPOSE_REUSED_HOME/);
+  rmSync(spawned.home, { recursive: true });
+  renameSync(preservedHome, spawned.home);
+
+  core.retireInstance(agentsRoot, spawned.instance, { home: spawned.home });
+  assert.ok(!existsSync(spawned.home), "packed source retired after final durable capture");
+  const durable = inspectSource();
+  assert.equal(durable.liveMemory.reason, "retired");
+  assert.equal(durable.status.retired, true);
+  assert.equal(durable.status.lastCapture.complete, true);
+  assert.equal(durable.documents.length, 1);
+  const refresh = boundary(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"]);
+  assert.equal(dirname(refresh.path), join(dirname(marker.source), "views"));
+  const read = boundary(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"]);
+  assert.equal(read.text, readFileSync(join(accepted, "expert/index.md"), "utf8"));
+
+  // No source home exists. The real capability asks the installed public CLI
+  // for its own independent directory worker, then stages durable evidence.
+  const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"]);
+  assert.equal(requested.status, "ready");
+  const workerMeta = JSON.parse(readFileSync(join(requested.home, "instance.json"), "utf8"));
+  assert.equal(workerMeta.launched, false);
+  assert.equal(workerMeta.work, "directory");
+  assert.equal(workerMeta.kind, "capability");
+  assert.equal(lstatSync(join(requested.home, "work")).isSymbolicLink(), false);
+  assert.ok(!existsSync(join(requested.home, ".okf-source.json")), "service worker must not become another working-memory source");
+  const workerWork = join(requested.home, "work");
+  const input = JSON.parse(readFileSync(join(workerWork, "input.json"), "utf8"));
+  assert.equal(input.inputs.length, 1);
+  assert.equal(input.inputs[0].text, largeNote, "full note survived source deletion into durable worker custody");
+  const inputId = input.inputs[0].id;
+  const stage = JSON.parse(readFileSync(join(workerWork, "staging.json"), "utf8")).project.root;
+  const concept = "---\ntype: Decision\ntitle: Explicit custody\ndescription: Why explicit custody was chosen.\n---\n\nHuman accepted explicit custody to avoid silent fallback.\n" + `Evidence: OKF input ${inputId}.\n`;
+  write(join(stage, "expert/decision.md"), concept);
+  write(join(stage, "expert/index.md"), readFileSync(join(stage, "expert/index.md"), "utf8") + "* [Explicit custody](decision.md) - Why explicit custody was chosen.\n");
+  const judgment = join(workerWork, "judgment.json");
+  write(judgment, JSON.stringify({ version: 1, exclusionsReviewed: true, outcomes: [{ input: inputId, verdict: "promote", reason: "Accepted rationale, not a code description.", concepts: [{ base: "project", path: "expert/decision.md" }] }] }));
+  const completed = boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--judgment", judgment, "--soul", "probe", "--json"]);
+  assert.equal(completed.receipts.project.status, "accepted");
+  assert.equal(completed.processed, true);
+  assert.equal(readFileSync(join(accepted, "expert/decision.md"), "utf8"), concept);
+  assert.deepEqual(boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--soul", "probe", "--json"]), completed, "completion receipt is idempotent");
+  core.retireInstance(agentsRoot, requested.instance, { home: requested.home });
+  assert.ok(!existsSync(requested.home), "independent scaffold-only worker retired");
+  const fresh = core.spawnInstance(agentsRoot, agent, { instance: "probe-fresh", repo: modernRepo, launch: false });
+  assert.equal(readFileSync(join(fresh.home, "knowledge/bases/project/expert/decision.md"), "utf8"), concept);
+  core.retireInstance(agentsRoot, fresh.instance, { home: fresh.home });
+  assert.ok(!existsSync(fresh.home));
+  assert.notEqual(boundary(["schedule", "list", "--dir", modernRepo, "--json"]).scheduler.active, true);
+  assert.equal(core.capabilityTrust(modernRepo, "oats.okf").trusted, true, "lifecycle never mutates installed OKF");
+  checkInstalledOkf();
 
   // Optional theory uses a DIFFERENT release channel: the exact self-contained
   // Git payload, not an npm copy with its source CLAUDE.md symlink missing.
@@ -325,10 +467,15 @@ try {
     initDoctor: true, exactSkills: skills, canonicalSoulUnchanged: true,
     offlineOfficialCatalog: true, freshInitMaterialized: true, nothingToMigrate: true,
     adapterResolvedPackedKernel: true, cleanContractConfigAndSpawn: true, installedJsChecked,
+    stubbedInactiveStatusProbes: existsSync(statusProbes) ? readFileSync(statusProbes, "utf8").trim().split("\n").length : 0,
     optionalTheory: { excludedFromNpm: true, acquiredFromGitFixture: true, acquisitionRoutes: ["direct-git", "catalog-git"],
       exactCommit: theoryCommit, sourceRemoved: true, references: expectedClosure.length - 1,
       trackedSourceAliasPreserved: true, generatedAliases: true, scaffoldedAndRetired: theoryProbes, alternativeIsolated: true, liveLaunches: 0 },
-    bundledOkfVersion: bundledVersion, catalogOkfRef: pinnedRef,
+    okf: { version: bundledVersion, catalogRef: pinnedRef, npm: npmOkf,
+      acquiredFromVerifiedGit: true, exactCommit: okfCommit, sourceRemoved: true,
+      trackedSourceAliasPreserved: true, requiredHooks: true, largePipedInspection: true,
+      sourceCustody: true, independentWorker: true, acceptedCompletion: true,
+      scaffoldedAndRetired: ["source", "worker", "fresh-reader"], liveLaunches: 0 },
   }, null, 2));
 } finally {
   if (keep) console.error(`OATS_KEEP_SMOKE=1: retained ${room}`);

@@ -1,5 +1,5 @@
 name: memory-harvest
 kind: capability
-work: attached
+work: directory
 runtime: pi
-description: Ephemeral OKF service agent that promotes one live instance's pending notes into its soul.
+description: Independent OKF judge for durable per-source evidence and external owned knowledge nodes.

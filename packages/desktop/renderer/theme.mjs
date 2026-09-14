@@ -1,10 +1,17 @@
 /* oats desktop — theme runtime.
    theme.css defines the semantic tokens (incl. the --ansi-* terminal set);
-   this module owns switching (OS-follow by default, manual override
-   persisted under the SAME key as the web panel so the two products feel
-   like one) and derives the xterm.js theme object from the live tokens. */
+   this module owns switching (White by default regardless of OS, choices
+   persisted under the SAME legacy key as the web panel) and derives the
+   xterm.js theme object from the live tokens. */
 
 const KEY = "oatsweb.theme"; // legacy key name kept so existing user prefs survive
+export const THEMES = Object.freeze([
+  Object.freeze({ id: "light", label: "White" }),
+  Object.freeze({ id: "solarized", label: "Solarized" }),
+  Object.freeze({ id: "dark", label: "Dark" }),
+]);
+const validTheme = name => THEMES.some(theme => theme.id === name);
+const normalizeTheme = name => validTheme(name) ? name : "light";
 
 const listeners = new Set();
 const terminalListeners = new Set();
@@ -12,31 +19,34 @@ const TERM_FONT_KEY = "oats.desktop.terminal.fontFamily";
 const TERM_SIZE_KEY = "oats.desktop.terminal.fontSize";
 
 export function currentTheme() {
-  return document.documentElement.dataset.theme || "dark";
+  return normalizeTheme(document.documentElement.dataset.theme);
 }
 
+// Non-persisting projection, retained for callers that apply a temporary theme.
 export function applyTheme(name) {
-  document.documentElement.dataset.theme = name;
-  for (const fn of [...listeners]) { try { fn(name); } catch { /* one listener must not break others */ } }
+  const next = normalizeTheme(name);
+  document.documentElement.dataset.theme = next;
+  for (const fn of [...listeners]) { try { fn(next); } catch { /* one listener must not break others */ } }
+  return next;
 }
 
 export function initTheme() {
   let saved = null;
   try { saved = localStorage.getItem(KEY); } catch { /* storage-less */ }
-  const mq = window.matchMedia("(prefers-color-scheme: dark)");
-  applyTheme(saved || (mq.matches ? "dark" : "light"));
-  // OS-follow only while the user hasn't chosen explicitly
-  mq.addEventListener("change", (e) => {
-    let stored = null;
-    try { stored = localStorage.getItem(KEY); } catch { /* storage-less */ }
-    if (!stored) applyTheme(e.matches ? "dark" : "light");
-  });
+  // Intentionally no OS listener: fresh/invalid preferences always mean White.
+  return applyTheme(saved);
 }
 
+export function setTheme(name) {
+  const next = normalizeTheme(name);
+  try { localStorage.setItem(KEY, next); } catch { /* choice still works in memory */ }
+  return applyTheme(next);
+}
+
+// White → Solarized → Dark → White, independent of storage availability.
 export function toggleTheme() {
-  const next = currentTheme() === "dark" ? "light" : "dark";
-  try { localStorage.setItem(KEY, next); } catch { /* storage-less */ }
-  applyTheme(next);
+  const index = THEMES.findIndex(theme => theme.id === currentTheme());
+  return setTheme(THEMES[(index + 1) % THEMES.length].id);
 }
 
 export function onThemeChange(fn) {

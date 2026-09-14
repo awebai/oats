@@ -68,7 +68,7 @@ if (argv[0] === "version" && argv.includes("--json")) {
 } else if (argv[0] === "operation" && argv[1] === "run" && argv.includes("--json")) {
   // The provider-operation contract: the kernel envelope carries the
   // provider's own view/action result under result.result.
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { operation: argv[2], capability: "oats.okf", result: { harvest: "skipped", reason: "no pending notes" } } }));
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { operation: argv[2], capability: "oats.okf", result: { status: "empty", processed: true } } }));
   process.exit(0);
 } else {
   process.stderr.write("unexpected argv: " + argv.join(" "));
@@ -258,7 +258,8 @@ test("desktop server: spawn routes through the CLI with --dir/--task-file argv; 
       const hr = await fetch(`http://127.0.0.1:${port}/api/harvest/${encodeURIComponent(inst.instance)}?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
       assert.equal(hr.status, 200, JSON.stringify(await hr.clone().json()));
       const hb = await hr.json();
-      assert.equal(hb.result.harvest, "skipped");
+      assert.equal(hb.result.status, "empty");
+      assert.equal(hb.result.processed, true);
       const harvestCall = calls().find((c) => c.argv[0] === "operation");
       assert.deepEqual(harvestCall.argv, ["operation", "run", "knowledge:harvest", "--home", inst.home, "--json"]);
     }

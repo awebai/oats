@@ -1,6 +1,6 @@
 {
   "capability": "oats.knowledge-theory",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Optional knowledge-model authoring guidance and expert; no knowledge layer or runtime policy injection.",
   "compatibility": { "oats": ">=0.22.19" },
   "requires": [],

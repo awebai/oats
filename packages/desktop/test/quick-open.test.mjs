@@ -233,7 +233,7 @@ test("preselect is consumed once: closing inspection keeps it closed", async (t)
   const { doc, spawn } = await mountSpawn(t);
   spawn.preselectSoul({ name: "ux-designer" });
   assert.equal(doc.querySelector(".soul-inspector").hidden, false);
-  [...doc.querySelectorAll(".inspector-head button")].find(b => b.textContent === "Back").click();
+  doc.querySelector('.inspector-head button[aria-label="Close inspector"]').click();
   assert.equal(doc.querySelector(".soul-inspector").hidden, true);
   assert.equal(doc.querySelector(".spawn-dialog"), null);
   // a later roster paint (poll) must not resurrect the consumed preselect

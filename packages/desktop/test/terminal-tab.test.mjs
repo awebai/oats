@@ -43,7 +43,7 @@ function makeDoubles(openPromise) {
 
 const mk = (d, extra = {}) => createTerminalTab({
   desk: d.desk, term: d.term, tmux: { session: "s", window: 1 }, wrap: d.wrap,
-  isActive: () => true, fit: () => {},
+  isActive: () => true, ownsFocus: () => true, fit: () => {},
   observe: () => { d.log.push("observe+"); return () => d.log.push("observe-"); },
   onError: () => {},
   ...extra,
@@ -293,4 +293,32 @@ test("shell wires interceptKey through the engine's terminal policy", () => {
   assert.match(src, /interceptKey: \(ev\) => \{/, "shell provides the interception hook");
   assert.match(src, /matchEvent\(ev, \{ insideTerminal: true \}\)/, "hook consults the engine allowlist");
   assert.match(src, /if \(ev\.type === "keydown"\) handleKeydown\(ev, \{ insideTerminal: true \}\)/, "action runs once, on keydown");
+});
+
+test("readiness focus fails closed without an explicit owner, while attachment setup is retained", async () => {
+  const d = makeDoubles(Promise.resolve(8));
+  const tab = mk(d, { ownsFocus: undefined });
+  await tab.start(); tab.focus();
+  assert.ok(d.log.includes("onData+")); assert.ok(d.log.includes("observe+"));
+  assert.ok(!d.log.includes("focus"));
+  await tab.close();
+  tab.focus();
+  assert.ok(!d.log.includes("focus"), "closed input cannot be focused");
+  assert.equal(d.log.filter(x => x === "closePty:8").length, 1);
+});
+
+test("losing intent does not dispose a pending attachment; subsequent explicit intent may focus it", async () => {
+  const gate = deferred(), d = makeDoubles(gate.promise);
+  let owns = true;
+  const tab = mk(d, { ownsFocus: () => owns });
+  const pending = tab.start();
+  tab.focus(); assert.ok(!d.log.includes("focus"), "pending focus waits for readiness");
+  owns = false;
+  gate.resolve(9); await pending;
+  assert.ok(!d.log.includes("focus"));
+  assert.ok(!d.log.includes("term.dispose"));
+  owns = true; tab.focus();
+  assert.equal(d.log.filter(x => x === "focus").length, 1);
+  await tab.close(); tab.focus();
+  assert.equal(d.log.filter(x => x === "focus").length, 1, "closed input stays unfocused even with an owner");
 });

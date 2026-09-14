@@ -24,6 +24,11 @@ decisions/ and referenced from here.
 
 ---
 
+## Knowledge prerequisites and OKF v2 publication (2026-09-13)
+- verdict: MERGED/RELEASED — framework PR #17 exact `38fa4c90` merged as `c0628d3a`, published OATS/Pi/Desktop v0.23.0 with release run `34770619372` successful in all jobs. Standalone OKF PR #1 merged `077eff6`; PR #2 exact `630c26a` passed independent review and 226/226 tests against the actual published minimum kernel, merged as `4b6d861`, and is the immutable v2.0.0 tag/release. Published-consumer CI `34779176900` succeeded in both jobs.
+- owner: oats-expert maintainer · delivery: feature PRs with same-account approval comments and expected-head merge guards.
+- taught us: source package transport must preserve canonical aliases; the optional theory package is Git-distributed, while npm bundled assets are not represented as complete Git packages. The remaining v0.23.1 integration refreshes catalog/mirror to these already-published sources; deployment/cutover is still a separate gate.
+
 ## Knowledge implementation R1/custody convergence and live acceptance (2026-09-13)
 - verdict: REVIEW FINDINGS CLOSED in the candidate through iterative independent review: retryable directory cleanup and start authority, historically attributed capture roots, piped/bounded record reads, migration binding drift, alias isolation, exact Git content/mode/push custody and directory crash/rejudgment recovery. R0 export validation gaps independently verified closed. Default OKF v2 is committed at `077eff6`; framework prerequisite candidate remains pending final commit/PR/release.
 - owner: oats-expert maintainer · delivery: feature branches and PRs, per the human's explicit clarification.

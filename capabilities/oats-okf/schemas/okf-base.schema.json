@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oats.dev/schemas/okf-base.schema.json",
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "nodes"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+    },
+    "nodes": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "path",
+          "owner"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

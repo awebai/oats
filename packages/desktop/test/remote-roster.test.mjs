@@ -12,6 +12,8 @@ const group = {
 test("remote roster projects server identity and souls without local path resolution", () => {
   assert.equal(remoteWorkspace(group).id, "remote:host-abc");
   const panel = remotePanel(group);
+  assert.equal(panel.workspace.registrationPresent, true);
+  assert.equal(panel.workspace.scope, "/remote/project");
   assert.equal(panel.instances[0].server, "host");
   assert.equal(panel.instances[0].home, "/remote/home");
   assert.equal(panel.instances[0].agentsRoot, "/remote/project/agents");
@@ -31,6 +33,9 @@ test("spawn handoff matches the actual remote target, preserving old route group
 test("removed registration keeps saved instances while unreachable means unknown, not stopped", () => {
   const removed = { ...group, registrationPresent: false };
   assert.equal(remotePanel(removed).instances.length, 1);
+  assert.equal(remotePanel(removed).workspace.registrationPresent, false);
+  assert.equal(remotePanel({ ...group, registrationPresent: undefined }).workspace.registrationPresent, false);
+  assert.equal(remotePanel({ ...group, registrationPresent: "true" }).workspace.registrationPresent, false);
   assert.deepEqual(remoteAgents(removed), []);
   const [unreachable] = unavailableGroups([removed], { code: "E_SSH", message: "Connection refused" });
   const panel = remotePanel(unreachable);

@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "scripts/check-okf-mirror.mjs --finalize --source <standalone-repository> --final-tag <tag> --final-commit <full-oid>",
+  "distributionPath": "oats-package",
+  "capabilityPath": "capabilities/oats-okf",
+  "version": "2.0.0",
+  "source": {
+    "repository": "https://github.com/awebai/oats-okf.git",
+    "branch": "fix/v2-inspection",
+    "head": "4b6d861ce44e5662303e150cc85095d0eb00d7e7",
+    "dirty": false,
+    "workingTreeStatus": []
+  },
+  "release": {
+    "status": "published",
+    "finalMergedCommit": "4b6d861ce44e5662303e150cc85095d0eb00d7e7",
+    "plannedTag": "v2.0.0",
+    "finalTag": "v2.0.0",
+    "published": true,
+    "remote": "origin",
+    "tagObject": "88c9c60a52e47e312ea7b02eac7e609a6cc0db3d"
+  },
+  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"2.0.0\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.23.0\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
+  "distributionManifestSha256": "549a847e6434321d902ab4240c51f69bbf965c6c300ceb14b9302b4d9f14a9b7",
+  "distributionLicenseText": "MIT License\n\nCopyright (c) 2026 OATS Framework\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
+  "distributionLicenseSha256": "549762a3949c109455d73fabcd2340e98bd32ecbb6fea0fcac9ba7f5d41e52fd",
+  "entries": [
+    {
+      "path": "agents",
+      "type": "directory"
+    },
+    {
+      "path": "agents/memory-harvest",
+      "type": "directory"
+    },
+    {
+      "path": "agents/memory-harvest/AGENTS.md",
+      "type": "file",
+      "mode": "100644",
+      "size": 1321,
+      "sha256": "62dabed337cd9c209176315751b1da54164b25badaca9a100fe9933627f39937"
+    },
+    {
+      "path": "agents/memory-harvest/CLAUDE.md",
+      "type": "symlink",
+      "mode": "120000",
+      "target": "AGENTS.md",
+      "size": 9,
+      "sha256": "a54ff182c7e8acf56acfd6e4b9c3ff41e2c41a31c9b211b2deb9df75d9a478f9"
+    },
+    {
+      "path": "agents/memory-harvest/soul.yaml",
+      "type": "file",
+      "mode": "100644",
+      "size": 169,
+      "sha256": "cbacaae3bc461e77800cb7b918cf46aec218fca2ec95f6018f07918ba6075108"
+    },
+    {
+      "path": "bin",
+      "type": "directory"
+    },
+    {
+      "path": "bin/oats-okf.mjs",
+      "type": "file",
+      "mode": "100755",
+      "size": 8615,
+      "sha256": "cc6b8858dfa509c590b43c90554f4839b7fd764a630b54cd6d68c00f6ede8821"
+    },
+    {
+      "path": "injects",
+      "type": "directory"
+    },
+    {
+      "path": "injects/okf.md",
+      "type": "file",
+      "mode": "100644",
+      "size": 2133,
+      "sha256": "8514530ce8a23f19e38bb3c6229d5937d08254fea059e756c14c06be1538b4f9"
+    },
+    {
+      "path": "lib",
+      "type": "directory"
+    },
+    {
+      "path": "lib/config.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 9098,
+      "sha256": "f7ed45632837ee27a108249d3c474427673f78e1c76a62a495b76865a8c585ea"
+    },
+    {
+      "path": "lib/inspection.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 5764,
+      "sha256": "83f56f55e9f58447ba7b8e22a5e9ae6bf46cb53052401953587834458d6af0e0"
+    },
+    {
+      "path": "lib/io.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 6610,
+      "sha256": "667efe769428e75fb6528d7bc6363d0d19313990a6172ad72295143f89b234fd"
+    },
+    {
+      "path": "lib/migration.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 10468,
+      "sha256": "4eaf12a8b850d52804fdc54201f8bf718931712ff6629e3ac30e6bb4619f6355"
+    },
+    {
+      "path": "lib/sources.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 16380,
+      "sha256": "99a667883a3d31e73c1fffded5d7283913d2fe97c6475ae134e5f8bde9512c9e"
+    },
+    {
+      "path": "lib/stores.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 22985,
+      "sha256": "6e176115002068b484866437b40462cbd0d1a28ac7cd1650bdabd72b431c3e54"
+    },
+    {
+      "path": "lib/worker.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 26993,
+      "sha256": "147e24fb1ff52a3fcef9546f5e4f725a6a1601739236ea3b66e1221c62c35740"
+    },
+    {
+      "path": "oats.json",
+      "type": "file",
+      "mode": "100644",
+      "size": 2329,
+      "sha256": "c5f50cb5bac0a22f504e4dd8444eba93880e5b104754a69bf86dfa2039203b31"
+    },
+    {
+      "path": "schemas",
+      "type": "directory"
+    },
+    {
+      "path": "schemas/okf-base.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "size": 1170,
+      "sha256": "4fe87338c9a768f924eae690dcf9dd9a251b53efa2697945a5b30eae7a7dc7f4"
+    },
+    {
+      "path": "schemas/okf-bindings.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "size": 2860,
+      "sha256": "8a613bc5e5bd33f36b0418e0452ea6b84afb4769c254a56bb72cfe083bf53068"
+    },
+    {
+      "path": "schemas/okf-soul.schema.json",
+      "type": "file",
+      "mode": "100644",
+      "size": 1114,
+      "sha256": "e11d35ac9b37f07c75d2b324762b469e902081277b2017985a5bd4b42a615787"
+    },
+    {
+      "path": "skills",
+      "type": "directory"
+    },
+    {
+      "path": "skills/memory-harvest",
+      "type": "directory"
+    },
+    {
+      "path": "skills/memory-harvest/SKILL.md",
+      "type": "file",
+      "mode": "100644",
+      "size": 14879,
+      "sha256": "f82c64a1a9653d6df6f7df837b90e1cbd3af34a4e6433a2ffb5255ed2a4c7d54"
+    },
+    {
+      "path": "skills/okf",
+      "type": "directory"
+    },
+    {
+      "path": "skills/okf/SKILL.md",
+      "type": "file",
+      "mode": "100644",
+      "size": 5946,
+      "sha256": "a4cf6bff664a86a4ba1620f1d7f03a352e908370fb64f18a7e0ac6122bb05b05"
+    },
+    {
+      "path": "skills/okf/scripts",
+      "type": "directory"
+    },
+    {
+      "path": "skills/okf/scripts/okf-validate.mjs",
+      "type": "file",
+      "mode": "100644",
+      "size": 5952,
+      "sha256": "a784569cd80ebc1e31cc7a0699f013b3ce449712dd3fe052e986be217c1b07f1"
+    }
+  ],
+  "snapshotSha256": "4364c9b98bd7326de4a1fa0898d2312c85d51dd0b0196362a077ecc97ce4ab23",
+  "distributionManifestMode": "100644",
+  "distributionLicenseMode": "100644"
+}

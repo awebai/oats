@@ -1,3 +1,4 @@
+import { launchSoul } from './helpers/workspace-actions.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
@@ -57,7 +58,7 @@ test("Soul roster: switching A→B during a hanging spawn removes A form and age
     await tick(); await tick();
     assert.match(dom.window.document.body.textContent, /wsA-soul/);
 
-    dom.window.document.querySelector(".spawn-act").click();
+    launchSoul(dom.window.document);
     dom.window.document.querySelector(".fspawn").click();
     await tick();
     assert.ok(releaseA, "workspace A spawn is hanging");
@@ -140,7 +141,7 @@ test("Soul roster: delayed switch refresh cannot erase a newer B spawn form", as
     poll();                    // newer normal B refresh resolves first
     await tick(); await tick();
     assert.match(dom.window.document.body.textContent, /wsB-soul/);
-    dom.window.document.querySelector(".spawn-act").click();
+    launchSoul(dom.window.document);
     dom.window.document.querySelector(".fspawn").click();
     await tick();
     const ownedForm = dom.window.document.querySelector(".soul-form");
@@ -208,7 +209,7 @@ test("Soul roster: the periodic refresh never wipes an open spawn form's typed t
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     // user opens the spawn form and types a multiline task (NOT submitted yet)
-    dom.window.document.querySelector(".spawn-act").click();
+    launchSoul(dom.window.document);
     const taskEl = dom.window.document.querySelector(".ftask");
     taskEl.value = "important multiline\ntask text";
     // the periodic roster poll fires while the user is still typing
@@ -268,7 +269,7 @@ test("Soul roster: selector-metacharacter agent names spawn cleanly and still bl
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     // opening the form must not throw an invalid-selector error
-    dom.window.document.querySelector(".spawn-act").click();
+    launchSoul(dom.window.document);
     const taskEl = dom.window.document.querySelector(".ftask");
     assert.ok(taskEl, "form opens for a metacharacter-named agent");
     taskEl.value = "task for evil-named soul";
@@ -322,7 +323,7 @@ test("Soul roster: relation + reference instance pass through POST /api/spawn; u
     common.setWorkspace("w");
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
-    dom.window.document.querySelector(".spawn-act").click();
+    launchSoul(dom.window.document);
     const doc = dom.window.document;
     // spawn opens a MODAL dialog (human change request): a11y contract
     const dialog = doc.querySelector(".spawn-dialog");
@@ -347,7 +348,7 @@ test("Soul roster: relation + reference instance pass through POST /api/spawn; u
     assert.equal(posts[0].relativeTo, undefined, "unrelated sends no relativeTo");
 
     // 2) choosing a relation ENABLES the picker; missing reference fails BEFORE dispatch
-    if (!doc.querySelector(".spawn-dialog")) doc.querySelector(".spawn-act").click(); // reopen if closed
+    if (!doc.querySelector(".spawn-dialog")) launchSoul(doc); // reopen if closed
     const form = doc.querySelector(".spawn-dialog");
     const rel2 = form.querySelector(".frelation");
     rel2.value = "child";
@@ -367,12 +368,12 @@ test("Soul roster: relation + reference instance pass through POST /api/spawn; u
     assert.equal(posts[1].relativeTo, "coord-1");
 
     // 4) modal close paths: Escape closes and clears the selection
-    if (!doc.querySelector(".spawn-dialog")) doc.querySelector(".spawn-act").click();
+    if (!doc.querySelector(".spawn-dialog")) launchSoul(doc);
     const dlg2 = doc.querySelector(".spawn-dialog");
     dlg2.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     assert.equal(doc.querySelector(".spawn-dialog"), null, "Escape closes the spawn modal");
     // Cancel button closes too
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     doc.querySelector(".spawn-dialog .fcancel").click();
     assert.equal(doc.querySelector(".spawn-dialog"), null, "Cancel closes the spawn modal");
   } finally {
@@ -385,7 +386,7 @@ test("Soul roster: relation + reference instance pass through POST /api/spawn; u
   }
 });
 
-test("Spawn modal: every option always visible; runtime/model pass through; defaults omitted", async () => {
+test("Spawn modal: existing non-configuration options stay visible; runtime/model pass through; defaults omitted", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body><div id=host></div></body></html>", { url: "http://localhost" });
   const oldDocument = globalThis.document;
   const oldWindow = globalThis.window;
@@ -418,8 +419,8 @@ test("Spawn modal: every option always visible; runtime/model pass through; defa
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
-    // the human requirement: ALL options visible in the modal, none hidden
+    launchSoul(doc);
+    // Existing non-configuration choices remain directly available.
     for (const cls of ["fpurpose", "ftask", "frelation", "frelto", "fruntime", "fmodel"]) {
       const el = doc.querySelector(`.spawn-dialog .${cls}`);
       assert.ok(el, `${cls} control present in the modal`);
@@ -431,7 +432,7 @@ test("Spawn modal: every option always visible; runtime/model pass through; defa
     assert.equal(posts[0].runtime, undefined, "default runtime not sent");
     assert.equal(posts[0].model, undefined, "default model not sent");
     // explicit overrides pass through
-    if (!doc.querySelector(".spawn-dialog")) doc.querySelector(".spawn-act").click();
+    if (!doc.querySelector(".spawn-dialog")) launchSoul(doc);
     doc.querySelector(".fruntime").value = "claude";
     doc.querySelector(".fmodel").value = "sonnet";
     doc.querySelector(".fspawn").click();
@@ -489,18 +490,22 @@ test("Spawn modal: model dropdown offers the runtime's catalog, swaps on runtime
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     await tick(); await tick();
-    // opening the modal fetched the catalog for the agent's DEFAULT runtime
-    assert.deepEqual(modelRequests, ["pi"], "catalog fetched for the agent default runtime");
+    // The roster runtime is not a resolved invocation (a soul can inherit a
+    // launch configuration). Only an explicit runtime requests its catalog.
+    assert.deepEqual(modelRequests, [], "soul defaults do not imply a catalog");
     const dl = doc.querySelector("#spawn-model-options");
     assert.ok(dl, "datalist present");
     const input = doc.querySelector(".fmodel");
     assert.equal(input.getAttribute("list"), "spawn-model-options", "model input wired to the datalist");
-    // RACE (review 9b1e3ff): flip the runtime while the initial pi request
-    // is STILL PENDING, then resolve claude FIRST and pi LAST — the stale
-    // pi response must never overwrite the later claude list.
     const fruntime = doc.querySelector(".fruntime");
+    fruntime.value = "pi";
+    fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
+    assert.deepEqual(modelRequests, ["pi"]);
+    // RACE (review 9b1e3ff): flip while the explicit pi request is STILL
+    // PENDING, then resolve claude FIRST and pi LAST — the stale pi response
+    // must never overwrite the later claude list.
     fruntime.value = "claude";
     fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     await tick();
@@ -513,14 +518,18 @@ test("Spawn modal: model dropdown offers the runtime's catalog, swaps on runtime
     await tick(); await tick();
     assert.deepEqual([...dl.querySelectorAll("option")].map((o) => o.value),
       ["opus", "claude-opus-4-5"], "out-of-order stale response never overwrites the latest list");
-    // a fresh runtime change still repopulates normally
+    // Restoring soul defaults clears suggestions without inventing a runtime.
     fruntime.value = "";
     fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-    await tick();
+    assert.equal(dl.children.length, 0);
+    assert.deepEqual(modelRequests, ["pi", "claude"]);
+    // A fresh explicit choice still repopulates normally.
+    fruntime.value = "pi";
+    fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
     deferred[2].resolve();
     await tick(); await tick();
     assert.deepEqual([...dl.querySelectorAll("option")].map((o) => o.value),
-      ["anthropic/claude-opus-4-5", "openai/gpt-5.2"], "agent-default runtime (pi) catalog restored");
+      ["anthropic/claude-opus-4-5", "openai/gpt-5.2"], "explicit pi catalog restored");
     // free text remains valid — the field is advisory, never a hard select
     input.value = "anthropic/custom,openai/gpt-5.2";
     assert.equal(input.value, "anthropic/custom,openai/gpt-5.2");
@@ -572,7 +581,7 @@ test("Spawn modal: pre-relations CLI gates the RELATED options + picker disabled
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     const rel = doc.querySelector(".spawn-dialog .frelation");
     assert.ok(rel, "relation selector still RENDERED on a pre-relations CLI");
     assert.equal(rel.disabled, false, "…select stays usable — 'unrelated' is the recovery path");
@@ -604,7 +613,7 @@ test("Spawn modal: pre-relations CLI gates the RELATED options + picker disabled
   }
 });
 
-test("Spawn modal close restores focus to the LIVE Spawn button and clears the card highlight (review 41059e0)", async () => {
+test("Spawn modal close restores focus to the LIVE Spawn button and preserves the selected soul (review 41059e0)", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body><div id=host></div></body></html>", { url: "http://localhost" });
   const oldDocument = globalThis.document;
   const oldWindow = globalThis.window;
@@ -646,18 +655,17 @@ test("Spawn modal close restores focus to the LIVE Spawn button and clears the c
       }],
     ];
     for (const [name, closeIt] of closePaths) {
-      const opener = doc.querySelector(".spawn-act");
-      opener.click(); // open the modal — renderGrid replaces the button node
+      const opener = launchSoul(doc); // action stays in the selected-soul inspector
       assert.ok(doc.querySelector(".spawn-dialog"), `${name}: modal open`);
       assert.ok(doc.querySelector(".soul-card.open"), `${name}: card highlighted while open`);
       closeIt();
       assert.equal(doc.querySelector(".spawn-dialog"), null, `${name}: modal closed`);
-      assert.equal(doc.querySelector(".soul-card.open"), null,
-        `${name}: card highlight cleared immediately, not on the next poll`);
-      const live = doc.querySelector(".soul-card[data-agent] .spawn-act");
+      assert.equal(doc.querySelector(".soul-card.open").dataset.agent, agent.name,
+        `${name}: selected soul stays highlighted after the modal closes`);
+      const live = doc.querySelector(".soul-inspector .spawn-act");
       assert.equal(doc.activeElement, live,
-        `${name}: focus restored to the CURRENTLY CONNECTED Spawn button (opener node was replaced)`);
-      assert.notEqual(doc.activeElement, opener, `${name}: not the detached original node`);
+        `${name}: focus restored to the CURRENTLY CONNECTED inspector Launch action`);
+      assert.equal(doc.activeElement, opener, `${name}: inspector action survives grid repaints`);
     }
   } finally {
     spawn.unmount();
@@ -703,7 +711,7 @@ test("Spawn modal tracks CLI capability LIVE: relations flip disables/enables co
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     // relation-capable at open: enabled controls, no note; user types + picks
     const rel = doc.querySelector(".frelation"), ref = doc.querySelector(".frelto");
     assert.equal(rel.disabled, false);
@@ -765,7 +773,7 @@ test("Spawn modal tracks CLI capability LIVE: relations flip disables/enables co
     // reopen it and re-query the controls for the upgrade leg
     assert.equal(doc.querySelector(".spawn-dialog"), null, "successful spawn closes the modal");
     await seed(true);
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     const rel3 = doc.querySelector(".frelation"), ref3 = doc.querySelector(".frelto");
     rel3.value = "child";
     rel3.dispatchEvent(new dom.window.Event("change"));
@@ -823,7 +831,7 @@ test("Spawn modal: relation + instance form ONE grouped fieldset with plain-lang
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     // ONE grouped section: fieldset+legend contains BOTH selects
     const group = doc.querySelector(".spawn-dialog fieldset.frelgroup");
     assert.ok(group, "relation section is a fieldset");
@@ -900,7 +908,7 @@ test("Spawn modal: picker sends the anchor's agents root; E_RELATIVE_AMBIGUOUS s
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     const ref = doc.querySelector(".frelto");
     // duplicate-name options carry distinct data-root and a visible root tag
     const dupOpts = [...ref.options].filter((o) => o.value === "dev-1");
@@ -922,7 +930,7 @@ test("Spawn modal: picker sends the anchor's agents root; E_RELATIVE_AMBIGUOUS s
     // kernel ambiguity error surfaces with actionable guidance (fresh modal —
     // the first spawn's roster wait still owns the old form's button)
     doc.querySelector(".spawn-dialog .fcancel").click();
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     const form = doc.querySelector(".spawn-dialog");
     const rel2 = form.querySelector(".frelation");
     rel2.value = "child";
@@ -998,12 +1006,13 @@ test("Spawn modal picker: hostile paths stay inert; colliding root tags render d
     spawn.mount(dom.window.document.getElementById("host"), ctx);
     await tick(); await tick();
     const doc = dom.window.document;
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     const ref = doc.querySelector(".frelto");
-    // hostile MODEL never escapes the attribute context: the placeholder is
-    // assigned as a DOM property, so no event handler attribute can exist
+    // A raw roster model is neither an effective-default promise nor markup.
     const fmodel = doc.querySelector(".fmodel");
-    assert.equal(fmodel.placeholder, `x" onpointerenter="window.__pwned=1`, "model preserved byte-for-byte as placeholder TEXT");
+    assert.equal(fmodel.placeholder, "Use soul defaults");
+    assert.equal(fmodel.value, "");
+    assert.ok(!doc.querySelector(".spawn-dialog").textContent.includes(agent.model));
     assert.equal(fmodel.getAttribute("onpointerenter"), null, "no event-handler attribute minted from a hostile model");
     assert.ok(![...doc.querySelectorAll("*")].some((el) => [...el.attributes].some((at) => at.name.startsWith("on"))),
       "no on* attribute anywhere in the modal from workspace-controlled data");

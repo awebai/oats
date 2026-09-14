@@ -31,14 +31,14 @@ their compatibility. Installing the theory package activates nothing.
 ## Install the optional authoring package
 
 The kernel's npm package ships this public guide and the CLI, **not** the
-optional expert payload. `oats.knowledge-theory` 1.0.0 is distributed through
-this repository's Git `oats-package/` subtree. Git preserves the canonical
+optional expert payload. The catalog selects `oats.knowledge-theory` 1.0.0
+from the already-published framework v0.23.0 Git `oats-package/` subtree. Git preserves the canonical
 source `CLAUDE.md -> AGENTS.md` symlink; npm omits symlinks, so a partial npm
 copy is not a supported distribution. Acquisition does not repair source
 aliases or relax installed-artifact integrity checks.
 
-Once the immutable framework `v0.23.0` tag is published, select a deployment
-scope explicitly and acquire, then opt in for an author soul:
+Select a deployment scope explicitly and acquire the published source, then
+opt in for an author soul:
 
 ```bash
 oats install git:github.com/awebai/oats@v0.23.0 --dir /path/to/scope
@@ -46,9 +46,12 @@ oats use oats.knowledge-theory --soul <author-soul> --dir /path/to/scope
 ```
 
 Git sources select `oats-package/` by default and lock the resolved commit.
-The official catalog shortcut may follow after the immutable tag exists; do
-not assume an unpublished catalog pin. For local development, use an explicit
-complete source package path instead. Activation exposes the expert and targets
+The `oats.knowledge-theory` catalog shortcut uses that same published v0.23.0
+source. The current authoring-reference patch is package 1.0.1: once framework
+v0.23.1 is published, an explicit initial Git acquisition at that tag selects
+the patch instead. It does not silently change the catalog's 1.0.0 selection
+or an existing lock. For local development, use an explicit complete source
+package path instead. Activation exposes the expert and targets
 the authoring skill, without selecting or replacing a knowledge integration.
 There are no executable surfaces to trust in this package. Installed experts
 use their materialized local curriculum, not this repository at runtime.
