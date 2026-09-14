@@ -43,6 +43,11 @@ ID, integrity, canonical local directory and `retained` or `kept` status.
 revision against the captured provenance. It does not consult the scope's current
 lock, source checkout, catalog, network or approval state.
 
+An absent scope, store or revision reports `artifact-not-found`. A present but
+invalid tree/store or a digest/provenance mismatch is a different refusal. Callers
+can therefore distinguish missing inputs from damaged retained state without
+parsing filesystem error messages. A damaged entry is never silently repaired.
+
 `retainedCapabilityDir(scope, capabilityId, integrity)` computes the lexical path
 after checking the ID and full digest. Computing a path is not verification.
 
