@@ -91,6 +91,20 @@ test("damaged retained content is never repaired from an otherwise valid source"
   assert.equal(readFileSync(marker, "utf8"), "damaged retained content\n");
 });
 
+test("missing scope, store or revision is distinct from damaged retained content", (t) => {
+  const f = fixture(t);
+  assert.throws(() => verifyRetainedCapability(join(f.base, "absent"), ID, f.lock), { code: "artifact-not-found" });
+  assert.throws(() => verifyRetainedCapability(f.scope, ID, f.lock), { code: "artifact-not-found" });
+  const a = retainCapabilityArtifact(f.scope, f.installed, ID, f.lock);
+  rmSync(a.dir, { recursive: true });
+  assert.throws(() => verifyRetainedCapability(f.scope, ID, f.lock), { code: "artifact-not-found" });
+  write(a.dir, "not a tree\n");
+  assert.throws(() => verifyRetainedCapability(f.scope, ID, f.lock), { code: "invalid-artifact" });
+  rmSync(a.dir);
+  mkdirSync(a.dir);
+  assert.throws(() => verifyRetainedCapability(f.scope, ID, f.lock), { code: "integrity-drift" });
+});
+
 test("retention rejects links to mutable external sources even when the lock matches", (t) => {
   const f = fixture(t);
   for (const target of [join(f.installed, "version.mjs"), join(f.source, "expert/version.mjs"), "../../outside"]) {
