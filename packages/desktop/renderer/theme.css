@@ -1,8 +1,9 @@
 /* oats desktop — shared design tokens + view styles.
-   Ported from capabilities/oats-web/ui/panel.html: dark and solarised-light
-   palettes both hold WCAG AA (≥4.5:1) for body text; muted text stays ≥4.5:1
-   against panel surfaces. Views under renderer/views/ style themselves with
-   these semantic tokens only — never raw colors. */
+   White follows the supplied Desktop/Sidebar specification with orange accents;
+   Solarized restores the prior warm-paper palette, and Dark is retained.
+   All three hold WCAG AA (≥4.5:1) for text
+   on their inventoried surfaces. Views under renderer/views/ style themselves
+   with these semantic tokens only — never raw colors or text transparency. */
 :root, [data-theme="dark"] {
   --bg: #0e1116;          /* app background */
   --surface: #161b22;     /* cards, sidebar */
@@ -11,8 +12,10 @@
   --fg: #e6edf3;          /* primary text  (13.9:1 on bg) */
   --muted: #9aa4b2;       /* secondary text (5.6:1 on surface) */
   --faint: #8b949e;       /* tertiary/disabled; AA where also used as metadata */
+  --nav-fg: #909baa;    /* subtly darker than muted; AA on nav surfaces */
   --accent: #4493f8;      /* interactive */
   --accent-fg: #ffffff;
+  --primary-bg: #e6edf3; --primary-fg: #0e1116; /* existing opaque dark pair */
   --violet: #c297ff;
   --ok: #3fb950; --warn: #d29922; --danger: #f85149;
   --chip-bg: #21262e; --chip-fg: #adb6c2;
@@ -26,6 +29,9 @@
   --term-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --term-font-size: 13px;
   --shadow: 0 1px 3px rgb(0 0 0 / .4);
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / .35);
+  --shadow-modal: 0 30px 80px rgb(0 0 0 / .35);
+  --scrim: rgb(0 0 0 / .4);
   /* ── terminal ANSI set (feeds the xterm.js theme via theme.mjs) ── */
   --ansi-black: #768390; --ansi-red: #ff7b72; --ansi-green: #4ac26b; --ansi-yellow: #d9a032;
   --ansi-blue: #6cb2ff; --ansi-magenta: #c297ff; --ansi-cyan: #4ed1db; --ansi-white: #c3ccd6;
@@ -35,9 +41,78 @@
   /* ── component tokens (thin aliases — themes rarely override) ── */
   --md-code-bg: #ffffff10; --md-rule: #ffffff2e;
   --graph-edge: #2d333c; --graph-edge-coord: #4493f8;
+  /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
+  --soul-sand-bg: #393128; --soul-sand-fg: #d4b991;
+  --soul-sage-bg: #29392e; --soul-sage-fg: #a9c6ad;
+  --soul-slate-bg: #2b3542; --soul-slate-fg: #afc1d6;
+  --soul-mauve-bg: #3b2e3b; --soul-mauve-fg: #d0aec7;
+  --soul-clay-bg: #3e302b; --soul-clay-fg: #d5b09a;
+  --soul-olive-bg: #343828; --soul-olive-fg: #bdc393;
+  /* Runtime brand families: warm-brown Claude, purple Pi, teal Codex.
+     AA-darkened blocks retain white marks (>=5.19:1); bright teal with
+     white fails AA. Reuse these readable blocks in every theme. */
+  --runtime-claude-bg: #966040; --runtime-claude-fg: #ffffff;
+  --runtime-pi-bg: #7957bd; --runtime-pi-fg: #ffffff;
+  --runtime-codex-bg: #0f766e; --runtime-codex-fg: #ffffff;
+  --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 [data-theme="light"] {
-  /* Slightly solarised light — warm paper surfaces, AA-readable ink. */
+  /* Off-white / white / ink / orange (not error red). AA deviations:
+     --faint replaces the export's #9a9a95 (2.57:1 on canvas) with opaque ink.
+     Deep orange #ad5500 on pale-orange --sel is 4.61:1; brighter orange
+     would fail for small text. Success stays green, errors stay red. */
+  --bg: #f4f4f1;
+  --surface: #ffffff;
+  --surface-2: #f8f8f6;
+  --border: #e3e3df;
+  --fg: #1a1a18;
+  --muted: #5f5f5a;
+  --faint: #686862;
+  --nav-fg: #50504b;
+  --accent: #ad5500;
+  --accent-fg: #ffffff;
+  --primary-bg: #1a1a18; --primary-fg: #ffffff;
+  --violet: #6d4ee0;
+  --ok: #267548; --warn: #725500; --danger: #b52f35;
+  --chip-bg: #f4f4f1; --chip-fg: #5f5f5a;
+  --sel: #fff0df;
+  --term-bg: #ffffff;
+  --term-fg: #1a1a18;
+  --term-sel: #fff0df;
+  --term-sel-fg: #1a1a18;
+  --shadow: 0 1px 3px rgb(26 26 24 / .06);
+  --shadow-popover: 0 12px 32px rgb(26 26 24 / .18);
+  --shadow-modal: 0 30px 80px rgb(0 0 0 / .22);
+  --scrim: rgb(26 26 24 / .28);
+  /* Local ANSI remap: neutral inks follow the white terminal; chromatic
+     ANSI colors retain distinct meanings, independent of app selection. */
+  --ansi-black: #686862; --ansi-red: #b52f35; --ansi-green: #267548; --ansi-yellow: #725500;
+  --ansi-blue: #155d91; --ansi-magenta: #9d2b61; --ansi-cyan: #0f6863; --ansi-white: #5f5f5a;
+  --ansi-bright-black: #5f5f5a; --ansi-bright-red: #a43a14; --ansi-bright-green: #28794d;
+  --ansi-bright-yellow: #725500; --ansi-bright-blue: #155f96; --ansi-bright-magenta: #9d2b61;
+  --ansi-bright-cyan: #0f6863; --ansi-bright-white: #1a1a18;
+  /* White over canvas paints approximately --surface-2. A dark overlay on
+     this canvas would fail AA for syntax accent/violet. Keep alpha tested. */
+  --md-code-bg: #ffffff60; --md-rule: #1a1a182e;
+  --graph-edge: #e3e3df; --graph-edge-coord: #ad5500;
+  /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
+  --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
+  --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
+  --soul-slate-bg: #e3e8ee; --soul-slate-fg: #485d71;
+  --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a;
+  --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f;
+  --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b;
+  /* Runtime brand families: warm-brown Claude, purple Pi, teal Codex.
+     AA-darkened blocks retain white marks (>=5.19:1); bright teal with
+     white fails AA. Reuse these readable blocks in every theme. */
+  --runtime-claude-bg: #966040; --runtime-claude-fg: #ffffff;
+  --runtime-pi-bg: #7957bd; --runtime-pi-fg: #ffffff;
+  --runtime-codex-bg: #0f766e; --runtime-codex-fg: #ffffff;
+  --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
+}
+[data-theme="solarized"] {
+  /* Solarized Light semantic + ANSI palette restored verbatim from b280ce1b.
+     New chrome tokens below complement it without remapping the old colors. */
   --bg: #f3eddd;
   --surface: #fdf6e3;
   --surface-2: #f0e9d2;
@@ -45,6 +120,8 @@
   --fg: #37424a;
   --muted: #56676d;
   --faint: #55666b;
+  --nav-fg: #4b5b61;
+  --primary-bg: #37424a; --primary-fg: #fdf6e3;
   --accent: #155f96;
   --accent-fg: #ffffff;
   --violet: #7f3f98;
@@ -56,6 +133,9 @@
   --term-sel: #d3c9a8;
   --term-sel-fg: #37424a;
   --shadow: 0 1px 3px rgb(88 110 117 / .14);
+  --shadow-popover: 0 12px 32px rgb(88 110 117 / .18);
+  --shadow-modal: 0 30px 80px rgb(0 0 0 / .22);
+  --scrim: rgb(88 110 117 / .28);
   /* solarized ANSI remap — base colors stay AA-readable on paper */
   --ansi-black: #55666b; --ansi-red: #b52f35; --ansi-green: #465f00; --ansi-yellow: #725500;
   --ansi-blue: #155d91; --ansi-magenta: #9d2b61; --ansi-cyan: #0f6863; --ansi-white: #56676d;
@@ -64,6 +144,20 @@
   --ansi-bright-cyan: #0f6863; --ansi-bright-white: #37424a;
   --md-code-bg: #58637510; --md-rule: #5863752e;
   --graph-edge: #ddd4bc; --graph-edge-coord: #1f6fb2;
+  /* Opaque identity pairs: fixed names only, never CSS supplied by a soul. */
+  --soul-sand-bg: #eee5d7; --soul-sand-fg: #665239;
+  --soul-sage-bg: #e2ebe2; --soul-sage-fg: #46634b;
+  --soul-slate-bg: #e3e8ee; --soul-slate-fg: #485d71;
+  --soul-mauve-bg: #eee3eb; --soul-mauve-fg: #74536a;
+  --soul-clay-bg: #f0e2da; --soul-clay-fg: #79533f;
+  --soul-olive-bg: #e9eadb; --soul-olive-fg: #5d623b;
+  /* Runtime brand families: warm-brown Claude, purple Pi, teal Codex.
+     AA-darkened blocks retain white marks (>=5.19:1); bright teal with
+     white fails AA. Reuse these readable blocks in every theme. */
+  --runtime-claude-bg: #966040; --runtime-claude-fg: #ffffff;
+  --runtime-pi-bg: #7957bd; --runtime-pi-fg: #ffffff;
+  --runtime-codex-bg: #0f766e; --runtime-codex-fg: #ffffff;
+  --runtime-unknown-bg: #5f5f5a; --runtime-unknown-fg: #ffffff;
 }
 
 /* Keyboard-first accessibility: every interactive element shows a visible
@@ -74,11 +168,11 @@
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
-::selection { background: var(--surface-2); color: var(--fg); }
+::selection { background: var(--sel); color: var(--fg); }
 
 /* ── shared primitives ── */
 .oats-view { display: flex; min-height: 0; height: 100%; background: var(--bg); color: var(--fg);
-            font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
             -webkit-font-smoothing: antialiased; }
 .oats-view * { box-sizing: border-box; }
 .oats-view .chip { background: var(--chip-bg); color: var(--chip-fg); border-radius: 999px; font-size: 10.5px;
@@ -88,16 +182,23 @@
 .oats-view .empty { color: var(--muted); text-align: center; padding: 60px 30px; font-size: 13.5px; white-space: normal; }
 .oats-view .empty .big { font-size: 32px; display: block; margin-bottom: 12px; color: var(--faint); }
 .oats-view .empty code { background: var(--chip-bg); border-radius: 6px; padding: 1px 7px; font-size: 12px; }
-.oats-view button.act { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 8px;
-                       padding: 6px 13px; cursor: pointer; font-size: 12.5px; font-weight: 550; font-family: inherit; }
-.oats-view button.act:hover { border-color: var(--accent); color: var(--accent); }
-.oats-view button.act.danger:hover { border-color: var(--danger); color: var(--danger); }
-.oats-view button.act:disabled { color: var(--faint); border-color: var(--border); cursor: default; }
+.oats-view button.act { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 7px;
+                       min-height: 32px; padding: 5px 14px; cursor: pointer; font-size: 12.5px; font-weight: 650; font-family: inherit; }
+.oats-view button.act:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+/* Opt-in primaries only: never recolor every .act or its descendants. */
+.oats-view button.act.primary { background: var(--primary-bg); color: var(--primary-fg); border-color: var(--primary-bg); }
+.oats-view button.act.primary:hover:not(:disabled) { background: var(--primary-bg); color: var(--primary-fg); border-color: var(--primary-bg); }
+.oats-view button.act.danger { color: var(--danger); }
+.oats-view button.act.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.oats-view button.act:disabled { color: var(--faint); border-color: var(--border); background: var(--surface-2); cursor: default; }
 .oats-view input.field, .oats-view textarea.field, .oats-view select.field {
-  background: var(--bg); border: 1px solid var(--border); color: var(--fg);
-  border-radius: 8px; padding: 7px 11px; font: 13px/1.5 inherit; outline: none; }
+  background: var(--surface); border: 1px solid var(--border); color: var(--fg);
+  min-height: 36px; border-radius: 7px; padding: 7px 10px; font-family: inherit; font-size: 12.5px; line-height: 1.45; }
+.oats-view textarea.field { min-height: 64px; }
 .oats-view input.field:focus, .oats-view textarea.field:focus, .oats-view select.field:focus { border-color: var(--accent); }
 .oats-view input.field::placeholder, .oats-view textarea.field::placeholder { color: var(--faint); }
+.oats-view input.field:disabled, .oats-view textarea.field:disabled, .oats-view select.field:disabled {
+  background: var(--surface-2); color: var(--faint); cursor: default; }
 
 @keyframes oats-spin { to { transform: rotate(360deg); } }
 .oats-view .spinner { width: 14px; height: 14px; border: 2px solid color-mix(in srgb, var(--fg) 25%, transparent);
@@ -113,6 +214,7 @@
 .cli-card .cli-head { font-weight: 650; display: flex; align-items: center; gap: 8px; }
 .cli-card .cli-head .glyph { color: var(--warn); }
 .cli-card .cli-body { color: var(--muted); line-height: 1.5; display: flex; flex-direction: column; gap: 10px; }
+.cli-card .cli-explanation { margin: 0; }
 .cli-card .cli-kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }
 .cli-card .cli-kv .k { color: var(--muted); }
 .cli-card .cli-kv .v { color: var(--fg); word-break: break-all; }
@@ -134,3 +236,45 @@
 .oats-view .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; font-size: 12.5px; }
 .oats-view .kv .k { color: var(--muted); }
 .oats-view .kv .v { color: var(--fg); word-break: break-all; }
+
+
+/* Fixed semantic marker contract. The #app arm supplies enough specificity
+   to beat late-mounted .soul-card .sname .glyph / button styles even in the
+   .oats-view harness. Standalone markers work too. Unknown names stay neutral;
+   attribute contents are never interpolated into CSS values. */
+:is(#app, .oats-view) [data-avatar-color], [data-avatar-color] {
+  background: var(--chip-bg); color: var(--chip-fg);
+}
+:is(#app, .oats-view) [data-avatar-color="sand"], [data-avatar-color="sand"] {
+  background: var(--soul-sand-bg); color: var(--soul-sand-fg);
+}
+:is(#app, .oats-view) [data-avatar-color="sage"], [data-avatar-color="sage"] {
+  background: var(--soul-sage-bg); color: var(--soul-sage-fg);
+}
+:is(#app, .oats-view) [data-avatar-color="slate"], [data-avatar-color="slate"] {
+  background: var(--soul-slate-bg); color: var(--soul-slate-fg);
+}
+:is(#app, .oats-view) [data-avatar-color="mauve"], [data-avatar-color="mauve"] {
+  background: var(--soul-mauve-bg); color: var(--soul-mauve-fg);
+}
+:is(#app, .oats-view) [data-avatar-color="clay"], [data-avatar-color="clay"] {
+  background: var(--soul-clay-bg); color: var(--soul-clay-fg);
+}
+:is(#app, .oats-view) [data-avatar-color="olive"], [data-avatar-color="olive"] {
+  background: var(--soul-olive-bg); color: var(--soul-olive-fg);
+}
+:is(#app, .oats-view) .runtime-badge, .runtime-badge {
+  background: var(--runtime-unknown-bg); color: var(--runtime-unknown-fg);
+}
+:is(#app, .oats-view) .runtime-badge[data-runtime="claude"], .runtime-badge[data-runtime="claude"] {
+  background: var(--runtime-claude-bg); color: var(--runtime-claude-fg);
+}
+:is(#app, .oats-view) .runtime-badge[data-runtime="pi"], .runtime-badge[data-runtime="pi"] {
+  background: var(--runtime-pi-bg); color: var(--runtime-pi-fg);
+}
+:is(#app, .oats-view) .runtime-badge[data-runtime="codex"], .runtime-badge[data-runtime="codex"] {
+  background: var(--runtime-codex-bg); color: var(--runtime-codex-fg);
+}
+:is(#app, .oats-view) .runtime-badge[data-runtime="unknown"], .runtime-badge[data-runtime="unknown"] {
+  background: var(--runtime-unknown-bg); color: var(--runtime-unknown-fg);
+}

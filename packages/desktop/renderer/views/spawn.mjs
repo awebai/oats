@@ -1,16 +1,15 @@
-/* oats desktop — Spawn view: the souls browser.
-   Browse available agents (souls) per workspace as a card grid — description
-   and capability chips up front — and spawn from the card: "Spawn" opens a
-   MODAL dialog with every spawn option (purpose, task, relation + reference
-   instance) directly visible. Panel defaults hold: task "" spawns an
-   instance awaiting instructions; attached-mode agents are not spawnable
-   standalone. GET /api/agents, POST /api/spawn.
+/* OATS Desktop — Workspace discovery (legacy stage id: spawn).
+   Souls remain durable definitions; Launch explicitly opens the Spawn modal.
+   Capabilities/Sources project only the current CLI inspection contract.
+   No launch-configuration UI, proposed knowledge/tasks views or resolver.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
+import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
+import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
-  currentWorkspace, setWorkspace, onWorkspaceChange, renderWorkspaceSelect, wsQuery, workspaceGeneration,
+  currentWorkspace, setWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
@@ -35,28 +34,38 @@ function relationsMinLabel() {
 const cliProbePending = () => !cliStatus() && !cliKnownUnavailable();
 
 const CSS = `
-.souls { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
-.souls-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; min-height: var(--bar-h, 48px); flex: none; padding: 8px 14px;
-             border-bottom: 1px solid var(--border); background: var(--surface); }
-.souls-bar .filter { width: min(260px, 35%); min-width:100px; }
-.souls-sum { color: var(--muted); font-size: 12.5px; }
-.souls-grid { flex: 1; overflow-y: auto; padding: 18px; display: grid; gap: 14px;
-              grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-content: start; }
-.souls-grid .repo-head { grid-column: 1 / -1; color: var(--muted); font-size: 11px; font-weight: 650;
-                         text-transform: uppercase; letter-spacing: .06em; padding: 4px 2px 0; }
-.soul-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-             padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 8px;
+.souls { display: flex; flex-direction: column; height: 100%; min-height: 0; min-width:0; background: var(--bg); }
+.souls-bar { display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; margin-left:auto; min-width:0; flex:0 1 180px; }
+.souls-bar label { display:flex; min-width:0; width:100%; }
+.souls-bar .filter { width:100%; min-width:0; }
+.workspace-header .wssel { max-width:100%; min-width:0; flex:0 1 140px; }
+.souls-sum { color:var(--muted); font-size:12px; }
+.workspace-recovery { flex:none; min-width:0; padding:18px 20px; }
+.workspace-recovery[hidden] { display:none; }
+/* Counts are already in the Souls tab. Keep the full filter/CLI status for
+   assistive tech, without another permanent row above the canvas. */
+.workspace-sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.souls-grid { flex:1; min-height:0; min-width:0; overflow-y:auto; padding:18px 20px; display:grid; gap:12px;
+              grid-template-columns:repeat(auto-fill, minmax(min(230px, 100%), 1fr)); align-content:start; }
+.soul-card { background: var(--surface); border: 1px solid var(--border); border-radius:10px; min-width:0; overflow-wrap:anywhere;
+             padding:16px; cursor:pointer; display: flex; flex-direction: column; gap:10px;
              text-align: left; font: inherit; color: var(--fg); }
 .soul-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .soul-card.attached { border-style: dashed; background: var(--surface-2); }
-.soul-card.open { border-color: var(--accent); background: var(--sel); }
-.soul-card .sname { font-weight: 650; font-size: 13.5px; display: flex; align-items: center; gap: 8px; }
-.soul-card .sname .glyph { color: var(--accent); }
-.soul-card .sdesc { color: var(--muted); font-size: 12.5px; line-height: 1.5; flex: 1; }
-.soul-card .schips { display: flex; gap: 5px; flex-wrap: wrap; }
-.soul-card .sactions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 3px; }
-.soul-card .sactions .act { padding: 5px 11px; }
-.soul-card .sactions .brain-act { color: var(--accent); }
+.soul-card.open { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.soul-card .sname { font-weight:650; font-size:13.5px; display:flex; align-items:flex-start; gap:10px; }
+.soul-card .sidentity { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1; }
+.soul-card .stitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.soul-card .sruntime { flex:none; width:18px; height:18px; border-radius:5px; display:grid; place-items:center; font-size:9px; font-weight:700; }
+.soul-card .scontext { color:var(--muted); font:11px var(--mono,monospace); }
+.soul-card .sname .glyph { width:36px; height:36px; flex:none; border-radius:9px; display:grid; place-items:center; font-size:15px; }
+.oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
+.soul-card .sactivity { display:flex; align-items:center; gap:6px; margin-top:auto; color:var(--muted); font-size:11.5px; font-weight:600; }
+.soul-card .sactivity::before { content:""; flex:none; width:6px; height:6px; border-radius:50%; background:var(--muted); }
+.soul-card .sactivity.running { color:var(--accent); }
+.soul-card .sactivity.running::before { background:var(--accent); }
+.souls-grid[hidden] { display:none; }
+.soul-card .sdesc { color:var(--muted); font-size:12px; line-height:1.5; text-wrap:pretty; flex:1; }
 .soul-form { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
 .soul-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .soul-form .frow { display: flex; gap: 8px; align-items: center; }
@@ -90,94 +99,169 @@ let state = null;
 /* Quick Open selects a soul for inspection; launch remains explicit. */
 let pendingPreselect = null;
 let pendingHome = null;
+let pendingWorkspaceTab = null;
+// Selection handoffs compete with each other, NOT with the roster request
+// that supplies their data. Explicit tabs (including reselecting Souls) win
+// over any older soul/home waiting for that roster.
+let selectionIntent = 0;
+function nextSelectionIntent() {
+  // A newer choice in an already-mounted Workspace must also supersede a
+  // shell/footer handoff still waiting on its module import. Shell handoffs
+  // check their ticket before entering here; never mint a fresh ticket on
+  // behalf of an arrival that has already lost foreground ownership.
+  if (state?.alive) state.ctx.onSelectionIntent?.();
+  return { intent: ++selectionIntent, gen: workspaceGeneration() };
+}
+function ownsSelection(s, ref) {
+  return s.alive && ref.gen === workspaceGeneration() && ref.intent === selectionIntent;
+}
+/** Shell footer navigation is an inspection intent, never a launch. */
+export function preselectWorkspaceTab(name) {
+  if (!workspaceTabs.includes(name)) return false;
+  pendingWorkspaceTab = { name, ...nextSelectionIntent() };
+  if (state?.alive) applyWorkspaceTab(state);
+  return true;
+}
+function applyWorkspaceTab(s) {
+  if (!pendingWorkspaceTab) return;
+  const intent = pendingWorkspaceTab; pendingWorkspaceTab = null;
+  if (ownsSelection(s, intent)) s.discovery?.setTab(intent.name);
+}
 export function preselectHome(instance) {
-  pendingHome = { home: instance.home, gen: workspaceGeneration() };
-  if (state?.alive && state.rosterGen === workspaceGeneration()) applyHome(state);
+  const intent = nextSelectionIntent();
+  pendingWorkspaceTab = { name: "souls", ...intent };
+  pendingHome = { home: instance.home, server: instance.server, ...intent };
+  if (state?.alive) { applyWorkspaceTab(state); applyHome(state); }
 }
 function applyHome(s) {
   if (!pendingHome) return;
-  if (pendingHome.gen !== workspaceGeneration()) { pendingHome = null; return; }
+  if (!ownsSelection(s, pendingHome)) { pendingHome = null; return; }
   if (s.rosterGen !== workspaceGeneration()) return;
-  const instance = s.panelInstances.find(i => i.home === pendingHome.home);
+  const candidates = s.panelInstances.filter(i => i.home === pendingHome.home && (i.server || "") === (pendingHome.server || ""));
+  const instance = candidates.length === 1 ? candidates[0] : null;
   pendingHome = null;
   if (instance) s.inspector?.show({ instance, selector: { home: instance.home } });
 }
-function inspectSoul(s, agent) {
-  s.inspectRef = { name: agent.name, agentsRoot: agent.agentsRoot };
+function inspectSoul(s, agent, intent = nextSelectionIntent()) {
+  if (!ownsSelection(s, intent)) return;
+  s.discovery?.setTab("souls");
+  s.inspectRef = { name: agent.name, agentsRoot: agent.agentsRoot, server: agent.server };
   renderGrid(s);
   s.inspector?.show({ agent, selector: { soul: agent.name, agentsRoot: agent.agentsRoot } });
 }
 
 export function preselectSoul(ref) {
+  const intent = nextSelectionIntent();
+  pendingWorkspaceTab = { name: "souls", ...intent };
   pendingPreselect = ref && ref.name
-    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, gen: workspaceGeneration() }
+    ? { name: String(ref.name), agentsRoot: ref.agentsRoot, server: ref.server, ...intent }
     : null;
-  // already mounted with a loaded roster: apply on the spot
-  if (state && state.alive && state.souls.agents.length) applyPreselect(state);
+  // Already mounted with a current roster: apply on the spot, including an
+  // empty roster (a no-match is consumed once, never resurrected by polling).
+  if (state?.alive) { applyWorkspaceTab(state); applyPreselect(state); }
 }
 
 function applyPreselect(s) {
   if (!pendingPreselect) return;
-  // stale preselect: the workspace switched after Quick Open picked — drop
-  if (pendingPreselect.gen !== workspaceGeneration()) { pendingPreselect = null; return; }
+  // A workspace switch OR newer selection supersedes this handoff.
+  if (!ownsSelection(s, pendingPreselect)) { pendingPreselect = null; return; }
   // stale roster: s.souls still holds a previous workspace's agents while
   // the current refresh is pending — do NOT consume; the refresh that
   // paints the current workspace's roster calls back here (review 6d5e183)
   if (s.rosterGen !== workspaceGeneration()) return;
   const ref = pendingPreselect;
   pendingPreselect = null; // consumed-once, match or not
-  const a = s.souls.agents.find((x) => x.name === ref.name
-    && (!ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot));
-  if (!a) return;
-  inspectSoul(s, a);
-  // degraded / attached: focus the card — its disabled button + tooltip
-  // (and the degradation card above the grid) carry the explanation. An
+  const matches = s.souls.agents.filter((x) => x.name === ref.name
+    && (!ref.agentsRoot || x.agentsRoot === ref.agentsRoot) && (!ref.server || x.server === ref.server));
+  if (matches.length !== 1) return; // an incomplete identity must not pick a twin
+  const a = matches[0];
+  inspectSoul(s, a, ref);
+  // Degraded / attached souls still select for details; their inspector
+  // actions and diagnostic status explain availability. An
   // active filter may exclude the selected soul's card: reveal it by
   // clearing the filter before focusing (review 6d5e183 — a consumed
   // preselect must never be a silent no-op for a soul that exists).
   let card = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])]
-    .find((c) => c.dataset.agent === a.name);
+    .find((c) => cardMatches(c, a));
   if (!card && s.filterText) {
     s.filterText = "";
     const filterEl = s.q("filter");
     if (filterEl) filterEl.value = "";
     renderGrid(s);
     card = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])]
-      .find((c) => c.dataset.agent === a.name);
+      .find((c) => cardMatches(c, a));
   }
   if (card) { card.tabIndex = 0; card.focus?.({ preventScroll: true }); }
 }
 
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
-  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterGen: null };
+  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null };
   el.innerHTML = `
     <div class="oats-view" style="display:block">
       <style>${CSS}
-${inspectorCSS}</style>
+${inspectorCSS}
+${discoveryCSS}
+${identityCSS}</style>
       <div class="souls">
-        <div class="souls-bar">
-          <select class="field wssel" style="display:none"></select>
-          <input class="field filter" placeholder="Filter souls…" autocomplete="off">
-          <span class="souls-sum"></span><button class="act capabilities-act">Capabilities</button>
+        <div class="souls-body">
+          <section class="workspace-main" aria-label="Workspace discovery">
+            <header class="workspace-header"></header>
+            <div class="souls-bar">
+              <select class="field wssel" aria-label="Workspace" style="display:none"></select>
+              <label><span class="workspace-sr-only">Search souls</span><input class="field filter" type="search" placeholder="Filter souls…" autocomplete="off"></label>
+              <span class="souls-sum workspace-sr-only" role="status"></span>
+            </div>
+            <div class="workspace-recovery" hidden></div>
+            <div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div>
+            <section class="workspace-discovery" hidden></section>
+          </section>
+          <aside id="workspace-inspector" class="soul-inspector" aria-label="Soul and capability details" hidden></aside>
         </div>
-        <div class="souls-body"><div class="souls-grid"><div class="loading-block"><span class="spinner"></span> Loading souls…</div></div><aside class="soul-inspector" aria-label="Soul and capability details" hidden></aside></div>
       </div>
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
   s.inspector = createSoulInspector(s.q("soul-inspector"), {
     ctx, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
-    schedule: agent => { preselectSchedule(agent); ctx.openView?.("schedules"); },
-    changed: () => refresh(s), closed: () => { s.inspectRef = null; if (s.alive) { renderGrid(s); s.q("filter").focus(); } },
+    canLaunch: agent => canLaunchSoul(s, agent),
+    launchReason: () => cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
+    available: () => cliAvailable() && cliStatus()?.operationsApi === 1 && cliStatus()?.features?.includes('operations'),
+    files: agent => s.ctx.openBrain?.(agent.name),
+    canFiles: agent => canOpenFiles(s, agent),
+    instances: agent => soulInstances(s, agent),
+    schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); ctx.openView?.("schedules"); } },
+    changed: () => refresh(s), closed: () => {
+      const ref = s.inspectRef; s.inspectRef = null;
+      if (!s.alive) return;
+      renderGrid(s);
+      // The grid is rebuilt by polling; return to composite identity, never
+      // the first same-named soul from a different root or host.
+      const card = ref && gridCards(s).find(card => cardMatches(card, ref));
+      if (card && s.discovery?.tab === "souls") { card.tabIndex = 0; card.focus(); }
+    },
   });
-  s.q("capabilities-act").addEventListener("click", () => {
-    const contexts = [{ context: '', label: 'Workspace defaults' }];
-    for (const agent of s.souls.agents) {
-      const context = agent.agentsRoot?.replace(/\/[^/]+\/?$/, "") || agent.workspace;
-      if (context && !contexts.some(c => c.context === context)) contexts.push({ context, label: context });
-    }
-    s.inspector.show({ selector: {}, contexts });
+  s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
+    ctx, soulsPanel: s.q("souls-grid"),
+    onTab: tab => {
+      s.spawnOp++; closeSpawnModal(s); s.inspector.close();
+      s.q("souls-bar").hidden = tab !== "souls";
+    },
+    inspect: selection => selection ? s.inspector.show(selection) : s.inspector.close(),
   });
+  // Capture actual tab choices before discovery projects them. Its onTab
+  // callback runs only for CHANGES; clicking Souls or pressing Home while
+  // already there is still a newer explicit intent. Programmatic projection
+  // from an owned preselect must not mint a competing intent of its own.
+  const tabs = s.q("workspace-tabs");
+  tabs.addEventListener("click", event => {
+    if (s.alive && event.target.closest?.('[role="tab"]')) nextSelectionIntent();
+  }, true);
+  tabs.addEventListener("keydown", event => {
+    if (s.alive && event.target.closest?.('[role="tab"]') && ["Home", "End", "ArrowRight", "ArrowLeft"].includes(event.key)) nextSelectionIntent();
+  }, true);
+  s.q("workspace-header").append(s.q("souls-bar"));
+  s.q("workspace-header").append(s.q("wssel")); // standalone switcher stays reachable on every subtab
+  applyWorkspaceTab(s);
   s.q("filter").addEventListener("input", (e) => { s.filterText = e.target.value; renderGrid(s); });
   // Keyboard operability (task: keybindings wiring): `/` focuses the filter,
   // arrows rove the card grid, Enter inspects the focused soul,
@@ -201,7 +285,7 @@ ${inspectorCSS}</style>
     // selector must not focus the filter behind the open dialog, and 'B'
     // must not open a card's Brain underneath it.
     const editable = e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.isContentEditable;
-    if (editable || e.target.closest?.(".soul-card") || e.target.closest?.(".spawn-modal")) return; // card keys are onGridKey's
+    if (s.discovery.tab !== "souls" || editable || e.target.closest?.(".soul-inspector") || e.target.closest?.(".soul-card") || e.target.closest?.(".spawn-modal")) return; // card keys are onGridKey's
     const hit = resolveViewKey(e, s.viewActions);
     if (hit) { e.preventDefault(); s.viewActions.find((a) => a.id === hit)?.run(); }
   });
@@ -219,6 +303,8 @@ ${inspectorCSS}</style>
   s.unsubCli = onCliChange(() => {
     if (!s.alive) return;
     renderGrid(s);
+    s.discovery.syncCli();
+    s.inspector.syncAvailability();
     // an open modal tracks capability live — disabled state + version note
     // resync without touching typed fields (review 5526b70)
     s.syncModalRelations?.();
@@ -228,6 +314,8 @@ ${inspectorCSS}</style>
     // Workspace switch owns the whole surface: invalidate any A spawn modal
     // immediately, remove its DOM before B loads, and clear A's agentsRoot.
     s.spawnOp++;
+    s.rosterReq++; s.rosterGen = null; s.souls = { agents: [] }; s.panelInstances = [];
+    s.discovery.reset();
     s.inspector.close();
     closeSpawnModal(s, { repaint: false }); // the switch replaces the grid below
     s.q("souls-grid").innerHTML = '<div class="loading-block"><span class="spinner"></span> Loading agents…</div>';
@@ -254,8 +342,11 @@ export function unmount() {
   // (review 04584f9 — the consumed-once/stale-intent contract).
   pendingPreselect = null;
   pendingHome = null;
+  pendingWorkspaceTab = null;
+  selectionIntent++;
   state.alive = false;
   state.inspector.dispose();
+  state.discovery.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
   if (state.unsubWs) state.unsubWs();
@@ -269,20 +360,44 @@ export function unmount() {
 /* Exported for the deferred cross-workspace regression. */
 export async function refresh(s) {
   const myGen = workspaceGeneration();       // capture at dispatch
+  const myReq = s.rosterReq = (s.rosterReq || 0) + 1;
+  const intent = { intent: selectionIntent, gen: myGen };
+  const current = () => s.alive && myGen === workspaceGeneration() && myReq === s.rosterReq;
   let souls, panel;
   try {
     [souls, panel] = await Promise.all([
       apiJson(s.ctx, `/api/agents${wsQuery()}`),
       apiJson(s.ctx, `/api/panel${wsQuery()}`),
     ]);
-  } catch { return; } // keep the last good list
+  } catch (error) {
+    if (!current() || !ownsSelection(s, intent)) return;
+    const summary = s.q("souls-sum");
+    if (summary) { summary.classList?.remove("workspace-sr-only"); summary.textContent = `Unable to refresh souls: ${error.message || "unavailable"}. Retrying…`; }
+    return; // keep only this workspace's last good list
+  }
   // discard deferred responses from a previous workspace — they'd paint A's
   // agent list over B's after a switch
-  if (!s.alive || myGen !== workspaceGeneration()) return;
+  if (!current()) return;
+  if (!Array.isArray(souls?.agents)) return;
   s.souls = souls;
   s.rosterGen = myGen; // this roster belongs to the current workspace generation
   s.panelInstances = panel.instances || []; // reference-instance picker source
-  renderWorkspaceSelect(s.q("wssel"), panel.workspaces, panel.workspace?.id || "");
+  const select = s.q("wssel");
+  if (select && typeof select.replaceChildren === "function") {
+    // The real shell owns workspace selection. Standalone harnesses keep
+    // their selector, safely constructed even for quotes in workspace ids.
+    const workspaces = Array.isArray(panel.workspaces) ? panel.workspaces : [];
+    select.style.display = s.ctx.hasWorkspaceSwitcher || workspaces.length <= 1 ? "none" : "";
+    select.replaceChildren();
+    for (const workspace of workspaces) {
+      const option = select.ownerDocument.createElement("option");
+      option.value = workspace.id; option.textContent = workspace.name || workspace.id;
+      select.append(option);
+    }
+    select.value = panel.workspace?.id || "";
+  }
+  s.discovery?.updateRoster(souls.agents, panel);
+  s.inspector?.syncAvailability();
   renderGrid(s);
   applyPreselect(s); // Quick Open handoff — after the roster is painted
   applyHome(s);
@@ -312,17 +427,20 @@ function renderGrid(s) {
   // (main's in-card soul-form early-return does not apply: the spawn form
   // lives in the modal on this branch, so grid repaints never touch it)
   // capture the focused card's identity before the rebuild wipes the DOM
-  const focusedAgent = s.el?.ownerDocument?.activeElement?.closest?.(".soul-card")?.dataset?.agent || null;
+  const active = s.el?.ownerDocument?.activeElement;
+  const focused = active?.closest?.(".soul-card");
+  const focusedRef = focused ? { name: focused.dataset.agent, agentsRoot: focused.dataset.root, server: focused.dataset.server } : null;
+  // Recovery is shared by every Workspace section, not hidden inside the
+  // Souls tab. Its action/focus owner survives routine roster repaints.
+  const recovery = s.q("workspace-recovery");
+  if (s.cliCardHandle && !cliKnownUnavailable()) {
+    s.cliCardHandle.dispose(); s.cliCardHandle.el.remove(); s.cliCardHandle = null;
+  }
+  if (recovery) recovery.hidden = !cliKnownUnavailable();
   grid.innerHTML = "";
   const list = s.souls.agents.filter((a) => matches(s, a));
-  const spawnable = s.souls.agents.filter((a) => a.work !== "attached").length;
-  s.q("souls-sum").textContent = s.souls.agents.length
-    ? `${s.souls.agents.length} souls · ${spawnable} launchable` : "";
-  if (!s.souls.agents.length) {
-    grid.innerHTML = '<div class="empty" style="grid-column:1/-1"><span class="big">◎</span>No agents defined in this workspace.</div>';
-    return;
-  }
-  if (!list.length) { grid.innerHTML = '<div class="empty" style="grid-column:1/-1">Nothing matches the filter.</div>'; return; }
+  s.q("souls-sum").classList?.add("workspace-sr-only");
+  s.q("souls-sum").textContent = `${list.length} of ${s.souls.agents.length} souls${cliProbePending() ? " · Checking CLI…" : ""}`;
   if (typeof grid.append !== "function") return; // non-DOM host (tests observe s.souls)
   // One consistent degradation card ABOVE the roster when the CLI is KNOWN
   // unavailable — reads (the soul cards, brain) stay fully usable below it.
@@ -330,41 +448,38 @@ function renderGrid(s) {
   // require a verified compatible CLI (frozen contract), but flashing the
   // card during the milliseconds before the launch probe resolves would be
   // noise.
-  if (state && s === state && cliKnownUnavailable()) {
-    if (s.cliCardHandle) s.cliCardHandle.dispose();
-    s.cliCardHandle = cliCard(grid.ownerDocument, s.ctx);
-    s.cliCardHandle.el.style.gridColumn = "1/-1";
-    grid.append(s.cliCardHandle.el);
-  } else if (s.cliCardHandle) { s.cliCardHandle.dispose(); s.cliCardHandle = null; }
-  // Rendering-only repo grouping: cards sorted repo → name with a section
-  // header per repo (agent family = the card itself). Data order untouched.
+  if (state && s === state && cliKnownUnavailable() && recovery) {
+    if (!s.cliCardHandle) s.cliCardHandle = cliCard(grid.ownerDocument, s.ctx);
+    if (s.cliCardHandle.el.parentNode !== recovery) recovery.append(s.cliCardHandle.el);
+  }
+  if (!list.length) {
+    const empty = grid.ownerDocument.createElement("div");
+    empty.className = "empty"; empty.style.gridColumn = "1/-1";
+    empty.textContent = s.souls.agents.length ? "Nothing matches the filter." : "No agents defined in this workspace.";
+    grid.append(empty);
+    return;
+  }
+  // Source/name ordering remains stable; source is on each card, not an
+  // extra repo-heading row that offsets the reference canvas baseline.
   const label = (a) => a.repoName || (a.repo ? String(a.repo).split("/").filter(Boolean).at(-1) : "") || "workspace";
   const sorted = [...list].sort((a, b) =>
     label(a).localeCompare(label(b)) || String(a.name).localeCompare(String(b.name)));
-  let lastRepo = null;
-  for (const a of sorted) {
-    const repo = label(a);
-    if (repo !== lastRepo) {
-      lastRepo = repo;
-      const rh = grid.ownerDocument.createElement("div");
-      rh.className = "repo-head";
-      rh.textContent = repo;
-      grid.append(rh);
-    }
-    grid.append(soulCard(s, a));
-  }
+  for (const a of sorted) grid.append(soulCard(s, a));
   // Roving tabindex across the rebuilt grid: keep the previously focused
   // card's identity tabbable (and focused) when it survives the repaint,
   // else the first card enters the tab order.
   const rebuilt = [...grid.querySelectorAll(".soul-card")];
   if (rebuilt.length) {
-    const focused = focusedAgent && rebuilt.find((c) => c.dataset.agent === focusedAgent);
-    (focused || rebuilt[0]).tabIndex = 0;
-    if (focused) focused.focus({ preventScroll: true });
+    const restored = focusedRef && rebuilt.find((c) => cardMatches(c, focusedRef));
+    (restored || rebuilt[0]).tabIndex = 0;
+    if (restored) restored.focus({ preventScroll: true });
   }
 }
 
 /* ── grid keyboard: roving focus over cards ──────────────────────── */
+function cardMatches(card, ref) {
+  return card.dataset.agent === ref.name && (card.dataset.root || "") === (ref.agentsRoot || "") && (card.dataset.server || "") === (ref.server || "");
+}
 function gridCards(s) { return [...s.q("souls-grid").querySelectorAll(".soul-card")]; }
 
 function focusedCard(s) {
@@ -372,10 +487,23 @@ function focusedCard(s) {
   return active?.closest?.(".soul-card") || null;
 }
 
+function soulInstances(s, agent) {
+  return (s.panelInstances || []).filter(i => i.agent === agent.name && i.agentsRoot === agent.agentsRoot && (i.server || "") === (agent.server || ""));
+}
+function canOpenFiles(s, agent) {
+  // The existing read-only Brain route accepts a name, not an agentsRoot.
+  // Do not pretend it can safely address a shadowed soul, or redirect an
+  // inspector's captured A selector to a unique same-named replacement B.
+  if (!s.alive || s.rosterGen !== workspaceGeneration() || agent.remote || typeof s.ctx.openBrain !== "function") return false;
+  const candidates = s.souls.agents.filter(a => a.name === agent.name);
+  return candidates.length === 1 && !candidates[0].remote
+    && (candidates[0].agentsRoot || "") === (agent.agentsRoot || "")
+    && (candidates[0].server || "") === (agent.server || "");
+}
 function brainOfFocusedCard(s) {
-  const card = focusedCard(s) || gridCards(s)[0];
-  const a = card && s.souls.agents.find((x) => x.name === card.dataset.agent);
-  if (a && !a.remote) s.ctx.openBrain?.(a.name);
+  const card = focusedCard(s);
+  const a = card && s.souls.agents.find((x) => cardMatches(card, x));
+  if (a && canOpenFiles(s, a)) s.ctx.openBrain?.(a.name);
 }
 
 function onGridKey(s, e) {
@@ -391,9 +519,9 @@ function onGridKey(s, e) {
   } else if (["ArrowLeft", "ArrowUp"].includes(e.key)) {
     e.preventDefault();
     focusCard(s, cards, Math.max(0, at - 1));
-  } else if (e.key === "Enter" && cur && e.target === cur) {
+  } else if (["Enter", " "].includes(e.key) && cur && e.target === cur) {
     e.preventDefault();
-    cur.querySelector(".inspect-act")?.click();
+    cur.click();
   } else if (cur && e.target === cur) {
     // ALL view actions resolve from a focused card — the primary
     // non-editable surface (review 93ff03d: '/' must reach the filter
@@ -401,7 +529,7 @@ function onGridKey(s, e) {
     const hit = resolveViewKey(e, s.viewActions);
     if (hit === "spawn.brain") {
       e.preventDefault();
-      cur.querySelector(".brain-act:not([disabled])")?.click();
+      brainOfFocusedCard(s);
     } else if (hit) {
       e.preventDefault();
       s.viewActions.find((a) => a.id === hit)?.run();
@@ -417,89 +545,64 @@ function focusCard(s, cards, index) {
   target.focus();
 }
 
+function canLaunchSoul(s, agent) {
+  return s.alive && s.rosterGen === workspaceGeneration() && cliAvailable() && !!agent?.agentsRoot
+    && s.souls.agents.some(current => current.name === agent.name
+      && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "") && current.work !== "attached");
+}
+
 function soulCard(s, a) {
-  const attached = a.work === "attached"; // needs an owning instance's work tree
-  const noCli = !cliAvailable();          // unknown OR unavailable — mutations need a verified CLI
-  const card = document.createElement("div");
-  card.className = "soul-card" + (attached ? " attached" : "") + ((s.sel === a.name || (s.inspectRef?.name === a.name && s.inspectRef?.agentsRoot === a.agentsRoot)) ? " open" : "");
-  card.dataset.agent = a.name;
+  const attached = a.work === "attached";
+  const card = s.el.ownerDocument.createElement("button");
+  card.type = "button";
+  card.className = "soul-card inspect-act" + (attached ? " attached" : "") + (((s.selAgent?.name === a.name && s.selAgent?.agentsRoot === a.agentsRoot && s.selAgent?.server === a.server) || (s.inspectRef?.name === a.name && s.inspectRef?.agentsRoot === a.agentsRoot && s.inspectRef?.server === a.server)) ? " open" : "");
+  card.dataset.agent = a.name; card.dataset.root = a.agentsRoot || ""; card.dataset.server = a.server || "";
   card.tabIndex = -1; // roving tabindex — renderGrid elects the tabbable card
-  card.setAttribute("role", "group");
-  card.setAttribute("aria-label", a.name);
-  card.addEventListener("click", event => { if (!event.target.closest("button")) inspectSoul(s, a); });
-  card.innerHTML = `
-    <div class="sname"><span class="glyph" aria-hidden="true">✦</span>${escapeHtml(a.name)}</div>
-    ${a.description ? `<div class="sdesc">${escapeHtml(a.description)}</div>` : '<div class="sdesc"></div>'}
-    <div class="schips">
-      <span class="chip rt">${escapeHtml(a.runtime)}</span>
-      <span class="chip">${escapeHtml(a.work)}</span>
-      ${a.repo ? `<span class="chip">${escapeHtml(a.repoName)}</span>` : ""}
-      ${a.kind === "local" ? '<span class="chip">local</span>' : ""}
-      ${attached ? '<span class="chip">not spawnable standalone</span>' : ""}
-    </div>`;
-  const actions = document.createElement("div");
-  actions.className = "sactions";
-  const inspect = document.createElement("button"); inspect.className = "act inspect-act";
-  inspect.textContent = "Details"; inspect.addEventListener("click", () => inspectSoul(s, a)); actions.append(inspect);
-  {
-    const spawn = document.createElement("button");
-    spawn.className = "act spawn-act";
-    spawn.textContent = attached ? "Attached only" : "Launch…";
-    spawn.disabled = attached || noCli || !a.agentsRoot;
-    spawn.title = attached
-      ? "Attached-mode agent — spawn it from an owning instance’s work tree"
-      : noCli
-        // Pending probe renders NO card (frozen contract) — the tooltip must
-        // not point at a card that is not there.
-        ? (cliProbePending()
-          ? "Checking for a compatible oats CLI — spawning enables once it is verified"
-          : "Spawning requires a compatible installed oats CLI — see the card above")
-        : `Spawn ${a.name}`;
-    spawn.addEventListener("click", () => {
-      if (!cliAvailable()) return; // state may have flipped since render
-      openSpawnModal(s, a);
-    });
-    actions.append(spawn);
-  }
-  const brain = document.createElement("button");
-  brain.className = "act brain-act";
-  brain.textContent = "Files";
-  brain.disabled = !!a.remote || typeof s.ctx.openBrain !== "function";
-  if (a.remote) brain.title = "Remote files are available through the agent terminal";
-  brain.addEventListener("click", () => s.ctx.openBrain?.(a.name));
-  actions.append(brain);
-  card.append(actions);
-  const schedule = document.createElement("button");
-  schedule.className = "act schedule-act"; schedule.textContent = "Schedule…";
-  schedule.disabled = attached || noCli || !a.agentsRoot;
-  schedule.addEventListener("click", () => { preselectSchedule(a); s.ctx.openView?.("schedules"); });
-  actions.append(schedule);
+  card.setAttribute("aria-label", `Inspect ${a.name}`);
+  card.setAttribute("aria-controls", "workspace-inspector");
+  card.title = attached ? "Attached only — select for details and files" : `Inspect ${a.name} — Launch, Files, Schedule and reported defaults`;
+  card.addEventListener("click", () => inspectSoul(s, a));
+  const doc = s.el.ownerDocument;
+  const name = doc.createElement("span"); name.className = "sname";
+  const avatar = createSoulMark(doc, a); avatar.classList.add("glyph");
+  const identity = doc.createElement("span"); identity.className = "sidentity";
+  const title = doc.createElement("span"); title.className = "stitle"; title.textContent = a.name;
+  const context = doc.createElement("span"); context.className = "scontext"; context.textContent = a.repoName || a.workspace || "Workspace soul";
+  identity.append(title, context);
+  const runtime = createRuntimeBadge(doc, a.runtime); runtime.classList.add("sruntime");
+  name.append(avatar, identity, runtime);
+  const description = doc.createElement("span"); description.className = "sdesc"; description.textContent = a.description || "";
+  card.append(name, description);
+  const instances = soulInstances(s, a);
+  const running = instances.filter(i => i.running === true).length;
+  const activity = s.el.ownerDocument.createElement("span"); activity.className = "sactivity" + (running ? " running" : "");
+  activity.textContent = `${running} running · ${instances.length} ${instances.length === 1 ? "instance" : "instances"}`;
+  card.append(activity);
   return card;
 }
 
 /** Close (if open) the spawn modal and clear the selection. Safe to call
- * when no modal exists. Does NOT bump spawnOp — callers that must invalidate
- * an in-flight spawn (workspace switch) bump it themselves; a plain close
- * leaves the operation's status handling to the ownership tokens.
+ * when no modal exists. Closing ends the form's operation ownership; an
+ * in-flight completion cannot act after cancellation or a subtab change.
  * repaint (default true when a modal existed) re-renders the grid so the
  * card's .open highlight clears immediately — not on the next poll.
- * restoreFocus targets the CURRENTLY CONNECTED Spawn button of the agent
- * whose modal closed: renderGrid replaces nodes, so the captured opener is
- * usually detached by close time (review 41059e0) — the agent name is the
- * stable identity, matched via dataset (never a dynamic selector). */
+ * restoreFocus targets the current inspector Launch action for the same
+ * composite soul, falling back to its current card if the inspector closed.
+ * Grid polling replaces cards: never focus a captured detached opener or
+ * a same-named twin (review 41059e0). */
 function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   const hadModal = !!s.modalEl;
-  const agentName = s.sel;
+  const agentRef = s.selAgent;
+  if (hadModal) s.spawnOp++; // closing ends the form operation ownership
   s.sel = null; s.selAgent = null;
   s.modalEl?.remove(); s.modalEl = null;
   s.syncModalRelations = null;
   if (!hadModal || !repaint || s.alive === false) return;
   renderGrid(s); // clear the .open card highlight NOW
-  if (!restoreFocus || !agentName) return;
-  const button = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])]
-    .find((card) => card.dataset.agent === agentName)
-    ?.querySelector(".spawn-act:not([disabled])");
-  button?.focus();
+  if (!restoreFocus || !agentRef) return;
+  if (s.inspector?.focusLaunch(agentRef)) return;
+  const card = gridCards(s).find(card => cardMatches(card, agentRef));
+  card?.focus();
 }
 
 /** Spawn modal (human change request on the integrated feature branch):
@@ -508,11 +611,14 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
  * app's ws-dialog pattern: role=dialog + aria-modal, labelled controls,
  * Tab focus trap, Esc/backdrop/× close, focus restored to the opener. */
 function openSpawnModal(s, a) {
+  if (!canLaunchSoul(s, a)) return;
+  nextSelectionIntent();
   closeSpawnModal(s); // one modal at a time; a new open supersedes the old
   s.sel = a.name; s.selAgent = a;
   renderGrid(s); // highlight the selected card under the backdrop
 
   const doc = s.el.ownerDocument;
+  const modalGen = workspaceGeneration();
   const modal = doc.createElement("div");
   modal.className = "spawn-modal";
   const titleId = "spawn-dialog-title";
@@ -614,7 +720,7 @@ function openSpawnModal(s, a) {
           </select></label>
         <div class="fserverdesc" hidden>Runs in the selected server's workspace.</div>
         <div class="frow">
-          <button class="act fspawn">Spawn</button>
+          <button class="act fspawn primary">Spawn</button>
           <button class="act fcancel">Cancel</button>
           <span class="fstatus" aria-live="polite"></span>
         </div>
@@ -637,7 +743,7 @@ function openSpawnModal(s, a) {
     try {
       const d = await apiJson(s.ctx, "/api/servers");
       const sel = modal.querySelector(".fserver");
-      if (!sel || s.modalEl !== modal) return;
+      if (!sel || !s.alive || modalGen !== workspaceGeneration() || s.modalEl !== modal) return;
       if (!d?.servers?.length) return;
       for (const srv of d.servers) {
         const o = document.createElement("option");
@@ -673,7 +779,7 @@ function openSpawnModal(s, a) {
     if (serverSelect.value || !runtime) return; // No local catalog for remote or unresolved defaults.
     try {
       const d = await postJson(s.ctx, "/api/models", { runtime });
-      if (myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
+      if (!s.alive || modalGen !== workspaceGeneration() || myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
       for (const m of d.models || []) {
         const opt = doc.createElement("option");
         opt.value = m.id;
@@ -748,7 +854,9 @@ function openSpawnModal(s, a) {
     else if (!e.shiftKey && doc.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
-  f.querySelector(".fspawn").addEventListener("click", () => doSpawn(s, {
+  f.querySelector(".fspawn").addEventListener("click", () => {
+    if (!s.alive || s.modalEl !== modal || modalGen !== workspaceGeneration()) return;
+    return doSpawn(s, {
     btn: f.querySelector(".fspawn"),
     status: f.querySelector(".fstatus"),
     purpose: () => f.querySelector(".fpurpose").value,
@@ -782,7 +890,8 @@ function openSpawnModal(s, a) {
       f.querySelector(".fmodel").value = "";
       void fillModelOptions(); // restoring defaults also cancels any explicit-runtime catalog
     },
-  }));
+    });
+  });
 
   s.modalEl = modal;
   s.el.querySelector(".souls").append(modal);
@@ -864,7 +973,7 @@ export async function doSpawn(s, ui) {
   }
   const myGen = workspaceGeneration();       // capture at dispatch
   const myOp = ++s.spawnOp;                  // this spawn owns the form until superseded
-  const owns = () => myOp === s.spawnOp && s.alive !== false;
+  const owns = () => myOp === s.spawnOp && s.alive !== false && myGen === workspaceGeneration();
   const relation = ui.relation ? String(ui.relation() || "unrelated") : "unrelated";
   const relativeTo = ui.relativeTo ? String(ui.relativeTo() || "") : "";
   if (relation !== "unrelated" && ui.server?.() && !a.server) {

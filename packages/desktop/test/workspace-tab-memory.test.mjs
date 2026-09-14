@@ -21,7 +21,7 @@ function shellFunction(name) {
 }
 
 function shell(t) {
-  const dom = new JSDOM(`<div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><input id="workspace-picker">`);
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><input id="workspace-picker">`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
   const tabs = new Map();
@@ -51,7 +51,7 @@ function shell(t) {
   };
   context.tabOpenIntents = createSelectionOwnership(context);
   const api = runInNewContext([
-    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "restoreWorkspaceTabs",
+    "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "activateTab", "renderWorkspaceContext", "restoreWorkspaceTabs",
   ].map(shellFunction).join("\n") + "\n({ activateTab, restoreWorkspaceTabs, renderSplit });", context);
   return { ...api, context, document, tabs, switchTo(workspace) {
     context.workspace = workspace; context.generation++;

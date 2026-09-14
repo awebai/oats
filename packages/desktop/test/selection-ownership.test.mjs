@@ -21,6 +21,7 @@ import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as instanceTree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
@@ -28,7 +29,7 @@ const names = [
   "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "showStage",
   "splitPane", "closeSplit", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab",
   "openViewTab", "openTerminalTabFlow", "openTerminalTabInner", "focusActiveTerminal",
-  "visibleTabEntries", "cycleTab", "restoreWorkspaceTabs", "showTerminalContext",
+  "visibleTabEntries", "cycleTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
   "initContextRoster", "renderContextRoster", "focusRoster", "onRosterRowKey", "setRovingRow",
 ];
 function deferred() {
@@ -39,7 +40,7 @@ function deferred() {
 const flush = () => new Promise(setImmediate);
 
 function shell(t, { shellSource = source, ownership = createSelectionOwnership, terminal = createTerminalTab } = {}) {
-  const dom = new JSDOM(`<div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div><aside id="sidebar"><div id="instance-roster"><input id="entry" class="ctx-filter"><span class="ctx-count"></span><div class="ctx-list"></div></div><nav id="nav"><button class="nav-item active">Hierarchy</button></nav></aside>`);
   t.after(() => dom.window.close());
   const document = dom.window.document;
   const requests = [], loads = [], attachments = [], terms = [], detached = [], actions = new Map();
@@ -58,7 +59,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {},
-    ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, rosterKeyAction, moveTarget,
+    ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },
     prepareOwnedOpen: opts => prepareOwnedOpen({ ...opts, load() {
       const gate = deferred(); loads.push(gate); return gate.promise;

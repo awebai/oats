@@ -29,7 +29,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 function shell(t, shellSource = source) {
-  const dom = new JSDOM(`<body><aside><button id="ws-trigger">Workspace</button><nav id="nav"></nav></aside>
+  const dom = new JSDOM(`<body><span id="ws-context"></span><aside><button id="ws-trigger">Workspace</button><nav id="nav"></nav></aside>
     <div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div><div id="tabhost"></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, loads = [], contexts = [], focusCalls = [], navWrites = [];
@@ -56,7 +56,7 @@ function shell(t, shellSource = source) {
     ctx: {},
   };
   const names = ["showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",
-    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "selectEmptyGroup", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
+    "addTab", "selectTab", "activateTab", "closeTab", "onTabKeydown", "renderSplit", "selectEmptyGroup", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext", "openViewTab"];
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

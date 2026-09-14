@@ -29,7 +29,7 @@ const instance = name => ({ instance: name, running: true, home: `/synthetic/${n
   tmux: { session: "synthetic-only", window: name } });
 
 function shell(t) {
-  const dom = new JSDOM(`<div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
+  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
     <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button><button id="split-close"></button></div>
     </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
     <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button>`);
@@ -74,7 +74,7 @@ function shell(t) {
   c.tabOpenIntents = createSelectionOwnership(c);
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "showTerminalContext",
-    "openTerminalTabFlow", "openTerminalTabInner", "restoreWorkspaceTabs", "focusActiveTerminal"];
+    "openTerminalTabFlow", "openTerminalTabInner", "renderWorkspaceContext", "restoreWorkspaceTabs", "focusActiveTerminal"];
   const functions = names.map(name => {
     const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];

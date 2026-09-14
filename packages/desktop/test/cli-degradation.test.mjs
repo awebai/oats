@@ -6,6 +6,16 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 
 const cs = await import("../renderer/views/cli-status.mjs");
+const sp = await import("../renderer/views/spawn.mjs");
+// Launch now belongs to the selected-soul inspector, not every grid card.
+function selectSoul(el, index = 0) {
+  const card = el.querySelectorAll(".soul-card")[index];
+  assert.ok(card, "read-only soul card renders");
+  card.click();
+  const launch = el.querySelector(".soul-inspector .spawn-act");
+  assert.ok(launch, "selected-soul inspector exposes Launch");
+  return launch;
+}
 
 function dom() {
   const d = new JSDOM("<!doctype html><html><body></body></html>", { url: "http://127.0.0.1/" });
@@ -18,11 +28,10 @@ const payload = (ok, extra = {}) => ({
   probedAt: 1, tried: ok ? [] : [{ path: "/old/oats", source: "path", reason: "version 0.21.6 outside >=0.22.0 <0.23.0", version: "0.21.6" }],
   ...extra,
 });
+// Match the current shell: ctx.api resolves the already-parsed domain body.
+// cli-status-parity.test.mjs checks this against the Response-shaped harness.
 const jsonCtx = (state) => ({
-  api: async (pathname, opts) => ({
-    ok: true, status: 200,
-    json: async () => (pathname === "/api/cli" ? state.get : (state.reprobes.push(opts?.body || null), state.post)),
-  }),
+  api: async (pathname, opts) => pathname === "/api/cli" ? state.get : (state.reprobes.push(opts?.body || null), state.post),
 });
 
 test("cli-status: a RECEIVED 404 (absent endpoint) settles as unavailable and cards; transport failure stays transient (review 6b90702)", async () => {
@@ -130,6 +139,7 @@ test("cliCard states the requirement from the payload and never invents one when
   assert.equal(cs.cliStatus(), null, "precondition: settled unknown");
   const { el, dispose } = cs.cliCard(doc, { api: async () => ({ ok: true, status: 200, json: async () => ({ some: "legacy-shape" }) }) });
   assert.match(el.textContent, /unknown/, "an unreadable requirement says so");
+  assert.doesNotMatch(el.textContent, /no oats binary found/, "unreadable diagnostics cannot establish absence");
   assert.ok(!/>=\d+\.\d+\.\d+/.test(el.textContent), "no band is fabricated for a state that never received one");
   assert.equal(el.querySelector(".cli-cmd").textContent.trim(), cs.GENERIC_INSTALL_COMMAND);
   assert.ok(!/@\d+\.\d+\.\d+/.test(el.querySelector(".cli-cmd").textContent), "no version is fabricated either");
@@ -147,7 +157,7 @@ test("cli-status: install/requirement helpers prefer the backend payload, fall b
 });
 
 test("cli-status: a cached unavailable state transitions to UNKNOWN on an invalid/legacy payload (review d7becaf)", async () => {
-  // unavailable → legacy/garbage response → unknown → mutation UI ENABLED
+  // unavailable → legacy/garbage response → unknown → mutation UI stays disabled
   const state = { get: payload(false), post: payload(false), reprobes: [] };
   await cs.refreshCli(jsonCtx(state));
   assert.equal(cs.cliAvailable(), false);
@@ -162,7 +172,6 @@ test("spawn view: PENDING probe disables card-less; SETTLED unknown/unavailable 
   const doc = dom();
   globalThis.document = doc;
   try {
-    const sp = await import("../renderer/views/spawn.mjs");
     const agents = [{ name: "dev", description: "d", kind: "persistent", work: "worktree", runtime: "pi", repo: "/r", repoName: "r", agentsRoot: "/ws/agents", workspace: "/ws" }];
     // /api/cli HANGS first (probe pending), then answers legacy garbage
     // (settled unknown), then unavailable, then compatible.
@@ -191,7 +200,7 @@ test("spawn view: PENDING probe disables card-less; SETTLED unknown/unavailable 
     sp.mount(el, ctx);
     await new Promise((r) => setTimeout(r, 20));
     // TRANSIENT probe-pending: disabled, card-less is acceptable
-    const spawnBtn = el.querySelector(".spawn-act");
+    const spawnBtn = selectSoul(el);
     assert.ok(spawnBtn, "spawn button renders");
     assert.equal(spawnBtn.disabled, true, "pending probe disables spawn (mutations need a VERIFIED CLI)");
     spawnBtn.dispatchEvent(new doc.defaultView.Event("click"));
@@ -220,6 +229,7 @@ test("spawn view: PENDING probe disables card-less; SETTLED unknown/unavailable 
     sp.unmount();
     state.cliWaiters.forEach((ok) => ok({ ok: false, status: 599, json: async () => ({}) })); // release hangs
   } finally {
+    sp.unmount(); doc.defaultView.close();
     delete globalThis.document;
   }
 });
@@ -229,7 +239,6 @@ test("spawn view: form open under a VERIFIED CLI closes on the unavailable trans
   const doc = dom();
   globalThis.document = doc;
   try {
-    const sp = await import("../renderer/views/spawn.mjs");
     const agents = [{ name: "dev", description: "d", kind: "persistent", work: "worktree", runtime: "pi", repo: "/r", repoName: "r", agentsRoot: "/ws/agents", workspace: "/ws" }];
     const state = { cliPayload: payload(true), posts: [] };
     const ctx = {
@@ -251,7 +260,7 @@ test("spawn view: form open under a VERIFIED CLI closes on the unavailable trans
     sp.mount(el, ctx);
     await new Promise((r) => setTimeout(r, 20));
     // open the form under a verified CLI — legitimately
-    el.querySelector(".spawn-act").dispatchEvent(new doc.defaultView.Event("click"));
+    selectSoul(el).dispatchEvent(new doc.defaultView.Event("click"));
     const form = el.querySelector(".soul-form");
     assert.ok(form, "form opens under a verified CLI");
     // RETAIN the stale submit before the transition — its click listener
@@ -264,23 +273,25 @@ test("spawn view: form open under a VERIFIED CLI closes on the unavailable trans
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(el.querySelector(".soul-form"), null, "open form removed on the unavailable transition (bypass, review d7becaf)");
     assert.equal(el.querySelectorAll(".cli-card").length, 1, "card painted");
-    // fire the RETAINED (now-detached) submit — the listener still runs;
-    // only the doSpawn submit-time gate stops the dispatch.
+    // A retained detached submit is blocked by both CLI and modal ownership.
     staleSubmit.dispatchEvent(new doc.defaultView.Event("click"));
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(state.posts.length, 0, "stale submit path never dispatched /api/spawn (doSpawn gate)");
-    // control: the SAME stale handle DOES dispatch once re-verified —
-    // proving the gate (not node detachment) is what blocked it. Restore
-    // the selection the transition cleared, as doSpawn reads s.selAgent.
+    // Re-verification must not revive an obsolete modal's listener. The
+    // isolated doSpawn test below proves the CLI gate independently.
     state.cliPayload = payload(true);
     await cs.refreshCli(ctx);
     await new Promise((r) => setTimeout(r, 20));
     el.querySelector(".spawn-act").dispatchEvent(new doc.defaultView.Event("click")); // reselect (fresh form)
     staleSubmit.dispatchEvent(new doc.defaultView.Event("click"));                    // STALE handle fires
     await new Promise((r) => setTimeout(r, 30));
-    assert.equal(state.posts.length, 1, "control: the stale handle dispatches when verified — the gate was the blocker");
+    assert.equal(state.posts.length, 0, "re-verification cannot revive a stale modal owner");
+    el.querySelector(".fspawn").dispatchEvent(new doc.defaultView.Event("click"));
+    await new Promise((r) => setTimeout(r, 30));
+    assert.equal(state.posts.length, 1, "only the newly opened modal can dispatch");
     sp.unmount();
   } finally {
+    sp.unmount(); doc.defaultView.close();
     delete globalThis.document;
   }
 });
@@ -294,7 +305,6 @@ test("doSpawn gate isolation: selection still set + CLI unavailable → no dispa
   const doc = dom();
   globalThis.document = doc;
   try {
-    const sp = await import("../renderer/views/spawn.mjs");
     const posts = [];
     const ctx = {
       api: async (pathname, opts) => ({
@@ -338,6 +348,7 @@ test("doSpawn gate isolation: selection still set + CLI unavailable → no dispa
     await sp.doSpawn(s, { btn, status, task: () => "t", purpose: () => "", clear: () => {} });
     assert.equal(posts.length, 1, "control: gate open under a verified CLI — the gate was the blocker");
   } finally {
+    sp.unmount(); doc.defaultView.close();
     delete globalThis.document;
   }
 });
@@ -350,7 +361,6 @@ test("spawn view: an UNSETTLED probe explains itself (no dead button pointing at
   const ticks = [];
   globalThis.setInterval = (fn) => { ticks.push(fn); return realSetInterval(() => {}, 1 << 30); };
   try {
-    const sp = await import("../renderer/views/spawn.mjs");
     const agents = [{ name: "dev", description: "d", kind: "persistent", work: "worktree", runtime: "pi", repo: "/r", repoName: "r", agentsRoot: "/ws/agents", workspace: "/ws" }];
     // /api/cli fails at TRANSPORT level first (backend booting — e.g. the
     // request raced server startup), then recovers. The probe stays
@@ -380,7 +390,7 @@ test("spawn view: an UNSETTLED probe explains itself (no dead button pointing at
     await new Promise((r) => setTimeout(r, 20));
     // Unsettled: disabled + card-less — the tooltip must NOT reference a
     // card that is not there; it says the probe is still checking.
-    const btn = el.querySelector(".spawn-act");
+    const btn = selectSoul(el);
     assert.ok(btn, "spawn button renders");
     assert.equal(btn.disabled, true, "unsettled probe disables spawn (fail-closed)");
     assert.equal(el.querySelector(".cli-card"), null, "pending is card-less by design");
@@ -397,7 +407,7 @@ test("spawn view: an UNSETTLED probe explains itself (no dead button pointing at
     await new Promise((r) => setTimeout(r, 20));
     const btn2 = el.querySelector(".spawn-act");
     assert.ok(btn2 && !btn2.disabled, "spawn enables once the probe settles ok");
-    assert.match(btn2.title, /Spawn dev/, "tooltip returns to the spawn affordance");
+    assert.match(btn2.textContent, /Launch/, "explicit Launch affordance remains available");
     // settled state: the retry stops (no more /api/cli fetches from the tick)
     const settled = state.cliFetches;
     for (const t of ticks) t();
@@ -405,6 +415,7 @@ test("spawn view: an UNSETTLED probe explains itself (no dead button pointing at
     assert.equal(state.cliFetches, settled, "no further CLI re-probes once settled");
     sp.unmount();
   } finally {
+    sp.unmount(); doc.defaultView.close();
     globalThis.setInterval = realSetInterval;
     delete globalThis.document;
   }
@@ -414,23 +425,19 @@ test("spawn view: no compatible CLI disables every spawn button and shows ONE ca
   const doc = dom();
   globalThis.document = doc; // spawn.mjs builds DOM via the global document
   try {
-    const sp = await import("../renderer/views/spawn.mjs");
     const state = { get: payload(false), post: payload(false), reprobes: [] };
     const agents = [
       { name: "dev", description: "a dev", kind: "persistent", work: "worktree", runtime: "pi", repo: "/r", repoName: "r", agentsRoot: "/ws/agents", workspace: "/ws" },
       { name: "helper", description: "cap", kind: "capability", work: "checkout", runtime: "pi", repo: null, repoName: "ws", agentsRoot: "/ws/agents", workspace: "/ws" },
     ];
     const ctx = {
-      api: async (pathname, opts) => ({
-        ok: true, status: 200,
-        json: async () => {
-          if (pathname.startsWith("/api/agents")) return { workspace: { id: "/ws", name: "ws" }, agents };
-          if (pathname.startsWith("/api/panel")) return { workspace: { id: "/ws", name: "ws" }, workspaces: [{ id: "/ws", name: "ws" }], instances: [] };
-          if (pathname === "/api/cli") return state.get;
-          if (pathname === "/api/cli/reprobe") return state.post;
-          return {};
-        },
-      }),
+      api: async (pathname) => {
+        if (pathname.startsWith("/api/agents")) return { workspace: { id: "/ws", name: "ws" }, agents };
+        if (pathname.startsWith("/api/panel")) return { workspace: { id: "/ws", name: "ws" }, workspaces: [{ id: "/ws", name: "ws" }], instances: [] };
+        if (pathname === "/api/cli") return state.get;
+        if (pathname === "/api/cli/reprobe") return state.post;
+        return {};
+      },
       openTerminal: () => {}, openBrain: () => {},
     };
     const el = doc.createElement("div"); doc.body.append(el);
@@ -438,25 +445,31 @@ test("spawn view: no compatible CLI disables every spawn button and shows ONE ca
     await new Promise((r) => setTimeout(r, 20));
     // one consistent card, above a STILL-RENDERED roster (reads keep working)
     assert.equal(el.querySelectorAll(".cli-card").length, 1, "exactly one degradation card");
+    const cliCard = el.querySelector(".cli-card");
+    assert.match(cliCard.textContent, /\/old\/oats/, "parsed diagnostics survive into the actual Spawn card");
+    assert.match(cliCard.textContent, /0\.21\.6/);
+    assert.equal(cliCard.querySelector(".cli-cmd").textContent, state.get.install);
+    assert.doesNotMatch(cliCard.textContent, /no oats binary found/);
     const cards = [...el.querySelectorAll(".soul-card")];
     assert.equal(cards.length, 2, "soul cards (reads) still render");
-    for (const b of el.querySelectorAll(".spawn-act")) {
-      assert.equal(b.disabled, true, "every spawn button disabled");
-      assert.match(b.title, /oats CLI/, "tooltip explains the CLI requirement");
+    for (let i = 0; i < cards.length; i++) {
+      const launch = selectSoul(el, i);
+      assert.equal(launch.disabled, true, "each selected soul's Launch is disabled");
+      assert.match(launch.title, /OATS CLI/i, "tooltip explains the CLI requirement");
+      launch.dispatchEvent(new doc.defaultView.Event("click"));
+      assert.equal(el.querySelector(".soul-form"), null, "no spawn form opens without a CLI");
+      const files = el.querySelector(".soul-inspector .brain-act");
+      assert.ok(files && !files.disabled, "read-only Files remains usable");
     }
-    // clicking a disabled-state card never opens the form
-    cards[0].querySelector(".spawn-act")?.dispatchEvent(new doc.defaultView.Event("click"));
-    assert.equal(el.querySelector(".soul-form"), null, "no spawn form opens without a CLI");
-    // brain (read) action remains enabled
-    assert.ok([...el.querySelectorAll(".brain-act")].every((b) => !b.disabled), "View brain stays usable");
     // CLI becomes available → card disappears, buttons enable (same subscribe path)
     state.get = payload(true);
     await cs.refreshCli(ctx);
     await new Promise((r) => setTimeout(r, 20));
     assert.equal(el.querySelectorAll(".cli-card").length, 0, "card removed once compatible");
-    assert.ok([...el.querySelectorAll(".spawn-act")].every((b) => !b.disabled), "spawn re-enabled");
+    assert.equal(selectSoul(el).disabled, false, "Launch re-enabled");
     sp.unmount();
   } finally {
+    sp.unmount(); doc.defaultView.close();
     delete globalThis.document;
   }
 });

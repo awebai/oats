@@ -13,7 +13,7 @@ import { instanceActions, captureInstanceActionMenu } from "./instance-actions.m
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
 import {
-  initTheme, toggleTheme, xtermTheme, onThemeChange,
+  initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
 } from "./theme.mjs";
 import { createPalette } from "./palette.mjs";
@@ -32,6 +32,8 @@ import { createIntentGate, prepareOwnedOpen, runOpenFlow } from "./open-intent.m
 import { createSelectionOwnership, wirePaneSelection } from "./selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
+import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
+import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
   captureTreeRenderState, configureDisclosure, rosterResponseOwns, clusterSeparator,
@@ -50,6 +52,9 @@ import { projectSplitDom } from "./split-dom.mjs";
 
 const desk = window.oatsDesktop;
 initTheme();
+mountShellIcons(document);
+const identityStyle = document.createElement("style");
+identityStyle.textContent = identityCSS; document.head.append(identityStyle);
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
@@ -60,6 +65,9 @@ async function api(pathname, opts) {
 
 const ctx = {
   api,
+  hasWorkspaceSwitcher: true,
+  // Workspace selections compete with pending shell chooser/tab opens too.
+  onSelectionIntent: () => tabOpenIntents.invalidate(),
   notify: (message) => {
     const area = contextRosterEl?.querySelector(".ctx-list");
     if (!area) return;
@@ -127,7 +135,12 @@ async function showStage(name) {
 }
 
 function setNavActive(name) {
-  for (const b of navEl.querySelectorAll(".nav-item")) b.classList.toggle("active", b.dataset.view === name);
+  for (const b of navEl.querySelectorAll(".nav-item")) {
+    const active = b.dataset.view === name;
+    b.classList.toggle("active", active);
+    if (active) b.setAttribute("aria-current", "page");
+    else b.removeAttribute("aria-current");
+  }
 }
 
 function showTabLayer(on) {
@@ -240,7 +253,7 @@ async function refreshContextRoster() {
     adoptWorkspace(resolvedWs);
     tabWorkspace = resolvedWs;
   }
-  commitWorkspaceLabel(panel.workspace, panel.workspaces);
+  if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
   contextWorkspace = resolvedWs;
   contextInstances = panel.instances || [];
   renderContextRoster(contextInstances);
@@ -248,6 +261,16 @@ async function refreshContextRoster() {
     const error = document.createElement("div"); error.className = "ctx-empty"; error.textContent = panel.error;
     listEl.prepend(error);
   }
+}
+
+// Only reported context, never inferred team/membership/readiness. A local
+// deployment's reported id is its scope path; remote panels explicitly say so.
+function renderWorkspaceContext(workspace) {
+  const label = document.getElementById("ws-context");
+  label.textContent = workspace?.remote === true
+    ? (workspace.server ? `Remote deployment · ${workspace.server}` : "Remote deployment")
+    : String(workspace?.id || "");
+  label.title = label.textContent;
 }
 
 function renderContextRoster(instances) {
@@ -341,10 +364,15 @@ function renderContextRoster(instances) {
         name.textContent = i.instance;
         const meta = document.createElement("span");
         meta.className = "ctx-meta ctx-repo-label";
-        meta.textContent = `${instanceRepoLabel(i)}${state === "unknown" ? " · state unknown" : ""}`;
-        meta.title = `Repository: ${meta.textContent}`;
+        meta.textContent = [instanceRepoLabel(i), i.branch, state === "unknown" ? "state unknown" : ""].filter(Boolean).join(" · ");
+        meta.title = `Repository: ${instanceRepoLabel(i)}${i.branch ? `\nBranch: ${i.branch}` : ""}`;
         copy.append(name, meta);
         row.append(dot, copy);
+        if (typeof i.runtime === "string" && i.runtime) {
+          const runtime = createRuntimeBadge(document, i.runtime);
+          runtime.classList.add("ctx-runtime");
+          row.append(runtime);
+        }
         // pass the FULL reference: same-named instances in other agents
         // roots must open THEIR tmux session, not the first name match
         row.addEventListener("click", () => i.running ? openTerminalTab(i) : openInstanceStart(i));
@@ -1024,27 +1052,39 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
 const navEl = document.getElementById("nav");
 for (const v of NAV) {
   const b = document.createElement("button");
+  b.type = "button";
   b.className = "nav-item";
   b.title = v.title;
   b.dataset.view = v.name;
   b.dataset.action = `stage.${v.name}`;
   b.innerHTML = `<span class="icon"></span><span class="label"></span>`;
-  b.querySelector(".icon").textContent = v.icon;
+  b.querySelector(".icon").innerHTML = shellIcon(v.icon);
   b.querySelector(".label").textContent = v.label;
-  b.addEventListener("click", () => showStage(v.name));
+  b.addEventListener("click", () => runAction(`stage.${v.name}`));
   navEl.append(b);
 }
 
-// theme toggle at the bottom of the rail
-{
-  const foot = document.getElementById("nav-foot");
-  const b = document.createElement("button");
-  b.className = "nav-item";
-  b.title = "Toggle light/dark theme";
-  b.dataset.action = "app.themeToggle";
-  b.innerHTML = `<span class="icon">◐</span><span class="label">Theme</span>`;
-  b.addEventListener("click", () => toggleTheme());
-  (foot || navEl).append(b);
+// Persistent footer controls use exactly the same registry as keyboard actions.
+for (const button of document.querySelectorAll("#nav-foot [data-action]")) {
+  button.addEventListener("click", () => runAction(button.dataset.action));
+}
+
+// This is a chooser entry, not a launch or an inspection preselection. Capture
+// workspace visit + selection before import, and contain stale rejections too.
+async function openWorkspaceSouls() {
+  const selectionOwns = tabOpenIntents.begin();
+  const owns = () => selectionOwns() && ![...document.querySelectorAll('[aria-modal="true"]')]
+    .some(dialog => !dialog.closest("[hidden]"));
+  let mod;
+  try { mod = await import("./views/spawn.mjs"); }
+  catch (e) {
+    if (!owns()) return;
+    ctx.notify(`Could not open Workspace Souls: ${e.message || e}`);
+    return;
+  }
+  if (!owns()) return;
+  mod.preselectWorkspaceTab("souls");
+  showStage("spawn");
 }
 
 // ── command palette (⌘K): jump to an instance or run a command ─────────
@@ -1064,9 +1104,11 @@ const palette = createPalette({
     // View commands derive from the nav manifest so a new rail destination
     // can never be palette-invisible (review 8441961 nit).
     ...NAV.map((v) => ({ label: `View: ${v.label}`, detail: chordDetail(`stage.${v.name}`), run: () => showStage(v.name) })),
-    { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => quickOpen.open() },
+    { label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail("app.chooseSoul"), run: () => runAction("app.chooseSoul") },
+    { label: "Souls: quick open…", detail: chordDetail("app.quickOpenSouls"), run: () => runAction("app.quickOpenSouls") },
     { label: "File: open read-only…", detail: chordDetail("app.openFile"), run: () => runAction("app.openFile") },
-    { label: "Theme: toggle light/dark", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
+    { label: "Theme: cycle White / Solarized / Dark", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
+    ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
@@ -1124,7 +1166,7 @@ onWorkspaceChange(() => {
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
 const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
-function openShortcutsEditor() { shortcutsEditor.open(); }
+function openShortcutsEditor() { tabOpenIntents.invalidate(); shortcutsEditor.open(); }
 
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the filter already has DOM focus
@@ -1141,6 +1183,15 @@ function sidebarHidden() {
 }
 function setSidebarHidden(on) {
   document.getElementById("app").classList.toggle("sidebar-hidden", on);
+  for (const id of ["sidebar-toggle", "sidebar-restore"]) {
+    document.getElementById(id).setAttribute("aria-expanded", String(!on));
+  }
+  // Hiding by mouse or keyboard must not strand focus in display:none.
+  if (on && document.getElementById("sidebar").contains(document.activeElement)) {
+    document.getElementById("sidebar-restore").focus();
+  } else if (!on && document.activeElement === document.getElementById("sidebar-restore")) {
+    document.getElementById("sidebar-toggle").focus();
+  }
   try {
     if (on) localStorage.setItem(SIDEBAR_HIDDEN_KEY, "1");
     else localStorage.removeItem(SIDEBAR_HIDDEN_KEY);
@@ -1178,18 +1229,23 @@ function cycleTab(delta) {
 // ── action registry: every mouse affordance, one keyboard action ────────
 // Default chords live in the engine's DEFAULT_KEYMAP (keybindings.mjs);
 // user overrides persist in localStorage via the shortcuts editor.
-registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => palette.toggle() });
-registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => quickOpen.toggle() });
+registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); palette.toggle(); } });
+registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
+registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
 const unregisterOpenFile = registerAction({ id: "app.openFile", label: "File: open read-only…", context: "global", defaultChord: "Mod+O", run: () => fileOpener.choose() });
-window.addEventListener("pagehide", () => { unregisterOpenFile(); fileOpener.dispose(); }, { once: true });
+window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregisterOpenFile(); fileOpener.dispose(); }, { once: true });
 // stage-switch actions derive from the nav manifest (same rule as the
 // palette): a new rail destination can never be shortcut-invisible.
 NAV.forEach((v) => registerAction({
   id: `stage.${v.name}`, label: `View: ${v.label}`, context: "global",
   run: () => showStage(v.name),
 }));
-registerAction({ id: "app.themeToggle", label: "Toggle light/dark theme", context: "global", run: () => toggleTheme() });
+registerAction({ id: "app.themeToggle", label: "Cycle White / Solarized / Dark theme", context: "global", run: () => toggleTheme() });
+// Explicit theme choices are rebindable, but add no default keyboard chords.
+THEMES.forEach(({ id, label }) => registerAction({
+  id: `app.theme.${id}`, label: `Theme: ${label}`, context: "global", run: () => setTheme(id),
+}));
 registerAction({ id: "app.workspaces", label: "Open the workspace switcher", context: "global", run: () => workspaceLabel.openMenu() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster filter", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
@@ -1220,32 +1276,15 @@ registerAction({ id: "tabs.close", label: "Close the active tab", context: "tabs
 // The engine skips already-consumed (defaultPrevented) events itself.
 window.addEventListener("keydown", (e) => handleKeydown(e));
 
-// rail-footer: Sidebar toggle + Shortcuts button next to Theme
-{
-  const foot = document.getElementById("nav-foot");
-  const b = document.createElement("button");
-  b.className = "nav-item";
-  b.title = "Toggle the sidebar";
-  b.dataset.action = "sidebar.toggle";
-  b.innerHTML = `<span class="icon">◧</span><span class="label">Sidebar</span>`;
-  b.addEventListener("click", () => runAction("sidebar.toggle"));
-  (foot || navEl).append(b);
-}
-{
-  const foot = document.getElementById("nav-foot");
-  const b = document.createElement("button");
-  b.className = "nav-item";
-  b.title = "Edit keyboard shortcuts";
-  b.dataset.action = "app.shortcuts";
-  b.innerHTML = `<span class="icon">⌨</span><span class="label">Shortcuts</span>`;
-  b.addEventListener("click", () => openShortcutsEditor());
-  (foot || navEl).append(b);
-}
-
 // Chord-suffixed tooltips, live against the keymap: any control that
 // declares data-action gets “ … (chord)” appended to its base title.
 const baseTitles = new WeakMap();
 function applyChordTitles() {
+  const themeButton = document.getElementById("sidebar-theme");
+  if (themeButton) {
+    const label = "Cycle White / Solarized / Dark theme";
+    baseTitles.set(themeButton, label); themeButton.setAttribute("aria-label", label);
+  }
   for (const el of document.querySelectorAll("[data-action]")) {
     if (!baseTitles.has(el)) baseTitles.set(el, el.title || "");
     const chord = getBinding(el.dataset.action);
@@ -1265,6 +1304,7 @@ function restoreWorkspaceTabs() {
   brainIntents.invalidate();
   tabOpenIntents.invalidate();
   workspaceLabel.reset();
+  renderWorkspaceContext(null);
   workspaceTabMemory.remember(tabWorkspace, { split, activeTab, sidebarMode, tabLayerVisible });
   // Hide synchronously and park ALL nodes before replacing group identities.
   // Workspace-local group ids can overlap; deleting old cells first would

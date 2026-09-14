@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
@@ -252,7 +253,7 @@ test("runAction dispatches a registered action only in an active context (button
 
 // ── shell/index.html wiring pins (house style: source-level assertions) ──
 
-test("index.html ships the split buttons and shell wires the group projection through runAction", () => {
+test("index.html ships the split buttons and shell wires the group projection through runAction", (t) => {
   const html = read("renderer/index.html");
   for (const id of ["tab-actions", "split-right", "split-down", "split-close", "sidebar-restore", "tabstrip", "tabbar-row"]) {
     assert.match(html, new RegExp(`id="${id}"`), `index.html has #${id}`);
@@ -266,7 +267,23 @@ test("index.html ships the split buttons and shell wires the group projection th
   assert.match(src, /\["split-right", "split\.vertical"\]/, "split buttons map to the registered actions");
   assert.match(src, /splitControlsState\(split, activeTab/, "button gating derives from the shared model");
   assert.match(src, /projectSplitDom\(/, "group projection via split-dom");
-  assert.match(src, /label">Sidebar</, "rail-footer Sidebar button");
+  const footerDom = new JSDOM(html);
+  t.after(() => footerDom.window.close());
+  const document = footerDom.window.document;
+  const toggle = document.querySelector('#nav-foot button#sidebar-toggle');
+  assert.ok(toggle, "sidebar toggle is a footer button");
+  assert.equal(toggle.getAttribute("aria-label"), "Hide the sidebar", "icon-only button has an accessible name");
+  assert.equal(toggle.dataset.action, "sidebar.toggle");
+  const wiring = src.match(/for \(const button of document\.querySelectorAll\("#nav-foot \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
+  const registration = src.split("\n").find(line => line.startsWith('registerAction({ id: "sidebar.toggle"'));
+  assert.ok(wiring && registration, "exercise shipped footer dispatch and registry binding");
+  let toggles = 0;
+  runInNewContext(`${wiring}\n${registration}`, {
+    document, runAction, toggleSidebar: () => toggles++,
+    registerAction: action => { t.after(registerAction(action)); },
+  });
+  toggle.click();
+  assert.equal(toggles, 1, "footer click runs sidebar.toggle through the actual action registry");
   const css = read("renderer/shell.css");
   assert.match(css, /#sidebar-restore \{ display: none; \}/);
   assert.match(css, /#app\.sidebar-hidden #sidebar-restore \{/);

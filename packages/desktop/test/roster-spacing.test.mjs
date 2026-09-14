@@ -9,6 +9,7 @@ import { JSDOM } from "jsdom";
 import * as tree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 
 const read = name => readFileSync(new URL(`../renderer/${name}`, import.meta.url), "utf8");
 const css = read("shell.css"), html = read("index.html");
@@ -33,7 +34,7 @@ function fixture(t, stylesheet = css) {
     return matches[0].style;
   };
   const context = {
-    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState,
+    ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
     contextInstances: roster, currentWorkspace: () => "A", collapsedInstances: new Set(),
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
@@ -68,10 +69,22 @@ function assertRoom(u) {
       assert.match(style.marginBottom, /^0(?:px)?$/);
       assert.equal(style.overflowY, "visible", "do not clip the label stack or focus ring vertically");
     }
+    assert.equal(u.computed(button).paddingLeft, "8px", "content is inset from the selected background without changing tree depth");
     assert.equal(u.computed(button).paddingTop, "4px");
     assert.equal(u.computed(button).paddingBottom, "4px");
   }
 }
+
+test("sidebar metadata uses reported branch/runtime without claiming membership or installation", t => {
+  const u = fixture(t);
+  u.render([{ ...roster[0], branch: "feature/<literal>", runtime: "pi" }]);
+  const row = u.doc.querySelector(".ctx-inst");
+  assert.equal(row.querySelector(".ctx-meta").textContent, "desktop-repo · feature/<literal>");
+  assert.equal(row.querySelector(".ctx-meta").title, "Repository: desktop-repo\nBranch: feature/<literal>");
+  assert.equal(row.querySelector(".ctx-runtime").textContent, "π");
+  assert.equal(row.querySelector(".ctx-runtime").getAttribute("aria-label"), "Reported runtime: Pi");
+  assert.equal(row.querySelector("literal"), null);
+});
 
 test("roster spacing (non-layout): auto-height rows, padded controls and filter/list separation", t => {
   const u = fixture(t);
@@ -82,7 +95,7 @@ test("roster spacing (non-layout): auto-height rows, padded controls and filter/
   assert.equal(u.computed(filter.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
 });
 
-test("roster typography (non-layout): valid inherited control family without changing label scale", t => {
+test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
   const u = fixture(t);
   for (const [selector, size] of [[".ctx-filter", "12px"], [".ctx-disclosure", "11px"]]) {
     assert.equal(u.rule(selector).getPropertyValue("font"), "", "no invalid 'size/line-height inherit' shorthand");
@@ -92,14 +105,14 @@ test("roster typography (non-layout): valid inherited control family without cha
     assert.equal(u.computed(u.doc.querySelector(selector)).fontSize, size);
   }
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
-  assert.equal(u.rule(".ctx-name").fontSize, "12px");
-  assert.equal(u.rule(".ctx-repo-label").fontSize, "9.5px");
-  assert.equal(u.rule(".ctx-repo-label").lineHeight, "1.25");
+  assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
+  assert.equal(u.rule(".ctx-repo-label").fontSize, "10.5px");
+  assert.equal(u.rule(".ctx-repo-label").lineHeight, "1.45");
   for (const row of u.rows) {
     const name = row.querySelector(".ctx-name"), repo = row.querySelector(".ctx-repo-label");
     assert.equal(name.nextElementSibling, repo, "both labels remain in the same vertical stack");
     assert.equal(repo.textContent, row.querySelector(".ctx-inst").disabled ? "desktop-repo · state unknown" : "desktop-repo");
-    assert.equal(repo.title, `Repository: ${repo.textContent}`);
+    assert.equal(repo.title, "Repository: desktop-repo");
     for (const label of [name, repo]) {
       assert.equal(u.computed(label).textOverflow, "ellipsis");
       assert.equal(u.computed(label).whiteSpace, "nowrap");
@@ -160,8 +173,8 @@ test("roster DOM contract: identity, active/focus state and closed action menus 
   assert.equal(u.doc.activeElement.classList.contains("active"), true);
   assert.equal(u.rule(".ctx-inst").color, "var(--fg)");
   assert.equal(u.rule(".ctx-inst.active").background, "var(--sel)");
-  assert.equal(u.rule(".ctx-repo-label").color, "var(--chip-fg)");
-  assert.equal(u.rule(".ctx-repo-label").background, "var(--chip-bg)");
+  assert.equal(u.rule(".ctx-repo-label").color, "var(--muted)");
+  assert.equal(u.rule(".ctx-repo-label").background, "", "reference metadata is a plain subline, not a repository pill");
 });
 
 // Mutants exist only as in-memory stylesheets: no shared-file rollback, reload

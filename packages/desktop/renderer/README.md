@@ -8,11 +8,15 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 ## Views (`views/`)
 
-- **spawn.mjs** — available agents (`GET /api/agents`) with spawn-from-app
-  (`POST /api/spawn`), purpose/task fields. Panel defaults hold: empty task
-  spawns an instance awaiting instructions; attached-mode agents are not
-  spawnable standalone. Without a compatible installed `oats` CLI the view
-  shows the shared degradation card and disables Spawn consistently.
+- **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
+  Souls come from `GET /api/agents`; selection opens the side inspector. Explicit
+  **Launch…** opens Spawn (`POST /api/spawn`), with purpose/task fields and
+  inherited CLI defaults, not launch-configuration controls. An empty task waits
+  for instructions; attached-mode souls cannot launch standalone. The shell's
+  **Spawn instance** footer navigates to soul selection; it does not launch.
+  Capability facts and source provenance use negotiated read-only inspection,
+  never inferred membership, installation or remote discovery. Shared CLI recovery
+  stays visible across subtabs; incompatible installations are observation-only.
 - **cli-status.mjs** — shared CLI degradation state + the ONE card
   (detected path/version, required range, **Choose oats…**, **Retry**, docs
   link, copyable install command). Views subscribe via `onCliChange`;
@@ -22,9 +26,22 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
   workspace is shared across views via `setWorkspace`/`onWorkspaceChange`
   (persisted in localStorage), so a shell-level switcher can drive it too.
 
-`theme.css` carries the panel's semantic design tokens (dark + solarised
-light, WCAG AA); views style themselves against tokens only, scoped under
-`.oats-view` so shell chrome is unaffected.
+`theme.css` carries semantic WCAG AA tokens for **White** (default),
+**Solarized**, and **Dark**. Theme actions are available in the command palette;
+cycling follows that order. Existing valid `oatsweb.theme` preferences survive;
+missing/invalid preferences mean White regardless of OS. Views use tokens only,
+scoped under `.oats-view`. Orange selection is distinct from error/success.
+
+Soul marks use a stable hash of the reported root/name/server identity and a
+muted six-color palette. Optional top-level `color: sage` in an existing canonical
+`soul.yaml` overrides the local Desktop mark. Accepted names: `sand`, `sage`,
+`slate`, `mauve`, `clay`, `olive` (case-insensitive); invalid/absent values fall
+back to the hash. This is display-only metadata, not a kernel identity or launch
+setting, and there is no color editor or `soul.yml` alias. Current remote CLI
+rosters do not report this field, so remote marks use the fallback. Change
+package-owned declarations in reviewed package source, not locked installed
+payloads. Colors can collide and never determine selection, status or identity.
+Runtime marks show the reported runtime, not installation/authentication status.
 
 ## Keybindings (shell-level)
 

@@ -38,7 +38,7 @@ test("Souls toolbar can wrap instead of overflowing the narrow workspace stage",
   const bar = doc.createElement("div"); bar.className = "souls-bar"; host.append(bar);
   assert.equal(window.getComputedStyle(bar).flexWrap, "wrap");
   assert.equal(declaration(doc, ".souls-bar", "height"), "", "no fixed one-row height after wrapping");
-  assert.equal(declaration(doc, ".souls-bar", "min-height"), "var(--bar-h, 48px)");
+  assert.equal(declaration(doc, ".souls-bar", "min-height"), "", "compact toolbar does not impose a second 48px row");
 });
 
 // jsdom exercises the shipped markup + CSS cascade, not browser layout or

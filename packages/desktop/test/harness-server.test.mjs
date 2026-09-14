@@ -13,6 +13,10 @@ test("harness-server: serves renderer files and /node_modules ESM, guards traver
   try {
     assert.equal((await get("/")).status, 200, "harness page serves");
     assert.equal((await get("/views/markdown.mjs")).status, 200, "view module serves");
+    assert.equal((await get("/identity-marks.mjs")).status, 200, "identity component serves");
+    const colors = await get("/soul-colors.mjs");
+    assert.equal(colors.status, 200, "shared pure color module uses the existing renderer static root");
+    assert.match(await colors.text(), /export const SOUL_COLORS/);
     const marked = await get("/node_modules/marked/lib/marked.esm.js");
     assert.equal(marked.status, 200, "marked ESM serves through /node_modules");
     assert.ok((marked.headers.get("content-type") || "").includes("text/javascript"), "ESM content-type");

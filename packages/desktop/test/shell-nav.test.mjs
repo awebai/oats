@@ -19,7 +19,9 @@ const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("NAV includes schedules and keeps the instance roster in the sidebar", () => {
   assert.deepEqual(NAV.map((v) => v.name), ["hierarchy", "spawn", "schedules"],
-    "rail destinations are Active overview, Soul roster and Schedules");
+    "rail destinations are Active overview, Workspace and Schedules");
+  assert.deepEqual(NAV.map((v) => v.label), ["Active overview", "Workspace", "Schedules"],
+    "Knowledge/Tasks remain deferred; Workspace keeps the internal spawn route");
   for (const v of NAV) {
     assert.ok(v.label && v.icon && v.title, `${v.name} entry carries full rail chrome`);
   }

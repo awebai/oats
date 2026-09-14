@@ -1,3 +1,4 @@
+import { launchSoul } from './helpers/workspace-actions.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
@@ -51,7 +52,7 @@ async function setup(t, { soul = agent, cli = CLI, models = () => ({ models: [] 
   spawn.mount(dom.window.document.querySelector('#host'), ctx);
   await tick();
   const doc = dom.window.document;
-  const open = () => { doc.querySelector('.spawn-act').click(); return doc.querySelector('.spawn-dialog'); };
+  const open = () => { launchSoul(doc); return doc.querySelector('.spawn-dialog'); };
   const change = (modal, selector, value) => {
     const field = modal.querySelector(selector); field.value = value;
     field.dispatchEvent(new dom.window.Event('input', { bubbles: true }));

@@ -20,6 +20,8 @@ import { splitControlsState } from "../renderer/split-controls.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { runtimeState } from "../renderer/instance-presentation.mjs";
+import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
+import { THEMES } from "../renderer/theme.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
 import * as tree from "../renderer/instance-tree.mjs";
 import * as layout from "../renderer/split-layout.mjs";
@@ -55,7 +57,7 @@ function picked(name = "notes.md") {
 }
 
 function shell(t, shellSource = source, platform = "MacIntel") {
-  const dom = new JSDOM(`<!doctype html><body>
+  const dom = new JSDOM(`<!doctype html><body><span id="ws-context"></span>
     <div id="stagehost"></div>
     <div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div><div id="tab-actions"></div></div></div>
     <div id="tabhost"></div>
@@ -72,7 +74,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     assert.equal(this.type, "file"); chooserInputs.push(this); // never launch a native chooser
   };
   const c = {
-    document, window: dom.window, navigator, console, ...keys,
+    document, window: dom.window, navigator, console, ...keys, THEMES,
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), contextRosterEl: null,
@@ -104,7 +106,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     createQuickOpen: options => createQuickOpen({ ...options, doc: document }),
     createSelectionOwnership, wirePaneSelection, prepareOwnedOpen, createViewLifecycle,
     createTabChrome, tabKeyAction, focusAfterLastTab, reserveKey, whenKeyFree, projectSplitDom, splitControlsState,
-    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, rosterKeyAction, moveTarget,
+    ...tree, ...layout, ...workspaceTabs, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: cb => cb(),
     FitAddon: { FitAddon: class { fit() {} } },
@@ -124,7 +126,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     },
   };
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups", "onTabKeydown",
-    "addTab", "selectTab", "activateTab", "closeTab", "openViewTab", "restoreWorkspaceTabs", "showTerminalContext",
+    "addTab", "selectTab", "activateTab", "closeTab", "openViewTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
     "initContextRoster", "renderContextRoster", "onRosterRowKey", "setRovingRow", "focusRoster", "openTerminalTabFlow", "openTerminalTabInner"];
   const functions = names.map(name => fn(shellSource, name)).join("\n")
     .replace('import(`./views/${name}.mjs`)', "loadView(name)");
@@ -132,11 +134,12 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   const setup = shellSource.match(/const tabOpenIntents = [^\n]+/)[0];
   const fileComposition = block(shellSource, "let nextPickedFileId =", "// ── editor groups");
   const pickers = block(shellSource, 'const isMac = navigator.platform.includes("Mac");', "// ── shortcuts editor");
-  const registration = shellSource.match(/const unregisterOpenFile = registerAction[^\n]+/)[0];
+  const registration = shellSource.match(/const unregisterOpenFile = registerAction[^\n]+/)[0]
+    + "\nconst unregisterQuickOpen = " + shellSource.match(/registerAction\(\{ id: "app\.quickOpenSouls"[^\n]+/)[0];
   const listener = shellSource.match(/window.addEventListener\("keydown", [^\n]+/)[0];
-  const s = runInNewContext(`${setup}\n${functions}\n${fileComposition}\n${pickers}\n${registration}\n${listener}\n({ ${names.join(", ")}, tabOpenIntents, fileOpener, palette, quickOpen, unregisterOpenFile });`, c);
+  const s = runInNewContext(`${setup}\n${functions}\n${fileComposition}\n${pickers}\n${registration}\n${listener}\n({ ${names.join(", ")}, tabOpenIntents, fileOpener, palette, quickOpen, unregisterOpenFile, unregisterQuickOpen });`, c);
   s.initContextRoster();
-  t.after(() => { s.palette.close(); s.quickOpen.close(); s.fileOpener.dispose(); s.unregisterOpenFile(); markdown.unmount(); dom.window.close(); });
+  t.after(() => { s.palette.close(); s.quickOpen.close(); s.fileOpener.dispose(); s.unregisterOpenFile(); s.unregisterQuickOpen(); markdown.unmount(); dom.window.close(); });
   const key = (value, modifiers = {}, target = document.activeElement) => {
     const event = new dom.window.KeyboardEvent("keydown", { key: value, bubbles: true, cancelable: true, ...modifiers });
     target.dispatchEvent(event); return event;

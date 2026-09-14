@@ -43,6 +43,7 @@ export function cliRequirementText(s = cli) {
 
 let cli = null;              // last GET /api/cli payload (null = probe not yet settled)
 let settledUnknown = false;  // a response ARRIVED but was unclassifiable (older backend, garbage)
+let requestGeneration = 0;   // GET and POST compete for the same shared status
 const listeners = new Set();
 
 export function cliStatus() { return cli; }
@@ -62,8 +63,8 @@ export function cliAvailable() { return !!cli?.ok; }
 export function cliRelationsAvailable() { return !!cli?.ok && cli.relations !== false; }
 export function cliKnownUnavailable() { return (!!cli && !cli.ok) || settledUnknown; }
 export function onCliChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
-/** Test seam: return to the pristine probe-pending state. */
-export function resetCliStateForTests() { cli = null; settledUnknown = false; emit(); }
+/** Test seam: invalidate in-flight work and return to probe-pending. */
+export function resetCliStateForTests() { ++requestGeneration; cli = null; settledUnknown = false; emit(); }
 function emit() { for (const fn of [...listeners]) { try { fn(cli); } catch { /* listener errors stay local */ } } }
 
 /** Fetch a CLI endpoint distinguishing TRANSPORT failure (throw — keep last
@@ -82,20 +83,24 @@ async function fetchCliEndpoint(ctx, pathname, opts) {
     if (typeof e?.status === "number") return { received: true, error: true, status: e.status };
     throw e;
   }
-  if (!r || typeof r.json !== "function") {
-    if (r && r.ok === false) return { received: true, error: true };  // proxy-shape non-2xx
-    return { received: true, body: r };
-  }
+  // Only a Response's ok describes HTTP. The current shell returns the
+  // parsed domain body: ok:false is useful CLI diagnostics, NOT an HTTP error.
+  if (!r || typeof r.json !== "function") return { received: true, body: r };
   let body = null;
   try { body = await r.json(); } catch { /* non-JSON body */ }
   if (!r.ok) return { received: true, error: true, status: r.status };
   return { received: true, body };
 }
 
-/** Refresh from GET /api/cli (cheap — server-side cached probe state). */
-export async function refreshCli(ctx) {
-  try {
-    const r = await fetchCliEndpoint(ctx, "/api/cli");
+/** One commit boundary for refresh AND reprobe, including transport rejection.
+ * Stale completions neither replace state nor notify/repaint subscribers. */
+async function updateCli(ctx, pathname, opts) {
+  const request = ++requestGeneration;
+  let r;
+  try { r = await fetchCliEndpoint(ctx, pathname, opts); }
+  catch { /* TRANSPORT failure — keep last state (transient; no flapping) */ }
+  if (request !== requestGeneration) return cli;
+  if (r) {
     // A response was RECEIVED — the probe is SETTLED either way:
     //   status shape        → that state (ok / known-unavailable + card);
     //   HTTP error (404…)   → settled "absent endpoint" — carded;
@@ -103,27 +108,23 @@ export async function refreshCli(ctx) {
     //                         carded. "Disabled with no card forever" is
     //                         not acceptable (binding UX clarification).
     const d = r.body;
-    cli = d && typeof d.ok === "boolean" ? d : null;
+    cli = d && !Array.isArray(d) && typeof d.ok === "boolean" ? d : null;
     settledUnknown = !cli;
-  } catch { /* TRANSPORT failure — keep last state (transient; no flapping) */ }
+  }
   emit();
   return cli;
 }
 
+/** Refresh from GET /api/cli (cheap — server-side cached probe state). */
+export function refreshCli(ctx) { return updateCli(ctx, "/api/cli"); }
+
 /** POST /api/cli/reprobe — Retry and Choose-binary trigger. */
-export async function reprobeCli(ctx, bin) {
-  try {
-    const r = await fetchCliEndpoint(ctx, "/api/cli/reprobe", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(bin ? { bin } : {}),
-    });
-    const d = r.body;
-    cli = d && typeof d.ok === "boolean" ? d : null;   // same settled semantics
-    settledUnknown = !cli;
-  } catch { /* transport failure — keep last state */ }
-  emit();
-  return cli;
+export function reprobeCli(ctx, bin) {
+  return updateCli(ctx, "/api/cli/reprobe", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(bin ? { bin } : {}),
+  });
 }
 
 /** The one degradation card. `ctx` needs api(); optional ctx.chooseCliBinary
@@ -131,19 +132,50 @@ export async function reprobeCli(ctx, bin) {
 export function cliCard(doc, ctx) {
   const el = doc.createElement("div");
   el.className = "cli-card";
+  let alive = true, actionGeneration = 0;
+  const probe = async (choose = false) => {
+    if (!alive) return;
+    const action = ++actionGeneration;
+    let request = requestGeneration;
+    const owns = () => alive && action === actionGeneration && request === requestGeneration;
+    const status = (text) => { const st = el.querySelector(".cli-status"); if (st) st.textContent = text; };
+    let bin;
+    if (choose) {
+      let picked;
+      try { picked = await ctx.chooseCliBinary(); }
+      catch { if (owns()) status("Could not choose an oats binary. Try again."); return; }
+      if (!owns() || !picked?.path) return;
+      bin = picked.path;
+    }
+    status(choose ? "Probing chosen binary…" : "Probing…");
+    const pending = reprobeCli(ctx, bin);
+    request = requestGeneration;
+    await pending;
+    // A refresh, another action, reset or dispose revokes this callback's UI
+    // authority. The shared request itself outlives any one mounted card.
+    if (owns() && !cliAvailable() && el.isConnected) {
+      status(choose ? "Could not verify a compatible oats CLI for this choice." : "Still no compatible oats CLI.");
+    }
+  };
   const render = () => {
+    if (!alive) return;
     const s = cli;
-    const detected = s?.tried?.find((t) => t.version) || null;
+    const tried = Array.isArray(s?.tried) ? s.tried : [];
+    const candidates = tried.filter((t) => typeof t?.path === "string" && t.path);
+    const detected = typeof s?.bin === "string" && s.bin
+      ? { path: s.bin, version: s.version }
+      : candidates.find((t) => typeof t.version === "string" && t.version) || candidates[0];
+    const version = typeof detected?.version === "string" && detected.version ? detected.version : "unknown";
     el.innerHTML = `
       <div class="cli-head"><span class="glyph" aria-hidden="true">⚠</span> Compatible <code>oats</code> CLI required</div>
       <div class="cli-body">
-        Spawn and Harvest run through the installed <code>oats</code> CLI. Reads and
-        terminals keep working without it.
+        <p class="cli-explanation">Spawn and Harvest run through the installed <code>oats</code> CLI. Reads and
+        terminals keep working without it.</p>
         <div class="cli-kv">
           <span class="k">Detected</span>
           <span class="v">${detected
-            ? `${escapeHtml(detected.path)} <span class="cli-ver">(${escapeHtml(detected.version || "unknown")})</span>`
-            : "no oats binary found"}</span>
+            ? `${version === "unknown" ? "candidate: " : ""}${escapeHtml(detected.path)} <span class="cli-ver">(${escapeHtml(version)})</span>`
+            : "unknown — no CLI detection reported"}</span>
           <span class="k">Required</span>
           <span class="v">${escapeHtml(cliRequirementText(s))}</span>
         </div>
@@ -163,29 +195,10 @@ export function cliCard(doc, ctx) {
       const st = el.querySelector(".cli-status");
       if (st) st.textContent = "Install command copied.";
     });
-    el.querySelector(".cli-retry").addEventListener("click", async () => {
-      const st = el.querySelector(".cli-status");
-      if (st) st.textContent = "Probing…";
-      await reprobeCli(ctx);
-      // onCliChange re-renders; if still failing, say so explicitly
-      if (!cliAvailable() && el.isConnected) {
-        const st2 = el.querySelector(".cli-status");
-        if (st2) st2.textContent = "Still no compatible oats CLI.";
-      }
-    });
+    el.querySelector(".cli-retry").addEventListener("click", () => probe());
     const choose = el.querySelector(".cli-choose");
     if (typeof ctx.chooseCliBinary === "function") {
-      choose.addEventListener("click", async () => {
-        const st = el.querySelector(".cli-status");
-        const picked = await ctx.chooseCliBinary();          // native picker (privileged)
-        if (!picked?.path) return;                           // cancelled
-        if (st) st.textContent = "Probing chosen binary…";
-        await reprobeCli(ctx, picked.path);
-        if (!cliAvailable() && el.isConnected) {
-          const st2 = el.querySelector(".cli-status");
-          if (st2) st2.textContent = "Chosen binary is not a compatible oats CLI.";
-        }
-      });
+      choose.addEventListener("click", () => probe(true));
     } else choose.disabled = true;
     el.querySelector(".cli-docs").addEventListener("click", (e) => {
       e.preventDefault();
@@ -196,5 +209,5 @@ export function cliCard(doc, ctx) {
   render();
   const off = onCliChange(render);
   // dispose with the element: observe removal via the returned disposer
-  return { el, dispose: off };
+  return { el, dispose() { alive = false; off(); } };
 }

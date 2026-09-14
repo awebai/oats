@@ -133,3 +133,29 @@ test('soul launchConfig inspection populates its editor and is changed only expl
     assert.deepEqual(view.calls.filter(c => c.action === 'set').at(-1).fields, { 'launch-config': '' });
   } finally { view.close(); }
 });
+
+test('inspector preserves current provider, availability, kind and required-argument operation contracts', async () => {
+  const value = inspection('dev', 'snapshot');
+  value.capabilities[0].operations.push(
+    { name: 'digest', kind: 'action', available: true, args: [{ name: 'depth', flag: '--depth', required: false }] },
+    { name: 'search', kind: 'view', available: true, args: [{ name: 'query', flag: '--query', required: true }] },
+    { name: 'unavailable', kind: 'action', available: false, reason: 'Provider is unavailable' },
+  );
+  value.capabilities.push(
+    { id: 'inactive.notes', layer: 'knowledge', activation: { enabled: false }, operations: [{ name: 'inactive', kind: 'view', available: true }] },
+    { id: 'unbound.notes', activation: { enabled: true }, operations: [{ name: 'unbound', kind: 'view', available: true }] },
+  );
+  const view = ui(body => body.action === 'inspect' ? value : { result: { digested: true } });
+  try {
+    await view.controller.show({ instance: instances[0], selector: { home } });
+    assert.deepEqual([...view.el.querySelectorAll('[data-operation]')].map(b => [b.dataset.operation, b.textContent]), [['knowledge:inspect', 'View'], ['knowledge:digest', 'Run']]);
+    assert.match(view.el.textContent, /requires arguments/);
+    assert.match(view.el.textContent, /Provider is unavailable/);
+    view.controller.syncAvailability();
+    assert.equal(view.calls.length, 1, 'projecting operation controls never runs them');
+    view.click('Run'); await tick();
+    assert.deepEqual(view.calls[1], { url: '/api/capabilities?ws=%2Fteam', action: 'run', selector: { home }, operation: 'knowledge:digest' });
+    assert.deepEqual(JSON.parse(view.el.querySelector('.operation-output pre').textContent), { digested: true });
+    assert.equal(view.calls.length, 2, 'optional args are not synthesized and completion does not rerun');
+  } finally { view.close(); }
+});

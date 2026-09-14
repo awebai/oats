@@ -1,9 +1,34 @@
 # Desktop UX modernization — audit and delivery plan
 
-Status: proposed design direction; workspace correctness and read-only file-viewing
-increments implemented on the Desktop branch. Workflow reviews and partial browser
-verification completed; broader UX work and real Electron/PTY verification remain.
-Owner: Desktop engineering. Visual/interaction sign-off: ux-designer.
+Status: supplied-design Workspace/shell port, workspace correctness and read-only
+file-viewing implemented on the Desktop branch. White (default), Solarized and
+Dark themes, orange accents, muted soul identity marks and reported runtime marks
+are implemented. Broader UX work and full native Electron/PTY verification remain.
+Owner: Desktop engineering. Human-supplied design is the visual target; this does
+not implement the proposed Portable Souls architecture or new Knowledge/Tasks views.
+
+## Supplied-design delivery
+
+- 264px sidebar, aligned 48px bars, 340px side inspector; compact cards with
+  16px padding and 10px gaps/radii. Keep the requested roomy 56px roster rows.
+- Workspace (existing internal `spawn` stage) provides Souls / Capabilities /
+  Sources. Selected-soul actions live in the inspector; shell Spawn instance
+  chooses a soul before the explicit Launch action. No restored launch-config UI.
+- Capabilities and Sources project negotiated inspection facts and provenance,
+  not discovery, membership, enrollment or fabricated readiness. CLI recovery
+  persists across polling/subtabs; stale success and rejection cannot replace a
+  newer selection or reenable unavailable actions.
+- White is the default regardless of OS; valid legacy theme preference survives.
+  Explicit palette actions select White, Solarized or Dark. Soul colors use a
+  stable qualified-identity hash, optionally overridden by a closed named local
+  `soul.yaml` display field; see the [renderer README](../renderer/README.md).
+- Earlier isolated Electron fixture captures verified desktop dimensions and
+  revealed responsive/focus defects subsequently corrected in source. They are
+  not full product main/preload/installed-CLI/PTY/tmux acceptance. Private capture
+  evidence is intentionally not committed or included in release payloads.
+
+The audit below records the original baseline, not a claim that those defects
+remain in the implemented code.
 
 ## Product brief
 

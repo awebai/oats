@@ -73,7 +73,7 @@ const CSS = `
 .hnode .hmeta { color: var(--muted); font-size: 11.5px; margin-top: 3px; overflow: hidden;
                 text-overflow: ellipsis; white-space: nowrap; }
 .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.hdot.on { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
 .hdot.off { background: transparent; border: 1.5px solid var(--faint); }
 .hier-pop { position: absolute; z-index: 4; width: 232px; background: var(--surface); border: 1px solid var(--border);
