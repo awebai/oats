@@ -8,7 +8,8 @@
  * markdown viewer. No frameworks — plain DOM, panel design tokens (var(--*)).
  */
 
-let root = null;
+const mounts = new Set();
+let nextMountId = 0;
 import { runtimeState } from "../instance-presentation.mjs";
 import { wsQuery, onWorkspaceChange } from "./common.mjs";
 
@@ -173,23 +174,24 @@ function renderBrain(body, d, ctx) {
 
 async function json(res) { return res && typeof res.json === "function" ? res.json() : res; }
 
-let unsubWs = null;
-let rosterGen = 0; // /api/agents generation — workspace refreshes
-let gen = 0;       // /api/brain generation — agent selections
-// SEPARATE tokens (review 3dfe7d1): selections and roster refreshes must not
-// share one counter, or a selection made while /api/agents is in flight
-// cancels the required workspace refresh and strands the stale roster.
-
 export async function mount(el, ctx) {
-  root = document.createElement("div");
+  let unsubWs = null;
+  // Per-mount, separate request kinds: one workspace's selection/disposal
+  // must never invalidate another retained workspace's brain tab.
+  let rosterGen = 0;
+  let gen = 0;
+  const pinned = typeof ctx.workspace === "string";
+  const query = () => pinned ? `?ws=${encodeURIComponent(ctx.workspace)}` : wsQuery();
+  let root = document.createElement("div");
   root.className = "brain";
   const style = document.createElement("style");
   style.textContent = CSS;
   const bar = document.createElement("div");
   bar.className = "brain-bar";
-  bar.innerHTML = `<label for="brain-agent">Agent</label>`;
+  const selectorId = `brain-agent-${++nextMountId}`;
+  bar.innerHTML = `<label for="${selectorId}">Agent</label>`;
   const sel = document.createElement("select");
-  sel.id = "brain-agent";
+  sel.id = selectorId;
   const desc = document.createElement("span");
   desc.className = "brain-desc";
   bar.append(sel, desc);
@@ -210,7 +212,7 @@ export async function mount(el, ctx) {
     // selected name is bound in too so completion can't paint a stale agent.
     const owns = () => myGen === gen && root && sel.value === name;
     try {
-      const d = await json(await ctx.api(`/api/brain/${encodeURIComponent(name)}${wsQuery()}`));
+      const d = await json(await ctx.api(`/api/brain/${encodeURIComponent(name)}${query()}`));
       if (!owns()) return; // superseded, unmounted, or selection moved on
       if (d.error) { status(d.error); return; }
       renderBrain(body, d, ctx);
@@ -226,7 +228,7 @@ export async function mount(el, ctx) {
     status("Loading agents…");
     let agents = [];
     try {
-      const d = await json(await ctx.api(`/api/agents${wsQuery()}`));
+      const d = await json(await ctx.api(`/api/agents${query()}`));
       agents = (d.agents || []).filter((a, i, arr) => arr.findIndex((x) => x.name === a.name) === i);
     } catch (e) {
       // Current-request failure must re-enable the selector (nothing remains
@@ -256,13 +258,21 @@ export async function mount(el, ctx) {
   // every selection is a NEW generation — reusing the current gen lets a
   // prior request's late completion (success OR error) win over this one
   sel.addEventListener("change", () => load(sel.value, ++gen));
-  unsubWs = onWorkspaceChange(() => loadAgents());
+  // Standalone harness views follow the bus; shell artifacts keep the scope
+  // they were opened in and retain their content while another workspace shows.
+  if (!pinned) unsubWs = onWorkspaceChange(() => loadAgents());
+  const dispose = () => {
+    gen++;
+    rosterGen++;
+    unsubWs?.(); unsubWs = null;
+    root?.remove(); root = null;
+    mounts.delete(dispose);
+  };
+  mounts.add(dispose);
   await loadAgents();
+  return dispose;
 }
 
 export function unmount() {
-  gen++;
-  rosterGen++;
-  if (unsubWs) { unsubWs(); unsubWs = null; }
-  if (root) { root.remove(); root = null; }
+  for (const dispose of [...mounts]) dispose();
 }

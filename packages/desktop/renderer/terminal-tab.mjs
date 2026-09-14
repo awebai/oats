@@ -20,6 +20,9 @@ import { wireTerminalAttachments } from "./terminal-attachments.mjs";
  * @param {{ session: string, window?: string|number }} deps.tmux
  * @param {Element} deps.wrap       the tab's terminal container
  * @param {() => boolean} deps.isActive  whether the tab is visible (fit gate)
+ * @param {() => boolean} deps.ownsFocus  current explicit focus owner (not visibility)
+ * @param {() => void} [deps.focusInput] apply xterm focus under the shell's
+ *        synchronous programmatic-focus guard (default: term.focus)
  * @param {() => void} deps.fit     refit callback
  * @param {(el: Element) => void} [deps.observe]  install a resize observer on
  *        wrap, return handled via the returned disposer (defaults to a real
@@ -33,7 +36,7 @@ import { wireTerminalAttachments } from "./terminal-attachments.mjs";
  *        without it, xterm's capture-phase handler consumes allowlisted
  *        chords (e.g. Ctrl+K) before the bubble-phase window listener runs.
  * @param {(e: unknown) => void} [deps.onError]
- * @returns {{ start: () => Promise<void>, close: () => Promise<void> }}
+ * @returns {{ start: () => Promise<void>, close: () => Promise<void>, focus: () => void }}
  */
 /* Shift+Enter must insert a newline in the agent's input line, not send the
    message. xterm.js emits a plain \r for Enter regardless of Shift, so the
@@ -98,10 +101,18 @@ export function terminalKeyDecision(ev, interceptKey) {
   return { handled: false, byte: null };
 }
 
-export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wrap, isActive, fit, observe, interceptKey, onError = (e) => console.error(e) }) {
+export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wrap, isActive, ownsFocus = () => false, focusInput = () => term.focus(), fit, observe, interceptKey, onError = (e) => console.error(e) }) {
   let offData = null, offExit = null;
   let unobserve = null;
   let detachAttachments = null;
+  let ready = false;
+  let closed = false;
+  // Do not queue an acquisition-time boolean: a later explicit selection can
+  // own this retained tab, while an A→B→A restoration cannot revive old focus.
+  const focus = () => {
+    if (closed || !ready || !ownsFocus()) return;
+    try { focusInput(); } catch { /* disposed/unavailable input */ }
+  };
 
   const life = createTermLifecycle(
     { open: async () => {
@@ -171,10 +182,12 @@ export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wra
         term.onResize(({ cols, rows }) => { if (life.ptyId() !== null) desk.termResize(life.ptyId(), cols, rows); });
         unobserve = (observe || defaultObserve)(wrap);
         if (desk.termAttachFiles) detachAttachments = wireTerminalAttachments({ wrap, desk, term, ptyId: () => life.ptyId() });
-        term.focus();
+        ready = true;
+        focus();
       },
       (e) => banner(`could not attach: ${e?.message || e}`),
     ),
-    close: () => life.close(disposeUi),
+    focus,
+    close: () => { closed = true; return life.close(disposeUi); },
   };
 }

@@ -34,8 +34,8 @@ export const MAX_SPLIT_GROUPS = 4;
  * terminal the user opens lands there (VS Code: the new group is the active
  * one). In an existing split the new empty group is inserted after the
  * focused group and becomes focused. No new group is created while the
- * focused group is still empty (the renderer shows one placeholder pane;
- * fill it first) or at MAX_SPLIT_GROUPS — those requests only re-orient.
+ * layout has an empty group (fill it first) or at MAX_SPLIT_GROUPS — those
+ * requests only re-orient.
  * Returns { split, changed }. */
 export function requestSplit(split, orientation, seedTabs, activeId) {
   if (!split) {
@@ -54,9 +54,8 @@ export function requestSplit(split, orientation, seedTabs, activeId) {
     };
   }
   const focused = split.groups.find((g) => g.id === split.focusedGroup);
-  // At most ONE empty group exists at a time (the renderer shows one
-  // placeholder pane per empty group, and an unfilled group is a pending
-  // user decision) — fill it before splitting again.
+  // Fill existing destinations before adding another. Closing/moving tabs
+  // may leave several empty groups; those keep their identity until join.
   if (!focused || split.groups.some((g) => !g.tabs.length)
       || split.groups.length >= MAX_SPLIT_GROUPS) {
     if (split.orientation === orientation) return { split, changed: false };
@@ -69,6 +68,17 @@ export function requestSplit(split, orientation, seedTabs, activeId) {
     split: { ...split, orientation, nextId: split.nextId + 1, groups, focusedGroup: group.id },
     changed: true,
   };
+}
+
+/** Persist relative group sizes independently of their DOM lifetime. Ignore
+ * stale/non-member or malformed updates rather than corrupting the layout. */
+export function resizeSplitGroups(split, sizes) {
+  if (!split || !Array.isArray(sizes) || !sizes.length || sizes.some(s =>
+    !split.groups.some(g => g.id === s.id) || !Number.isFinite(s.weight) || s.weight <= 0)) return split;
+  return { ...split, groups: split.groups.map(g => {
+    const size = sizes.find(s => s.id === g.id);
+    return size ? { ...g, weight: size.weight } : g;
+  }) };
 }
 
 /** The group holding tab `id`, or null. */
@@ -148,38 +158,16 @@ export function wireSplitPaneSelection(paneEl, { isMember, isActive, select }) {
   };
 }
 
-/** Remove a (closed) tab from its group. Returns { split, successor }:
- *  - successor is the tab to activate when the closed tab was its group's
- *    active one — its right neighbor IN THE GROUP, else its left one, else
- *    (group now empty and collapsing) the surviving neighbor GROUP's active
- *    tab. A surviving split tab must win over the shell's generic
- *    most-recent-tab fallback (an unrelated newer terminal would otherwise
- *    cover the split).
- *  - closing a group's LAST tab collapses the group; down to one group the
- *    model collapses to null (single flat strip). */
+/** Remove a closed tab, not its destination. The successor is the next then
+ * previous tab IN THIS GROUP only. Empty groups, focus and proportions persist
+ * until the explicit Close split action; closing a tab is detach-only. */
 export function removeSplitTab(split, id) {
   const group = groupOfTab(split, id);
   if (!group) return { split, successor: null };
   const at = group.tabs.indexOf(id);
   const tabs = group.tabs.filter((t) => t !== id);
-  let successor = group.activeTab === id
-    ? (tabs[at] ?? tabs[at - 1] ?? null)
-    : null;
-  let groups;
-  if (!tabs.length) {
-    const gAt = split.groups.indexOf(group);
-    groups = split.groups.filter((g) => g !== group);
-    if (group.activeTab === id && groups.length) {
-      const neighbor = groups[Math.min(gAt, groups.length - 1)];
-      successor = neighbor.activeTab;
-    }
-  } else {
-    groups = split.groups.map((g) => (g === group
-      ? { ...g, tabs, activeTab: g.activeTab === id ? successor : g.activeTab } : g));
-  }
-  if (groups.length < 2) return { split: null, successor };
-  const focusedGroup = groups.some((g) => g.id === split.focusedGroup)
-    ? split.focusedGroup
-    : (groupOfTab({ ...split, groups }, successor)?.id ?? groups[0].id);
-  return { split: { ...split, groups, focusedGroup }, successor };
+  const successor = group.activeTab === id ? (tabs[at] ?? tabs[at - 1] ?? null) : null;
+  const groups = split.groups.map((g) => (g === group
+    ? { ...g, tabs, activeTab: g.activeTab === id ? successor : g.activeTab } : g));
+  return { split: { ...split, groups }, successor };
 }

@@ -208,10 +208,14 @@ test("ws generation: a spawn begun in workspace A completing after a switch to B
     common.setWorkspace("wsA");
     const inFlight = doSpawn(s);
     common.setWorkspace("wsB");              // user switches while spawning
+    fields.fstatus.textContent = "Workspace B status";
+    fields.fspawn.disabled = false; fields.fspawn.textContent = "Spawn in B";
     release();
     await inFlight;
     assert.deepEqual(opened, [], "openTerminal(dev-1) with wsB current would target a same-named B instance");
-    assert.match(fields.fstatus.textContent, /previous workspace/);
+    assert.equal(fields.fstatus.textContent, "Workspace B status", "stale success must not write into the new workspace");
+    assert.equal(fields.fspawn.disabled, false);
+    assert.equal(fields.fspawn.textContent, "Spawn in B", "stale finally must not change the new workspace control");
     // control: same flow without a switch DOES auto-open
     const p2 = doSpawn(s);
     release();

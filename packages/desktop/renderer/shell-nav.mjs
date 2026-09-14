@@ -9,9 +9,9 @@
  * shell's permanent sidebar roster (below the rail), not a rail destination
  * (scope correction of PR #29 — the human rejected the extra tab/sidebar). */
 export const NAV = [
-  { name: "hierarchy", label: "Active overview", icon: "⌘", title: "Active overview" },
-  { name: "spawn", label: "Souls & capabilities", icon: "✦", title: "Souls & capabilities" },
-  { name: "schedules", label: "Schedules", icon: "◷", title: "Schedules" },
+  { name: "hierarchy", label: "Active overview", icon: "overview", title: "Active overview" },
+  { name: "spawn", label: "Workspace", icon: "workspace", title: "Workspace" },
+  { name: "schedules", label: "Schedules", icon: "schedules", title: "Schedules" },
 ];
 
 /** Sidebar mode a stage view pairs with (spawn shows the souls context). */

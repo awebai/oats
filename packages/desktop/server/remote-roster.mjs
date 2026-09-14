@@ -19,7 +19,8 @@ export function remotePanel(group) {
     tmux: i.tmux || null, git: i.git || null, task: i.task || "", next: i.next || "",
   }));
   return {
-    workspace: { id: ws.id, name: ws.name, team: null, server: ws.server, remote: true },
+    workspace: { id: ws.id, name: ws.name, scope: ws.scope, team: null, server: ws.server,
+      remote: true, registrationPresent: ws.registrationPresent === true },
     team: null, generatedAt: new Date().toISOString(),
     running: instances.filter((i) => i.running).length, instances,
     error: group.probe.ok ? null : group.probe.error?.message || "Server is unreachable",

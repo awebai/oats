@@ -4,6 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
@@ -29,15 +30,12 @@ function dom() {
 }
 
 function shellEls(doc) {
-  const emptyEl = doc.createElement("div");
-  emptyEl.className = "split-empty";
   return {
     tabhost: doc.getElementById("tabhost"),
     tabstrip: doc.getElementById("tabstrip"),
     tabbar: doc.getElementById("tabbar"),
     actionsEl: doc.getElementById("tab-actions"),
     actionsHome: doc.getElementById("tabbar-row"),
-    emptyEl,
   };
 }
 
@@ -84,7 +82,8 @@ test("splitting projects one group-cell per group: group strip with the REAL tab
   for (const id of [1, 2, 3]) assert.equal(tabs.get(id).paneEl.parentNode, cells[0]);
   assert.equal(doc.getElementById("tabbar").querySelector(".tab"), null, "flat strip emptied");
   // the new (focused) empty group shows the placeholder, no tabs
-  assert.equal(els.emptyEl.parentNode, cells[1]);
+  assert.ok(cells[1].querySelector(":scope > .split-empty"));
+  assert.equal(cells[1].querySelector(".split-empty").tabIndex, 0);
   // the split controls ride the FOCUSED group's strip
   assert.equal(els.actionsEl.parentNode, cells[1].querySelector(".group-tabbar"));
 });
@@ -104,7 +103,7 @@ test("new tab opens into the FOCUSED group's strip; the old flat strip stays hid
   const cells = [...els.tabhost.querySelectorAll(":scope > .group-cell")];
   assert.equal(cells[1].querySelector(".tab"), tabs.get(2).tabEl, "tab 2 opened into the focused group");
   assert.equal(tabs.get(2).paneEl.parentNode, cells[1]);
-  assert.equal(els.emptyEl.parentNode, null, "placeholder leaves once the group fills");
+  assert.equal(els.tabhost.querySelector(".split-empty"), null, "placeholder leaves once the group fills");
 });
 
 test("projection is idempotent — an in-place node is never re-inserted (pointerdown-tear guard)", () => {
@@ -144,7 +143,7 @@ test("switching the active tab within a group re-projects without dismantling th
   assert.equal(els.actionsEl.parentNode, cells[0].querySelector(".group-tabbar"));
 });
 
-test("collapsing to one group restores the flat layout byte-identical to the pre-split DOM (regression guard)", () => {
+test("explicit Close split restores the flat layout byte-identical to the pre-split DOM (regression guard)", () => {
   const { window } = dom();
   const doc = window.document;
   const tabs = makeTabs(doc, [1, 2, 3]);
@@ -178,7 +177,7 @@ test("covering the split (non-member tab active) hides it without destroying gro
   assert.equal(els.tabhost.querySelectorAll(":scope > .group-cell").length, 2, "split re-materializes");
 });
 
-test("a removed group's cell disappears; survivors keep their cells (stable data-group identity)", () => {
+test("closing a group's last tab retains its empty cell and every other cell (stable data-group identity)", () => {
   const { window } = dom();
   const doc = window.document;
   const tabs = makeTabs(doc, [1, 2, 3]);
@@ -188,14 +187,14 @@ test("a removed group's cell disappears; survivors keep their cells (stable data
   split = requestSplit(split, "row", null, null).split;
   split = openTabInFocusedGroup(split, 3).split; // [1] [2] [3]
   projectSplitDom(els, split, true, [...tabs]);
-  const keepCell = els.tabhost.querySelector('.group-cell[data-group="1"]');
+  const before = [...els.tabhost.querySelectorAll(":scope > .group-cell")];
   ({ split } = removeSplitTab(split, 2));
   // tab 2's nodes leave the DOM the way closeTab removes them
   tabs.get(2).tabEl.remove(); tabs.get(2).paneEl.remove(); tabs.delete(2);
   projectSplitDom(els, split, true, [...tabs]);
   const cells = [...els.tabhost.querySelectorAll(":scope > .group-cell")];
-  assert.equal(cells.length, 2);
-  assert.equal(cells[0], keepCell, "surviving group keeps its cell node");
+  assert.deepEqual(cells, before, "every group keeps its cell node");
+  assert.ok(cells[1].querySelector(".split-empty"), "closed last tab leaves its own placeholder");
 });
 
 test("projection preserves keyboard focus on the focused tab trigger across regrouping (a11y)", () => {
@@ -254,7 +253,7 @@ test("runAction dispatches a registered action only in an active context (button
 
 // ── shell/index.html wiring pins (house style: source-level assertions) ──
 
-test("index.html ships the split buttons and shell wires the group projection through runAction", () => {
+test("index.html ships the split buttons and shell wires the group projection through runAction", (t) => {
   const html = read("renderer/index.html");
   for (const id of ["tab-actions", "split-right", "split-down", "split-close", "sidebar-restore", "tabstrip", "tabbar-row"]) {
     assert.match(html, new RegExp(`id="${id}"`), `index.html has #${id}`);
@@ -268,7 +267,23 @@ test("index.html ships the split buttons and shell wires the group projection th
   assert.match(src, /\["split-right", "split\.vertical"\]/, "split buttons map to the registered actions");
   assert.match(src, /splitControlsState\(split, activeTab/, "button gating derives from the shared model");
   assert.match(src, /projectSplitDom\(/, "group projection via split-dom");
-  assert.match(src, /label">Sidebar</, "rail-footer Sidebar button");
+  const footerDom = new JSDOM(html);
+  t.after(() => footerDom.window.close());
+  const document = footerDom.window.document;
+  const toggle = document.querySelector('#nav-foot button#sidebar-toggle');
+  assert.ok(toggle, "sidebar toggle is a footer button");
+  assert.equal(toggle.getAttribute("aria-label"), "Hide the sidebar", "icon-only button has an accessible name");
+  assert.equal(toggle.dataset.action, "sidebar.toggle");
+  const wiring = src.match(/for \(const button of document\.querySelectorAll\("#nav-foot \[data-action\]"\)\) \{[^]*?\n\}/)?.[0];
+  const registration = src.split("\n").find(line => line.startsWith('registerAction({ id: "sidebar.toggle"'));
+  assert.ok(wiring && registration, "exercise shipped footer dispatch and registry binding");
+  let toggles = 0;
+  runInNewContext(`${wiring}\n${registration}`, {
+    document, runAction, toggleSidebar: () => toggles++,
+    registerAction: action => { t.after(registerAction(action)); },
+  });
+  toggle.click();
+  assert.equal(toggles, 1, "footer click runs sidebar.toggle through the actual action registry");
   const css = read("renderer/shell.css");
   assert.match(css, /#sidebar-restore \{ display: none; \}/);
   assert.match(css, /#app\.sidebar-hidden #sidebar-restore \{/);

@@ -1,9 +1,6 @@
-// Terminal focus jump (feature: jump to an instance terminal and FOCUS its
-// input). Source-level pins in the keybindings-wiring house style: the
-// focus-discipline invariants live in shell.mjs's activateTab plumbing
-// (Electron-only composition root), so they are pinned at the source layer;
-// the fresh-open path's term.focus() is behaviorally covered by
-// terminal-tab.test.mjs (onReady ordering).
+// Direct terminal jumps retain explicit content focus; restoration stays
+// focus-neutral. The shipped-shell DOM/async ownership regressions live in
+// selection-ownership.test.mjs, with lifecycle cleanup in terminal-tab.test.mjs.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,23 +9,23 @@ import { fileURLToPath } from "node:url";
 import { runInNewContext } from "node:vm";
 import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 import { fillEmptyGroup, requestSplit } from "../renderer/split-layout.mjs";
-import { terminalOpenOwnsWorkspace } from "../renderer/workspace-tabs.mjs";
+import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (f) => readFileSync(join(PKG, f), "utf8");
 
-test("activateTab carries an explicit focusContent intent (user jumps vs side effects)", () => {
+test("selectTab carries explicit focusContent intent; activateTab remains restoration-only", () => {
   const src = read("renderer/shell.mjs");
-  assert.match(src, /function activateTab\(id, \{ focusContent = false, keepGroupFocus = false \} = \{\}\)/,
+  assert.match(src, /function selectTab\(id, \{ focusContent = false, intent = tabOpenIntents\.begin\(\) \} = \{\}\)/,
     "focusContent defaults FALSE — side-effect activations must not steal focus");
   assert.match(src, /if \(focusContent\) tabs\.get\(id\)\?\.focusContent\?\.\(\);/,
-    "content focus runs only on explicit user intent, after onShow");
+    "content focus runs only on explicit user intent, after activation/onShow");
 });
 
-test("terminal tabs provide focusContent = term.focus and fresh-open dedup focuses", () => {
+test("terminal tabs provide readiness-aware focusContent and fresh-open dedup focuses", () => {
   const src = read("renderer/shell.mjs");
-  assert.match(src, /focusContent: \(\) => \{ try \{ term\.focus\(\); \} catch \{\} \}/,
-    "terminal tab focuses the xterm textarea");
+  assert.match(src, /focusContent: \(\) => tab\.focus\(\)/,
+    "terminal tab requests readiness-aware input focus");
   assert.match(src, /focusOnActivate: true/,
     "addTab's dedup inside openTerminalTabInner is a user jump");
 });
@@ -46,14 +43,16 @@ test("existing-terminal jumps focus input, fill an empty split without another a
     const context = {
       split: initial, tabs: new Map([[1, { key: "other" }], [2, { key: "selected" }]]),
       setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
-      currentWorkspace: () => workspace, terminalOpenOwnsWorkspace, fillEmptyGroup,
+      currentWorkspace: () => workspace, workspaceGeneration: () => 0,
+      fillEmptyGroup,
       api: async () => ({ instances: [] }),
       resolveTerminalOpen: () => ({ inst: {}, key: "selected" }),
       whenKeyFree: async () => { if (scenario === "workspace-changed") workspace = "workspace-b"; },
-      activateTab: (id, options) => activated.push({ id, focusContent: options.focusContent }),
+      selectTab: (id, options) => activated.push({ id, focusContent: options.focusContent }),
       pendingTerms: new Set(),
       openTerminalTabInner: () => assert.fail("an existing tab must not attach again"),
     };
+    context.tabOpenIntents = createSelectionOwnership(context);
     const run = runInNewContext(`(${flow})`, context);
     await run({}, () => assert.fail("existing terminal must resolve"));
     assert.deepEqual(activated, scenario === "workspace-changed" ? [] : [{ id: 2, focusContent: true }], scenario);
@@ -77,7 +76,7 @@ test("terminal.focusActive is a registered rebindable action with NO default cho
   assert.equal(DEFAULT_KEYMAP["terminal.focusActive"], undefined,
     "no default chord — Ctrl chords belong to the pty on Linux/Windows; bind in the editor");
   assert.match(src, /Terminal: focus the active terminal input/, "palette-discoverable");
-  assert.match(src, /function focusActiveTerminal\(\)[\s\S]*?kind === "terminal"\) t\.focusContent\?\.\(\)/,
+  assert.match(src, /function focusActiveTerminal\(\)[\s\S]*?kind === "terminal"\) selectTab\(activeTab, \{ focusContent: true \}\)/,
     "focuses only when the active tab IS a terminal");
 });
 

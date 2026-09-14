@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html data-theme="light">
 <head>
   <meta charset="utf-8" />
   <meta http-equiv="Content-Security-Policy"
@@ -22,9 +22,10 @@
   <div id="app">
     <aside id="sidebar">
       <div class="side-head">
-        <span class="side-kicker">OATS workspace</span>
         <button id="ws-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="ws-menu">
-          <span id="ws-name">Resolving…</span><span class="ws-chevron" aria-hidden="true">⌄</span>
+          <span class="ws-brand-mark" data-shell-icon="oats" aria-hidden="true"></span>
+          <span class="ws-heading-copy"><span id="ws-name">Resolving…</span><span id="ws-context"></span></span>
+          <span class="ws-chevron" data-shell-icon="chevron" aria-hidden="true"></span>
         </button>
       </div>
       <div id="ws-menu" class="ws-menu" hidden>
@@ -32,27 +33,42 @@
         <div id="ws-options" class="ws-options" role="listbox" aria-label="Added workspaces"></div>
         <button id="ws-add-open" class="ws-add-open" type="button"><span aria-hidden="true">＋</span> Add workspace…</button>
       </div>
-      <nav id="nav"></nav>
+      <nav id="nav" aria-label="Main views"></nav>
       <section id="instance-roster" aria-label="Instances">
         <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
         <input class="ctx-filter" placeholder="Filter instances…" autocomplete="off" aria-label="Filter instances">
         <div class="ctx-list"></div>
       </section>
-      <div id="nav-foot"></div>
+      <div id="nav-foot">
+        <button id="sidebar-spawn" class="primary" type="button" data-action="app.chooseSoul"
+                title="Choose a soul in Workspace to spawn an instance" aria-label="Spawn instance: choose a soul in Workspace">
+          <span data-shell-icon="plus" aria-hidden="true"></span><span>Spawn instance</span>
+        </button>
+        <div id="sidebar-tools" role="group" aria-label="Desktop tools">
+          <button id="sidebar-toggle" class="nav-item icon-button" type="button" data-action="sidebar.toggle"
+                  title="Hide the sidebar" aria-label="Hide the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
+          <button id="sidebar-theme" class="nav-item icon-button" type="button" data-action="app.themeToggle"
+                  title="Toggle light/dark theme" aria-label="Toggle light/dark theme"><span data-shell-icon="theme" aria-hidden="true"></span></button>
+          <button id="sidebar-shortcuts" class="nav-item icon-button" type="button" data-action="app.shortcuts"
+                  title="Edit keyboard shortcuts" aria-label="Edit keyboard shortcuts"><span data-shell-icon="shortcuts" aria-hidden="true"></span></button>
+          <button id="sidebar-palette" class="nav-item icon-button" type="button" data-action="app.palette"
+                  title="Open the command palette" aria-label="Open the command palette"><span data-shell-icon="palette" aria-hidden="true"></span></button>
+        </div>
+      </div>
     </aside>
     <button id="sidebar-restore" type="button" data-action="sidebar.toggle"
-            title="Show the sidebar" aria-label="Show the sidebar">›</button>
+            title="Show the sidebar" aria-label="Show the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
     <main id="main">
       <div id="tabstrip">
         <div id="tabbar-row">
           <div id="tabbar" role="tablist" aria-label="Open terminals and artifacts"></div>
           <div id="tab-actions" hidden>
           <button id="split-right" type="button" data-action="split.vertical"
-                  title="Split terminal right (side by side)" aria-label="Split terminal right">◭</button>
+                  title="Split terminal right (side by side)" aria-label="Split terminal right"><span data-shell-icon="splitRight" aria-hidden="true"></span></button>
           <button id="split-down" type="button" data-action="split.horizontal"
-                  title="Split terminal down (stacked)" aria-label="Split terminal down">⬓</button>
+                  title="Split terminal down (stacked)" aria-label="Split terminal down"><span data-shell-icon="splitDown" aria-hidden="true"></span></button>
           <button id="split-close" type="button" data-action="split.close"
-                  title="Close the split (back to single pane)" aria-label="Close the split">▣</button>
+                  title="Close the split (back to single pane)" aria-label="Close the split"><span data-shell-icon="splitClose" aria-hidden="true"></span></button>
           </div>
         </div>
       </div>

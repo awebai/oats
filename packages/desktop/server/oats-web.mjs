@@ -35,6 +35,7 @@ import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
+import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -161,6 +162,7 @@ function agentsData(wsId) {
     const context = dirname(root); // the workspace/repo owning this agents root
     const pushAgent = (a) => agents.push({
       name: a.name, description: a.description || "", kind: a.kind || "persistent",
+      ...(normalizeSoulColor(a.color) ? { color: normalizeSoulColor(a.color) } : {}),
       work: a.work || "checkout", backend: a.backend || "tmux", yolo: a.yolo, runtime: a.runtime || "pi", model: a.model || null,
       repo: a.repo || null, capability: a.capability || null, agentsRoot: root,
       workspace: context, repoName: resolve(context, a.repo || ".").split("/").pop(),

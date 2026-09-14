@@ -9,7 +9,7 @@ test("terminal tabs: same-named A/B instances remain workspace-scoped", () => {
   const tabs = new Map([
     [1, { kind: "terminal", workspace: "wsA", key: "term:wsA:dev-1" }],
     [2, { kind: "terminal", workspace: "wsB", key: "term:wsB:dev-1" }],
-    [3, { kind: "brain", workspace: null, key: "view:brain" }],
+    [3, { kind: "brain", workspace: "wsB", key: "brain:wsB" }],
   ]);
   assert.deepEqual(terminalTabsForWorkspace(tabs, "wsA").map(([id]) => id), [1]);
   assert.deepEqual(terminalTabsForWorkspace(tabs, "wsB").map(([id]) => id), [2]);
@@ -18,6 +18,17 @@ test("terminal tabs: same-named A/B instances remain workspace-scoped", () => {
   assert.equal(tabVisibleInContext(tabs.get(2), "instances", "wsB"), true);
   assert.equal(tabVisibleInContext(tabs.get(3), "instances", "wsB"), false);
   assert.equal(tabVisibleInContext(tabs.get(3), "souls", "wsB"), true);
+});
+
+test("every artifact kind requires the exact workspace for visibility and activation", () => {
+  for (const kind of ["terminal", "brain", "file", "artifact"]) {
+    const tab = { kind, workspace: "wsA" };
+    assert.equal(canActivateTab(tab, "wsA"), true);
+    assert.equal(canActivateTab(tab, "wsB"), false);
+    assert.equal(tabVisibleInContext(tab, "souls", "wsB"), false);
+    assert.equal(tabVisibleInContext(tab, "instances", "wsB"), false);
+  }
+  assert.equal(canActivateTab({ kind: "file", workspace: null }, "wsA"), false);
 });
 
 test("shell fallback: closing B terminal never activates hidden A terminal", () => {

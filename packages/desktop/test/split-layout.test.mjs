@@ -120,39 +120,31 @@ test("closing the group-active tab picks the right-then-left neighbor IN THE GRO
   assert.equal(r2.successor, 1, "left neighbor when no right one");
 });
 
-test("closing a group's last tab collapses the group; successor is the neighbor group's active tab", () => {
+test("closing a group's last tab keeps its identity, proportions and no cross-group successor", () => {
   let { split } = requestSplit(null, "row", [1, 2], 1);
   ({ split } = openTabInFocusedGroup(split, 5));
   ({ split } = requestSplit(split, "row", null, null));
   ({ split } = openTabInFocusedGroup(split, 6)); // groups: [1,2] [5] [6]
-  const r = removeSplitTab(split, 5);
-  assert.equal(r.split.groups.length, 2, "middle group collapsed");
-  assert.equal(r.successor, 6, "neighbor group's active tab survives as successor");
-});
-
-test("down to one group the model collapses to null (flat strip)", () => {
-  let { split } = requestSplit(null, "row", [1, 2], 1);
-  ({ split } = openTabInFocusedGroup(split, 5));
-  const r = removeSplitTab(split, 5);
-  assert.equal(r.split, null);
-  assert.equal(r.successor, 1, "the surviving group's active tab");
-});
-
-test("removing the last tab of the ONLY populated pair collapses cleanly (empty group present)", () => {
-  const { split } = requestSplit(null, "row", [1], 1); // [1] + empty focused group
-  const r = removeSplitTab(split, 1);
-  assert.equal(r.split, null, "an empty group cannot stand alone");
-});
-
-test("collapsing the focused group moves focus to the successor's group", () => {
-  let { split } = requestSplit(null, "row", [1, 2], 1);
-  ({ split } = openTabInFocusedGroup(split, 5));
-  ({ split } = requestSplit(split, "row", null, null));
-  ({ split } = openTabInFocusedGroup(split, 6)); // groups: [1,2] [5]* [6]
   ({ split } = focusTab(split, 5));
+  split.groups[1].weight = .7;
   const r = removeSplitTab(split, 5);
-  assert.equal(groupOfTab(r.split, r.successor).id, r.split.focusedGroup,
-    "focusedGroup never dangles on a removed group id");
+  assert.equal(r.split.groups.length, 3, "the empty middle destination persists");
+  assert.equal(r.successor, null, "no neighboring group's terminal is silently selected");
+  assert.deepEqual(r.split.groups.map(g => g.id), split.groups.map(g => g.id));
+  assert.equal(r.split.focusedGroup, split.focusedGroup);
+  assert.deepEqual(r.split.groups[1], { id: split.focusedGroup, tabs: [], activeTab: null, weight: .7 });
+  assert.deepEqual(split.groups[1].tabs, [5], "transition does not mutate callers");
+});
+
+test("closing every tab leaves every destination intact, including the focused empty group", () => {
+  let { split } = requestSplit(null, "row", [1, 2], 1);
+  const ids = split.groups.map(g => g.id), focusedGroup = split.focusedGroup;
+  ({ split } = removeSplitTab(split, 1));
+  ({ split } = removeSplitTab(split, 2));
+  assert.deepEqual(split.groups.map(g => g.id), ids);
+  assert.deepEqual(split.groups.map(g => g.tabs), [[], []]);
+  assert.deepEqual(split.groups.map(g => g.activeTab), [null, null]);
+  assert.equal(split.focusedGroup, focusedGroup);
 });
 
 test("mutation guard: removeSplitTab of a non-member changes nothing", () => {

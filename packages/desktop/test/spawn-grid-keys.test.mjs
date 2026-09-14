@@ -1,3 +1,4 @@
+import { launchSoul } from './helpers/workspace-actions.mjs';
 // Spawn view grid keyboard — DOM-level regressions (review 93ff03d: the
 // default "/" must focus the filter FROM A FOCUSED CARD, the primary
 // non-editable surface, not only from grid whitespace).
@@ -141,7 +142,7 @@ test("spawn MODAL controls are excluded from view-key dispatch: '/' and 'B' from
     const { spawn, opened } = await mountSpawn(dom);
     const doc = dom.window.document;
     // open the modal from the first card
-    doc.querySelector(".spawn-act").click();
+    launchSoul(doc);
     const modal = doc.querySelector(".spawn-modal");
     assert.ok(modal, "modal open");
     const filter = doc.querySelector(".filter");
