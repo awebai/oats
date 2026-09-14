@@ -94,6 +94,7 @@ test("damaged retained content is never repaired from an otherwise valid source"
 test("missing scope, store or revision is distinct from damaged retained content", (t) => {
   const f = fixture(t);
   assert.throws(() => verifyRetainedCapability(join(f.base, "absent"), ID, f.lock), { code: "artifact-not-found" });
+  assert.throws(() => retainCapabilityArtifact(join(f.base, "absent"), f.installed, ID, f.lock), { code: "artifact-not-found" });
   assert.throws(() => verifyRetainedCapability(f.scope, ID, f.lock), { code: "artifact-not-found" });
   const a = retainCapabilityArtifact(f.scope, f.installed, ID, f.lock);
   rmSync(a.dir, { recursive: true });
