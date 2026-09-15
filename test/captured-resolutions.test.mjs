@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
+import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApprovals, readApprovalLedger, validateApprovalLedger } from "../lib/artifact-approvals.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bytesIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
@@ -149,4 +150,53 @@ test("missing hard source requirements or helper inputs refuse before publishing
   missingHelper.helpers.worker = { schemaVersion: 1, id: `sha256-${"b".repeat(64)}` };
   assert.throws(() => commitCapturedResolution(f.scope, missingHelper), { code: "resolution-not-found" });
   assert.equal(existsSync(join(f.scope, ".agents/resolutions")), false);
+});
+
+test("exact A/B approvals coexist independently of removed sources and poisoned current trust", (t) => {
+  const f = fixture(t), a = f.build("A"), A = commitCapturedResolution(f.scope, a);
+  const b = f.build("B"), B = commitCapturedResolution(f.scope, b), id = "example.action";
+  const status = (ref) => inspectCapturedApprovals(f.scope, ref).capabilities[0].status;
+  assert.equal(status(A), "approval-required");
+  assert.equal(approveCapturedCapability(f.scope, A, id, origin).status, "approved");
+  assert.equal(status(A), "approved"); assert.equal(status(B), "approval-required");
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  writeFileSync(join(f.scope, "oats-lock.json"), '{"trusted":true}');
+  assert.equal(status(B), "approval-required");
+  approveCapturedCapability(f.scope, B, id, origin);
+  assert.equal(status(A), "approved"); assert.equal(status(B), "approved");
+  assert.equal(Object.keys(readApprovalLedger(f.scope).ledger.capabilities[id]).length, 2);
+  assert.equal(approveCapturedCapability(f.scope, A, id, origin).status, "already-approved");
+  const bad = readApprovalLedger(f.scope).ledger;
+  const key = artifactApprovalKey(a.artifacts.capabilities[id].artifact);
+  bad.capabilities[id][key].artifact.integrity.value = b.artifacts.capabilities[id].artifact.integrity.value;
+  assert.throws(() => validateApprovalLedger(bad), { code: "invalid-approval" });
+  const legacy = readApprovalLedger(f.scope).ledger;
+  legacy.capabilities[id][key].artifact.integrity.format = "oats.capability-artifact.v1";
+  assert.throws(() => validateApprovalLedger(legacy), { code: "invalid-artifact-reference" });
+});
+
+test("environment-only authority and owner-execute changes need exact approval; declarative-only changes do not", (t) => {
+  const f = fixture(t), record = f.build("A"), id = "example.action";
+  const manifest = JSON.parse(readFileSync(join(f.cap, "oats.json"), "utf8"));
+  delete manifest.commands; manifest.environment = ["EXAMPLE_MODE"];
+  const capture = () => {
+    writeFileSync(join(f.cap, "oats.json"), JSON.stringify(manifest));
+    const artifact = { kind: "capability", capability: id, integrity: treeIntegrity(f.cap) };
+    retainPortableArtifact(f.scope, f.cap, artifact);
+    record.artifacts.capabilities[id].artifact = artifact;
+    for (const resource of Object.values(record.resources)) resource.owner = artifact;
+    return commitCapturedResolution(f.scope, record);
+  };
+  const A = capture();
+  assert.equal(inspectCapturedApprovals(f.scope, A).capabilities[0].status, "approval-required");
+  approveCapturedCapability(f.scope, A, id, origin);
+  chmodSync(join(f.cap, "marker.mjs"), 0o755);
+  const B = capture();
+  assert.equal(inspectCapturedApprovals(f.scope, B).capabilities[0].status, "approval-required");
+  assert.equal(inspectCapturedApprovals(f.scope, A).capabilities[0].status, "approved");
+  delete manifest.environment;
+  const C = capture();
+  assert.equal(inspectCapturedApprovals(f.scope, C).capabilities[0].status, "not-required");
+  assert.equal(approveCapturedCapability(f.scope, C, id, origin).status, "not-required");
+  assert.equal(Object.keys(readApprovalLedger(f.scope).ledger.capabilities[id]).length, 1);
 });

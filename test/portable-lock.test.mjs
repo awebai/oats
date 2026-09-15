@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { canonicalJson } from "../lib/portable-values.mjs";
 import { TREE_FORMAT, PACKAGE_FORMAT } from "../lib/portable-digest.mjs";
 import { artifactSetKey3, emptyLock3, readLock3, requestKey3, validateLock3, writeLock3 } from "../lib/portable-lock.mjs";
-import { withPortableStateWrite } from "../lib/portable-state.mjs";
+import { withPortableStateWrite, writeGuardedPortableDocument } from "../lib/portable-state.mjs";
 
 const request = { source: "git:https://github.com/example/tools.git@main", path: "oats-package" };
 const integrity = (format, letter) => ({ format, value: `sha256-${letter.repeat(64)}` });
@@ -51,7 +51,12 @@ test("whole-snapshot CAS refuses stale writers, held guards, legacy and symlinke
   const written = writeLock3(root, null, first);
   assert.equal(canonicalJson(readLock3(root).lock), canonicalJson(first));
   assert.throws(() => writeLock3(root, null, emptyLock3()), { code: "selection-changed" });
-  withPortableStateWrite(root, () => assert.throws(() => writeLock3(root, written.integrity, emptyLock3()), { code: "selection-changed" }));
+  let closedContext;
+  withPortableStateWrite(root, (context) => {
+    closedContext = context;
+    assert.throws(() => writeLock3(root, written.integrity, emptyLock3()), { code: "selection-changed" });
+  });
+  assert.throws(() => writeGuardedPortableDocument(closedContext, join(root, "oats-lock.json"), emptyLock3()), { code: "selection-changed" });
   assert.equal(writeLock3(root, written.integrity, first).status, "kept");
   const next = writeLock3(root, written.integrity, emptyLock3());
   assert.equal(next.status, "written");

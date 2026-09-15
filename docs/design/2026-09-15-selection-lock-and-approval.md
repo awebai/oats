@@ -51,13 +51,45 @@ cutover or live lock write was performed while implementing this module.
 `portable-files.mjs` shares the bounded descriptor-backed metadata read with
 captured records, preserving their size/identity/content-change checks.
 
+## Separate exact-artifact approval
+
+`lib/artifact-approvals.mjs` owns `.agents/portable/approvals.json`. Its closed
+version-1 ledger is keyed by capability ID, then integrity format and full digest.
+Every entry must agree with its keys and carry explicit operator provenance.
+Legacy digests, source/provider declarations and captured approval flags cannot
+supply this new authority. Missing ledger means no approvals; malformed existing
+metadata refuses, never repairs itself from a selection lock.
+
+`approveCapturedCapability(deployment, resolution, id, operatorOrigin)` is the
+explicit approval writer. It verifies the retained record, selected artifact and
+provenance, then preserves previous approvals under the same scope write guard.
+There is no bulk caller-supplied ledger overwrite or approval during discovery.
+Approving B neither revokes nor rewrites A. Repeating A keeps its original receipt.
+
+`inspectCapturedApprovals` verifies retained inputs and reads current local
+approval authority without consulting current selections/configuration. It returns
+per-capability facts, not a dispatch permit. Helpers have dedicated record checks.
+The existing command/hook/environment classifier was extracted byte-identically
+from core into `capability-execution.mjs`; both callers use it. An environment-only
+artifact needs approval, and owner-execute changes require a new exact approval.
+Declarative-only changes have no executable gate; they remain visible as changed
+artifact identities. No approval for an unrelated managed harness resource follows
+from a capability's approval.
+
+All mutable publication uses an active synchronous scope-write context; saved or
+fabricated contexts cannot publish after the guard is released. This is an internal
+coordination safeguard, not a hostile-host permission system. Full manifest/launch
+validation, action-specific trust checks, explicit CLI consent and runtime/provider
+qualification still belong to the forthcoming preparation/dispatch integration.
+
 ## Verification so far
 
 Four focused tests cover A/B selection and failed-refresh visibility, canonical
 keys/root correlation, full-snapshot CAS/legacy/symlink/guard refusal, and two
 independent concurrent first writers. Existing captured-record and scaffold-only
-spawn/inspect/retire tests cover the shared read-helper extraction. This does not
-qualify executable approval, preparation, native dispatch or live migration.
-
-The separate exact-artifact approval ledger is the next implementation step;
-it must not inherit old digest approval or accept a captured `approved` flag.
+spawn/inspect/retire tests cover the shared read-helper extraction. Two focused
+captured-approval tests cover source-deleted A/B coexistence, poisoned current trust,
+key/format refusal, environment-only gating, owner-execute changes and declarative
+no-op. Two existing package-engine trust/environment regressions cover the classifier
+extraction. These qualify the tested storage/approval boundaries, not public CLI
+consent, complete preparation, native dispatch or live migration.
