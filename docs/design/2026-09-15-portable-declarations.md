@@ -2,8 +2,8 @@
 
 The new parser modules implement the accepted two-authority architecture's data
 boundary. They do **not** yet change legacy CLI composition, acquire packages or
-select a workspace. Captured records, preparation and consumer migration remain
-separate integration work.
+select a workspace. Captured-record primitives exist separately; complete
+preparation and public consumer migration remain integration work.
 
 ## One safe syntax reader
 
@@ -145,3 +145,38 @@ unbound selections to null; the generic engine does not guess from strings such 
 none. False, zero and empty arrays can be legitimate data bindings. The source-aware
 preparer must supply validated typed selections and retain the authored provenance.
 No I/O or provider-specific payload interpretation belongs in this engine.
+
+## Source-aware software plan
+
+`lib/portable-composition.mjs:planSoftwareChoices` now compiles validated soul and
+workspace parser results, qualified import adoptions, explicit operator policy and
+provider-supplied hard fields into that SAME engine. `soul-constraints.mjs` supplies
+the hard facts used by both planning and captured-record verification. It does not
+implement another precedence algorithm.
+
+Selections and settings retain their original document/pointer. The plan exposes
+selected capability sources, zero/one providers per fundamental slot and per-setting
+choice references. Inactive alternatives remain explanatory history, not executable
+configuration. Two selected fields cannot assign different sources to one capability
+ID. A required provider with no selection remains needs-configuration; no repository
+capability-default tier or implicit provider is introduced.
+
+A repo: choice carries its declaring source locator and exact Git revision or explicit
+local context alongside the relative path; retained local bytes have separate witnesses. The same path in workspace and soul repositories is not
+the same package. Operator repo: inputs need an explicit source context, never cwd.
+The shared source codec validates normalized choice fields against their source/path
+rather than allowing a contradictory URL or extra annotation. Local-path selection
+still requires explicit authorization and is never executable trust.
+
+Discovery must supply qualified adoption identities; aliases do not select the
+upstream soul. Matching canonical-remote identities must agree with the import source.
+Contradictory adoption fields for the same identity report both origins. Binding
+values and team-alias maps are retained as data, not provider execution or enrollment.
+
+This is a private SOFTWARE plan, not public readiness or a completed captured
+composition. Provider declarations/stores stay opaque. Their non-secret classification,
+concrete binding resolution and fixed-field constraints must join the same pipeline
+before a public preview or complete capture; do not dump unclassified provider input.
+No fetch, package materialization, trust write, membership claim or native dispatch
+occurs here. Four focused planner tests cover anchors/hard seeds, precedence/missing
+providers, qualified adoption conflicts and cross-field source collisions.

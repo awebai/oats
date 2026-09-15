@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseLockedSource3, parsePortableSource, parseRepositorySource, portablePath } from "../lib/source-spec.mjs";
+import { parseLockedSource3, parsePortableSource, parseRepositorySource, portablePath, validateSelectionSource } from "../lib/source-spec.mjs";
 
 test("portable Git sources retain slash-bearing refs and resolve the documented package default", () => {
   const source = parsePortableSource("git:github.com/example/tools@refs/heads/stable");
@@ -12,6 +12,8 @@ test("portable Git sources retain slash-bearing refs and resolve the documented 
   assert.equal(source.selector, "refs/heads/stable");
   assert.equal(source.path, "oats-package");
   assert.deepEqual(parseLockedSource3(source.source, source.path), source);
+  assert.equal(validateSelectionSource(source), source);
+  assert.throws(() => validateSelectionSource({ ...source, url: "https://example.invalid/other" }), { code: "invalid-source" });
   assert.equal(parsePortableSource("git:github.com/example/tools@main#.").path, ".");
   assert.equal(parsePortableSource("git:github.com/example/tools@main#").path, ".");
   assert.equal(parsePortableSource("git:github.com/example/tools@main#packages/research").path, "packages/research");
