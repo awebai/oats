@@ -24,6 +24,13 @@ decisions/ and referenced from here.
 
 ---
 
+## Portable package/default capture — direct main delivery (2026-09-15)
+- verdict: DELIVERED TO MAIN through `1a61daa46ab4bfd18d8b5618bf9ae70e864e7517`, ordinary fast-forward direct push after bounded review; no PR or approval wait. No release or deployment.
+- scope: shared package walker/materializer, frozen-source acquisition with strict ingress and guarded private-state projection, and manifest defaults captured with exact artifact/file-byte/pointer provenance. The reverse-provenance P2 is closed by `4518da3a`: every intrinsic candidate is checked, even overridden or absent from dispatch maps, without adding a second resolver.
+- evidence: package engine 80/80 at its extraction/safety checkpoint; subsequent package-adapter review findings independently closed. Latest parent record/default 12, stream-lock six, dependency/scaffold three passed; independent final closure ten passed. Main CI `35010453332` failed an elapsed-time assertion after successful append/read; `1a61daa4` replaces that test assertion with deterministic bounded-poll observation. No record runtime change, held capture patch still excluded. Latest full CI is pending confirmation, not represented as green.
+- owner: oats-expert maintainer; review: read-only bounded adversarial checks.
+- taught us: completeness checks must reject invented provenance as well as missing facts. Lock-wait assertions should observe polling behavior, not include unrelated filesystem/scheduler latency. Package preparation is not complete captured runtime/host/provider qualification.
+
 ## Portable Souls source/discovery foundations — direct main delivery (2026-09-15)
 - verdict: DELIVERED TO MAIN as `8373fc2fe3c9aa766a73ece82aacec5df98527a8`, by authorized direct push. Prior foundation PR #21 became merged when its commits reached main; no PR approval wait or new PR was used. No new release or production activation is claimed.
 - scope: canonical/versioned data and digest primitives; strict source/declaration/shared schemas; retained artifacts and captured records; lock v3 and separate exact approvals; source-aware planning; native repository observations and reciprocal workspace/by-reference export discovery. Complete package preparation, captured public consumers, provider qualification and explicit migration remain work in flight.
