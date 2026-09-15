@@ -106,9 +106,10 @@ captures or notes. No new disclosure engine or per-agent ACL is implied.
 A soul declares its essential capabilities with enough information to acquire
 them independently of a private upstream configuration.
 
-Illustrative soul declaration (nesting requires parser/schema review):
+Illustrative soul declaration as **pseudoconfiguration**, not current runnable
+configuration (nesting requires parser/schema review):
 
-```yaml
+```text
 name: market-research-expert
 requires:
   capabilities:

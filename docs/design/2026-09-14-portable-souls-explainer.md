@@ -237,7 +237,10 @@ Illustrative syntax from the proposal, not an agreed schema. What matters is the
 
 **lfx-self-serve/agents/self-serve-expert/soul.yaml**
 
-```yaml
+Illustrative soul declaration as **pseudoconfiguration**, not current runnable
+configuration (nesting requires parser/schema review):
+
+```text
 name: self-serve-expert
 description: Ships lfx-self-serve features through reviewed PRs
 
