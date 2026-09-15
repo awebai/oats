@@ -458,6 +458,32 @@
       ],
       "additionalProperties": false
     },
+    "ArtifactDocument": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "artifact"
+        },
+        "owner": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z]:)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*$"
+        },
+        "integrity": {
+          "$ref": "#/$defs/ByteIntegrity"
+        }
+      },
+      "required": [
+        "kind",
+        "owner",
+        "path",
+        "integrity"
+      ],
+      "additionalProperties": false
+    },
     "Origin": {
       "type": "object",
       "properties": {
@@ -474,7 +500,8 @@
             "provider-binding",
             "workspace-admission",
             "member-backlink",
-            "source-export"
+            "source-export",
+            "manifest-default"
           ]
         },
         "document": {
@@ -490,6 +517,9 @@
             },
             {
               "$ref": "#/$defs/RecordDocument"
+            },
+            {
+              "$ref": "#/$defs/ArtifactDocument"
             }
           ]
         },
@@ -609,6 +639,7 @@
       "properties": {
         "kind": {
           "enum": [
+            "manifest-default",
             "workspace-default",
             "soul-default",
             "import-adoption",

@@ -128,8 +128,10 @@ membership; the discovery adapter must establish the actual facts.
 ## One choice engine
 
 `lib/portable-choices.mjs` resolves field-level inputs through one algorithm. A
-requirement is either equality with a concrete value or required presence. Candidate
-kinds are workspace-default, soul-default, import-adoption and operator. This is
+requirement is either equality with a concrete value or required presence. Policy
+candidate kinds are workspace-default, soul-default, import-adoption and operator;
+manifest-default is the lower intrinsic field fallback, captured from exact manifest
+bytes rather than a third policy authority. This is
 constraints plus bounded fallbacks, not a repository policy tier or a general
 expression/version solver.
 

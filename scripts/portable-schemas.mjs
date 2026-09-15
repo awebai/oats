@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ORIGIN_KINDS, RESOLUTION_FIELDS } from "../lib/resolution-shape.mjs";
+import { CHOICE_KINDS } from "../lib/portable-choices.mjs";
 import { TREE_FORMAT, PACKAGE_FORMAT, BYTES_FORMAT } from "../lib/portable-digest.mjs";
 
 const id = "https://oats.dev/schemas/portable-v1.json";
@@ -51,15 +52,16 @@ const d = {
     object({ kind: { const: "source" }, source: local, revision: { const: "local" }, path, integrity: ref("ByteIntegrity") })),
   DeploymentDocument: object({ kind: { const: "deployment" }, path, integrity: ref("ByteIntegrity") }),
   RecordDocument: object({ kind: { const: "record" }, ref: ref("ResolutionRef") }),
+  ArtifactDocument: object({ kind: { const: "artifact" }, owner: ref("ArtifactRef"), path, integrity: ref("ByteIntegrity") }),
 };
 d.Origin = object({
   kind: enumeration(...ORIGIN_KINDS),
-  document: one(ref("SourceDocument"), ref("DeploymentDocument"), ref("OperatorDocument"), ref("RecordDocument")),
+  document: one(ref("SourceDocument"), ref("DeploymentDocument"), ref("OperatorDocument"), ref("RecordDocument"), ref("ArtifactDocument")),
   pointer: { ...text, pattern: "^(?:/(?:[^~]|~[01])*)*$" }, span: object({ start: nonnegative, end: nonnegative }),
 }, ["span"]);
 d.OperatorOrigin = object({ ...d.Origin.properties, kind: { const: "operator" }, document: ref("OperatorDocument") }, ["span"]);
 d.Constraint = one(object({ kind: { const: "equals" }, value: {}, origin: ref("Origin") }), object({ kind: { const: "required" }, origin: ref("Origin") }));
-d.Considered = object({ kind: enumeration("workspace-default", "soul-default", "import-adoption", "operator"), value: {}, origin: ref("Origin"), disposition: enumeration("selected", "overridden") });
+d.Considered = object({ kind: enumeration(...CHOICE_KINDS), value: {}, origin: ref("Origin"), disposition: enumeration("selected", "overridden") });
 d.Choice = object({ value: {}, selectedBy: nullable(ref("Origin")), constraints: list(ref("Constraint")), considered: list(ref("Considered")) });
 d.GitObservation = object({ identity: ref("RepositoryIdentity"), remote: git, selector: s, commit, provenance: { ...origins, minItems: 1 } });
 d.LocalObservation = object({ kind: { const: "local" }, source: local, integrity: ref("TreeIntegrity"), provenance: { ...origins, minItems: 1 }, repository: ref("RepositoryIdentity") }, ["repository"]);

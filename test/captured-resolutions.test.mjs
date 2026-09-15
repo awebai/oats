@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateWire } from "./helpers/portable-schema-check.mjs";
+import { captureManifestSettings } from "../lib/manifest-settings.mjs";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApprovals, readApprovalLedger, validateApprovalLedger } from "../lib/artifact-approvals.mjs";
 import { tmpdir } from "node:os";
@@ -129,6 +130,30 @@ test("an equal effective setting cannot discard the source hard constraint or so
   const key = settingChoiceKey("example.action", "mode");
   record.choices[key] = resolveChoices({ candidates: [{ key, kind: "operator", value: "strict", origin }] }).choices[key];
   assert.throws(() => commitCapturedResolution(f.scope, record), { code: "resolution-incomplete" });
+});
+
+test("manifest defaults and canonical setting references must be captured, never invented while loading", (t) => {
+  const f = fixture(t), record = f.build("A"), id = "example.action";
+  const manifest = JSON.parse(readFileSync(join(f.cap, "oats.json"), "utf8"));
+  manifest.settings = { mode: { default: "soft" }, target: { default: "base" } };
+  const bytes = Buffer.from(JSON.stringify(manifest)); writeFileSync(join(f.cap, "oats.json"), bytes);
+  const artifact = { kind: "capability", capability: id, integrity: treeIntegrity(f.cap) };
+  retainPortableArtifact(f.scope, f.cap, artifact);
+  record.artifacts.capabilities[id].artifact = artifact;
+  for (const resource of Object.values(record.resources)) resource.owner = artifact;
+  assert.throws(() => commitCapturedResolution(f.scope, record), { code: "resolution-incomplete" });
+  const requirements = Object.entries(record.choices).flatMap(([key, choice]) => choice.constraints.map((entry) => ({ key, ...entry })));
+  const candidates = Object.entries(record.choices).flatMap(([key, choice]) => choice.considered.map(({ disposition: _, ...entry }) => ({ key, ...entry })));
+  const captured = captureManifestSettings({ status: "resolved", requirements, candidates, capabilities: record.artifacts.capabilities, settings: record.dispatch.settingsChoices }, [{ artifact, bytes }]);
+  record.choices = captured.choices; record.dispatch.settingsChoices = captured.settings;
+  const ref = commitCapturedResolution(f.scope, record);
+  validateWire("CapturedResolution", readCapturedResolution(f.scope, ref));
+  assert.equal(record.choices[settingChoiceKey(id, "mode")].value, "strict");
+  const changed = structuredClone(record), key = settingChoiceKey(id, "target");
+  changed.choices[key] = resolveChoices({ candidates: [{ key, kind: "operator", value: "base", origin }] }).choices[key];
+  assert.throws(() => commitCapturedResolution(f.scope, changed), { code: "resolution-incomplete" });
+  changed.dispatch.settingsChoices[id].target = settingChoiceKey(id, "mode");
+  assert.throws(() => commitCapturedResolution(f.scope, changed), { code: "invalid-declaration" });
 });
 
 test("record corruption refuses without repair, and partial/unknown evidence cannot be published as a resolution", (t) => {

@@ -65,8 +65,11 @@ Choices retain value, selectedBy, constraints and considered candidates. Candida
 also retain their authority kind so replay does not guess precedence from a display
 origin. The record validator replays them through the SAME pure choice resolver and
 requires an identical satisfied result. It does not add a second policy algorithm.
-Origins identify source/deployment/operator/record documents and JSON pointers;
-source witnesses include exact revision and raw-byte document integrity.
+Origins identify source/deployment/operator/record/artifact documents and JSON pointers;
+source witnesses include exact revision and raw-byte document integrity. Manifest defaults
+name their exact selected artifact, oats.json bytes and default pointer, and are retained
+as lowest-priority candidates. Missing defaults or noncanonical setting references refuse;
+loading never invents a default. See `2026-09-15-captured-dispatch.md`.
 
 Bindings identify a selected fundamental provider, payload contract/version,
 provider-owned payload, credential references and provenance. The kernel imposes no
