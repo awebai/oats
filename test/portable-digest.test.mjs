@@ -56,6 +56,21 @@ test("strict JSON preserves own-key data and refuses duplicate decoded keys or i
   assert.equal(decodeUtf8(Buffer.from("\ufeffname")), "\ufeffname", "no silent BOM stripping in source names");
 });
 
+test("byte budgets and integrity validation never invoke caller-owned accessors", () => {
+  let calls = 0;
+  const view = new Uint8Array(Buffer.from("[true]"));
+  for (const key of ["byteLength", "buffer", "byteOffset"]) {
+    Object.defineProperty(view, key, { get() { calls++; return 0; } });
+  }
+  assert.throws(() => parseStrictJson(view, { maxBytes: 1 }), { code: "resource-limit" });
+  assert.deepEqual(parseStrictJson(view), [true]);
+  assert.throws(() => parseStrictJson({ get byteLength() { calls++; return 0; } }), { code: "invalid-declaration" });
+  const reference = { value: `sha256-${"a".repeat(64)}` };
+  Object.defineProperty(reference, "format", { enumerable: true, get() { calls++; return TREE_FORMAT; } });
+  assert.throws(() => validateIntegrity(reference), { code: "invalid-artifact-reference" });
+  assert.equal(calls, 0);
+});
+
 test("length-framed new digest separates the real legacy binary collision without changing the old verifier", (t) => {
   const root = fixture(t), a = join(root, "a"), b = join(root, "b"), empty = join(root, "empty");
   for (const dir of [a, b, empty]) mkdirSync(dir);

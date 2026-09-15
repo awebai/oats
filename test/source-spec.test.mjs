@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { parseLockedSource3, parsePortableSource, parseRepositorySource, portablePath } from "../lib/source-spec.mjs";
 
 test("portable Git sources retain slash-bearing refs and resolve the documented package default", () => {
@@ -15,12 +19,29 @@ test("portable Git sources retain slash-bearing refs and resolve the documented 
 
 test("SSH authority is not a revision delimiter and explicit repository URLs are not rewritten", () => {
   const scp = parsePortableSource("git:git@example.invalid:group/tools@release/stable#pkg");
-  assert.equal(scp.source, "git:ssh://git@example.invalid/group/tools@release/stable");
+  assert.equal(scp.source, "git:git@example.invalid:group/tools@release/stable");
   assert.equal(scp.path, "pkg");
   assert.deepEqual(parseLockedSource3(scp.source, scp.path), scp);
   const https = parsePortableSource("git:https://example.invalid/group/tools@main#pkg");
   assert.equal(https.url, "https://example.invalid/group/tools", "do not append .git to an explicitly supplied endpoint");
   assert.throws(() => parsePortableSource("git:https://user:secret@example.invalid/group/tools@main"), { code: "invalid-source" });
+});
+
+test("normalization preserves actual Git SCP home-relative versus SSH absolute upload paths without network", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-source-ssh-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const ssh = join(root, "ssh"), output = join(root, "args");
+  writeFileSync(ssh, '#!/bin/sh\nprintf "%s\\n" "$@" > "$OATS_SSH_PROBE"\nexit 1\n', { mode: 0o700 });
+  const env = { PATH: process.env.PATH, HOME: root, TMPDIR: root, GIT_CONFIG_GLOBAL: "/dev/null",
+    GIT_CONFIG_NOSYSTEM: "1", GIT_ALLOW_PROTOCOL: "ssh", GIT_SSH: ssh, GIT_SSH_VARIANT: "ssh", OATS_SSH_PROBE: output };
+  for (const [locator, expected] of [
+    ["git@example.invalid:group/tools", "git-upload-pack 'group/tools'"],
+    ["ssh://git@example.invalid/group/tools", "git-upload-pack '/group/tools'"],
+  ]) {
+    const normalized = parseRepositorySource(`git:${locator}`).url;
+    assert.throws(() => execFileSync("git", ["ls-remote", normalized], { env, stdio: "pipe" }));
+    assert.ok(readFileSync(output, "utf8").split("\n").includes(expected));
+  }
 });
 
 test("repo sources describe a repository-root relation; local paths need explicit authoring authorization and base", () => {
