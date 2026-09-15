@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -69,6 +69,37 @@ test("retaining identical bytes keeps the original tree and does not select or a
   assert.equal(f.lock.capabilities[ID].trusted, false);
   assert.equal(Object.hasOwn(b, "trusted"), false);
   assert.equal(readdirSync(dirname(a.dir)).some((name) => name.startsWith(".staging-")), false);
+});
+
+test("retention preserves the complete byte/mode/link tree without changing the old digest", (t) => {
+  const f = fixture(t);
+  chmodSync(f.installed, 0o750);
+  chmodSync(join(f.installed, "version.mjs"), 0o751);
+  chmodSync(join(f.installed, "skills"), 0o710);
+  chmodSync(join(f.installed, "skills/expert/SKILL.md"), 0o640);
+  // Mode changes above are intentionally NOT a new artifact identity in this step.
+  assert.equal(capabilityArtifactIntegrity(f.installed), f.lock.capabilities[ID].integrity);
+  const snapshot = (root) => {
+    const entries = [];
+    const walk = (path, name) => {
+      const st = lstatSync(path);
+      if (st.isSymbolicLink()) entries.push([name, "link", readlinkSync(path)]);
+      else if (st.isFile()) entries.push([name, "file", st.mode & 0o7777, readFileSync(path).toString("hex")]);
+      else {
+        entries.push([name, "dir", st.mode & 0o7777]);
+        for (const child of readdirSync(path).sort()) walk(join(path, child), `${name}/${child}`);
+      }
+    };
+    walk(root, ".");
+    return entries;
+  };
+  const before = snapshot(f.installed);
+  const a = retainCapabilityArtifact(f.scope, f.installed, ID, f.lock);
+  assert.deepEqual(snapshot(a.dir), before);
+  rmSync(f.source, { recursive: true });
+  rmSync(f.installed, { recursive: true });
+  assert.equal(verifyRetainedCapability(f.scope, ID, f.lock).integrity, a.integrity);
+  assert.deepEqual(snapshot(a.dir), before, "retained modes/links/bytes survive removal of both sources");
 });
 
 test("source drift or incorrect provenance refuses retention before creating a store", (t) => {
