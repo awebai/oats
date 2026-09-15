@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oats.dev/schemas/soul-v1.json",
+  "title": "Portable soul declaration v1",
+  "description": "Authored shape only. The shared source codec, provider codec and preparation transaction enforce source semantics, containment, requirements and readiness.",
+  "type": "object",
+  "required": ["schemaVersion", "name"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "description": { "type": "string" },
+    "requires": { "$ref": "#/$defs/requirements" },
+    "defaults": { "$ref": "#/$defs/defaults" },
+    "knowledge": {
+      "type": "object",
+      "required": ["contract", "version", "payload"],
+      "additionalProperties": false,
+      "properties": {
+        "contract": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
+        "version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+        "payload": {}
+      }
+    },
+    "teams": {
+      "type": "array", "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" }
+    },
+    "resources": {
+      "type": "array", "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^(?:\\.|(?![A-Za-z]:)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*)$" }
+    },
+    "work": { "enum": ["worktree", "checkout", "attached", "workspace", "directory"] },
+    "runtime": { "enum": ["pi", "claude", "codex"] },
+    "model": { "type": "string", "minLength": 1 },
+    "yolo": { "type": "boolean" }
+  },
+  "$defs": {
+    "source": { "type": "string", "pattern": "^(git|repo|path):.+$" },
+    "capability": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "selection": {
+      "type": "object", "required": ["source"], "additionalProperties": false,
+      "properties": { "source": { "$ref": "#/$defs/source" }, "settings": { "type": "object" } }
+    },
+    "provider": {
+      "type": "object", "required": ["capability", "source"], "additionalProperties": false,
+      "properties": {
+        "capability": { "$ref": "#/$defs/capability" },
+        "source": { "$ref": "#/$defs/source" },
+        "settings": { "type": "object" }
+      }
+    },
+    "requiredProvider": { "anyOf": [{ "const": "any" }, { "$ref": "#/$defs/provider" }] },
+    "defaultProvider": { "anyOf": [{ "const": "none" }, { "$ref": "#/$defs/provider" }] },
+    "requirements": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "type": "object", "additionalProperties": false,
+          "patternProperties": { "^[a-z0-9][a-z0-9._-]*$": { "$ref": "#/$defs/selection" } }
+        },
+        "knowledge": { "$ref": "#/$defs/requiredProvider" },
+        "messaging": { "$ref": "#/$defs/requiredProvider" },
+        "tasks": { "$ref": "#/$defs/requiredProvider" }
+      }
+    },
+    "defaults": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "type": "object", "additionalProperties": false,
+          "patternProperties": { "^[a-z0-9][a-z0-9._-]*$": { "anyOf": [{ "$ref": "#/$defs/selection" }, { "const": false }] } }
+        },
+        "knowledge": { "$ref": "#/$defs/defaultProvider" },
+        "messaging": { "$ref": "#/$defs/defaultProvider" },
+        "tasks": { "$ref": "#/$defs/defaultProvider" }
+      }
+    }
+  }
+}
