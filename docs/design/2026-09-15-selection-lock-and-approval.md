@@ -3,7 +3,8 @@
 The new private API in `lib/portable-lock.mjs` implements selection lock v3.
 It is not yet connected to the public package CLI or migration. Old v1/v2
 readers and `docs/oats-lock.schema.json` retain their existing interpretation.
-New-format schema publication and consumer cutover remain integration gates.
+The new structural schema is `docs/oats-lock-v3.schema.json`; changing the old
+public CLI/schema to admit it remains an explicit consumer-cutover gate.
 
 ## Future selections, not historical authority
 
@@ -81,6 +82,23 @@ fabricated contexts cannot publish after the guard is released. This is an inter
 coordination safeguard, not a hostile-host permission system. Full manifest/launch
 validation, action-specific trust checks, explicit CLI consent and runtime/provider
 qualification still belong to the forthcoming preparation/dispatch integration.
+
+## Shared structural schemas
+
+`docs/portable.schema.json` owns the shared value definitions. The thin
+`captured-resolution.schema.json`, `oats-lock-v3.schema.json` and
+`artifact-approvals.schema.json` reference them without copying their types.
+Generate with `node scripts/portable-schemas.mjs --write`; invocation without
+`--write` checks drift. All four schemas compile offline. Existing current-format
+schemas are unchanged; publishing these new wire schemas does not activate them
+in the old installer or CLI.
+
+Schema acceptance is structural, not a replacement for strict bounded decoding,
+canonical source parsing, choice replay, cross-reference/digest equality, graph
+closure, source/provenance verification or provider non-secret classification.
+The existing launch/manifest codecs still own their complete contracts. Real
+captured-record, lock and approval fixtures are checked against these schemas;
+a separate test checks deterministic generation and authority/credential boundaries.
 
 ## Verification so far
 

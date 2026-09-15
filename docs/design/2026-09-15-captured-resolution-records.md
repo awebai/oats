@@ -8,7 +8,9 @@ the authority for that subsequent consumer migration.
 
 ## Record and address
 
-`lib/resolution-shape.mjs` is the current executable wire validator. A reference is
+`lib/resolution-shape.mjs` is the executable wire validator. The structural schema
+is `docs/captured-resolution.schema.json`, using `docs/portable.schema.json` shared
+definitions; semantic and filesystem checks remain mandatory. A reference is
 `{ schemaVersion: 1, id: "sha256-<64 lowercase hex>" }`. The ID hashes the complete
 canonical JSON record including its final LF, with no self-ID field. Records live at:
 
@@ -132,6 +134,7 @@ A/B record resources after original-source removal and poisoned ambient config/l
 corrupt-record refusal; and missing requirements/helpers before publication.
 
 These are record/input tests, NOT the end-to-end old-instance/queued-job lifecycle
-acceptance. Machine-readable schema publication, new selection-lock integration,
-complete source-aware preparation, exact action dispatch, managed-runtime authorization,
+acceptance. The shared structural schemas and private lock/approval primitives are
+implemented, but public selection-lock integration, complete source-aware preparation,
+exact action dispatch, managed-runtime authorization,
 provider payload qualification and explicit historical migration remain separate gates.

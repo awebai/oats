@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { validateWire } from "./helpers/portable-schema-check.mjs";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,6 +26,7 @@ function scope(t) { const root = mkdtempSync(join(tmpdir(), "oats-lock3-")); t.a
 
 test("source-request lock keeps A current and B available without claiming latest or trust", () => {
   const { lock, A, B, key } = fixtureLock();
+  validateWire("Lock3", lock);
   validateLock3(lock);
   lock.selections[key].freshness = { state: "failed", observedAt: "2026-09-15T00:00:00.000Z", problems: [{ code: "offline", message: "Refresh unavailable", origins: [] }] };
   validateLock3(lock);

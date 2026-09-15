@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { validateWire } from "./helpers/portable-schema-check.mjs";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApprovals, readApprovalLedger, validateApprovalLedger } from "../lib/artifact-approvals.mjs";
 import { tmpdir } from "node:os";
@@ -53,6 +54,7 @@ function fixture(t) {
 
 test("captured A/B records retain exact source and resources after original sources and ambient selection state disappear", (t) => {
   const f = fixture(t), a = f.build("A"), aRef = commitCapturedResolution(f.scope, a);
+  validateWire("CapturedResolution", readCapturedResolution(f.scope, aRef));
   assert.deepEqual(commitCapturedResolution(f.scope, a), aRef);
   const b = f.build("B"), bRef = commitCapturedResolution(f.scope, b);
   assert.notEqual(aRef.id, bRef.id);
@@ -164,6 +166,7 @@ test("exact A/B approvals coexist independently of removed sources and poisoned 
   assert.equal(status(B), "approval-required");
   approveCapturedCapability(f.scope, B, id, origin);
   assert.equal(status(A), "approved"); assert.equal(status(B), "approved");
+  validateWire("ApprovalLedger", readApprovalLedger(f.scope).ledger);
   assert.equal(Object.keys(readApprovalLedger(f.scope).ledger.capabilities[id]).length, 2);
   assert.equal(approveCapturedCapability(f.scope, A, id, origin).status, "already-approved");
   const bad = readApprovalLedger(f.scope).ledger;
