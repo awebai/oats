@@ -98,3 +98,24 @@ or grants trust. It is not wired into legacy CLI/lock readers at this checkpoint
 - Existing legacy-format parsers remain literal evidence readers until their explicit
   migration. Consumer integration must route new values through this codec rather
   than adding private URL/ref splitters.
+
+## New-format retained trees
+
+`lib/portable-artifacts.mjs` stores new-format capability, soul-source and other
+managed-resource trees under the explicit deployment. Capability namespaces use
+validated IDs; soul namespaces use the canonical hash of the supplied qualified
+identity, not an adopter alias; resource namespaces are content-addressed.
+The source/record layer must establish that identity and its source witness.
+Storage alone does not certify repository identity or a complete soul projection.
+
+New revisions live under a `tree-exec-v1` path component; legacy artifact addresses
+remain distinct. Existing relative-link containment, same-parent tree publication
+and atomic managed-ignore publication are reused. Source and copied bytes are
+verified; damaged entries refuse without repair; valid identical trees are reused.
+Managed directory symlinks refuse, while an explicitly selected deployment alias
+may resolve to its real directory. No current lock, source checkout or network is
+consulted when verifying a retained tree.
+
+A verification receipt establishes tree bytes/containment only. It does not grant
+trust, prove all required resources are present, resolve provider bindings or
+implement lifecycle dispatch. Those are the captured-resolution layer's checks.
