@@ -80,9 +80,15 @@ references, host requirements and work-target inputs. Manifests correspond exact
 to selected capability IDs; runtime/work-target references must be in the inventory.
 
 The input verifier checks source hard capability/provider/settings requirements
-against captured selections and provenance. Explicit extra source resources and
-repo-relative package roots must be present in the projection. Missing required
-source or helper inputs refuse before record publication.
+against captured selections and provenance. `soul-constraints.mjs` derives these
+hard facts for both preparation and verification; their equality/presence constraint
+and retained-definition document/pointer must remain in the captured choices.
+An equal effective value with an operator-only origin is not a substitute.
+
+Explicit extra source resources and repo-relative package roots must be present in
+the projection. A repo: package's versioned payload integrity must match that root
+inside the retained source snapshot, not merely the original local pathname or a
+claimed commit. Missing required source or helper inputs refuse before publication.
 
 Launch/host structures retain their existing codec boundary. Full manifest and
 launch-contract compilation belongs to the sole preparation/dispatch adapter; this

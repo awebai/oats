@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { treeIntegrity } from "../lib/portable-digest.mjs";
+import { bytesIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
+import { acquirePackage, installedCapabilityDir, updatePackage } from "../lib/core.mjs";
+import { parsePortableSoul } from "../lib/portable-soul.mjs";
+import { resolveChoices } from "../lib/portable-choices.mjs";
+import { settingChoiceKey, soulConstraints } from "../lib/soul-constraints.mjs";
 import { retainPortableArtifact } from "../lib/portable-artifacts.mjs";
 import { commitCapturedResolution, readCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
 
@@ -13,12 +17,16 @@ function fixture(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const scope = join(root, "deployment"), source = join(root, "soul"), cap = join(root, "capability");
   for (const path of [scope, source, cap]) mkdirSync(path);
-  writeFileSync(join(source, "soul.yaml"), `schemaVersion: 1\nname: example-expert\nrequires:\n  capabilities:\n    example.action:\n      source: path:${cap}\n`);
+  writeFileSync(join(source, "soul.yaml"), `schemaVersion: 1\nname: example-expert\nrequires:\n  capabilities:\n    example.action:\n      source: path:${cap}\n      settings:\n        mode: strict\n`);
   writeFileSync(join(source, "AGENTS.md"), "Expert instructions\n");
   symlinkSync("AGENTS.md", join(source, "CLAUDE.md"));
   const identity = { kind: "local-soul", source: `path:${source}`, exportPath: "." };
   const soulArtifact = { kind: "soul", identity, integrity: treeIntegrity(source) };
   retainPortableArtifact(scope, source, soulArtifact);
+  const definitionBytes = readFileSync(join(source, "soul.yaml"));
+  const sourceDocument = { kind: "source", source: `path:${source}`, revision: "local", path: "soul.yaml", integrity: bytesIntegrity(definitionBytes) };
+  const parsed = parsePortableSoul(definitionBytes, { origin: sourceDocument, localBase: source, allowLocalPaths: true });
+  const choices = resolveChoices({ requirements: soulConstraints(parsed) }).choices;
   const build = (marker) => {
     writeFileSync(join(cap, "oats.json"), JSON.stringify({ capability: "example.action", version: "1.0.0", description: "Fixture action", command: "example-action", commands: { show: "marker.mjs" } }));
     writeFileSync(join(cap, "marker.mjs"), `console.log(${JSON.stringify(marker)});\n`);
@@ -33,10 +41,10 @@ function fixture(t) {
       artifacts: { schemaVersion: 1, packages: {}, capabilities: { "example.action": {
         version: "1.0.0", artifact, origin: { kind: "local-capability", source: `path:${cap}`, authoredAs: "path", witness: origin },
       } } },
-      choices: {}, bindings: {}, messagingChoice: { schemaVersion: 1, enabled: false },
+      choices: structuredClone(choices), bindings: {}, messagingChoice: { schemaVersion: 1, enabled: false },
       resources: { manifest: { owner: artifact, path: "oats.json", kind: "manifest" }, command: { owner: artifact, path: "marker.mjs", kind: "file" } },
       resourceBundles: [], helpers: {}, evidence: [],
-      dispatch: { schemaVersion: 1, providerManifests: { "example.action": "manifest" }, settingsChoices: {}, launch: null, runtimePackages: [], hostRequirements: [], workTargetInputs: {} },
+      dispatch: { schemaVersion: 1, providerManifests: { "example.action": "manifest" }, settingsChoices: { "example.action": { mode: settingChoiceKey("example.action", "mode") } }, launch: null, runtimePackages: [], hostRequirements: [], workTargetInputs: {} },
     };
   };
   return { root, scope, source, cap, build };
@@ -84,6 +92,42 @@ test("a captured helper is a separate exported helper record and survives remova
   assert.throws(() => commitCapturedResolution(f.scope, wrongKind), { code: "invalid-resolution" });
 });
 
+test("repo package provenance is bound to the retained source snapshot, not only the old local pathname", (t) => {
+  const f = fixture(t), record = f.build("unused"), pkg = join(f.source, "packages/action"), install = join(f.root, "installation");
+  mkdirSync(join(pkg, "action"), { recursive: true }); mkdirSync(install);
+  writeFileSync(join(pkg, "oats-package.json"), JSON.stringify({ package: "example.package", version: "1.0.0", description: "Fixture package", compatibility: { oats: ">=0.1.0" }, capabilities: ["action"] }));
+  writeFileSync(join(pkg, "action/oats.json"), readFileSync(join(f.cap, "oats.json")));
+  writeFileSync(join(pkg, "action/marker.mjs"), "console.log('A');\n");
+  writeFileSync(join(f.source, "soul.yaml"), readFileSync(join(f.source, "soul.yaml"), "utf8").replace(`path:${f.cap}`, "repo:packages/action"));
+  const bytes = readFileSync(join(f.source, "soul.yaml"));
+  const sourceArtifact = { ...record.subject.soul.sourceArtifact, integrity: treeIntegrity(f.source) };
+  retainPortableArtifact(f.scope, f.source, sourceArtifact);
+  record.subject.soul.sourceArtifact = sourceArtifact; record.subject.soul.revision.integrity = sourceArtifact.integrity;
+  const document = { kind: "source", source: `path:${f.source}`, revision: "local", path: "soul.yaml", integrity: bytesIntegrity(bytes) };
+  record.choices = resolveChoices({ requirements: soulConstraints(parsePortableSoul(bytes, { origin: document })) }).choices;
+  acquirePackage(install, `path:${pkg}`);
+  const selectInstalled = () => {
+    const installed = installedCapabilityDir(install, "example.action");
+    const artifact = { kind: "capability", capability: "example.action", integrity: treeIntegrity(installed) };
+    retainPortableArtifact(f.scope, installed, artifact);
+    record.artifacts.packages["example.package"] = { source: `path:${pkg}`, path: ".", version: "1.0.0", commit: "local", integrity: treeIntegrity(pkg, { format: PACKAGE_FORMAT }), dependencies: [] };
+    record.artifacts.capabilities["example.action"] = { version: "1.0.0", artifact, origin: { kind: "package", package: "example.package", path: "action", projectionVersion: 1 } };
+    for (const resource of Object.values(record.resources)) resource.owner = artifact;
+  };
+  selectInstalled(); commitCapturedResolution(f.scope, record);
+  writeFileSync(join(pkg, "action/marker.mjs"), "console.log('B');\n");
+  updatePackage(install, "example.package"); selectInstalled();
+  assert.throws(() => commitCapturedResolution(f.scope, record), { code: "resolution-incomplete" });
+});
+
+test("an equal effective setting cannot discard the source hard constraint or source provenance", (t) => {
+  const f = fixture(t), record = f.build("A");
+  commitCapturedResolution(f.scope, record);
+  const key = settingChoiceKey("example.action", "mode");
+  record.choices[key] = resolveChoices({ candidates: [{ key, kind: "operator", value: "strict", origin }] }).choices[key];
+  assert.throws(() => commitCapturedResolution(f.scope, record), { code: "resolution-incomplete" });
+});
+
 test("record corruption refuses without repair, and partial/unknown evidence cannot be published as a resolution", (t) => {
   const f = fixture(t), record = f.build("A"), ref = commitCapturedResolution(f.scope, record);
   const file = join(f.scope, ".agents/resolutions", `${ref.id}.json`);
@@ -98,7 +142,7 @@ test("record corruption refuses without repair, and partial/unknown evidence can
 test("missing hard source requirements or helper inputs refuse before publishing a selectable record", (t) => {
   const f = fixture(t), record = f.build("A");
   const incomplete = structuredClone(record);
-  incomplete.artifacts.capabilities = {}; incomplete.resources = {}; incomplete.dispatch.providerManifests = {};
+  incomplete.artifacts.capabilities = {}; incomplete.resources = {}; incomplete.dispatch.providerManifests = {}; incomplete.dispatch.settingsChoices = {};
   assert.throws(() => commitCapturedResolution(f.scope, incomplete), { code: "resolution-incomplete" });
   assert.equal(existsSync(join(f.scope, ".agents/resolutions")), false);
   const missingHelper = structuredClone(record);
