@@ -118,6 +118,12 @@ and nested soul layouts without guessing. Package exports give their contained
 package root. A public source index may omit workspace; that is not organizational
 admission. Duplicate import aliases/member locators report both origin pointers.
 Qualified hosting identity and reciprocal admission are the next discovery layer.
+`lib/portable-identity.mjs` validates their value shapes: host/provider/repository ID
+or an explicitly canonical remote; a soul adds its exported path; a workspace names
+its oats-workspace.yaml. Alias, revision and local checkout placement are not parts
+of a Git soul identity. Local-only souls have explicit canonical path identities.
+These validators do not turn authored IDs into observed hosting authority or grant
+membership; the discovery adapter must establish the actual facts.
 
 ## One choice engine
 
