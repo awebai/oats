@@ -156,8 +156,12 @@ implement another precedence algorithm.
 
 Selections and settings retain their original document/pointer. The plan exposes
 selected capability sources, zero/one providers per fundamental slot and per-setting
-choice references. Inactive alternatives remain explanatory history, not executable
-configuration. Two selected fields cannot assign different sources to one capability
+choice references. Nested settings retain their owning selection and source: the
+same resolver first determines source eligibility, then resolves eligible settings
+with the same stable inputs. Compatible-source fallbacks still fill open fields;
+rejected-source settings are separate `excludedSettings` diagnostics with their
+origins, never active configuration. No source is fetched or observed twice.
+Two selected fields cannot assign different sources to one capability
 ID. A required provider with no selection remains needs-configuration; no repository
 capability-default tier or implicit provider is introduced.
 
@@ -178,5 +182,6 @@ composition. Provider declarations/stores stay opaque. Their non-secret classifi
 concrete binding resolution and fixed-field constraints must join the same pipeline
 before a public preview or complete capture; do not dump unclassified provider input.
 No fetch, package materialization, trust write, membership claim or native dispatch
-occurs here. Four focused planner tests cover anchors/hard seeds, precedence/missing
-providers, qualified adoption conflicts and cross-field source collisions.
+occurs here. Five focused planner tests cover anchors/hard seeds, precedence/missing
+providers, qualified adoption conflicts, settings ownership and cross-field source
+collisions.

@@ -71,6 +71,21 @@ test("adoption uses qualified identity rather than alias and contradictory alias
   assert.deepEqual(result.problems[0].origins.map((origin) => origin.pointer), ["/imports/0/adoption/providers/tasks", "/imports/1/adoption/providers/tasks"]);
 });
 
+test("rejected sources cannot contribute active settings, while compatible-source fallbacks still can", () => {
+  const sourceSoul = soul({ requires: { capabilities: { "example.action": { source: tool } } } });
+  const plan = (selectedSource) => planSoftwareChoices({ identity, soul: sourceSoul, workspace: workspace({ defaults: {
+    capabilities: { "example.action": { source: selectedSource, settings: { destination: "workspace-destination" } } },
+  } }) });
+  const rejected = plan(otherTool), compatible = plan(tool);
+  assert.equal(rejected.status, "resolved");
+  assert.equal(Object.hasOwn(rejected.settings["example.action"], "destination"), false);
+  assert.equal(rejected.excludedSettings[0].origin.document.source, workspaceSource);
+  assert.equal(rejected.excludedSettings[0].reason, "owning-source-overridden");
+  assert.equal(compatible.status, "resolved");
+  const key = compatible.settings["example.action"].destination;
+  assert.equal(compatible.choices[key].value, "workspace-destination");
+});
+
 test("one composition cannot select two sources for the same capability via different policy fields", () => {
   const plan = planSoftwareChoices({ identity, soul: soul({ requires: { capabilities: { "example.action": { source: tool } } },
     defaults: { tasks: provider("example.action", otherTool) } }) });
