@@ -63,8 +63,14 @@ test("Git package and repo dependency preparation use the same frozen source com
   try {
     const observation = repositories.observe(source, { revision: "topic", origin });
     writeFileSync(join(repo, "packages/a/cap/run.mjs"), "console.log('B');\n"); git("add", "."); git("commit", "--quiet", "-m", "B");
+    let observations = 0;
+    const once = {
+      observe(...args) { if (++observations > 1) throw new Error("already observed snapshot must not be fetched again"); return repositories.observe(...args); },
+      materialize: (...args) => repositories.materialize(...args),
+    };
     const prepared = preparePackageArtifacts({ requests: [{ source: parsePortableSource(`${source}@topic#packages/a`), capability: "example.action", origin }],
-      deployment: f.deployment, directory: f.root, repositories, observations: [observation], kernel });
+      deployment: f.deployment, directory: f.root, repositories: once, kernel });
+    assert.equal(observations, 1, "newly obtained observations are cached by selector and commit");
     try {
       for (const row of Object.values(prepared.artifactSet.packages)) assert.equal(row.commit, observation.source.commit);
       assert.equal(prepared.artifactSet.packages["example.a"].source, `${source}@topic`);
@@ -81,7 +87,31 @@ test("required export and private local-state failures publish no selectable art
   const run = () => preparePackageArtifacts({ requests: [request], deployment: f.deployment, directory: f.root, kernel, allowLocalPaths: true });
   assert.throws(run, { code: "capability-list-mismatch" });
   assert.equal(existsSync(join(f.deployment, ".agents")), false);
-  request.capability = "example.action"; mkdirSync(join(source, ".aw"));
+  request.capability = "example.action";
+  mkdirSync(join(source, "cap/.aw")); writeFileSync(join(source, "cap/.aw/identity.json"), "synthetic private state");
   assert.throws(run, { code: "source-incomplete" });
   assert.equal(existsSync(join(f.deployment, ".agents")), false);
+  rmSync(join(source, "cap/.aw"), { recursive: true });
+  mkdirSync(join(source, ".aw"));
+  assert.throws(run, { code: "source-incomplete" });
+  assert.equal(existsSync(join(f.deployment, ".agents")), false);
+});
+
+test("strict capability ingress precedes semantic validation and nested Git state is never copied", (t) => {
+  const f = fixture(t), source = f.pkg(join(f.root, "source"), "example.source", "example.action");
+  const request = { source: parsePortableSource(`path:${source}`, { allowLocalPaths: true }), capability: "example.action", origin };
+  const manifest = join(source, "cap/oats.json"), original = readFileSync(manifest);
+  // Also semantically invalid: the old unbounded validator would report missing
+  // version/description before the late strict reader could enforce its limit.
+  writeFileSync(manifest, JSON.stringify({ capability: "example.action", padding: "x".repeat(8 * 1024 * 1024) }));
+  const run = () => preparePackageArtifacts({ requests: [request], deployment: f.deployment, directory: f.root, kernel, allowLocalPaths: true });
+  assert.throws(run, { code: "resource-limit" });
+  assert.equal(existsSync(join(f.deployment, ".agents")), false);
+  writeFileSync(manifest, original);
+  mkdirSync(join(source, "cap/.git")); writeFileSync(join(source, "cap/.git/config"), "synthetic Git state");
+  const prepared = run();
+  try {
+    const root = verifyPortableArtifact(f.deployment, prepared.artifactSet.capabilities["example.action"].artifact).dir;
+    assert.equal(existsSync(join(root, ".git")), false);
+  } finally { prepared.cleanup(); }
 });

@@ -41,7 +41,8 @@ metadata-file bound. Optional absence is explicit. Descriptor symlinks/non-files
 not treated as alternate declarations. Return values include raw bytes and the exact
 source document/revision/byte witness for the common parser.
 
-`materialize` writes a selected repository-root-relative projection into a NEW tree,
+`materialize` uses the shared `source-projection.mjs` writer (also used for explicit
+local package snapshots) to write a selected repository-root-relative projection into a NEW tree,
 never merging with an existing destination. It preserves literal links and Git owner-
 execute state, refuses Git administrative paths, unsupported submodules/object kinds,
 missing required roots and escaping/broken links. Parent directories are created and

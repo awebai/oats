@@ -67,20 +67,30 @@ walker/materializer to frozen repository observations. It verifies required expo
 uses one staged source per normalized package request, binds repo: dependencies to
 their declaring snapshot, applies whole-closure platform checks before materialization,
 and retains new-format artifacts with their real source/commit/path provenance.
-Raw package/capability JSON passes the strict codec before the existing full validators.
+The existing full package/capability loader accepts an explicit strict-ingress option:
+bounded strict bytes are read BEFORE either package or capability semantic validation,
+not as a late post-check. Legacy default readers keep their existing interpretation.
 
-Local inputs require explicit authorization and a clean selected package subtree;
-known deployment/auth/instance roots refuse rather than being copied. Git metadata
-is not copied. Remote package dependencies cannot borrow adopter-local paths merely
-because another root request was local. Owned staging cleanup uses the shared safe
-read-only-directory cleanup, never changes original sources or retained artifacts.
+Local inputs require explicit authorization and a clean selected package subtree.
+A bounded no-follow preflight refuses known deployment/auth/instance roots at EVERY
+depth before copying, and excludes nested Git metadata. Source identity/stat witnesses
+are checked around copying. Git and local sources share the same guarded projection
+writer, including exclusive leaf creation, parent-alias protection and exact final names.
+Remote package dependencies cannot borrow adopter-local paths merely because another
+root request was local. Owned staging cleanup uses the shared safe read-only-directory
+cleanup, never changes original sources or retained artifacts.
+
+Newly obtained observations join the same selector/commit cache as caller-supplied ones.
+A repo: dependency reuses a snapshot already obtained by this preparation operation;
+it does not require another upstream fetch to serve an already-known commit.
 
 The result contains the acquired artifact set and root package IDs plus owned cleanup.
 It writes neither current selection locks nor approvals and activates nothing. Complete
 composition must still select active capabilities, classify/resolve provider bindings,
 retain source/runtime resources, commit the full record and perform selection CAS.
-Three focused tests cover original local provenance/source deletion, real Git A plus
-repo dependencies after upstream B, and export/private-state refusal before publication.
+Four focused tests cover original local provenance/source deletion, real Git A plus
+repo dependencies without a second observation after upstream B, nested private-state
+refusal, nested Git exclusion and bounded capability ingress before semantic validation.
 
 ## Following integration
 
