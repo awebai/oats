@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCapabilityMaterializer } from "../lib/package-materialization.mjs";
-import { loadPackageManifestAt, materializeCapabilityDeps, assertCapabilitySelfContained, assertMaterializedDepsContained, assertNoNativeBinaries } from "../lib/core.mjs";
+import { acquirePackage, loadPackageManifestAt, materializeCapabilityDeps, assertCapabilitySelfContained, assertMaterializedDepsContained, assertNoNativeBinaries } from "../lib/core.mjs";
 import { treeIntegrity } from "../lib/portable-digest.mjs";
 
 const materialize = createCapabilityMaterializer({ materializeCapabilityDeps, assertCapabilitySelfContained, assertMaterializedDepsContained, assertNoNativeBinaries });
@@ -30,4 +30,24 @@ test("shared materialization keeps exact provenance v1 bytes, source modes and l
   assert.equal(existsSync(join(root, "oats-lock.json")), false);
   assert.equal(existsSync(join(root, ".agents")), false);
   assert.throws(() => createCapabilityMaterializer({}), TypeError);
+});
+
+test("acquisition refuses source-controlled provenance links and aliased capability roots before writes", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "oats-provenance-write-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const payload = join(root, "payload"), cap = join(payload, "capabilities/action"), deployment = join(root, "deployment"), victim = join(root, "unrelated.json");
+  mkdirSync(cap, { recursive: true }); mkdirSync(deployment);
+  writeFileSync(join(payload, "oats-package.json"), JSON.stringify({ package: "example.package", version: "1.0.0", description: "Fixture", compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/action"] }));
+  writeFileSync(join(cap, "oats.json"), JSON.stringify({ capability: "example.action", version: "1.0.0", description: "Fixture", commands: { run: "run.mjs" } }));
+  writeFileSync(join(cap, "run.mjs"), "// not executed\n"); writeFileSync(victim, "preserve");
+  symlinkSync(victim, join(cap, ".oats-installation.json"));
+  let failure;
+  try { acquirePackage(deployment, `path:${payload}`); } catch (error) { failure = error; }
+  assert.equal(readFileSync(victim, "utf8"), "preserve", "unapproved package data must not overwrite a provenance-link target");
+  assert.equal(failure?.code, "invalid-package-manifest");
+  assert.equal(existsSync(join(deployment, "oats-lock.json")), false);
+  rmSync(join(cap, ".oats-installation.json"));
+  renameSync(cap, join(payload, "actual-capability")); symlinkSync("../actual-capability", cap);
+  assert.throws(() => acquirePackage(deployment, `path:${payload}`), { code: "invalid-package-manifest" });
+  assert.equal(readFileSync(victim, "utf8"), "preserve");
 });

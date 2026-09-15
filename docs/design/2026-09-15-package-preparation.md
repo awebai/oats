@@ -24,6 +24,13 @@ kernel version or a fabricated temporary local source. The legacy integrity resu
 remains literal compatibility evidence; new preparation calculates the explicit
 new-format digest over the same resulting tree. No approval transfers between formats.
 
+Materialization also rejects aliased capability roots and source-controlled links,
+directories, executable entries or case aliases at the reserved provenance path BEFORE
+dependency work. Generated provenance replaces its own entry atomically; it never writes
+through an authored link or shared inode. Valid v1 bytes remain unchanged. A temporary
+fixture reproduced an inherited acquisition overwrite through a provenance symlink
+before this correction, then verified refusal and preservation of the unrelated target.
+
 Whole-closure platform-invariance preflight remains the caller's responsibility and
 must occur BEFORE any sibling npm materialization. The reusable callback factory does
 not replace that transaction-level requirement or the full manifest codec.
@@ -46,6 +53,12 @@ never installs, activates, writes a lock, grants approval or calls a catalog on 
 Two focused graph tests and existing acquisition/closure/restore/incremental/platform
 preflight regressions verify the extraction. The legacy source parser remains explicit
 in the old adapter while the new preparation adapter uses the shared portable grammar.
+
+Package dependencies in new preparation use `source-spec.mjs:parsePackageDependency3`:
+pinned Git shorthand/raw transports share the portable parser, catalog convenience is
+explicitly dependency-only, and local dependencies need an explicit base/authorization.
+No catalog nickname becomes an intrinsic soul source and no remote dependency inherits
+cwd or HOME. The legacy adapter retains its literal older parser until cutover.
 
 ## Following integration
 

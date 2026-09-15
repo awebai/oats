@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseLockedSource3, parsePortableSource, parseRepositorySource, portablePath, validateSelectionSource } from "../lib/source-spec.mjs";
+import { parseLockedSource3, parsePackageDependency3, parsePortableSource, parseRepositorySource, portablePath, validateSelectionSource } from "../lib/source-spec.mjs";
 
 test("portable Git sources retain slash-bearing refs and resolve the documented package default", () => {
   const source = parsePortableSource("git:github.com/example/tools@refs/heads/stable");
@@ -17,6 +17,15 @@ test("portable Git sources retain slash-bearing refs and resolve the documented 
   assert.equal(parsePortableSource("git:github.com/example/tools@main#.").path, ".");
   assert.equal(parsePortableSource("git:github.com/example/tools@main#").path, ".");
   assert.equal(parsePortableSource("git:github.com/example/tools@main#packages/research").path, "packages/research");
+});
+
+test("package dependencies share source grammar while keeping catalog convenience and explicit local authorization separate", () => {
+  assert.deepEqual(parsePackageDependency3("https://example.invalid/tools@release/stable#pkg"), parsePortableSource("git:https://example.invalid/tools@release/stable#pkg"));
+  assert.deepEqual(parsePackageDependency3("example.tools@stable"), { kind: "catalog", source: "catalog:example.tools@stable", id: "example.tools", selector: "stable" });
+  assert.throws(() => parsePortableSource("example.tools@stable"), { code: "invalid-source" });
+  assert.throws(() => parsePackageDependency3("https://example.invalid/tools"), { code: "invalid-source" });
+  assert.throws(() => parsePackageDependency3("../sibling"), { code: "invalid-source" });
+  assert.equal(parsePackageDependency3("../sibling", { localBase: "/author/packages/current", allowLocalPaths: true }).localPath, "/author/packages/sibling");
 });
 
 test("SSH authority is not a revision delimiter and explicit repository URLs are not rewritten", () => {
