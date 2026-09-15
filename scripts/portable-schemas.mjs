@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RESOLUTION_FIELDS } from "../lib/resolution-shape.mjs";
+import { ORIGIN_KINDS, RESOLUTION_FIELDS } from "../lib/resolution-shape.mjs";
 import { TREE_FORMAT, PACKAGE_FORMAT, BYTES_FORMAT } from "../lib/portable-digest.mjs";
 
 const id = "https://oats.dev/schemas/portable-v1.json";
@@ -53,7 +53,7 @@ const d = {
   RecordDocument: object({ kind: { const: "record" }, ref: ref("ResolutionRef") }),
 };
 d.Origin = object({
-  kind: enumeration("soul-requirement", "soul-default", "workspace-default", "import-adoption", "operator", "package-dependency", "work-target", "migration-evidence", "provider-binding"),
+  kind: enumeration(...ORIGIN_KINDS),
   document: one(ref("SourceDocument"), ref("DeploymentDocument"), ref("OperatorDocument"), ref("RecordDocument")),
   pointer: { ...text, pattern: "^(?:/(?:[^~]|~[01])*)*$" }, span: object({ start: nonnegative, end: nonnegative }),
 }, ["span"]);

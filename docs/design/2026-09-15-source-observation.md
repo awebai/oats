@@ -72,6 +72,36 @@ transport mappings preserve production portable-identity rules. A separate read-
 native GitHub probe resolved this framework repository's stable ID/default branch using
 existing credentials; it is not messaging/provider privacy qualification.
 
-Workspace/export/member observation, source-aware package preparation, retained record
-publication and public consumer/migration integration still follow. They must use these
-observations and the shared codecs, not a second Git/source resolver or mutable checkout.
+## Reciprocal discovery and imports
+
+`lib/workspace-discovery.mjs` now connects the native transaction to the shared
+workspace/member/soul parsers. `identify` resolves hosting identity without cloning
+unrelated allowlist repositories. Discovery views are frozen and transaction-issued;
+a serialized or mutated client object cannot substitute for a read workspace.
+
+`readWorkspace` reads the exact oats-workspace.yaml. `checkMember` qualifies the
+candidate and matches the workspace allowlist by repository identity, using the
+workspace-declared member revision (or observed hosting default), not the caller's
+work-tree branch. The observed member's oats.yaml must point back to that workspace.
+The backlink's workspace observation must match the selected workspace commit;
+mismatches remain stale rather than silently admitted. Missing/wrong backlinks,
+unlisted forks and inaccessible observations remain distinct blocked results.
+Eligibility records both descriptor witnesses and revisions, not live enrollment.
+
+`importSoul` instead reads the selected source's advertised export and exact soul
+metadata without following its publisher-workspace backlink. It returns qualified
+identity, alias/reference, explicit definition, minimum required source roots and
+adopter-owned policy inputs for the same planner. No adopter-maintained soul copy is
+created. Optional extra selected roots are finalized during preparation. Required
+repo: package roots remain source-repository-relative.
+
+The shared Origin enum now names workspace-admission, member-backlink and source-export
+facts explicitly. These are provenance labels, NOT new policy precedence tiers or
+approval authority. The generated schema consumes the runtime enum. Three focused
+discovery tests cover reciprocity/forks/revisions/immutable views and public import
+independence; a native Git smoke exercises the complete observation/discovery/import/
+projection path. The no-filter test also has an executable positive control.
+
+Source-aware package preparation, retained record publication and public consumer/
+migration integration still follow. They must use these observations and shared
+codecs, not a second Git/source resolver or mutable checkout.

@@ -471,7 +471,10 @@
             "package-dependency",
             "work-target",
             "migration-evidence",
-            "provider-binding"
+            "provider-binding",
+            "workspace-admission",
+            "member-backlink",
+            "source-export"
           ]
         },
         "document": {

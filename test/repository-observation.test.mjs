@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createRepositoryTransaction } from "../lib/repository-observation.mjs";
+import { createWorkspaceDiscovery } from "../lib/workspace-discovery.mjs";
 
 const origin = { kind: "operator", document: { kind: "operator", id: "source-request" }, pointer: "/source" };
 function fixture(t) {
@@ -33,11 +34,15 @@ function fixture(t) {
     const value = createRepositoryTransaction({ directory: root, accessContextKey: "fixture-account", environment, allowLocalGit: true, ...extra });
     transactions.push(value); return value;
   };
-  return { root, repo, head, source, aliasSource, marker, commit, transaction };
+  return { root, repo, head, source, aliasSource, marker, git, commit, transaction };
 }
 
 test("real Git observes the actual default branch once and materializes exact source bytes without checkout filters", (t) => {
-  const f = fixture(t), tx = f.transaction(), first = tx.observe(f.source, { origin });
+  const f = fixture(t);
+  f.git("cat-file", "--filters", "HEAD:agents/expert/run.mjs");
+  assert.equal(existsSync(f.marker), true, "positive control: the host smudge filter is executable");
+  rmSync(f.marker);
+  const tx = f.transaction(), first = tx.observe(f.source, { origin });
   assert.equal(first.source.selector, "topic"); assert.equal(first.source.commit, f.head);
   const definition = tx.readFile(first, "agents/expert/soul.yaml");
   assert.equal(definition.origin.revision, f.head);
@@ -68,6 +73,23 @@ test("qualified identity unifies transport aliases and rejects changed or fabric
   assert.throws(() => tx.observe(f.source, { revision: "topic", origin, expectedIdentity: { ...identity, id: "2" } }), { code: "source-identity-change" });
   assert.throws(() => tx.readFile(structuredClone(first), "agents/expert/soul.yaml"), { code: "invalid-source" });
   assert.equal(tx.readFile(first, "not-present.yaml", { optional: true }), null);
+});
+
+test("native observations feed reciprocal discovery and materialize an imported soul without an adopter copy", (t) => {
+  const f = fixture(t);
+  writeFileSync(join(f.repo, "oats-workspace.yaml"), JSON.stringify({ schemaVersion: 1, name: "Fixture workspace", members: [{ source: f.source, revision: "topic" }] }));
+  writeFileSync(join(f.repo, "oats.yaml"), JSON.stringify({ schemaVersion: 1, workspace: { source: f.source, revision: "topic" },
+    exports: { souls: [{ path: "agents/expert", definition: "agents/expert/soul.yaml" }] } }));
+  const head = f.commit(), tx = f.transaction(), discovery = createWorkspaceDiscovery(tx);
+  const workspace = discovery.readWorkspace({ source: f.source, origin });
+  assert.equal(discovery.checkMember(workspace, { source: f.source, origin }).status, "eligible");
+  const imported = discovery.importSoul({ source: f.source, soul: "agents/expert", revision: "topic", alias: "local-name" }, { origin });
+  assert.equal(imported.observation.source.commit, head);
+  assert.equal(imported.reference.alias, "local-name");
+  const destination = join(f.root, "import-projection");
+  tx.materialize(imported.observation, imported.roots, destination);
+  assert.equal(readFileSync(join(destination, "agents/expert/AGENTS.md"), "utf8"), "Revision A\n");
+  assert.equal(existsSync(join(f.root, "deployment/agents/local-name")), false);
 });
 
 test("source reads enforce byte budgets and projection refuses escaping links", (t) => {
