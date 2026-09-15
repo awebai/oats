@@ -6,7 +6,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, w
 import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApprovals, readApprovalLedger, validateApprovalLedger } from "../lib/artifact-approvals.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { bytesIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
+import { bytesIntegrity, jsonIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
 import { acquirePackage, installedCapabilityDir, updatePackage } from "../lib/core.mjs";
 import { parsePortableSoul } from "../lib/portable-soul.mjs";
 import { resolveChoices } from "../lib/portable-choices.mjs";
@@ -154,6 +154,23 @@ test("manifest defaults and canonical setting references must be captured, never
   assert.throws(() => commitCapturedResolution(f.scope, changed), { code: "resolution-incomplete" });
   changed.dispatch.settingsChoices[id].target = settingChoiceKey(id, "mode");
   assert.throws(() => commitCapturedResolution(f.scope, changed), { code: "invalid-declaration" });
+});
+
+test("invented manifest defaults refuse even when overridden or absent from dispatch settings", (t) => {
+  const f = fixture(t), base = f.build("A"), id = "example.action", key = settingChoiceKey(id, "target");
+  const witness = { kind: "manifest-default", document: { kind: "artifact", owner: base.artifacts.capabilities[id].artifact,
+    path: "oats.json", integrity: bytesIntegrity(readFileSync(join(f.cap, "oats.json"))) }, pointer: "/settings/target/default" };
+  for (const referenced of [true, false]) {
+    const record = structuredClone(base);
+    record.choices[key] = resolveChoices({ candidates: [
+      { key, kind: "manifest-default", value: "invented-fallback", origin: witness },
+      { key, kind: "operator", value: "explicit", origin },
+    ] }).choices[key];
+    if (referenced) record.dispatch.settingsChoices[id].target = key;
+    const reference = { schemaVersion: 1, id: jsonIntegrity(record).value };
+    assert.throws(() => verifyResolutionInputs(f.scope, reference, { draft: record }), { code: "resolution-incomplete" });
+    assert.throws(() => commitCapturedResolution(f.scope, record), { code: "resolution-incomplete" });
+  }
 });
 
 test("record corruption refuses without repair, and partial/unknown evidence cannot be published as a resolution", (t) => {

@@ -20,8 +20,11 @@ schema consumes the runtime candidate/Origin enums.
 Preparation must call `captureManifestSettings` with every selected manifest before
 publishing the record. Every effective setting uses its canonical per-capability
 choice key. Loaded records verify the retained default value and artifact/file/pointer
-witness, even when overridden. Missing or misdirected settings are incomplete captures,
-not an invitation to consult the current manifest/configuration and fill them later.
+witness, even when overridden. Verification also checks every recorded intrinsic
+candidate against those exact selected manifests, including choices absent from the
+dispatch settings map; fabricated defaults are not valid considered inputs. Missing
+or misdirected settings are incomplete captures, not an invitation to consult the
+current manifest/configuration and fill them later.
 
 Two focused default tests and a real retained-record regression cover priority,
 nullable/false/empty/prototype-named data, complete definition coverage, original
