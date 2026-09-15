@@ -32,10 +32,24 @@ One focused test pins exact provenance bytes, modes, links and absence of select
 approval writes. Existing acquisition, integrity-drift, restore and no-install-script
 regressions plus the scaffold-only dependency probe exercise the core adapter.
 
+## Shared staged closure
+
+`lib/package-closure.mjs:resolvePackageClosure` now owns the one bounded dependency
+walk, identity/source-key collision checks, cycle detection and dependency-first
+ordering. Existing acquisition delegates to it through its existing source, manifest,
+compatibility and literal legacy-digest adapters. Source adapters must provide explicit
+owned staging and cleanup; repeated edges cannot discard a reused authoritative root.
+
+The default limits are 256 unique package identities, 64 dependency levels and 1024
+source requests. These are resource guards, not another version solver. The engine
+never installs, activates, writes a lock, grants approval or calls a catalog on its own.
+Two focused graph tests and existing acquisition/closure/restore/incremental/platform
+preflight regressions verify the extraction. The legacy source parser remains explicit
+in the old adapter while the new preparation adapter uses the shared portable grammar.
+
 ## Following integration
 
-Extract the staged package dependency closure into one shared engine with explicit
-source/manifest/materialization adapters. Portable preparation must consume already
-observed repository snapshots, resolve each selector once, retain exact artifacts and
-records, and update only its mutable selection snapshot. Existing old-format readers
+Connect the shared staged engine to already observed repository snapshots and the
+new-format source adapter. Portable preparation must resolve each selector once,
+retain exact artifacts and records, and update only its mutable selection snapshot. Existing old-format readers
 remain literal evidence/migration paths, not ambient fallback for captured dispatch.
