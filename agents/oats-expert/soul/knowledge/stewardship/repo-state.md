@@ -3,7 +3,7 @@ type: Reference
 title: Repo state — the living picture of the OATS repo
 description: Always-current snapshot of what is on main, what is in flight (PRs, features, running instances), recent deliveries, and open threads. Every oats-expert instance updates the relevant subsection whenever it changes that reality (merge, release, spawn, retire, delivery).
 tags: [stewardship, repo-state, living]
-timestamp: 2026-09-13
+timestamp: 2026-09-15
 ---
 # Repo state — the living picture
 
@@ -14,6 +14,11 @@ entries first inside each section; prune entries that stop being true rather
 than letting the file grow stale.
 
 ## On main
+
+- **Portable Souls foundations delivered directly (2026-09-15)** — `8373fc2f` is on main: versioned canonical data/digests, strict source/declaration schemas, retained source/resource/artifact and captured-record primitives, source-request lock v3, separate exact approvals, source-aware choice planning, native repository observation and reciprocal workspace/import discovery. Bounded adversarial findings are closed, including a reproduced case-alias pre-write escape. All eight local integration gates passed at code head `92d031e6` (2586 pass, zero fail, two existing skips); the later CI-only change passed its focused checks and enables the same gates on direct main pushes. Prior foundation PR #21 was automatically marked merged when its commits reached main. **No new release or production activation is claimed:** package preparation, captured public consumers and explicit migration remain in flight.
+- **Published baseline is v0.23.2 (2026-09-14)** — [the immutable release](https://github.com/awebai/oats/releases/tag/v0.23.2) is published, not draft/prerelease. The preceding v0.23.1 publication incorporated the released OKF v2 catalog/mirror after PR #18; that integration is no longer pending. The newer source foundations above do not silently update installed deployments.
+
+Earlier dated entries below are delivery history, not current deployment, process or readiness assertions; the current checkpoint above supersedes their old version snapshots.
 
 - **Knowledge prerequisites published (2026-09-13)** — OATS/Pi/Desktop **v0.23.0** published from `c0628d3a` after PR #17 and successful release run `34770619372`; all three Desktop legs and npm publication passed. Official **OKF v2.0.0** is published at `4b6d861` after standalone PRs #1/#2, 226/226 released-minimum tests and successful public-consumer CI `34779176900`. The kernel prerequisite intentionally retains the 1.6.1 catalog pin; the v0.23.1 integration branch now verifies and incorporates the immutable v2 payload. These facts supersede older release-version snapshots below without rewriting their history.
 - **RELEASED v0.20.0 (2026-07-30)** — tag `v0.20.0` at `1e73257` published `@awebai/oats@0.20.0`, `@awebai/oats-pi@0.20.0`, and the complete Desktop 0.20.0 installer/checksum/provenance set. Release run `30548558607` passed build/test/tarball and all three Desktop build+smoke legs; its only failure was the known Actions-created-PR organization restriction after publication. Manual bump PR #68 merged as `c6d92da`, so main manifests are 0.20.0. Official package revisions, catalog follow-up, and local cutover are now authorized in that order.
@@ -180,20 +185,20 @@ than letting the file grow stale.
 - Earlier oats.web and Control Pane deliveries remain in the delivery log and
   donor-soul knowledge as migration history; their product surfaces are no
   longer present on main.
-- Framework source and Desktop artifacts are now **0.19.4** (root/pi npm plus
-  GitHub Release installers). Official package tags are: oats.okf 1.4.1,
-  oats.aweb 1.8.0, oats.authoring/oats.jira/oats.linear/oats.dev 1.0.0; `oats.dev`
-  exports oats.review 1.2.0.
+- Historical v0.19.4 package snapshot: oats.okf 1.4.1, oats.aweb 1.8.0,
+  oats.authoring/oats.jira/oats.linear/oats.dev 1.0.0; oats.dev exported
+  oats.review 1.2.0. These are historical tags, not the current release inventory.
 
 ## In flight
 
-- **After implementation: expert roster and curated knowledge repository (2026-09-13)** — [accepted rebuild direction](/decisions/expert-souls-and-knowledge-rebuild.md): create a separate OATS knowledge Git repository; domain-expert souls rather than engineer roles; distinguish overall OATS stewardship, kernel depth, Desktop, market research and user onboarding. Audit all existing knowledge and pending notes against current OATS; retain useful expertise only, not code descriptions or obsolete OAS material. Repository creation, roster cutover and source cleanup wait until the implementation is complete and verified.
+- **External knowledge and expert roster cutover (2026-09-15)** — the [accepted rebuild direction](/decisions/expert-souls-and-knowledge-rebuild.md) remains: external durable knowledge and persistent overall/kernel/Desktop/market/onboarding expertise, not engineer-role souls. Curated candidates exist, but must be adapted to the new portable-source contract before publication/adoption. Preserve reviewed content and source dispositions; no bulk legacy import or destructive cleanup ahead of qualified custody.
 
-- **Knowledge/memory implementation (2026-09-13)** — the human authorized main pushes/releases and adversarial review approximately every two commits. Plan: `docs/design/2026-09-13-knowledge-implementation.md`; [reference theory](/decisions/provider-neutral-knowledge-and-harvest.md) remains adoptable, not mandatory kernel policy. Initial custody is Git/directory OKF with native user access, no ACL/public-private system. The standalone baseline corrections in `03364e4` passed independent re-review; OKF v2 candidate `077eff6` includes iteratively reviewed custody fixes and requires >=0.23.0. The framework prerequisite candidate advertises 0.23.0 while preserving bundled/catalog OKF 1.6.1. Optional theory tooling is a Git-distributed package, deliberately not a partial npm payload. Full prerequisite suite is green (1682 pass, zero fail, one opt-in skip); installed real-model learning after source deletion and actual GitHub PR merge/reconciliation/fresh visibility passed. The prerequisite kernel and standalone v2 are now published; final v0.23.1 catalog/mirror integration and live deployment remain open. Curation has 24 staged concepts and five persistent expert definitions with complete source dispositions; it is prepared, not yet migrated. Older release/workstream entries below are not re-verified by this update.
-- **Post-v0.20 official package and local cutover** — framework v0.20.0 is published; `dev-coordinator-capability-finalization` owns dedicated-root/config-template revisions and immutable releases for all six official packages (leaf packages first, `oats.dev` last), catalog follow-up, normal global npm/Pi installation, supported local workspace rebuild (no transitional-v2 migration), three-workspace source Desktop restart, and safe branch/worktree cleanup. The five leaf instances are live on unchanged clean launch bases after bounded recovery from Claude trust/onboarding prompt exits; the coordinator checkout is restored, and package work is in progress. `oats.dev` and catalog remain frozen until the five leaf tags are immutable. No credential deletion or old-v2 compatibility subsystem.
-- Historical open PRs #37, #43, and #48 remain outside this feature scope and require separate owner decisions.
+- **Portable Souls completion (2026-09-15)** — accepted authority is the September 14–15 Portable Souls design/retention/handoff documents under `docs/design/`. Implementation is authorized through release and production with direct maintainer delivery, without PR waits; proportionate testing and adversarial safety review remain required. The completed source/data/discovery foundations are not the runtime cutover. Next: reuse package validation/materialization over frozen observations, complete record-owned public CLI/lifecycle/operation/queued-work dispatch, explicit evidence-based legacy migration and provider qualification. Managed runtime loading, non-secret payload classification and real private-team behavior need their own evidence. Desktop feature work follows infrastructure. [Reference theory](/decisions/provider-neutral-knowledge-and-harvest.md) remains optional; default OKF owns its model and runtime.
+- Older package-wave and instance-status notes are historical, not requalified live work. Current deployment-specific state belongs to the deployment; do not infer running agents or pending operations from old delivery entries.
 
 ## Recent deliveries
+
+- Portable Souls foundations: DIRECT MAIN delivery `8373fc2f` on 2026-09-15, with closed bounded reviews, eight green local gates and direct-push CI enabled; no new release/deployment claim (see delivery-log).
 
 - PR #58 guided official-capability migration: MERGED 2026-07-28 as `ab51acc`; exact head `24e6f00`, clean-room/full CI green, remote branch deleted (see delivery-log).
 - PR #57 configurable contained package payload roots: MERGED 2026-07-28 as `d9e176f`; exact PR head `842f043`, required CI green, remote branch deleted (see delivery-log).
@@ -329,9 +334,9 @@ than letting the file grow stale.
   PR #28, v0.18.4 as PR #31, v0.18.5 as PR #34, and v0.18.6 as PR #39). Needs an org admin to
   relax the Actions-PR policy to fully automate.
   Rescue procedure is in the git-tag-release skill.
-- Published artifacts are now v0.19.4. The macOS installers retain complete
-  ad-hoc signatures passing strict deep codesign; earlier release assets remain
-  untouched.
+- Current published baseline is v0.23.2. Installed runtime/signature readiness is a
+  deployment qualification, not something source delivery alone establishes;
+  earlier immutable release assets remain untouched.
 - webpanel-dev instance worktrees still hold deleted branches locally
   (webpanel-dev-1: feature/panel-refinements, fix/panel-key-routing,
   perf/fast-attach, debug/typing-live; webpanel-dev-spawn-from-panel:

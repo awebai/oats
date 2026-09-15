@@ -1,5 +1,8 @@
 # Knowledge Log
 
+## 2026-09-15
+* **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record direct main delivery of reviewed Portable Souls data/source/discovery foundations, the all-green integration gates, the reproduced-and-closed pre-write containment defect, and remaining runtime/migration work. Corrected the published baseline to v0.23.2; older operational notes are history, not live deployment qualification. No new release or production activation is inferred from source delivery.
+
 ## 2026-09-13
 * **Delivery**: [Delivery log](/stewardship/delivery-log.md) records published OATS/Pi/Desktop v0.23.0 and OKF v2.0.0, successful released-minimum consumer CI, and the remaining final catalog/deployment step. The source snapshot inventory now verifies the immutable published OKF tag and full payload rather than a pending working tree.
 * **Update**: [Delivery log](/stewardship/delivery-log.md) records closed adversarial findings, real installed-model learning after source deletion, actual GitHub PR acceptance/reader visibility, and the green prerequisite suite. These are candidate acceptance results, not a published release or completed deployment.

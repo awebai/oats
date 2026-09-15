@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-13
+timestamp: 2026-09-15
 ---
 
 # Delivery log
@@ -23,6 +23,13 @@ Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
 ---
+
+## Portable Souls source/discovery foundations — direct main delivery (2026-09-15)
+- verdict: DELIVERED TO MAIN as `8373fc2fe3c9aa766a73ece82aacec5df98527a8`, by authorized direct push. Prior foundation PR #21 became merged when its commits reached main; no PR approval wait or new PR was used. No new release or production activation is claimed.
+- scope: canonical/versioned data and digest primitives; strict source/declaration/shared schemas; retained artifacts and captured records; lock v3 and separate exact approvals; source-aware planning; native repository observations and reciprocal workspace/by-reference export discovery. Complete package preparation, captured public consumers, provider qualification and explicit migration remain work in flight.
+- evidence: all eight local integration gates passed at code head `92d031e6` — 2586 tests passed, zero failed, two existing skips; nine strict knowledge bundles and packaging/tarball smoke passed. Initial isolated-runner socket-path failures were preserved and attributed, then corrected without application/test weakening; all 29 affected session tests and the full suite passed. The later CI-only delta passed its focused regression/actionlint and enables the same read-only checks on direct main pushes.
+- owner: oats-expert maintainer; safety review: bounded adversarial findings independently closed, including native projection containment.
+- taught us: nested settings retain their owning source, not just capability ID. Case-sensitive Git paths can alias on the destination filesystem; materialization must protect every write parent before side effects, not rely on a final containment check. Canonical, short isolated socket paths prevent test-harness failures from masquerading as runtime defects.
 
 ## Knowledge prerequisites and OKF v2 publication (2026-09-13)
 - verdict: MERGED/RELEASED — framework PR #17 exact `38fa4c90` merged as `c0628d3a`, published OATS/Pi/Desktop v0.23.0 with release run `34770619372` successful in all jobs. Standalone OKF PR #1 merged `077eff6`; PR #2 exact `630c26a` passed independent review and 226/226 tests against the actual published minimum kernel, merged as `4b6d861`, and is the immutable v2.0.0 tag/release. Published-consumer CI `34779176900` succeeded in both jobs.
