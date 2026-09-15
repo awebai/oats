@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oats.dev/schemas/member-v1.json",
+  "title": "Portable repository export index v1",
+  "description": "oats.yaml advertises definitions; a backlink is not admission or permission. Public external export indexes may omit workspace.",
+  "type": "object",
+  "required": ["schemaVersion", "exports"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "workspace": { "$ref": "https://oats.dev/schemas/workspace-v1.json#/$defs/repository" },
+    "exports": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "souls": {
+          "type": "array", "items": {
+            "type": "object", "required": ["path", "definition"], "additionalProperties": false,
+            "properties": {
+              "path": { "$ref": "https://oats.dev/schemas/workspace-v1.json#/$defs/path" },
+              "definition": { "$ref": "https://oats.dev/schemas/workspace-v1.json#/$defs/path" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "packages": {
+          "type": "array", "items": {
+            "type": "object", "required": ["path"], "additionalProperties": false,
+            "properties": {
+              "path": { "$ref": "https://oats.dev/schemas/workspace-v1.json#/$defs/path" },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "knowledge": { "type": "array", "items": { "$ref": "https://oats.dev/schemas/soul-v1.json#/properties/knowledge" } }
+      }
+    }
+  }
+}

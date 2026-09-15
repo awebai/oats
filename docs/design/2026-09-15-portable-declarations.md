@@ -81,3 +81,40 @@ and the old machine-local `repo` field rather than silently dropping them. Legac
 flat declarations remain migration inputs until the coordinated cutover. A local
 capability path requires explicit local adoption authorization and an absolute
 local base when relative; remote declarations cannot silently use the caller's cwd.
+
+## Workspace, repository exports and external imports
+
+`lib/workspace-definition.mjs` validates `oats-workspace.yaml`, repository `oats.yaml`
+and the identical standalone/workspace external-soul reference. The schemas are
+[oats-workspace.schema.json](../oats-workspace.schema.json) and
+[oats-member.schema.json](../oats-member.schema.json); they reuse the soul schema's
+selection/provider-envelope definitions. Runtime checks additionally enforce source
+and path semantics, definition containment and duplicate aliases/repositories.
+Both authorities share `portable-policy.mjs` selection-shape validation; neither
+parser implements precedence or acquisition.
+
+Workspace fields are schemaVersion, name, members, defaults, knowledge, teams,
+catalogs and imports. Only schemaVersion/name are required; omitted lists admit
+or activate nothing. Repository references have source and optional revision;
+the parser leaves an omitted revision unresolved, not guessed as main. Discovery
+must observe the intended hosting default branch and retain the exact observation.
+Catalog references may additionally name an explicit contained index path.
+
+An external import requires source, soul (exported path), revision and alias.
+Its optional adoption object contains teamAliases, providers and bindings. Provider
+choices use the same source-complete default-selection shape; the single resolver
+later checks hard requirements. A team alias mapping is not wider-team consent.
+The parser returns normalized references without creating an adopter-owned soul
+or pretending the source repository is a member.
+
+Workspace teams map aliases to provider/id pairs, with the reserved private entry
+accepting only per-human. Knowledge stores and exported stores use provider-owned
+contract/version/payload declarations; there is no imposed OKF node schema here.
+No parser result claims enrollment, private-team identity or privacy qualification.
+
+Repository exports contain souls, packages and knowledge lists. A soul export gives
+an identity path plus an explicit definition path inside it, accommodating direct
+and nested soul layouts without guessing. Package exports give their contained
+package root. A public source index may omit workspace; that is not organizational
+admission. Duplicate import aliases/member locators report both origin pointers.
+Qualified hosting identity and reciprocal admission are the next discovery layer.
