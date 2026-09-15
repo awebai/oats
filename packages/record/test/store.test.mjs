@@ -210,13 +210,19 @@ test("stream lock: a dead holder's lock is reclaimed at once, without waiting ou
         acquiredAt: new Date().toISOString(),
       }) + "\n",
     );
-    const started = Date.now();
+    // Observe lock polling, not elapsed disk/fsync/scheduler time. A loaded CI
+    // host can take >200ms AFTER successful acquisition without waiting on the
+    // holder at all. Advancing only the retry clock also makes an age-only
+    // regression hit the deadline deterministically instead of sleeping here.
+    let clock = Date.now();
+    const waits = [];
+    t.mock.method(Date, "now", () => clock);
+    t.mock.method(Atomics, "wait", (_array, _index, _value, ms) => {
+      waits.push(ms); clock += ms; return "timed-out";
+    });
     store.append("alice~notes", finishTurn(noteCore("alice", "after the crash")));
     assert.equal(store.readStream("alice~notes").length, 1);
-    assert.ok(
-      Date.now() - started < store.lockTimeoutMs,
-      "a dead holder's lock must be reclaimed without waiting",
-    );
+    assert.deepEqual(waits, [25], "a dead holder needs only the bounded retry after reclaim, not an age wait");
   });
 });
 
