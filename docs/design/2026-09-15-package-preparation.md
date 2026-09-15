@@ -60,9 +60,31 @@ explicitly dependency-only, and local dependencies need an explicit base/authori
 No catalog nickname becomes an intrinsic soul source and no remote dependency inherits
 cwd or HOME. The legacy adapter retains its literal older parser until cutover.
 
+## Portable package adapter
+
+`lib/portable-package-preparation.mjs:preparePackageArtifacts` connects the shared
+walker/materializer to frozen repository observations. It verifies required exports,
+uses one staged source per normalized package request, binds repo: dependencies to
+their declaring snapshot, applies whole-closure platform checks before materialization,
+and retains new-format artifacts with their real source/commit/path provenance.
+Raw package/capability JSON passes the strict codec before the existing full validators.
+
+Local inputs require explicit authorization and a clean selected package subtree;
+known deployment/auth/instance roots refuse rather than being copied. Git metadata
+is not copied. Remote package dependencies cannot borrow adopter-local paths merely
+because another root request was local. Owned staging cleanup uses the shared safe
+read-only-directory cleanup, never changes original sources or retained artifacts.
+
+The result contains the acquired artifact set and root package IDs plus owned cleanup.
+It writes neither current selection locks nor approvals and activates nothing. Complete
+composition must still select active capabilities, classify/resolve provider bindings,
+retain source/runtime resources, commit the full record and perform selection CAS.
+Three focused tests cover original local provenance/source deletion, real Git A plus
+repo dependencies after upstream B, and export/private-state refusal before publication.
+
 ## Following integration
 
-Connect the shared staged engine to already observed repository snapshots and the
-new-format source adapter. Portable preparation must resolve each selector once,
-retain exact artifacts and records, and update only its mutable selection snapshot. Existing old-format readers
+Complete the composition transaction and public consumers using this adapter. Portable
+preparation must resolve each selector once, retain exact artifacts and records, and
+update only its mutable selection snapshot. Existing old-format readers
 remain literal evidence/migration paths, not ambient fallback for captured dispatch.
