@@ -44,8 +44,13 @@ source document/revision/byte witness for the common parser.
 `materialize` writes a selected repository-root-relative projection into a NEW tree,
 never merging with an existing destination. It preserves literal links and Git owner-
 execute state, refuses Git administrative paths, unsupported submodules/object kinds,
-missing required roots and escaping/broken links. A filesystem unable to retain owner-
-execute state refuses rather than certifying lost mode information. The caller retains
+missing required roots and escaping/broken links. Parent directories are created and
+checked component-by-component without recursive mkdir through source links. Case or
+normalization aliases cannot turn an earlier source symlink into a later write parent;
+existing directory spellings must belong to this projection. Final names must round-trip
+exactly. Windows device/alternate-stream/trailing-dot aliases refuse before writing.
+A filesystem unable to retain owner-execute state refuses rather than certifying lost
+mode information. The caller retains
 and verifies this projection before closing the scratch transaction. A failed projection
 is reported by staging path; it is not a complete captured resolution.
 
@@ -65,12 +70,18 @@ no force cleanup of another owner, live home or unrelated process.
 
 ## Evidence and remaining integration
 
-Three native-Git tests cover observed non-main default and same-selector caching after
+Native-Git tests cover observed non-main default and same-selector caching after
 upstream changes, alias identity/counterfeit-handle refusal, exact materialized bytes/
 links/execute mode without filters, byte budgets and escaping links. Local fixture
 transport mappings preserve production portable-identity rules. A separate read-only
 native GitHub probe resolved this framework repository's stable ID/default branch using
 existing credentials; it is not messaging/provider privacy qualification.
+
+Review found a real pre-refusal write escape using valid case-aliasing Git tree entries
+on a case-insensitive filesystem. A raw-tree regression reproduced the outside write
+in an owned temporary fixture before the correction; it now proves rejection without
+that write. The final containment check is defense-in-depth, never the first boundary
+protecting materialization side effects.
 
 ## Reciprocal discovery and imports
 

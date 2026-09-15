@@ -5,7 +5,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { createRepositoryTransaction } from "../lib/repository-observation.mjs";
+import { createRepositoryTransaction, validateProjectionPath } from "../lib/repository-observation.mjs";
 import { createWorkspaceDiscovery } from "../lib/workspace-discovery.mjs";
 
 const origin = { kind: "operator", document: { kind: "operator", id: "source-request" }, pointer: "/source" };
@@ -90,6 +90,31 @@ test("native observations feed reciprocal discovery and materialize an imported 
   tx.materialize(imported.observation, imported.roots, destination);
   assert.equal(readFileSync(join(destination, "agents/expert/AGENTS.md"), "utf8"), "Revision A\n");
   assert.equal(existsSync(join(f.root, "deployment/agents/local-name")), false);
+});
+
+test("case-aliasing Git paths cannot write through a source symlink before containment refusal", (t) => {
+  for (const path of ["file:stream", "AUX.txt", "COM¹", "directory./file"]) {
+    assert.throws(() => validateProjectionPath(path, "win32"), { code: "source-incomplete" });
+  }
+  const f = fixture(t), outside = join(f.root, "outside");
+  mkdirSync(outside); writeFileSync(join(outside, "keep.txt"), "unchanged");
+  let index = 0;
+  const object = (type, bytes) => {
+    const file = join(f.root, `git-object-${index++}`); writeFileSync(file, bytes);
+    return f.git("hash-object", "-w", "-t", type, file);
+  };
+  const payload = object("blob", "must remain inside staging\n"), link = object("blob", "../outside");
+  const entry = (mode, name, id) => Buffer.concat([Buffer.from(`${mode} ${name}\0`), Buffer.from(id, "hex")]);
+  const subtree = object("tree", entry("100644", "payload.txt", payload));
+  // Git trees are case-sensitive even when the checkout filesystem is not.
+  // Construct the legitimate source tree without checking these aliases out.
+  const tree = object("tree", Buffer.concat([entry("120000", "A", link), entry("40000", "a", subtree)]));
+  const commit = f.git("commit-tree", tree, "-p", f.head, "-m", "case alias fixture");
+  f.git("update-ref", "refs/heads/topic", commit);
+  const tx = f.transaction(), observed = tx.observe(f.source, { origin });
+  assert.throws(() => tx.materialize(observed, ["."], join(f.root, "case-projection")), { code: "artifact-not-contained" });
+  assert.equal(existsSync(join(outside, "payload.txt")), false, "no write may escape before a later rejection");
+  assert.equal(readFileSync(join(outside, "keep.txt"), "utf8"), "unchanged");
 });
 
 test("source reads enforce byte budgets and projection refuses escaping links", (t) => {
