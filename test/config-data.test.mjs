@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { Composer } from "yaml";
 import { parseConfigData } from "../lib/config-data.mjs";
 import { canonicalJson } from "../lib/portable-values.mjs";
 
@@ -53,6 +54,16 @@ test("aliases, tags, duplicate/coercive keys, malformed indentation and multiple
     '---\na: 1\n---\nb: 2\n',
     'a: .inf\n',
   ]) assert.throws(() => parseConfigData(source), { code: "invalid-declaration" }, source);
+});
+
+test("syntax budgets stop a wide YAML document before AST composition, without timing assertions", () => {
+  const source = Array.from({ length: 256 }, (_, i) => `key${i}: ${i}`).join("\n");
+  const next = Composer.prototype.next;
+  let composed = 0;
+  Composer.prototype.next = function* (...args) { composed++; yield* next.apply(this, args); };
+  try { assert.throws(() => parseConfigData(source, { limits: { maxEntries: 8 } }), { code: "resource-limit" }); }
+  finally { Composer.prototype.next = next; }
+  assert.equal(composed, 0, "reject while consuming lexer tokens, before constructing a complete YAML AST");
 });
 
 test("portable documents enforce byte/depth/entry limits without reading input getters", () => {

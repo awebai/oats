@@ -60,7 +60,12 @@ test("published soul shape and runtime codec agree on declarations and structura
   const schema = JSON.parse(readFileSync(new URL('../docs/soul.schema.json', import.meta.url), 'utf8'));
   const validate = new Ajv({ strict: true, allErrors: true, ownProperties: true }).compile(schema);
   assert.equal(validate(parsePortableSoul(source).declaration), true, JSON.stringify(validate.errors));
-  for (const changed of [source + 'type: developers\n', source.replace('messaging: any', 'messaging: none'),
+  const hints = parsePortableSoul(source + 'launch-config: portable\nbackend: herdr\n');
+  assert.equal(hints.declaration['launch-config'], 'portable');
+  assert.equal(hints.declaration.backend, 'herdr');
+  assert.equal(validate(hints.declaration), true, JSON.stringify(validate.errors));
+  for (const changed of [source + 'type: developers\n', source + 'launch-config: invalid name\n',
+    source + 'backend: other\n', source.replace('messaging: any', 'messaging: none'),
     source.replace('teams: [experts, marketing]', 'teams: [experts, experts]'), source.replace('resources: [references]', 'resources: [../outside]')]) {
     assert.equal(validate(parseConfigData(changed).value), false);
     assert.throws(() => parsePortableSoul(changed));

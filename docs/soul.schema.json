@@ -33,6 +33,8 @@
     "work": { "enum": ["worktree", "checkout", "attached", "workspace", "directory"] },
     "runtime": { "enum": ["pi", "claude", "codex"] },
     "model": { "type": "string", "minLength": 1 },
+    "launch-config": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "backend": { "enum": ["tmux", "herdr"] },
     "yolo": { "type": "boolean" }
   },
   "$defs": {

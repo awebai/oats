@@ -18,6 +18,8 @@ explicit YAML may select `format: yaml`; ordinary block YAML supports inline map
 sequences of maps, quotes and block scalars. No line or nested mapping is silently
 dropped. YAML anchors, aliases, explicit tags, merge syntax, duplicate/coercive keys,
 non-finite numbers and multiple documents refuse. Quoted metacharacters remain data.
+Lexer/CST processing is budgeted before AST composition; duplicate decoded keys
+are checked with a linear own-key lookup rather than a quadratic composer scan.
 Decoded maps have null prototypes. Origins refer to the original document and
 pointer; optional spans are character offsets, not byte offsets.
 
@@ -68,8 +70,11 @@ contents are non-secret or that required external resources are configured.
 
 Teams are offered aliases, not enrollment or wider-team consent. Extra resources
 are canonical source-repository-relative paths; source projection later verifies
-containment and complete retention. Work/runtime/model/yolo are typed execution
-hints, not an inferred work repository or a capability-policy tier.
+containment and complete retention. Work/runtime/model/yolo, `launch-config` and
+`backend` are typed execution hints, not an inferred work repository or a policy
+tier. Launch-config keeps the current 1–64-character name grammar; backend remains
+tmux or herdr. This codec does not look up a named configuration, check host tools
+or launch a backend.
 
 The versioned format rejects `agent-types`, `type`, authored internal annotations,
 and the old machine-local `repo` field rather than silently dropping them. Legacy
