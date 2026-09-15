@@ -36,6 +36,18 @@ test("complete record shape keeps source identity/revision/alias distinct withou
   assert.throws(() => validateResolutionShape(value), { code: "invalid-declaration" });
 });
 
+test("a canonical source identity must match its observed remote", () => {
+  const value = record(), source = value.subject.soul;
+  const repository = { kind: "canonical-remote", remote: "git:https://github.com/example/source-a.git" };
+  source.identity.repository = repository;
+  source.sourceArtifact.identity = structuredClone(source.identity);
+  source.revision.identity = structuredClone(repository);
+  source.revision.remote = repository.remote;
+  assert.equal(validateResolutionShape(value), value);
+  source.revision.remote = "git:https://github.com/example/source-b.git";
+  assert.throws(() => validateResolutionShape(value), { code: "invalid-declaration" });
+});
+
 test("captured choices replay through the same resolver and cannot claim a different selected value", () => {
   const value = record();
   value.choices = resolveChoices({ candidates: [{ key: "/settings/example/target", kind: "operator", value: "one", origin }] }).choices;
