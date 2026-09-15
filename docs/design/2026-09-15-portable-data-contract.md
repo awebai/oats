@@ -69,3 +69,32 @@ Record IDs, identity keys, source-request keys and artifact-set keys must use th
 one encoding. Validate a stored record's content address before following its
 references. Complete/evidence separation, graph budgets and semantic cross-reference
 validation are the next record-store layer, not claims supplied by a digest alone.
+
+## Shared portable source grammar
+
+`lib/source-spec.mjs` is the pure new-format codec. It neither reads the filesystem
+nor acquires anything, supplies credentials, observes hosting-provider identity,
+or grants trust. It is not wired into legacy CLI/lock readers at this checkpoint.
+
+- Intrinsic declarations use exactly `git:`, `repo:` or `path:`.
+- Git declarations require an explicit revision selector; omitted package fragments
+  use the documented `oats-package` default. `#.` and an empty fragment select root.
+- The normalized source and canonical package path remain separate in lock rows.
+- SSH user@host is authority, not a selector. Slash-bearing refs remain intact;
+  ambiguous additional delimiters refuse rather than select another repository.
+- Shorthand host/repository locators expand through the documented HTTPS/.git
+  convention. Explicit repository endpoints retain their path; no .git suffix is
+  invented for an explicit SSH/HTTPS/file endpoint.
+- Repository/import/knowledge locators have no package-root default, ref or fragment;
+  the surrounding declaration supplies revision and exported path separately.
+- `repo:` is a repository-root relation at the captured soul revision, not a local
+  path and not a new persisted package transport. Containment is also checked later.
+- `path:` acquisition requires explicit local adoption authorization; relative local
+  paths require an explicit absolute authoring base. No cwd or HOME inference.
+- New-format locked values must already be canonical; reading does not repair them.
+  Catalog convenience remains valid for package locks/CLI, never as the sole source
+  of an intrinsic portable soul requirement. Captured provenance must preserve the
+  actual resolution; a catalog ID is not immutable publisher authority.
+- Existing legacy-format parsers remain literal evidence readers until their explicit
+  migration. Consumer integration must route new values through this codec rather
+  than adding private URL/ref splitters.
