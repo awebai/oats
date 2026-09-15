@@ -45,7 +45,8 @@
   ],
   "dependencies": {
     "@awebai/pi": "^0.2.1",
-    "croner": "10.0.1"
+    "croner": "10.0.1",
+    "yaml": "2.9.1"
   },
   "bin": {
     "oats": "./bin/oats.mjs"
