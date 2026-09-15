@@ -118,3 +118,24 @@ and nested soul layouts without guessing. Package exports give their contained
 package root. A public source index may omit workspace; that is not organizational
 admission. Duplicate import aliases/member locators report both origin pointers.
 Qualified hosting identity and reciprocal admission are the next discovery layer.
+
+## One choice engine
+
+`lib/portable-choices.mjs` resolves field-level inputs through one algorithm. A
+requirement is either equality with a concrete value or required presence. Candidate
+kinds are workspace-default, soul-default, import-adoption and operator. This is
+constraints plus bounded fallbacks, not a repository policy tier or a general
+expression/version solver.
+
+A concrete requirement seeds selection; an incompatible ordinary fallback is
+recorded as overridden, not a false conflict. Incompatible adoption/operator choices
+or conflicting hard/equal-authority inputs report both origins. Abstract presence
+with no concrete binding reports needs-configuration. Results include selectedBy,
+constraints and considered origins; they are choice plans, not installed/trusted/
+enrolled readiness or captured-resolution authority.
+
+Choice keys are JSON-pointer-shaped field names. Field codecs normalize disabled or
+unbound selections to null; the generic engine does not guess from strings such as
+none. False, zero and empty arrays can be legitimate data bindings. The source-aware
+preparer must supply validated typed selections and retain the authored provenance.
+No I/O or provider-specific payload interpretation belongs in this engine.
