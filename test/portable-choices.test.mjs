@@ -57,5 +57,9 @@ test("conflicting requirements/equal authority retain both origins; arbitrary po
   const conflict = resolveChoices({ candidates });
   assert.equal(conflict.status, "conflict");
   assert.deepEqual(conflict.problems[0].origins, candidates.map((item) => item.origin));
+  const sameOrigin = requirements.map((item) => ({ ...item, origin: origin("same-location") }));
+  assert.deepEqual(resolveChoices({ requirements: sameOrigin }), resolveChoices({ requirements: [...sameOrigin].reverse() }));
+  const sameCandidates = sameOrigin.map((item) => ({ ...item, kind: "workspace-default" }));
+  assert.deepEqual(resolveChoices({ candidates: sameCandidates }), resolveChoices({ candidates: [...sameCandidates].reverse() }));
   assert.throws(() => resolveChoices({ requirements: [{ key, kind: "expression", value: "execute()", origin: origin("bad") }] }), { code: "invalid-declaration" });
 });
