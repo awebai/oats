@@ -60,6 +60,7 @@ test("capture policy admits exact retained authority before a slot and persists 
     command: (request) => {
       calls.push(request);
       const state = readState(ws);
+      assert.equal(state.jobs.captured.attempt.schemaVersion, 1, "captured attempts carry their own wire version");
       assert.equal(state.jobs.captured.attempt.execution.executionId, saved.execution.executionId, "capsule is durable before child invocation");
       assert.equal(jobLockInfo(ws, "captured").executionId, saved.execution.executionId, "slot names the admitted capsule");
       return { schemaVersion: 1, ok: true, result: {} };
@@ -144,7 +145,7 @@ test("an admitted capsule survives definition edits and reconciliation after sou
 
   const state = readState(ws);
   state.jobs.recover = {
-    attempt: { scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", execution: original.execution },
+    attempt: { schemaVersion: 1, scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", execution: original.execution },
     lastRun: { scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", outcome: "unknown", instance, execution: original.execution },
   };
   writeState(ws, state);

@@ -111,9 +111,10 @@ capsule ID and calls the exact captured-action loader before acquiring a launch
 slot or invoking the CLI. The capsule is written into the attempt before the
 child process runs and is retained on the result. Definition edits affect later
 admissions only; an unknown attempt, `run`, or reconciliation never replaces its
-capsule with the edited definition or today's config/lock. Scheduler launch also
-scrubs ambient `OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is
-authority.
+capsule with the edited definition or today's config/lock. Captured attempts
+carry their own `schemaVersion:1`; malformed/unknown attempt versions stay
+unresolved and cannot dispatch. Scheduler launch also scrubs ambient
+`OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is authority.
 
 `prepare-on-tick` is a distinct explicit policy for a genuinely new tick. It is
 accepted as a version-2 definition but currently reports `migration-required`
