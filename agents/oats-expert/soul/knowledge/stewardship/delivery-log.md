@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-15
+timestamp: 2026-09-16
 ---
 
 # Delivery log
@@ -23,6 +23,13 @@ Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
 ---
+
+## Captured command consumers and native preparation — direct delivery (2026-09-16)
+- verdict: DELIVERED TO MAIN through `049a22ad1e88053e5b96c832a6b4563a027d5fc7` by ordinary fast-forward push after bounded review. No PR, release, deployment or live schedule activation.
+- scope: `loadCapturedDispatch` and explicit CLI selectors; exact prospective artifact approval without a fabricated partial resolution; native import/workspace/adoption/package/default/resource/helper preparation. Complete results expose a versioned execution binding; per-admission execution identity remains separate from content identity. Provider/launch/cutover gaps remain explicit.
+- evidence: source-deleted A/B commands execute the retained approved version, public CLI uses the exact selector and scrubs invoking identity, malformed-selector JSON remains one envelope. Native preparation/curriculum/helper, alias conflict, provider-incomplete and legacy-refusal tests pass; scaffold/layout/retire checks pass. Final bounded preparation review ran four requested tests and identified the hook-rendering mismatch; its fix passed the native hook regression and independent closure. Prior main CI at `d3ba70de` passed; no blanket later-CI claim.
+- owner: oats-expert maintainer; parallel scheduler implementation coordinated on separate owned files.
+- taught us: executable provider normalization needs exact prospective approval before a complete record exists. Resource inventory must consume raw hook declarations, not a legacy shell command whose first token is the Node interpreter. Scope/identity/config proofs must remain distinct from actual host/provider readiness.
 
 ## Portable package/default capture — direct main delivery (2026-09-15)
 - verdict: DELIVERED TO MAIN through `1a61daa46ab4bfd18d8b5618bf9ae70e864e7517`, ordinary fast-forward direct push after bounded review; no PR or approval wait. No release or deployment.
