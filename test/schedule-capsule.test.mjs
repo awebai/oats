@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { admitExecutionTemplate, buildCommandExecutionTemplate, capturedDispatchAction, executionContentIntegrity, validateExecutionCapsule, validateExecutionTemplate } from "../lib/schedule-capsule.mjs";
-import { addSchedule, findHomesInScope, jobLockInfo, readDefinitions, readState, reconcile, scheduleExecutionStatus, tickWorkspace, writeDefinitions, writeState } from "../lib/schedule.mjs";
+import { addSchedule, findHomesInScope, jobLockInfo, readDefinitions, readState, reconcile, saveWakeForHome, scheduleExecutionStatus, tickWorkspace, writeDefinitions, writeState } from "../lib/schedule.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { commitCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
 import { bytesIntegrity, treeIntegrity } from "../lib/portable-digest.mjs";
@@ -182,6 +182,12 @@ test("captured wake templates bind instance executionBinding and remain gated be
   assert.equal(result.find((entry) => entry.id === "bound-wake").action, "blocked");
   assert.equal(result.find((entry) => entry.id === "bound-wake").errorCode, "E_SCHEDULE_INVALID");
   assert.equal(starts, 0); assert.equal(inputs, 0);
+
+  const auto = join(ws, "agents/dev/instances/auto"), autoBinding = { ...binding, resolution: { schemaVersion: 1, id: RID_B } };
+  write(join(auto, "instance.json"), JSON.stringify({ instance: "dev-auto", executionBinding: autoBinding }));
+  const autoWake = saveWakeForHome(ws, { instance: "dev-auto", home: auto, wake: { cron: "*/5 * * * *", tz: "UTC", message: "auto" }, executionBinding: autoBinding, responsibleHuman: null });
+  assert.equal(autoWake.definitionVersion, 2); assert.equal(autoWake.execution.resolution.id, RID_B);
+  assert.throws(() => saveWakeForHome(ws, { instance: "missing-owner", home: auto, wake: { cron: "*/5 * * * *", tz: "UTC", message: "auto" }, executionBinding: autoBinding }), { code: "needs-configuration" });
 });
 
 test("captured schedule dispatch executes retained code after source deletion and blocks before a child when retention is missing", (t) => {

@@ -243,7 +243,13 @@ listed with its skipped reason.
 saves a wake job `wake-<instance>` bound to the new home after the spawn
 succeeded. If the spawn succeeds but the save fails, the spawn result still
 carries the full instance receipt, plus `wakeScheduleError` and a warning;
-the instance is neither hidden nor spawned again.
+the instance is neither hidden nor spawned again. When the spawning consumer
+supplies both the returned `executionBinding` and `responsibleHuman`,
+`saveWakeForHome` creates a version-2 captured wake from the matching binding in
+the new home. Supplying only one, or a result binding that differs from the
+home, refuses. The current parent-owned spawn caller still needs to pass these
+fields when its captured lifecycle path lands; omission retains explicit legacy
+behavior rather than inventing a binding.
 
 ## OKF v2 source jobs
 
