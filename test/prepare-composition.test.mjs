@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
+import { activateCapturedScaffold, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
@@ -20,7 +20,7 @@ function fixture(t, provider=false) {
   write('agents/expert/AGENTS.md','Expert instructions\n');symlinkSync('AGENTS.md',join(repo,'agents/expert/CLAUDE.md'));
   write('packages/action/oats-package.json',JSON.stringify({package:'example.package',version:'1.0.0',description:'Fixture',compatibility:{oats:'>=0.1.0'},capabilities:['cap']}));
   write('packages/action/cap/oats.json',JSON.stringify({capability:id,version:'1.0.0',description:'Fixture',command:'example-action',commands:{show:'show.mjs'},hooks:{spawn:{command:'./show.mjs',required:true}},settings:{limit:{default:3}},inject:'inject.md',skills:['skills/procedure'],agents:['agents/worker'],...(provider?{layer:'knowledge'}:{})}));
-  write('packages/action/cap/show.mjs','console.log("A");\n');write('packages/action/cap/inject.md','Capability instructions\n');
+  write('packages/action/cap/show.mjs','if(process.env.FAIL_CAPTURED_HOOK){console.log(JSON.stringify({meta:{created:true},warning:"fixture hook failed after effect"}));process.exit(1);}console.log("A");\n');write('packages/action/cap/inject.md','Capability instructions\n');
   write('packages/action/cap/skills/procedure/SKILL.md','# Procedure\n');
   write('packages/action/cap/agents/worker/soul.yaml','schemaVersion: 1\nname: worker\nwork: directory\n');
   write('packages/action/cap/agents/worker/AGENTS.md','Worker instructions\n');symlinkSync('AGENTS.md',join(repo,'packages/action/cap/agents/worker/CLAUDE.md'));
@@ -54,6 +54,13 @@ test('native preparation publishes complete source/curriculum/helper records, th
   const scaffoldMeta=JSON.parse(readFileSync(join(scaffoldHome,'instance.json'),'utf8'));assert.equal(scaffoldMeta.captured.lifecycle,'scaffolded-hooks-pending');
   assert.equal(scaffoldMeta.executionBinding.resolution.id,result.resolution.id);assert.equal(existsSync(join(scaffoldHome,'.agents/skills/procedure/SKILL.md')),true);
   assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'}),{code:'E_INSTANCE_EXISTS'});
+  const activated=activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome});
+  assert.equal(activated.launchPending,true);assert.deepEqual(activated.hooks.order,[f.id]);
+  assert.equal(JSON.parse(readFileSync(join(scaffoldHome,'instance.json'),'utf8')).captured.lifecycle,'spawned-launch-pending');
+  const failedHome=join(scaffoldParent,'imported-expert-2');scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:failedHome,instance:'imported-expert-2'});
+  assert.throws(()=>activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome,extraEnv:{FAIL_CAPTURED_HOOK:'1'}}),error=>error.code==='E_REQUIRED_HOOK_FAILED'&&error.home===failedHome);
+  const failedMeta=JSON.parse(readFileSync(join(failedHome,'instance.json'),'utf8'));
+  assert.equal(failedMeta.captured.lifecycle,'spawn-failed-cleanup-required');assert.equal(failedMeta.capabilityMeta[f.id].created,true);assert.equal(existsSync(failedHome),true);
   const action=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'command',namespace:'example-action',name:'show'}});
   assert.equal(execFileSync(process.execPath,[action.executable.file,...action.executable.args],{encoding:'utf8'}).trim(),'A');
   const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'}});
@@ -267,13 +274,11 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   const nodes=join(physicalRoot,'fixture-nodes.json');writeFileSync(nodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));
   mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   initBase(binding.payload.runtime.bindings,'private-kb',nodes,undefined,{confirm:true}); // Administrative fixture bootstrap only.
-  const sourceHome=join(physicalRoot,'captured-source'),sourceWork=join(sourceHome,'work');mkdirSync(sourceWork,{recursive:true});
-  const sourceReceipt={schemaVersion:1,kind:'persistent',home:sourceHome,work:sourceWork,context:ready.executionBinding.deployment,agent:'imported-expert',instance:'imported-expert-1',
-    sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:ready.executionBinding,responsibleHuman:null,binding};
-  const registered=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:ready.resolution,home:sourceHome,instance:sourceReceipt.instance,agentName:sourceReceipt.agent,
-    sourceReceipt,extraEnv:{OATS_HOME_DIR:join(physicalRoot,'host-state')}});
-  assert.deepEqual(registered.failures,[],JSON.stringify(registered));assert.equal(registered.meta['oats.okf'].memory,'okf-v2');
-  const descriptor=JSON.parse(readFileSync(registered.meta['oats.okf'].source,'utf8'));
+  const capturedHomes=join(physicalRoot,'captured-homes');mkdirSync(capturedHomes);const sourceHome=join(capturedHomes,'imported-expert-1');
+  scaffoldCapturedInstance({deployment:f.deployment,resolution:ready.resolution,home:sourceHome,instance:'imported-expert-1'});
+  const activated=activateCapturedScaffold({deployment:f.deployment,resolution:ready.resolution,home:sourceHome,extraEnv:{OATS_HOME_DIR:join(physicalRoot,'host-state')}});
+  assert.deepEqual(activated.hooks.failures,[],JSON.stringify(activated));assert.equal(activated.hooks.meta['oats.okf'].memory,'okf-v2');
+  const descriptor=JSON.parse(readFileSync(activated.hooks.meta['oats.okf'].source,'utf8'));
   assert.deepEqual(descriptor.executionBinding,ready.executionBinding);assert.equal(descriptor.responsibleHuman,null);
   assert.equal(JSON.stringify(descriptor.sourceIdentity),JSON.stringify(record.subject.soul.identity));
   const schedules=JSON.parse(readFileSync(join(f.deployment,'oats-schedules.json'),'utf8')),schedule=schedules.jobs[`okf-${descriptor.id}`];

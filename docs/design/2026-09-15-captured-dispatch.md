@@ -112,7 +112,11 @@ Core now also exposes a bounded scaffold-only adapter for a preselected explicit
 home. It requires exact executable approvals and retained `directory` work mode,
 then materializes the retained soul/helper link, composed instructions, copied skill
 trees, private directory work and `instance.json` execution binding/responsible-human
-metadata. `instance.json` explicitly records `scaffolded-hooks-pending`; no hook,
-launch, public spawn route, work-target setup or roster placement is implied. The
-adapter creates the home exclusively and rolls back only its inode-owned home on
-pre-hook failure. Other work modes refuse until their work-target inputs are retained.
+metadata. `instance.json` explicitly records `scaffolded-hooks-pending`; no launch,
+public spawn route, work-target setup or roster placement is implied. A separate exact
+activation step derives any source receipt from the record and runs the captured hook
+preflight/runner. Success records `spawned-launch-pending`. Required-hook failure keeps
+the home, hook metadata and `spawn-failed-cleanup-required` status rather than deleting
+possible external effects. The scaffold adapter creates the home exclusively and rolls
+back only its inode-owned home on pre-hook failure. Other work modes refuse until their
+work-target inputs are retained.
