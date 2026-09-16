@@ -239,6 +239,17 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   const nodes=join(physicalRoot,'fixture-nodes.json');writeFileSync(nodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));
   mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   initBase(binding.payload.runtime.bindings,'private-kb',nodes,undefined,{confirm:true}); // Administrative fixture bootstrap only.
+  const poisonState=join(physicalRoot,'poison-state'),poisonBase=join(physicalRoot,'poison-base'),poisonNodes=join(physicalRoot,'poison-nodes.json');
+  writeFileSync(poisonNodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
+  writeFileSync(settings['bindings-file'],JSON.stringify({version:1,stateDir:poisonState,bases:{'private-kb':{id:'private-kb',kind:'directory',path:poisonBase}}}));
+  const poisonBytes=readFileSync(settings['bindings-file']),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  for(const [name,argv] of [['setup',['--source',join(physicalRoot,'missing-source.json')]],['init',['--base','private-kb','--nodes',poisonNodes,'--confirm']],
+    ['migrate',['--legacy',join(physicalRoot,'legacy'),'--base','private-kb','--node','expert','--output',join(physicalRoot,'stage')]],
+    ['unlock',['--lock',join(physicalRoot,'missing-lock'),'--token','no-token']]]) {
+    const call=spawnSync(process.execPath,[cli,'okf',name,'--deployment',f.deployment,'--resolution',ready.resolution.id,'--',...argv,'--json'],{encoding:'utf8'});
+    assert.equal(call.status,1,`${name}: ${call.stdout||call.stderr}`);assert.equal(JSON.parse(call.stdout).error.code,'provider-not-qualified',name);
+  }
+  assert.deepEqual(readFileSync(settings['bindings-file']),poisonBytes);assert.equal(existsSync(poisonState),false);assert.equal(existsSync(poisonBase),false);
   const loaded=loadCapturedDispatch({deployment:f.deployment,resolution:ready.resolution,action:{kind:'command',capability:'oats.okf',name:'binding-check'}});
   const moduleUrl=pathToFileURL(join(root,'lib/binding-wire.mjs')).href;
   let invocation;
