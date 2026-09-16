@@ -55,6 +55,9 @@ test("capture policy admits exact retained authority before a slot and persists 
   assert.equal(saved.definitionVersion, 2); assert.equal(saved.recurrencePolicy, "capture");
   assert.deepEqual(saved.executionStatus, { kind: "captured", capture: "recorded", migrationRequired: false, schemaVersion: 1, executionId: saved.execution.executionId, resolution: saved.execution.resolution });
   assert.deepEqual(scheduleExecutionStatus({ kind: "command" }), { kind: "legacy", capture: "unknown", migrationRequired: true });
+  assert.deepEqual(scheduleExecutionStatus(saved, { scheduledFor: "past" }).attempt, { kind: "legacy", capture: "unknown", migrationRequired: true });
+  assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 1, execution: saved.execution }).attempt.executionId, saved.execution.executionId);
+  assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 2, execution: saved.execution }).attempt.kind, "invalid");
   assert.equal(readDefinitions(ws).jobs.captured.execution.executionId, saved.execution.executionId);
   const io = {
     admit: (request) => { admitted.push(request); return { ok: true }; },
