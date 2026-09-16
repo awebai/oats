@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { buildCommandExecutionTemplate, admitExecutionTemplate } from "../lib/schedule-capsule.mjs";
 import { readPortableMigrationInventory, verifyHistoricalLockCandidate, verifyPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
 import { planPortableMigration } from "../lib/portable-migration.mjs";
-import { commitPlannedResolutionEvidence, readResolutionEvidence, validateResolutionEvidence } from "../lib/portable-migration-store.mjs";
+import { commitPlannedResolutionEvidence, listResolutionEvidence, readResolutionEvidence, validateResolutionEvidence } from "../lib/portable-migration-store.mjs";
 import { decodeLegacyLockBytes } from "../lib/legacy-lock-codec.mjs";
 
 const RID = `sha256-${"a".repeat(64)}`;
@@ -33,10 +33,14 @@ function fixture(t) {
   write(join(deployment, "oats-schedules.json"), { version: 2, jobs: {
     legacy: { id: "legacy", kind: "command", cwd: deployment, argv: ["oats", "status"], cron: "* * * * *", tz: "UTC" },
     captured: { id: "captured", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", execution: template },
+    "captured-legacy-attempt": { id: "captured-legacy-attempt", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", execution: template },
+    "captured-malformed-attempt": { id: "captured-malformed-attempt", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", execution: template },
   } });
   write(join(deployment, ".agents", "schedules", "state.json"), { jobs: {
     legacy: { attempt: { scheduledFor: "2026-09-16T00:00:00.000Z" }, lastRun: { outcome: "unknown" } },
     captured: { attempt: { schemaVersion: 1, execution: attempt } },
+    "captured-legacy-attempt": { attempt: { scheduledFor: "2026-09-16T00:01:00.000Z" }, lastRun: { outcome: "unknown" } },
+    "captured-malformed-attempt": { attempt: "not-an-attempt" },
   } });
   return { deployment, legacyHome, capturedHome };
 }
@@ -77,6 +81,14 @@ test("bounded migration inventory witnesses literal locks, homes and jobs withou
   const capturedJob = byTarget(plan, "scheduled-job", ".:captured");
   assert.equal(capturedJob.status, "partial"); assert.equal(capturedJob.action, "preserve");
   assert.equal(capturedJob.preserve.executions.find((entry) => entry.source === "attempt").executionId, "attempt-a");
+  const heldCapturedDefinition = byTarget(plan, "scheduled-job", ".:captured-legacy-attempt");
+  assert.equal(inventory.schedules[0].jobs.find((job) => job.id === "captured-legacy-attempt").attempt.state, "legacy");
+  assert.equal(heldCapturedDefinition.status, "unknown"); assert.equal(heldCapturedDefinition.action, "hold");
+  assert.equal(Object.hasOwn(heldCapturedDefinition, "preserve"), false, "today's captured definition cannot supply an old attempt's authority");
+  assert.ok(heldCapturedDefinition.unresolved.some((entry) => /owner reconciliation/.test(entry.reason)));
+  const malformedAttempt = byTarget(plan, "scheduled-job", ".:captured-malformed-attempt");
+  assert.equal(malformedAttempt.status, "unknown"); assert.equal(malformedAttempt.action, "hold");
+  assert.ok(malformedAttempt.unresolved.some((entry) => entry.code === "invalid-evidence"));
   verifyPortableMigrationInventory(f.deployment, inventory);
 });
 
@@ -108,6 +120,7 @@ test("unselectable evidence publication rechecks witnesses and never creates a c
     lockFiles: ["oats-lock.json"], instanceHomes: ["agents/dev/instances/dev-old"], scheduleScopes: ["."],
   });
   const target = { kind: "instance-home", id: "agents/dev/instances/dev-old" };
+  assert.deepEqual(listResolutionEvidence(f.deployment), [], "an absent evidence store is an empty diagnostic result");
   const reference = commitPlannedResolutionEvidence(f.deployment, inventory, target);
   const evidence = readResolutionEvidence(f.deployment, reference);
   assert.equal(evidence.status, "partial"); assert.equal(evidence.resolution, null);
@@ -115,10 +128,18 @@ test("unselectable evidence publication rechecks witnesses and never creates a c
   assert.equal(existsSync(join(f.deployment, ".agents", "resolutions")), false);
   assert.deepEqual(commitPlannedResolutionEvidence(f.deployment, inventory, target), reference, "identical evidence is immutable and reusable");
   assert.throws(() => validateResolutionEvidence({ ...evidence, resolution: { schemaVersion: 1, id: RID } }), { code: "resolution-incomplete" });
+  const listed = listResolutionEvidence(f.deployment, { includeDocuments: true });
+  assert.equal(listed.length, 1); assert.equal(listed[0].reference.id, reference.id);
+  assert.equal(listed[0].target.id, target.id); assert.equal(listed[0].document.status, "partial");
+  assert.throws(() => listResolutionEvidence(f.deployment, { maxBytes: 1 }), { code: "resource-limit" });
+  const evidenceRoot = join(f.deployment, ".agents", "resolution-evidence");
+  for (const name of [".evidence-one", ".evidence-two", ".evidence-three"]) mkdirSync(join(evidenceRoot, name));
+  assert.throws(() => listResolutionEvidence(f.deployment, { maxEntries: 2 }), { code: "resource-limit" }, "ignored staging entries still consume the incremental visit budget");
 
-  const path = join(f.deployment, ".agents", "resolution-evidence", `${reference.id}.json`);
+  const path = join(evidenceRoot, `${reference.id}.json`);
   writeFileSync(path, readFileSync(path, "utf8").replace('"status":"partial"', '"status":"unknown"'));
   assert.throws(() => readResolutionEvidence(f.deployment, reference), { code: "integrity-drift" });
+  assert.throws(() => listResolutionEvidence(f.deployment), { code: "integrity-drift" });
   assert.throws(() => commitPlannedResolutionEvidence(f.deployment, inventory, target), { code: "integrity-drift" });
 });
 

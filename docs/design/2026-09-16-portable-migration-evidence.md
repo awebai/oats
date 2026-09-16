@@ -56,12 +56,23 @@ planned partial/unknown evidence under:
 ```
 
 The store is distinct from `.agents/resolutions/`; partial/unknown documents must
-carry `resolution:null`. `commitPlannedResolutionEvidence` re-reads and compares
+carry `resolution:null`. `listResolutionEvidence` provides bounded deterministic
+diagnostics with incremental visited-entry, retained-record and aggregate-byte
+limits. Managed metadata/staging consumes the visited-entry budget even though it
+is not returned. An absent store is empty; every returned content address is
+verified, and corruption or unexpected entries fail closed.
+`commitPlannedResolutionEvidence` re-reads and compares
 the complete inventory before it creates the evidence store, recomputes the
 planner output rather than trusting caller-supplied status, and publishes canonical
 private bytes by atomic no-replace hard link. Matching existing bytes are reused;
 damaged existing evidence refuses without repair. Publication changes no source
 lock, home, schedule, session or approval state.
+
+`commitHistoricalHomeCapabilityEvidence` can publish the narrow verified
+home-to-v2-artifact association as `partial`. It persists capability/package IDs,
+paths and old/new digests, but deliberately omits unclassified legacy source,
+settings and command text; the original byte-addressed documents remain the
+witnesses. It still grants no selection, approval or retention authority.
 
 The validator can read a future `reconstructed` evidence document only when it has
 no unresolved inputs and names a shaped resolution reference. This slice exposes
@@ -88,15 +99,34 @@ revision an individual home or job used. Home runtime rows, rendered hook paths,
 copied skills and launch metadata can narrow investigation but do not establish
 the full source, capability, helper and managed-runtime closure. A legacy or
 unknown scheduled attempt is held exactly; it is never rebound to today's
-definition or lock.
+definition or lock. The inventory distinguishes an existing legacy attempt from
+an absent attempt even when no execution field exists. A captured current
+definition cannot turn that old unresolved attempt into preserved captured
+authority; the planner keeps the target `unknown` and `hold` pending owner
+reconciliation.
 
 `lib/portable-migration-artifacts.mjs` adds one narrower read-only proof for an
 explicit materialized-v2 candidate. It requires the strict lock witness, verifies
 the existing legacy artifact digest and exact `.oats-installation.json` provenance,
-then measures the new owner-exec digest twice with the legacy digest bracketing it.
-The result labels modes `observed-at-migration`, trust/selection authority `none`,
-and retention `not-retained`. It does not support v1 without that format's separate
-historical digest verifier and does not publish the candidate.
+preflights `.oats-installation.json` through the bounded descriptor-backed
+regular-file reader before the legacy tree hasher can allocate it, records the
+exact provenance-byte digest, and then measures both old and new tree digests
+twice. A final bounded provenance read must match the preflight witness. A
+symlinked, oversized, replaced or drifting provenance file therefore cannot lend
+external/pre-hash bytes to the candidate. The old digest implementation and its
+historical mode limitations remain unchanged. The result labels modes
+`observed-at-migration`, trust/selection authority `none`, and retention
+`not-retained`.
+
+V1 candidates require the existing literal legacy digest as an injected callback;
+the migration module never imports core or substitutes the v2 algorithm. It
+preflights and byte-witnesses bounded regular `oats.json`, requires its
+capability/version to match the v1 row, brackets old/new digest measurements, and
+still treats `trustedExecutables` only as evidence. V1 `package` and capability
+`path` are persisted as `null`: unknown historical row keys do not become verified
+artifact provenance. No legacy source, settings or other unknown row text is copied
+into the new evidence document; only the independently verified artifact path is.
+
 `verifyHistoricalHomeCapabilityCandidate` can additionally prove that one unchanged
 home's `capabilityRuntime` names exactly one capability with the same old digest.
 That is a narrow per-capability association only: the result remains `partial`,

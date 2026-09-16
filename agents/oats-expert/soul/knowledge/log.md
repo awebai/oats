@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-16
+* **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record coordinator-only integration of provider preparation/captured operation-hook authority and unselectable historical evidence as `9c69251a`. Scoped custody/authority findings closed; all eight exact-head local gates passed (2651 pass, zero fail, two existing skips). Reconstructed migration, public captured launch, production/provider/privacy qualification and release remain separate unfinished gates.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record captured scheduler/API-2 and retained provider-broker delivery through `17bda42a`, closed custody/identity/timeout findings, and the full-run help assertion followed by its focused correction. Provider composition/lifecycle, migration, real privacy qualification and production release remain outstanding; transport tests do not certify them.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record exact captured CLI/action consumers and native command/curriculum preparation delivered through `049a22ad`, prospective approval ordering, the independently closed raw-hook/rendered-command defect, and the parallel scheduler lane. Provider/lifecycle/migration/production completion is still outstanding; operational setup is not framework deployment qualification.
 
