@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import Ajv from "ajv";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -47,6 +48,13 @@ test("ExecutionCapsule1 binds its ID to the saved explicit captured command", ()
   assert.throws(() => buildCommandExecutionCapsule({ cwd: "/deployment", argv: ["oats", "example-action", "show"] }), { code: "invalid-declaration" });
   assert.throws(() => buildCommandExecutionCapsule({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--resolution", RID_A] }), (error) => error.code === "invalid-declaration" && /save --json/.test(error.message));
   assert.throws(() => buildCommandExecutionCapsule({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--artifact-set", RID_A] }), { code: "invalid-declaration" });
+
+  const ajv = new Ajv({ strict: true, ownProperties: true });
+  ajv.addSchema(JSON.parse(readFileSync(new URL("../docs/portable.schema.json", import.meta.url), "utf8")));
+  const validate = ajv.compile(JSON.parse(readFileSync(new URL("../docs/execution-capsule.schema.json", import.meta.url), "utf8")));
+  assert.equal(validate(capsule), true, JSON.stringify(validate.errors));
+  const extra = { ...capsule, unrecorded: true };
+  assert.equal(validate(extra), false, "the public structural schema stays closed");
 });
 
 test("capture policy admits exact retained authority before a slot and persists the capsule before command side effects", (t) => {

@@ -103,6 +103,11 @@ recurrence policy:
 }
 ```
 
+The structural wire is published as
+[`execution-capsule.schema.json`](execution-capsule.schema.json); runtime
+validation additionally recomputes `executionId` and checks selector/target
+agreement.
+
 `capture` requires the explicit deployment/resolution selector pair and
 `--json` in the **saved argv**. The scheduler never appends an unrecorded
 protocol argument to a captured target. Adding or updating the definition derives an immutable

@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oats.dev/schemas/execution-capsule-v1.json",
+  "title": "Scheduled execution capsule v1",
+  "description": "Immutable local authority for one admitted scheduled execution. Structural validation does not verify the capsule ID, retained resolution, approval, host readiness or provider state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "executionId",
+    "resolution",
+    "deployment",
+    "action",
+    "target",
+    "inputRefs",
+    "responsibleHuman"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "executionId": {
+      "type": "string",
+      "pattern": "^sha256-[a-f0-9]{64}$"
+    },
+    "resolution": {
+      "$ref": "https://oats.dev/schemas/portable-v1.json#/$defs/ResolutionRef"
+    },
+    "deployment": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": {
+          "const": "command"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[^:\\s]+:[^:\\s]+$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd", "argv"],
+      "properties": {
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argv": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "inputRefs": {
+      "type": "object"
+    },
+    "responsibleHuman": {
+      "type": ["object", "null"]
+    }
+  }
+}
