@@ -24,6 +24,13 @@ decisions/ and referenced from here.
 
 ---
 
+## Standalone OKF portable candidate — direct-main review (2026-09-16)
+- verdict: RETURNED at provider `388182cab282f2c490002af00d19794d047d7b35`, against released base `4b6d861`. Direct-main implementation delivery is authorized, but no source push/release/activation occurred while findings remain.
+- findings: captured worker creation and completion commands still use legacy/current selection; dotted aliases cannot be rebound by the external binding grammar; locator/identity validation admits secret-bearing URLs into retained or diagnostic data; owner lookup sees inherited properties; read-only Git staging may execute configured checkout filters. Corrective provider work and the generic captured-helper seam are assigned to their owners. Version/minimum metadata remains a separate publication gate.
+- evidence: only the permitted binding/domain and captured-source/schema tests ran, 19 passed; no full suite or live consumer/privacy qualification. Existing private snapshot, source-descriptor, v2 schedule/null-owner and PR-only publication boundaries were confirmed, but a fake worker/direct completion test is not executable dispatch proof.
+- owner: coordinator review and main integration; capability owner implements provider functionality, lifecycle owner supplies generic helper contracts.
+- taught us: source-free data is insufficient if the next subprocess selects today's code. Closed identifier maps need own-property lookup. Nonsecret validation applies to malformed persisted identities and URL components too. Authorizing direct source-main delivery does not waive runtime knowledge PR custody or remaining review findings.
+
 ## Provider consumers and historical evidence — coordinator integration (2026-09-16)
 - verdict: DELIVERED TO MAIN as `9c69251a84b4a7bd6329016ffca2d4e0ee57ad50`, ordinary non-force coordinator push after scoped review closure and all eight local gates. No PR wait, new release, live migration or production activation.
 - scope: single-resolver provider binding preparation; captured command/operation readiness and private invocation snapshots; exact source-receipt/hook authority; owned bounded operation execution with observed receipts retained across cleanup failures; helper policy preflight. Legacy lock decoding now has one acyclic byte implementation and a small core wrapper. Explicit bounded inventory/artifact observations and immutable partial/unknown evidence remain separate from selectable captured resolutions, approval and reconstructed publication.
