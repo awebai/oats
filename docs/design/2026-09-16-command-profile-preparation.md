@@ -38,8 +38,10 @@ same-repository package roots. Kernel instructions/skills are copied from explic
 named trusted resources, never by sweeping a checkout, credentials or node_modules.
 The record includes ordered instructions, discovered skill entries, inventoried
 command/hook files, and dedicated helper records. Duplicate skill names or a helper's
-own unresolved software policy refuse rather than silently inheriting incompatible
-choices. Helper records are committed before the main record.
+own unresolved software, provider, team or resource policy refuse rather than silently
+inheriting incompatible parent choices/bindings. All helper definitions are preflighted
+before any helper record is published; accepted helpers are then committed before the
+main record.
 
 Missing provider binding interface/approval or unresolved fields return
 `needs-configuration` with no main resolution, while exact prospective package sets

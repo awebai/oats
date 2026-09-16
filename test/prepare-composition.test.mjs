@@ -52,6 +52,29 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(helper.composition.text.startsWith('Worker instructions'));
   assert.ok(loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition.text.includes('Capability instructions'));
 });
+test('helper-authored provider policy refuses before helper or parent records can inherit the parent binding',t=>{
+  const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');
+  const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
+  manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
+  writeFileSync(manifestFile,JSON.stringify(manifest));
+  const soul=JSON.parse(readFileSync(soulFile,'utf8'));soul.knowledge={contract:'example.locations',version:1,payload:{location:'parent-A'}};
+  writeFileSync(soulFile,JSON.stringify(soul));
+  f.write('packages/action/cap/agents/worker/soul.yaml',JSON.stringify({schemaVersion:1,name:'worker',work:'directory',knowledge:{contract:'example.locations',version:1,payload:{location:'helper-B'}}}));
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync} from 'node:fs';
+    const r=JSON.parse(readFileSync(0,'utf8'));let result;
+    if(r.phase==='normalize'){const source=r.input.declarations.find(d=>d.kind==='soul');result={requirements:[],candidates:[],model:{location:source.value.knowledge.payload.location}};}
+    else if(r.phase==='bind')result={payloadContract:'example.locations',payloadVersion:1,payload:r.input.model,credentialRefs:{},provenance:[]};
+    else result={status:'ready',problems:[]};
+    console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
+  f.git('add','.');f.git('commit','--quiet','-m','helper policy conflict');
+  const pending=prepareCapturedComposition(f.input,f.options);
+  approveAvailableCapability(f.deployment,pending.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const blocked=prepareCapturedComposition(f.input,f.options);
+  assert.equal(blocked.status,'needs-configuration');assert.equal(blocked.resolution,null);
+  assert.match(blocked.problems[0].message,/helper.*knowledge.*dedicated preparation/);
+  assert.equal(existsSync(join(f.deployment,'.agents','resolutions')),false,'neither a contradictory helper nor a parent record was published');
+});
+
 test('public prepare CLI uses the native transport and returns the exact immutable binding',t=>{
   const f=fixture(t),ssh=join(f.root,'fixture-ssh');
   // Native SSH transport with a controlled upload-pack endpoint: no network,
