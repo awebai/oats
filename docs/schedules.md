@@ -18,8 +18,12 @@ and no queue.
 
 ## Files
 
-- `<workspace>/oats-schedules.json` — the definitions (`{version: 1, jobs:
-  {<id>: ...}}`). Commit it if you want the schedule shared with the team.
+- `<workspace>/oats-schedules.json` — the definitions (`{version: 1|2, jobs:
+  {<id>: ...}}`). Version 1 is the legacy format. Adding the first explicit
+  version-2 execution upgrades the whole document to version 2 so an older
+  scheduler refuses it instead of ignoring capture policy. Existing legacy
+  entries may remain visibly unmigrated; new entries in a v2 file must declare
+  their policy. Commit the file if you want the schedule shared with the team.
 - `<workspace>/.agents/schedules/state.json` — last attempted minute and
   last run per job (gitignored), plus one lock directory per running job.
 - `~/.oats/schedules/registry.json` — the host registry: which scopes the
@@ -82,7 +86,7 @@ then :00 again, so 1, 5, 10, 15 and 30 give an even cadence.
 ## Captured execution and recurrence
 
 A new captured command definition is explicitly versioned and chooses its
-recurrence policy:
+recurrence policy. Its containing schedule document is version 2:
 
 ```json
 {

@@ -61,6 +61,8 @@ test("capture policy admits exact retained authority before a slot and persists 
   const ws = workspace(t), admitted = [], calls = [];
   const saved = addSchedule(ws, spec(ws, "captured"));
   assert.equal(saved.definitionVersion, 2); assert.equal(saved.recurrencePolicy, "capture");
+  assert.equal(readDefinitions(ws).version, 2, "a captured definition upgrades the outer file so old readers fail closed");
+  assert.throws(() => addSchedule(ws, { id: "new-legacy", kind: "command", cwd: ws, argv: ["oats", "status"], cron: "* * * * *", tz: "UTC" }), { code: "migration-required" });
   assert.deepEqual(saved.executionStatus, { kind: "captured", capture: "recorded", migrationRequired: false, schemaVersion: 1, executionId: saved.execution.executionId, resolution: saved.execution.resolution });
   assert.deepEqual(scheduleExecutionStatus({ kind: "command" }), { kind: "legacy", capture: "unknown", migrationRequired: true });
   assert.deepEqual(scheduleExecutionStatus(saved, { scheduledFor: "past" }).attempt, { kind: "legacy", capture: "unknown", migrationRequired: true });
