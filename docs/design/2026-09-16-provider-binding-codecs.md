@@ -65,9 +65,17 @@ retained. A check's current result is not cached as permanent authority in the r
 
 ## Delivery status
 
-This document fixes the concrete handshake for the next implementation increment.
-The optional manifest field now has a shared validator wired into the complete
-kernel manifest loader and its public structural schema. Two focused tests cover
-owned command references, slot ownership and version/field refusal. The invocation
-broker, default-provider adapter and real provider qualification are NOT implemented
-yet. Keep the existing explicit refusal until those pieces are connected and verified.
+The optional manifest field has a shared validator wired into the complete kernel
+manifest loader and its public structural schema. The [wire v1](2026-09-16-provider-binding-wire.md)
+now has a bounded codec and native invocation broker, exposed through core
+`runCapturedProviderBinding({deployment,artifacts,capability,phase,settings,input})`.
+It loads the complete retained manifest, verifies artifact/provenance, checks current
+exact approval before execution, and validates/sanitizes provider output. Shared
+ProviderBinding, MessagingChoice and captured-choice codecs are reused, not copied.
+A native fixture proves no unapproved child runs and all phases work after source
+deletion/current-config poison; that is transport evidence, not provider qualification.
+
+Preparation orchestration and captured lifecycle/readiness consumers still need to
+connect this broker. Default-provider wrappers are being implemented in their own
+source repository. Keep the explicit provider-not-qualified refusal until those
+pieces are connected and verified; no live provider or deployment was qualified here.

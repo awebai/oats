@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability } from '../lib/core.mjs';
+import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
@@ -86,6 +86,38 @@ test('prepare-on-tick uses the real core adapter and captured CLI without inject
   const run=readState(f.deployment).jobs.prepared.lastRun;
   assert.equal(run.execution.resolution.id,initial.resolution.id);
   assert.equal(run.execution.responsibleHuman,null);
+});
+
+test('provider broker requires exact approval then runs retained phases without source or current config',t=>{
+  const f=fixture(t,true),marker=join(f.root,'codec-ran'),manifestPath=join(f.repo,'packages/action/cap/oats.json');
+  const manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
+  manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
+  writeFileSync(manifestPath,JSON.stringify(manifest));
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync,writeFileSync} from 'node:fs';
+    const request=JSON.parse(readFileSync(0,'utf8'));
+    if(process.env.OATS_INSTANCE || process.env.OATS_RESOLUTION || process.env.PI_AGENT_HOME) throw Error('ambient identity');
+    writeFileSync(${JSON.stringify(marker)},'ran');
+    const result=request.phase==='normalize'?{requirements:[],candidates:[],model:{source:'retained-A'}}:
+      request.phase==='bind'?{payloadContract:'example.locations',payloadVersion:1,payload:request.input.model,credentialRefs:{},provenance:[]}:
+      {status:'ready',problems:[]};
+    console.log(JSON.stringify({schemaVersion:1,phase:request.phase,slot:request.slot,capability:request.capability,ok:true,result}));`);
+  f.git('add','.');f.git('commit','--quiet','-m','binding codec');
+  const initial=prepareCapturedComposition(f.input,f.options),set=initial.selections[0].artifactSet;
+  assert.equal(initial.resolution,null);
+  const artifacts=readLock3(f.deployment).lock.artifactSets[set],context={kind:'standalone',key:null};
+  const options={deployment:f.deployment,artifacts,capability:f.id,phase:'normalize',settings:{limit:3},input:{declarations:[],context}};
+  assert.throws(()=>runCapturedProviderBinding(options),{code:'approval-required'});
+  assert.equal(existsSync(marker),false,'unapproved code never ran');
+  rmSync(f.repo,{recursive:true});
+  approveAvailableCapability(f.deployment,set,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  writeFileSync(join(f.deployment,'oats-config.yaml'),'poison: current config must not be read\n');
+  const prior=process.env.OATS_INSTANCE;process.env.OATS_INSTANCE='poison-instance';
+  t.after(()=>{if(prior===undefined) delete process.env.OATS_INSTANCE;else process.env.OATS_INSTANCE=prior;});
+  const normalized=runCapturedProviderBinding(options);assert.equal(normalized.model.source,'retained-A');
+  const bound=runCapturedProviderBinding({...options,phase:'bind',input:{model:normalized.model,choices:{},context}});
+  assert.equal(bound.binding.payload.source,'retained-A');
+  const checked=runCapturedProviderBinding({...options,phase:'check',input:{binding:bound.binding,context,action:{kind:'command'}}});
+  assert.equal(checked.status,'ready','fixture transport result only, not real provider qualification');
 });
 
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{
