@@ -1,5 +1,6 @@
 # Decisions
 
+* [Messaging capabilities consume kernel contracts and own provider behavior](messaging-capability-contract-boundary.md) - OATS supplies provider-neutral messaging intent and lifecycle contracts while the selected capability implements native identity, membership, transport and qualification.
 * [Prioritize fresh Portable Souls deployments over historical migration](fresh-install-first-portable-rollout.md) - Controlled Portable Souls rollouts use fresh provisioning while historical migration is deferred without discarding state or changing target invariants.
 * [Rebuild OATS knowledge in a dedicated repository around domain-expert souls](expert-souls-and-knowledge-rebuild.md) - After the knowledge implementation is complete, create a separate OATS knowledge repository and rebuild domain-expert souls through a strict audit of current and inherited knowledge rather than bulk migration.
 * [OATS provides a reference knowledge theory while capabilities own runtime behavior](provider-neutral-knowledge-and-harvest.md) - OATS maintains canonical default knowledge theory and an authoring expert, while each knowledge capability supplies its complete runtime behavior and may choose a different theory.

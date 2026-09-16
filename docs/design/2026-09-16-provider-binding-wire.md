@@ -88,6 +88,11 @@ binding is not evidence of enrollment/privacy/readiness. Non-messaging providers
 cannot set messagingChoice. Disabled messaging is represented by no messaging
 provider and `{schemaVersion:1,enabled:false}`, not an invented private team.
 
+For messaging lifecycle integration, the [capability contract boundary](2026-09-16-messaging-capability-contract.md)
+assigns generic intent/invocation to the kernel and native identity/team/transport
+behavior to the capability. Missing additional invocation fields need one reviewed
+versioned projection, not aweb-specific kernel behavior.
+
 ## Check
 
 `input` is exactly `{binding,context,action}`. Binding is the complete immutable
