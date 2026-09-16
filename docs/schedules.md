@@ -48,6 +48,8 @@ and no queue.
   from durable context; the job follows that worker until its home is gone.
   Command return is not task completion. Avoid binding durable work to a
   disposable source-home cwd; see [OKF v2 source jobs](#okf-v2-source-jobs).
+  New exact-record command definitions use the fields described in
+  [Captured execution and recurrence](#captured-execution-and-recurrence).
 - **wake** `{id, enabled, cron, tz, kind: "wake", home, message}` — every
   due minute inspects the instance at `home` through its session receipts.
   Running: `message` is delivered once with `session input`. Not running
@@ -77,6 +79,60 @@ required IANA zone; both are evaluated by the croner library. `--wake-every
 N` at spawn time means `*/N * * * *`: every 7 fires at :00, :07, ... :56 and
 then :00 again, so 1, 5, 10, 15 and 30 give an even cadence.
 
+## Captured execution and recurrence
+
+A new captured command definition is explicitly versioned and chooses its
+recurrence policy:
+
+```json
+{
+  "id": "retained-job",
+  "definitionVersion": 2,
+  "recurrencePolicy": "capture",
+  "kind": "command",
+  "cwd": "/absolute/workspace",
+  "argv": [
+    "oats", "example-action", "run",
+    "--deployment", "/absolute/deployment",
+    "--resolution", "sha256-...",
+    "--", "--provider-argument"
+  ],
+  "responsibleHuman": null,
+  "cron": "0 * * * *",
+  "tz": "UTC"
+}
+```
+
+`capture` requires the explicit deployment/resolution selector pair in the
+**saved argv**. Adding or updating the definition derives an immutable
+`execution` capsule containing that exact target, resolution, input references
+and explicitly supplied responsible-human value. The scheduler verifies the
+capsule ID and calls the exact captured-action loader before acquiring a launch
+slot or invoking the CLI. The capsule is written into the attempt before the
+child process runs and is retained on the result. Definition edits affect later
+admissions only; an unknown attempt, `run`, or reconciliation never replaces its
+capsule with the edited definition or today's config/lock. Scheduler launch also
+scrubs ambient `OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is
+authority.
+
+`prepare-on-tick` is a distinct explicit policy for a genuinely new tick. It is
+accepted as a version-2 definition but currently reports `migration-required`
+at admission because the preparation transaction adapter is not yet available.
+It never falls back to current-context command execution. Captured spawn,
+operation and wake definitions likewise remain unavailable until their public
+captured consumer adapters exist; capture is currently accepted only for
+capability-command jobs. A wake continues to start its existing home through the
+legacy lifecycle boundary in this release.
+
+Definitions without `definitionVersion`/`recurrencePolicy` are legacy v1
+definitions. They retain the old release behavior during migration and are not
+reported as captured execution. `list`/`show` report their `executionStatus` as
+`{kind:"legacy",capture:"unknown",migrationRequired:true}`. A captured definition
+reports only `capture:"recorded"` until action admission verifies the retained
+record and current exact approval; it does not claim launch readiness. Partial,
+malformed or unsupported versioned definitions are invalid/blocked, never
+reinterpreted as legacy.
+
 ## Commands
 
 ```sh
@@ -100,12 +156,17 @@ running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`.
 
 ## What a run reports
 
-`launched` (spawn or command returned), `active` (the instance is running;
+`launched` (spawn or command returned), `blocked` (versioned execution
+admission refused before a launch slot or child process), `active` (the instance is running;
 a home whose retirement is pending still counts, its runtime may be alive),
 `ended` (its home is gone), `stopped` (home present, nothing running: needs
 attention, never removed for you), `launch-failed`, `unknown`, and for wake
 jobs `delivered`, `started` or `skipped`. The kernel never claims a task
 succeeded.
+
+`blocked` includes an unavailable exact record/approval and the currently
+unimplemented `prepare-on-tick` adapter. The result preserves the typed
+`errorCode`; no attempt capsule or launch lock is created.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed
 out or answered no envelope, an envelope named an instance the roster
@@ -132,13 +193,14 @@ or malformed definition is reported on that job and the rest of the tick
 continues.
 
 `disable` never stops anything. `update` never touches a running instance,
-and while a job holds a slot or has an unresolved attempt what its run is
-tracked or reconciled by (kind, agent, agentsRoot, repo, purpose, home, cwd,
-argv) cannot change; cron, tz, task, message, runtime, model and enabled
-can. A cold wake persists its slot before the session start runs and keeps
-it on any start exception, whatever its code (the kernel can refuse while
-recording, after the session exists); the next observation releases it once
-the runtime is proven stopped or absent, one tick at worst.
+and while a job holds a slot or has an unresolved attempt its complete
+execution identity (including a versioned capsule), kind and target cannot
+change; cron, tz and enabled can. Legacy definitions retain their narrower
+compatibility behavior until migrated. A cold wake persists its slot before
+the session start runs and keeps it on any start exception, whatever its code
+(the kernel can refuse while recording, after the session exists); the next
+observation releases it once the runtime is proven stopped or absent, one tick
+at worst.
 `remove` refuses while the job's instance is still tracked (`--force`
 forgets the job without stopping anything). Retiring an instance removes the
 wake jobs bound to its home; a wake whose home is gone otherwise stays
