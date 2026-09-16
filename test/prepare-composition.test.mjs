@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding } from '../lib/core.mjs';
+import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, withCapturedBindingFile } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
@@ -130,7 +130,11 @@ test('preparation resolves approved provider fields in the same engine and never
   writeFileSync(manifestFile,JSON.stringify(manifest));
   const soul=JSON.parse(readFileSync(soulFile,'utf8'));soul.knowledge={contract:'example.locations',version:1,payload:{location:'A'}};
   writeFileSync(soulFile,JSON.stringify(soul));
-  f.write('packages/action/cap/binding.mjs',`import {readFileSync} from 'node:fs';
+  f.write('packages/action/cap/show.mjs',`import {readFileSync,statSync} from 'node:fs';
+    const snapshot=process.env.OATS_BINDING_FILE,binding=JSON.parse(readFileSync(snapshot,'utf8'));
+    console.log(JSON.stringify({location:binding.payload.location,snapshot,mode:statSync(snapshot).mode & 0o777}));`);
+  const unavailable=join(f.root,'provider-unavailable');
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
     if(r.phase==='normalize') {
       const source=r.input.declarations.find(d=>d.kind==='soul'),operator=r.input.declarations.find(d=>d.kind==='operator');
@@ -138,7 +142,7 @@ test('preparation resolves approved provider fields in the same engine and never
       const candidates=operator?.value.bindings?.location===undefined?[]:[{key,kind:'operator',value:operator.value.bindings.location,origin:operator.origins['/bindings/location']}];
       result={requirements,candidates,model:{}};
     } else if(r.phase==='bind') result={payloadContract:'example.locations',payloadVersion:1,payload:{location:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
-    else result={status:'ready',problems:[]};
+    else result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};
     console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
   f.git('add','.');f.git('commit','--quiet','-m','source provider policy');
   const pending=prepareCapturedComposition(f.input,f.options);
@@ -152,19 +156,30 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(conflict.status,'conflict');assert.equal(conflict.resolution,null);assert.equal(conflict.problems[0].code,'requirement-conflict');
   rmSync(f.repo,{recursive:true});
   assert.equal(loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'inspect'}}).record.bindings.knowledge.payload.location,'A');
-  assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}}),{code:'provider-not-qualified'},'consumer readiness still refuses until connected');
+  writeFileSync(join(f.deployment,'oats-config.yaml'),'poison: never use this current configuration\n');
+  const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  const command=[cli,'--deployment',f.deployment,'--resolution',prepared.resolution.id,'example-action','show','--json'];
+  const answer=JSON.parse(execFileSync(process.execPath,command,{encoding:'utf8',env:{...process.env,OATS_BINDING_FILE:'/poison/snapshot'}}));
+  assert.equal(answer.location,'A');assert.equal(answer.mode,0o400);assert.equal(existsSync(answer.snapshot),false,'invocation snapshot removed after synchronous command');
+  const loaded=loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}});
+  let failedSnapshot;
+  assert.throws(()=>withCapturedBindingFile(loaded,env=>{failedSnapshot=env.OATS_BINDING_FILE;throw Error('fixture child failure');}),/fixture child failure/);
+  assert.equal(existsSync(failedSnapshot),false,'failure also removes only the owned invocation snapshot');
+  writeFileSync(unavailable,'not ready');
+  assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}}),{code:'provider-unavailable'},'mutable readiness is checked again, not cached as permanent record authority');
 });
 
-test('standalone OKF consumer prepares its actual retained binding payload with no kernel-private provider imports', {skip:!process.env.OATS_OKF_CONSUMER_REPO}, t=>{
+test('standalone OKF consumer prepares its actual retained binding payload with no kernel-private provider imports', {skip:!process.env.OATS_OKF_CONSUMER_REPO}, async t=>{
   const f=fixture(t,true),provider=process.env.OATS_OKF_CONSUMER_REPO,revision=process.env.OATS_OKF_CONSUMER_REV;
   assert.match(revision ?? '',/^[a-f0-9]{40}$/,'consumer must pin an exact provider commit');
   const archive=execFileSync('git',['-C',provider,'archive',revision,'oats-package'],{maxBuffer:16*1024*1024});
   const destination=join(f.repo,'packages/action');rmSync(destination,{recursive:true});mkdirSync(destination);
   execFileSync('tar',['-x','--strip-components=1','-C',destination],{input:archive});
-  const settings={'bindings-file':join(f.root,'host','bindings.json'),'state-dir':join(f.root,'state')};
+  const physicalRoot=realpathSync(f.root); // OKF deliberately refuses symlinked custody locators, including platform aliases.
+  const settings={'bindings-file':join(physicalRoot,'host','bindings.json'),'state-dir':join(physicalRoot,'state')};
   const soulFile=join(f.repo,'agents/expert/soul.yaml'),soul=JSON.parse(readFileSync(soulFile,'utf8'));
   soul.requires.knowledge={capability:'oats.okf',source:'repo:packages/action',settings};
-  soul.knowledge={contract:'oats.okf.locations',version:1,payload:{owner:'expert-owner',stores:{private:{fixed:{id:'private-kb',kind:'directory',path:`path:${join(f.root,'knowledge')}`}}},reads:[],owns:[{node:'expert',destination:'private'}]}};
+  soul.knowledge={contract:'oats.okf.locations',version:1,payload:{owner:'expert-owner',stores:{private:{fixed:{id:'private-kb',kind:'directory',path:`path:${join(physicalRoot,'knowledge')}`}}},reads:[],owns:[{node:'expert',destination:'private'}]}};
   writeFileSync(soulFile,JSON.stringify(soul));f.git('add','-A');f.git('commit','--quiet','-m','real OKF consumer');
   const pending=prepareCapturedComposition(f.input,f.options);assert.equal(pending.resolution,null,JSON.stringify(pending));
   approveAvailableCapability(f.deployment,pending.selections[0].artifactSet,'oats.okf',{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
@@ -175,6 +190,20 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poison: current configuration is not binding authority\n');
   const checked=runCapturedProviderBinding({deployment:f.deployment,artifacts:record.artifacts,capability:'oats.okf',phase:'check',settings:{},input:{binding,context:record.context,action:{kind:'command'}}});
   assert.notEqual(checked.status,'ready','absent accepted base must not be qualified');
+  const inspected=loadCapturedDispatch({deployment:f.deployment,resolution:ready.resolution,action:{kind:'inspect'}});
+  const root=inspected.manifests.get('oats.okf')._dir;
+  const {initBase}=await import(pathToFileURL(join(root,'lib/migration.mjs')));
+  const nodes=join(physicalRoot,'fixture-nodes.json');writeFileSync(nodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));
+  mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
+  initBase(binding.payload.runtime.bindings,'private-kb',nodes,undefined,{confirm:true}); // Administrative fixture bootstrap only.
+  const loaded=loadCapturedDispatch({deployment:f.deployment,resolution:ready.resolution,action:{kind:'command',capability:'oats.okf',name:'binding-check'}});
+  const moduleUrl=pathToFileURL(join(root,'lib/binding-wire.mjs')).href;
+  let invocation;
+  const projected=withCapturedBindingFile(loaded,env=>{
+    invocation=env.OATS_BINDING_FILE;
+    return JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`import {loadInvocationKnowledgeBinding} from ${JSON.stringify(moduleUrl)}; const r=loadInvocationKnowledgeBinding();console.log(JSON.stringify({kind:r.kind,owner:r.binding.payload.owner}));`],{encoding:'utf8',env:{...process.env,...env}}));
+  });
+  assert.deepEqual(projected,{kind:'captured',owner:'expert-owner'});assert.equal(existsSync(invocation),false);
 });
 
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{

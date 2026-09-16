@@ -32,7 +32,8 @@ the retained manifest. Settings are already selected and schema-validated.
 
 Success echoes the identity fields and contains `ok:true,result:{...}`. Failure
 echoes them and contains `ok:false,error:{code:"needs-configuration"}`. It has no
-result. Allowed error/problem codes are needs-configuration, requirement-conflict,
+result. All structured responses exit 0: transport completed, while `ok` is the
+semantic outcome. Nonzero exit/signal/timeout is transport failure. Allowed error/problem codes are needs-configuration, requirement-conflict,
 invalid-binding, authorization-required, host-requirement-missing,
 provider-unavailable and provider-not-qualified. Optional provider error/problem
 `message` is permitted but never forwarded by the kernel.
@@ -96,8 +97,32 @@ authorization-required/unavailable. Problems is an array of code + optional mess
 objects using the error-code set above. Ready requires an empty problems array.
 
 Check performs provider-owned READ-ONLY mutable readiness/credential/store/member
-checks through existing native/provider mechanisms. It does not change binding,
+checks through existing native/provider mechanisms. Bounded private temporary Git
+staging for fetch/checkout/read is allowed with owned cleanup; accepted stores,
+operator checkouts and remotes must not be mutated. It does not change binding,
 initialize a base, enroll an identity, create a team, or schedule/publish work.
 Unsupported/unqualified checks return non-ready. Results are evaluated at each
 action boundary and never persisted as permanent authority in the resolution.
 A real provider acceptance is still required; fixture success is not certification.
+
+## Captured command invocation
+
+The captured action loader runs the provider's check against the verified record at
+each command/operation/hook load; non-ready blocks before the action. Inspection and
+instruction composition do not enroll or claim readiness. Full lifecycle consumers
+remain a separate integration step.
+
+For synchronous captured CLI commands, core writes the exact ProviderBinding1 to a
+fresh private invocation directory outside the home and retained artifacts. It
+passes only its absolute path in `OATS_BINDING_FILE`; the selected capability's
+retained root and effective settings are supplied separately. The file is owner-read
+only and removed with its owned directory after success or failure. A pre-existing
+ambient snapshot variable is scrubbed. The caller must not exit before cleanup.
+
+This is an ephemeral invocation input, never the operator's live `bindings-file`
+or a durable worker pointer. A provider must distinguish absent (legacy) from
+present-but-invalid (refuse, no fallback). Independent work must freeze its needed
+binding/runtime data under existing durable source/attempt custody before returning;
+no async worker may rely on the invocation file remaining. No credential value is
+part of the ProviderBinding contract. Abrupt process death can leave private scratch;
+it does not make that scratch selectable authority or justify unsafe cleanup.

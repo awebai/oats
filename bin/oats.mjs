@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch, prepareCapturedComposition,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch, prepareCapturedComposition, withCapturedBindingFile,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -167,12 +167,13 @@ function capturedCommand(selector) {
     const env = { ...process.env };
     for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
     Object.assign(env, { OATS_DEPLOYMENT: selector.deployment, OATS_RESOLUTION: selector.resolution.id,
-      OATS_CAPABILITY: loaded.capability.id, OATS_SETTINGS: JSON.stringify(loaded.capability.settings),
+      OATS_CAPABILITY: loaded.capability.id, OATS_CAPABILITY_ROOT: loaded.capability.manifest._dir,
+      OATS_SETTINGS: JSON.stringify(loaded.capability.settings),
       OATS_CLI_BIN: CLI_BIN, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment });
     const forwarded = args.slice(2); if (forwarded[0] === "--") forwarded.shift();
-    const child = spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
-      cwd: selector.deployment, env, stdio: "inherit",
-    });
+    const child = withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
+      cwd: selector.deployment, env: { ...env, ...bindingEnv }, stdio: "inherit",
+    }));
     if (child.error) fail("E_CAPABILITY_BROKEN", child.error.message);
     process.exit(child.status ?? 1);
   } catch (error) { fail(error.code || "E_CAPABILITY_BROKEN", error.message); }

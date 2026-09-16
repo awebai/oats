@@ -2,8 +2,9 @@
 
 `prepareCapturedComposition(input)` now connects native by-reference import,
 workspace/adoption choices, package preparation, manifest defaults and retained
-resources into real records. This is command/curriculum preparation, NOT yet
-launch/profile/provider/migration completion.
+resources into real records. Provider-owned binding preparation and captured command
+readiness now use the [retained codec broker](2026-09-16-provider-binding-codecs.md).
+This is NOT yet full launch/runtime/lifecycle/migration completion.
 
 Public CLI (new command/curriculum preparation, no launch):
 
@@ -40,9 +41,12 @@ command/hook files, and dedicated helper records. Duplicate skill names or a hel
 own unresolved software policy refuse rather than silently inheriting incompatible
 choices. Helper records are committed before the main record.
 
-Missing provider binding qualification returns `needs-configuration` with no main
-resolution, while exact prospective package sets remain available for explicit
-artifact-set approval. Provider code does not run merely because it was downloaded.
+Missing provider binding interface/approval or unresolved fields return
+`needs-configuration` with no main resolution, while exact prospective package sets
+remain available for explicit artifact-set approval. Approved providers normalize
+fields into the same choice resolver, then render complete nonsecret bindings.
+Mutable host/provider readiness is checked separately at each captured action;
+a static binding is not certification. Provider code does not run merely because it was downloaded.
 No guessed nonsecret payload, owner, enrollment or privacy guarantee is generated.
 Valid retained orphan objects/records may survive later refusal or selection CAS loss;
 shared immutable stores are never rolled back wholesale.
@@ -70,7 +74,7 @@ with that lane. A distinct execution ID identifies each admitted attempt; immuta
 capsule content identity must not collapse two otherwise identical work intents.
 
 Current records deliberately have no launch recipe or managed runtime-package claim.
-Provider codecs, full helper-policy planning, work-target setup, captured lifecycle
-adoption and explicit historical migration remain the next integration work. Native
+Full helper-policy planning, work-target setup, captured lifecycle adoption and
+explicit historical migration remain the next integration work. Native
 source-deletion tests prove preparation, curriculum/helper reads, explicit prospective
 approval and retained command execution—not those unfinished paths.

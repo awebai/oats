@@ -85,6 +85,14 @@ origin-map keys are made subtree-relative while original document pointers/spans
 intact. A real standalone-OKF consumer probe at a pinned source commit verifies the
 cross-repository payload and source-deleted, non-ready check (an absent base is not ready).
 
-Captured command/lifecycle readiness consumers still need to connect this broker.
+Captured action loading now runs read-only provider readiness against its exact
+binding; non-ready refuses before execution and is not cached in the immutable record.
+Synchronous captured CLI commands receive a private `OATS_BINDING_FILE` snapshot,
+not live configuration, with owned cleanup after success/failure. A real pinned OKF
+consumer fixture verifies its native snapshot loader against an initialized temporary
+base after source/config deletion. That is integration evidence, not production
+provider or privacy qualification.
+
+Captured lifecycle/registration consumers and full helper policy remain unfinished.
 Default-provider work remains in its own source repository. No live provider,
 private-team behavior, new release or deployment was qualified here.
