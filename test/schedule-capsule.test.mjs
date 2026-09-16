@@ -67,6 +67,7 @@ test("ExecutionCapsule1 separates reusable content identity from fresh admission
 
 test("capture policy admits exact retained authority before a slot and mints a fresh intent before each command", (t) => {
   const ws = workspace(t), admitted = [], calls = [], executionIds = [];
+  assert.throws(() => addSchedule(ws, { ...spec(ws, "missing-human"), responsibleHuman: undefined }), (error) => error.code === "E_SCHEDULE_INVALID" && /responsibleHuman/.test(error.message));
   const saved = addSchedule(ws, spec(ws, "captured"));
   assert.equal(saved.definitionVersion, 2); assert.equal(saved.recurrencePolicy, "capture");
   assert.equal(readDefinitions(ws).version, 2, "a captured definition upgrades the outer file so old readers fail closed");
@@ -112,7 +113,8 @@ test("failed admission and unavailable prepare-on-tick are blocked before comman
   assert.equal(commands, 0); assert.equal(jobLockInfo(ws, "denied"), null); assert.equal(readState(ws).jobs.denied.attempt, undefined);
 
   addSchedule(ws, { id: "future", definitionVersion: 2, recurrencePolicy: "prepare-on-tick", kind: "command", cwd: ws,
-    argv: ["oats", "status"], cron: "* * * * *", tz: "UTC" });
+    argv: ["oats", "example-action", "show", "--", "--json"], cron: "* * * * *", tz: "UTC",
+    preparation: { deployment: ws, source: { source: "git:https://example.test/repo.git", soul: "agents/expert", revision: "main", alias: "expert" } } });
   const wakeHome = join(ws, "agents/dev/instances/wake"); write(join(wakeHome, "instance.json"), "{}");
   assert.throws(() => addSchedule(ws, { id: "unsafe-wake", definitionVersion: 2, recurrencePolicy: "prepare-on-tick", kind: "wake", home: wakeHome,
     message: "wake", cron: "* * * * *", tz: "UTC" }), (error) => error.code === "E_SCHEDULE_INVALID" && error.field === "recurrencePolicy");
@@ -121,6 +123,36 @@ test("failed admission and unavailable prepare-on-tick are blocked before comman
   assert.equal(future.action, "blocked"); assert.equal(future.errorCode, "migration-required");
   assert.equal(readState(ws).jobs.future.lastRun.outcome, "blocked");
   assert.equal(commands, 0); assert.equal(jobLockInfo(ws, "future"), null);
+});
+
+test("prepare-on-tick uses the injected generic adapter and admits a new immutable capsule per tick", (t) => {
+  const ws = workspace(t), prepared = [], dispatched = [], ids = [];
+  const preparation = { deployment: ws, source: { source: "git:https://example.test/repo.git", soul: "agents/expert", revision: "main", alias: "expert" }, mode: { work: "directory" } };
+  addSchedule(ws, { id: "prepared", definitionVersion: 2, recurrencePolicy: "prepare-on-tick", kind: "command", cwd: ws,
+    argv: ["oats", "example-action", "show", "--", "--json"], preparation, cron: "* * * * *", tz: "UTC" });
+  let prepareCalls = 0;
+  const refs = [RID_A, RID_B];
+  const io = {
+    prepare: (input) => { prepared.push(input); return { executionBinding: { schemaVersion: 1, deployment: ws, resolution: { schemaVersion: 1, id: refs[prepareCalls++] } }, responsibleHuman: null, inputRefs: { source: `input-${prepareCalls}` } }; },
+    admit: (request) => { dispatched.push(request); },
+    command: ({ argv: actual }) => {
+      const execution = readState(ws).jobs.prepared.attempt.execution; ids.push(execution.executionId);
+      assert.equal(actual.includes("--deployment"), true); assert.equal(actual.includes("--resolution"), true);
+      assert.equal(actual.indexOf("--resolution") < actual.indexOf("--"), true, "selectors are saved before protected child arguments");
+      return { schemaVersion: 1, ok: true, result: {} };
+    },
+  };
+  const dry = tickWorkspace(ws, { now: at("2026-09-16T10:06:00Z"), reg: { maxConcurrent: 1 }, io, dryRun: true });
+  assert.equal(dry[0].action, "due"); assert.equal(prepareCalls, 0, "dry-run never prepares or mints an attempt");
+  tickWorkspace(ws, { now: at("2026-09-16T10:06:00Z"), reg: { maxConcurrent: 1 }, io });
+  tickWorkspace(ws, { now: at("2026-09-16T10:07:00Z"), reg: { maxConcurrent: 1 }, io });
+  assert.deepEqual(prepared, [preparation, preparation]);
+  assert.deepEqual(dispatched.map((entry) => entry.resolution.id), [RID_A, RID_B]);
+  assert.equal(new Set(ids).size, 2); assert.equal(readState(ws).jobs.prepared.lastRun.execution.resolution.id, RID_B);
+
+  const before = ids.length;
+  const blocked = tickWorkspace(ws, { now: at("2026-09-16T10:08:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ problems: [{ code: "needs-configuration" }] }) } });
+  assert.equal(blocked[0].action, "blocked"); assert.equal(blocked[0].errorCode, "needs-configuration"); assert.equal(ids.length, before);
 });
 
 test("captured wake templates bind instance executionBinding and remain gated before lifecycle side effects", (t) => {
