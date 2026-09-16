@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, sy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { capabilityArtifactIntegrity } from "../lib/artifact-tree.mjs";
+import { capabilityIntegrity } from "../lib/core.mjs";
 import { decodeLegacyLockBytes } from "../lib/legacy-lock-codec.mjs";
 import { readPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
 import { MATERIALIZED_CAPABILITY_FORMAT, verifyHistoricalCapabilityCandidate, verifyHistoricalHomeCapabilityCandidate } from "../lib/portable-migration-artifacts.mjs";
@@ -103,6 +104,37 @@ test("verified home association publishes only sanitized partial evidence outsid
   assert.equal(proof.approvalAuthority, "none"); assert.equal(proof.retentionStatus, "not-retained");
   assert.equal(Object.hasOwn(proof.capability, "source"), false, "unclassified legacy source text is not copied into new evidence");
   assert.equal(existsSync(join(f.deployment, ".agents", "resolutions")), false);
+});
+
+test("explicit v1 digest callback verifies legacy artifacts without reinterpreting trust or historical modes", (t) => {
+  const deployment = mkdtempSync(join(tmpdir(), "oats-migration-v1-artifact-"));
+  t.after(() => rmSync(deployment, { recursive: true, force: true }));
+  const capability = "example.legacy", artifactPath = `.agents/capabilities/installed/${capability}`, artifact = join(deployment, artifactPath);
+  write(join(artifact, "oats.json"), { capability, version: "1.0.0", description: "Legacy candidate", commands: { show: "show.mjs" } });
+  write(join(artifact, "show.mjs"), "console.log('legacy');\n"); chmodSync(join(artifact, "show.mjs"), 0o644);
+  const integrity = capabilityIntegrity(artifact), homePath = "agents/dev/instances/dev-v1";
+  write(join(deployment, "legacy.json"), { lockfileVersion: 1, capabilities: { [capability]: {
+    source: "path:/historical/legacy", version: "1.0.0", integrity, trustedExecutables: true } } });
+  write(join(deployment, homePath, "instance.json"), { instance: "dev-v1", capabilityRuntime: [{ id: capability,
+    trust: { trusted: true, integrity }, hooks: {} }] });
+  const legacyLockDecoder = (bytes, context) => decodeLegacyLockBytes(bytes, { file: context.path });
+  const inventory = readPortableMigrationInventory(deployment, { lockFiles: ["legacy.json"], instanceHomes: [homePath] }, { legacyLockDecoder });
+  const request = { lockPath: "legacy.json", capability, artifactDir: artifactPath, homePath };
+  assert.throws(() => verifyHistoricalCapabilityCandidate(deployment, inventory, request, { legacyLockDecoder }), { code: "migration-held" });
+  const adapters = { legacyLockDecoder, legacyCapabilityDigest: capabilityIntegrity };
+  const first = verifyHistoricalHomeCapabilityCandidate(deployment, inventory, request, adapters);
+  assert.equal(first.artifact.artifact.historicalIntegrity.format, "oats.capability-legacy.v1");
+  assert.equal(first.artifact.artifact.manifest.path, "oats.json"); assert.equal(first.approvalAuthority, "none");
+  const reference = commitHistoricalHomeCapabilityEvidence(deployment, inventory, request, adapters);
+  const evidence = readResolutionEvidence(deployment, reference);
+  assert.equal(evidence.knownInputs.preserve.kind, "home-capability-v1");
+  assert.equal(evidence.knownInputs.preserve.capability.package, null);
+  assert.equal(Object.hasOwn(evidence.knownInputs.preserve.capability, "source"), false);
+
+  chmodSync(join(artifact, "show.mjs"), 0o744);
+  const second = verifyHistoricalCapabilityCandidate(deployment, inventory, request, adapters);
+  assert.equal(second.artifact.historicalIntegrity.value, first.artifact.artifact.historicalIntegrity.value, "literal v1 digest does not gain mode semantics");
+  assert.notEqual(second.artifact.observedIntegrity.value, first.artifact.artifact.observedIntegrity.value);
 });
 
 test("candidate verifier refuses missing rows, drift and legacy-v1 without inventing restoration", (t) => {

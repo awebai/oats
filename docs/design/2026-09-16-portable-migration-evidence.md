@@ -114,8 +114,15 @@ symlinked, oversized, replaced or drifting provenance file therefore cannot lend
 external/pre-hash bytes to the candidate. The old digest implementation and its
 historical mode limitations remain unchanged. The result labels modes
 `observed-at-migration`, trust/selection authority `none`, and retention
-`not-retained`. It does not support v1 without that format's separate
-historical digest verifier and does not publish the candidate.
+`not-retained`.
+
+V1 candidates require the existing literal legacy digest as an injected callback;
+the migration module never imports core or substitutes the v2 algorithm. It
+preflights and byte-witnesses bounded regular `oats.json`, requires its
+capability/version to match the v1 row, brackets old/new digest measurements, and
+still treats `trustedExecutables` only as evidence. No legacy source text is copied
+into the new evidence document.
+
 `verifyHistoricalHomeCapabilityCandidate` can additionally prove that one unchanged
 home's `capabilityRuntime` names exactly one capability with the same old digest.
 That is a narrow per-capability association only: the result remains `partial`,
