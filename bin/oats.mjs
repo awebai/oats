@@ -4931,7 +4931,7 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             packages/experimental/README.md
 
   oats prepare --dir <abs> --source <git repo> --revision <ref> --export <path>
-      --alias <name> [--work <mode>] [--json]  prepare a retained command/curriculum profile,
+      --alias <name> [--work <mode>] [--json]  prepare retained commands and curriculum,
                                             no launch; provider gaps report incomplete
   oats prepare --dir <abs> --workspace <git repo> --alias <advertised alias>
       [--workspace-revision <ref>] [--json]  same preparation through workspace imports
