@@ -24,6 +24,8 @@ and no queue.
   scheduler refuses it instead of ignoring capture policy. Existing legacy
   entries may remain visibly unmigrated; new entries in a v2 file must declare
   their policy. Commit the file if you want the schedule shared with the team.
+  Remote creation/update of v2 definitions must remain disabled until both ends
+  negotiate schedule API v2; the existing feature-only remote gate is not enough.
 - `<workspace>/.agents/schedules/state.json` — last attempted minute and
   last run per job (gitignored), plus one lock directory per running job.
 - `~/.oats/schedules/registry.json` — the host registry: which scopes the
