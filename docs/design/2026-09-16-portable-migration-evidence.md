@@ -63,6 +63,12 @@ private bytes by atomic no-replace hard link. Matching existing bytes are reused
 damaged existing evidence refuses without repair. Publication changes no source
 lock, home, schedule, session or approval state.
 
+`commitHistoricalHomeCapabilityEvidence` can publish the narrow verified
+home-to-v2-artifact association as `partial`. It persists capability/package IDs,
+paths and old/new digests, but deliberately omits unclassified legacy source,
+settings and command text; the original byte-addressed documents remain the
+witnesses. It still grants no selection, approval or retention authority.
+
 The validator can read a future `reconstructed` evidence document only when it has
 no unresolved inputs and names a shaped resolution reference. This slice exposes
 no writer for that state. A later dedicated historical verifier must establish and

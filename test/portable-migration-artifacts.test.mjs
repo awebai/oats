@@ -7,6 +7,7 @@ import { capabilityArtifactIntegrity } from "../lib/artifact-tree.mjs";
 import { decodeLegacyLockBytes } from "../lib/legacy-lock-codec.mjs";
 import { readPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
 import { MATERIALIZED_CAPABILITY_FORMAT, verifyHistoricalCapabilityCandidate, verifyHistoricalHomeCapabilityCandidate } from "../lib/portable-migration-artifacts.mjs";
+import { commitHistoricalHomeCapabilityEvidence, readResolutionEvidence } from "../lib/portable-migration-store.mjs";
 
 const hash = (letter) => `sha256-${letter.repeat(64)}`;
 function write(path, value) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n"); }
@@ -64,6 +65,18 @@ test("one home runtime digest can associate one v2 artifact but remains partial 
   const changed = readPortableMigrationInventory(f.deployment, { lockFiles: ["oats-lock.json"], instanceHomes: [f.homePath] }, { legacyLockDecoder: f.legacyLockDecoder });
   assert.throws(() => verifyHistoricalHomeCapabilityCandidate(f.deployment, changed, request,
     { legacyLockDecoder: f.legacyLockDecoder }), { code: "migration-held" });
+});
+
+test("verified home association publishes only sanitized partial evidence outside resolutions", (t) => {
+  const f = fixture(t), request = { lockPath: "oats-lock.json", capability: f.capability,
+    artifactDir: `.agents/capabilities/installed/${f.capability}`, homePath: f.homePath };
+  const reference = commitHistoricalHomeCapabilityEvidence(f.deployment, f.inventory, request, { legacyLockDecoder: f.legacyLockDecoder });
+  const evidence = readResolutionEvidence(f.deployment, reference), proof = evidence.knownInputs.preserve;
+  assert.equal(evidence.status, "partial"); assert.equal(evidence.resolution, null);
+  assert.equal(proof.kind, "home-capability-v2"); assert.equal(proof.association, "capability-runtime-integrity-match");
+  assert.equal(proof.approvalAuthority, "none"); assert.equal(proof.retentionStatus, "not-retained");
+  assert.equal(Object.hasOwn(proof.capability, "source"), false, "unclassified legacy source text is not copied into new evidence");
+  assert.equal(existsSync(join(f.deployment, ".agents", "resolutions")), false);
 });
 
 test("candidate verifier refuses missing rows, drift and legacy-v1 without inventing restoration", (t) => {
