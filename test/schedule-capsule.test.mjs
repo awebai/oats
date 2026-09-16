@@ -73,6 +73,7 @@ test("capture policy admits exact retained authority before a slot and mints a f
   assert.deepEqual(scheduleExecutionStatus(saved, { scheduledFor: "past" }).attempt, { kind: "legacy", capture: "unknown", migrationRequired: true });
   const sample = admitExecutionCapture(saved.capturedExecution, { executionId: "attempt-sample" });
   assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 1, execution: sample }).attempt.executionId, "attempt-sample");
+  assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 1, execution: sample }, { executionId: "another-intent" }).attempt.kind, "invalid");
   assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 2, execution: sample }).attempt.kind, "invalid");
   assert.equal(readDefinitions(ws).jobs.captured.capturedExecution.executionId, undefined, "a recurring definition has content identity, not admission identity");
   const io = {
@@ -185,6 +186,7 @@ test("an admitted capsule survives definition edits and reconciliation after sou
   const result = reconcile(ws, "recover", { io: { inspect: () => ({ present: true, state: "unknown" }) } });
   assert.equal(result.reconciled, "adopted");
   assert.equal(result.schedule.lastRun.execution.resolution.id, RID_A, "reconciliation keeps admitted A despite future definition B");
+  assert.equal(jobLockInfo(ws, "recover").executionId, "attempt-a", "reconciled slot remains bound to the admitted intent");
   assert.equal(readDefinitions(ws).jobs.recover.capturedExecution.resolution.id, RID_B);
 });
 

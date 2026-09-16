@@ -126,7 +126,8 @@ slot, and only then invokes the CLI. Thus two attempts with identical content
 have the same capsule digest but remain different intents. Definition edits
 affect later admissions only; an unknown attempt, `run`, or reconciliation never
 replaces its capsule with the edited definition or today's config/lock. Captured
-attempts carry their own `schemaVersion:1`; malformed/unknown attempt versions stay
+attempts carry their own `schemaVersion:1`; their launch-slot lock names the same
+`executionId`. A mismatching lock or malformed/unknown attempt version stays
 unresolved and cannot dispatch. Scheduler launch also scrubs ambient
 `OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is authority.
 
