@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
@@ -51,6 +51,21 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(helper.composition.text.startsWith('Worker instructions'));
   assert.ok(loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition.text.includes('Capability instructions'));
 });
+test('public prepare CLI uses the native transport and returns the exact immutable binding',t=>{
+  const f=fixture(t),ssh=join(f.root,'fixture-ssh');
+  // Native SSH transport with a controlled upload-pack endpoint: no network,
+  // model, daemon, or production-only test bypass is needed.
+  writeFileSync(ssh,`#!/bin/sh\nexec git-upload-pack '${f.repo.replaceAll("'", "'\\''")}'\n`);chmodSync(ssh,0o700);
+  const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  const output=execFileSync(process.execPath,[cli,'prepare','--dir',f.deployment,'--source','git:ssh://example.invalid/prepare.git','--revision','topic','--export','agents/expert','--alias','cli-expert','--json'],{
+    encoding:'utf8',env:{...f.options.repositoryOptions.environment,GIT_SSH_COMMAND:ssh,GIT_SSH_VARIANT:'ssh'},
+  });
+  const envelope=JSON.parse(output);assert.equal(envelope.ok,true);
+  assert.equal(envelope.result.status,'approval-required');assert.equal(envelope.result.source.alias,'cli-expert');
+  assert.equal(envelope.result.executionBinding.resolution.id,envelope.result.resolution.id);
+  assert.equal(readCapturedResolution(f.deployment,envelope.result.resolution).subject.soul.alias,'cli-expert');
+});
+
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{
   const f=fixture(t),source=f.input.source.source,reference=f.input.source;
   f.write('oats-workspace.yaml',JSON.stringify({schemaVersion:1,name:'Fixture',imports:[

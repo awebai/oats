@@ -5,6 +5,20 @@ workspace/adoption choices, package preparation, manifest defaults and retained
 resources into real records. This is command/curriculum preparation, NOT yet
 launch/profile/provider/migration completion.
 
+Public CLI (new command/curriculum preparation, no launch):
+
+```text
+oats prepare --dir /deployment --source git:github.com/example/souls --revision v1 --export agents/expert --alias expert --json
+oats prepare --dir /deployment --workspace git:github.com/example/workspace --alias expert --json
+```
+
+Use `--workspace-revision` to select a workspace revision explicitly; otherwise the
+hosting default is observed, never guessed. `--work` overrides the source's work hint.
+A new-work request needs its own explicit absolute `--dir`; an inherited command
+selector does not supply or change that intent. Unsupported/mixed flags refuse.
+Incomplete preparation returns a failing envelope with prospective software details;
+a complete but unapproved record reports `approval-required`, not executable readiness.
+
 Input names an explicit deployment and four-field source reference
 `{source,soul,revision,alias}`. A workspace request permits selecting an advertised
 alias instead. Optional member context requires reciprocal eligibility. Workspace

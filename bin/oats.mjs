@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch, prepareCapturedComposition,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -52,7 +52,7 @@ import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -89,6 +89,31 @@ const JSON_MODE = args.includes("--json");
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
 const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
+
+function prepareCmd() {
+  const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
+  const values = new Map(), allowed = new Set(["dir", "source", "revision", "export", "alias", "workspace", "workspace-revision", "work"]);
+  for (let index = 1; index < args.length; index++) {
+    if (args[index] === "--json") continue;
+    const key = args[index].startsWith("--") ? args[index].slice(2) : "";
+    if (!allowed.has(key) || values.has(key) || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "prepare needs unique named source/context arguments; use prepare --help");
+    values.set(key, args[++index]);
+  }
+  const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
+  if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");
+  if (source ? !values.get("revision") || !values.get("export") : !values.get("workspace") || values.has("revision") || values.has("export")) fail("E_BAD_ARGS", "choose a complete source/revision/export reference or a workspace-advertised alias");
+  if (values.has("workspace-revision") && !values.has("workspace")) fail("E_BAD_ARGS", "--workspace-revision requires --workspace");
+  const origin = { kind: "operator", document: { kind: "operator", id: "oats-prepare" }, pointer: "/source" };
+  const input = { deployment, source: source ? { source, revision: values.get("revision"), soul: values.get("export"), alias } : alias, origin,
+    ...(values.has("work") ? { mode: values.get("work") } : {}),
+    ...(values.has("workspace") ? { workspace: { source: values.get("workspace"), origin: { ...origin, pointer: "/workspace" },
+      ...(values.has("workspace-revision") ? { revision: values.get("workspace-revision") } : {}) } } : {}) };
+  try {
+    const result = prepareCapturedComposition(input);
+    if (!result.resolution) fail("needs-configuration", "preparation is incomplete; no executable resolution was published", result);
+    if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+  } catch (error) { fail(error.code || "E_PREPARE_FAILED", error.message); }
+}
 
 /** Exact-selector dispatch enters before any current-context resolver. Its
  * child receives the same selector, never an invoking agent's ambient identity. */
@@ -4590,6 +4615,12 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
+// Explicit new-work preparation uses its own absolute --dir and source input;
+// an inherited command binding must not turn it into a current-context fallback.
+if (cmd === "prepare") {
+  if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
+  prepareCmd(); process.exit(0);
+}
 let captured;
 try { captured = capturedSelector(args); }
 catch (error) {
@@ -4899,6 +4930,11 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             design, repo checkout only; see
                                             packages/experimental/README.md
 
+  oats prepare --dir <abs> --source <git repo> --revision <ref> --export <path>
+      --alias <name> [--work <mode>] [--json]  prepare a retained command/curriculum profile,
+                                            no launch; provider gaps report incomplete
+  oats prepare --dir <abs> --workspace <git repo> --alias <advertised alias>
+      [--workspace-revision <ref>] [--json]  same preparation through workspace imports
   oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
                                             inspect exact retained inputs, not today's configuration
   oats trust <capability> --deployment <abs> --resolution <id> [--json]
