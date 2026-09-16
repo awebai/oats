@@ -115,8 +115,8 @@ remain a separate integration step.
 For synchronous captured CLI commands, core writes the exact ProviderBinding1 to a
 fresh private invocation directory outside the home and retained artifacts. It
 passes only its absolute path in `OATS_BINDING_FILE`; the selected capability's
-retained root and effective settings are supplied separately. The file is owner-read
-only and removed with its owned directory after success or failure. A pre-existing
+retained root and effective settings are supplied separately. The file is owner-only
+mode `0600` and removed with its owned directory after success or failure. A pre-existing
 ambient snapshot variable is scrubbed. The caller must not exit before cleanup.
 
 This is an ephemeral invocation input, never the operator's live `bindings-file`
@@ -137,8 +137,8 @@ receipts require `sourceIdentity:null`. The context equals the durable execution
 deployment, the role is the retained canonical source instructions (bounded to
 128 KiB), and the provider binding contains no credential values.
 
-The file uses the same owner-read-only, outside-home/retained-artifact custody and
-normal success/failure cleanup posture as `OATS_BINDING_FILE`. The home argument
+The file uses the same owner-only mode `0600`, outside-home/retained-artifact custody
+and normal success/failure cleanup posture as `OATS_BINDING_FILE`. The home argument
 must match the receipt. Captured lifecycle hook loading preflights every applicable
 retained hook, exact approval, host requirement and provider readiness before the
 first lifecycle side effect, then preserves the existing hook metadata, warning,

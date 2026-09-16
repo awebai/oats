@@ -28,7 +28,7 @@ test("captured source receipt is a private synchronous snapshot with owned clean
   const f = fixture(t); let path;
   const value = withCapturedSourceReceiptFile(f.home, f.receipt, (env) => {
     path = env.OATS_SOURCE_RECEIPT_FILE;
-    assert.equal(statSync(path).mode & 0o777, 0o400);
+    assert.equal(statSync(path).mode & 0o777, 0o600);
     assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), f.receipt);
     assert.equal(path.startsWith(f.home), false, "snapshot is not durable home state");
     return "registered";

@@ -187,7 +187,7 @@ test('preparation resolves approved provider fields in the same engine and never
   const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
   const command=[cli,'--deployment',f.deployment,'--resolution',prepared.resolution.id,'example-action','show','--json'];
   const answer=JSON.parse(execFileSync(process.execPath,command,{encoding:'utf8',env:{...process.env,OATS_BINDING_FILE:'/poison/snapshot'}}));
-  assert.equal(answer.location,'A');assert.equal(answer.mode,0o400);assert.equal(existsSync(answer.snapshot),false,'invocation snapshot removed after synchronous command');
+  assert.equal(answer.location,'A');assert.equal(answer.mode,0o600);assert.equal(existsSync(answer.snapshot),false,'invocation snapshot removed after synchronous command');
   const operation=JSON.parse(execFileSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=exact','--json'],{encoding:'utf8'}));
   assert.equal(operation.ok,true);assert.equal(operation.result.result.location,'A');assert.deepEqual(operation.result.result.args,['--label','exact','--json']);
   assert.equal(operation.result.result.resolution,prepared.resolution.id);assert.equal(existsSync(operation.result.result.snapshot),false,'operation snapshot is removed before its receipt is rendered');
