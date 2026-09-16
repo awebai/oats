@@ -106,12 +106,15 @@ reconciliation.
 `lib/portable-migration-artifacts.mjs` adds one narrower read-only proof for an
 explicit materialized-v2 candidate. It requires the strict lock witness, verifies
 the existing legacy artifact digest and exact `.oats-installation.json` provenance,
-reads `.oats-installation.json` through the bounded descriptor-backed regular-file
-reader, records the exact provenance-byte digest, and then measures the new
-owner-exec digest twice with the legacy digest bracketing it. A symlinked or
-replaced provenance file cannot borrow external bytes that the artifact digest did
-not witness. The result labels modes `observed-at-migration`, trust/selection
-authority `none`, and retention `not-retained`. It does not support v1 without that format's separate
+preflights `.oats-installation.json` through the bounded descriptor-backed
+regular-file reader before the legacy tree hasher can allocate it, records the
+exact provenance-byte digest, and then measures both old and new tree digests
+twice. A final bounded provenance read must match the preflight witness. A
+symlinked, oversized, replaced or drifting provenance file therefore cannot lend
+external/pre-hash bytes to the candidate. The old digest implementation and its
+historical mode limitations remain unchanged. The result labels modes
+`observed-at-migration`, trust/selection authority `none`, and retention
+`not-retained`. It does not support v1 without that format's separate
 historical digest verifier and does not publish the candidate.
 `verifyHistoricalHomeCapabilityCandidate` can additionally prove that one unchanged
 home's `capabilityRuntime` names exactly one capability with the same old digest.

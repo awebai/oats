@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { capabilityArtifactIntegrity } from "../lib/artifact-tree.mjs";
@@ -52,6 +52,15 @@ test("explicit v2 artifact candidate verifies old bytes/provenance but observes 
   const second = verifyHistoricalCapabilityCandidate(f.deployment, f.inventory, request, { legacyLockDecoder: f.legacyLockDecoder });
   assert.equal(second.artifact.historicalIntegrity.value, first.artifact.historicalIntegrity.value, "old v2 digest did not cover owner execute");
   assert.notEqual(second.artifact.observedIntegrity.value, first.artifact.observedIntegrity.value, "new observation records owner execute today");
+});
+
+test("oversized unreadable provenance is bounded before the legacy artifact hasher reads it", { skip: process.getuid?.() === 0 ? "root can read mode-000 files" : false }, (t) => {
+  const f = fixture(t), provenance = join(f.artifact, ".oats-installation.json");
+  truncateSync(provenance, 8 * 1024 * 1024 + 1); chmodSync(provenance, 0o000);
+  const request = { lockPath: "oats-lock.json", capability: f.capability,
+    artifactDir: `.agents/capabilities/installed/${f.capability}` };
+  assert.throws(() => verifyHistoricalCapabilityCandidate(f.deployment, f.inventory, request,
+    { legacyLockDecoder: f.legacyLockDecoder }), { code: "resource-limit" });
 });
 
 test("external provenance symlink is refused even when the old artifact digest witnesses its link target", (t) => {
