@@ -85,6 +85,9 @@ test("failed admission and unavailable prepare-on-tick are blocked before comman
 
   addSchedule(ws, { id: "future", definitionVersion: 2, recurrencePolicy: "prepare-on-tick", kind: "command", cwd: ws,
     argv: ["oats", "status"], cron: "* * * * *", tz: "UTC" });
+  const wakeHome = join(ws, "agents/dev/instances/wake"); write(join(wakeHome, "instance.json"), "{}");
+  assert.throws(() => addSchedule(ws, { id: "unsafe-wake", definitionVersion: 2, recurrencePolicy: "prepare-on-tick", kind: "wake", home: wakeHome,
+    message: "wake", cron: "* * * * *", tz: "UTC" }), (error) => error.code === "E_SCHEDULE_INVALID" && error.field === "recurrencePolicy");
   result = tickWorkspace(ws, { now: at("2026-09-16T10:02:00Z"), io: { command: () => { commands++; } }, reg: { maxConcurrent: 1 } });
   const future = result.find((entry) => entry.id === "future");
   assert.equal(future.action, "blocked"); assert.equal(future.errorCode, "migration-required");

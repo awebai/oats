@@ -117,8 +117,9 @@ unresolved and cannot dispatch. Scheduler launch also scrubs ambient
 `OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is authority.
 
 `prepare-on-tick` is a distinct explicit policy for a genuinely new tick. It is
-accepted as a version-2 definition but currently reports `migration-required`
-at admission because the preparation transaction adapter is not yet available.
+accepted for a version-2 command definition but currently reports
+`migration-required` at admission because the preparation transaction adapter
+is not yet available.
 It never falls back to current-context command execution. Captured spawn,
 operation and wake definitions likewise remain unavailable until their public
 captured consumer adapters exist; capture is currently accepted only for
