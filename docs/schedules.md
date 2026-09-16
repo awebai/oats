@@ -146,10 +146,11 @@ definitions. They retain the old release behavior during migration and are not
 reported as captured execution. `list`/`show` report their `executionStatus` as
 `{kind:"legacy",capture:"unknown",migrationRequired:true}`. A captured definition
 reports only `capture:"recorded"` until action admission verifies the retained
-record and current exact approval; it does not claim launch readiness. When an
-attempt exists, `executionStatus.attempt` separately reports captured,
-legacy-unknown or invalid authority, so editing a future definition cannot hide
-an older admitted capsule. Partial, malformed or unsupported versioned
+record and current exact approval; it does not claim launch readiness. While an
+attempt is unresolved or its confirmed launched work still holds a slot,
+`executionStatus.intent` separately reports captured, legacy-unknown or invalid
+authority, so editing a future definition cannot hide an older admitted capsule.
+Partial, malformed or unsupported versioned
 definitions/attempts are invalid or blocked, never reinterpreted as legacy.
 
 ## Commands
