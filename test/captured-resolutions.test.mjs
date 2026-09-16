@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { parsePortableSoul } from "../lib/portable-soul.mjs";
 import { resolveChoices } from "../lib/portable-choices.mjs";
 import { settingChoiceKey, soulConstraints } from "../lib/soul-constraints.mjs";
+import { artifactSetKey3, writeLock3 } from "../lib/portable-lock.mjs";
 import { retainPortableArtifact } from "../lib/portable-artifacts.mjs";
 import { commitCapturedResolution, readCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
 
@@ -88,6 +89,21 @@ test("exact command loading uses retained A/B and current approvals, never poiso
   assert.equal(execFileSync(process.execPath, [selectedB.executable.file, ...selectedB.executable.args], { encoding: "utf8" }).trim(), "B");
   assert.equal(load(a).executable.file, selectedA.executable.file);
   assert.throws(() => loadCapturedDispatch({ deployment: f.scope, resolution: a, action: { kind: "launch" } }), { code: "unsupported-action" });
+});
+
+test("prospective exact-artifact approval precedes provider compilation without fabricating a resolution", (t) => {
+  const f = fixture(t), record = f.build("A"), key = artifactSetKey3(record.artifacts);
+  writeLock3(f.scope, null, { lockfileVersion: 3, artifactSets: { [key]: record.artifacts }, selections: {} });
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  const cli = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
+  const args = [cli, "trust", "example.action", "--deployment", f.scope, "--artifact-set", key, "--json"];
+  const result = spawnSync(process.execPath, args, { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr); assert.equal(JSON.parse(result.stdout).result.status, "approved");
+  assert.equal(existsSync(join(f.scope, ".agents/resolutions")), false, "approval never publishes a partial resolution");
+  const resolution = commitCapturedResolution(f.scope, record);
+  assert.equal(loadCapturedDispatch({ deployment: f.scope, resolution, action: { kind: "command", capability: "example.action", name: "show" } }).capability.id, "example.action");
+  const wrong = spawnSync(process.execPath, [...args.slice(0, 2), "example.other", ...args.slice(3)], { encoding: "utf8" });
+  assert.equal(wrong.status, 1); assert.equal(JSON.parse(wrong.stdout).error.code, "invalid-approval");
 });
 
 test("public captured selectors inspect, approve and execute without ambient identity or source state", (t) => {

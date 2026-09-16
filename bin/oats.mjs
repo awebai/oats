@@ -27,7 +27,7 @@ import {
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
-  approveCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
+  approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
@@ -98,6 +98,14 @@ function capturedCommand(selector) {
     const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
     if (head.some((arg) => ["--dir", "--home", "--server", "--soul", "--agents-root"].includes(arg.split("=")[0]))) {
       fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
+    }
+    if (selector.artifactSet !== undefined) {
+      if (cmd !== "trust" || !args[1] || args[1].startsWith("-") || args.slice(2).some((arg) => arg !== "--json")) fail("E_BAD_ARGS", "artifact-set selectors support only explicit trust of one capability");
+      const result = approveAvailableCapability(selector.deployment, selector.artifactSet, args[1], {
+        kind: "operator", document: { kind: "operator", id: "oats-trust-artifact-set" }, pointer: "/capability",
+      });
+      if (JSON_MODE) jsonOk(result); else console.log(`${args[1]}: ${result.status}`);
+      return;
     }
     const target = { deployment: selector.deployment, resolution: selector.resolution };
     const load = (action) => loadCapturedDispatch({ ...target, action });

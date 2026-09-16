@@ -42,8 +42,13 @@ and the complete `sha256-…` resolution ID; they can precede or follow the comm
 oats inspect --deployment /deployment --resolution sha256-… --json
 oats inspect --deployment /deployment --resolution sha256-… --composition --json
 oats trust example.action --deployment /deployment --resolution sha256-… --json
+oats trust example.action --deployment /deployment --artifact-set sha256-… --json
 oats example-action show --deployment /deployment --resolution sha256-… -- --detail
 ```
+
+The artifact-set variant approves exact prospective software BEFORE a provider codec
+can complete a resolution. It requires a verified v3 artifact set, never a fabricated
+partial resolution or current selected-ID lookup, and supports trust only.
 
 The last command passes `--detail` to the capability. Tokens after `--` are never
 interpreted as OATS selectors. Duplicate/partial pairs and mixed legacy context

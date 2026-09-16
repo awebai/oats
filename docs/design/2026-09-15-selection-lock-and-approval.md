@@ -62,8 +62,17 @@ supply this new authority. Missing ledger means no approvals; malformed existing
 metadata refuses, never repairs itself from a selection lock.
 
 `approveCapturedCapability(deployment, resolution, id, operatorOrigin)` is the
-explicit approval writer. It verifies the retained record, selected artifact and
-provenance, then preserves previous approvals under the same scope write guard.
+record-addressed approval writer. It verifies the retained record, selected artifact
+and provenance, then preserves previous approvals under the same scope write guard.
+Prospective `approveAvailableCapability(deployment, artifactSet, id, operatorOrigin)`
+uses an exact content-addressed set already in lock v3, verifies its retained artifact
+and installation provenance with the SAME proof, and runs the complete kernel manifest
+codec before that same ledger writer. This breaks the legitimate ordering cycle:
+provider normalization code needs approval BEFORE a complete resolution can be built.
+No partial resolution is fabricated for approval. The CLI spelling is
+`oats trust <id> --deployment <absolute scope> --artifact-set <sha256-set-id>`;
+artifact-set selectors authorize no command execution and cannot mix with resolution
+selectors. Approval itself still grants neither binding readiness nor enrollment.
 There is no bulk caller-supplied ledger overwrite or approval during discovery.
 Approving B neither revokes nor rewrites A. Repeating A keeps its original receipt.
 
