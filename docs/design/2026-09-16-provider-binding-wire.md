@@ -174,7 +174,12 @@ against their prior receipt; they must not infer replacements from cwd, OS user,
 display name, source alias or ambient configuration.
 
 The file uses the same owned scratch, success/failure cleanup and observed-result
-preservation boundary as the binding/source snapshots. Existing
+preservation boundary as the binding/source snapshots. Captured hook dispatch recovers
+an observed opaque provider receipt even if several nested snapshot cleanups fail,
+including after a nonzero child exit. It records a required, unconfirmed cleanup
+failure rather than treating the hook as clean or discarding receipt-owned effects.
+This accounting is provider-neutral and does not interpret knowledge or messaging data.
+Existing
 `OATS_SOURCE_RECEIPT_FILE` remains the knowledge source-registration input, not a
 messaging-specific or general identity mechanism. Captured start/restart/retire and
 managed launch adoption remain unfinished and cannot fall back to current source or

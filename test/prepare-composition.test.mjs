@@ -194,8 +194,12 @@ test('preparation resolves approved provider fields in the same engine and never
     const invocationSnapshot=process.env.OATS_INVOCATION_CONTEXT_FILE??null,invocation=invocationSnapshot?JSON.parse(readFileSync(invocationSnapshot,'utf8')):null;
     const result={location:binding.payload.location,snapshot,invocationSnapshot,invocation,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
     if(process.env.OATS_OPERATION && process.argv.includes('cleanup-failure')) rmSync(dirname(snapshot),{recursive:true});
-    if(process.env.OATS_EVENT) writeFileSync(${JSON.stringify(hookMarker)},'ran');
-    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding,invocation}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
+    if(process.env.OATS_EVENT) {
+      writeFileSync(${JSON.stringify(hookMarker)},'ran');
+      if(process.env.CLEANUP_CAPTURED_SNAPSHOTS) for(const path of [snapshot,sourceSnapshot,invocationSnapshot]) if(path) rmSync(dirname(path),{recursive:true});
+    }
+    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding,invocation}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));
+    if(process.env.OATS_EVENT && process.env.FAIL_CAPTURED_HOOK) process.exitCode=1;`);
   const unavailable=join(f.root,'provider-unavailable'),checkContext=join(f.root,'provider-check-context.json');
   f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync,writeFileSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
@@ -260,6 +264,15 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.deepEqual(hooks.meta[f.id].executionBinding,prepared.executionBinding);assert.equal(existsSync(hooks.meta[f.id].sourceSnapshot),false,'source receipt snapshot is removed after the synchronous hook');
   assert.equal(hooks.meta[f.id].invocation.action.name,'spawn');assert.equal(hooks.meta[f.id].invocation.priorReceipt,null);
   assert.equal(hooks.meta[f.id].invocation.instance.home,home);
+  for (const failedChild of [false,true]) {
+    const incomplete=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home',agentName:'imported-expert',sourceReceipt,
+      extraEnv:{CLEANUP_CAPTURED_SNAPSHOTS:'1',...(failedChild?{FAIL_CAPTURED_HOOK:'1'}:{})}});
+    assert.equal(incomplete.meta[f.id].executionBinding.resolution.id,prepared.resolution.id,'nested cleanup failures retain the actual provider receipt');
+    assert.equal(incomplete.meta[f.id].invocation.instance.home,home);
+    assert.equal(incomplete.failures.length,1);assert.equal(incomplete.failures[0].contract,'snapshot-cleanup');
+    assert.equal(incomplete.failures[0].required,true);assert.equal(incomplete.failures[0].unconfirmed,true);
+    assert.ok(incomplete.failures[0].cleanup.code);
+  }
   writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',executionBinding:{...prepared.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}}));
   const mismatch=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(mismatch.status,1);assert.equal(JSON.parse(mismatch.stdout).error.code,'E_HOME_MISMATCH');
