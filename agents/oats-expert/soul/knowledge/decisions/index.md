@@ -1,5 +1,6 @@
 # Decisions
 
+* [Prioritize fresh Portable Souls deployments over historical migration](fresh-install-first-portable-rollout.md) - Controlled Portable Souls rollouts use fresh provisioning while historical migration is deferred without discarding state or changing target invariants.
 * [Rebuild OATS knowledge in a dedicated repository around domain-expert souls](expert-souls-and-knowledge-rebuild.md) - After the knowledge implementation is complete, create a separate OATS knowledge repository and rebuild domain-expert souls through a strict audit of current and inherited knowledge rather than bulk migration.
 * [OATS provides a reference knowledge theory while capabilities own runtime behavior](provider-neutral-knowledge-and-harvest.md) - OATS maintains canonical default knowledge theory and an authoring expert, while each knowledge capability supplies its complete runtime behavior and may choose a different theory.
 * [Knowledge leaves souls and Git-backed harvesting delivers through PRs](external-knowledge-custody.md) - All durable knowledge moves outside souls, working instances receive an instructional write prohibition, and independent harvesters propose Git-backed updates through pull requests.

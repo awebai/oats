@@ -15,6 +15,11 @@ no operational changes: no commits/pushes, branch switches, live installation or
 activation, credential work, schedulers, models/GUI/session control. The held
 capture patch `54b07ee` must never be integrated. **Desktop feature work is later.**
 
+**Rollout amendment (2026-09-16):** [fresh installation is the current delivery path](2026-09-16-fresh-install-first-rollout.md).
+General historical conversion/reconstruction and more migration CLI work are deferred,
+not release-critical. The architecture and evidence/custody rules below still apply;
+existing knowledge, work, histories and identities are not implicitly disposable.
+
 ## 1. Portable contract reading order and baseline
 
 All required design text now lives at repository-relative paths; no private
