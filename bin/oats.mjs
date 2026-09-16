@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch, prepareCapturedComposition, withCapturedBindingFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, scaffoldCapturedInstance, withCapturedBindingFile,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -191,13 +191,46 @@ function capturedOperation(selector, load, bail) {
   finishOperation({ r: child, bail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError });
 }
 
+/** Fresh explicit captured scaffold + spawn hooks. Placement is supplied by
+ * the operator; launch and non-directory work remain unsupported. */
+function capturedSpawn(selector, load, bail) {
+  const subject = args[1]; let home; let noLaunch = false;
+  if (!subject || subject.startsWith("-")) bail("E_BAD_ARGS", "captured spawn needs the retained subject name");
+  for (let index = 2; index < args.length; index++) {
+    const token = args[index];
+    if (token === "--json") continue;
+    if (token === "--no-launch") { if (noLaunch) bail("E_BAD_ARGS", "duplicate --no-launch"); noLaunch = true; continue; }
+    if (token === "--home") {
+      const value = args[++index];
+      if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute new instance home");
+      home = resolve(value); continue;
+    }
+    bail("E_BAD_ARGS", `unsupported captured spawn argument ${JSON.stringify(token)}`);
+  }
+  if (!home || !noLaunch) bail("E_BAD_ARGS", "captured spawn currently requires --home <absolute new home> and --no-launch");
+  const inspected = load({ kind: "inspect" }), expected = inspected.record.subject.kind === "persistent" ? inspected.record.subject.soul.alias : inspected.record.subject.name;
+  if (subject !== expected) bail("E_HOME_MISMATCH", `captured resolution subject is ${expected}, not ${subject}`);
+  const scaffold = scaffoldCapturedInstance({ deployment: selector.deployment, resolution: selector.resolution, home, instance: basename(home) });
+  let activated;
+  try {
+    activated = activateCapturedScaffold({ deployment: selector.deployment, resolution: selector.resolution, home,
+      extraEnv: process.env.OATS_HOME_DIR ? { OATS_HOME_DIR: process.env.OATS_HOME_DIR } : {} });
+  } catch (error) {
+    if (error?.home) bail(error.code || "E_SPAWN_FAILED", error.message, { home: error.home, cleanupRequired: true, failures: error.provenance || [] });
+    throw error;
+  }
+  const result = { ...scaffold, hooksPending: false, launchPending: true, hookOrder: activated.hooks.order, warnings: activated.hooks.warnings };
+  if (JSON_MODE) jsonOk(result); else console.log(`Scaffolded ${result.instance} at ${result.home}; captured hooks complete, launch pending`);
+}
+
 /** Exact-selector dispatch enters before any current-context resolver. Its
  * child receives the same selector, never an invoking agent's ambient identity. */
 function capturedCommand(selector) {
   const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
   try {
     const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-    const forbiddenContext = cmd === "operation" ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
+    const permitsHome = cmd === "operation" || cmd === "spawn";
+    const forbiddenContext = permitsHome ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
     if (head.some((arg) => forbiddenContext.includes(arg.split("=")[0]))) {
       fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
     }
@@ -232,6 +265,7 @@ function capturedCommand(selector) {
       return;
     }
     if (cmd === "operation") { capturedOperation(selector, load, fail); return; }
+    if (cmd === "spawn") { capturedSpawn(selector, load, fail); return; }
     if (!cmd || cmd.startsWith("-") || KERNEL_COMMANDS.has(cmd)) fail("unsupported-action", "this kernel command has not yet adopted captured selectors; no current-context fallback was used");
     if (!args[1] || args[1] === "--json" || head.some((arg) => HELP_WORDS.has(arg))) {
       const loaded = load({ kind: "inspect" });
@@ -4334,7 +4368,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -5028,6 +5062,8 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats operation run <layer>:<name> --deployment <abs> --resolution <id>
       [--home <abs>] [--arg k=v ...] [--json]
                                             run an exact retained provider operation
+  oats spawn <captured subject> --deployment <abs> --resolution <id>
+      --home <abs> --no-launch [--json]      create a fresh directory scaffold and run captured hooks
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)

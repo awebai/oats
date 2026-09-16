@@ -126,7 +126,7 @@ test("public captured selectors inspect, approve and execute without ambient ide
   const result = call("example-action", "show", "--", "--custom", "alpha"); assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { marker: "A", resolution: ref.id, home: null, args: ["--custom", "alpha"] });
   const refused = call("spawn", "anything", "--json"); assert.equal(refused.status, 1);
-  assert.equal(JSON.parse(refused.stdout).error.code, "unsupported-action");
+  assert.equal(JSON.parse(refused.stdout).error.code, "E_BAD_ARGS");
   const inherited = spawnSync(process.execPath, [cli, "example-action", "show"], { encoding: "utf8", env: { ...env, OATS_DEPLOYMENT: f.scope, OATS_RESOLUTION: ref.id } });
   assert.equal(inherited.status, 0, inherited.stderr); assert.equal(JSON.parse(inherited.stdout).marker, "A");
 });

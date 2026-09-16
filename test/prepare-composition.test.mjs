@@ -248,7 +248,7 @@ test('preparation resolves approved provider fields in the same engine and never
 });
 
 test('standalone OKF consumer prepares its actual retained binding payload with no kernel-private provider imports', {skip:!process.env.OATS_OKF_CONSUMER_REPO}, async t=>{
-  const f=fixture(t,true),provider=process.env.OATS_OKF_CONSUMER_REPO,revision=process.env.OATS_OKF_CONSUMER_REV;
+  const f=fixture(t,true),provider=process.env.OATS_OKF_CONSUMER_REPO,revision=process.env.OATS_OKF_CONSUMER_REV,cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
   assert.match(revision ?? '',/^[a-f0-9]{40}$/,'consumer must pin an exact provider commit');
   const archive=execFileSync('git',['-C',provider,'archive',revision,'oats-package'],{maxBuffer:16*1024*1024});
   const destination=join(f.repo,'packages/action');rmSync(destination,{recursive:true});mkdirSync(destination);
@@ -275,10 +275,12 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   initBase(binding.payload.runtime.bindings,'private-kb',nodes,undefined,{confirm:true}); // Administrative fixture bootstrap only.
   const capturedHomes=join(physicalRoot,'captured-homes');mkdirSync(capturedHomes);const sourceHome=join(capturedHomes,'imported-expert-1');
-  scaffoldCapturedInstance({deployment:f.deployment,resolution:ready.resolution,home:sourceHome,instance:'imported-expert-1'});
-  const activated=activateCapturedScaffold({deployment:f.deployment,resolution:ready.resolution,home:sourceHome,extraEnv:{OATS_HOME_DIR:join(physicalRoot,'host-state')}});
-  assert.deepEqual(activated.hooks.failures,[],JSON.stringify(activated));assert.equal(activated.hooks.meta['oats.okf'].memory,'okf-v2');
-  const descriptor=JSON.parse(readFileSync(activated.hooks.meta['oats.okf'].source,'utf8'));
+  const spawned=spawnSync(process.execPath,[cli,'spawn','imported-expert','--deployment',f.deployment,'--resolution',ready.resolution.id,'--home',sourceHome,'--no-launch','--json'],
+    {encoding:'utf8',env:{...process.env,OATS_HOME_DIR:join(physicalRoot,'host-state')}});
+  assert.equal(spawned.status,0,spawned.stdout||spawned.stderr);const spawnResult=JSON.parse(spawned.stdout).result;
+  assert.equal(spawnResult.home,sourceHome);assert.equal(spawnResult.launchPending,true);assert.deepEqual(spawnResult.hookOrder,['oats.okf']);
+  const sourceMeta=JSON.parse(readFileSync(join(sourceHome,'instance.json'),'utf8'));assert.equal(sourceMeta.capabilityMeta['oats.okf'].memory,'okf-v2');
+  const descriptor=JSON.parse(readFileSync(sourceMeta.capabilityMeta['oats.okf'].source,'utf8'));
   assert.deepEqual(descriptor.executionBinding,ready.executionBinding);assert.equal(descriptor.responsibleHuman,null);
   assert.equal(JSON.stringify(descriptor.sourceIdentity),JSON.stringify(record.subject.soul.identity));
   const schedules=JSON.parse(readFileSync(join(f.deployment,'oats-schedules.json'),'utf8')),schedule=schedules.jobs[`okf-${descriptor.id}`];
@@ -287,7 +289,7 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   const poisonState=join(physicalRoot,'poison-state'),poisonBase=join(physicalRoot,'poison-base'),poisonNodes=join(physicalRoot,'poison-nodes.json');
   writeFileSync(poisonNodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   writeFileSync(settings['bindings-file'],JSON.stringify({version:1,stateDir:poisonState,bases:{'private-kb':{id:'private-kb',kind:'directory',path:poisonBase}}}));
-  const poisonBytes=readFileSync(settings['bindings-file']),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  const poisonBytes=readFileSync(settings['bindings-file']);
   for(const [name,argv] of [['setup',['--source',join(physicalRoot,'missing-source.json')]],['init',['--base','private-kb','--nodes',poisonNodes,'--confirm']],
     ['migrate',['--legacy',join(physicalRoot,'legacy'),'--base','private-kb','--node','expert','--output',join(physicalRoot,'stage')]],
     ['unlock',['--lock',join(physicalRoot,'missing-lock'),'--token','no-token']]]) {

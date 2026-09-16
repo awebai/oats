@@ -45,6 +45,7 @@ oats trust example.action --deployment /deployment --resolution sha256-… --jso
 oats trust example.action --deployment /deployment --artifact-set sha256-… --json
 oats example-action show --deployment /deployment --resolution sha256-… -- --detail
 oats operation run knowledge:view --deployment /deployment --resolution sha256-… --home /instance --arg mode=full --json
+oats spawn expert --deployment /deployment --resolution sha256-… --home /fresh/instances/expert-1 --no-launch --json
 ```
 
 The operation form loads the selected provider and operation declaration from the
@@ -113,8 +114,10 @@ home. It requires exact executable approvals and retained `directory` work mode,
 then materializes the retained soul/helper link, composed instructions, copied skill
 trees, private directory work and `instance.json` execution binding/responsible-human
 metadata. `instance.json` explicitly records `scaffolded-hooks-pending`; no launch,
-public spawn route, work-target setup or roster placement is implied. A separate exact
-activation step derives any source receipt from the record and runs the captured hook
+non-directory work-target setup or roster discovery is implied. The public captured
+spawn route currently requires an explicit absolute new home and `--no-launch`; it does
+not infer placement, work or launch inputs. A separate exact activation step derives
+any source receipt from the record and runs the captured hook
 preflight/runner. Success records `spawned-launch-pending`. Required-hook failure keeps
 the home, hook metadata and `spawn-failed-cleanup-required` status rather than deleting
 possible external effects. The scaffold adapter creates the home exclusively and rolls
