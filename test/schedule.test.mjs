@@ -267,7 +267,7 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   assert.ok(failed, "an unknown id exits non-zero");
   assert.equal(JSON.parse(String(failed.stdout).trim()).error.code, "E_SCHEDULE_UNKNOWN");
   const probe = JSON.parse(execFileSync(process.execPath, [bin, "version", "--json"], { encoding: "utf8" }));
-  assert.equal(probe.scheduleApi, 1); assert.ok(probe.features.includes("schedule")); assert.ok(probe.remote.includes("schedule"));
+  assert.equal(probe.scheduleApi, 2); assert.ok(probe.features.includes("schedule")); assert.ok(probe.remote.includes("schedule"));
 });
 
 test("host units render the single tick and status reports what the OS says", () => {
@@ -309,12 +309,18 @@ test("remote schedules route to the server workspace only when the host advertis
   const oatsHome = process.env.OATS_HOME_DIR; mkdirSync(oatsHome, { recursive: true });
   writeFileSync(join(oatsHome, "servers.json"), JSON.stringify({ servers: { s: { sshHost: "h", workspace: "/w" } } }));
   const calls = [];
-  const io = (features) => ({ execFileSync: (b, argv) => { const a = argv.join(" "); calls.push(a); if (a.includes("version --json")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { desktopApi: 1, version: "0.22.10", remote: ["session"], features } }); return JSON.stringify({ schemaVersion: 1, ok: true, result: { schedules: [], scheduler: { installed: false, active: false, lastTick: null, maxConcurrent: 1 } } }); } });
+  const io = (features, scheduleApi) => ({ execFileSync: (b, argv) => { const a = argv.join(" "); calls.push(a); if (a.includes("version --json")) return JSON.stringify({ schemaVersion: 1, ok: true, result: { desktopApi: 1, version: "0.22.10", remote: ["session"], features, scheduleApi } }); return JSON.stringify({ schemaVersion: 1, ok: true, result: { schedules: [], scheduler: { installed: false, active: false, lastTick: null, maxConcurrent: 1 } } }); } });
   assert.throws(() => scheduleRemote("s", ["list"], io(["retire-home"])), (e) => e.code === "E_REMOTE_INCOMPATIBLE" && /schedules/.test(e.message));
   assert.equal(calls.filter((c) => c.includes("schedule list")).length, 0, "refused before any remote schedule command");
   const out = scheduleRemote("s", ["add", "x", "--spec-json", "{}"], io(["retire-home", "schedule"]));
   assert.equal(out.envelope.ok, true); assert.equal(out.envelope.result.server, "s");
   assert.match(calls.find((c) => c.includes("schedule add")), /schedule add x --spec-json .*\{\}.* --dir \/w --json/);
+  const captured = ["add", "pinned", "--spec-json", JSON.stringify({ definitionVersion: 2, recurrencePolicy: "capture" })];
+  const before = calls.filter(c => c.includes("schedule add pinned")).length;
+  assert.throws(() => scheduleRemote("s", captured, io(["schedule"], 1)), { code: "E_REMOTE_INCOMPATIBLE" });
+  assert.equal(calls.filter(c => c.includes("schedule add pinned")).length, before, "old host receives no captured mutation");
+  assert.equal(scheduleRemote("s", captured, io(["schedule"], 2)).envelope.ok, true);
+  assert.throws(() => scheduleRemote("s", ["add", "remote-file", "--file", "/remote/spec.json"], io(["schedule"], 1)), { code: "E_REMOTE_INCOMPATIBLE" });
 });
 
 test("a cold wake needs a launch slot; a delivery to a running home does not; a started runtime keeps its slot until the home ends", () => {

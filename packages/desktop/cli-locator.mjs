@@ -193,7 +193,7 @@ export async function discover(io, probe) {
         continue;
       }
       const a = acceptProbe(payload);
-      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...(payload.scheduleApi === 1 ? { scheduleApi: 1 } : {}), ...(payload.operationsApi === 1 ? { operationsApi: 1 } : {}), ...(Array.isArray(payload.features) ? { features: payload.features } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
+      if (a.ok) return { ok: true, bin: path, source: src.source, version: payload.version, ...(Array.isArray(payload.runtimes) ? { runtimes: payload.runtimes } : {}), ...(Array.isArray(payload.sessionBackends) ? { sessionBackends: payload.sessionBackends } : {}), ...(Array.isArray(payload.launchOptions) ? { launchOptions: payload.launchOptions } : {}), ...([1, 2].includes(payload.scheduleApi) ? { scheduleApi: payload.scheduleApi } : {}), ...(payload.operationsApi === 1 ? { operationsApi: 1 } : {}), ...(Array.isArray(payload.features) ? { features: payload.features } : {}), ...(Array.isArray(payload.remote) ? { remote: payload.remote } : {}) };
       tried.push({ path, source: src.source, reason: a.reason, version: payload?.version });
     }
   }

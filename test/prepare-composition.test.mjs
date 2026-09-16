@@ -8,6 +8,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
+import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
   const root=mkdtempSync(join(tmpdir(),'oats-prepare-composition-')),repo=join(root,'repo'),deployment=join(root,'deployment');
   mkdirSync(deployment);t.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -64,6 +65,27 @@ test('public prepare CLI uses the native transport and returns the exact immutab
   assert.equal(envelope.result.status,'approval-required');assert.equal(envelope.result.source.alias,'cli-expert');
   assert.equal(envelope.result.executionBinding.resolution.id,envelope.result.resolution.id);
   assert.equal(readCapturedResolution(f.deployment,envelope.result.resolution).subject.soul.alias,'cli-expert');
+});
+
+test('prepare-on-tick uses the real core adapter and captured CLI without injected preparation or admission',t=>{
+  const f=fixture(t),ssh=join(f.root,'fixture-schedule-ssh');
+  f.write('packages/action/cap/show.mjs','console.log(JSON.stringify({schemaVersion:1,ok:true,result:{marker:"A"}}));\n');
+  f.git('add','.');f.git('commit','--quiet','-m','JSON command');
+  writeFileSync(ssh,`#!/bin/sh\nexec git-upload-pack '${f.repo.replaceAll("'", "'\\''")}'\n`);chmodSync(ssh,0o700);
+  const environment={...f.options.repositoryOptions.environment,GIT_SSH_COMMAND:ssh,GIT_SSH_VARIANT:'ssh',OATS_HOME_DIR:join(f.root,'host-state')};
+  const input={...f.input,source:{...f.input.source,source:'git:ssh://example.invalid/prepare.git',revision:f.git('rev-parse','HEAD')}};
+  const initial=prepareCapturedComposition(input,{repositoryOptions:{environment}});
+  approveAvailableCapability(f.deployment,initial.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const prior=Object.fromEntries(Object.keys(environment).map(key=>[key,process.env[key]]));
+  t.after(()=>{for(const [key,value] of Object.entries(prior)) if(value===undefined) delete process.env[key]; else process.env[key]=value;});
+  Object.assign(process.env,environment);
+  addSchedule(f.deployment,{id:'prepared',definitionVersion:2,recurrencePolicy:'prepare-on-tick',kind:'command',cwd:f.deployment,
+    argv:['oats','example-action','show','--','--json'],preparation:input,cron:'* * * * *',tz:'UTC'});
+  const result=tickWorkspace(f.deployment,{now:new Date('2026-09-16T12:10:00Z'),reg:{maxConcurrent:1}});
+  assert.equal(result[0].action,'launched',JSON.stringify(result));
+  const run=readState(f.deployment).jobs.prepared.lastRun;
+  assert.equal(run.execution.resolution.id,initial.resolution.id);
+  assert.equal(run.execution.responsibleHuman,null);
 });
 
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{

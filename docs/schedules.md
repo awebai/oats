@@ -24,8 +24,10 @@ and no queue.
   scheduler refuses it instead of ignoring capture policy. Existing legacy
   entries may remain visibly unmigrated; new entries in a v2 file must declare
   their policy. Commit the file if you want the schedule shared with the team.
-  Remote creation/update of v2 definitions must remain disabled until both ends
-  negotiate schedule API v2; the existing feature-only remote gate is not enough.
+  Automatic wake creation uses this same document-version gate. Remote captured
+  mutations require advertised numeric schedule API 2 before forwarding; the old
+  feature-only gate is insufficient. Unclassifiable remote spec files also require
+  API 2. Legacy inline specs/read operations remain compatible with older hosts.
 - `<workspace>/.agents/schedules/state.json` — last attempted minute and
   last run per job (gitignored), plus one lock directory per running job.
 - `~/.oats/schedules/registry.json` — the host registry: which scopes the
@@ -34,6 +36,10 @@ and no queue.
   by another process: a lock whose owner is unreadable or gone is reported
   with the directory to remove, and the holder removes its own lock on exit
   and on SIGINT/SIGTERM. Definition edits take a short per-scope lock.
+
+The existing Desktop adapter can inspect/manage supported API-2 schedules, but its
+legacy editor refuses captured policy fields rather than dropping them. Full captured
+editing UI remains later Desktop work; use the explicit CLI for those definitions.
 
 ## Kinds
 
@@ -136,8 +142,9 @@ unresolved and cannot dispatch. Scheduler launch also scrubs ambient
 `prepare-on-tick` is a distinct explicit policy for a genuinely new command
 tick. Its `preparation` object maps directly to the generic
 `prepareCapturedComposition({deployment,source,workspace?,member?,operator?,mode?})`
-input; scheduler code does not parse source/workspace policy itself. A complete
-adapter result must contain `executionBinding` and an explicit
+input; scheduler code does not parse source/workspace policy itself. The production
+adapter now calls that core API by default. `mode` is a work-mode string, not a
+nested launch object. A complete adapter result must contain `executionBinding` and an explicit
 `responsibleHuman` (`null` means messaging was actually disabled). The scheduler
 then inserts the exact selector pair before `--`, verifies the captured action,
 mints and persists the attempt, and dispatches. Missing adapters and incomplete
@@ -195,17 +202,21 @@ attention, never removed for you), `launch-failed`, `unknown`, and for wake
 jobs `delivered`, `started` or `skipped`. The kernel never claims a task
 succeeded.
 
-`blocked` includes an unavailable exact record/approval and the currently
-unimplemented `prepare-on-tick` adapter. The result preserves the typed
+`blocked` includes an unavailable exact record/approval or incomplete new-work
+preparation, including not-yet-qualified provider bindings. The result preserves the typed
 `errorCode`; no attempt capsule or launch lock is created.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed
 out or answered no envelope, an envelope named an instance the roster
 cannot place, or an attempt was never recorded. The job keeps its slot and
 is skipped until `oats schedule reconcile <id>`. Reconcile adopts only an
-attributable receipt: a spawn job's instance is named deterministically for
-its minute, a command job's only by the instance its answer named. Nothing
-is inferred from file times. A command whose answer named nothing stays
+attributable receipt: a legacy spawn job's instance is named deterministically
+for its minute. A captured command requires the SAME admitted execution ID and
+content witness, plus its explicitly recorded home and matching instance metadata;
+current-config roster lookup or a previous attempt's name cannot establish it.
+Nothing is inferred from file times. Observation validates custody before releasing
+slots, and unresolved attempts remain held even in the crash gap before a lock
+exists. Ordinary removal refuses those attempts; force-forget remains explicit. A command whose answer named nothing stays
 unknown; check the roster and the host by hand, then
 `oats schedule reconcile <id> --clear` records launch-failed and frees the
 slot (or `remove --force` forgets the job).

@@ -6,7 +6,7 @@ const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(m
 
 export async function scheduleRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliSchedule, inspect = capabilityRequest }) {
   if (!workspace) fail("Select a known workspace", "E_WORKSPACE_UNKNOWN");
-  if (!cli?.ok || cli.scheduleApi !== 1 || !cli.features?.includes("schedule")) fail("Update the installed oats CLI to use schedules", "cli-no-schedule");
+  if (!cli?.ok || ![1, 2].includes(cli.scheduleApi) || !cli.features?.includes("schedule")) fail("Update the installed oats CLI to use schedules", "cli-no-schedule");
   const server = workspace.server || undefined;
   if (server && (!workspace.registrationPresent || !cli.remote?.includes("schedule"))) {
     fail("This workspace needs a registered server and a CLI with remote scheduling support", "cli-no-schedule");
@@ -16,6 +16,9 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
   if (operation === "add" || operation === "update") {
     const value = request.spec;
     if (!value || typeof value !== "object" || Array.isArray(value)) fail("A schedule definition is required");
+    if (["definitionVersion", "recurrencePolicy", "execution", "preparation", "executionBinding", "responsibleHuman"].some(key => Object.hasOwn(value, key))) {
+      fail("Captured schedule editing is not supported by this Desktop adapter yet; use the captured CLI without dropping its policy fields", "cli-no-captured-schedule");
+    }
     const { cron, tz, enabled } = value;
     if (typeof cron !== "string" || typeof tz !== "string" || typeof enabled !== "boolean") fail("Specify cron, time zone, and enabled state");
     spec = { cron, tz, enabled };

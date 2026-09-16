@@ -294,6 +294,7 @@ test("requireRemoteSupport: fails closed on the probe's advertisement, never on 
 
 test("discovery retains remote routing capabilities for terminal preflight", async () => {
   const io = { persisted: () => "/bin/oats", env: {}, isExecutableFile: () => true };
-  const cli = await discover(io, async () => ({ stdout: JSON.stringify({ ...PROBE(), remote: ["spawn", "session"] }) }));
+  const cli = await discover(io, async () => ({ stdout: JSON.stringify({ ...PROBE(), scheduleApi: 2, remote: ["spawn", "session"] }) }));
   assert.deepEqual(cli.remote, ["spawn", "session"]);
+  assert.equal(cli.scheduleApi, 2);
 });
