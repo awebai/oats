@@ -86,9 +86,18 @@ literal witness and `trustAuthority:"none"`. It does not retain artifacts or
 associate the lock with a home/job. A deployment lock still cannot establish which
 revision an individual home or job used. Home runtime rows, rendered hook paths,
 copied skills and launch metadata can narrow investigation but do not establish
-the full source, capability,
-helper and managed-runtime closure. A legacy or unknown scheduled attempt is held
-exactly; it is never rebound to today's definition or lock.
+the full source, capability, helper and managed-runtime closure. A legacy or
+unknown scheduled attempt is held exactly; it is never rebound to today's
+definition or lock.
+
+`lib/portable-migration-artifacts.mjs` adds one narrower read-only proof for an
+explicit materialized-v2 candidate. It requires the strict lock witness, verifies
+the existing legacy artifact digest and exact `.oats-installation.json` provenance,
+then measures the new owner-exec digest twice with the legacy digest bracketing it.
+The result labels modes `observed-at-migration`, trust/selection authority `none`,
+and retention `not-retained`. It does not support v1 without that format's separate
+historical digest verifier, does not publish the candidate, and cannot associate it
+with a particular home or job.
 
 ## Required follow-on seams
 
