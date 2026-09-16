@@ -109,22 +109,24 @@ recurrence policy. Its containing schedule document is version 2:
 }
 ```
 
-The structural wire is published as
-[`execution-capsule.schema.json`](execution-capsule.schema.json); runtime
-validation additionally recomputes `executionId` and checks selector/target
-agreement.
+The admitted-attempt wire is published as
+[`execution-capsule.schema.json`](execution-capsule.schema.json). Runtime
+validation recomputes its `capsuleIntegrity` and checks selector/target
+agreement; `executionId` is a separate opaque admission identity.
 
 `capture` requires the explicit deployment/resolution selector pair and
 `--json` in the **saved argv**. The scheduler never appends an unrecorded
-protocol argument to a captured target. Adding or updating the definition derives an immutable
-`execution` capsule containing that exact target, resolution, input references
-and explicitly supplied responsible-human value. The scheduler verifies the
-capsule ID and calls the exact captured-action loader before acquiring a launch
-slot or invoking the CLI. The capsule is written into the attempt before the
-child process runs and is retained on the result. Definition edits affect later
-admissions only; an unknown attempt, `run`, or reconciliation never replaces its
-capsule with the edited definition or today's config/lock. Captured attempts
-carry their own `schemaVersion:1`; malformed/unknown attempt versions stay
+protocol argument to a captured target. Adding or updating the definition
+derives immutable `capturedExecution` content containing that exact target,
+resolution, input references, explicitly supplied responsible-human value and a
+canonical `capsuleIntegrity`. It contains no execution ID. At each due tick the
+scheduler verifies the retained action first, then mints a fresh opaque
+`executionId`, writes the resulting capsule into the attempt before reserving a
+slot, and only then invokes the CLI. Thus two attempts with identical content
+have the same capsule digest but remain different intents. Definition edits
+affect later admissions only; an unknown attempt, `run`, or reconciliation never
+replaces its capsule with the edited definition or today's config/lock. Captured
+attempts carry their own `schemaVersion:1`; malformed/unknown attempt versions stay
 unresolved and cannot dispatch. Scheduler launch also scrubs ambient
 `OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is authority.
 
