@@ -4,7 +4,7 @@ import Ajv from "ajv";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { admitExecutionTemplate, buildCommandExecutionTemplate, capturedDispatchAction, executionContentIntegrity, validateExecutionCapsule, validateExecutionTemplate } from "../lib/schedule-capsule.mjs";
+import { admitExecutionTemplate, buildCommandExecutionTemplate, capturedDispatchAction, executionContentIntegrity, validateExecutionCapsule, validateExecutionTemplate, validatePreparationInput } from "../lib/schedule-capsule.mjs";
 import { acquireJobLock, addSchedule, describe, findHomesInScope, jobLockInfo, readDefinitions, readState, reconcile, releaseJobLock, removeSchedule, runNow, saveWakeForHome, scheduleExecutionStatus, tickWorkspace, writeDefinitions, writeState } from "../lib/schedule.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { commitCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
@@ -127,7 +127,9 @@ test("failed admission and unavailable prepare-on-tick are blocked before comman
 
 test("prepare-on-tick uses the injected generic adapter and admits a new immutable capsule per tick", (t) => {
   const ws = workspace(t), prepared = [], dispatched = [], ids = [];
-  const preparation = { deployment: ws, source: { source: "git:https://example.test/repo.git", soul: "agents/expert", revision: "main", alias: "expert" }, mode: "directory" };
+  const preparation = { deployment: ws, source: { source: "git:https://example.test/repo.git", soul: "agents/expert", revision: "main", alias: "expert" }, mode: "directory", allowLocalPaths: false };
+  assert.deepEqual(validatePreparationInput({ deployment: ws, source: "expert", workspace: { source: "git:https://example.test/workspace.git" } }), { deployment: ws, source: "expert", workspace: { source: "git:https://example.test/workspace.git" } });
+  assert.throws(() => validatePreparationInput({ deployment: ws, source: "expert" }), { code: "invalid-declaration" });
   addSchedule(ws, { id: "prepared", definitionVersion: 2, recurrencePolicy: "prepare-on-tick", kind: "command", cwd: ws,
     argv: ["oats", "example-action", "show", "--", "--json"], preparation, cron: "* * * * *", tz: "UTC" });
   let prepareCalls = 0;
@@ -151,8 +153,12 @@ test("prepare-on-tick uses the injected generic adapter and admits a new immutab
   assert.equal(new Set(ids).size, 2); assert.equal(readState(ws).jobs.prepared.lastRun.execution.resolution.id, RID_B);
 
   const before = ids.length;
-  const blocked = tickWorkspace(ws, { now: at("2026-09-16T10:08:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ problems: [{ code: "needs-configuration" }] }) } });
+  let blocked = tickWorkspace(ws, { now: at("2026-09-16T10:08:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ problems: [{ code: "needs-configuration" }] }) } });
   assert.equal(blocked[0].action, "blocked"); assert.equal(blocked[0].errorCode, "needs-configuration"); assert.equal(ids.length, before);
+  blocked = tickWorkspace(ws, { now: at("2026-09-16T10:09:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ executionBinding: { schemaVersion: 1, deployment: "/other", resolution: { schemaVersion: 1, id: RID_A } }, responsibleHuman: null }) } });
+  assert.equal(blocked[0].action, "blocked"); assert.equal(blocked[0].errorCode, "E_SCHEDULE_INVALID"); assert.equal(ids.length, before);
+  blocked = tickWorkspace(ws, { now: at("2026-09-16T10:10:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ executionBinding: { schemaVersion: 1, deployment: ws, resolution: { schemaVersion: 1, id: RID_A } }, resolution: { schemaVersion: 1, id: RID_B }, responsibleHuman: null }) } });
+  assert.equal(blocked[0].action, "blocked"); assert.equal(blocked[0].errorCode, "E_SCHEDULE_INVALID"); assert.equal(ids.length, before);
 });
 
 test("captured wake templates bind instance executionBinding and remain gated before lifecycle side effects", (t) => {
