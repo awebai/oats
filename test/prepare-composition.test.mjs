@@ -240,6 +240,18 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   const nodes=join(physicalRoot,'fixture-nodes.json');writeFileSync(nodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));
   mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   initBase(binding.payload.runtime.bindings,'private-kb',nodes,undefined,{confirm:true}); // Administrative fixture bootstrap only.
+  const sourceHome=join(physicalRoot,'captured-source'),sourceWork=join(sourceHome,'work');mkdirSync(sourceWork,{recursive:true});
+  const sourceReceipt={schemaVersion:1,kind:'persistent',home:sourceHome,work:sourceWork,context:ready.executionBinding.deployment,agent:'imported-expert',instance:'imported-expert-1',
+    sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:ready.executionBinding,responsibleHuman:null,binding};
+  const registered=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:ready.resolution,home:sourceHome,instance:sourceReceipt.instance,agentName:sourceReceipt.agent,
+    sourceReceipt,extraEnv:{OATS_HOME_DIR:join(physicalRoot,'host-state')}});
+  assert.deepEqual(registered.failures,[],JSON.stringify(registered));assert.equal(registered.meta['oats.okf'].memory,'okf-v2');
+  const descriptor=JSON.parse(readFileSync(registered.meta['oats.okf'].source,'utf8'));
+  assert.deepEqual(descriptor.executionBinding,ready.executionBinding);assert.equal(descriptor.responsibleHuman,null);
+  assert.equal(JSON.stringify(descriptor.sourceIdentity),JSON.stringify(record.subject.soul.identity));
+  const schedules=JSON.parse(readFileSync(join(f.deployment,'oats-schedules.json'),'utf8')),schedule=schedules.jobs[`okf-${descriptor.id}`];
+  assert.equal(schedule.definitionVersion,2);assert.equal(schedule.recurrencePolicy,'capture');assert.equal(schedule.execution.responsibleHuman,null);
+  assert.equal(schedule.execution.resolution.id,ready.resolution.id);
   const poisonState=join(physicalRoot,'poison-state'),poisonBase=join(physicalRoot,'poison-base'),poisonNodes=join(physicalRoot,'poison-nodes.json');
   writeFileSync(poisonNodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   writeFileSync(settings['bindings-file'],JSON.stringify({version:1,stateDir:poisonState,bases:{'private-kb':{id:'private-kb',kind:'directory',path:poisonBase}}}));
