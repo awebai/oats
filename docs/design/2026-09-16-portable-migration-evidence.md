@@ -57,9 +57,11 @@ planned partial/unknown evidence under:
 
 The store is distinct from `.agents/resolutions/`; partial/unknown documents must
 carry `resolution:null`. `listResolutionEvidence` provides bounded deterministic
-diagnostics with record-count and aggregate-byte limits, treats an absent store as
-empty, ignores only managed metadata/staging, and verifies every returned content
-address; corruption or unexpected entries fail closed. `commitPlannedResolutionEvidence` re-reads and compares
+diagnostics with incremental visited-entry, retained-record and aggregate-byte
+limits. Managed metadata/staging consumes the visited-entry budget even though it
+is not returned. An absent store is empty; every returned content address is
+verified, and corruption or unexpected entries fail closed.
+`commitPlannedResolutionEvidence` re-reads and compares
 the complete inventory before it creates the evidence store, recomputes the
 planner output rather than trusting caller-supplied status, and publishes canonical
 private bytes by atomic no-replace hard link. Matching existing bytes are reused;

@@ -132,8 +132,11 @@ test("unselectable evidence publication rechecks witnesses and never creates a c
   assert.equal(listed.length, 1); assert.equal(listed[0].reference.id, reference.id);
   assert.equal(listed[0].target.id, target.id); assert.equal(listed[0].document.status, "partial");
   assert.throws(() => listResolutionEvidence(f.deployment, { maxBytes: 1 }), { code: "resource-limit" });
+  const evidenceRoot = join(f.deployment, ".agents", "resolution-evidence");
+  for (const name of [".evidence-one", ".evidence-two", ".evidence-three"]) mkdirSync(join(evidenceRoot, name));
+  assert.throws(() => listResolutionEvidence(f.deployment, { maxEntries: 2 }), { code: "resource-limit" }, "ignored staging entries still consume the incremental visit budget");
 
-  const path = join(f.deployment, ".agents", "resolution-evidence", `${reference.id}.json`);
+  const path = join(evidenceRoot, `${reference.id}.json`);
   writeFileSync(path, readFileSync(path, "utf8").replace('"status":"partial"', '"status":"unknown"'));
   assert.throws(() => readResolutionEvidence(f.deployment, reference), { code: "integrity-drift" });
   assert.throws(() => listResolutionEvidence(f.deployment), { code: "integrity-drift" });
