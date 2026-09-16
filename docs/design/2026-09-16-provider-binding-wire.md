@@ -143,6 +143,34 @@ must match the receipt. Captured lifecycle hook loading preflights every applica
 retained hook, exact approval, host requirement and provider readiness before the
 first lifecycle side effect, then preserves the existing hook metadata, warning,
 environment and required-hook result contract. The source receipt is exposed only
-to its binding owner. This establishes the hook/registration ABI; public captured
-spawn/start/restart/retire adoption is still unfinished and cannot fall back to
-current source or configuration.
+to its binding owner. This establishes the knowledge-source hook/registration ABI; it is not a generic
+messaging lifecycle contract.
+
+## Provider-neutral captured invocation context
+
+Every captured provider hook and operation also receives one private mode-`0600`
+`OATS_INVOCATION_CONTEXT_FILE`. Its v1 payload is:
+
+```text
+{schemaVersion, executionBinding,
+ subject:{kind,identity,alias},
+ instance:null|{home,work,name,agent},
+ context, responsibleHuman, messagingChoice,
+ capability, action, priorReceipt}
+```
+
+The kernel derives it from the verified record, explicit target and that capability's
+stored prior hook metadata before provider readiness or execution. `messagingChoice`
+carries the requested private floor and explicit wider set; it is intent, never proof
+of privacy/enrollment. `priorReceipt` is bounded opaque JSON owned by the selected
+capability. Credential values remain outside all three snapshots. Providers must use
+the exact execution/source/instance/context/human/action facts and reconcile retries
+against their prior receipt; they must not infer replacements from cwd, OS user,
+display name, source alias or ambient configuration.
+
+The file uses the same owned scratch, success/failure cleanup and observed-result
+preservation boundary as the binding/source snapshots. Existing
+`OATS_SOURCE_RECEIPT_FILE` remains the knowledge source-registration input, not a
+messaging-specific or general identity mechanism. Captured start/restart/retire and
+managed launch adoption remain unfinished and cannot fall back to current source or
+configuration.

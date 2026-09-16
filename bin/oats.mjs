@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, scaffoldCapturedInstance, withCapturedBindingFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, buildCapturedInvocationContext, loadCapturedDispatch, prepareCapturedComposition, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -180,10 +180,13 @@ function capturedOperation(selector, load, bail) {
   });
   if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
     PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
+  const invocation = buildCapturedInvocationContext({ loaded, action: { kind: "operation", name: address },
+    instance: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
+    priorReceipt: meta?.capabilityMeta?.[capability.id] ?? null });
   let child, cleanupError;
   try {
-    child = withCapturedBindingFile(loaded, bindingEnv => runCapturedOperationProcess({ file: executable.file,
-      args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...bindingEnv } }));
+    child = withCapturedInvocationContextFile(invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => runCapturedOperationProcess({ file: executable.file,
+      args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...contextEnv, ...bindingEnv } })));
   } catch (error) {
     if (!error?.invocationCompleted) throw error;
     child = error.invocationResult; cleanupError = error;

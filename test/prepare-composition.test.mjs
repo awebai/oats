@@ -191,10 +191,11 @@ test('preparation resolves approved provider fields in the same engine and never
   f.write('packages/action/cap/show.mjs',`import {readFileSync,rmSync,statSync,writeFileSync} from 'node:fs';import {dirname} from 'node:path';
     const snapshot=process.env.OATS_BINDING_FILE,binding=JSON.parse(readFileSync(snapshot,'utf8'));
     const sourceSnapshot=process.env.OATS_SOURCE_RECEIPT_FILE??null,sourceReceipt=sourceSnapshot?JSON.parse(readFileSync(sourceSnapshot,'utf8')):null;
-    const result={location:binding.payload.location,snapshot,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
+    const invocationSnapshot=process.env.OATS_INVOCATION_CONTEXT_FILE??null,invocation=invocationSnapshot?JSON.parse(readFileSync(invocationSnapshot,'utf8')):null;
+    const result={location:binding.payload.location,snapshot,invocationSnapshot,invocation,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
     if(process.env.OATS_OPERATION && process.argv.includes('cleanup-failure')) rmSync(dirname(snapshot),{recursive:true});
     if(process.env.OATS_EVENT) writeFileSync(${JSON.stringify(hookMarker)},'ran');
-    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
+    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding,invocation}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
   const unavailable=join(f.root,'provider-unavailable');
   f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
@@ -226,15 +227,18 @@ test('preparation resolves approved provider fields in the same engine and never
   const operation=JSON.parse(execFileSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=exact','--json'],{encoding:'utf8'}));
   assert.equal(operation.ok,true);assert.equal(operation.result.result.location,'A');assert.deepEqual(operation.result.result.args,['--label','exact','--json']);
   assert.equal(operation.result.result.resolution,prepared.resolution.id);assert.equal(existsSync(operation.result.result.snapshot),false,'operation snapshot is removed before its receipt is rendered');
+  assert.equal(operation.result.result.invocation.action.name,'knowledge:probe');assert.equal(operation.result.result.invocation.capability,f.id);
+  assert.equal(operation.result.result.invocation.instance,null);assert.equal(existsSync(operation.result.result.invocationSnapshot),false,'invocation context is also transient');
   const cleanup=spawnSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=cleanup-failure','--json'],{encoding:'utf8'});
   assert.equal(cleanup.status,1);const cleanupFailure=JSON.parse(cleanup.stdout).error;
   assert.equal(cleanupFailure.code,'E_OPERATION_RESULT');assert.equal(cleanupFailure.details.unconfirmed,true);
   assert.equal(cleanupFailure.details.envelope.result.location,'A');assert.equal(cleanupFailure.details.envelope.result.args.includes('cleanup-failure'),true);
   assert.ok(cleanupFailure.details.cleanup.message,'cleanup diagnostic is retained with the observed provider receipt');
-  const home=join(f.root,'captured-home');mkdirSync(home);writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',agent:'expert',executionBinding:prepared.executionBinding}));
+  const home=join(f.root,'captured-home');mkdirSync(home);writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',agent:'imported-expert',executionBinding:prepared.executionBinding,capabilityMeta:{[f.id]:{identity:'prior-receipt'}}}));
   const homeCall=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
   assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
+  assert.deepEqual(homeOperation.result.result.invocation.priorReceipt,{identity:'prior-receipt'});assert.equal(homeOperation.result.result.invocation.instance.agent,'imported-expert');
   const sourceReceipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:prepared.executionBinding.deployment,agent:'imported-expert',instance:'captured-home',
     sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:prepared.executionBinding,responsibleHuman:null,binding:record.bindings.knowledge};
   mkdirSync(sourceReceipt.work);
@@ -252,6 +256,8 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(readFileSync(hookMarker,'utf8'),'ran');
   assert.deepEqual(hooks.order,[f.id]);assert.equal(JSON.stringify(hooks.meta[f.id].sourceIdentity),JSON.stringify(record.subject.soul.identity));
   assert.deepEqual(hooks.meta[f.id].executionBinding,prepared.executionBinding);assert.equal(existsSync(hooks.meta[f.id].sourceSnapshot),false,'source receipt snapshot is removed after the synchronous hook');
+  assert.equal(hooks.meta[f.id].invocation.action.name,'spawn');assert.equal(hooks.meta[f.id].invocation.priorReceipt,null);
+  assert.equal(hooks.meta[f.id].invocation.instance.home,home);
   writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',executionBinding:{...prepared.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}}));
   const mismatch=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(mismatch.status,1);assert.equal(JSON.parse(mismatch.stdout).error.code,'E_HOME_MISMATCH');
