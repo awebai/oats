@@ -33,10 +33,14 @@ function fixture(t) {
   write(join(deployment, "oats-schedules.json"), { version: 2, jobs: {
     legacy: { id: "legacy", kind: "command", cwd: deployment, argv: ["oats", "status"], cron: "* * * * *", tz: "UTC" },
     captured: { id: "captured", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", execution: template },
+    "captured-legacy-attempt": { id: "captured-legacy-attempt", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", execution: template },
+    "captured-malformed-attempt": { id: "captured-malformed-attempt", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", execution: template },
   } });
   write(join(deployment, ".agents", "schedules", "state.json"), { jobs: {
     legacy: { attempt: { scheduledFor: "2026-09-16T00:00:00.000Z" }, lastRun: { outcome: "unknown" } },
     captured: { attempt: { schemaVersion: 1, execution: attempt } },
+    "captured-legacy-attempt": { attempt: { scheduledFor: "2026-09-16T00:01:00.000Z" }, lastRun: { outcome: "unknown" } },
+    "captured-malformed-attempt": { attempt: "not-an-attempt" },
   } });
   return { deployment, legacyHome, capturedHome };
 }
@@ -77,6 +81,14 @@ test("bounded migration inventory witnesses literal locks, homes and jobs withou
   const capturedJob = byTarget(plan, "scheduled-job", ".:captured");
   assert.equal(capturedJob.status, "partial"); assert.equal(capturedJob.action, "preserve");
   assert.equal(capturedJob.preserve.executions.find((entry) => entry.source === "attempt").executionId, "attempt-a");
+  const heldCapturedDefinition = byTarget(plan, "scheduled-job", ".:captured-legacy-attempt");
+  assert.equal(inventory.schedules[0].jobs.find((job) => job.id === "captured-legacy-attempt").attempt.state, "legacy");
+  assert.equal(heldCapturedDefinition.status, "unknown"); assert.equal(heldCapturedDefinition.action, "hold");
+  assert.equal(Object.hasOwn(heldCapturedDefinition, "preserve"), false, "today's captured definition cannot supply an old attempt's authority");
+  assert.ok(heldCapturedDefinition.unresolved.some((entry) => /owner reconciliation/.test(entry.reason)));
+  const malformedAttempt = byTarget(plan, "scheduled-job", ".:captured-malformed-attempt");
+  assert.equal(malformedAttempt.status, "unknown"); assert.equal(malformedAttempt.action, "hold");
+  assert.ok(malformedAttempt.unresolved.some((entry) => entry.code === "invalid-evidence"));
   verifyPortableMigrationInventory(f.deployment, inventory);
 });
 

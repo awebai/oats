@@ -97,14 +97,21 @@ revision an individual home or job used. Home runtime rows, rendered hook paths,
 copied skills and launch metadata can narrow investigation but do not establish
 the full source, capability, helper and managed-runtime closure. A legacy or
 unknown scheduled attempt is held exactly; it is never rebound to today's
-definition or lock.
+definition or lock. The inventory distinguishes an existing legacy attempt from
+an absent attempt even when no execution field exists. A captured current
+definition cannot turn that old unresolved attempt into preserved captured
+authority; the planner keeps the target `unknown` and `hold` pending owner
+reconciliation.
 
 `lib/portable-migration-artifacts.mjs` adds one narrower read-only proof for an
 explicit materialized-v2 candidate. It requires the strict lock witness, verifies
 the existing legacy artifact digest and exact `.oats-installation.json` provenance,
-then measures the new owner-exec digest twice with the legacy digest bracketing it.
-The result labels modes `observed-at-migration`, trust/selection authority `none`,
-and retention `not-retained`. It does not support v1 without that format's separate
+reads `.oats-installation.json` through the bounded descriptor-backed regular-file
+reader, records the exact provenance-byte digest, and then measures the new
+owner-exec digest twice with the legacy digest bracketing it. A symlinked or
+replaced provenance file cannot borrow external bytes that the artifact digest did
+not witness. The result labels modes `observed-at-migration`, trust/selection
+authority `none`, and retention `not-retained`. It does not support v1 without that format's separate
 historical digest verifier and does not publish the candidate.
 `verifyHistoricalHomeCapabilityCandidate` can additionally prove that one unchanged
 home's `capabilityRuntime` names exactly one capability with the same old digest.

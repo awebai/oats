@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { capabilityArtifactIntegrity } from "../lib/artifact-tree.mjs";
@@ -42,6 +42,8 @@ test("explicit v2 artifact candidate verifies old bytes/provenance but observes 
   assert.equal(first.artifact.historicalIntegrity.value, first.capability.row.integrity);
   assert.notEqual(first.artifact.historicalIntegrity.value, f.inventory.locks[0].integrity.value, "lock file and artifact hashes are different domains");
   assert.equal(first.artifact.modeEvidence, "observed-at-migration");
+  assert.equal(first.artifact.provenance.path, ".oats-installation.json");
+  assert.match(first.artifact.provenance.integrity.value, /^sha256-[a-f0-9]{64}$/);
   assert.equal(first.selectionAuthority, "none"); assert.equal(first.approvalAuthority, "none");
   assert.equal(first.retentionStatus, "not-retained");
   assert.equal(existsSync(join(f.deployment, ".agents", "capabilities", "artifacts")), false, "verification does not retain or publish");
@@ -50,6 +52,21 @@ test("explicit v2 artifact candidate verifies old bytes/provenance but observes 
   const second = verifyHistoricalCapabilityCandidate(f.deployment, f.inventory, request, { legacyLockDecoder: f.legacyLockDecoder });
   assert.equal(second.artifact.historicalIntegrity.value, first.artifact.historicalIntegrity.value, "old v2 digest did not cover owner execute");
   assert.notEqual(second.artifact.observedIntegrity.value, first.artifact.observedIntegrity.value, "new observation records owner execute today");
+});
+
+test("external provenance symlink is refused even when the old artifact digest witnesses its link target", (t) => {
+  const f = fixture(t), provenance = join(f.artifact, ".oats-installation.json"), external = join(f.deployment, "external-provenance.json");
+  const bytes = readFileSync(provenance); writeFileSync(external, bytes); rmSync(provenance); symlinkSync(external, provenance);
+  const lockPath = join(f.deployment, "oats-lock.json"), lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  lock.capabilities[f.capability].integrity = capabilityArtifactIntegrity(f.artifact); write(lockPath, lock);
+  write(join(f.home, "instance.json"), { instance: "dev-old", capabilityRuntime: [{ id: f.capability,
+    trust: { trusted: true, integrity: lock.capabilities[f.capability].integrity }, hooks: {} }] });
+  const inventory = readPortableMigrationInventory(f.deployment, { lockFiles: ["oats-lock.json"], instanceHomes: [f.homePath] }, { legacyLockDecoder: f.legacyLockDecoder });
+  const request = { lockPath: "oats-lock.json", capability: f.capability,
+    artifactDir: `.agents/capabilities/installed/${f.capability}` };
+  assert.throws(() => verifyHistoricalCapabilityCandidate(f.deployment, inventory, request,
+    { legacyLockDecoder: f.legacyLockDecoder }), { code: "invalid-lock" });
+  assert.deepEqual(readFileSync(external), bytes, "external bytes were neither changed nor accepted as artifact provenance");
 });
 
 test("one home runtime digest can associate one v2 artifact but remains partial and unapproved", (t) => {
