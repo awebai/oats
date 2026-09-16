@@ -136,8 +136,9 @@ unresolved and cannot dispatch. Scheduler launch also scrubs ambient
 `prepare-on-tick` is a distinct explicit policy for a genuinely new command
 tick. Its `preparation` object maps directly to the generic
 `prepareCapturedComposition({deployment,source,workspace?,member?,operator?,mode?})`
-input; scheduler code does not parse source/workspace policy itself. A complete
-adapter result must contain `executionBinding` and an explicit
+input; scheduler code does not parse source/workspace policy itself. Production
+uses the core adapter and tests may inject the same contract. A complete
+result must contain `executionBinding` and an explicit
 `responsibleHuman` (`null` means messaging was actually disabled). The scheduler
 then inserts the exact selector pair before `--`, verifies the captured action,
 mints and persists the attempt, and dispatches. Missing adapters and incomplete
