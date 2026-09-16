@@ -376,6 +376,45 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   assert.deepEqual(projected,{kind:'captured',owner:'expert-owner'});assert.equal(existsSync(invocation),false);
 });
 
+test('standalone aweb consumer accepts exact captured check and snapshot wire without native effects', {skip:!process.env.OATS_AWEB_CONSUMER_REPO}, async t=>{
+  const f=fixture(t,true),provider=process.env.OATS_AWEB_CONSUMER_REPO,revision=process.env.OATS_AWEB_CONSUMER_REV;
+  assert.match(revision??'',/^[a-f0-9]{40}$/,'consumer must pin an exact provider commit');
+  const archive=execFileSync('git',['-C',provider,'archive',revision,'oats-package'],{maxBuffer:16*1024*1024});
+  const destination=join(f.repo,'packages/action');rmSync(destination,{recursive:true});mkdirSync(destination);
+  execFileSync('tar',['-x','--strip-components=1','-C',destination],{input:archive});
+  const physical=realpathSync(f.root),tools=join(physical,'tools'),marker=join(physical,'native-aw-ran');mkdirSync(tools);
+  writeFileSync(join(tools,'aw'),`#!${process.execPath}\nimport {writeFileSync} from 'node:fs';writeFileSync(${JSON.stringify(marker)},'unexpected');process.exit(99);\n`,{mode:0o700});
+  const priorPath=process.env.PATH;process.env.PATH=`${tools}:${priorPath}`;t.after(()=>{process.env.PATH=priorPath;});
+  f.write('agents/expert/soul.yaml',JSON.stringify({schemaVersion:1,name:'expert',work:'directory',teams:[],requires:{messaging:{capability:'oats.aweb',source:'repo:packages/action',settings:{delivery:'session'}}}}));
+  f.git('add','-A');f.git('commit','--quiet','-m','real aweb wire consumer');
+  const human={provider:'oats.aweb',id:'human:fixture'},input={...f.input,standaloneContextKey:'explicit-fixture',operator:{policy:{},document:{kind:'operator',id:'aweb-consumer'},bindings:{responsibleHuman:human,wider:[]}}};
+  const pending=prepareCapturedComposition(input,f.options);assert.equal(pending.resolution,null,JSON.stringify(pending));
+  approveAvailableCapability(f.deployment,pending.selections[0].artifactSet,'oats.aweb',{kind:'operator',document:{kind:'operator',id:'fixture-approve'},pointer:'/approve'});
+  const prepared=prepareCapturedComposition(input,f.options);assert.equal(prepared.status,'prepared',JSON.stringify(prepared));
+  const record=readCapturedResolution(f.deployment,prepared.resolution),binding=record.bindings.messaging;
+  assert.deepEqual(JSON.parse(JSON.stringify(prepared.responsibleHuman)),human);assert.deepEqual(record.messagingChoice.wider,[]);
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poison: never select ambient provider state\n');
+  writeFileSync(join(f.deployment,'oats-lock.json'),'poisoned current lock');
+  const home=join(physical,'imported-expert-1');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'imported-expert-1'});
+  const inspected=loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'inspect'}}),capability=inspected.capabilities.get('oats.aweb');
+  const {buildCapturedInvocationContext,withCapturedInvocationContextFile}=await import('../lib/captured-invocation-context.mjs');
+  const action={kind:'hook',capability:'oats.aweb',name:'spawn'},invocation=buildCapturedInvocationContext({loaded:{...inspected,capability},action,
+    instance:{home,work:join(home,'work'),name:'imported-expert-1',agent:'imported-expert'}});
+  const checked=runCapturedProviderBinding({deployment:f.deployment,artifacts:record.artifacts,capability:'oats.aweb',phase:'check',settings:capability.settings,input:{binding,context:record.context,action,invocation}});
+  assert.notEqual(checked.status,'ready','accepted wire is not setup/privacy qualification');
+  const loaded={...inspected,capability};let contextFile,bindingFile;
+  const consumed=withCapturedInvocationContextFile(invocation,contextEnv=>withCapturedBindingFile(loaded,bindingEnv=>{
+    contextFile=contextEnv.OATS_INVOCATION_CONTEXT_FILE;bindingFile=bindingEnv.OATS_BINDING_FILE;
+    const module=pathToFileURL(join(capability.manifest._dir,'lib/invocation-context.mjs')).href;
+    return JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`import {loadCapturedAwebInvocation} from ${JSON.stringify(module)};const r=loadCapturedAwebInvocation();console.log(JSON.stringify({kind:r.kind,subject:r.context.subject}));`],{encoding:'utf8',env:{...process.env,...contextEnv,...bindingEnv}}));
+  }));
+  assert.equal(consumed.kind,'captured');assert.deepEqual(consumed.subject,JSON.parse(JSON.stringify(record.subject)));
+  assert.equal(existsSync(contextFile),false);assert.equal(existsSync(bindingFile),false);
+  assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',namespace:'aweb',name:'setup'}}),{code:'authorization-required'});
+  const blocked=activateCapturedScaffold.bind(null,{deployment:f.deployment,resolution:prepared.resolution,home});
+  assert.throws(blocked,{code:'E_REQUIRED_HOOK_FAILED'});assert.equal(existsSync(join(home,'.aw')),false);assert.equal(existsSync(marker),false,'no native aw was invoked');
+});
+
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{
   const f=fixture(t),source=f.input.source.source,reference=f.input.source;
   f.write('oats-workspace.yaml',JSON.stringify({schemaVersion:1,name:'Fixture',imports:[
