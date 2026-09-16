@@ -1,5 +1,8 @@
 # Knowledge Log
 
+## 2026-09-16
+* **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record exact captured CLI/action consumers and native command/curriculum preparation delivered through `049a22ad`, prospective approval ordering, the independently closed raw-hook/rendered-command defect, and the parallel scheduler lane. Provider/lifecycle/migration/production completion is still outstanding; operational setup is not framework deployment qualification.
+
 ## 2026-09-15
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record package preparation and exact manifest-default capture on main through `1a61daa4`, independently closed provenance findings, and the deterministic CI lock-test correction. Full CI confirmation and captured public runtime/migration/production remain outstanding; no release or deployment is inferred.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record direct main delivery of reviewed Portable Souls data/source/discovery foundations, the all-green integration gates, the reproduced-and-closed pre-write containment defect, and remaining runtime/migration work. Corrected the published baseline to v0.23.2; older operational notes are history, not live deployment qualification. No new release or production activation is inferred from source delivery.
