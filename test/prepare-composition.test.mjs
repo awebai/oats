@@ -67,10 +67,13 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.deepEqual(indexed.map(row=>[row.instance,row.status]),[['imported-expert-1','spawned-launch-pending'],['imported-expert-2','spawn-failed-cleanup-required']]);
   const action=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'command',namespace:'example-action',name:'show'}});
   assert.equal(execFileSync(process.execPath,[action.executable.file,...action.executable.args],{encoding:'utf8'}).trim(),'A');
-  const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'}});
+  const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'},
+    invocationTarget:{home:scaffoldHome,work:join(scaffoldHome,'work'),name:'imported-expert-1',agent:'imported-expert'}});
   assert.equal(hook.executable.file,action.executable.file); assert.deepEqual(hook.executable.args,[]);
   const helper=loadCapturedDispatch({deployment:f.deployment,resolution:record.helpers['example.action:worker'],action:{kind:'compose'}});
   assert.ok(helper.composition.text.startsWith('Worker instructions'));
+  const helperCommand=loadCapturedDispatch({deployment:f.deployment,resolution:record.helpers['example.action:worker'],action:{kind:'command',capability:f.id,name:'show'}});
+  assert.deepEqual(helperCommand.invocation.subject,structuredClone(helper.record.subject),'helper invocation retains exact provider artifact and definition, not an alias-derived identity');
   const capturedComposition=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition;
   assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
   assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
@@ -209,7 +212,7 @@ test('preparation resolves approved provider fields in the same engine and never
       const candidates=operator?.value.bindings?.location===undefined?[]:[{key,kind:'operator',value:operator.value.bindings.location,origin:operator.origins['/bindings/location']}];
       result={requirements,candidates,model:{}};
     } else if(r.phase==='bind') result={payloadContract:'example.locations',payloadVersion:1,payload:{location:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
-    else {if(process.env.OATS_INVOCATION_CONTEXT_FILE)writeFileSync(${JSON.stringify(checkContext)},readFileSync(process.env.OATS_INVOCATION_CONTEXT_FILE));result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};}
+    else {if(process.env.OATS_INVOCATION_CONTEXT_FILE)throw Error('check has a second context authority');if(r.input.invocation)writeFileSync(${JSON.stringify(checkContext)},JSON.stringify(r.input.invocation));result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};}
     console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
   f.git('add','.');f.git('commit','--quiet','-m','source provider policy');
   const pending=prepareCapturedComposition(f.input,f.options);
@@ -239,12 +242,26 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(cleanupFailure.code,'E_OPERATION_RESULT');assert.equal(cleanupFailure.details.unconfirmed,true);
   assert.equal(cleanupFailure.details.envelope.result.location,'A');assert.equal(cleanupFailure.details.envelope.result.args.includes('cleanup-failure'),true);
   assert.ok(cleanupFailure.details.cleanup.message,'cleanup diagnostic is retained with the observed provider receipt');
-  const home=join(f.root,'captured-home');mkdirSync(home);writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',agent:'imported-expert',executionBinding:prepared.executionBinding,capabilityMeta:{[f.id]:{identity:'prior-receipt'}}}));
+  const home=join(f.root,'captured-home');mkdirSync(home);
+  const homeMetadata={home,kind:'persistent',responsibleHuman:null,instance:'captured-home',agent:'imported-expert',executionBinding:prepared.executionBinding};
+  writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,capabilityMeta:{[f.id]:{identity:'prior-receipt'}}}));
   const homeCall=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
   assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
   assert.deepEqual(homeOperation.result.result.invocation.priorReceipt,{identity:'prior-receipt'});assert.equal(homeOperation.result.result.invocation.instance.agent,'imported-expert');
   assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),homeOperation.result.result.invocation,'readiness receives target and prior receipt before the home operation');
+  const target={home,work:join(home,'work'),name:'captured-home',agent:'imported-expert'};
+  const checkBefore=readFileSync(checkContext),homeOptions={deployment:f.deployment,resolution:prepared.resolution,action:{kind:'hook',capability:f.id,name:'spawn'},invocationTarget:target};
+  for(const bad of [
+    {...homeOptions,invocationTarget:{...target,name:'replacement-instance'}},
+    {...homeOptions,invocationTarget:{...target,agent:'replacement-agent'}},
+    {...homeOptions,invocationTarget:{...target,work:join(f.root,'wrong-work')}},
+    {...homeOptions,priorReceipt:{identity:'forged-prior'}},
+    {...homeOptions,invocationTarget:null},
+  ]) { assert.throws(()=>loadCapturedDispatch(bad));assert.deepEqual(readFileSync(checkContext),checkBefore,'target/prior contradictions fail before provider check'); }
+  writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,responsibleHuman:{provider:'example.messaging',id:'invented-human'}}));
+  assert.throws(()=>loadCapturedDispatch(homeOptions));assert.deepEqual(readFileSync(checkContext),checkBefore);
+  writeFileSync(join(home,'instance.json'),JSON.stringify(homeMetadata));
   const sourceReceipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:prepared.executionBinding.deployment,agent:'imported-expert',instance:'captured-home',
     sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:prepared.executionBinding,responsibleHuman:null,binding:record.bindings.knowledge};
   mkdirSync(sourceReceipt.work);
@@ -280,6 +297,15 @@ test('preparation resolves approved provider fields in the same engine and never
   const checkedContext=JSON.parse(readFileSync(checkContext,'utf8'));assert.equal(checkedContext.action.kind,'command');assert.equal(checkedContext.capability,f.id);
   assert.equal(checkedContext.executionBinding.resolution.id,prepared.resolution.id);assert.equal(checkedContext.instance,null);
   assert.deepEqual(checkedContext,JSON.parse(JSON.stringify(loaded.invocation)));
+  const capturedCheck={deployment:f.deployment,artifacts:record.artifacts,capability:f.id,phase:'check',settings:loaded.capability.settings,
+    input:{binding:record.bindings.knowledge,context:record.context,action:loaded.action,invocation:loaded.invocation}};
+  assert.equal(runCapturedProviderBinding(capturedCheck).status,'ready');
+  const brokerCheckBefore=readFileSync(checkContext);
+  for(const bad of [
+    {...capturedCheck,input:{...capturedCheck.input,invocation:{...loaded.invocation,subject:{...loaded.invocation.subject,soul:{...loaded.invocation.subject.soul,alias:'forged'}}}}},
+    {...capturedCheck,settings:{limit:99}},
+    {...capturedCheck,input:{...capturedCheck.input,binding:{...record.bindings.knowledge,payload:{location:'other-location'}}}},
+  ]) { assert.throws(()=>runCapturedProviderBinding(bad),{code:'invalid-resolution'});assert.deepEqual(readFileSync(checkContext),brokerCheckBefore,'public check cannot authorize a forged invocation'); }
   assert.throws(()=>runCapturedProviderBinding({deployment:f.deployment,artifacts:record.artifacts,capability:f.id,phase:'check',settings:{limit:3},
     input:{binding:record.bindings.knowledge,context:record.context,action:{kind:'command',capability:f.id,name:'show'}},invocationContextFile:checkContext}),
     {code:'invalid-declaration'},'prospective binding callers cannot nominate a context-file authority');

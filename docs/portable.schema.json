@@ -1550,6 +1550,305 @@
         }
       ]
     },
+    "CapturedSubject": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "persistent"
+            },
+            "soul": {
+              "$ref": "#/$defs/SoulSelection"
+            }
+          },
+          "required": [
+            "kind",
+            "soul"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "helper"
+            },
+            "provider": {
+              "$ref": "#/$defs/CapabilityArtifactRef"
+            },
+            "definition": {
+              "$ref": "#/$defs/ResourceRef"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            }
+          },
+          "required": [
+            "kind",
+            "provider",
+            "definition",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ExecutionBinding": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "deployment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolution": {
+          "$ref": "#/$defs/ResolutionRef"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "deployment",
+        "resolution"
+      ],
+      "additionalProperties": false
+    },
+    "CapturedAction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "enum": [
+                "inspect",
+                "compose"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "command"
+            },
+            "capability": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "capability",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "command"
+            },
+            "namespace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "namespace",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "hook"
+            },
+            "capability": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^[a-z0-9][a-z0-9._-]*$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "capability",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "operation"
+            },
+            "slot": {
+              "enum": [
+                "knowledge",
+                "messaging",
+                "tasks"
+              ]
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "slot",
+            "name"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "CapturedInvocationContext": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "executionBinding": {
+          "$ref": "#/$defs/ExecutionBinding"
+        },
+        "subject": {
+          "$ref": "#/$defs/CapturedSubject"
+        },
+        "instance": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "home": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "work": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "agent": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "home",
+                "work",
+                "name",
+                "agent"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "context": {
+          "$ref": "#/$defs/Context"
+        },
+        "responsibleHuman": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/TeamRef"
+            }
+          ]
+        },
+        "messagingChoice": {
+          "$ref": "#/$defs/MessagingChoice"
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "action": {
+          "$ref": "#/$defs/CapturedAction"
+        },
+        "priorReceipt": {}
+      },
+      "required": [
+        "schemaVersion",
+        "executionBinding",
+        "subject",
+        "instance",
+        "context",
+        "responsibleHuman",
+        "messagingChoice",
+        "capability",
+        "action",
+        "priorReceipt"
+      ],
+      "additionalProperties": false,
+      "description": "Bounded generic projection: exact subject union and validated record/instance equality are mandatory. Prior receipt is opaque nullable JSON, not credentials or an idempotency grant."
+    },
+    "ProviderCheckInput": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/ProviderBinding"
+        },
+        "context": {
+          "$ref": "#/$defs/Context"
+        },
+        "action": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "invocation": {
+          "$ref": "#/$defs/CapturedInvocationContext"
+        }
+      },
+      "required": [
+        "binding",
+        "context",
+        "action"
+      ],
+      "additionalProperties": false
+    },
     "CapturedResolution": {
       "type": "object",
       "properties": {
@@ -1563,50 +1862,7 @@
           ]
         },
         "subject": {
-          "oneOf": [
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "const": "persistent"
-                },
-                "soul": {
-                  "$ref": "#/$defs/SoulSelection"
-                }
-              },
-              "required": [
-                "kind",
-                "soul"
-              ],
-              "additionalProperties": false
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "const": "helper"
-                },
-                "provider": {
-                  "$ref": "#/$defs/CapabilityArtifactRef"
-                },
-                "definition": {
-                  "$ref": "#/$defs/ResourceRef"
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
-                }
-              },
-              "required": [
-                "kind",
-                "provider",
-                "definition",
-                "name"
-              ],
-              "additionalProperties": false
-            }
-          ]
+          "$ref": "#/$defs/CapturedSubject"
         },
         "context": {
           "$ref": "#/$defs/Context"

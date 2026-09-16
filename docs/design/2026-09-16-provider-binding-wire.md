@@ -90,8 +90,13 @@ provider and `{schemaVersion:1,enabled:false}`, not an invented private team.
 
 ## Check
 
-`input` is exactly `{binding,context,action}`. Binding is the complete immutable
-ProviderBinding1. Action is the requested captured action, not a new launch recipe.
+`input` is `{binding,context,action,invocation?}` with no other fields. Binding is
+the complete immutable ProviderBinding1. Action is the requested captured action,
+not a new launch recipe. Optional `invocation` is the same bounded
+CapturedInvocationContext1 projected for execution below; if present, its capability,
+context and action must match this request. It is not nullable: omit it for an explicit
+scope check without invocation data. Identity-dependent provider actions must refuse
+missing instance context. Normalize/bind do not accept this field.
 Result is exactly `{status,problems}`; status is ready/needs-configuration/
 authorization-required/unavailable. Problems is an array of code + optional message
 objects using the error-code set above. Ready requires an empty problems array.
@@ -148,21 +153,34 @@ messaging lifecycle contract.
 
 ## Provider-neutral captured invocation context
 
-Every captured provider check, command, hook and operation receives one private
-mode-`0600` `OATS_INVOCATION_CONTEXT_FILE`. Checks receive the same derived context
-and action as execution; this enables setup-specific admission without requiring
-already-completed enrollment. Its v1 payload is:
+Captured commands, hooks and operations receive one private mode-`0600`
+`OATS_INVOCATION_CONTEXT_FILE`. Read-only checks receive that same validated data in
+`input.invocation` instead, NOT via a second file/environment source of authority.
+This enables setup-specific admission without requiring already-completed enrollment.
+The unreleased v1 payload is:
 
 ```text
-{schemaVersion, executionBinding,
- subject:{kind,identity,alias},
+{schemaVersion:1, executionBinding,
+ subject: <exact captured record subject>,
  instance:null|{home,work,name,agent},
  context, responsibleHuman, messagingChoice,
  capability, action, priorReceipt}
 ```
 
+The subject is the existing closed union: `{kind:'persistent',soul: SoulSelection}`
+or `{kind:'helper',provider: CapabilityArtifactRef,definition: ResourceRef,name}`.
+Helpers retain their exact provider artifact and definition, not an alias-derived
+identity. The shared subject/context codecs and structural schemas are reused.
+Overall limits are 512 KiB, depth 32 and 16384 entries; `priorReceipt` separately has
+128 KiB, depth 24 and 8192 entries. Its JSON is opaque and nullable, never credentials.
+
 The kernel derives it from the verified record, explicit target and that capability's
-stored prior hook metadata before provider readiness or execution. `action` is the
+current stored metadata before provider readiness or execution. Non-null instance
+facts and any supplied prior receipt must match the captured home's metadata and
+record; a scope action has instance:null and no invented home. A public broker check
+with invocation re-verifies the referenced record and matches the entire binding,
+artifact set and effective settings, not merely the request's syntactic shape.
+`action` is the
 existing exact loader action (`command` with capability/namespace and name, `hook`
 with capability/name, or `operation` with slot/name), not a new action table.
 `messagingChoice`
@@ -184,3 +202,12 @@ Existing
 messaging-specific or general identity mechanism. Captured start/restart/retire and
 managed launch adoption remain unfinished and cannot fall back to current source or
 configuration.
+
+This addition is an unreleased coordinated wire change: both provider validators
+must accept optional `check.input.invocation` and the exact subject union before a
+new compatible provider pin is used. Earlier pinned providers are not silently
+patched or claimed compatible. Composition resolution IDs and home/alias strings
+are NOT request/incarnation identities. Stable scheduled `executionId` propagation
+and a durable fresh incarnation/action-intent identity are still required before
+retryable setup mutation can be qualified; no provider may invent one from the
+composition hash or infer completed enrollment from setup admission.

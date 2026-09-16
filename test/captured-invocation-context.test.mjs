@@ -4,15 +4,13 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { validateCapturedInvocationContext, withCapturedInvocationContextFile } from "../lib/captured-invocation-context.mjs";
+import { invocationFixture } from "./helpers/captured-invocation.mjs";
+import { validateWire } from "./helpers/portable-schema-check.mjs";
 
-const RID=`sha256-${'a'.repeat(64)}`;
 function fixture(t) {
   const root=realpathSync(mkdtempSync(join(tmpdir(),'oats-invocation-context-'))),deployment=join(root,'deployment'),home=join(root,'home');mkdirSync(deployment);mkdirSync(join(home,'work'),{recursive:true});
   t.after(()=>rmSync(root,{recursive:true,force:true}));
-  return {root,context:{schemaVersion:1,executionBinding:{schemaVersion:1,deployment,resolution:{schemaVersion:1,id:RID}},
-    subject:{kind:'persistent',identity:{kind:'local-soul',source:`path:${join(root,'source')}`,exportPath:'.'},alias:'expert'},
-    instance:{home,work:join(home,'work'),name:'expert-1',agent:'expert'},context:{kind:'standalone',key:'opaque-context'},responsibleHuman:null,
-    messagingChoice:{schemaVersion:1,enabled:false},capability:'example.provider',action:{kind:'hook',name:'spawn'},priorReceipt:null}};
+  return {root,context:invocationFixture({deployment,home})};
 }
 
 test('captured invocation context is one private transient generic snapshot',t=>{
@@ -29,12 +27,20 @@ test('captured invocation context refuses unknown fields and helper identity cla
   const f=fixture(t);assert.equal(validateCapturedInvocationContext(f.context),f.context);
   assert.throws(()=>validateCapturedInvocationContext({...f.context,secret:'value'}),{code:'invalid-declaration'});
   assert.throws(()=>validateCapturedInvocationContext({...f.context,subject:{...f.context.subject,kind:'helper'}}),{code:'invalid-declaration'});
-  assert.doesNotThrow(()=>validateCapturedInvocationContext({...f.context,subject:{kind:'helper',identity:null,alias:'worker'},instance:{...f.context.instance,agent:'worker'}}));
+  const helper=invocationFixture({deployment:f.context.executionBinding.deployment,home:f.context.instance.home,helper:true});
+  assert.doesNotThrow(()=>validateCapturedInvocationContext(helper));
+  validateWire('CapturedInvocationContext',f.context);validateWire('CapturedInvocationContext',helper);
+  assert.equal(helper.subject.provider.capability,'example.provider');assert.equal(helper.subject.definition.path,'agents/worker/soul.yaml');
+  assert.throws(()=>validateCapturedInvocationContext({...helper,subject:{kind:'helper',identity:null,alias:'worker'}}));
+  assert.throws(()=>validateCapturedInvocationContext({...helper,subject:{...helper.subject,provider:{...helper.subject.provider,capability:'example.other'}}}));
   for (const context of [
     {...f.context,instance:{...f.context.instance,work:join(f.root,'other-work')}},
     {...f.context,instance:{...f.context.instance,agent:'other-agent'}},
     {...f.context,responsibleHuman:{provider:'example.messaging',id:'unwitnessed'}},
     {...f.context,messagingChoice:{schemaVersion:2,enabled:false}},
     {...f.context,context:{kind:'workspace',identity:{},observation:{}}},
+    {...f.context,action:{...f.context.action,capability:'example.other'}},
+    {...f.context,instance:null},
+    {...f.context,priorReceipt:{oversized:'x'.repeat(128*1024)}},
   ]) assert.throws(()=>validateCapturedInvocationContext(context));
 });
