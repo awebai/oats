@@ -95,6 +95,7 @@ test('provider broker requires exact approval then runs retained phases without 
   writeFileSync(manifestPath,JSON.stringify(manifest));
   f.write('packages/action/cap/binding.mjs',`import {readFileSync,writeFileSync} from 'node:fs';
     const request=JSON.parse(readFileSync(0,'utf8'));
+    if(request.settings.timeoutProbe) { process.on('SIGTERM',()=>{}); setInterval(()=>{},1000); }
     if(process.env.OATS_INSTANCE || process.env.OATS_RESOLUTION || process.env.PI_AGENT_HOME) throw Error('ambient identity');
     writeFileSync(${JSON.stringify(marker)},'ran');
     const result=request.phase==='normalize'?{requirements:[],candidates:[],model:{source:'retained-A'}}:
@@ -118,6 +119,8 @@ test('provider broker requires exact approval then runs retained phases without 
   assert.equal(bound.binding.payload.source,'retained-A');
   const checked=runCapturedProviderBinding({...options,phase:'check',input:{binding:bound.binding,context,action:{kind:'command'}}});
   assert.equal(checked.status,'ready','fixture transport result only, not real provider qualification');
+  assert.throws(()=>runCapturedProviderBinding({...options,timeoutMs:250,settings:{limit:3,timeoutProbe:true}}),{code:'provider-unavailable'});
+  for (const timeoutMs of [0,30001,Infinity]) assert.throws(()=>runCapturedProviderBinding({...options,timeoutMs}));
 });
 
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{

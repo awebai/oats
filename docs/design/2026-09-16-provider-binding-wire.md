@@ -9,7 +9,10 @@ must already have exact artifact approval before any phase runs.
 Invoke the manifest-owned phase command with its declared arguments, no shell and
 no extra implicit flags. Write ONE UTF-8 JSON request to stdin and close stdin.
 Stdout is ONE JSON response; logs belong on stderr. Maximum request/response size
-is 1 MiB, depth 32, 16384 entries; execution timeout is 30 seconds. Duplicate keys,
+is 1 MiB, depth 32, 16384 entries; execution timeout is at most 30 seconds. The
+native broker may accept a shorter explicit `timeoutMs` (1–30000). Timeout terminates
+only the spawned codec process with SIGKILL, not an ignorable SIGTERM; no existing
+session or unrelated process is targeted. Duplicate keys,
 trailing output, malformed UTF-8 and unknown envelope fields/versions refuse.
 Kernel diagnostics never echo provider stdout/stderr or free-form error messages.
 The command runs from its verified retained capability root. Ambient OATS/PI
