@@ -75,7 +75,16 @@ ProviderBinding, MessagingChoice and captured-choice codecs are reused, not copi
 A native fixture proves no unapproved child runs and all phases work after source
 deletion/current-config poison; that is transport evidence, not provider qualification.
 
-Preparation orchestration and captured lifecycle/readiness consumers still need to
-connect this broker. Default-provider wrappers are being implemented in their own
-source repository. Keep the explicit provider-not-qualified refusal until those
-pieces are connected and verified; no live provider or deployment was qualified here.
+Preparation now supplies frozen decoded declarations/origins to the broker, merges
+provider-owned fields through the same resolver, and captures complete nonsecret
+bindings only after conflicts and provenance checks pass. Missing approval/interface
+or unresolved fields still expose prospective software without a fabricated record.
+Operator preparation input may include a provider-owned `bindings` map alongside its
+existing software `policy`; it does not introduce another precedence engine. Adoption
+origin-map keys are made subtree-relative while original document pointers/spans stay
+intact. A real standalone-OKF consumer probe at a pinned source commit verifies the
+cross-repository payload and source-deleted, non-ready check (an absent base is not ready).
+
+Captured command/lifecycle readiness consumers still need to connect this broker.
+Default-provider work remains in its own source repository. No live provider,
+private-team behavior, new release or deployment was qualified here.
