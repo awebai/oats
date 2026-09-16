@@ -70,17 +70,33 @@ publish the complete reconstructed record before it can publish that evidence.
 
 Old v1/v2 lock rows remain literal historical evidence. Their legacy digest and
 trust fields are not reinterpreted as owner-execute identity or exact-artifact
-approval. A deployment lock also cannot establish which revision an individual
-home or job used. Home runtime rows, rendered hook paths, copied skills and launch
-metadata can narrow investigation but do not establish the full source,
-capability, helper and managed-runtime closure. A legacy or unknown scheduled
-attempt is held exactly; it is never rebound to today's definition or lock.
+approval. `lib/legacy-lock-codec.mjs` is the acyclic bytes-in structural decoder
+for both historical formats. It preserves the existing v1 entry, retired-entry,
+v2 row/graph/back-reference, state-free empty-v2 and transitional-v2 semantics,
+while routing ingress through the common bounded strict JSON decoder. Duplicate
+decoded keys, malformed UTF-8 and oversized inputs therefore refuse before any
+row is exposed. Retired capability policy is an injected pure callback; the
+codec imports no core/config/filesystem module.
+
+The migration inventory accepts this codec as `legacyLockDecoder`. Successful
+structural verification removes only that unresolved item from the plan.
+`verifyHistoricalLockCandidate` then rechecks the complete inventory, rereads the
+chosen explicit target and returns the strictly decoded v1/v2 rows with their
+literal witness and `trustAuthority:"none"`. It does not retain artifacts or
+associate the lock with a home/job. A deployment lock still cannot establish which
+revision an individual home or job used. Home runtime rows, rendered hook paths,
+copied skills and launch metadata can narrow investigation but do not establish
+the full source, capability,
+helper and managed-runtime closure. A legacy or unknown scheduled attempt is held
+exactly; it is never rebound to today's definition or lock.
 
 ## Required follow-on seams
 
-1. An acyclic strict legacy-lock **byte decoder**, equivalent to the existing
-   authoritative v1/v2 semantics, must verify lock rows. The migration module
-   must not import `core.mjs` or duplicate that parser.
+1. The acyclic strict legacy-lock byte decoder is implemented. Parent integration
+   must replace `core.parseLockFileStrict`'s duplicate body with a tiny file-read
+   wrapper around it and expose the bound bytes seam with the kernel's retired-ID
+   callback. Until that integration lands, core remains the live parser and the
+   migration inventory requires explicit decoder injection.
 2. Parent lifecycle integration must provide the authoritative bounded target
    list, including quarantined/deferred homes and independent provider records.
    This module does not infer deployment topology.

@@ -4,9 +4,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { buildCommandExecutionTemplate, admitExecutionTemplate } from "../lib/schedule-capsule.mjs";
-import { readPortableMigrationInventory, verifyPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
+import { readPortableMigrationInventory, verifyHistoricalLockCandidate, verifyPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
 import { planPortableMigration } from "../lib/portable-migration.mjs";
 import { commitPlannedResolutionEvidence, readResolutionEvidence, validateResolutionEvidence } from "../lib/portable-migration-store.mjs";
+import { decodeLegacyLockBytes } from "../lib/legacy-lock-codec.mjs";
 
 const RID = `sha256-${"a".repeat(64)}`;
 function write(path, value) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n"); }
@@ -77,6 +78,29 @@ test("bounded migration inventory witnesses literal locks, homes and jobs withou
   assert.equal(capturedJob.status, "partial"); assert.equal(capturedJob.action, "preserve");
   assert.equal(capturedJob.preserve.executions.find((entry) => entry.source === "attempt").executionId, "attempt-a");
   verifyPortableMigrationInventory(f.deployment, inventory);
+});
+
+test("injected sole bytes decoder closes structural lock verification without upgrading association or trust", (t) => {
+  const f = fixture(t), calls = [];
+  const legacyLockDecoder = (bytes, context) => {
+    calls.push({ bytes: Buffer.from(bytes), context });
+    return decodeLegacyLockBytes(bytes, { file: context.path });
+  };
+  const inventory = readPortableMigrationInventory(f.deployment, { lockFiles: ["oats-lock.json"] }, { legacyLockDecoder });
+  assert.equal(inventory.locks[0].semanticVerification, "verified");
+  assert.deepEqual(inventory.locks[0].rowIds.capabilities, ["example.action"]);
+  const planned = byTarget(planPortableMigration(inventory), "selection-lock", "oats-lock.json");
+  assert.equal(planned.status, "partial"); assert.equal(planned.action, "hold");
+  assert.equal(planned.unresolved.some((entry) => /strict legacy lock reader/.test(entry.reason)), false);
+  assert.ok(planned.unresolved.some((entry) => /does not prove which revision/.test(entry.reason)));
+  assert.ok(planned.unresolved.some((entry) => entry.code === "approval-required"));
+  verifyPortableMigrationInventory(f.deployment, inventory, { legacyLockDecoder });
+  const candidate = verifyHistoricalLockCandidate(f.deployment, inventory, "oats-lock.json", { legacyLockDecoder });
+  assert.equal(candidate.version, 1); assert.equal(candidate.trustAuthority, "none");
+  assert.equal(candidate.legacyCapabilities["example.action"].trustedExecutables, true, "historical trust survives only as candidate data");
+  assert.equal(candidate.evidence[0].document.integrity.value, inventory.locks[0].integrity.value);
+  assert.equal(calls.length, 4); assert.deepEqual(calls[0].bytes, readFileSync(join(f.deployment, "oats-lock.json")));
+  assert.deepEqual(calls[0].context, { path: "oats-lock.json", version: 1 });
 });
 
 test("unselectable evidence publication rechecks witnesses and never creates a captured resolution", (t) => {
