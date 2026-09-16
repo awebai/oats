@@ -40,7 +40,8 @@ test('native preparation publishes complete source/curriculum/helper records, th
   const record=readCapturedResolution(f.deployment,result.resolution);
   assert.equal(record.choices['/settings/example.action/limit'].value,3);
   assert.ok(record.helpers['example.action:worker']);
-  assert.equal(record.dispatch.composition.skills.length,4);
+  assert.deepEqual(record.dispatch.composition.skills.map(skill=>skill.name).sort(),['oats-portable','oats-portable-artifacts','oats-portable-setup','procedure']);
+  assert.equal(record.dispatch.composition.skills.some(skill=>['oats','oats-config','oats-packages'].includes(skill.name)),false);
   assert.equal(record.dispatch.launch,null,'command/curriculum preparation does not invent a launch recipe');
   const scaffoldParent=join(realpathSync(f.root),'scaffolds');mkdirSync(scaffoldParent);const scaffoldHome=join(scaffoldParent,'imported-expert-1');
   assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'}),{code:'approval-required'});
@@ -67,7 +68,9 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.equal(hook.executable.file,action.executable.file); assert.deepEqual(hook.executable.args,[]);
   const helper=loadCapturedDispatch({deployment:f.deployment,resolution:record.helpers['example.action:worker'],action:{kind:'compose'}});
   assert.ok(helper.composition.text.startsWith('Worker instructions'));
-  assert.ok(loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition.text.includes('Capability instructions'));
+  const capturedComposition=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition;
+  assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
+  assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
 test('helper-authored provider policy refuses before helper or parent records can inherit the parent binding',t=>{
   const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');

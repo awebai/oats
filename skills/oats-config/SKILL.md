@@ -1,17 +1,20 @@
 ---
 name: oats-config
 description: >-
-  How to configure OATS deployments with oats-config.yaml and the oats CLI.
-  Use for capability activation, fundamental-layer integrations, agent
-  types, targeting souls, binding settings, injection overrides, config
-  scopes, or adopting a package config template. Triggers: "bind a layer",
-  "target these souls", "agent type", "override an injection", "oats use",
-  "oats init", "configure OATS", "oats-config.yaml", "adopt a config template".
-  Package acquisition/update/remove, locks, restore, and trust mechanics
-  belong to the oats-packages skill.
+  Use only for configuring a legacy uncaptured OATS deployment with the current
+  oats-config.yaml cascade, including legacy activation, agent types, targeting,
+  overrides, and templates. Triggers: "legacy oats-config", "uncaptured config",
+  "oats use", or "agent type". For portable source/workspace preparation, load
+  oats-portable-setup instead; this legacy policy never fills a captured record.
 ---
 
-# Configuring OATS
+# Configuring legacy uncaptured OATS
+
+> **Legacy-only procedure.** The cascading scopes, agent-type targeting and
+> closest-team rules below are compatibility behavior for uncaptured instances.
+> They are not portable composition authorities. Use **oats-portable-setup** for
+> the source/workspace two-authority model and never consult this cascade as a
+> fallback during captured preparation or dispatch.
 
 Config lives in `oats-config.yaml` at laptop (`~`), workspace, and repository
 levels; resolution walks from a soul's repository outward, closest scope wins.

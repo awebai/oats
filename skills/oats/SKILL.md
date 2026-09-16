@@ -1,15 +1,20 @@
 ---
 name: oats
 description: >-
-  How to operate inside OATS (Open Agent Team Specification): instance layout and
-  lifecycle, status, spawn, retire, doctor, operational capability commands,
-  canonical-vs-generated instructions, or explaining OATS. For configuring
-  deployments (capabilities, layers, agent types, injections) load the
-  oats-config skill. Triggers: "spawn an agent", "what agents are running",
-  "retire this instance", "oats doctor", "oats status", "how does OATS work".
+  Use only for operating a legacy uncaptured OATS deployment through its current
+  config chain: legacy status, spawn, retire, doctor, capability commands, and
+  instance layout. Triggers: "legacy OATS", "uncaptured instance", or an
+  instance without executionBinding. For a captured portable composition, load
+  oats-portable instead; never use this skill to fill missing captured inputs.
 ---
 
-# Operating in OATS
+# Operating legacy uncaptured OATS
+
+> **Legacy-only procedure.** This skill documents the current config-chain
+> engine for instances without a captured execution binding. A portable instance
+> must use **oats-portable** and explicit deployment/resolution authority. Never
+> apply the config cascade, agent types, or team-scoped lookup below to complete
+> or override a captured record.
 
 A **soul** is a durable specialized agent. An **instance** is one disposable,
 resumable incarnation. A **capability package** distributes reusable skills,
