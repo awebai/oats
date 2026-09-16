@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -127,12 +127,15 @@ test('preparation resolves approved provider fields in the same engine and never
   const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
   manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
+  manifest.operations={probe:{command:'show',kind:'action',context:'scope',args:[{name:'label',flag:'--label',required:true}]},
+    'home-probe':{command:'show',kind:'action',context:'home'}};
   writeFileSync(manifestFile,JSON.stringify(manifest));
   const soul=JSON.parse(readFileSync(soulFile,'utf8'));soul.knowledge={contract:'example.locations',version:1,payload:{location:'A'}};
   writeFileSync(soulFile,JSON.stringify(soul));
   f.write('packages/action/cap/show.mjs',`import {readFileSync,statSync} from 'node:fs';
     const snapshot=process.env.OATS_BINDING_FILE,binding=JSON.parse(readFileSync(snapshot,'utf8'));
-    console.log(JSON.stringify({location:binding.payload.location,snapshot,mode:statSync(snapshot).mode & 0o777}));`);
+    const result={location:binding.payload.location,snapshot,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
+    console.log(JSON.stringify(process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
   const unavailable=join(f.root,'provider-unavailable');
   f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
@@ -161,6 +164,16 @@ test('preparation resolves approved provider fields in the same engine and never
   const command=[cli,'--deployment',f.deployment,'--resolution',prepared.resolution.id,'example-action','show','--json'];
   const answer=JSON.parse(execFileSync(process.execPath,command,{encoding:'utf8',env:{...process.env,OATS_BINDING_FILE:'/poison/snapshot'}}));
   assert.equal(answer.location,'A');assert.equal(answer.mode,0o400);assert.equal(existsSync(answer.snapshot),false,'invocation snapshot removed after synchronous command');
+  const operation=JSON.parse(execFileSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=exact','--json'],{encoding:'utf8'}));
+  assert.equal(operation.ok,true);assert.equal(operation.result.result.location,'A');assert.deepEqual(operation.result.result.args,['--label','exact','--json']);
+  assert.equal(operation.result.result.resolution,prepared.resolution.id);assert.equal(existsSync(operation.result.result.snapshot),false,'operation snapshot is removed before its receipt is rendered');
+  const home=join(f.root,'captured-home');mkdirSync(home);writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',agent:'expert',executionBinding:prepared.executionBinding}));
+  const homeCall=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
+  assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
+  assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
+  writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',executionBinding:{...prepared.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}}));
+  const mismatch=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
+  assert.equal(mismatch.status,1);assert.equal(JSON.parse(mismatch.stdout).error.code,'E_HOME_MISMATCH');
   const loaded=loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}});
   let failedSnapshot;
   assert.throws(()=>withCapturedBindingFile(loaded,env=>{failedSnapshot=env.OATS_BINDING_FILE;throw Error('fixture child failure');}),/fixture child failure/);

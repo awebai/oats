@@ -44,7 +44,16 @@ oats inspect --deployment /deployment --resolution sha256-… --composition --js
 oats trust example.action --deployment /deployment --resolution sha256-… --json
 oats trust example.action --deployment /deployment --artifact-set sha256-… --json
 oats example-action show --deployment /deployment --resolution sha256-… -- --detail
+oats operation run knowledge:view --deployment /deployment --resolution sha256-… --home /instance --arg mode=full --json
 ```
+
+The operation form loads the selected provider and operation declaration from the
+exact record. Home-context operations additionally require the target home's stored
+`executionBinding` to match the deployment/resolution pair; scope operations run in
+the explicit deployment and reject a home. Both routes use current exact approval,
+provider readiness, retained settings/resources and the private invocation binding
+snapshot. They preserve the existing strict JSON-v1 operation receipt and unconfirmed-
+effects semantics without consulting a current soul, config, lock or manifest.
 
 The artifact-set variant approves exact prospective software BEFORE a provider codec
 can complete a resolution. It requires a verified v3 artifact set, never a fabricated
@@ -63,7 +72,8 @@ kernel commands refuse rather than use current configuration; host `version` pro
 remains available under inherited context. Existing uncaptured invocations are unchanged
 pending explicit lifecycle/migration cutover. Trust is an explicit operator action;
 inspect/help never execute capability code. Provider binding qualification and captured
-operation/lifecycle CLI support are not implied by the four advertised actions.
+operation CLI support are implemented; captured spawn/lifecycle CLI support is not
+implied by the advertised actions.
 
 ## Implemented action-loading boundary
 

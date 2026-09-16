@@ -115,13 +115,86 @@ function prepareCmd() {
   } catch (error) { fail(error.code || "E_PREPARE_FAILED", error.message); }
 }
 
+/** Run one provider operation from immutable captured authority. A home is an
+ * explicit target only: its stored binding must name this exact record. */
+function capturedOperation(selector, load, bail) {
+  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> --deployment <abs> --resolution <id> [--home <abs>] [--arg k=v ...] [--json]");
+  const address = args[2], match = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
+  if (!match) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
+  const [, slot, name] = match, given = Object.create(null);
+  let home;
+  for (let index = 3; index < args.length; index++) {
+    const token = args[index];
+    if (token === "--json") continue;
+    if (token === "--home") {
+      const value = args[++index];
+      if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute instance home");
+      home = resolve(value); continue;
+    }
+    if (token === "--arg") {
+      const value = args[++index], eq = value?.indexOf("=") ?? -1;
+      if (eq < 1) bail("E_BAD_ARGS", "--arg expects name=value");
+      const key = value.slice(0, eq);
+      if (Object.hasOwn(given, key)) bail("E_BAD_ARGS", `duplicate operation arg ${JSON.stringify(key)}`);
+      given[key] = value.slice(eq + 1); continue;
+    }
+    bail("E_BAD_ARGS", `unsupported captured operation argument ${JSON.stringify(token)}`);
+  }
+  let meta;
+  if (home) {
+    const metaFile = join(home, "instance.json");
+    if (!existsSync(metaFile)) bail("E_SESSION_UNKNOWN", `${home} is not an OATS instance home (no instance.json)`);
+    try { meta = JSON.parse(readFileSync(metaFile, "utf8")); } catch (error) { bail("E_SESSION_UNKNOWN", `${metaFile}: ${error.message}`); }
+    if (!meta || typeof meta !== "object" || Array.isArray(meta) || typeof meta.instance !== "string" || !meta.instance) bail("E_SESSION_UNKNOWN", `${metaFile}: invalid instance metadata`);
+    const binding = meta.executionBinding;
+    if (!binding) bail("migration-required", `${home} has no captured executionBinding; current configuration was not used`);
+    if (binding.schemaVersion !== 1 || typeof binding.deployment !== "string" || !isAbsolute(binding.deployment)
+      || realOrResolved(binding.deployment) !== realOrResolved(selector.deployment)
+      || binding.resolution?.schemaVersion !== 1 || binding.resolution.id !== selector.resolution.id) {
+      bail("E_HOME_MISMATCH", `${home} is not bound to captured resolution ${selector.resolution.id} in ${selector.deployment}`);
+    }
+  }
+  // Inspect is static: validate target and arguments before the action load runs
+  // the provider's mutable readiness check.
+  const inspected = load({ kind: "inspect" }), providerId = inspected.record.bindings[slot]?.capability;
+  const provider = providerId ? inspected.manifests.get(providerId) : undefined;
+  if (!provider) bail("capability-not-selected", `no captured ${slot} provider is selected`);
+  const operation = manifestOperations(provider).find((entry) => entry.name === name);
+  if (!operation) bail("operation-not-found", "captured provider does not declare this operation");
+  if (operation.context === "home" && !meta) bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
+  if (operation.context === "scope" && meta) bail("E_BAD_ARGS", `${address} is a scope operation and does not accept --home`);
+  const declared = new Map(operation.args.map((entry) => [entry.name, entry]));
+  for (const key of Object.keys(given)) if (!declared.has(key)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(key)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
+  for (const entry of operation.args) if (entry.required && given[entry.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${entry.name}=<value>: ${entry.description || "required"}`);
+  const loaded = load({ kind: "operation", slot, name }), { capability, executable } = loaded;
+  const argFlags = operation.args.flatMap((entry) => given[entry.name] === undefined ? [] : [entry.flag, given[entry.name]]), cwd = home || selector.deployment;
+  const env = { ...process.env };
+  for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
+  Object.assign(env, {
+    OATS_DEPLOYMENT: selector.deployment, OATS_RESOLUTION: selector.resolution.id,
+    OATS_CAPABILITY: capability.id, OATS_CAPABILITY_ROOT: capability.manifest._dir,
+    OATS_SETTINGS: JSON.stringify(capability.settings), OATS_CLI_BIN: CLI_BIN,
+    OATS_OPERATION: address, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment,
+    OATS_WORKSPACE: selector.deployment,
+  });
+  if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
+    PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
+  const child = withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath,
+    [executable.file, ...executable.args, ...argFlags, "--json"], {
+      cwd, env: { ...env, ...bindingEnv }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM",
+    }));
+  finishOperation({ r: child, bail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta });
+}
+
 /** Exact-selector dispatch enters before any current-context resolver. Its
  * child receives the same selector, never an invoking agent's ambient identity. */
 function capturedCommand(selector) {
-  const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
+  const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
   try {
     const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-    if (head.some((arg) => ["--dir", "--home", "--server", "--soul", "--agents-root"].includes(arg.split("=")[0]))) {
+    const forbiddenContext = cmd === "operation" ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
+    if (head.some((arg) => forbiddenContext.includes(arg.split("=")[0]))) {
       fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
     }
     if (selector.artifactSet !== undefined) {
@@ -154,6 +227,7 @@ function capturedCommand(selector) {
       if (JSON_MODE) jsonOk(result); else console.log(`${args[1]}: ${result.status}`);
       return;
     }
+    if (cmd === "operation") { capturedOperation(selector, load, fail); return; }
     if (!cmd || cmd.startsWith("-") || KERNEL_COMMANDS.has(cmd)) fail("unsupported-action", "this kernel command has not yet adopted captured selectors; no current-context fallback was used");
     if (!args[1] || args[1] === "--json" || head.some((arg) => HELP_WORDS.has(arg))) {
       const loaded = load({ kind: "inspect" });
@@ -731,6 +805,52 @@ const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|cou
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = 4 * 60 * 1000;
+function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta }) {
+  const stderr = String(r.stderr || "").trim();
+  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && r.signal === "SIGTERM");
+  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
+  const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
+  // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
+  // by the exit status) carry what WAS observed in error.details, so a
+  // scheduler can keep the slot as unknown and reconcile by any name the
+  // provider managed to answer; they are never confirmed failures.
+  const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) });
+  if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
+  // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
+  // that agrees with it: contaminated output or a success envelope from a
+  // process that then failed is not a receipt.
+  let envelope;
+  try { envelope = JSON.parse(String(r.stdout || "").trim()); } catch { envelope = undefined; }
+  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status}); its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(parseEnvelopeText(String(r.stdout || ""))));
+  // A provider's own failure is relayed with its code; its WHOLE envelope
+  // (a partial receipt such as result.instance of something it launched
+  // before failing, and any details it gave) travels in error.details so a
+  // scheduler can keep an unconfirmed outcome and reconcile that target.
+  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, { exit: r.status, envelope, ...(reportsRetainedEffectsText(envelope.error?.message) ? { unconfirmed: true } : {}) });
+  if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted and its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(envelope));
+  const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
+  if (op.kind === "view") {
+    const docs = result.documents;
+    const bad = !Array.isArray(docs) || docs.some((d) => !d || typeof d !== "object" || typeof d.label !== "string" || !d.label
+      || (d.kind !== undefined && !["markdown", "text"].includes(d.kind))
+      || (d.path !== undefined && d.path !== null && (typeof d.path !== "string" || !isAbsolute(d.path)))
+      || (d.text !== undefined && d.text !== null && typeof d.text !== "string"));
+    if (bad) bail("E_OPERATION_RESULT", `${address} is a view operation but ${provider.capability} ${op.command} did not answer { documents: [{label, kind?, path?, text?}] }`);
+  }
+  // A launch receipt in the delegated result (a harvester the provider
+  // spawned) is surfaced as top-level instance/home so the scheduler tracks
+  // it exactly as it tracks a command job's launch; the source home itself
+  // is `target`, never a launch.
+  const receipt = {};
+  if (typeof result.instance === "string" && result.instance !== meta?.instance) receipt.instance = result.instance;
+  if (typeof result.home === "string" && result.home !== home) receipt.home = result.home;
+  const out = { ...base, ...receipt, result, ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
+  if (JSON_MODE) { jsonOk(out); return; }
+  console.log(`${address} via ${provider.capability}@${provider.version || "?"} (${provider.command} ${op.command}) in ${shortPath(cwd)}: ok`);
+  if (op.kind === "view") for (const d of result.documents) console.log(`  - ${d.label}${d.path ? ` (${shortPath(d.path)})` : ""}${d.text ? `: ${String(d.text).split("\n")[0].slice(0, 100)}` : ""}`);
+  else console.log(JSON.stringify(result, null, 2));
+  if (stderr) console.error(stderr);
+}
 function operationCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
@@ -847,50 +967,7 @@ function operationCmd() {
   });
   if (op.context === "home") Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home, PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home });
   const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
-  const stderr = String(r.stderr || "").trim();
-  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && r.signal === "SIGTERM");
-  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
-  const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
-  // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
-  // by the exit status) carry what WAS observed in error.details, so a
-  // scheduler can keep the slot as unknown and reconcile by any name the
-  // provider managed to answer; they are never confirmed failures.
-  const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) });
-  if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
-  // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
-  // that agrees with it: contaminated output or a success envelope from a
-  // process that then failed is not a receipt.
-  let envelope;
-  try { envelope = JSON.parse(String(r.stdout || "").trim()); } catch { envelope = undefined; }
-  if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status}); its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(parseEnvelopeText(String(r.stdout || ""))));
-  // A provider's own failure is relayed with its code; its WHOLE envelope
-  // (a partial receipt such as result.instance of something it launched
-  // before failing, and any details it gave) travels in error.details so a
-  // scheduler can keep an unconfirmed outcome and reconcile that target.
-  if (!envelope.ok) bail(envelope.error?.code || "E_OPERATION_FAILED", `${address}: ${envelope.error?.message || "failed"}`, { exit: r.status, envelope, ...(reportsRetainedEffectsText(envelope.error?.message) ? { unconfirmed: true } : {}) });
-  if (r.status !== 0) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered ok but exited ${r.status}; the receipt is not trusted and its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(envelope));
-  const result = envelope.result && typeof envelope.result === "object" ? envelope.result : {};
-  if (op.kind === "view") {
-    const docs = result.documents;
-    const bad = !Array.isArray(docs) || docs.some((d) => !d || typeof d !== "object" || typeof d.label !== "string" || !d.label
-      || (d.kind !== undefined && !["markdown", "text"].includes(d.kind))
-      || (d.path !== undefined && d.path !== null && (typeof d.path !== "string" || !isAbsolute(d.path)))
-      || (d.text !== undefined && d.text !== null && typeof d.text !== "string"));
-    if (bad) bail("E_OPERATION_RESULT", `${address} is a view operation but ${provider.capability} ${op.command} did not answer { documents: [{label, kind?, path?, text?}] }`);
-  }
-  // A launch receipt in the delegated result (a harvester the provider
-  // spawned) is surfaced as top-level instance/home so the scheduler tracks
-  // it exactly as it tracks a command job's launch; the source home itself
-  // is `target`, never a launch.
-  const receipt = {};
-  if (typeof result.instance === "string" && result.instance !== meta?.instance) receipt.instance = result.instance;
-  if (typeof result.home === "string" && result.home !== home) receipt.home = result.home;
-  const out = { ...base, ...receipt, result, ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
-  if (JSON_MODE) { jsonOk(out); return; }
-  console.log(`${address} via ${provider.capability}@${provider.version || "?"} (${provider.command} ${op.command}) in ${shortPath(cwd)}: ok`);
-  if (op.kind === "view") for (const d of result.documents) console.log(`  - ${d.label}${d.path ? ` (${shortPath(d.path)})` : ""}${d.text ? `: ${String(d.text).split("\n")[0].slice(0, 100)}` : ""}`);
-  else console.log(JSON.stringify(result, null, 2));
-  if (stderr) console.error(stderr);
+  finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta });
 }
 
 // ---------- soul set: runtime defaults and instructions of an editable soul ----------
@@ -4251,7 +4328,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4942,6 +5019,9 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             explicitly approve that exact captured artifact
   oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]
                                             run the approved retained command; no ambient fallback
+  oats operation run <layer>:<name> --deployment <abs> --resolution <id>
+      [--home <abs>] [--arg k=v ...] [--json]
+                                            run an exact retained provider operation
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)
