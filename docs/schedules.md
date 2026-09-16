@@ -95,7 +95,7 @@ recurrence policy:
     "oats", "example-action", "run",
     "--deployment", "/absolute/deployment",
     "--resolution", "sha256-...",
-    "--", "--provider-argument"
+    "--", "--provider-argument", "--json"
   ],
   "responsibleHuman": null,
   "cron": "0 * * * *",
@@ -103,8 +103,9 @@ recurrence policy:
 }
 ```
 
-`capture` requires the explicit deployment/resolution selector pair in the
-**saved argv**. Adding or updating the definition derives an immutable
+`capture` requires the explicit deployment/resolution selector pair and
+`--json` in the **saved argv**. The scheduler never appends an unrecorded
+protocol argument to a captured target. Adding or updating the definition derives an immutable
 `execution` capsule containing that exact target, resolution, input references
 and explicitly supplied responsible-human value. The scheduler verifies the
 capsule ID and calls the exact captured-action loader before acquiring a launch

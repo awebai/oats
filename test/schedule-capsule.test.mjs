@@ -25,7 +25,7 @@ function workspace(t) {
   return ws;
 }
 function argv(deployment, resolution) {
-  return ["oats", "example-action", "show", "--deployment", deployment, "--resolution", resolution, "--", "--fixture"];
+  return ["oats", "example-action", "show", "--deployment", deployment, "--resolution", resolution, "--", "--fixture", "--json"];
 }
 function spec(ws, id, resolution = RID_A) {
   return { id, definitionVersion: 2, recurrencePolicy: "capture", kind: "command", cwd: ws,
@@ -45,6 +45,7 @@ test("ExecutionCapsule1 binds its ID to the saved explicit captured command", ()
     { ...structuredClone(capsule), executionId: RID_B },
   ]) assert.throws(() => validateExecutionCapsule(changed), { code: "invalid-declaration" });
   assert.throws(() => buildCommandExecutionCapsule({ cwd: "/deployment", argv: ["oats", "example-action", "show"] }), { code: "invalid-declaration" });
+  assert.throws(() => buildCommandExecutionCapsule({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--resolution", RID_A] }), (error) => error.code === "invalid-declaration" && /save --json/.test(error.message));
   assert.throws(() => buildCommandExecutionCapsule({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--artifact-set", RID_A] }), { code: "invalid-declaration" });
 });
 
@@ -69,7 +70,7 @@ test("capture policy admits exact retained authority before a slot and persists 
   const considered = tickWorkspace(ws, { now: at("2026-09-16T10:00:00Z"), io, reg: { maxConcurrent: 1 } });
   assert.equal(considered[0].action, "launched");
   assert.deepEqual(admitted, [{ deployment: ws, resolution: { schemaVersion: 1, id: RID_A }, action: { kind: "command", namespace: "example-action", name: "show" } }]);
-  assert.deepEqual(calls, [{ cwd: ws, argv: argv(ws, RID_A).slice(1).concat("--json") }]);
+  assert.deepEqual(calls, [{ cwd: ws, argv: argv(ws, RID_A).slice(1) }], "admission executes the capsule argv without appending mutable arguments");
   const state = readState(ws).jobs.captured;
   assert.equal(state.attempt, undefined); assert.equal(state.lastRun.execution.executionId, saved.execution.executionId);
   assert.equal(jobLockInfo(ws, "captured"), null);
@@ -129,7 +130,7 @@ test("captured schedule dispatch executes retained code after source deletion an
   rmSync(source, { recursive: true }); rmSync(capability, { recursive: true });
   write(join(deployment, "oats-config.yaml"), "poisoned current config"); write(join(deployment, "oats-lock.json"), "poisoned current lock");
   addSchedule(deployment, { id: "exact", definitionVersion: 2, recurrencePolicy: "capture", kind: "command", cwd: deployment,
-    argv: ["oats", "example-action", "show", "--deployment", deployment, "--resolution", resolution.id, "--", marker],
+    argv: ["oats", "example-action", "show", "--deployment", deployment, "--resolution", resolution.id, "--", marker, "--json"],
     responsibleHuman: null, cron: "* * * * *", tz: "UTC" });
   let result = tickWorkspace(deployment, { now: at("2026-09-16T11:00:00Z"), reg: { maxConcurrent: 1 } });
   assert.equal(result[0].action, "launched", JSON.stringify(result)); assert.equal(readFileSync(marker, "utf8"), "A");
