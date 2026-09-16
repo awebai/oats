@@ -47,6 +47,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
+import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 
 const args = process.argv.slice(2);
@@ -179,12 +180,15 @@ function capturedOperation(selector, load, bail) {
   });
   if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
     PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
-  const child = withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath,
-    [executable.file, ...executable.args, ...argFlags, "--json"], {
-      cwd, env: { ...env, ...bindingEnv }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-      maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM",
-    }));
-  finishOperation({ r: child, bail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta });
+  let child, cleanupError;
+  try {
+    child = withCapturedBindingFile(loaded, bindingEnv => runCapturedOperationProcess({ file: executable.file,
+      args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...bindingEnv } }));
+  } catch (error) {
+    if (!error?.invocationCompleted) throw error;
+    child = error.invocationResult; cleanupError = error;
+  }
+  finishOperation({ r: child, bail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError });
 }
 
 /** Exact-selector dispatch enters before any current-context resolver. Its
@@ -804,17 +808,18 @@ const OPERATION_ADDRESS_RE = /^(knowledge|messaging|tasks):([a-z][a-z0-9-]*)$/;
 const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|could not (?:be )?(?:verif|confirm)/i.test(String(message || ""));
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
-const OPERATION_TIMEOUT_MS = 4 * 60 * 1000;
-function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta }) {
+const OPERATION_TIMEOUT_MS = CAPTURED_OPERATION_TIMEOUT_MS;
+function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError }) {
   const stderr = String(r.stderr || "").trim();
-  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && r.signal === "SIGTERM");
+  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal));
   if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
   const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
   // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
   // by the exit status) carry what WAS observed in error.details, so a
   // scheduler can keep the slot as unknown and reconcile by any name the
   // provider managed to answer; they are never confirmed failures.
-  const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) });
+  const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}),
+    ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}), ...(cleanupError ? { cleanup: { code: cleanupError.code || "E_OPERATION_CLEANUP", message: String(cleanupError.message || cleanupError).slice(0, 1000) } } : {}) });
   if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
   // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
   // that agrees with it: contaminated output or a success envelope from a
@@ -822,6 +827,7 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   let envelope;
   try { envelope = JSON.parse(String(r.stdout || "").trim()); } catch { envelope = undefined; }
   if (!envelope || typeof envelope !== "object" || Array.isArray(envelope) || envelope.schemaVersion !== 1 || typeof envelope.ok !== "boolean") bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) did not answer exactly one JSON-v1 envelope on stdout (exit ${r.status}); its effects are unconfirmed${stderr ? `: ${stderr.slice(0, 400)}` : ""}`, observed(parseEnvelopeText(String(r.stdout || ""))));
+  if (cleanupError) bail("E_OPERATION_RESULT", `${address} (${provider.capability} ${op.command}) answered, but private invocation cleanup could not be confirmed; its effects are unconfirmed`, observed(envelope));
   // A provider's own failure is relayed with its code; its WHOLE envelope
   // (a partial receipt such as result.instance of something it launched
   // before failing, and any details it gave) travels in error.details so a

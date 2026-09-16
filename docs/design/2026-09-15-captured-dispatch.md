@@ -53,7 +53,11 @@ exact record. Home-context operations additionally require the target home's sto
 the explicit deployment and reject a home. Both routes use current exact approval,
 provider readiness, retained settings/resources and the private invocation binding
 snapshot. They preserve the existing strict JSON-v1 operation receipt and unconfirmed-
-effects semantics without consulting a current soul, config, lock or manifest.
+effects semantics without consulting a current soul, config, lock or manifest. The
+owned operation process uses non-ignorable `SIGKILL` at the bounded timeout. If the
+provider answered but private snapshot cleanup cannot be confirmed, the command fails
+as unconfirmed while retaining the observed provider envelope and cleanup diagnostic;
+it never reports ordinary pre-execution failure or drops the possible effects.
 
 The artifact-set variant approves exact prospective software BEFORE a provider codec
 can complete a resolution. It requires a verified v3 artifact set, never a fabricated

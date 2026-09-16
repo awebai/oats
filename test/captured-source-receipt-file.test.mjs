@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { validateCapturedSourceReceipt, withCapturedSourceReceiptFile } from "../lib/captured-source-receipt-file.mjs";
 
 const RID = `sha256-${"a".repeat(64)}`;
@@ -37,6 +37,10 @@ test("captured source receipt is a private synchronous snapshot with owned clean
   let failedPath;
   assert.throws(() => withCapturedSourceReceiptFile(f.home, f.receipt, (env) => { failedPath = env.OATS_SOURCE_RECEIPT_FILE; throw new Error("fixture failure"); }), /fixture failure/);
   assert.equal(existsSync(failedPath), false);
+  let cleanupFailure;
+  try { withCapturedSourceReceiptFile(f.home, f.receipt, (env) => { rmSync(dirname(env.OATS_SOURCE_RECEIPT_FILE), { recursive: true }); return { observed: true }; }); }
+  catch (error) { cleanupFailure = error; }
+  assert.equal(cleanupFailure.invocationCompleted, true); assert.deepEqual(cleanupFailure.invocationResult, { observed: true });
 });
 
 test("captured source receipt validates identity, binding and exact invocation home", (t) => {
