@@ -150,6 +150,18 @@
         "minLength": 1
       }
     },
+    "binding": {
+      "description": "Versioned provider-owned normalize/bind/check phases, each naming an existing command in this manifest. Runtime validation enforces fundamental-slot ownership and command references; presence is not approval or provider readiness.",
+      "type": "object",
+      "required": ["version", "normalize", "bind", "check"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "const": 1 },
+        "normalize": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "bind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "check": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+      }
+    },
     "operations": {
       "description": "Named operations a GUI or scheduler may invoke through `oats operation run`, each delegating to one of this manifest's commands. kind \"view\" answers { documents: [{label, kind, path, text}] }; \"action\" (default) runs something. context \"home\" (default) runs in an instance home, \"scope\" in the config scope.",
       "type": "object",
