@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { buildCommandExecutionTemplate, admitExecutionTemplate } from "../lib/schedule-capsule.mjs";
 import { readPortableMigrationInventory, verifyHistoricalLockCandidate, verifyPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
 import { planPortableMigration } from "../lib/portable-migration.mjs";
-import { commitPlannedResolutionEvidence, readResolutionEvidence, validateResolutionEvidence } from "../lib/portable-migration-store.mjs";
+import { commitPlannedResolutionEvidence, listResolutionEvidence, readResolutionEvidence, validateResolutionEvidence } from "../lib/portable-migration-store.mjs";
 import { decodeLegacyLockBytes } from "../lib/legacy-lock-codec.mjs";
 
 const RID = `sha256-${"a".repeat(64)}`;
@@ -108,6 +108,7 @@ test("unselectable evidence publication rechecks witnesses and never creates a c
     lockFiles: ["oats-lock.json"], instanceHomes: ["agents/dev/instances/dev-old"], scheduleScopes: ["."],
   });
   const target = { kind: "instance-home", id: "agents/dev/instances/dev-old" };
+  assert.deepEqual(listResolutionEvidence(f.deployment), [], "an absent evidence store is an empty diagnostic result");
   const reference = commitPlannedResolutionEvidence(f.deployment, inventory, target);
   const evidence = readResolutionEvidence(f.deployment, reference);
   assert.equal(evidence.status, "partial"); assert.equal(evidence.resolution, null);
@@ -115,10 +116,14 @@ test("unselectable evidence publication rechecks witnesses and never creates a c
   assert.equal(existsSync(join(f.deployment, ".agents", "resolutions")), false);
   assert.deepEqual(commitPlannedResolutionEvidence(f.deployment, inventory, target), reference, "identical evidence is immutable and reusable");
   assert.throws(() => validateResolutionEvidence({ ...evidence, resolution: { schemaVersion: 1, id: RID } }), { code: "resolution-incomplete" });
+  const listed = listResolutionEvidence(f.deployment, { includeDocuments: true });
+  assert.equal(listed.length, 1); assert.equal(listed[0].reference.id, reference.id);
+  assert.equal(listed[0].target.id, target.id); assert.equal(listed[0].document.status, "partial");
 
   const path = join(f.deployment, ".agents", "resolution-evidence", `${reference.id}.json`);
   writeFileSync(path, readFileSync(path, "utf8").replace('"status":"partial"', '"status":"unknown"'));
   assert.throws(() => readResolutionEvidence(f.deployment, reference), { code: "integrity-drift" });
+  assert.throws(() => listResolutionEvidence(f.deployment), { code: "integrity-drift" });
   assert.throws(() => commitPlannedResolutionEvidence(f.deployment, inventory, target), { code: "integrity-drift" });
 });
 
