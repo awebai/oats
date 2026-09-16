@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, buildCapturedInvocationContext, loadCapturedDispatch, prepareCapturedComposition, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -167,7 +167,9 @@ function capturedOperation(selector, load, bail) {
   const declared = new Map(operation.args.map((entry) => [entry.name, entry]));
   for (const key of Object.keys(given)) if (!declared.has(key)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(key)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
   for (const entry of operation.args) if (entry.required && given[entry.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${entry.name}=<value>: ${entry.description || "required"}`);
-  const loaded = load({ kind: "operation", slot, name }), { capability, executable } = loaded;
+  const action = { kind: "operation", slot, name };
+  const loaded = load(action, { invocationTarget: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
+    priorReceipt: meta?.capabilityMeta?.[providerId] ?? null }), { capability, executable } = loaded;
   const argFlags = operation.args.flatMap((entry) => given[entry.name] === undefined ? [] : [entry.flag, given[entry.name]]), cwd = home || selector.deployment;
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
@@ -180,9 +182,7 @@ function capturedOperation(selector, load, bail) {
   });
   if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
     PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
-  const invocation = buildCapturedInvocationContext({ loaded, action: { kind: "operation", name: address },
-    instance: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
-    priorReceipt: meta?.capabilityMeta?.[capability.id] ?? null });
+  const invocation = loaded.invocation;
   let child, cleanupError;
   try {
     child = withCapturedInvocationContextFile(invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => runCapturedOperationProcess({ file: executable.file,
@@ -246,7 +246,7 @@ function capturedCommand(selector) {
       return;
     }
     const target = { deployment: selector.deployment, resolution: selector.resolution };
-    const load = (action) => loadCapturedDispatch({ ...target, action });
+    const load = (action, extra = {}) => loadCapturedDispatch({ ...target, action, ...extra });
     if (cmd === "inspect") {
       if (args.slice(1).some((arg) => !["--json", "--composition"].includes(arg))) fail("E_BAD_ARGS", "captured inspect accepts only --json and --composition");
       const loaded = load({ kind: args.includes("--composition") ? "compose" : "inspect" });
@@ -286,9 +286,9 @@ function capturedCommand(selector) {
       OATS_SETTINGS: JSON.stringify(loaded.capability.settings),
       OATS_CLI_BIN: CLI_BIN, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment });
     const forwarded = args.slice(2); if (forwarded[0] === "--") forwarded.shift();
-    const child = withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
-      cwd: selector.deployment, env: { ...env, ...bindingEnv }, stdio: "inherit",
-    }));
+    const child = withCapturedInvocationContextFile(loaded.invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
+      cwd: selector.deployment, env: { ...env, ...contextEnv, ...bindingEnv }, stdio: "inherit",
+    })));
     if (child.error) fail("E_CAPABILITY_BROKEN", child.error.message);
     process.exit(child.status ?? 1);
   } catch (error) { fail(error.code || "E_CAPABILITY_BROKEN", error.message); }

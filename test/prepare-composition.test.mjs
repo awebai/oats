@@ -196,8 +196,8 @@ test('preparation resolves approved provider fields in the same engine and never
     if(process.env.OATS_OPERATION && process.argv.includes('cleanup-failure')) rmSync(dirname(snapshot),{recursive:true});
     if(process.env.OATS_EVENT) writeFileSync(${JSON.stringify(hookMarker)},'ran');
     console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding,invocation}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
-  const unavailable=join(f.root,'provider-unavailable');
-  f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync} from 'node:fs';
+  const unavailable=join(f.root,'provider-unavailable'),checkContext=join(f.root,'provider-check-context.json');
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync,writeFileSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
     if(r.phase==='normalize') {
       const source=r.input.declarations.find(d=>d.kind==='soul'),operator=r.input.declarations.find(d=>d.kind==='operator');
@@ -205,7 +205,7 @@ test('preparation resolves approved provider fields in the same engine and never
       const candidates=operator?.value.bindings?.location===undefined?[]:[{key,kind:'operator',value:operator.value.bindings.location,origin:operator.origins['/bindings/location']}];
       result={requirements,candidates,model:{}};
     } else if(r.phase==='bind') result={payloadContract:'example.locations',payloadVersion:1,payload:{location:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
-    else result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};
+    else {if(process.env.OATS_INVOCATION_CONTEXT_FILE)writeFileSync(${JSON.stringify(checkContext)},readFileSync(process.env.OATS_INVOCATION_CONTEXT_FILE));result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};}
     console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
   f.git('add','.');f.git('commit','--quiet','-m','source provider policy');
   const pending=prepareCapturedComposition(f.input,f.options);
@@ -227,8 +227,9 @@ test('preparation resolves approved provider fields in the same engine and never
   const operation=JSON.parse(execFileSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=exact','--json'],{encoding:'utf8'}));
   assert.equal(operation.ok,true);assert.equal(operation.result.result.location,'A');assert.deepEqual(operation.result.result.args,['--label','exact','--json']);
   assert.equal(operation.result.result.resolution,prepared.resolution.id);assert.equal(existsSync(operation.result.result.snapshot),false,'operation snapshot is removed before its receipt is rendered');
-  assert.equal(operation.result.result.invocation.action.name,'knowledge:probe');assert.equal(operation.result.result.invocation.capability,f.id);
+  assert.deepEqual(operation.result.result.invocation.action,{kind:'operation',slot:'knowledge',name:'probe'});assert.equal(operation.result.result.invocation.capability,f.id);
   assert.equal(operation.result.result.invocation.instance,null);assert.equal(existsSync(operation.result.result.invocationSnapshot),false,'invocation context is also transient');
+  assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),operation.result.result.invocation,'check and scope operation receive identical derived authority');
   const cleanup=spawnSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=cleanup-failure','--json'],{encoding:'utf8'});
   assert.equal(cleanup.status,1);const cleanupFailure=JSON.parse(cleanup.stdout).error;
   assert.equal(cleanupFailure.code,'E_OPERATION_RESULT');assert.equal(cleanupFailure.details.unconfirmed,true);
@@ -239,6 +240,7 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
   assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
   assert.deepEqual(homeOperation.result.result.invocation.priorReceipt,{identity:'prior-receipt'});assert.equal(homeOperation.result.result.invocation.instance.agent,'imported-expert');
+  assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),homeOperation.result.result.invocation,'readiness receives target and prior receipt before the home operation');
   const sourceReceipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:prepared.executionBinding.deployment,agent:'imported-expert',instance:'captured-home',
     sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:prepared.executionBinding,responsibleHuman:null,binding:record.bindings.knowledge};
   mkdirSync(sourceReceipt.work);
@@ -262,6 +264,12 @@ test('preparation resolves approved provider fields in the same engine and never
   const mismatch=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(mismatch.status,1);assert.equal(JSON.parse(mismatch.stdout).error.code,'E_HOME_MISMATCH');
   const loaded=loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}});
+  const checkedContext=JSON.parse(readFileSync(checkContext,'utf8'));assert.equal(checkedContext.action.kind,'command');assert.equal(checkedContext.capability,f.id);
+  assert.equal(checkedContext.executionBinding.resolution.id,prepared.resolution.id);assert.equal(checkedContext.instance,null);
+  assert.deepEqual(checkedContext,JSON.parse(JSON.stringify(loaded.invocation)));
+  assert.throws(()=>runCapturedProviderBinding({deployment:f.deployment,artifacts:record.artifacts,capability:f.id,phase:'check',settings:{limit:3},
+    input:{binding:record.bindings.knowledge,context:record.context,action:{kind:'command',capability:f.id,name:'show'}},invocationContextFile:checkContext}),
+    {code:'invalid-declaration'},'prospective binding callers cannot nominate a context-file authority');
   let failedSnapshot;
   assert.throws(()=>withCapturedBindingFile(loaded,env=>{failedSnapshot=env.OATS_BINDING_FILE;throw Error('fixture child failure');}),/fixture child failure/);
   assert.equal(existsSync(failedSnapshot),false,'failure also removes only the owned invocation snapshot');

@@ -29,5 +29,12 @@ test('captured invocation context refuses unknown fields and helper identity cla
   const f=fixture(t);assert.equal(validateCapturedInvocationContext(f.context),f.context);
   assert.throws(()=>validateCapturedInvocationContext({...f.context,secret:'value'}),{code:'invalid-declaration'});
   assert.throws(()=>validateCapturedInvocationContext({...f.context,subject:{...f.context.subject,kind:'helper'}}),{code:'invalid-declaration'});
-  assert.doesNotThrow(()=>validateCapturedInvocationContext({...f.context,subject:{kind:'helper',identity:null,alias:'worker'}}));
+  assert.doesNotThrow(()=>validateCapturedInvocationContext({...f.context,subject:{kind:'helper',identity:null,alias:'worker'},instance:{...f.context.instance,agent:'worker'}}));
+  for (const context of [
+    {...f.context,instance:{...f.context.instance,work:join(f.root,'other-work')}},
+    {...f.context,instance:{...f.context.instance,agent:'other-agent'}},
+    {...f.context,responsibleHuman:{provider:'example.messaging',id:'unwitnessed'}},
+    {...f.context,messagingChoice:{schemaVersion:2,enabled:false}},
+    {...f.context,context:{kind:'workspace',identity:{},observation:{}}},
+  ]) assert.throws(()=>validateCapturedInvocationContext(context));
 });

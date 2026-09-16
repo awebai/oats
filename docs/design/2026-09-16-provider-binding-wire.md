@@ -148,8 +148,10 @@ messaging lifecycle contract.
 
 ## Provider-neutral captured invocation context
 
-Every captured provider hook and operation also receives one private mode-`0600`
-`OATS_INVOCATION_CONTEXT_FILE`. Its v1 payload is:
+Every captured provider check, command, hook and operation receives one private
+mode-`0600` `OATS_INVOCATION_CONTEXT_FILE`. Checks receive the same derived context
+and action as execution; this enables setup-specific admission without requiring
+already-completed enrollment. Its v1 payload is:
 
 ```text
 {schemaVersion, executionBinding,
@@ -160,7 +162,10 @@ Every captured provider hook and operation also receives one private mode-`0600`
 ```
 
 The kernel derives it from the verified record, explicit target and that capability's
-stored prior hook metadata before provider readiness or execution. `messagingChoice`
+stored prior hook metadata before provider readiness or execution. `action` is the
+existing exact loader action (`command` with capability/namespace and name, `hook`
+with capability/name, or `operation` with slot/name), not a new action table.
+`messagingChoice`
 carries the requested private floor and explicit wider set; it is intent, never proof
 of privacy/enrollment. `priorReceipt` is bounded opaque JSON owned by the selected
 capability. Credential values remain outside all three snapshots. Providers must use
