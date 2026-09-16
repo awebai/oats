@@ -38,6 +38,11 @@ invalid-binding, authorization-required, host-requirement-missing,
 provider-unavailable and provider-not-qualified. Optional provider error/problem
 `message` is permitted but never forwarded by the kernel.
 
+Knowledge providers and harvesters follow the same separation: the
+[knowledge capability boundary](2026-09-16-knowledge-capability-contract.md) keeps
+models, retrieval, evidence selection, judgment and delivery in the capability.
+Shared invocation/evidence/helper execution is infrastructure, not a kernel harvester.
+
 ## Normalize
 
 `input` is `{declarations,context}`. Context is the captured workspace/standalone

@@ -3,14 +3,18 @@ type: Decision
 title: Knowledge leaves souls and Git-backed harvesting delivers through PRs
 description: All durable knowledge moves outside souls, working instances receive an instructional write prohibition, and independent harvesters propose Git-backed updates through pull requests.
 tags: [knowledge, memory, custody, architecture]
-timestamp: 2026-09-13
+timestamp: 2026-09-16
 ---
 # Status
 
-Accepted direction in the human scoping discussion on 2026-09-13; not yet
-implemented. This records the rulings below, not approval of a complete
-storage schema or rollout. Existing per-soul bundles remain the current
-implementation until an explicit migration is designed and authorized.
+Accepted direction from 2026-09-13. The default OKF Git/directory stores,
+source-independent harvesting and PR delivery have since been implemented and
+released; portable-provider integration and curated soul/knowledge cutover remain
+unfinished. Existing legacy soul bundles are preserved until actual cutover.
+The current [fresh-install-first rollout](/decisions/fresh-install-first-portable-rollout.md)
+defers general historical conversion without permitting data loss. The original
+scoping questions retained below are historical; current Portable Souls contracts
+and subsequent decisions govern implementation.
 
 The subsequent [reference-theory ruling](/decisions/provider-neutral-knowledge-and-harvest.md)
 clarifies scope: these are the default knowledge rework's choices, not extra

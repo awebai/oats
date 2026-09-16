@@ -3,15 +3,16 @@ type: Decision
 title: OATS provides a reference knowledge theory while capabilities own runtime behavior
 description: OATS maintains canonical default knowledge theory and an authoring expert, while each knowledge capability supplies its complete runtime behavior and may choose a different theory.
 tags: [knowledge, memory, harvest, providers, architecture]
-timestamp: 2026-09-13
+timestamp: 2026-09-16
 ---
 # Status
 
-Accepted architectural direction in the human scoping discussion on 2026-09-13;
-not implemented. The later same-day ruling explicitly replaces the earlier
-interpretation of one mandatory semantic framework for every capability with
-an opinionated, adoptable reference theory. Initial working support still
-requires Git-backed OKF and a non-Git store; the non-Git backend remains open.
+Accepted on 2026-09-13 and explicitly reaffirmed on 2026-09-16: **OATS provides
+contracts; knowledge capabilities and harvesters provide functionality.** The
+reference theory is opinionated and adoptable, not one mandatory semantic model.
+Git-backed and directory-backed OKF plus optional reference-authoring support
+have since been delivered. Portable captured-provider/lifecycle integration and
+its live acceptance remain in progress; they are not implied by the earlier release.
 
 # Context
 
@@ -39,7 +40,8 @@ preferred framework without making that framework a universal provider policy.
    design complete capability instructions/skills/harvesting, and make gaps or
    deliberate departures explicit. It is an authoring aid, not a runtime
    dispatcher, universal harvester, required approval service, or replacement
-   for canonical docs. The agent is a planned deliverable, not scaffolded yet.
+   for canonical docs. The optional reference-authoring capability supplies this
+   role; consuming a knowledge provider does not require running it.
 4. **Each capability owns its complete runtime package.** It supplies its own
    skills, injections, instance-memory/capture conventions, reader tools,
    harvester and harvest protocol where applicable, lifecycle contributions,
@@ -76,12 +78,36 @@ injection, skills and harvester. This does not assert that the CLI or storage
 semantics have been investigated. Choosing different knowledge behavior also
 remains valid, with that capability documenting its own contract.
 
-Still to design/deliver: canonical injection/skill authoring references,
-`knowledge-theory-expert` packaging and curriculum, the default location and
-harvest implementation, and the first non-Git backend. Directory-backed OKF is
-the current simplest recommendation; whether Omnigraph ships first is open.
-The exclusive knowledge layer is unchanged; mixed integrations in one instance
-are a separate question, not implicit in replaceability.
+Reference authoring and the default Git/directory OKF implementation are delivered;
+they are not still open backend choices. Remaining work concerns captured provider
+integration, fresh-deployment/lifecycle acceptance and deliberately chosen additional
+providers. Omnigraph remains an illustrative alternative, not an investigated or
+required backend. The exclusive knowledge layer is unchanged; mixed integrations
+in one instance are a separate question, not implicit in replaceability.
+
+# Contract versus capability functionality
+
+The same boundary applies to knowledge as to [messaging](/decisions/messaging-capability-contract-boundary.md).
+
+- **Kernel contracts:** selected provider and exact approval, captured source/instance
+  context, versioned opaque binding/invocation inputs, lifecycle ordering and required
+  outcomes, generic native evidence services where applicable, independent helper/job
+  execution, retained authority and cleanup/custody obligations.
+- **Capability functionality:** knowledge model/schema, storage/query/read views,
+  episodic conventions and input selection/freezing, harvester implementation and
+  prompts, promotion policy, validation, retries, delivery and acceptance semantics.
+
+Native capture/recall can be a framework substrate; the capability decides whether
+and how to use it. No universal kernel harvester, mandatory STATE/log/notes layout,
+OKF node/store model, promotion algorithm or Git publisher follows from these
+contracts. Default OKF keeps its existing promotion and PR-only Git delivery rules.
+Provider autonomy does not weaken repository governance, work boundaries, secret
+exclusions, exact approval or truthful lifecycle outcomes.
+
+Helper memory/injection behavior and source handoff fields must be reviewed as
+capability-owned behavior or explicit neutral contracts, not accidental OKF policy
+hardcoded into the new captured path. Do not blindly enable recursive harvesting
+or weaken existing guards while correcting that boundary.
 
 # Related decisions
 
