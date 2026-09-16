@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { activateCapturedScaffold, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
+import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
@@ -62,6 +63,8 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.throws(()=>activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome,extraEnv:{FAIL_CAPTURED_HOOK:'1'}}),error=>error.code==='E_REQUIRED_HOOK_FAILED'&&error.home===failedHome);
   const failedMeta=JSON.parse(readFileSync(join(failedHome,'instance.json'),'utf8'));
   assert.equal(failedMeta.captured.lifecycle,'spawn-failed-cleanup-required');assert.equal(failedMeta.capabilityMeta[f.id].created,true);assert.equal(existsSync(failedHome),true);
+  const indexed=readCapturedInstanceIndex(f.deployment).instances;
+  assert.deepEqual(indexed.map(row=>[row.instance,row.status]),[['imported-expert-1','spawned-launch-pending'],['imported-expert-2','spawn-failed-cleanup-required']]);
   const action=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'command',namespace:'example-action',name:'show'}});
   assert.equal(execFileSync(process.execPath,[action.executable.file,...action.executable.args],{encoding:'utf8'}).trim(),'A');
   const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'}});

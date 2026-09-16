@@ -117,9 +117,11 @@ metadata. `instance.json` explicitly records `scaffolded-hooks-pending`; no laun
 non-directory work-target setup or roster discovery is implied. The public captured
 spawn route currently requires an explicit absolute new home and `--no-launch`; it does
 not infer placement, work or launch inputs. A separate exact activation step derives
-any source receipt from the record and runs the captured hook
-preflight/runner. Success records `spawned-launch-pending`. Required-hook failure keeps
-the home, hook metadata and `spawn-failed-cleanup-required` status rather than deleting
-possible external effects. The scaffold adapter creates the home exclusively and rolls
+any source receipt from the record and runs the captured hook preflight/runner. Before
+hooks it publishes a durable captured-home reference outside the source/home, so source
+deletion cannot hide an uncertain lifecycle obligation. Success records
+`spawned-launch-pending`; required or uncertain hook failure keeps the home, hook metadata
+and `spawn-failed-cleanup-required` status in both metadata and the index rather than
+deleting possible external effects. The scaffold adapter creates the home exclusively and rolls
 back only its inode-owned home on pre-hook failure. Other work modes refuse until their
 work-target inputs are retained.
