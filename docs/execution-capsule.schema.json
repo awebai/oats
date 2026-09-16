@@ -2,13 +2,12 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://oats.dev/schemas/execution-capsule-v1.json",
   "title": "Scheduled execution capsule v1",
-  "description": "Immutable local authority for one admitted scheduled execution. executionId identifies this intent; capsuleIntegrity identifies canonical content. Structural validation does not recompute content integrity or verify freshness, the retained resolution, approval, host readiness or provider state.",
+  "description": "Immutable local authority for one admitted scheduled execution. executionId identifies this intent; a canonical oats.json.v1 digest of the remaining fields separately identifies content. Structural validation does not verify freshness, the retained resolution, approval, host readiness or provider state.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "executionId",
-    "capsuleIntegrity",
     "resolution",
     "deployment",
     "action",
@@ -26,20 +25,6 @@
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
     },
-    "capsuleIntegrity": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["format", "value"],
-      "properties": {
-        "format": {
-          "const": "oats.json.v1"
-        },
-        "value": {
-          "type": "string",
-          "pattern": "^sha256-[a-f0-9]{64}$"
-        }
-      }
-    },
     "resolution": {
       "$ref": "https://oats.dev/schemas/portable-v1.json#/$defs/ResolutionRef"
     },
@@ -48,36 +33,52 @@
       "minLength": 1
     },
     "action": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "name"],
-      "properties": {
-        "kind": {
-          "const": "command"
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": { "const": "command" },
+            "name": { "type": "string", "pattern": "^[^:\\s]+:[^:\\s]+$" }
+          }
         },
-        "name": {
-          "type": "string",
-          "pattern": "^[^:\\s]+:[^:\\s]+$"
-        }
-      }
-    },
-    "target": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["cwd", "argv"],
-      "properties": {
-        "cwd": {
-          "type": "string",
-          "minLength": 1
-        },
-        "argv": {
-          "type": "array",
-          "minItems": 3,
-          "items": {
-            "type": "string"
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": { "const": "wake" },
+            "name": { "const": "session" }
           }
         }
-      }
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cwd", "argv"],
+          "properties": {
+            "cwd": { "type": "string", "minLength": 1 },
+            "argv": {
+              "type": "array",
+              "minItems": 3,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["home", "message"],
+          "properties": {
+            "home": { "type": "string", "minLength": 1 },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
     },
     "inputRefs": {
       "type": "object"
@@ -85,5 +86,23 @@
     "responsibleHuman": {
       "type": ["object", "null"]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "action": { "type": "object", "properties": { "kind": { "const": "command" } } } }
+      },
+      "then": {
+        "properties": { "target": { "type": "object", "required": ["cwd", "argv"], "properties": { "cwd": {}, "argv": {} } } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "action": { "type": "object", "properties": { "kind": { "const": "wake" } } } }
+      },
+      "then": {
+        "properties": { "target": { "type": "object", "required": ["home", "message"], "properties": { "home": {}, "message": {} } } }
+      }
+    }
+  ]
 }

@@ -111,15 +111,17 @@ recurrence policy. Its containing schedule document is version 2:
 
 The admitted-attempt wire is published as
 [`execution-capsule.schema.json`](execution-capsule.schema.json). Runtime
-validation recomputes its `capsuleIntegrity` and checks selector/target
-agreement; `executionId` is a separate opaque admission identity.
+validation checks selector/target agreement. A canonical `oats.json.v1` digest
+of all fields except `executionId` is the separate content witness;
+`executionId` itself is opaque admission identity.
 
 `capture` requires the explicit deployment/resolution selector pair and
 `--json` in the **saved argv**. The scheduler never appends an unrecorded
 protocol argument to a captured target. Adding or updating the definition
-derives immutable `capturedExecution` content containing that exact target,
-resolution, input references, explicitly supplied responsible-human value and a
-canonical `capsuleIntegrity`. It contains no execution ID. At each due tick the
+derives an immutable `execution` template containing that exact target,
+resolution, input references and explicitly supplied responsible-human value.
+It contains no execution ID; `executionStatus.contentIntegrity` exposes its
+canonical content witness. At each due tick the
 scheduler verifies the retained action first, then mints a fresh opaque
 `executionId`, writes the resulting capsule into the attempt before reserving a
 slot, and only then invokes the CLI. Thus two attempts with identical content
@@ -135,11 +137,14 @@ unresolved and cannot dispatch. Scheduler launch also scrubs ambient
 accepted for a version-2 command definition but currently reports
 `migration-required` at admission because the preparation transaction adapter
 is not yet available.
-It never falls back to current-context command execution. Captured spawn,
-operation and wake definitions likewise remain unavailable until their public
-captured consumer adapters exist; capture is currently accepted only for
-capability-command jobs. A wake continues to start its existing home through the
-legacy lifecycle boundary in this release.
+It never falls back to current-context command execution. Captured spawn and
+operation definitions remain unavailable until their public captured consumer
+adapters exist. A captured wake definition is accepted only when its target
+`instance.json` has an exact `executionBinding`; the binding is copied into the
+execution template and checked again at admission without consulting source or
+configuration. Actual captured wake delivery/start remains blocked with
+`migration-required` until the parent-owned lifecycle consumer lands. Legacy
+wakes continue through the old lifecycle boundary in this release.
 
 Definitions without `definitionVersion`/`recurrencePolicy` are legacy v1
 definitions. They retain the old release behavior during migration and are not

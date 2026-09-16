@@ -4,7 +4,7 @@ import Ajv from "ajv";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { admitExecutionCapture, buildCommandExecutionCapture, capturedDispatchAction, validateExecutionCapsule, validateExecutionCapture } from "../lib/schedule-capsule.mjs";
+import { admitExecutionTemplate, buildCommandExecutionTemplate, capturedDispatchAction, executionContentIntegrity, validateExecutionCapsule, validateExecutionTemplate } from "../lib/schedule-capsule.mjs";
 import { addSchedule, findHomesInScope, jobLockInfo, readDefinitions, readState, reconcile, scheduleExecutionStatus, tickWorkspace, writeDefinitions, writeState } from "../lib/schedule.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { commitCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
@@ -32,31 +32,34 @@ function spec(ws, id, resolution = RID_A) {
   return { id, definitionVersion: 2, recurrencePolicy: "capture", kind: "command", cwd: ws,
     argv: argv(ws, resolution), cron: "* * * * *", tz: "UTC", responsibleHuman: null };
 }
+function executionSchema() {
+  const ajv = new Ajv({ strict: true, ownProperties: true });
+  ajv.addSchema(JSON.parse(readFileSync(new URL("../docs/portable.schema.json", import.meta.url), "utf8")));
+  return ajv.compile(JSON.parse(readFileSync(new URL("../docs/execution-capsule.schema.json", import.meta.url), "utf8")));
+}
 
 test("ExecutionCapsule1 separates reusable content identity from fresh admission identity", () => {
-  const capture = buildCommandExecutionCapture({ cwd: "/deployment", argv: argv("/deployment", RID_A),
+  const capture = buildCommandExecutionTemplate({ cwd: "/deployment", argv: argv("/deployment", RID_A),
     inputRefs: { source: "sha256-input" }, responsibleHuman: null });
-  assert.equal(validateExecutionCapture(capture), capture);
+  assert.equal(validateExecutionTemplate(capture), capture);
   assert.deepEqual(capture.resolution, { schemaVersion: 1, id: RID_A });
   assert.deepEqual(capture.action, { kind: "command", name: "example-action:show" });
   assert.deepEqual(capturedDispatchAction(capture), { kind: "command", namespace: "example-action", name: "show" });
-  const first = admitExecutionCapture(capture), second = admitExecutionCapture(capture);
+  const first = admitExecutionTemplate(capture), second = admitExecutionTemplate(capture);
   assert.notEqual(first.executionId, second.executionId, "identical content still represents two independent intents");
-  assert.deepEqual(first.capsuleIntegrity, second.capsuleIntegrity);
+  assert.deepEqual(executionContentIntegrity(first), executionContentIntegrity(second));
   assert.equal(validateExecutionCapsule(first), first);
   for (const changed of [
     { ...structuredClone(first), deployment: "/other" },
     { ...structuredClone(first), target: { ...first.target, argv: argv("/deployment", RID_B) } },
-    { ...structuredClone(first), capsuleIntegrity: { ...first.capsuleIntegrity, value: RID_B } },
+    { ...structuredClone(first), resolution: { schemaVersion: 1, id: RID_B } },
     { ...structuredClone(first), executionId: "bad id" },
   ]) assert.throws(() => validateExecutionCapsule(changed), { code: "invalid-declaration" });
-  assert.throws(() => buildCommandExecutionCapture({ cwd: "/deployment", argv: ["oats", "example-action", "show"] }), { code: "invalid-declaration" });
-  assert.throws(() => buildCommandExecutionCapture({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--resolution", RID_A] }), (error) => error.code === "invalid-declaration" && /save --json/.test(error.message));
-  assert.throws(() => buildCommandExecutionCapture({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--artifact-set", RID_A, "--json"] }), { code: "invalid-declaration" });
+  assert.throws(() => buildCommandExecutionTemplate({ cwd: "/deployment", argv: ["oats", "example-action", "show"] }), { code: "invalid-declaration" });
+  assert.throws(() => buildCommandExecutionTemplate({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--resolution", RID_A] }), (error) => error.code === "invalid-declaration" && /save --json/.test(error.message));
+  assert.throws(() => buildCommandExecutionTemplate({ cwd: "/deployment", argv: ["oats", "example-action", "show", "--deployment", "/deployment", "--artifact-set", RID_A, "--json"] }), { code: "invalid-declaration" });
 
-  const ajv = new Ajv({ strict: true, ownProperties: true });
-  ajv.addSchema(JSON.parse(readFileSync(new URL("../docs/portable.schema.json", import.meta.url), "utf8")));
-  const validate = ajv.compile(JSON.parse(readFileSync(new URL("../docs/execution-capsule.schema.json", import.meta.url), "utf8")));
+  const validate = executionSchema();
   assert.equal(validate(first), true, JSON.stringify(validate.errors));
   const extra = { ...first, unrecorded: true };
   assert.equal(validate(extra), false, "the public structural schema stays closed");
@@ -68,21 +71,21 @@ test("capture policy admits exact retained authority before a slot and mints a f
   assert.equal(saved.definitionVersion, 2); assert.equal(saved.recurrencePolicy, "capture");
   assert.equal(readDefinitions(ws).version, 2, "a captured definition upgrades the outer file so old readers fail closed");
   assert.throws(() => addSchedule(ws, { id: "new-legacy", kind: "command", cwd: ws, argv: ["oats", "status"], cron: "* * * * *", tz: "UTC" }), { code: "migration-required" });
-  assert.deepEqual(saved.executionStatus, { kind: "captured", capture: "recorded", migrationRequired: false, schemaVersion: 1, capsuleIntegrity: saved.capturedExecution.capsuleIntegrity, resolution: saved.capturedExecution.resolution });
+  assert.deepEqual(saved.executionStatus, { kind: "captured", capture: "recorded", migrationRequired: false, schemaVersion: 1, contentIntegrity: executionContentIntegrity(saved.execution), resolution: saved.execution.resolution });
   assert.deepEqual(scheduleExecutionStatus({ kind: "command" }), { kind: "legacy", capture: "unknown", migrationRequired: true });
   assert.deepEqual(scheduleExecutionStatus(saved, { scheduledFor: "past" }).intent, { kind: "legacy", capture: "unknown", migrationRequired: true });
-  const sample = admitExecutionCapture(saved.capturedExecution, { executionId: "attempt-sample" });
+  const sample = admitExecutionTemplate(saved.execution, { executionId: "attempt-sample" });
   assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 1, execution: sample }).intent.executionId, "attempt-sample");
   assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 1, execution: sample }, { executionId: "another-intent" }).intent.kind, "invalid");
   assert.equal(scheduleExecutionStatus(saved, { schemaVersion: 2, execution: sample }).intent.kind, "invalid");
-  assert.equal(readDefinitions(ws).jobs.captured.capturedExecution.executionId, undefined, "a recurring definition has content identity, not admission identity");
+  assert.equal(readDefinitions(ws).jobs.captured.execution.executionId, undefined, "a recurring definition has content identity, not admission identity");
   const io = {
     admit: (request) => { admitted.push(request); return { ok: true }; },
     command: (request) => {
       calls.push(request);
       const state = readState(ws), execution = state.jobs.captured.attempt.execution;
       assert.equal(state.jobs.captured.attempt.schemaVersion, 1, "captured attempts carry their own wire version");
-      assert.deepEqual(execution.capsuleIntegrity, saved.capturedExecution.capsuleIntegrity, "attempt binds the saved immutable content");
+      assert.deepEqual(executionContentIntegrity(execution), executionContentIntegrity(saved.execution), "attempt binds the saved immutable content");
       assert.equal(jobLockInfo(ws, "captured").executionId, execution.executionId, "slot names this admitted intent");
       executionIds.push(execution.executionId);
       return { schemaVersion: 1, ok: true, result: {} };
@@ -118,6 +121,35 @@ test("failed admission and unavailable prepare-on-tick are blocked before comman
   assert.equal(future.action, "blocked"); assert.equal(future.errorCode, "migration-required");
   assert.equal(readState(ws).jobs.future.lastRun.outcome, "blocked");
   assert.equal(commands, 0); assert.equal(jobLockInfo(ws, "future"), null);
+});
+
+test("captured wake templates bind instance executionBinding and remain gated before lifecycle side effects", (t) => {
+  const ws = workspace(t), bound = join(ws, "agents/dev/instances/bound"), legacy = join(ws, "agents/dev/instances/legacy");
+  const binding = { schemaVersion: 1, deployment: ws, resolution: { schemaVersion: 1, id: RID_A } };
+  write(join(bound, "instance.json"), JSON.stringify({ instance: "dev-bound", executionBinding: binding }));
+  write(join(legacy, "instance.json"), JSON.stringify({ instance: "dev-legacy" }));
+  assert.throws(() => addSchedule(ws, { id: "legacy-wake-v2", definitionVersion: 2, recurrencePolicy: "capture", kind: "wake", home: legacy,
+    message: "wake", responsibleHuman: null, cron: "* * * * *", tz: "UTC" }), { code: "migration-required" });
+  const saved = addSchedule(ws, { id: "bound-wake", definitionVersion: 2, recurrencePolicy: "capture", kind: "wake", home: bound,
+    message: "wake", responsibleHuman: null, cron: "* * * * *", tz: "UTC" });
+  assert.deepEqual(saved.execution.resolution, binding.resolution); assert.equal(saved.execution.deployment, ws);
+  assert.deepEqual(saved.execution.action, { kind: "wake", name: "session" });
+  const wakeCapsule = admitExecutionTemplate(saved.execution, { executionId: "wake-intent" }), validate = executionSchema();
+  assert.equal(validate(wakeCapsule), true, JSON.stringify(validate.errors));
+  let starts = 0, inputs = 0;
+  let result = tickWorkspace(ws, { now: at("2026-09-16T10:04:00Z"), reg: { maxConcurrent: 1 }, io: {
+    admit: () => ({ ok: true }), inspect: () => ({ present: false, state: "shell" }),
+    start: () => { starts++; }, input: () => { inputs++; },
+  } });
+  assert.equal(result.find((entry) => entry.id === "bound-wake").action, "blocked");
+  assert.equal(result.find((entry) => entry.id === "bound-wake").errorCode, "migration-required");
+  assert.equal(starts, 0); assert.equal(inputs, 0); assert.equal(jobLockInfo(ws, "bound-wake"), null);
+
+  write(join(bound, "instance.json"), JSON.stringify({ instance: "dev-bound", executionBinding: { ...binding, resolution: { schemaVersion: 1, id: RID_B } } }));
+  result = tickWorkspace(ws, { now: at("2026-09-16T10:05:00Z"), reg: { maxConcurrent: 1 }, io: { admit: () => ({ ok: true }) } });
+  assert.equal(result.find((entry) => entry.id === "bound-wake").action, "blocked");
+  assert.equal(result.find((entry) => entry.id === "bound-wake").errorCode, "E_SCHEDULE_INVALID");
+  assert.equal(starts, 0); assert.equal(inputs, 0);
 });
 
 test("captured schedule dispatch executes retained code after source deletion and blocks before a child when retention is missing", (t) => {
@@ -171,15 +203,15 @@ test("an admitted capsule survives definition edits and reconciliation after sou
   rmSync(join(ws, "agents/dev/soul"), { recursive: true, force: true });
   assert.deepEqual(findHomesInScope(ws, instance), [home], "home discovery does not depend on the deleted soul definition");
 
-  const admitted = admitExecutionCapture(original.capturedExecution, { executionId: "attempt-a" });
+  const admitted = admitExecutionTemplate(original.execution, { executionId: "attempt-a" });
   const state = readState(ws);
   state.jobs.recover = {
     attempt: { schemaVersion: 1, scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", execution: admitted },
     lastRun: { scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", outcome: "unknown", instance, execution: admitted },
   };
   writeState(ws, state);
-  const defs = readDefinitions(ws), replacement = { ...defs.jobs.recover, argv: argv(ws, RID_B) };
-  delete replacement.capturedExecution;
+  const defs = readDefinitions(ws), replacement = { ...defs.jobs.recover, argv: argv(ws, RID_B), responsibleHuman: null };
+  delete replacement.execution;
   defs.jobs.recover = { ...replacement, ...updateLike(ws, replacement) };
   writeDefinitions(ws, defs);
 
@@ -188,7 +220,7 @@ test("an admitted capsule survives definition edits and reconciliation after sou
   assert.equal(result.schedule.lastRun.execution.resolution.id, RID_A, "reconciliation keeps admitted A despite future definition B");
   assert.equal(jobLockInfo(ws, "recover").executionId, "attempt-a", "reconciled slot remains bound to the admitted intent");
   assert.equal(result.schedule.executionStatus.intent.executionId, "attempt-a", "a confirmed active run still reports its intent after the unresolved attempt is cleared");
-  assert.equal(readDefinitions(ws).jobs.recover.capturedExecution.resolution.id, RID_B);
+  assert.equal(readDefinitions(ws).jobs.recover.execution.resolution.id, RID_B);
 });
 
 // Normalize a replacement without taking updateSchedule's host lock while the
