@@ -126,3 +126,23 @@ binding/runtime data under existing durable source/attempt custody before return
 no async worker may rely on the invocation file remaining. No credential value is
 part of the ProviderBinding contract. Abrupt process death can leave private scratch;
 it does not make that scratch selectable authority or justify unsafe cleanup.
+
+## Captured lifecycle registration input
+
+The kernel also has a bounded private `OATS_SOURCE_RECEIPT_FILE` projection for a
+synchronous captured lifecycle hook. Its exact v1 payload is the agreed
+`{schemaVersion,kind,home,work,context,agent,instance,sourceIdentity,role,executionBinding,responsibleHuman,binding}`
+receipt. Persistent sources require their qualified captured soul identity; helper
+receipts require `sourceIdentity:null`. The context equals the durable execution
+deployment, the role is the retained canonical source instructions (bounded to
+128 KiB), and the provider binding contains no credential values.
+
+The file uses the same owner-read-only, outside-home/retained-artifact custody and
+normal success/failure cleanup posture as `OATS_BINDING_FILE`. The home argument
+must match the receipt. Captured lifecycle hook loading preflights every applicable
+retained hook, exact approval, host requirement and provider readiness before the
+first lifecycle side effect, then preserves the existing hook metadata, warning,
+environment and required-hook result contract. The source receipt is exposed only
+to its binding owner. This establishes the hook/registration ABI; public captured
+spawn/start/restart/retire adoption is still unfinished and cannot fall back to
+current source or configuration.

@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, withCapturedBindingFile } from '../lib/core.mjs';
+import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, runCapturedLifecycleHooks, withCapturedBindingFile } from '../lib/core.mjs';
 import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
@@ -134,8 +134,9 @@ test('preparation resolves approved provider fields in the same engine and never
   writeFileSync(soulFile,JSON.stringify(soul));
   f.write('packages/action/cap/show.mjs',`import {readFileSync,statSync} from 'node:fs';
     const snapshot=process.env.OATS_BINDING_FILE,binding=JSON.parse(readFileSync(snapshot,'utf8'));
+    const sourceSnapshot=process.env.OATS_SOURCE_RECEIPT_FILE??null,sourceReceipt=sourceSnapshot?JSON.parse(readFileSync(sourceSnapshot,'utf8')):null;
     const result={location:binding.payload.location,snapshot,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
-    console.log(JSON.stringify(process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
+    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
   const unavailable=join(f.root,'provider-unavailable');
   f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
@@ -171,6 +172,12 @@ test('preparation resolves approved provider fields in the same engine and never
   const homeCall=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
   assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
+  const sourceReceipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:prepared.executionBinding.deployment,agent:'expert',instance:'captured-home',
+    sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:prepared.executionBinding,responsibleHuman:null,binding:record.bindings.knowledge};
+  mkdirSync(sourceReceipt.work);
+  const hooks=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home',agentName:'expert',sourceReceipt});
+  assert.deepEqual(hooks.order,[f.id]);assert.equal(JSON.stringify(hooks.meta[f.id].sourceIdentity),JSON.stringify(record.subject.soul.identity));
+  assert.deepEqual(hooks.meta[f.id].executionBinding,prepared.executionBinding);assert.equal(existsSync(hooks.meta[f.id].sourceSnapshot),false,'source receipt snapshot is removed after the synchronous hook');
   writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',executionBinding:{...prepared.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}}));
   const mismatch=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(mismatch.status,1);assert.equal(JSON.parse(mismatch.stdout).error.code,'E_HOME_MISMATCH');
