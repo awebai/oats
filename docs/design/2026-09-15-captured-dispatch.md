@@ -1,7 +1,8 @@
 # Captured dispatch integration
 
 This connects the record/package/source primitives to the exact action loader.
-Core now exposes `loadCapturedDispatch`; public CLI/lifecycle adoption and complete
+Core exposes `loadCapturedDispatch`, and the CLI supports exact captured inspect,
+approval and command invocation. Lifecycle/provider adoption and complete
 preparation/migration are still in progress.
 
 ## Capture effective setting defaults, do not invent them on load
@@ -30,6 +31,34 @@ current manifest/configuration and fill them later.
 Two focused default tests and a real retained-record regression cover priority,
 nullable/false/empty/prototype-named data, complete definition coverage, original
 manifest ownership and refusal of omitted witnesses/noncanonical references.
+
+## Public captured command ABI
+
+Builds advertise `capturedDispatchApi: 1` and their supported actions in
+`oats version --json`. Both selectors are required, with an absolute deployment
+and the complete `sha256-…` resolution ID; they can precede or follow the command.
+
+```text
+oats inspect --deployment /deployment --resolution sha256-… --json
+oats inspect --deployment /deployment --resolution sha256-… --composition --json
+oats trust example.action --deployment /deployment --resolution sha256-… --json
+oats example-action show --deployment /deployment --resolution sha256-… -- --detail
+```
+
+The last command passes `--detail` to the capability. Tokens after `--` are never
+interpreted as OATS selectors. Duplicate/partial pairs and mixed legacy context
+selectors refuse. Explicit pairs replace inherited captured selectors as a whole.
+Child commands receive `OATS_DEPLOYMENT`/`OATS_RESOLUTION` plus their captured settings;
+invoking-agent OATS/PI identity variables are removed. Host credentials/configuration
+outside those identity namespaces are not copied or reconfigured. Dispatch uses the
+current absolute Node executable and the exact retained, inventoried script.
+
+An inherited pair propagates to subsequent CLI invocations. Unsupported captured
+kernel commands refuse rather than use current configuration; host `version` probing
+remains available under inherited context. Existing uncaptured invocations are unchanged
+pending explicit lifecycle/migration cutover. Trust is an explicit operator action;
+inspect/help never execute capability code. Provider binding qualification and captured
+operation/lifecycle CLI support are not implied by the four advertised actions.
 
 ## Implemented action-loading boundary
 

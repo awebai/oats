@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -46,9 +46,13 @@ import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describe
 import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/schedule-host.mjs";
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
+import { capturedSelector } from "../lib/captured-selector.mjs";
+import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
+
 const args = process.argv.slice(2);
-const cmd = args[0];
+let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
+const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -85,6 +89,61 @@ const JSON_MODE = args.includes("--json");
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
 const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
+
+/** Exact-selector dispatch enters before any current-context resolver. Its
+ * child receives the same selector, never an invoking agent's ambient identity. */
+function capturedCommand(selector) {
+  const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
+  try {
+    const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
+    if (head.some((arg) => ["--dir", "--home", "--server", "--soul", "--agents-root"].includes(arg.split("=")[0]))) {
+      fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
+    }
+    const target = { deployment: selector.deployment, resolution: selector.resolution };
+    const load = (action) => loadCapturedDispatch({ ...target, action });
+    if (cmd === "inspect") {
+      if (args.slice(1).some((arg) => !["--json", "--composition"].includes(arg))) fail("E_BAD_ARGS", "captured inspect accepts only --json and --composition");
+      const loaded = load({ kind: args.includes("--composition") ? "compose" : "inspect" });
+      const result = { resolution: selector.resolution, capture: loaded.record.capture,
+        capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
+          approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),
+        hasComposition: !!loaded.record.dispatch.composition,
+        ...(loaded.composition ? { composition: loaded.composition } : {}) };
+      if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    if (cmd === "trust") {
+      if (!args[1] || args[1].startsWith("-") || args.slice(2).some((arg) => arg !== "--json")) fail("E_BAD_ARGS", "captured trust needs one capability ID");
+      load({ kind: "inspect" }); // complete manifest validation before approval
+      const result = approveCapturedCapability(selector.deployment, selector.resolution, args[1], {
+        kind: "operator", document: { kind: "operator", id: "oats-trust" }, pointer: "/capability",
+      });
+      if (JSON_MODE) jsonOk(result); else console.log(`${args[1]}: ${result.status}`);
+      return;
+    }
+    if (!cmd || cmd.startsWith("-") || KERNEL_COMMANDS.has(cmd)) fail("unsupported-action", "this kernel command has not yet adopted captured selectors; no current-context fallback was used");
+    if (!args[1] || args[1] === "--json" || head.some((arg) => HELP_WORDS.has(arg))) {
+      const loaded = load({ kind: "inspect" });
+      const matches = [...loaded.manifests.values()].filter((manifest) => manifest.command === cmd);
+      if (matches.length !== 1) fail("capability-not-selected", "captured command namespace is absent or ambiguous");
+      const result = { capability: matches[0].capability, commands: Object.keys(matches[0].commands || {}), help: "manifest only; no executable ran" };
+      if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    const loaded = load({ kind: "command", namespace: cmd, name: args[1] });
+    const env = { ...process.env };
+    for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
+    Object.assign(env, { OATS_DEPLOYMENT: selector.deployment, OATS_RESOLUTION: selector.resolution.id,
+      OATS_CAPABILITY: loaded.capability.id, OATS_SETTINGS: JSON.stringify(loaded.capability.settings),
+      OATS_CLI_BIN: CLI_BIN, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment });
+    const forwarded = args.slice(2); if (forwarded[0] === "--") forwarded.shift();
+    const child = spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
+      cwd: selector.deployment, env, stdio: "inherit",
+    });
+    if (child.error) fail("E_CAPABILITY_BROKEN", child.error.message);
+    process.exit(child.status ?? 1);
+  } catch (error) { fail(error.code || "E_CAPABILITY_BROKEN", error.message); }
+}
 
 /** Level of a directory: laptop (home), repo (.git), else workspace. */
 function levelOf(dir) {
@@ -4158,7 +4217,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1 }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4523,11 +4582,17 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
+const captured = capturedSelector(args);
+if (captured) {
+  args.splice(0, args.length, ...captured.args); cmd = args[0];
+  // Host protocol negotiation describes this executable, not a mutable
+  // configuration. An inherited capture must not break `oats version` probes.
+  if (captured.explicit || cmd !== "version") { capturedCommand(captured); process.exit(0); }
+}
 // `--help`/`-h` anywhere after a kernel command prints that command's usage
 // and exits 0 BEFORE any dispatch: a fresh operator inspects --help before
 // using a command, and `install --help` once ran the bare restore while
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
-const KERNEL_COMMANDS = new Set(["capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul", "launch-config"].includes(cmd)) await serverRouteCmd();
@@ -4820,6 +4885,13 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             selection and agent synthesis; unproven by
                                             design, repo checkout only; see
                                             packages/experimental/README.md
+
+  oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
+                                            inspect exact retained inputs, not today's configuration
+  oats trust <capability> --deployment <abs> --resolution <id> [--json]
+                                            explicitly approve that exact captured artifact
+  oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]
+                                            run the approved retained command; no ambient fallback
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)

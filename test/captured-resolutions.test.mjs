@@ -8,7 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bytesIntegrity, jsonIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
 import { acquirePackage, installedCapabilityDir, loadCapturedDispatch, updatePackage } from "../lib/core.mjs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parsePortableSoul } from "../lib/portable-soul.mjs";
 import { resolveChoices } from "../lib/portable-choices.mjs";
 import { settingChoiceKey, soulConstraints } from "../lib/soul-constraints.mjs";
@@ -89,6 +90,31 @@ test("exact command loading uses retained A/B and current approvals, never poiso
   assert.throws(() => loadCapturedDispatch({ deployment: f.scope, resolution: a, action: { kind: "launch" } }), { code: "unsupported-action" });
 });
 
+test("public captured selectors inspect, approve and execute without ambient identity or source state", (t) => {
+  const f = fixture(t), record = f.build("A"), cli = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
+  writeFileSync(join(f.cap, "marker.mjs"), 'console.log(JSON.stringify({marker:"A", resolution:process.env.OATS_RESOLUTION, home:process.env.OATS_INSTANCE_HOME ?? null, args:process.argv.slice(2)}));\n');
+  const artifact = { kind: "capability", capability: "example.action", integrity: treeIntegrity(f.cap) };
+  retainPortableArtifact(f.scope, f.cap, artifact); record.artifacts.capabilities["example.action"].artifact = artifact;
+  for (const resource of Object.values(record.resources)) resource.owner = artifact;
+  const ref = commitCapturedResolution(f.scope, record);
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  writeFileSync(join(f.scope, "oats-config.yaml"), "poisoned current config");
+  const selectors = ["--deployment", f.scope, "--resolution", ref.id];
+  const env = { ...process.env, OATS_INSTANCE_HOME: "/unrelated-parent", PI_AGENT_HOME: "/unrelated-parent", OATS_DEPLOYMENT: "/poisoned", OATS_RESOLUTION: "poisoned" };
+  const call = (...args) => spawnSync(process.execPath, [cli, ...selectors, ...args], { env, encoding: "utf8" });
+  const inspect = call("inspect", "--json"); assert.equal(inspect.status, 0, inspect.stderr);
+  assert.equal(JSON.parse(inspect.stdout).result.capabilities[0].approval, "approval-required");
+  const denied = call("example-action", "show", "--json"); assert.equal(denied.status, 1);
+  assert.equal(JSON.parse(denied.stdout).error.code, "approval-required");
+  const approval = call("trust", "example.action", "--json"); assert.equal(approval.status, 0, approval.stderr);
+  const result = call("example-action", "show", "--", "--custom", "alpha"); assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { marker: "A", resolution: ref.id, home: null, args: ["--custom", "alpha"] });
+  const refused = call("spawn", "anything", "--json"); assert.equal(refused.status, 1);
+  assert.equal(JSON.parse(refused.stdout).error.code, "unsupported-action");
+  const inherited = spawnSync(process.execPath, [cli, "example-action", "show"], { encoding: "utf8", env: { ...env, OATS_DEPLOYMENT: f.scope, OATS_RESOLUTION: ref.id } });
+  assert.equal(inherited.status, 0, inherited.stderr); assert.equal(JSON.parse(inherited.stdout).marker, "A");
+});
+
 test("captured instructions preserve explicit order and resources after source deletion", (t) => {
   const f = fixture(t), record = f.build("A"), input = join(f.root, "instructions");
   mkdirSync(join(input, "procedure"), { recursive: true });
@@ -114,6 +140,9 @@ test("captured instructions preserve explicit order and resources after source d
   assert.equal(readFileSync(join(composition.skills[0].path, "SKILL.md"), "utf8"), "# Procedure\n");
   const wrong = structuredClone(record); wrong.dispatch.composition.body = "first";
   assert.throws(() => commitCapturedResolution(f.scope, wrong), { code: "invalid-declaration" });
+  record.dispatch.launch = { version: 1, runtime: "pi", executable: process.execPath, args: [], env: { OATS_INSTANCE: "forged" }, hooks: {} };
+  const unsafe = commitCapturedResolution(f.scope, record);
+  assert.throws(() => loadCapturedDispatch({ deployment: f.scope, resolution: unsafe, action: { kind: "inspect" } }), { code: "E_LAUNCH_CONFIG_INVALID" });
 });
 
 test("a captured helper is a separate exported helper record and survives removal of its original source", (t) => {
