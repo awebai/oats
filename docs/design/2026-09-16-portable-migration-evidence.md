@@ -122,8 +122,10 @@ V1 candidates require the existing literal legacy digest as an injected callback
 the migration module never imports core or substitutes the v2 algorithm. It
 preflights and byte-witnesses bounded regular `oats.json`, requires its
 capability/version to match the v1 row, brackets old/new digest measurements, and
-still treats `trustedExecutables` only as evidence. No legacy source text is copied
-into the new evidence document.
+still treats `trustedExecutables` only as evidence. V1 `package` and capability
+`path` are persisted as `null`: unknown historical row keys do not become verified
+artifact provenance. No legacy source, settings or other unknown row text is copied
+into the new evidence document; only the independently verified artifact path is.
 
 `verifyHistoricalHomeCapabilityCandidate` can additionally prove that one unchanged
 home's `capabilityRuntime` names exactly one capability with the same old digest.

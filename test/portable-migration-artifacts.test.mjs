@@ -113,8 +113,10 @@ test("explicit v1 digest callback verifies legacy artifacts without reinterpreti
   write(join(artifact, "oats.json"), { capability, version: "1.0.0", description: "Legacy candidate", commands: { show: "show.mjs" } });
   write(join(artifact, "show.mjs"), "console.log('legacy');\n"); chmodSync(join(artifact, "show.mjs"), 0o644);
   const integrity = capabilityIntegrity(artifact), homePath = "agents/dev/instances/dev-v1";
+  const secretPath = "SECRET_TOKEN=must-not-enter-evidence";
   write(join(deployment, "legacy.json"), { lockfileVersion: 1, capabilities: { [capability]: {
-    source: "path:/historical/legacy", version: "1.0.0", integrity, trustedExecutables: true } } });
+    source: "path:/historical/legacy", version: "1.0.0", integrity, trustedExecutables: true,
+    path: secretPath, unknownSettings: { token: "also-not-projected" } } } });
   write(join(deployment, homePath, "instance.json"), { instance: "dev-v1", capabilityRuntime: [{ id: capability,
     trust: { trusted: true, integrity }, hooks: {} }] });
   const legacyLockDecoder = (bytes, context) => decodeLegacyLockBytes(bytes, { file: context.path });
@@ -129,7 +131,9 @@ test("explicit v1 digest callback verifies legacy artifacts without reinterpreti
   const evidence = readResolutionEvidence(deployment, reference);
   assert.equal(evidence.knownInputs.preserve.kind, "home-capability-v1");
   assert.equal(evidence.knownInputs.preserve.capability.package, null);
+  assert.equal(evidence.knownInputs.preserve.capability.path, null, "unknown v1 row.path is not verified artifact provenance");
   assert.equal(Object.hasOwn(evidence.knownInputs.preserve.capability, "source"), false);
+  assert.doesNotMatch(JSON.stringify(evidence), /SECRET_TOKEN|also-not-projected|historical\/legacy/, "raw v1 source/settings/unknown fields never enter persisted evidence");
 
   chmodSync(join(artifact, "show.mjs"), 0o744);
   const second = verifyHistoricalCapabilityCandidate(deployment, inventory, request, adapters);
