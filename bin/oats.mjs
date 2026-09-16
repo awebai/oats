@@ -4582,7 +4582,12 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-const captured = capturedSelector(args);
+let captured;
+try { captured = capturedSelector(args); }
+catch (error) {
+  if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
+  die(error.message);
+}
 if (captured) {
   args.splice(0, args.length, ...captured.args); cmd = args[0];
   // Host protocol negotiation describes this executable, not a mutable
