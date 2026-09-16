@@ -8,6 +8,7 @@ import { addSchedule, runNow } from "../lib/schedule.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const IDENTITY = ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_ROOT", "OATS_CONTEXT", "OATS_WORKSPACE", "OATS_EVENT", "OATS_SETTINGS", "OATS_CLI_BIN", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT", "OATS_CAPABILITY", "OATS_LAYER", "OATS_LEVEL", "OATS_META", "OATS_OPERATION", "OATS_REPO", "OATS_BRANCH", "OATS_WORK", "OATS_KIND", "OATS_TASK", "OATS_RUNTIME", "OATS_PREVIOUS_RUNTIME", "OATS_RETIRE_INTENT", "OATS_TEAM_NAME", "OATS_TEAM_ID", "OATS_TEAM_SCOPE"];
+const CAPTURE_IDENTITY = ["OATS_DEPLOYMENT", "OATS_RESOLUTION"];
 function write(path, text) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, text); }
 function fixture(t) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-schedule-context-")));
@@ -32,13 +33,13 @@ test("scheduled child process clears all kernel-authored instance context withou
   write(child, `import { writeFileSync } from 'node:fs';
 writeFileSync(${JSON.stringify(receipt)}, JSON.stringify({ cwd: process.cwd(), env: process.env, argv: process.argv.slice(2) }));
 console.log(JSON.stringify({ schemaVersion: 1, ok: true, result: {} }));`);
-  for (const key of IDENTITY) process.env[key] = `poison-${key}`;
+  for (const key of [...IDENTITY, ...CAPTURE_IDENTITY]) process.env[key] = `poison-${key}`;
   process.env.TEST_HOST_CREDENTIAL = "kept";
   add(ws, "env", ws, ["oats", "status"]);
   const result = runNow(ws, "env", { io: { oatsBin: child } });
   assert.equal(result.run.outcome, "launched", JSON.stringify(result));
   const observed = JSON.parse(readFileSync(receipt));
-  for (const key of IDENTITY) assert.equal(observed.env[key], undefined, key);
+  for (const key of [...IDENTITY, ...CAPTURE_IDENTITY]) assert.equal(observed.env[key], undefined, key);
   assert.equal(observed.env.OATS_HOME_DIR, process.env.OATS_HOME_DIR);
   assert.equal(observed.env.HOME, process.env.HOME);
   assert.equal(observed.env.TEST_HOST_CREDENTIAL, "kept");

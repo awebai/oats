@@ -1,0 +1,108 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://oats.dev/schemas/execution-capsule-v1.json",
+  "title": "Scheduled execution capsule v1",
+  "description": "Immutable local authority for one admitted scheduled execution. executionId identifies this intent; a canonical oats.json.v1 digest of the remaining fields separately identifies content. Structural validation does not verify freshness, the retained resolution, approval, host readiness or provider state.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "executionId",
+    "resolution",
+    "deployment",
+    "action",
+    "target",
+    "inputRefs",
+    "responsibleHuman"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "executionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "resolution": {
+      "$ref": "https://oats.dev/schemas/portable-v1.json#/$defs/ResolutionRef"
+    },
+    "deployment": {
+      "type": "string",
+      "minLength": 1
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": { "const": "command" },
+            "name": { "type": "string", "pattern": "^[^:\\s]+:[^:\\s]+$" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "name"],
+          "properties": {
+            "kind": { "const": "wake" },
+            "name": { "const": "session" }
+          }
+        }
+      ]
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cwd", "argv"],
+          "properties": {
+            "cwd": { "type": "string", "minLength": 1 },
+            "argv": {
+              "type": "array",
+              "minItems": 3,
+              "items": { "type": "string" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["home", "message"],
+          "properties": {
+            "home": { "type": "string", "minLength": 1 },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "inputRefs": {
+      "type": "object"
+    },
+    "responsibleHuman": {
+      "type": ["object", "null"]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "action": { "type": "object", "properties": { "kind": { "const": "command" } } } }
+      },
+      "then": {
+        "properties": { "target": { "type": "object", "required": ["cwd", "argv"], "properties": { "cwd": {}, "argv": {} } } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "action": { "type": "object", "properties": { "kind": { "const": "wake" } } } }
+      },
+      "then": {
+        "properties": { "target": { "type": "object", "required": ["home", "message"], "properties": { "home": {}, "message": {} } } }
+      }
+    }
+  ]
+}

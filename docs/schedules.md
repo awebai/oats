@@ -18,8 +18,14 @@ and no queue.
 
 ## Files
 
-- `<workspace>/oats-schedules.json` — the definitions (`{version: 1, jobs:
-  {<id>: ...}}`). Commit it if you want the schedule shared with the team.
+- `<workspace>/oats-schedules.json` — the definitions (`{version: 1|2, jobs:
+  {<id>: ...}}`). Version 1 is the legacy format. Adding the first explicit
+  version-2 execution upgrades the whole document to version 2 so an older
+  scheduler refuses it instead of ignoring capture policy. Existing legacy
+  entries may remain visibly unmigrated; new entries in a v2 file must declare
+  their policy. Commit the file if you want the schedule shared with the team.
+  Remote creation/update of v2 definitions must remain disabled until both ends
+  negotiate schedule API v2; the existing feature-only remote gate is not enough.
 - `<workspace>/.agents/schedules/state.json` — last attempted minute and
   last run per job (gitignored), plus one lock directory per running job.
 - `~/.oats/schedules/registry.json` — the host registry: which scopes the
@@ -48,6 +54,8 @@ and no queue.
   from durable context; the job follows that worker until its home is gone.
   Command return is not task completion. Avoid binding durable work to a
   disposable source-home cwd; see [OKF v2 source jobs](#okf-v2-source-jobs).
+  New exact-record command definitions use the fields described in
+  [Captured execution and recurrence](#captured-execution-and-recurrence).
 - **wake** `{id, enabled, cron, tz, kind: "wake", home, message}` — every
   due minute inspects the instance at `home` through its session receipts.
   Running: `message` is delivered once with `session input`. Not running
@@ -77,6 +85,85 @@ required IANA zone; both are evaluated by the croner library. `--wake-every
 N` at spawn time means `*/N * * * *`: every 7 fires at :00, :07, ... :56 and
 then :00 again, so 1, 5, 10, 15 and 30 give an even cadence.
 
+## Captured execution and recurrence
+
+A new captured command definition is explicitly versioned and chooses its
+recurrence policy. Its containing schedule document is version 2:
+
+```json
+{
+  "id": "retained-job",
+  "definitionVersion": 2,
+  "recurrencePolicy": "capture",
+  "kind": "command",
+  "cwd": "/absolute/workspace",
+  "argv": [
+    "oats", "example-action", "run",
+    "--deployment", "/absolute/deployment",
+    "--resolution", "sha256-...",
+    "--", "--provider-argument", "--json"
+  ],
+  "responsibleHuman": null,
+  "cron": "0 * * * *",
+  "tz": "UTC"
+}
+```
+
+The admitted-attempt wire is published as
+[`execution-capsule.schema.json`](execution-capsule.schema.json). Runtime
+validation checks selector/target agreement. A canonical `oats.json.v1` digest
+of all fields except `executionId` is the separate content witness;
+`executionId` itself is opaque admission identity.
+
+`capture` requires the explicit deployment/resolution selector pair and
+`--json` in the **saved argv**. The scheduler never appends an unrecorded
+protocol argument to a captured target. Adding or updating the definition
+derives an immutable `execution` template containing that exact target,
+resolution, input references and explicitly supplied responsible-human value.
+It contains no execution ID; `executionStatus.contentIntegrity` exposes its
+canonical content witness. At each due tick the
+scheduler verifies the retained action first, then mints a fresh opaque
+`executionId`, writes the resulting capsule into the attempt before reserving a
+slot, and only then invokes the CLI. Thus two attempts with identical content
+have the same capsule digest but remain different intents. Definition edits
+affect later admissions only; an unknown attempt, `run`, or reconciliation never
+replaces its capsule with the edited definition or today's config/lock. Captured
+attempts carry their own `schemaVersion:1`; their launch-slot lock names the same
+`executionId`. A mismatching lock or malformed/unknown attempt version stays
+unresolved and cannot dispatch. Scheduler launch also scrubs ambient
+`OATS_DEPLOYMENT` and `OATS_RESOLUTION`; only the saved argv is authority.
+
+`prepare-on-tick` is a distinct explicit policy for a genuinely new command
+tick. Its `preparation` object maps directly to the generic
+`prepareCapturedComposition({deployment,source,workspace?,member?,operator?,mode?})`
+input; scheduler code does not parse source/workspace policy itself. A complete
+adapter result must contain `executionBinding` and an explicit
+`responsibleHuman` (`null` means messaging was actually disabled). The scheduler
+then inserts the exact selector pair before `--`, verifies the captured action,
+mints and persists the attempt, and dispatches. Missing adapters and incomplete
+results return typed `migration-required`/`needs-configuration` with no attempt.
+A dry run never invokes preparation or mints intent. There is no current-context
+fallback. Captured spawn and
+operation definitions remain unavailable until their public captured consumer
+adapters exist. A captured wake definition is accepted only when its target
+`instance.json` has an exact `executionBinding`; the binding is copied into the
+execution template and checked again at admission without consulting source or
+configuration. Actual captured wake delivery/start remains blocked with
+`migration-required` until the parent-owned lifecycle consumer lands. Legacy
+wakes continue through the old lifecycle boundary in this release.
+
+Definitions without `definitionVersion`/`recurrencePolicy` are legacy v1
+definitions. They retain the old release behavior during migration and are not
+reported as captured execution. `list`/`show` report their `executionStatus` as
+`{kind:"legacy",capture:"unknown",migrationRequired:true}`. A captured definition
+reports only `capture:"recorded"` until action admission verifies the retained
+record and current exact approval; it does not claim launch readiness. While an
+attempt is unresolved or its confirmed launched work still holds a slot,
+`executionStatus.intent` separately reports captured, legacy-unknown or invalid
+authority, so editing a future definition cannot hide an older admitted capsule.
+Partial, malformed or unsupported versioned
+definitions/attempts are invalid or blocked, never reinterpreted as legacy.
+
 ## Commands
 
 ```sh
@@ -100,12 +187,17 @@ running}], scheduler: {installed, active, lastTick, maxConcurrent, ...}}`.
 
 ## What a run reports
 
-`launched` (spawn or command returned), `active` (the instance is running;
+`launched` (spawn or command returned), `blocked` (versioned execution
+admission refused before a launch slot or child process), `active` (the instance is running;
 a home whose retirement is pending still counts, its runtime may be alive),
 `ended` (its home is gone), `stopped` (home present, nothing running: needs
 attention, never removed for you), `launch-failed`, `unknown`, and for wake
 jobs `delivered`, `started` or `skipped`. The kernel never claims a task
 succeeded.
+
+`blocked` includes an unavailable exact record/approval and the currently
+unimplemented `prepare-on-tick` adapter. The result preserves the typed
+`errorCode`; no attempt capsule or launch lock is created.
 
 `unknown` means the launch's side effects are unconfirmed: a command timed
 out or answered no envelope, an envelope named an instance the roster
@@ -132,13 +224,14 @@ or malformed definition is reported on that job and the rest of the tick
 continues.
 
 `disable` never stops anything. `update` never touches a running instance,
-and while a job holds a slot or has an unresolved attempt what its run is
-tracked or reconciled by (kind, agent, agentsRoot, repo, purpose, home, cwd,
-argv) cannot change; cron, tz, task, message, runtime, model and enabled
-can. A cold wake persists its slot before the session start runs and keeps
-it on any start exception, whatever its code (the kernel can refuse while
-recording, after the session exists); the next observation releases it once
-the runtime is proven stopped or absent, one tick at worst.
+and while a job holds a slot or has an unresolved attempt its complete
+execution identity (including a versioned capsule), kind and target cannot
+change; cron, tz and enabled can. Legacy definitions retain their narrower
+compatibility behavior until migrated. A cold wake persists its slot before
+the session start runs and keeps it on any start exception, whatever its code
+(the kernel can refuse while recording, after the session exists); the next
+observation releases it once the runtime is proven stopped or absent, one tick
+at worst.
 `remove` refuses while the job's instance is still tracked (`--force`
 forgets the job without stopping anything). Retiring an instance removes the
 wake jobs bound to its home; a wake whose home is gone otherwise stays
@@ -150,7 +243,13 @@ listed with its skipped reason.
 saves a wake job `wake-<instance>` bound to the new home after the spawn
 succeeded. If the spawn succeeds but the save fails, the spawn result still
 carries the full instance receipt, plus `wakeScheduleError` and a warning;
-the instance is neither hidden nor spawned again.
+the instance is neither hidden nor spawned again. When the spawning consumer
+supplies both the returned `executionBinding` and `responsibleHuman`,
+`saveWakeForHome` creates a version-2 captured wake from the matching binding in
+the new home. Supplying only one, or a result binding that differs from the
+home, refuses. The current parent-owned spawn caller still needs to pass these
+fields when its captured lifecycle path lands; omission retains explicit legacy
+behavior rather than inventing a binding.
 
 ## OKF v2 source jobs
 
