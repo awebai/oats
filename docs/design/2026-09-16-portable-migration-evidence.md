@@ -46,6 +46,28 @@ Every target remains `partial` or `unknown`. This planner cannot emit
 `reconstructed`, sets `readyToApply:false`, and declares that it performs no
 writes, provider execution, session or schedule changes, or trust transfer.
 
+## Separate unselectable evidence store
+
+`lib/portable-migration-store.mjs` validates `ResolutionEvidence1` and publishes
+planned partial/unknown evidence under:
+
+```text
+<deployment>/.agents/resolution-evidence/<oats.json.v1 id>.json
+```
+
+The store is distinct from `.agents/resolutions/`; partial/unknown documents must
+carry `resolution:null`. `commitPlannedResolutionEvidence` re-reads and compares
+the complete inventory before it creates the evidence store, recomputes the
+planner output rather than trusting caller-supplied status, and publishes canonical
+private bytes by atomic no-replace hard link. Matching existing bytes are reused;
+damaged existing evidence refuses without repair. Publication changes no source
+lock, home, schedule, session or approval state.
+
+The validator can read a future `reconstructed` evidence document only when it has
+no unresolved inputs and names a shaped resolution reference. This slice exposes
+no writer for that state. A later dedicated historical verifier must establish and
+publish the complete reconstructed record before it can publish that evidence.
+
 Old v1/v2 lock rows remain literal historical evidence. Their legacy digest and
 trust fields are not reinterpreted as owner-execute identity or exact-artifact
 approval. A deployment lock also cannot establish which revision an individual
@@ -67,8 +89,9 @@ attempt is held exactly; it is never rebound to today's definition or lock.
    artifacts, require new-format executable approval, and use immutable guarded
    publication. It must not weaken the existing prepared-only
    `commitCapturedResolution` gate.
-4. Partial/unknown evidence needs its own immutable evidence store and must never
-   enter `.agents/resolutions/` or become dispatch-selectable.
+4. Partial/unknown evidence now has its own immutable evidence store and never
+   enters `.agents/resolutions/` or becomes dispatch-selectable. A later lifecycle
+   adapter may index these references without changing that authority boundary.
 
 No live migration, lock conversion, timer, provider, instance, or deployment
 operation is performed by this slice.

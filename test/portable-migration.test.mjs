@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { buildCommandExecutionTemplate, admitExecutionTemplate } from "../lib/schedule-capsule.mjs";
 import { readPortableMigrationInventory, verifyPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
 import { planPortableMigration } from "../lib/portable-migration.mjs";
+import { commitPlannedResolutionEvidence, readResolutionEvidence, validateResolutionEvidence } from "../lib/portable-migration-store.mjs";
 
 const RID = `sha256-${"a".repeat(64)}`;
 function write(path, value) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n"); }
@@ -78,7 +79,26 @@ test("bounded migration inventory witnesses literal locks, homes and jobs withou
   verifyPortableMigrationInventory(f.deployment, inventory);
 });
 
-test("inventory recheck detects exact-byte drift and malformed evidence remains held", (t) => {
+test("unselectable evidence publication rechecks witnesses and never creates a captured resolution", (t) => {
+  const f = fixture(t), inventory = readPortableMigrationInventory(f.deployment, {
+    lockFiles: ["oats-lock.json"], instanceHomes: ["agents/dev/instances/dev-old"], scheduleScopes: ["."],
+  });
+  const target = { kind: "instance-home", id: "agents/dev/instances/dev-old" };
+  const reference = commitPlannedResolutionEvidence(f.deployment, inventory, target);
+  const evidence = readResolutionEvidence(f.deployment, reference);
+  assert.equal(evidence.status, "partial"); assert.equal(evidence.resolution, null);
+  assert.equal(evidence.target.kind, target.kind); assert.equal(evidence.target.id, target.id); assert.equal(evidence.knownInputs.action, "hold");
+  assert.equal(existsSync(join(f.deployment, ".agents", "resolutions")), false);
+  assert.deepEqual(commitPlannedResolutionEvidence(f.deployment, inventory, target), reference, "identical evidence is immutable and reusable");
+  assert.throws(() => validateResolutionEvidence({ ...evidence, resolution: { schemaVersion: 1, id: RID } }), { code: "resolution-incomplete" });
+
+  const path = join(f.deployment, ".agents", "resolution-evidence", `${reference.id}.json`);
+  writeFileSync(path, readFileSync(path, "utf8").replace('"status":"partial"', '"status":"unknown"'));
+  assert.throws(() => readResolutionEvidence(f.deployment, reference), { code: "integrity-drift" });
+  assert.throws(() => commitPlannedResolutionEvidence(f.deployment, inventory, target), { code: "integrity-drift" });
+});
+
+test("inventory recheck detects exact-byte drift before evidence publication", (t) => {
   const f = fixture(t);
   write(join(f.deployment, "broken-lock.json"), "{not json\n");
   const inventory = readPortableMigrationInventory(f.deployment, { lockFiles: ["broken-lock.json", "oats-lock.json"] });
@@ -89,6 +109,8 @@ test("inventory recheck detects exact-byte drift and malformed evidence remains 
 
   writeFileSync(join(f.deployment, "oats-lock.json"), readFileSync(join(f.deployment, "oats-lock.json"), "utf8") + "\n");
   assert.throws(() => verifyPortableMigrationInventory(f.deployment, inventory), { code: "selection-changed" });
+  assert.throws(() => commitPlannedResolutionEvidence(f.deployment, inventory, held.target), { code: "selection-changed" });
+  assert.equal(existsSync(join(f.deployment, ".agents", "resolution-evidence")), false, "drift refuses before opening the immutable evidence store");
 });
 
 test("inventory refuses out-of-deployment and symlinked evidence paths", (t) => {
