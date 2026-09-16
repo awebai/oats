@@ -107,3 +107,12 @@ configuration, including reserved environment/NUL rules) are supplied by core.
 This static validation does not qualify launch: launch action adoption and mutable
 host/provider gates are still separate work. No current lock/config/marketplace
 fallback and no inferred executable permission from diagnostic booleans.
+
+Core now also exposes a bounded scaffold-only adapter for a preselected explicit
+home. It requires exact executable approvals and retained `directory` work mode,
+then materializes the retained soul/helper link, composed instructions, copied skill
+trees, private directory work and `instance.json` execution binding/responsible-human
+metadata. `instance.json` explicitly records `scaffolded-hooks-pending`; no hook,
+launch, public spawn route, work-target setup or roster placement is implied. The
+adapter creates the home exclusively and rolls back only its inode-owned home on
+pre-hook failure. Other work modes refuse until their work-target inputs are retained.
