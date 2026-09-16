@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { capabilityArtifactIntegrity } from "../lib/artifact-tree.mjs";
 import { decodeLegacyLockBytes } from "../lib/legacy-lock-codec.mjs";
 import { readPortableMigrationInventory } from "../lib/portable-migration-evidence.mjs";
-import { MATERIALIZED_CAPABILITY_FORMAT, verifyHistoricalCapabilityCandidate } from "../lib/portable-migration-artifacts.mjs";
+import { MATERIALIZED_CAPABILITY_FORMAT, verifyHistoricalCapabilityCandidate, verifyHistoricalHomeCapabilityCandidate } from "../lib/portable-migration-artifacts.mjs";
 
 const hash = (letter) => `sha256-${letter.repeat(64)}`;
 function write(path, value) { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value, null, 2) + "\n"); }
@@ -25,9 +25,12 @@ function fixture(t) {
     packagePath: packageRow.path, capabilityPath: capabilityBase.path });
   const capabilityRow = { ...capabilityBase, integrity: capabilityArtifactIntegrity(artifact) };
   write(join(deployment, "oats-lock.json"), { lockfileVersion: 2, packages: { [packageId]: packageRow }, capabilities: { [capability]: capabilityRow } });
+  const homePath = "agents/dev/instances/dev-old", home = join(deployment, homePath);
+  write(join(home, "instance.json"), { instance: "dev-old", capabilityRuntime: [{ id: capability,
+    trust: { trusted: true, integrity: capabilityRow.integrity }, hooks: { retire: "/historical/retire.mjs" } }] });
   const legacyLockDecoder = (bytes, context) => decodeLegacyLockBytes(bytes, { file: context.path });
-  const inventory = readPortableMigrationInventory(deployment, { lockFiles: ["oats-lock.json"] }, { legacyLockDecoder });
-  return { deployment, artifact, capability, inventory, legacyLockDecoder };
+  const inventory = readPortableMigrationInventory(deployment, { lockFiles: ["oats-lock.json"], instanceHomes: [homePath] }, { legacyLockDecoder });
+  return { deployment, artifact, capability, home, homePath, inventory, legacyLockDecoder };
 }
 
 test("explicit v2 artifact candidate verifies old bytes/provenance but observes modes only at migration", (t) => {
@@ -46,6 +49,21 @@ test("explicit v2 artifact candidate verifies old bytes/provenance but observes 
   const second = verifyHistoricalCapabilityCandidate(f.deployment, f.inventory, request, { legacyLockDecoder: f.legacyLockDecoder });
   assert.equal(second.artifact.historicalIntegrity.value, first.artifact.historicalIntegrity.value, "old v2 digest did not cover owner execute");
   assert.notEqual(second.artifact.observedIntegrity.value, first.artifact.observedIntegrity.value, "new observation records owner execute today");
+});
+
+test("one home runtime digest can associate one v2 artifact but remains partial and unapproved", (t) => {
+  const f = fixture(t), request = { lockPath: "oats-lock.json", capability: f.capability,
+    artifactDir: `.agents/capabilities/installed/${f.capability}`, homePath: f.homePath };
+  const result = verifyHistoricalHomeCapabilityCandidate(f.deployment, f.inventory, request, { legacyLockDecoder: f.legacyLockDecoder });
+  assert.equal(result.association, "capability-runtime-integrity-match"); assert.equal(result.completeness, "partial");
+  assert.equal(result.legacyTrustedClaim, true); assert.equal(result.approvalAuthority, "none");
+  assert.ok(result.unresolved.some((entry) => /source revision/.test(entry)));
+
+  write(join(f.home, "instance.json"), { instance: "dev-old", capabilityRuntime: [{ id: f.capability,
+    trust: { trusted: true, integrity: hash("f") }, hooks: {} }] });
+  const changed = readPortableMigrationInventory(f.deployment, { lockFiles: ["oats-lock.json"], instanceHomes: [f.homePath] }, { legacyLockDecoder: f.legacyLockDecoder });
+  assert.throws(() => verifyHistoricalHomeCapabilityCandidate(f.deployment, changed, request,
+    { legacyLockDecoder: f.legacyLockDecoder }), { code: "migration-held" });
 });
 
 test("candidate verifier refuses missing rows, drift and legacy-v1 without inventing restoration", (t) => {

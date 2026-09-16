@@ -96,8 +96,12 @@ the existing legacy artifact digest and exact `.oats-installation.json` provenan
 then measures the new owner-exec digest twice with the legacy digest bracketing it.
 The result labels modes `observed-at-migration`, trust/selection authority `none`,
 and retention `not-retained`. It does not support v1 without that format's separate
-historical digest verifier, does not publish the candidate, and cannot associate it
-with a particular home or job.
+historical digest verifier and does not publish the candidate.
+`verifyHistoricalHomeCapabilityCandidate` can additionally prove that one unchanged
+home's `capabilityRuntime` names exactly one capability with the same old digest.
+That is a narrow per-capability association only: the result remains `partial`,
+retains the legacy trusted bit only as a claim, and leaves source revision, full
+resources/helpers/runtime closure and new-format approval unresolved.
 
 ## Required follow-on seams
 
