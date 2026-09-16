@@ -131,6 +131,7 @@ test("unselectable evidence publication rechecks witnesses and never creates a c
   const listed = listResolutionEvidence(f.deployment, { includeDocuments: true });
   assert.equal(listed.length, 1); assert.equal(listed[0].reference.id, reference.id);
   assert.equal(listed[0].target.id, target.id); assert.equal(listed[0].document.status, "partial");
+  assert.throws(() => listResolutionEvidence(f.deployment, { maxBytes: 1 }), { code: "resource-limit" });
 
   const path = join(f.deployment, ".agents", "resolution-evidence", `${reference.id}.json`);
   writeFileSync(path, readFileSync(path, "utf8").replace('"status":"partial"', '"status":"unknown"'));
