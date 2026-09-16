@@ -153,8 +153,10 @@ test("prepare-on-tick uses the injected generic adapter and admits a new immutab
   assert.equal(new Set(ids).size, 2); assert.equal(readState(ws).jobs.prepared.lastRun.execution.resolution.id, RID_B);
 
   const before = ids.length;
-  const blocked = tickWorkspace(ws, { now: at("2026-09-16T10:08:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ problems: [{ code: "needs-configuration" }] }) } });
+  let blocked = tickWorkspace(ws, { now: at("2026-09-16T10:08:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ problems: [{ code: "needs-configuration" }] }) } });
   assert.equal(blocked[0].action, "blocked"); assert.equal(blocked[0].errorCode, "needs-configuration"); assert.equal(ids.length, before);
+  blocked = tickWorkspace(ws, { now: at("2026-09-16T10:09:00Z"), reg: { maxConcurrent: 1 }, io: { ...io, prepare: () => ({ executionBinding: { schemaVersion: 1, deployment: "/other", resolution: { schemaVersion: 1, id: RID_A } }, responsibleHuman: null }) } });
+  assert.equal(blocked[0].action, "blocked"); assert.equal(blocked[0].errorCode, "E_SCHEDULE_INVALID"); assert.equal(ids.length, before);
 });
 
 test("captured wake templates bind instance executionBinding and remain gated before lifecycle side effects", (t) => {
