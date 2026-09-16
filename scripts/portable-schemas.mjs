@@ -85,8 +85,14 @@ d.MessagingChoice = one(object({ schemaVersion: v1, enabled: { const: false } })
 d.RuntimeResource = object({ runtime: s, package: s, resource: s, requiredBy: origins });
 d.LaunchRecipe = { type: "object", required: ["version", "runtime"], properties: { version: v1, runtime: enumeration("pi", "claude", "codex") },
   description: "Envelope only: the sole existing launch codec owns all remaining recipe fields and their interpretation." };
+d.InstructionBlock = object({ source: { ...s, pattern: "^(kernel|work-mode|capability|config):[A-Za-z0-9._:-]+$" }, resource: s, choice: s }, ["choice"]);
+d.InstructionOmission = object({ source: d.InstructionBlock.properties.source, reason: enumeration("disabled", "helper-knowledge"), choice: s }, ["choice"]);
+d.InstructionComposition = object({ schemaVersion: v1, mode: enumeration("worktree", "checkout", "attached", "workspace", "directory"), body: s,
+  blocks: list(ref("InstructionBlock")), omissions: list(ref("InstructionOmission")),
+  skills: list(object({ name: { ...s, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }, resource: s })) });
 d.Dispatch = object({ schemaVersion: v1, providerManifests: map(s, cap), settingsChoices: map(map(s), cap), launch: nullable(ref("LaunchRecipe")),
-  runtimePackages: list(ref("RuntimeResource")), hostRequirements: list({}), workTargetInputs: map(s) });
+  runtimePackages: list(ref("RuntimeResource")), hostRequirements: list({}), workTargetInputs: map(s), composition: ref("InstructionComposition") }, ["composition"]);
+d.Dispatch.allOf = [{ if: { type: "object", properties: { launch: { type: "object" } }, required: ["launch"] }, then: { type: "object", properties: { composition: ref("InstructionComposition") }, required: ["composition"] } }];
 d.CapturedResolution = object({ schemaVersion: v1, capture: enumeration("prepared", "reconstructed"),
   subject: one(object({ kind: { const: "persistent" }, soul: ref("SoulSelection") }),
     object({ kind: { const: "helper" }, provider: ref("CapabilityArtifactRef"), definition: ref("ResourceRef"), name: slug })),

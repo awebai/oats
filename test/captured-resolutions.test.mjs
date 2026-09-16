@@ -7,7 +7,8 @@ import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApproval
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { bytesIntegrity, jsonIntegrity, PACKAGE_FORMAT, treeIntegrity } from "../lib/portable-digest.mjs";
-import { acquirePackage, installedCapabilityDir, updatePackage } from "../lib/core.mjs";
+import { acquirePackage, installedCapabilityDir, loadCapturedDispatch, updatePackage } from "../lib/core.mjs";
+import { execFileSync } from "node:child_process";
 import { parsePortableSoul } from "../lib/portable-soul.mjs";
 import { resolveChoices } from "../lib/portable-choices.mjs";
 import { settingChoiceKey, soulConstraints } from "../lib/soul-constraints.mjs";
@@ -68,6 +69,51 @@ test("captured A/B records retain exact source and resources after original sour
     assert.equal(readCapturedResolution(f.scope, ref).subject.soul.alias, "expert");
     assert.equal(Object.hasOwn(verified, "approved"), false, "input verification grants no execution authority");
   }
+});
+
+test("exact command loading uses retained A/B and current approvals, never poisoned ambient selection", (t) => {
+  const f = fixture(t), a = commitCapturedResolution(f.scope, f.build("A")), b = commitCapturedResolution(f.scope, f.build("B"));
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  writeFileSync(join(f.scope, "oats-lock.json"), "poisoned current lock");
+  writeFileSync(join(f.scope, "oats-config.yaml"), "poisoned current config");
+  const load = (resolution) => loadCapturedDispatch({ deployment: f.scope, resolution, action: { kind: "command", namespace: "example-action", name: "show" } });
+  assert.throws(() => load(a), { code: "approval-required" });
+  approveCapturedCapability(f.scope, a, "example.action", origin);
+  const selectedA = load(a);
+  assert.equal(execFileSync(process.execPath, [selectedA.executable.file, ...selectedA.executable.args], { encoding: "utf8" }).trim(), "A");
+  assert.throws(() => load(b), { code: "approval-required" });
+  approveCapturedCapability(f.scope, b, "example.action", origin);
+  const selectedB = load(b);
+  assert.equal(execFileSync(process.execPath, [selectedB.executable.file, ...selectedB.executable.args], { encoding: "utf8" }).trim(), "B");
+  assert.equal(load(a).executable.file, selectedA.executable.file);
+  assert.throws(() => loadCapturedDispatch({ deployment: f.scope, resolution: a, action: { kind: "launch" } }), { code: "unsupported-action" });
+});
+
+test("captured instructions preserve explicit order and resources after source deletion", (t) => {
+  const f = fixture(t), record = f.build("A"), input = join(f.root, "instructions");
+  mkdirSync(join(input, "procedure"), { recursive: true });
+  writeFileSync(join(input, "first.md"), "First block\n");
+  writeFileSync(join(input, "second.md"), "Second block\n");
+  writeFileSync(join(input, "procedure/SKILL.md"), "# Procedure\n");
+  const bundle = { kind: "resource", integrity: treeIntegrity(input) };
+  retainPortableArtifact(f.scope, input, bundle); record.resourceBundles = [bundle];
+  Object.assign(record.resources, {
+    body: { owner: record.subject.soul.sourceArtifact, path: "AGENTS.md", kind: "file" },
+    first: { owner: bundle, path: "first.md", kind: "file" }, second: { owner: bundle, path: "second.md", kind: "file" },
+    procedure: { owner: bundle, path: "procedure", kind: "skill" },
+  });
+  record.dispatch.composition = { schemaVersion: 1, mode: "checkout", body: "body",
+    blocks: [{ source: "config:first", resource: "first" }, { source: "config:second", resource: "second" }],
+    skills: [{ name: "procedure", resource: "procedure" }], omissions: [] };
+  const resolution = commitCapturedResolution(f.scope, record);
+  validateWire("CapturedResolution", readCapturedResolution(f.scope, resolution));
+  rmSync(input, { recursive: true }); rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  const { composition } = loadCapturedDispatch({ deployment: f.scope, resolution, action: { kind: "compose" } });
+  assert.ok(composition.text.startsWith("Expert instructions\n"));
+  assert.ok(composition.text.indexOf("First block") < composition.text.indexOf("Second block"));
+  assert.equal(readFileSync(join(composition.skills[0].path, "SKILL.md"), "utf8"), "# Procedure\n");
+  const wrong = structuredClone(record); wrong.dispatch.composition.body = "first";
+  assert.throws(() => commitCapturedResolution(f.scope, wrong), { code: "invalid-declaration" });
 });
 
 test("a captured helper is a separate exported helper record and survives removal of its original source", (t) => {

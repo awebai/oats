@@ -35,7 +35,16 @@ test("actual ESM dependency graph is acyclic, including the future core -> reten
       if (graph.has(file)) return;
       // Parse real module declarations (imports AND re-exports), not grep.
       const specs = new SourceTextModule(readFileSync(new URL(file), 'utf8')).dependencySpecifiers;
-      for (const spec of specs) assert.ok(spec.startsWith('.') || spec.startsWith('node:'), spec);
+      for (const spec of specs) {
+        if (spec.startsWith('.') || spec.startsWith('node:')) continue;
+        // The captured consumer now reaches the approved strict YAML decoder.
+        // External packages are outside this repo's ESM graph; allow only that
+        // declared edge, not arbitrary new dependencies or retention imports.
+        assert.equal(spec, 'yaml');
+        assert.equal(file, new URL('./config-data.mjs', core).href);
+        const pkg = JSON.parse(readFileSync(new URL('../package.json', core), 'utf8'));
+        assert.equal(pkg.dependencies.yaml, '2.9.1');
+      }
       const deps = specs.filter(s => s.startsWith('.')).map(s => new URL(s, file).href);
       graph.set(file, deps);
       for (const dep of deps) visit(dep);

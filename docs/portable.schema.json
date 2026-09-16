@@ -1337,6 +1337,118 @@
       },
       "description": "Envelope only: the sole existing launch codec owns all remaining recipe fields and their interpretation."
     },
+    "InstructionBlock": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(kernel|work-mode|capability|config):[A-Za-z0-9._:-]+$"
+        },
+        "resource": {
+          "type": "string",
+          "minLength": 1
+        },
+        "choice": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "source",
+        "resource"
+      ],
+      "additionalProperties": false
+    },
+    "InstructionOmission": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(kernel|work-mode|capability|config):[A-Za-z0-9._:-]+$"
+        },
+        "reason": {
+          "enum": [
+            "disabled",
+            "helper-knowledge"
+          ]
+        },
+        "choice": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "source",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "InstructionComposition": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "mode": {
+          "enum": [
+            "worktree",
+            "checkout",
+            "attached",
+            "workspace",
+            "directory"
+          ]
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InstructionBlock"
+          }
+        },
+        "omissions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InstructionOmission"
+          }
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "resource": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "name",
+              "resource"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "mode",
+        "body",
+        "blocks",
+        "omissions",
+        "skills"
+      ],
+      "additionalProperties": false
+    },
     "Dispatch": {
       "type": "object",
       "properties": {
@@ -1396,6 +1508,9 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "composition": {
+          "$ref": "#/$defs/InstructionComposition"
         }
       },
       "required": [
@@ -1407,7 +1522,33 @@
         "hostRequirements",
         "workTargetInputs"
       ],
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "properties": {
+              "launch": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "launch"
+            ]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "composition": {
+                "$ref": "#/$defs/InstructionComposition"
+              }
+            },
+            "required": [
+              "composition"
+            ]
+          }
+        }
+      ]
     },
     "CapturedResolution": {
       "type": "object",

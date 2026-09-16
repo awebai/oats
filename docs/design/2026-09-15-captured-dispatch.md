@@ -1,7 +1,8 @@
 # Captured dispatch integration
 
-This continues the implemented record/package/source primitives toward one exact
-action loader. Public dispatch and full composition/migration are not complete yet.
+This connects the record/package/source primitives to the exact action loader.
+Core now exposes `loadCapturedDispatch`; public CLI/lifecycle adoption and complete
+preparation/migration are still in progress.
 
 ## Capture effective setting defaults, do not invent them on load
 
@@ -30,14 +31,31 @@ Two focused default tests and a real retained-record regression cover priority,
 nullable/false/empty/prototype-named data, complete definition coverage, original
 manifest ownership and refusal of omitted witnesses/noncanonical references.
 
-## Remaining loader boundary
+## Implemented action-loading boundary
 
-- Explicit captured projection must carry retained soul/kernel/resource paths,
-  instruction ordering and injection-disable intent. Existing ambient composition
-  and resource-discovery calls cannot run on the captured path.
-- Core supplies its COMPLETE strict manifest and applicable launch validators;
-  partial version/runtime checks do not replace reserved environment/NUL validation.
-- The exact action/event/target determines approval, host and provider gates. Current
-  approval is read separately; diagnostic booleans are not executable permission.
-- Helpers use their dedicated records. Unsupported actions and unverified historical
-  reconstruction refuse. No current lock, configuration or marketplace fallback.
+`loadCapturedDispatch({deployment, resolution, action})` verifies exact retained
+inputs, applies core's strict full manifest loader/self-containment/compatibility
+checks, and reconstructs captured settings without consulting current config.
+It reads current exact-artifact approvals separately, sharing evaluation with
+approval diagnostics. No provider payload code runs before approval.
+
+Actions are inspect, compose, command (capability or namespace), operation (slot
+and name), and hook (capability and event). Command/operation/hook loading requires
+the exact action declaration, approved target artifact, host requirements, and an
+inventoried retained executable file. Fundamental provider bindings remain blocked
+until their qualification adapter is integrated; choices are not enrollment.
+Unsupported actions and unverified historical reconstruction refuse, never fall back.
+
+`dispatch.composition` records canonical soul body, ordered instruction references,
+work mode, named skills, and explicit injection omission/override choices. Launch
+recipes require this projection. Non-launch command records may omit it; compose
+then refuses. The common formatter is shared with existing preparation, while the
+captured path reads only verified retained resources. Body ownership, duplicate
+sources/skill names, override references and disabled choices are checked. Complete
+manifest-to-curriculum coverage and lifecycle materialization remain integration work.
+
+The actual complete manifest codec and both applicable launch checks (recipe plus
+configuration, including reserved environment/NUL rules) are supplied by core.
+This static validation does not qualify launch: launch action adoption and mutable
+host/provider gates are still separate work. No current lock/config/marketplace
+fallback and no inferred executable permission from diagnostic booleans.
