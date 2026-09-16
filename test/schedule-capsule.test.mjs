@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { admitExecutionTemplate, buildCommandExecutionTemplate, capturedDispatchAction, executionContentIntegrity, validateExecutionCapsule, validateExecutionTemplate } from "../lib/schedule-capsule.mjs";
-import { addSchedule, findHomesInScope, jobLockInfo, readDefinitions, readState, reconcile, saveWakeForHome, scheduleExecutionStatus, tickWorkspace, writeDefinitions, writeState } from "../lib/schedule.mjs";
+import { acquireJobLock, addSchedule, describe, findHomesInScope, jobLockInfo, readDefinitions, readState, reconcile, releaseJobLock, removeSchedule, runNow, saveWakeForHome, scheduleExecutionStatus, tickWorkspace, writeDefinitions, writeState } from "../lib/schedule.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { commitCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
 import { bytesIntegrity, treeIntegrity } from "../lib/portable-digest.mjs";
@@ -245,7 +245,7 @@ test("an admitted capsule survives definition edits and reconciliation after sou
   const state = readState(ws);
   state.jobs.recover = {
     attempt: { schemaVersion: 1, scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", execution: admitted },
-    lastRun: { scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", outcome: "unknown", instance, execution: admitted },
+    lastRun: { scheduledFor: "2026-09-16T10:03:00.000Z", startedAt: "2026-09-16T10:03:01.000Z", outcome: "unknown", instance, home, execution: admitted },
   };
   writeState(ws, state);
   const defs = readDefinitions(ws), replacement = { ...defs.jobs.recover, argv: argv(ws, RID_B), responsibleHuman: null };
@@ -259,6 +259,60 @@ test("an admitted capsule survives definition edits and reconciliation after sou
   assert.equal(jobLockInfo(ws, "recover").executionId, "attempt-a", "reconciled slot remains bound to the admitted intent");
   assert.equal(result.schedule.executionStatus.intent.executionId, "attempt-a", "a confirmed active run still reports its intent after the unresolved attempt is cleared");
   assert.equal(readDefinitions(ws).jobs.recover.execution.resolution.id, RID_B);
+});
+
+test("automatic captured wakes apply the first-write document version and new-entry policy gates", (t) => {
+  const ws = workspace(t), home = join(ws, "agents/dev/instances/first-auto");
+  const executionBinding = { schemaVersion: 1, deployment: ws, resolution: { schemaVersion: 1, id: RID_A } };
+  write(join(home, "instance.json"), JSON.stringify({ instance: "first-auto", home, executionBinding }));
+  const wake = { cron: "*/5 * * * *", tz: "UTC", message: "wake" };
+  saveWakeForHome(ws, { instance: "first-auto", home, wake, executionBinding, responsibleHuman: null });
+  assert.equal(readDefinitions(ws).version, 2, "old readers must reject the first automatic captured wake");
+  assert.throws(() => saveWakeForHome(ws, { instance: "legacy-auto", home, wake }), { code: "migration-required" });
+  assert.equal(readDefinitions(ws).jobs["wake-legacy-auto"], undefined);
+});
+
+test("observation preserves mismatched captured lock custody before tick or run-now admission", (t) => {
+  const ws = workspace(t), home = join(ws, "agents/dev/instances/worker");
+  write(join(home, "instance.json"), JSON.stringify({ instance: "worker", home }));
+  addSchedule(ws, spec(ws, "held")); let commands = 0;
+  const io = { admit() {}, command() { commands++; return { schemaVersion: 1, ok: true, result: { instance: "worker", home } }; } };
+  tickWorkspace(ws, { now: at("2026-09-16T12:00:00Z"), reg: { maxConcurrent: 1 }, io });
+  releaseJobLock(ws, "held"); acquireJobLock(ws, "held", { executionId: "other-intent", home });
+  rmSync(home, { recursive: true });
+  const before = readState(ws);
+  assert.equal(describe(ws, "held").executionStatus.intent.kind, "invalid");
+  assert.throws(() => tickWorkspace(ws, { now: at("2026-09-16T12:01:00Z"), reg: { maxConcurrent: 1 }, io }), { code: "E_SCHEDULE_INVALID" });
+  assert.throws(() => tickWorkspace(ws, { now: at("2026-09-16T12:01:00Z"), reg: { maxConcurrent: 1 }, io, observeOnly: true }), { code: "E_SCHEDULE_INVALID" });
+  assert.throws(() => runNow(ws, "held", { io }), { code: "E_SCHEDULE_INVALID" });
+  assert.deepEqual(readState(ws), before); assert.equal(commands, 1);
+  assert.equal(jobLockInfo(ws, "held").executionId, "other-intent");
+});
+
+test("reconcile cannot attribute an earlier worker receipt to a new admitted execution", (t) => {
+  const ws = workspace(t), saved = addSchedule(ws, spec(ws, "receipt"));
+  const home = join(ws, "agents/dev/instances/old-worker");
+  write(join(home, "instance.json"), JSON.stringify({ instance: "old-worker", home }));
+  const old = admitExecutionTemplate(saved.execution, { executionId: "old-intent" });
+  const current = admitExecutionTemplate(saved.execution, { executionId: "new-intent" });
+  const state = readState(ws); state.jobs.receipt = {
+    attempt: { schemaVersion: 1, execution: current, scheduledFor: "2026-09-16T12:02:00Z" },
+    lastRun: { execution: old, kind: "command", outcome: "launch-failed", instance: "old-worker", home },
+  }; writeState(ws, state); acquireJobLock(ws, "receipt", { executionId: current.executionId });
+  let observations = 0;
+  const result = reconcile(ws, "receipt", { io: { inspect() { observations++; return { present: true, state: "unknown" }; } } });
+  assert.equal(result.reconciled, "unknown"); assert.equal(observations, 0);
+  assert.deepEqual(readState(ws), state); assert.equal(jobLockInfo(ws, "receipt").executionId, current.executionId);
+});
+
+test("ordinary removal preserves the admitted-attempt-before-lock crash state", (t) => {
+  const ws = workspace(t), saved = addSchedule(ws, spec(ws, "pre-lock"));
+  const state = readState(ws); state.jobs["pre-lock"] = { attempt: { schemaVersion: 1,
+    execution: admitExecutionTemplate(saved.execution), scheduledFor: "2026-09-16T12:03:00Z" } };
+  writeState(ws, state); assert.equal(jobLockInfo(ws, "pre-lock"), null);
+  assert.throws(() => removeSchedule(ws, "pre-lock"), { code: "E_SCHEDULE_RUNNING" });
+  assert.deepEqual(readState(ws), state); assert.ok(readDefinitions(ws).jobs["pre-lock"]);
+  assert.equal(removeSchedule(ws, "pre-lock", { force: true }).removed, "pre-lock");
 });
 
 // Normalize a replacement without taking updateSchedule's host lock while the
