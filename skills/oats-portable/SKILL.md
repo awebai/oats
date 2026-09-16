@@ -38,6 +38,19 @@ oats operation run <knowledge|messaging|tasks>:<name> \
   [--home <absolute-instance-home>] [--arg name=value ...] --json
 ```
 
+For capability helpers, inspect the source's captured helper map and resolve one
+exact key before selecting a helper record:
+
+```bash
+oats inspect --deployment <source-deployment> --resolution <source-id> \
+  --helper <exact-map-key> --composition --json
+```
+
+Keep `sourceExecutionBinding` for provider completion commands and the returned
+`executionBinding` for the helper. Do not complete through a worker's inherited
+selector or use legacy helper-name discovery. Helper inspection is not worker
+launch; a running-helper request must remain blocked until launch is supported.
+
 A fresh captured directory scaffold is available only with explicit placement
 and no launch:
 

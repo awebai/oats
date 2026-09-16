@@ -5,8 +5,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { activateCapturedScaffold, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
-import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
+import { activateCapturedScaffold, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
+import { commitCapturedResolution, readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
@@ -78,6 +78,38 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
   assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
+test('source helper lookup preserves dedicated A/B authority without source or current selection',t=>{
+  const f=fixture(t),a=prepareCapturedComposition(f.input,f.options),key='example.action:worker';
+  const aRecord=readCapturedResolution(f.deployment,a.resolution),aHelper=aRecord.helpers[key];
+  f.write('packages/action/cap/agents/worker/AGENTS.md','Helper B instructions\n');
+  f.git('add','.');f.git('commit','--quiet','-m','helper B');
+  const b=prepareCapturedComposition(f.input,f.options),bHelper=readCapturedResolution(f.deployment,b.resolution).helpers[key];
+  assert.notEqual(aHelper.id,bHelper.id);assert.notEqual(a.resolution.id,aHelper.id);
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned config');writeFileSync(join(f.deployment,'oats-lock.json'),'poisoned lock');
+  const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  for(const [source,helper,text] of [[a,aHelper,'Worker instructions'],[b,bHelper,'Helper B instructions']]) {
+    const resolved=resolveCapturedHelper({executionBinding:source.executionBinding,helper:key,name:'worker'});
+    assert.equal(resolved.sourceExecutionBinding.resolution.id,source.resolution.id);assert.equal(resolved.executionBinding.resolution.id,helper.id);
+    assert.equal(resolved.helper.subject.kind,'helper');assert.equal(resolved.helper.subject.provider.capability,'example.action');
+    assert.equal(resolved.workMode,'directory');assert.equal(resolved.launch.status,'unsupported');assert.equal(resolved.responsibleHuman,null);
+    const result=spawnSync(process.execPath,[cli,'inspect','--deployment',f.deployment,'--resolution',source.resolution.id,'--helper',key,'--composition','--json'],{encoding:'utf8'});
+    assert.equal(result.status,0,result.stdout||result.stderr);const receipt=JSON.parse(result.stdout).result;
+    assert.equal(receipt.resolution.id,helper.id);assert.equal(receipt.helperSelection.sourceExecutionBinding.resolution.id,source.resolution.id);
+    assert.ok(receipt.composition.text.startsWith(text));
+  }
+  for(const helper of ['missing','constructor','__proto__']) assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper}),{code:'helper-not-selected'});
+  assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper:key,name:'different'}),{code:'invalid-resolution'});
+  const differentContext=structuredClone(readCapturedResolution(f.deployment,aHelper));differentContext.context={kind:'standalone',key:'other-helper-context'};
+  const differentRef=commitCapturedResolution(f.deployment,differentContext),sourceWithDifferent=structuredClone(aRecord);sourceWithDifferent.helpers[key]=differentRef;
+  const differentSource=commitCapturedResolution(f.deployment,sourceWithDifferent);
+  assert.throws(()=>resolveCapturedHelper({executionBinding:{...a.executionBinding,resolution:differentSource},helper:key}),{code:'needs-configuration'},'distinct context is held until explicit helper-request policy, never overwritten');
+  assert.equal(existsSync(join(f.deployment,'.agents','portable','instance-references.json')),false,'helper inspection admits no incarnation');
+  assert.equal(existsSync(join(f.deployment,'oats-schedules.json')),false,'helper inspection schedules nothing');
+  rmSync(join(f.deployment,'.agents','resolutions',`${aHelper.id}.json`));
+  assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper:key}));
+  assert.equal(resolveCapturedHelper({executionBinding:b.executionBinding,helper:key}).executionBinding.resolution.id,bHelper.id,'missing A cannot reselect B');
+});
+
 test('helper-authored provider policy refuses before helper or parent records can inherit the parent binding',t=>{
   const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));

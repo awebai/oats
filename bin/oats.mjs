@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -248,11 +248,20 @@ function capturedCommand(selector) {
     const target = { deployment: selector.deployment, resolution: selector.resolution };
     const load = (action, extra = {}) => loadCapturedDispatch({ ...target, action, ...extra });
     if (cmd === "inspect") {
-      if (args.slice(1).some((arg) => !["--json", "--composition"].includes(arg))) fail("E_BAD_ARGS", "captured inspect accepts only --json and --composition");
-      const loaded = load({ kind: args.includes("--composition") ? "compose" : "inspect" });
-      const result = { resolution: selector.resolution, capture: loaded.record.capture,
+      let helperKey;
+      for (let index = 1; index < args.length; index++) {
+        if (["--json", "--composition"].includes(args[index])) continue;
+        if (args[index] !== "--helper" || helperKey !== undefined || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "captured inspect accepts --json, --composition and one --helper <exact-map-key>");
+        helperKey = args[++index];
+      }
+      const helperSelection = helperKey === undefined ? null : resolveCapturedHelper({ executionBinding: { schemaVersion: 1, ...target }, helper: helperKey });
+      const selected = helperSelection?.executionBinding ?? target;
+      const loaded = loadCapturedDispatch({ deployment: selected.deployment, resolution: selected.resolution, action: { kind: args.includes("--composition") ? "compose" : "inspect" } });
+      const result = { resolution: loaded.resolution, capture: loaded.record.capture,
+        ...(helperSelection ? { helperSelection } : {}),
         capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
           approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),
+        helpers: Object.entries(loaded.record.helpers).map(([key, resolution]) => ({ key, resolution })),
         hasComposition: !!loaded.record.dispatch.composition,
         ...(loaded.composition ? { composition: loaded.composition } : {}) };
       if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
@@ -5057,7 +5066,7 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats prepare --dir <abs> --workspace <git repo> --alias <advertised alias>
       [--workspace-revision <ref>] [--json]  same preparation through workspace imports
   oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
-                                            inspect exact retained inputs, not today's configuration
+      [--helper <exact-map-key>]             inspect retained source/helper inputs, not today's configuration
   oats trust <capability> --deployment <abs> --resolution <id> [--json]
                                             explicitly approve that exact captured artifact
   oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]
