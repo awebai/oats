@@ -95,6 +95,16 @@ test('helper-authored provider policy refuses before helper or parent records ca
   assert.equal(existsSync(join(f.deployment,'.agents','resolutions')),false,'neither a contradictory helper nor a parent record was published');
 });
 
+test('standalone context key is explicit, opaque and preserved without workspace inference',t=>{
+  const f=fixture(t),key='provider-context:opaque/one';
+  const keyed=prepareCapturedComposition({...f.input,standaloneContextKey:key},f.options);
+  assert.equal(readCapturedResolution(f.deployment,keyed.resolution).context.key,key);
+  const disabled=prepareCapturedComposition({...f.input,standaloneContextKey:null},f.options);
+  assert.equal(readCapturedResolution(f.deployment,disabled.resolution).context.key,null);
+  assert.throws(()=>prepareCapturedComposition({...f.input,standaloneContextKey:''},f.options),{code:'invalid-declaration'});
+  assert.throws(()=>prepareCapturedComposition({...f.input,workspace:{source:f.input.source.source},standaloneContextKey:key},f.options),{code:'invalid-declaration'});
+});
+
 test('public prepare CLI uses the native transport and returns the exact immutable binding',t=>{
   const f=fixture(t),ssh=join(f.root,'fixture-ssh');
   // Native SSH transport with a controlled upload-pack endpoint: no network,
