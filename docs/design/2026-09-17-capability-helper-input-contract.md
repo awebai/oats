@@ -42,7 +42,7 @@ Use the existing choice resolver with a capability-local hard equality fact:
 - Inclusion: existing block `{source:"capability:<id>",resource:<key>,choice:<choice-key>}`. The resource remains owned by the same exact capability artifact and must match its retained declared file.
 - Omission: `{source:"capability:<id>",reason:"helper-policy",choice:<choice-key>}` with null value and the exact retained `omit` witness.
 
-No new authority kind or resolver is needed. The verifier must check both directions: every new helper-policy choice/block/omission agrees with its selected manifest, and every applicable retained declaration is represented. A same-valued fabricated origin is not sufficient. Such witnesses cannot justify choices for software or other capabilities.
+No new authority kind or resolver is needed. The verifier must check both directions: every capability-sourced block/omission in a newly published helper agrees with its owner's exact retained helper-policy fact, and every applicable retained declaration is represented. This includes entries with no choice or an unrelated operator choice: neither can supply a contribution from a capability with no applicable declaration. Publication checks run through the real `commitCapturedResolution` boundary before creating the store/staging, not only through the compiler. A same-valued fabricated origin is not sufficient. Such witnesses cannot justify choices for software or other capabilities.
 
 ### Old evidence versus new publication
 
