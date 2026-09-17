@@ -132,6 +132,14 @@ no async worker may rely on the invocation file remaining. No credential value i
 part of the ProviderBinding contract. Abrupt process death can leave private scratch;
 it does not make that scratch selectable authority or justify unsafe cleanup.
 
+### Current paired execution transport versus explicit old ingress
+
+Current captured commands, operations and hooks with an actual selected provider binding receive BOTH `OATS_INVOCATION_CONTEXT_FILE` and `OATS_BINDING_FILE`. Generic invocation is universal; an additive/unbound capability legitimately has no binding snapshot. The supplemental source receipt is not a substitute for either input. Checks still use the existing stdin contract and optional inline invocation, not an additional file channel.
+
+The raw namespace-command route does not nominate an instance or admit an action. Source-independent existing-run completion therefore receives `instance:null`, `intent:null` and no instance-derived prior receipt, even after source-home deletion. The [existing-run completion boundary](2026-09-16-captured-admission.md#existing-provider-run-completion-after-source-home-deletion) keeps qualified retained provider-run custody separate from a new kernel mutation grant. No helper binding or invented live source identity substitutes for that authority.
+
+Binding/source-receipt-only fixtures represent explicitly OLD transport, not positives for the current paired reader. Missing, malformed or invalid-present current snapshots must not cause synthesized projections or silent fallback. Any deliberate old-ingress compatibility path is separately explicit and qualified against exact producer/provider pins; it does not silently upgrade old fixtures or alter the selected supplemental-input/registered-replay policy.
+
 ## Captured lifecycle registration input
 
 The kernel also has a bounded private `OATS_SOURCE_RECEIPT_FILE` projection for a
