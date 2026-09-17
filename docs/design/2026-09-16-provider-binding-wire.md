@@ -162,7 +162,8 @@ The unreleased v1 payload is:
 ```text
 {schemaVersion:1, executionBinding,
  subject: <exact captured record subject>,
- instance:null|{home,work,name,agent},
+ instance:null|{home,work,name,agent,incarnationId},
+ intent:null|{schemaVersion:1,executionId,incarnationId,attempt},
  context, responsibleHuman, messagingChoice,
  capability, action, priorReceipt}
 ```
@@ -175,9 +176,9 @@ Overall limits are 512 KiB, depth 32 and 16384 entries; `priorReceipt` separatel
 128 KiB, depth 24 and 8192 entries. Its JSON is opaque and nullable, never credentials.
 
 The kernel derives it from the verified record, explicit target and that capability's
-current stored metadata before provider readiness or execution. Non-null instance
-facts and any supplied prior receipt must match the captured home's metadata and
-record; a scope action has instance:null and no invented home. A public broker check
+current stored metadata/index before provider readiness or execution. Non-null instance
+facts and any supplied prior receipt must match the captured home's owned incarnation,
+record and indexed receipts; a scope action has instance:null and no invented home. A public broker check
 with invocation re-verifies the referenced record and matches the entire binding,
 artifact set and effective settings, not merely the request's syntactic shape.
 `action` is the
@@ -205,9 +206,11 @@ configuration.
 
 This addition is an unreleased coordinated wire change: both provider validators
 must accept optional `check.input.invocation` and the exact subject union before a
-new compatible provider pin is used. Earlier pinned providers are not silently
-patched or claimed compatible. Composition resolution IDs and home/alias strings
-are NOT request/incarnation identities. Stable scheduled `executionId` propagation
-and a durable fresh incarnation/action-intent identity are still required before
-retryable setup mutation can be qualified; no provider may invent one from the
-composition hash or infer completed enrollment from setup admission.
+new compatible provider pin is used. The new incarnation/intent fields also need
+coordinated successor consumers; earlier pins are not silently patched or claimed
+compatible. [Captured admission](2026-09-16-captured-admission.md) records opaque fresh
+incarnations and logical request IDs before effects using the existing home index.
+An explicit retry reuses its ID/receipt; identical distinct requests get distinct IDs.
+Composition/home/alias values are never replacement identities. Stable scheduler
+execution-ID propagation and actual captured launch remain unfinished. Admission
+authorizes an attempt/reconciliation, not duplicate native effects, enrollment or privacy.

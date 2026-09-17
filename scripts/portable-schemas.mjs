@@ -102,11 +102,15 @@ d.CapturedAction = one(
   object({ kind: { const: "command" }, namespace: s, name: s }),
   object({ kind: { const: "hook" }, capability: cap, name: s }),
   object({ kind: { const: "operation" }, slot: enumeration("knowledge", "messaging", "tasks"), name: s }));
+d.IncarnationId = { ...s, pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$" };
+d.CapturedIntentRef = object({ schemaVersion: v1, executionId: { ...s, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+  incarnationId: ref("IncarnationId"), attempt: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER } });
 d.CapturedInvocationContext = object({ schemaVersion: v1, executionBinding: ref("ExecutionBinding"),
-  subject: ref("CapturedSubject"), instance: nullable(object({ home: s, work: s, name: s, agent: s })),
+  subject: ref("CapturedSubject"), instance: nullable(object({ home: s, work: s, name: s, agent: s, incarnationId: ref("IncarnationId") })),
+  intent: nullable(ref("CapturedIntentRef")),
   context: ref("Context"), responsibleHuman: nullable(ref("TeamRef")), messagingChoice: ref("MessagingChoice"),
   capability: cap, action: ref("CapturedAction"), priorReceipt: {} });
-d.CapturedInvocationContext.description = "Bounded generic projection: exact subject union and validated record/instance equality are mandatory. Prior receipt is opaque nullable JSON, not credentials or an idempotency grant.";
+d.CapturedInvocationContext.description = "Bounded generic projection: exact subject union and validated record/instance equality are mandatory. Incarnation and intent are independently minted durable identities, never a resolution/home/name digest. A null intent grants no mutation authority. Prior receipt is opaque nullable JSON, not credentials.";
 d.ProviderCheckInput = object({ binding: ref("ProviderBinding"), context: ref("Context"),
   action: { type: "object", required: ["kind"], properties: { kind: s } }, invocation: ref("CapturedInvocationContext") }, ["invocation"]);
 d.CapturedResolution = object({ schemaVersion: v1, capture: enumeration("prepared", "reconstructed"),

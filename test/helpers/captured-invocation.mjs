@@ -9,7 +9,7 @@ export function invocationFixture({ deployment = "/deployment", home = null, hel
       revision: { kind: "local", source: "path:/fixture-source", integrity, provenance: [origin] }, definition: "soul.yaml", projection: { roots: ["."] } } };
   const name = helper ? "worker" : "expert";
   return { schemaVersion: 1, executionBinding: { schemaVersion: 1, deployment, resolution: { schemaVersion: 1, id: `sha256-${"b".repeat(64)}` } },
-    subject, instance: home === null ? null : { home, work: `${home}/work`, name: `${name}-1`, agent: name },
+    subject, intent: null, instance: home === null ? null : { home, work: `${home}/work`, name: `${name}-1`, agent: name, incarnationId: '11111111-1111-4111-8111-111111111111' },
     context: { kind: "standalone", key: "opaque-context" }, responsibleHuman: null, messagingChoice: { schemaVersion: 1, enabled: false },
     capability, action: home === null ? { kind: "command", capability, name: "show" } : { kind: "hook", capability, name: "spawn" }, priorReceipt: null };
 }

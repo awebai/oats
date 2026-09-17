@@ -65,6 +65,13 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.equal(failedMeta.captured.lifecycle,'spawn-failed-cleanup-required');assert.equal(failedMeta.capabilityMeta[f.id].created,true);assert.equal(existsSync(failedHome),true);
   const indexed=readCapturedInstanceIndex(f.deployment).instances;
   assert.deepEqual(indexed.map(row=>[row.instance,row.status]),[['imported-expert-1','spawned-launch-pending'],['imported-expert-2','spawn-failed-cleanup-required']]);
+  assert.notEqual(scaffoldMeta.incarnationId,failedMeta.incarnationId,'identical composition has independently minted incarnations');
+  assert.equal(indexed[0].incarnationId,scaffoldMeta.incarnationId);assert.equal(indexed[1].intents[0].state,'unconfirmed');
+  const firstIntent=failedMeta.captured.hookIntents[f.id];
+  assert.throws(()=>activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome}),{code:'invalid-resolution'});
+  const retried=activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome,retryIntents:{[f.id]:firstIntent.executionId}});
+  assert.equal(retried.incarnationId,failedMeta.incarnationId);assert.equal(retried.hooks.intents[f.id].executionId,firstIntent.executionId);assert.equal(retried.hooks.intents[f.id].attempt,2);
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances[1].intents.length,1,'retry never creates a replacement logical request');
   const action=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'command',namespace:'example-action',name:'show'}});
   assert.equal(execFileSync(process.execPath,[action.executable.file,...action.executable.args],{encoding:'utf8'}).trim(),'A');
   const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'},
@@ -218,8 +225,8 @@ test('preparation resolves approved provider fields in the same engine and never
   const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
   manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
-  manifest.operations={probe:{command:'show',kind:'action',context:'scope',args:[{name:'label',flag:'--label',required:true}]},
-    'home-probe':{command:'show',kind:'action',context:'home'}};
+  manifest.operations={probe:{command:'show',kind:'view',context:'scope',args:[{name:'label',flag:'--label',required:true}]},
+    'scope-mutate':{command:'show',kind:'action',context:'scope'},'home-probe':{command:'show',kind:'action',context:'home',args:[{name:'label',flag:'--label'}]}};
   writeFileSync(manifestFile,JSON.stringify(manifest));
   const soul=JSON.parse(readFileSync(soulFile,'utf8'));soul.knowledge={contract:'example.locations',version:1,payload:{location:'A'}};
   writeFileSync(soulFile,JSON.stringify(soul));const hookMarker=join(f.root,'captured-hook-ran');
@@ -227,7 +234,8 @@ test('preparation resolves approved provider fields in the same engine and never
     const snapshot=process.env.OATS_BINDING_FILE,binding=JSON.parse(readFileSync(snapshot,'utf8'));
     const sourceSnapshot=process.env.OATS_SOURCE_RECEIPT_FILE??null,sourceReceipt=sourceSnapshot?JSON.parse(readFileSync(sourceSnapshot,'utf8')):null;
     const invocationSnapshot=process.env.OATS_INVOCATION_CONTEXT_FILE??null,invocation=invocationSnapshot?JSON.parse(readFileSync(invocationSnapshot,'utf8')):null;
-    const result={location:binding.payload.location,snapshot,invocationSnapshot,invocation,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
+    const result={documents:[],location:binding.payload.location,snapshot,invocationSnapshot,invocation,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
+    if(invocation?.intent){const ledger=JSON.parse(readFileSync(invocation.executionBinding.deployment+'/.agents/portable/instance-references.json','utf8'));const row=ledger.instances.find(row=>row.incarnationId===invocation.instance.incarnationId);const intent=row?.intents.find(item=>item.executionId===invocation.intent.executionId);if(!intent||intent.state!=='running'||intent.attempt!==invocation.intent.attempt)throw Error('effect before durable admission');}
     if(process.env.OATS_OPERATION && process.argv.includes('cleanup-failure')) rmSync(dirname(snapshot),{recursive:true});
     if(process.env.OATS_EVENT) {
       writeFileSync(${JSON.stringify(hookMarker)},'ran');
@@ -274,14 +282,32 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(cleanupFailure.code,'E_OPERATION_RESULT');assert.equal(cleanupFailure.details.unconfirmed,true);
   assert.equal(cleanupFailure.details.envelope.result.location,'A');assert.equal(cleanupFailure.details.envelope.result.args.includes('cleanup-failure'),true);
   assert.ok(cleanupFailure.details.cleanup.message,'cleanup diagnostic is retained with the observed provider receipt');
-  const home=join(f.root,'captured-home');mkdirSync(home);
-  const homeMetadata={home,kind:'persistent',responsibleHuman:null,instance:'captured-home',agent:'imported-expert',executionBinding:prepared.executionBinding};
+  const scopeMutation=spawnSync(process.execPath,[cli,'operation','run','knowledge:scope-mutate','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--json'],{encoding:'utf8'});
+  assert.equal(JSON.parse(scopeMutation.stdout).error.code,'admission-required','scope mutation does not invent an incarnation');
+  const home=join(realpathSync(f.root),'captured-home');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home'});
+  const homeMetadata=JSON.parse(readFileSync(join(home,'instance.json'),'utf8'));
   writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,capabilityMeta:{[f.id]:{identity:'prior-receipt'}}}));
   const homeCall=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
   assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
   assert.deepEqual(homeOperation.result.result.invocation.priorReceipt,{identity:'prior-receipt'});assert.equal(homeOperation.result.result.invocation.instance.agent,'imported-expert');
   assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),homeOperation.result.result.invocation,'readiness receives target and prior receipt before the home operation');
+  const homeIntent=homeOperation.result.intent,homeArgv=[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'];
+  const beforeReplay=readFileSync(checkContext);
+  const replayed=JSON.parse(execFileSync(process.execPath,[...homeArgv,'--retry-intent',homeIntent.executionId],{encoding:'utf8'}));
+  assert.deepEqual(replayed.result.intent,homeIntent);assert.deepEqual(readFileSync(checkContext),beforeReplay,'completed retry never runs readiness or provider effects');
+  const requestHome=join(realpathSync(f.root),'request-home');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:requestHome,instance:'request-home'});
+  const requestArgv=homeArgv.map(value=>value===home?requestHome:value);
+  const newA=JSON.parse(execFileSync(process.execPath,requestArgv,{encoding:'utf8'})),newB=JSON.parse(execFileSync(process.execPath,requestArgv,{encoding:'utf8'}));
+  assert.notEqual(newA.result.intent.executionId,newB.result.intent.executionId,'identical public requests do not collapse');
+  const failedArgv=[...requestArgv,'--arg','label=cleanup-failure'];
+  const failureA=JSON.parse(spawnSync(process.execPath,failedArgv,{encoding:'utf8'}).stdout).error;
+  assert.equal(failureA.details.unconfirmed,true);assert.ok(failureA.details.intent.executionId);
+  const failedRef=failureA.details.intent;
+  const held=JSON.parse(spawnSync(process.execPath,requestArgv,{encoding:'utf8'}).stdout).error;assert.equal(held.code,'selection-changed');
+  const failureB=JSON.parse(spawnSync(process.execPath,[...failedArgv,'--retry-intent',failedRef.executionId],{encoding:'utf8'}).stdout).error;
+  assert.equal(failureB.details.intent.executionId,failedRef.executionId);assert.equal(failureB.details.intent.attempt,2);
+  assert.equal(failureB.details.envelope.result.invocation.priorReceipt.result.invocation.intent.executionId,failedRef.executionId,'explicit retry consumes its own observed receipt');
   const target={home,work:join(home,'work'),name:'captured-home',agent:'imported-expert'};
   const checkBefore=readFileSync(checkContext),homeOptions={deployment:f.deployment,resolution:prepared.resolution,action:{kind:'hook',capability:f.id,name:'spawn'},invocationTarget:target};
   for(const bad of [
@@ -296,7 +322,7 @@ test('preparation resolves approved provider fields in the same engine and never
   writeFileSync(join(home,'instance.json'),JSON.stringify(homeMetadata));
   const sourceReceipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:prepared.executionBinding.deployment,agent:'imported-expert',instance:'captured-home',
     sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:prepared.executionBinding,responsibleHuman:null,binding:record.bindings.knowledge};
-  mkdirSync(sourceReceipt.work);
+  assert.ok(existsSync(sourceReceipt.work),'real scaffold supplies witnessed work ownership');
   const forgedReceipts=[
     {...sourceReceipt,role:'ambient replacement'},
     {...sourceReceipt,executionBinding:{...sourceReceipt.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}},
@@ -311,11 +337,13 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(readFileSync(hookMarker,'utf8'),'ran');
   assert.deepEqual(hooks.order,[f.id]);assert.equal(JSON.stringify(hooks.meta[f.id].sourceIdentity),JSON.stringify(record.subject.soul.identity));
   assert.deepEqual(hooks.meta[f.id].executionBinding,prepared.executionBinding);assert.equal(existsSync(hooks.meta[f.id].sourceSnapshot),false,'source receipt snapshot is removed after the synchronous hook');
-  assert.equal(hooks.meta[f.id].invocation.action.name,'spawn');assert.equal(hooks.meta[f.id].invocation.priorReceipt,null);
+  assert.equal(hooks.meta[f.id].invocation.action.name,'spawn');assert.equal(hooks.meta[f.id].invocation.priorReceipt.result.home,home,'latest indexed operation receipt survives metadata rewriting');
   assert.equal(hooks.meta[f.id].invocation.instance.home,home);
+  let retryIntents={};
   for (const failedChild of [false,true]) {
-    const incomplete=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home',agentName:'imported-expert',sourceReceipt,
+    const incomplete=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home',agentName:'imported-expert',sourceReceipt,retryIntents,
       extraEnv:{CLEANUP_CAPTURED_SNAPSHOTS:'1',...(failedChild?{FAIL_CAPTURED_HOOK:'1'}:{})}});
+    retryIntents=Object.fromEntries(Object.entries(incomplete.intents).map(([id,ref])=>[id,ref.executionId]));
     assert.equal(incomplete.meta[f.id].executionBinding.resolution.id,prepared.resolution.id,'nested cleanup failures retain the actual provider receipt');
     assert.equal(incomplete.meta[f.id].invocation.instance.home,home);
     assert.equal(incomplete.failures.length,1);assert.equal(incomplete.failures[0].contract,'snapshot-cleanup');

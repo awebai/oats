@@ -1729,6 +1729,39 @@
         }
       ]
     },
+    "IncarnationId": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "CapturedIntentRef": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "executionId": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "incarnationId": {
+          "$ref": "#/$defs/IncarnationId"
+        },
+        "attempt": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "executionId",
+        "incarnationId",
+        "attempt"
+      ],
+      "additionalProperties": false
+    },
     "CapturedInvocationContext": {
       "type": "object",
       "properties": {
@@ -1764,15 +1797,29 @@
                 "agent": {
                   "type": "string",
                   "minLength": 1
+                },
+                "incarnationId": {
+                  "$ref": "#/$defs/IncarnationId"
                 }
               },
               "required": [
                 "home",
                 "work",
                 "name",
-                "agent"
+                "agent",
+                "incarnationId"
               ],
               "additionalProperties": false
+            }
+          ]
+        },
+        "intent": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/CapturedIntentRef"
             }
           ]
         },
@@ -1807,6 +1854,7 @@
         "executionBinding",
         "subject",
         "instance",
+        "intent",
         "context",
         "responsibleHuman",
         "messagingChoice",
@@ -1815,7 +1863,7 @@
         "priorReceipt"
       ],
       "additionalProperties": false,
-      "description": "Bounded generic projection: exact subject union and validated record/instance equality are mandatory. Prior receipt is opaque nullable JSON, not credentials or an idempotency grant."
+      "description": "Bounded generic projection: exact subject union and validated record/instance equality are mandatory. Incarnation and intent are independently minted durable identities, never a resolution/home/name digest. A null intent grants no mutation authority. Prior receipt is opaque nullable JSON, not credentials."
     },
     "ProviderCheckInput": {
       "type": "object",

@@ -24,7 +24,7 @@ import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
-  readCapabilityLocks, writeCapabilityLock,
+  readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
   approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
@@ -119,11 +119,11 @@ function prepareCmd() {
 /** Run one provider operation from immutable captured authority. A home is an
  * explicit target only: its stored binding must name this exact record. */
 function capturedOperation(selector, load, bail) {
-  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> --deployment <abs> --resolution <id> [--home <abs>] [--arg k=v ...] [--json]");
+  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> --deployment <abs> --resolution <id> [--home <abs>] [--arg k=v ...] [--retry-intent <saved-id>] [--json]");
   const address = args[2], match = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
   if (!match) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
   const [, slot, name] = match, given = Object.create(null);
-  let home;
+  let home, retryExecutionId;
   for (let index = 3; index < args.length; index++) {
     const token = args[index];
     if (token === "--json") continue;
@@ -131,6 +131,11 @@ function capturedOperation(selector, load, bail) {
       const value = args[++index];
       if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute instance home");
       home = resolve(value); continue;
+    }
+    if (token === "--retry-intent") {
+      const value = args[++index];
+      if (retryExecutionId !== undefined || !value || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
+      retryExecutionId = value; continue;
     }
     if (token === "--arg") {
       const value = args[++index], eq = value?.indexOf("=") ?? -1;
@@ -168,9 +173,24 @@ function capturedOperation(selector, load, bail) {
   for (const key of Object.keys(given)) if (!declared.has(key)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(key)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
   for (const entry of operation.args) if (entry.required && given[entry.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${entry.name}=<value>: ${entry.description || "required"}`);
   const action = { kind: "operation", slot, name };
-  const loaded = load(action, { invocationTarget: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
-    priorReceipt: meta?.capabilityMeta?.[providerId] ?? null }), { capability, executable } = loaded;
   const argFlags = operation.args.flatMap((entry) => given[entry.name] === undefined ? [] : [entry.flag, given[entry.name]]), cwd = home || selector.deployment;
+  if (operation.kind === "action" && !home) bail("admission-required", "scope mutation has no qualified incarnation/admission path; use an instance-scoped operation");
+  if (retryExecutionId !== undefined && operation.kind !== "action") bail("E_BAD_ARGS", "read-only operations do not retry mutation intents");
+  const admission = operation.kind === "action" ? admitCapturedAction({ deployment: selector.deployment, resolution: selector.resolution, home, action, input: { arguments: argFlags },
+    ...(retryExecutionId !== undefined ? { retryExecutionId } : {}) }) : null;
+  const admittedBail = (code, message, details) => bail(code, message, { ...details, ...(admission ? { intent: admission.intent } : {}) });
+  if (admission?.replayed) {
+    if (!admission.replayable) admittedBail("needs-configuration", "completed operation cannot replay its retained outcome");
+    finishOperation({ r: { status: 0, stdout: JSON.stringify(admission.receipt) }, bail: admittedBail, address, provider, op: operation, argFlags, cwd, home, meta, intent: admission.intent }); return;
+  }
+  let loaded;
+  try { loaded = load(action, { invocationTarget: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
+    ...(admission ? { intent: admission.intent, priorReceipt: admission.receipt } : { priorReceipt: meta?.capabilityMeta?.[providerId] ?? null }) }); }
+  catch (error) {
+    if (admission) settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: "blocked", receipt: admission.receipt });
+    admittedBail(error.code || "provider-unavailable", error.message);
+  }
+  const { capability, executable } = loaded;
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
   Object.assign(env, {
@@ -183,15 +203,27 @@ function capturedOperation(selector, load, bail) {
   if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
     PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
   const invocation = loaded.invocation;
-  let child, cleanupError;
+  let child, cleanupError, started = false;
   try {
-    child = withCapturedInvocationContextFile(invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => runCapturedOperationProcess({ file: executable.file,
-      args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...contextEnv, ...bindingEnv } })));
+    child = withCapturedInvocationContextFile(invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => {
+      if (admission) { beginCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action }); started = true; }
+      return runCapturedOperationProcess({ file: executable.file, args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...contextEnv, ...bindingEnv } });
+    }));
   } catch (error) {
-    if (!error?.invocationCompleted) throw error;
+    if (!error?.invocationCompleted) {
+      if (admission) settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: started ? "unconfirmed" : "blocked", receipt: admission.receipt });
+      admittedBail(error.code || "E_OPERATION_RESULT", error.message, { unconfirmed: started });
+    }
     child = error.invocationResult; cleanupError = error;
   }
-  finishOperation({ r: child, bail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError });
+  if (admission) {
+    let envelope; try { envelope = JSON.parse(String(child.stdout || "").trim()); } catch { /* unconfirmed below */ }
+    const completed = !cleanupError && !child.error && child.status === 0 && envelope?.schemaVersion === 1 && envelope.ok === true;
+    try { settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: completed ? "completed" : "unconfirmed",
+      receipt: envelope ?? parseEnvelopeText(String(child.stdout || "")) ?? admission.receipt, replayable: completed }); }
+    catch (error) { admittedBail("E_OPERATION_RESULT", "operation ran but outcome custody could not be confirmed", { unconfirmed: true, envelope, custody: { code: error.code, message: error.message } }); }
+  }
+  finishOperation({ r: child, bail: admittedBail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError, ...(admission ? { intent: admission.intent } : {}) });
 }
 
 /** Fresh explicit captured scaffold + spawn hooks. Placement is supplied by
@@ -855,7 +887,7 @@ const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|cou
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = CAPTURED_OPERATION_TIMEOUT_MS;
-function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError }) {
+function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent }) {
   const stderr = String(r.stderr || "").trim();
   const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal));
   if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
@@ -896,7 +928,7 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   const receipt = {};
   if (typeof result.instance === "string" && result.instance !== meta?.instance) receipt.instance = result.instance;
   if (typeof result.home === "string" && result.home !== home) receipt.home = result.home;
-  const out = { ...base, ...receipt, result, ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
+  const out = { ...base, ...receipt, result, ...(intent ? { intent } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
   if (JSON_MODE) { jsonOk(out); return; }
   console.log(`${address} via ${provider.capability}@${provider.version || "?"} (${provider.command} ${op.command}) in ${shortPath(cwd)}: ok`);
   if (op.kind === "view") for (const d of result.documents) console.log(`  - ${d.label}${d.path ? ` (${shortPath(d.path)})` : ""}${d.text ? `: ${String(d.text).split("\n")[0].slice(0, 100)}` : ""}`);
@@ -5072,8 +5104,9 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]
                                             run the approved retained command; no ambient fallback
   oats operation run <layer>:<name> --deployment <abs> --resolution <id>
-      [--home <abs>] [--arg k=v ...] [--json]
-                                            run an exact retained provider operation
+      [--home <abs>] [--arg k=v ...] [--retry-intent <saved-id>] [--json]
+                                            home actions admit distinct requests; explicit retry reuses intent
+                                            scope views stay read-only; scope mutation is not yet qualified
   oats spawn <captured subject> --deployment <abs> --resolution <id>
       --home <abs> --no-launch [--json]      create a fresh directory scaffold and run captured hooks
 
