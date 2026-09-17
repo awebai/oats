@@ -25,7 +25,7 @@ function fixture(t, provider=false) {
   write('agents/expert/soul.yaml',JSON.stringify({schemaVersion:1,name:'expert',work:'directory',requires:provider?{knowledge:{capability:id,...selection}}:{capabilities:{[id]:selection}}}));
   write('agents/expert/AGENTS.md','Expert instructions\n');symlinkSync('AGENTS.md',join(repo,'agents/expert/CLAUDE.md'));
   write('packages/action/oats-package.json',JSON.stringify({package:'example.package',version:'1.0.0',description:'Fixture',compatibility:{oats:'>=0.1.0'},capabilities:['cap']}));
-  write('packages/action/cap/oats.json',JSON.stringify({capability:id,version:'1.0.0',description:'Fixture',command:'example-action',commands:{show:'show.mjs'},hooks:{spawn:{command:'./show.mjs',required:true}},settings:{limit:{default:3}},inject:'inject.md',skills:['skills/procedure'],agents:['agents/worker'],...(provider?{layer:'knowledge'}:{})}));
+  write('packages/action/cap/oats.json',JSON.stringify({capability:id,version:'1.0.0',description:'Fixture',command:'example-action',commands:{show:'show.mjs'},hooks:{spawn:{command:'./show.mjs',required:true,...(provider?{inputs:{sourceReceipt:{version:1}}}:{})}},settings:{limit:{default:3}},inject:'inject.md',helperInjection:{version:1,mode:provider?'omit':'inherit'},skills:['skills/procedure'],agents:['agents/worker'],...(provider?{layer:'knowledge'}:{})}));
   write('packages/action/cap/show.mjs','if(process.env.FAIL_CAPTURED_HOOK){console.log(JSON.stringify({meta:{created:true},warning:"fixture hook failed after effect"}));process.exit(1);}console.log("A");\n');write('packages/action/cap/inject.md','Capability instructions\n');
   write('packages/action/cap/skills/procedure/SKILL.md','# Procedure\n');
   write('packages/action/cap/agents/worker/soul.yaml','schemaVersion: 1\nname: worker\nwork: directory\n');
@@ -527,6 +527,130 @@ test('source helper lookup preserves dedicated A/B authority without source or c
   rmSync(join(f.deployment,'.agents','resolutions',`${aHelper.id}.json`));
   assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper:key}));
   assert.equal(resolveCapturedHelper({executionBinding:b.executionBinding,helper:key}).executionBinding.resolution.id,bHelper.id,'missing A cannot reselect B');
+});
+
+test('helper instruction policies compose distinct retained maps and refuse forged declaration witnesses',t=>{
+  for(const mode of ['inherit','omit','file','file-only']){
+    const f=fixture(t),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
+    manifest.helperInjection={version:1,mode:mode==='file-only'?'file':mode,...(mode.startsWith('file')?{path:'helper.md'}:{})};
+    if(mode==='file-only')delete manifest.inject;
+    f.write('packages/action/cap/helper.md','Helper-only declared instruction\n');f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m',mode);
+    const result=prepareCapturedComposition(f.input,f.options),parent=readCapturedResolution(f.deployment,result.resolution),helperRef=parent.helpers['example.action:worker'],helper=readCapturedResolution(f.deployment,helperRef);
+    const key='instruction:capability:example.action',choice='/helpers/injections/example.action';
+    assert.equal(parent.choices[choice],undefined,'helper hard facts never enter primary choices');
+    assert.equal(parent.resources[key]?.path,mode==='file-only'?undefined:'inject.md');
+    assert.equal(helper.resources[key]?.path,mode==='omit'?undefined:mode==='inherit'?'inject.md':'helper.md');
+    assert.equal(helper.choices[choice].constraints[0].origin.pointer,'/helperInjection');
+    assert.deepEqual(helper.choices[choice].constraints[0].origin.document.owner,helper.artifacts.capabilities[f.id].artifact);
+    validateWire('CapturedResolution',helper);
+    rmSync(f.repo,{recursive:true});
+    const primaryText=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition.text;
+    const helperText=loadCapturedDispatch({deployment:f.deployment,resolution:helperRef,action:{kind:'compose'}}).composition.text;
+    assert.equal(primaryText.includes('Capability instructions'),mode!=='file-only');assert.equal(primaryText.includes('Helper-only declared instruction'),false);
+    assert.equal(helperText.includes('Capability instructions'),mode==='inherit');assert.equal(helperText.includes('Helper-only declared instruction'),mode.startsWith('file'));
+    if(mode==='omit')assert.deepEqual(structuredClone(helper.dispatch.composition.omissions),[{source:'capability:example.action',reason:'helper-policy',choice}]);
+    if(mode==='file'){
+      const wrongPath=structuredClone(helper);wrongPath.resources[key].path='inject.md';
+      assert.throws(()=>commitCapturedResolution(f.deployment,wrongPath),{code:'invalid-resolution'},'same resource key cannot substitute another existing file');
+      const forged=structuredClone(helper),integrity={format:'oats.bytes.v1',value:`sha256-${'0'.repeat(64)}`};
+      forged.choices[choice].selectedBy.document.integrity=integrity;forged.choices[choice].constraints[0].origin.document.integrity=integrity;
+      assert.throws(()=>commitCapturedResolution(f.deployment,forged),{code:'resolution-incomplete'},'same-valued forged origin does not witness manifest bytes');
+      const missing=structuredClone(helper);delete missing.choices[choice];delete missing.dispatch.composition.blocks.find(block=>block.source==='capability:example.action').choice;
+      assert.throws(()=>commitCapturedResolution(f.deployment,missing),{code:'resolution-incomplete'},'applicable declaration cannot disappear from the capture');
+      for(const override of [false,true]){
+        const conflict=structuredClone(helper),other='/injections/capability:example.action',origin={kind:'operator',document:{kind:'operator',id:'explicit-instruction-choice'},pointer:'/value'},value=override?'instruction:operator':null;
+        conflict.choices[other]={value,selectedBy:origin,constraints:[],considered:[{kind:'operator',value,origin,disposition:'selected'}]};
+        conflict.dispatch.composition.blocks=conflict.dispatch.composition.blocks.filter(block=>block.source!=='capability:example.action');
+        if(override){conflict.resources[value]={...conflict.resources[key],path:'inject.md'};conflict.dispatch.composition.blocks.push({source:'capability:example.action',resource:value,choice:other});}
+        else conflict.dispatch.composition.omissions.push({source:'capability:example.action',reason:'disabled',choice:other});
+        assert.throws(()=>commitCapturedResolution(f.deployment,conflict),{code:'invalid-resolution'},'independently authorized disable/override cannot silently displace helper policy');
+      }
+    }
+  }
+});
+
+test('missing helper policy or declared file refuses before publishing any helper or parent',t=>{
+  for(const policy of [undefined,{version:1,mode:'file',path:'missing.md'}]){
+    const f=fixture(t),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
+    if(policy===undefined)delete manifest.helperInjection;else manifest.helperInjection=policy;
+    f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','unresolved helper policy');
+    assert.throws(()=>prepareCapturedComposition(f.input,f.options),{code:policy===undefined?'needs-configuration':'resource-not-found'});
+    assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false,'no published helper/parent graph on missing explicit policy/resource');
+  }
+});
+
+function selectedHookInputFixture(t,{knowledgeOptIn=true,unboundOptIn=false}={}) {
+  const f=fixture(t),root=realpathSync(f.root),checks=join(root,'input-checks.jsonl'),effects=join(root,'input-effects.jsonl');
+  const selection={source:'repo:packages/action'},ids=['example.action','example.knowledge','example.tasks'];
+  f.write('agents/expert/soul.yaml',JSON.stringify({schemaVersion:1,name:'expert',work:'directory',requires:{capabilities:{'example.action':selection},knowledge:{capability:ids[1],...selection},tasks:{capability:ids[2],...selection}}}));
+  const pkg=JSON.parse(readFileSync(join(f.repo,'packages/action/oats-package.json')));pkg.capabilities=['cap','knowledge','tasks'];f.write('packages/action/oats-package.json',JSON.stringify(pkg));
+  const hook=`import {readFileSync,appendFileSync,statSync,rmSync} from 'node:fs';import {dirname} from 'node:path';
+    const e=process.env,inv=JSON.parse(readFileSync(e.OATS_INVOCATION_CONTEXT_FILE,'utf8'));
+    const binding=e.OATS_BINDING_FILE?JSON.parse(readFileSync(e.OATS_BINDING_FILE,'utf8')):null,receipt=e.OATS_SOURCE_RECEIPT_FILE?JSON.parse(readFileSync(e.OATS_SOURCE_RECEIPT_FILE,'utf8')):null;
+    if(inv.capability!==e.OATS_CAPABILITY||binding&&binding.capability!==inv.capability||receipt&&receipt.binding.capability!==inv.capability)throw Error('cross-owner input');
+    const index=JSON.parse(readFileSync(inv.executionBinding.deployment+'/.agents/portable/instance-references.json','utf8'));
+    const intent=index.instances.find(row=>row.incarnationId===inv.instance.incarnationId)?.intents.find(row=>row.executionId===inv.intent.executionId);
+    if(intent?.state!=='running')throw Error('input hook effect before admission');
+    const paths=[e.OATS_INVOCATION_CONTEXT_FILE,e.OATS_BINDING_FILE,e.OATS_SOURCE_RECEIPT_FILE].filter(Boolean),modes=paths.map(path=>statSync(path).mode&0o777);
+    appendFileSync(${JSON.stringify(effects)},JSON.stringify({owner:inv.capability,event:e.OATS_EVENT})+'\\n');
+    const meta={owner:inv.capability,receipt,bindingOwner:binding?.capability??null,paths,modes,kind:inv.subject.kind,incarnation:inv.instance.incarnationId,executionId:inv.intent.executionId};
+    console.log(JSON.stringify({meta}));
+    if(e.CLEAN_SELECTED_INPUT_OWNER===inv.capability)rmSync(dirname(e.OATS_SOURCE_RECEIPT_FILE),{recursive:true});`;
+  const input={sourceReceipt:{version:1}};
+  const generic=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
+  generic.hooks={spawn:{command:'show.mjs',required:true,...(unboundOptIn?{inputs:input}:{})},retire:'show.mjs'};
+  f.write('packages/action/cap/oats.json',JSON.stringify(generic));f.write('packages/action/cap/show.mjs',hook);
+  for(const slot of ['knowledge','tasks']){
+    const id=`example.${slot}`,optIn=slot==='tasks'||knowledgeOptIn;
+    f.write(`packages/action/${slot}/oats.json`,JSON.stringify({capability:id,version:'1.0.0',description:'Input owner fixture',layer:slot,command:`fixture-${slot}`,
+      commands:{phase:'phase.mjs',hook:'hook.mjs'},binding:{version:1,normalize:'phase',bind:'phase',check:'phase'},inject:'inject.md',helperInjection:{version:1,mode:'omit'},
+      hooks:{spawn:{command:'hook.mjs',required:true,...(optIn?{inputs:input}:{})},retire:{command:'hook.mjs',...(optIn?{inputs:input}:{})}}}));
+    f.write(`packages/action/${slot}/inject.md`,`${slot} injected upkeep, not canonical body\n`);f.write(`packages/action/${slot}/hook.mjs`,hook);
+    f.write(`packages/action/${slot}/phase.mjs`,`import {readFileSync,appendFileSync} from 'node:fs';const r=JSON.parse(readFileSync(0,'utf8'));
+      if(r.phase==='check'){if(process.env.OATS_SOURCE_RECEIPT_FILE||Object.keys(r.input).some(key=>!['binding','context','action','invocation'].includes(key)))throw Error('second check authority');appendFileSync(${JSON.stringify(checks)},JSON.stringify(r.input)+'\\n');}
+      const result=r.phase==='normalize'?{requirements:[],candidates:[],model:{}}:r.phase==='bind'?{payloadContract:'fixture.inputs',payloadVersion:1,payload:{owner:r.capability},credentialRefs:{},provenance:[]}:{status:'ready',problems:[]};
+      console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
+  }
+  f.git('add','.');f.git('commit','--quiet','-m','explicit per-owner hook inputs');
+  const initial=prepareCapturedComposition(f.input,f.options);
+  for(const id of ids)approveAvailableCapability(f.deployment,initial.selections[0].artifactSet,id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const prepared=prepareCapturedComposition(f.input,f.options),record=readCapturedResolution(f.deployment,prepared.resolution);
+  rmSync(f.repo,{recursive:true});return {...f,root,checks,effects,ids,prepared,record};
+}
+
+test('selected hook inputs are per-owner canonical snapshots, never inferred from layer or extraEnv',t=>{
+  for(const knowledgeOptIn of [true,false]){
+    const f=selectedHookInputFixture(t,{knowledgeOptIn});
+    for(const [name,resolution,agent,body,kind] of [['source',f.prepared.resolution,'imported-expert','Expert instructions\n','persistent'],['helper',f.record.helpers['example.action:worker'],'worker','Worker instructions\n','helper']]){
+      const home=join(f.root,name);scaffoldCapturedInstance({deployment:f.deployment,resolution,home,instance:name});
+      const options={deployment:f.deployment,resolution,home,instance:name,agentName:agent,extraEnv:{OATS_SOURCE_RECEIPT_FILE:'/poison/source',OATS_BINDING_FILE:'/poison/binding',OATS_INVOCATION_CONTEXT_FILE:'/poison/invocation'}};
+      for(const event of ['spawn','retire']){
+        const result=runCapturedLifecycleHooks(event,options);assert.deepEqual(result.failures,[]);
+        for(const id of f.ids){
+          const meta=result.meta[id],selected=id==='example.tasks'||id==='example.knowledge'&&knowledgeOptIn;
+          assert.equal(meta.kind,kind);assert.equal(meta.owner,id);assert.ok(meta.executionId);assert.ok(meta.incarnation);assert.ok(meta.modes.every(mode=>mode===0o600));assert.ok(meta.paths.every(path=>!existsSync(path)),'all private snapshots cleaned');
+          assert.equal(meta.bindingOwner,id==='example.action'?null:id);
+          if(selected){assert.equal(meta.receipt.role,body);assert.equal(meta.receipt.context,f.prepared.executionBinding.deployment);assert.equal(meta.receipt.binding.capability,id);assert.equal(meta.receipt.kind,kind);assert.equal(meta.receipt.sourceIdentity===null,kind==='helper');assert.equal(meta.receipt.executionBinding.resolution.id,resolution.id);}
+          else assert.equal(meta.receipt,null,'no opt-in means no receipt, even for knowledge');
+        }
+        const paths=Object.values(result.meta).flatMap(meta=>meta.paths);assert.equal(new Set(paths).size,paths.length,'owners never share invocation/binding/source snapshots');
+      }
+    }
+  }
+});
+
+test('selected input prerequisites and unsolicited receipts refuse before checks, while cleanup retains observed custody',t=>{
+  const absent=selectedHookInputFixture(t,{unboundOptIn:true}),badHome=join(absent.root,'unbound');scaffoldCapturedInstance({deployment:absent.deployment,resolution:absent.prepared.resolution,home:badHome,instance:'unbound'});
+  assert.throws(()=>runCapturedLifecycleHooks('spawn',{deployment:absent.deployment,resolution:absent.prepared.resolution,home:badHome,instance:'unbound',agentName:'imported-expert'}),{code:'needs-configuration'});
+  assert.equal(existsSync(absent.checks),false);assert.equal(existsSync(absent.effects),false);
+  const f=selectedHookInputFixture(t,{knowledgeOptIn:false}),home=join(f.root,'no-consent');scaffoldCapturedInstance({deployment:f.deployment,resolution:f.prepared.resolution,home,instance:'no-consent'});
+  const receipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:f.prepared.executionBinding.deployment,agent:'imported-expert',instance:'no-consent',sourceIdentity:f.record.subject.soul.identity,
+    role:'Expert instructions\n',executionBinding:f.prepared.executionBinding,responsibleHuman:null,binding:f.record.bindings.knowledge};
+  assert.throws(()=>runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:f.prepared.resolution,home,instance:'no-consent',agentName:'imported-expert',sourceReceipt:receipt}),{code:'invalid-resolution'});
+  assert.equal(existsSync(f.checks),false);assert.equal(existsSync(f.effects),false);
+  const damaged=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:f.prepared.resolution,home,instance:'no-consent',agentName:'imported-expert',extraEnv:{CLEAN_SELECTED_INPUT_OWNER:'example.tasks'}});
+  const failure=damaged.failures.find(failure=>failure.capability==='example.tasks');assert.equal(failure.required,true);assert.equal(failure.unconfirmed,true);assert.equal(damaged.meta['example.tasks'].receipt.role,'Expert instructions\n');
+  const indexed=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home).intents.find(intent=>intent.capability==='example.tasks');assert.equal(indexed.state,'unconfirmed');assert.equal(indexed.receipt.executionId,damaged.intents['example.tasks'].executionId);
 });
 
 test('helper-authored provider policy refuses before helper or parent records can inherit the parent binding',t=>{

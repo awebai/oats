@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateWire } from "./helpers/portable-schema-check.mjs";
+import { canonicalJson } from "../lib/portable-values.mjs";
 import { captureManifestSettings } from "../lib/manifest-settings.mjs";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApprovals, readApprovalLedger, validateApprovalLedger } from "../lib/artifact-approvals.mjs";
@@ -185,6 +186,38 @@ test("a captured helper is a separate exported helper record and survives remova
   assert.throws(() => commitCapturedResolution(f.scope, wrong), { code: "resolution-incomplete" });
   const wrongKind = structuredClone(parent); wrongKind.helpers.worker = parentRef;
   assert.throws(() => commitCapturedResolution(f.scope, wrongKind), { code: "invalid-resolution" });
+});
+
+test("storage refuses new legacy helper omissions while literal old records remain readable and reusable", (t) => {
+  const f = fixture(t), draft = f.build("legacy-evidence"), id = "example.action";
+  const directory = join(f.cap, "agents/worker"); mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "soul.yaml"), "name: worker\nwork: directory\n");
+  writeFileSync(join(directory, "AGENTS.md"), "Canonical worker body\n"); symlinkSync("AGENTS.md", join(directory, "CLAUDE.md"));
+  writeFileSync(join(f.cap, "inject.md"), "Legacy contribution\n");
+  const manifest = JSON.parse(readFileSync(join(f.cap, "oats.json"))); manifest.inject = "inject.md"; manifest.agents = ["agents/worker"];
+  writeFileSync(join(f.cap, "oats.json"), JSON.stringify(manifest));
+  const artifact = { kind: "capability", capability: id, integrity: treeIntegrity(f.cap) }; retainPortableArtifact(f.scope, f.cap, artifact);
+  draft.artifacts.capabilities[id].artifact = artifact;
+  for (const resource of Object.values(draft.resources)) resource.owner = artifact;
+  draft.subject = { kind: "helper", provider: artifact, name: "worker", definition: { owner: artifact, path: "agents/worker/soul.yaml", kind: "file" } };
+  draft.resources.body = { owner: artifact, path: "agents/worker/AGENTS.md", kind: "file" };
+  draft.dispatch.composition = { schemaVersion: 1, mode: "directory", body: "body", blocks: [], skills: [], omissions: [{ source: `capability:${id}`, reason: "helper-knowledge" }] };
+  const reference = { schemaVersion: 1, id: jsonIntegrity(draft).value }, root = join(f.scope, ".agents/resolutions"), path = join(root, `${reference.id}.json`);
+  // Direct storage caller bypasses the compiler: publication still refuses.
+  assert.throws(() => commitCapturedResolution(f.scope, draft), { code: "needs-configuration" });
+  assert.equal(existsSync(root), false, "refused legacy mint creates no store/staging");
+  // Literal historical fixture bytes only, not an old-kernel runtime claim.
+  mkdirSync(root); const bytes = canonicalJson(draft); writeFileSync(path, bytes, { mode: 0o600 });
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  assert.equal(readCapturedResolution(f.scope, reference).dispatch.composition.omissions[0].reason, "helper-knowledge");
+  assert.equal(verifyResolutionInputs(f.scope, reference).record.subject.kind, "helper");
+  assert.deepEqual(commitCapturedResolution(f.scope, draft), reference); assert.equal(readFileSync(path, "utf8"), bytes);
+  const fresh = structuredClone(draft); fresh.context.key = "distinct-publication";
+  assert.throws(() => commitCapturedResolution(f.scope, fresh), { code: "needs-configuration" });
+  assert.equal(existsSync(join(root, `${jsonIntegrity(fresh).value}.json`)), false);
+  // Removing the omission cannot bypass the missing explicit-policy guard.
+  fresh.dispatch.composition.omissions = [];
+  assert.throws(() => commitCapturedResolution(f.scope, fresh), { code: "needs-configuration" });
 });
 
 test("repo package provenance is bound to the retained source snapshot, not only the old local pathname", (t) => {

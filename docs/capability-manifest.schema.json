@@ -8,6 +8,24 @@
     "version",
     "description"
   ],
+  "$defs": {
+    "HelperInjection": {
+      "oneOf": [
+        {"type":"object","required":["version","mode"],"additionalProperties":false,"properties":{"version":{"const":1},"mode":{"enum":["inherit","omit"]}}},
+        {"type":"object","required":["version","mode","path"],"additionalProperties":false,"properties":{"version":{"const":1},"mode":{"const":"file"},"path":{"type":"string","minLength":1,"pattern":"^(?![A-Za-z]:)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*$"}}}
+      ]
+    },
+    "HookInputs": {
+      "type":"object","additionalProperties":false,
+      "properties":{"sourceReceipt":{"type":"object","required":["version"],"additionalProperties":false,"properties":{"version":{"const":1}}}}
+    },
+    "OptionalHook": {
+      "oneOf":[
+        {"type":"string"},
+        {"type":"object","required":["command"],"additionalProperties":false,"properties":{"command":{"type":"string"},"required":{"const":false,"description":"Only the existing spawn hook may be required."},"inputs":{"$ref":"#/$defs/HookInputs"}}}
+      ]
+    }
+  },
   "properties": {
     "capability": {
       "type": "string",
@@ -54,6 +72,7 @@
     "inject": {
       "type": "string"
     },
+    "helperInjection": {"$ref":"#/$defs/HelperInjection"},
     "environment": {
       "type": "array",
       "items": {
@@ -197,75 +216,15 @@
     "hooks": {
       "type": "object",
       "properties": {
-        "soul-scaffold": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "object",
-              "required": [
-                "command"
-              ],
-              "properties": {
-                "command": {
-                  "type": "string"
-                },
-                "required": {
-                  "const": false,
-                  "description": "Only the spawn hook may be required \u2014 retire and soul-scaffold run outside a spawn transaction."
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        },
+        "soul-scaffold": {"$ref":"#/$defs/OptionalHook"},
         "spawn": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "object",
-              "required": [
-                "command"
-              ],
-              "properties": {
-                "command": {
-                  "type": "string"
-                },
-                "required": {
-                  "type": "boolean",
-                  "description": "When true, a failure fails the spawn and rolls it back."
-                }
-              },
-              "additionalProperties": false
-            }
+          "oneOf":[
+            {"type":"string"},
+            {"type":"object","required":["command"],"additionalProperties":false,"properties":{"command":{"type":"string"},"required":{"type":"boolean","description":"When true, a failure fails the spawn."},"inputs":{"$ref":"#/$defs/HookInputs"}}}
           ]
         },
-        "retire": {
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "object",
-              "required": [
-                "command"
-              ],
-              "properties": {
-                "command": {
-                  "type": "string"
-                },
-                "required": {
-                  "const": false,
-                  "description": "Only the spawn hook may be required \u2014 retire and soul-scaffold run outside a spawn transaction."
-                }
-              },
-              "additionalProperties": false
-            }
-          ]
-        }
+        "retire": {"$ref":"#/$defs/OptionalHook"},
+        "launch": {"$ref":"#/$defs/OptionalHook"}
       },
       "additionalProperties": false
     },

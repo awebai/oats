@@ -86,7 +86,7 @@ d.RuntimeResource = object({ runtime: s, package: s, resource: s, requiredBy: or
 d.LaunchRecipe = { type: "object", required: ["version", "runtime"], properties: { version: v1, runtime: enumeration("pi", "claude", "codex") },
   description: "Envelope only: the sole existing launch codec owns all remaining recipe fields and their interpretation." };
 d.InstructionBlock = object({ source: { ...s, pattern: "^(kernel|work-mode|capability|config):[A-Za-z0-9._:-]+$" }, resource: s, choice: s }, ["choice"]);
-d.InstructionOmission = object({ source: d.InstructionBlock.properties.source, reason: enumeration("disabled", "helper-knowledge"), choice: s }, ["choice"]);
+d.InstructionOmission = object({ source: d.InstructionBlock.properties.source, reason: enumeration("disabled", "helper-knowledge", "helper-policy"), choice: s }, ["choice"]);
 d.InstructionComposition = object({ schemaVersion: v1, mode: enumeration("worktree", "checkout", "attached", "workspace", "directory"), body: s,
   blocks: list(ref("InstructionBlock")), omissions: list(ref("InstructionOmission")),
   skills: list(object({ name: { ...s, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }, resource: s })) });

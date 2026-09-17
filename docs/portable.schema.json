@@ -1371,7 +1371,8 @@
         "reason": {
           "enum": [
             "disabled",
-            "helper-knowledge"
+            "helper-knowledge",
+            "helper-policy"
           ]
         },
         "choice": {
