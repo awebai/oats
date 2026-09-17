@@ -117,6 +117,36 @@ test('explicit primary and helper launch inputs retain separate entrypoints and 
   assert.equal(existsSync(join(g.deployment,'.agents/resolutions')),false,'required runtime packages are not replaced with ambient discovery or partially published helpers');
 });
 
+test('activation never publishes or cleans through home/work replacement during a retained hook',t=>{
+  const f=fixture(t),root=realpathSync(f.root);
+  f.write('packages/action/cap/show.mjs',`import {readFileSync,renameSync,symlinkSync} from 'node:fs';
+    const e=process.env,invocation=JSON.parse(readFileSync(e.OATS_INVOCATION_CONTEXT_FILE,'utf8'));
+    const target=e.FA1_MODE.startsWith('work')?e.OATS_INSTANCE_HOME+'/work':e.OATS_INSTANCE_HOME;
+    renameSync(target,target+'.preserved');
+    if(e.FA1_MODE.endsWith('link'))symlinkSync(e.FA1_FOREIGN,target);else renameSync(e.FA1_FOREIGN,target);
+    console.log(JSON.stringify({meta:{observedResource:'resource-before-custody-loss',incarnationId:invocation.instance.incarnationId,executionId:invocation.intent.executionId}}));
+    if(e.FA1_EXIT)process.exitCode=1;`);
+  f.git('add','.');f.git('commit','--quiet','-m','replacement during retained hook');
+  const prepared=prepareCapturedComposition(f.input,f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  for(const mode of ['home-dir','home-link','work-dir','work-link']){
+    const home=join(root,mode),foreign=join(root,`foreign-${mode}`);mkdirSync(foreign);
+    const foreignBytes=Buffer.from('foreign metadata, deliberately not JSON\n');writeFileSync(join(foreign,'instance.json'),foreignBytes);
+    const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:mode});
+    const originalBytes=readFileSync(join(home,'instance.json'));let failure;
+    try{activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home,extraEnv:{FA1_MODE:mode,FA1_FOREIGN:foreign,...(mode.endsWith('link')?{FA1_EXIT:'1'}:{})}});}catch(error){failure=error;}
+    assert.equal(failure?.code,'integrity-drift');assert.equal(failure.home,home);
+    const foreignAt=mode.endsWith('link')?foreign:mode.startsWith('home')?home:join(home,'work');
+    assert.deepEqual(readFileSync(join(foreignAt,'instance.json')),foreignBytes,'foreign metadata is byte-identical');
+    const originalAt=mode.startsWith('home')?`${home}.preserved`:home;
+    assert.deepEqual(readFileSync(join(originalAt,'instance.json')),originalBytes,'lost-custody path never publishes even on catch');
+    const row=readCapturedInstanceIndex(f.deployment).instances.find(entry=>entry.incarnationId===scaffold.incarnationId);
+    assert.equal(row.status,'spawn-failed-cleanup-required');assert.equal(row.intents[0].state,'unconfirmed');
+    assert.equal(row.intents[0].receipt.observedResource,'resource-before-custody-loss');assert.equal(row.custodyFailure.code,'integrity-drift');
+    assert.equal(failure.capturedCustody.meta[f.id].executionId,row.intents[0].executionId,'independent reporting retains the exact observed provider receipt');
+  }
+});
+
 test('source helper lookup preserves dedicated A/B authority without source or current selection',t=>{
   const f=fixture(t),a=prepareCapturedComposition(f.input,f.options),key='example.action:worker';
   const aRecord=readCapturedResolution(f.deployment,a.resolution),aHelper=aRecord.helpers[key];

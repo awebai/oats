@@ -18,6 +18,12 @@ Rows remain home-indexed, with unique incarnation IDs. A recreated home cannot r
 
 Index limits are 4 MiB, depth 32, 40000 entries, at most 128 retained intent rows per incarnation. Receipts use the shared 128 KiB/depth-24/8192-entry bound. Limits refuse rather than prune receipts. All index transitions use the existing portable-state write guard. Identity metadata and index publication are synchronized before returning authorization to execute. Failed publication/synchronization or guard cleanup retains custody; an uncertain index publication does not trigger scaffold deletion.
 
+## Activation publication custody
+
+Activation retains its original indexed home/work witnesses across hooks and settlement. Both success and failure metadata publication use the same guard before temporary-file creation, rename and cleanup; a replacement home/work is never adopted or written through. The hook runner propagates observed receipt/intent facts when its final custody assertion fails.
+
+On publication/custody failure, the independently owned deployment index is matched against the original authority and exact intent attempts WITHOUT resolving the replacement home. It retains observed provider receipts, holds admitted/running work as unconfirmed, and records a bounded `custodyFailure` diagnostic and cleanup-required lifecycle. If independent reporting is itself blocked, the existing caller error envelope carries the observed facts and reporting failure. It never bypasses a held write guard. This is preservation/reporting, not automatic replacement-home recovery or retry qualification.
+
 ## Admission and retries
 
 The public core API is:

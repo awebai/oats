@@ -251,7 +251,8 @@ function capturedSpawn(selector, load, bail) {
     activated = activateCapturedScaffold({ deployment: selector.deployment, resolution: selector.resolution, home,
       extraEnv: process.env.OATS_HOME_DIR ? { OATS_HOME_DIR: process.env.OATS_HOME_DIR } : {} });
   } catch (error) {
-    if (error?.home) bail(error.code || "E_SPAWN_FAILED", error.message, { home: error.home, cleanupRequired: true, failures: error.provenance || [] });
+    if (error?.home) bail(error.code || "E_SPAWN_FAILED", error.message, { home: error.home, cleanupRequired: true, failures: error.provenance || [],
+      ...(error.capturedCustody ? { unconfirmed: true, custody: error.capturedCustody } : {}) });
     throw error;
   }
   const result = { ...scaffold, hooksPending: false, launchPending: true, hookOrder: activated.hooks.order, warnings: activated.hooks.warnings };
