@@ -24,6 +24,12 @@ decisions/ and referenced from here.
 
 ---
 
+## Standalone OKF — reviewed source-main checkpoint (2026-09-17)
+- delivered: provider main `ec5d7671799b3258aef69f9bbcf2c6480c4811ad`, normal fast-forward from `4b6d861ce44e5662303e150cc85095d0eb00d7e7`. Coordinator fetched/checked exact clean head, covered ancestry and corrected gate receipt before push; shared checkouts and tags were not changed.
+- review: assigned reviewer APPROVED SOURCE CHECKPOINT, confirming continuous coverage across all 33 commits through initial candidate, corrective/harvest/index closure, c24 wire and ec5 residual fixes. No new tests or source review were invented by the coordinator to widen that verdict.
+- gate: corrected physically non-Git full run 274 total / 270 pass / zero failures / four skips, archived source unchanged. Original failed harness remains preserved as failed evidence, with independent cause classification.
+- holds: no release/version-floor qualification, generic execution-reader completion, actual helper/native/Pi/Herdr/private-provider readiness, install, mirror update or accepted-branch knowledge publication. Runtime Git knowledge stays PR-only. Later reader/declaration/native candidates remain separate work.
+
 ## Captured admission and preparation routes — direct source delivery (2026-09-17)
 - code: `c1ff882b6510bc3bc041b9037d9f8443251558da`, coordinator merge of exact257 prerequisites and independently approved cumulative v2, portable resources/composition, context-adapted workspace ingress and final shared request router. All supplied patch/hash/blob checks passed; no native-start/public-helper/Herdr ancestry was included.
 - verification: all eight gates pass at exact code head: 2677 total / 2674 pass / zero failures / three skips; syntax, Pi syntax, project, strict knowledge, package dry-run, clean-room tarball and diff checks pass. Prior merged-tree30/30 includes the owned scaffold/layout/normal-retirement probe. Runtime source remained at the same head; the temporary Desktop dependency link was normally removed. Parent performed integration/gates, not source review.
