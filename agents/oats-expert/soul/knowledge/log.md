@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Delivery**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record captured admission/preparation source delivery through `c1ff882b`, all eight exact-head gates passing (2674/0/3) and preserved scaffold evidence. Corrected standalone gate passes270/0/4; provider source-main/native/public/Herdr/release qualifications remain separate.
 * **Integration**: [Delivery log](/stewardship/delivery-log.md) records local assembly of independently accepted captured admission/curriculum/request changes with exact patch/blob checks and 30 passing merged-tree tests. Full gates/main delivery remain pending; native/public/Herdr and provider qualifications retain their separate scopes.
 * **Decision**: [Fresh rollout](/decisions/fresh-install-first-portable-rollout.md) now explicitly requires captured execution parity across tmux and Herdr through the existing backend abstraction. Shared authority/retry/cleanup guarantees and real acceptance remain required; a tmux-only inert path is not the finished rollout.
 * **Gate**: [Delivery log](/stewardship/delivery-log.md) records the failed complete standalone gate with unchanged source and independent harness/custody triage. Reviewers own source verdicts; coordinator owns integration/delivery. Parent-only fresh-directory evidence is routed for independent confirmation, not silently promoted into review acceptance.

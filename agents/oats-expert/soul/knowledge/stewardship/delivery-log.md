@@ -24,6 +24,12 @@ decisions/ and referenced from here.
 
 ---
 
+## Captured admission and preparation routes — direct source delivery (2026-09-17)
+- code: `c1ff882b6510bc3bc041b9037d9f8443251558da`, coordinator merge of exact257 prerequisites and independently approved cumulative v2, portable resources/composition, context-adapted workspace ingress and final shared request router. All supplied patch/hash/blob checks passed; no native-start/public-helper/Herdr ancestry was included.
+- verification: all eight gates pass at exact code head: 2677 total / 2674 pass / zero failures / three skips; syntax, Pi syntax, project, strict knowledge, package dry-run, clean-room tarball and diff checks pass. Prior merged-tree30/30 includes the owned scaffold/layout/normal-retirement probe. Runtime source remained at the same head; the temporary Desktop dependency link was normally removed. Parent performed integration/gates, not source review.
+- provider gate: corrected standalone `ec5d767` passes270/0/4 with unchanged source after independent harness-placement diagnosis; the original failed run remains preserved. Provider source-main coverage review and later reader/helper/private-provider/release work remain separate.
+- limits: this delivery is main source code, NOT0.24 publication/deployment, real native/model/helper success, Herdr parity or privacy qualification. High-level fresh-facade adoption and later native/public/Herdr candidates continue through their own reviews.
+
 ## Approved captured-base assembly — local integration checkpoint (2026-09-17)
 - integrated scope: exact `257c4b96` prerequisites plus the independently accepted cumulative fix-only v2 patch; accepted portable resources/full composition, context-adapted `fdbd909b`, and original `7a9c25d2` request leaf/router. Supplied before/after hashes and final five request blobs matched. Unreviewed native/public/Herdr code and `packages/record` runtime are excluded.
 - evidence: 30 merged-tree checks passed, including the previously static-only direct workspace ingress case and the owned scaffold/layout/normal-retirement probe. Runtime source remained unchanged during execution. This local checkpoint is not a full combined gate, main push, release or native-model qualification.
