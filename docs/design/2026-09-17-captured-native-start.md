@@ -1,6 +1,6 @@
 # Captured native start through the existing session transaction
 
-**Implementation candidate; not release, privacy or live-model acceptance.** This is an actual native dispatch path, not replay of a no-launch scaffold. Tests execute inert native fixture binaries through the existing backend command path. Public captured CLI/helper-worker consumption is still a subsequent integration step.
+**Implementation candidate; not release, privacy or live-model acceptance.** This is an actual native dispatch path, not replay of a no-launch scaffold. Tests execute inert native fixture binaries through the existing backend command path. The subsequent [public start/helper CLI bridge](2026-09-17-public-captured-start.md) exposes this transaction; provider-worker and Pi qualification remain separate.
 
 ## Explicit executable inputs
 
@@ -53,6 +53,6 @@ On uncertainty, preserve pending target/native-history references and an unconfi
 
 ## Initial limits and evidence
 
-Unsupported work modes, non-tmux first placement, arbitrary extra native arguments, required managed runtime packages without a qualified captured loader, and unresolved launch/spawn runtime contributions explicitly refuse. This does not replace their missing implementation with `--no-launch`. The static helper resolver and provider `E_CAPTURED_HELPER` gate remain unchanged until the supported public CLI/worker path consumes this core route.
+Unsupported work modes, non-tmux first placement, arbitrary extra native arguments, required managed runtime packages without a qualified captured loader, and unresolved launch/spawn runtime contributions explicitly refuse. This does not replace their missing implementation with `--no-launch`. The static helper resolver and provider `E_CAPTURED_HELPER` gate remain unchanged; the public CLI bridge now consumes this core route, but each provider-worker path still needs its own qualification.
 
 The focused test prepares separate primary/helper recipes, deletes source/current config authority, executes actual inert fixture processes through a fake tmux transport, verifies admission inside those processes, checks captured model/identity markers and native history linkage, exercises new-request/replay/restart and preflight-before-backend refusal, holds a metadata-write uncertainty without duplicate execution, and refuses missing native scaffold evidence or replaced native custody directories. No real model, GUI, backend daemon, provider enrollment, timer, release or deployment operation runs in that fixture.

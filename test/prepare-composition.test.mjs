@@ -148,6 +148,70 @@ test('captured native start executes inert primary/helper processes through the 
   fs.rmdirSync(historyRoot);fs.renameSync(`${historyRoot}.preserved`,historyRoot);
 });
 
+test('public captured session dispatch follows retained helper edges and preserves uncertain execution identity',t=>{
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-cli-fixture'),backendBinary=join(root,'tmux-cli-fixture');
+  const backendLog=join(root,'backend.jsonl'),uncertainFlag=join(root,'uncertain-backend'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
+    const ledger=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'),'utf8'));
+    const row=ledger.instances.find(row=>row.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(intent=>intent.executionId===e.OATS_EXECUTION_ID);
+    if(row?.status!=='start-running'||intent?.state!=='running')throw Error('public native execution lacks admission');
+    fs.appendFileSync(p.join(process.cwd(),'work/public-native.jsonl'),JSON.stringify({home:e.OATS_INSTANCE_HOME,resolution:e.OATS_RESOLUTION,incarnationId:e.OATS_INCARNATION_ID,executionId:e.OATS_EXECUTION_ID,args:process.argv.slice(2)})+'\\n');`,{mode:0o700});
+  writeFileSync(backendBinary,`#!${process.execPath}\nconst fs=require('node:fs'),cp=require('node:child_process'),args=process.argv.slice(2);
+    fs.appendFileSync(${JSON.stringify(backendLog)},JSON.stringify(args)+'\\n');
+    if(args.includes('list-panes')){console.error("can't find window");process.exit(1);}
+    if(args.includes('new-window')||args.includes('respawn-pane')){
+      const env={...process.env};for(let i=0;i<args.length;i++)if(args[i]==='-e'){const pair=args[++i],at=pair.indexOf('=');env[pair.slice(0,at)]=pair.slice(at+1);}
+      cp.execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:args[args.indexOf('-c')+1],env,stdio:'pipe'});
+      if(fs.existsSync(${JSON.stringify(uncertainFlag)})){console.error('fixture response lost after native effect');process.exit(1);}
+    }`,{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:join(root,'profile')},model:'public-primary-model',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch,helperLaunches:{'example.action:worker':{...launch,model:'public-helper-model'}}},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const record=readCapturedResolution(f.deployment,prepared.resolution),helper=record.helpers['example.action:worker'];
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'invalid current config');writeFileSync(join(f.deployment,'oats-lock.json'),'invalid current lock');
+  const env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true',OATS_HOME_DIR:join(root,'isolated-oats'),OATS_DEPLOYMENT:'poison-parent',OATS_RESOLUTION:'poison-parent'};
+  const run=argv=>{const result=spawnSync(process.execPath,[cli,...argv,'--json'],{cwd:root,env,encoding:'utf8',timeout:20000});assert.equal(result.error,undefined);return {status:result.status,...JSON.parse(result.stdout.trim())};};
+  const sourceFlags=['--deployment',f.deployment,'--resolution',prepared.resolution.id],home=join(root,'public-primary'),helperHome=join(root,'public-helper');
+  const request=join(root,'native-request.json'),requestBody={schemaVersion:1,backend:{backend:'tmux',binary:backendBinary,socket:join(root,'fixture.sock'),session:'fixture'},task:'inert public task'};
+  writeFileSync(request,JSON.stringify(requestBody));
+  const inspected=run(['inspect',...sourceFlags,'--helper','example.action:worker']);assert.equal(inspected.ok,true);assert.equal(inspected.result.helperSelection.executionBinding.resolution.id,helper.id);
+  const scaffold=run(['spawn','imported-expert',...sourceFlags,'--home',home,'--no-launch']);assert.equal(scaffold.ok,true);
+  const helperScaffold=run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--no-launch']);assert.equal(helperScaffold.ok,true);
+  assert.equal(existsSync(backendLog),false,'scaffold/hooks alone never allocate a native backend');
+  const startArgs=['session','start',...sourceFlags,'--home',home,'--request',request];
+  for(const bad of [{...requestBody,io:{}},{...requestBody,runtime:'pi'},{...requestBody,schemaVersion:2},{...requestBody,backend:null},{...requestBody,backend:{...requestBody.backend,backend:'unsupported'}},{...requestBody,task:null}]){
+    writeFileSync(request,JSON.stringify(bad));const refused=run(startArgs);assert.equal(refused.ok,false);assert.equal(existsSync(backendLog),false);
+  }
+  writeFileSync(request,JSON.stringify(requestBody));
+  const requestLink=join(root,'request-link.json');symlinkSync(request,requestLink);
+  assert.equal(run(['session','start',...sourceFlags,'--home',home,'--request',requestLink]).error.code,'E_BAD_ARGS');
+  for(const tail of [['--model','ambient'],['--dir',root],['--home',home],['--retry-intent','bad/id']])assert.equal(run([...startArgs,...tail]).ok,false);
+  assert.equal(run(['session','start',...sourceFlags,'--helper','missing','--home',helperHome,'--request',request]).error.code,'helper-not-selected');
+  assert.equal(run(['session','start',...sourceFlags,'--helper','example.action:worker','--home',home,'--request',request]).error.code,'invalid-resolution');
+  assert.equal(existsSync(backendLog),false,'invalid requests/selectors refuse before native backend access');
+  const started=run(startArgs);assert.equal(started.ok,true);assert.equal(started.result.dispatchAccepted,true);assert.equal(started.result.incarnationId,scaffold.result.incarnationId);
+  const helperArgs=['session','start',...sourceFlags,'--helper','example.action:worker','--home',helperHome,'--request',request];
+  const helperStarted=run(helperArgs);assert.equal(helperStarted.ok,true);assert.equal(helperStarted.result.executionBinding.resolution.id,helper.id);assert.equal(helperStarted.result.sourceExecutionBinding.resolution.id,prepared.resolution.id);assert.equal(helperStarted.result.helper.subject.kind,'helper');
+  const runs=at=>readFileSync(join(at,'work/public-native.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(runs(home)[0].resolution,prepared.resolution.id);assert.ok(runs(home)[0].args.includes('public-primary-model'));
+  assert.equal(runs(helperHome)[0].resolution,helper.id);assert.ok(runs(helperHome)[0].args.includes('public-helper-model'));
+  assert.equal(runs(helperHome)[0].executionId,helperStarted.result.intent.executionId);assert.equal(runs(helperHome)[0].incarnationId,helperScaffold.result.incarnationId);
+  const backendBeforeReplay=readFileSync(backendLog,'utf8'),replayed=run([...helperArgs,'--retry-intent',helperStarted.result.intent.executionId]);
+  assert.equal(replayed.ok,true);assert.equal(replayed.result.replayed,true);assert.equal(readFileSync(backendLog,'utf8'),backendBeforeReplay);assert.equal(runs(helperHome).length,1);
+  const restarted=run(['session','restart',...sourceFlags,'--helper','example.action:worker','--home',helperHome]);
+  assert.equal(restarted.ok,true);assert.equal(restarted.result.incarnationId,helperScaffold.result.incarnationId);assert.notEqual(restarted.result.intent.executionId,helperStarted.result.intent.executionId);assert.equal(runs(helperHome).length,2);
+  const occupiedBefore=readFileSync(join(helperHome,'instance.json'),'utf8');assert.equal(run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--no-launch']).error.code,'E_INSTANCE_EXISTS');assert.equal(readFileSync(join(helperHome,'instance.json'),'utf8'),occupiedBefore);
+  const uncertainHome=join(root,'public-uncertain');assert.equal(run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',uncertainHome,'--no-launch']).ok,true);
+  writeFileSync(uncertainFlag,'lose backend response after effect');
+  const uncertainArgs=['session','start',...sourceFlags,'--helper','example.action:worker','--home',uncertainHome,'--request',request],failed=run(uncertainArgs);
+  assert.equal(failed.ok,false);assert.equal(failed.error.details.unconfirmed,true);assert.equal(failed.error.details.sourceExecutionBinding.resolution.id,prepared.resolution.id);
+  const custody=failed.error.details.nativeCustody;assert.equal(runs(uncertainHome).length,1);assert.equal(runs(uncertainHome)[0].executionId,custody.intent.executionId);assert.ok(existsSync(custody.pendingPath));
+  rmSync(uncertainFlag);const retried=run([...uncertainArgs,'--retry-intent',custody.intent.executionId]);
+  assert.equal(retried.ok,false);assert.equal(retried.error.code,'E_SESSION_UNKNOWN');assert.equal(retried.error.details.nativeCustody.intent.executionId,custody.intent.executionId);assert.equal(retried.error.details.nativeCustody.intent.attempt,2);assert.equal(runs(uncertainHome).length,1,'unknown effect never duplicates native execution');
+  const indexed=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===uncertainHome),nativeIntents=indexed.intents.filter(intent=>intent.action.kind==='session');
+  assert.equal(nativeIntents.length,1);assert.equal(nativeIntents[0].state,'unconfirmed');assert.equal(indexed.incarnationId,custody.intent.incarnationId);
+});
+
 test('explicit primary and helper launch inputs retain separate entrypoints and never use current runtime choices',t=>{
   const f=fixture(t),key='example.action:worker';
   f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("retained runtime A");\n');chmodSync(join(f.repo,'packages/action/cap/show.mjs'),0o755);

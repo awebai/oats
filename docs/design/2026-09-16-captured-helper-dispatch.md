@@ -51,10 +51,21 @@ oats spawn HELPER_NAME --deployment ABS --resolution HELPER_ID --home NEW_ABS_HO
 
 That route consumes the DEDICATED helper record and exact approvals/hooks, not a
 legacy name-only scaffold. It does not satisfy a request for a running worker.
-Captured helper runtime launch remains unsupported; a provider requiring a running
-worker must refuse until retained runtime/launch, incarnation/admitted-intent and
-cleanup contracts are qualified. `launch:null` is never filled from current config.
-Helper-authored policy holds and the existing recursion guards remain intact.
+A separate public captured start now follows this scaffold/hooks stage:
+
+```text
+oats session start --deployment SOURCE_DEPLOYMENT --resolution SOURCE_ID --helper EXACT_MAP_KEY --home OWNED_HELPER_HOME --request ABS_NATIVE_REQUEST_JSON --json
+```
+
+It revalidates the exact source edge, checks that the owned home belongs to that
+dedicated helper, and calls the existing captured native session transaction.
+See the [public native request contract](2026-09-17-public-captured-start.md).
+The original static `launch:unsupported` lookup projection is unchanged: it is
+not a runtime-readiness certificate or a claim about the newer callable API.
+Providers must qualify this API at an exact compatible version before replacing
+their unsupported-helper guard. `launch:null` is never filled from current config;
+unsupported runtime prerequisites still refuse. Helper-authored policy holds and
+the existing recursion guards remain intact.
 
 ## Completion belongs to the source selection
 
