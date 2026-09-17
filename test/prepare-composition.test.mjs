@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { activateCapturedScaffold, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
+import { activateCapturedScaffold, admitCapturedAction, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
 import { commitCapturedResolution, readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
@@ -145,6 +145,54 @@ test('activation never publishes or cleans through home/work replacement during 
     assert.equal(row.intents[0].receipt.observedResource,'resource-before-custody-loss');assert.equal(row.custodyFailure.code,'integrity-drift');
     assert.equal(failure.capturedCustody.meta[f.id].executionId,row.intents[0].executionId,'independent reporting retains the exact observed provider receipt');
   }
+});
+
+test('explicit empty activation retry and later preflight failure preserve indexed spawn references',t=>{
+  const f=fixture(t),root=realpathSync(f.root),bin=join(root,'host-bin'),host=join(bin,'oats-fa2-fixture-host');mkdirSync(bin);
+  const previousPath=process.env.PATH;process.env.PATH=`${bin}:${previousPath}`;t.after(()=>{process.env.PATH=previousPath;});
+  const manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json'),'utf8'));manifest.requires=[{command:'oats-fa2-fixture-host'}];
+  f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','host preflight requirement');
+  const prepared=prepareCapturedComposition(f.input,f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const makeHost=()=>{writeFileSync(host,'#!/bin/sh\nexit 0\n');chmodSync(host,0o755);};
+  const home=join(root,'preflight-empty');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'preflight-empty'});
+  const activate=(target,options={})=>activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home:target,...options});
+  assert.throws(()=>activate(home),{code:'E_REQUIRED_HOOK_FAILED'});
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home).intents.length,0);
+  assert.deepEqual(JSON.parse(readFileSync(join(home,'instance.json'),'utf8')).captured.hookIntents,{});
+  makeHost();assert.throws(()=>activate(home),{code:'invalid-resolution'});
+  const emptyRetry=activate(home,{retryIntents:{}});assert.equal(emptyRetry.hooksPending,false);assert.equal(emptyRetry.hooks.intents[f.id].attempt,1);
+  const later=join(root,'preflight-existing');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:later,instance:'preflight-existing'});
+  assert.throws(()=>activate(later,{extraEnv:{FAIL_CAPTURED_HOOK:'1'}}),{code:'E_REQUIRED_HOOK_FAILED'});
+  const readMeta=()=>JSON.parse(readFileSync(join(later,'instance.json'),'utf8'));
+  const saved=readMeta().captured.hookIntents[f.id],retryIntents={[f.id]:saved.executionId};
+  assert.throws(()=>activate(later,{retryIntents:{}}),{code:'invalid-resolution'},'empty retry cannot remint over an existing obligation');
+  rmSync(host);assert.throws(()=>activate(later,{retryIntents}),{code:'E_REQUIRED_HOOK_FAILED'});
+  assert.deepEqual(readMeta().captured.hookIntents[f.id],saved,'preflight failure preserves the exact saved ref');
+  assert.equal(readMeta().capabilityMeta[f.id].created,true);
+  makeHost();const retried=activate(later,{retryIntents});assert.equal(retried.hooks.intents[f.id].executionId,saved.executionId);assert.equal(retried.hooks.intents[f.id].attempt,2);
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===later).intents.length,1);
+});
+
+test('optional hook failure reports nonterminal custody and public spawn retains a usable exact retry route',t=>{
+  const f=fixture(t),root=realpathSync(f.root),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json'),'utf8'));
+  manifest.hooks.spawn.required=false;f.write('packages/action/cap/oats.json',JSON.stringify(manifest));
+  f.write('packages/action/cap/show.mjs',`import {existsSync,writeFileSync} from 'node:fs';const file=process.env.OATS_INSTANCE_HOME+'/work/attempted';
+    const retry=existsSync(file);writeFileSync(file,'owned effect');console.log(JSON.stringify({meta:{observed:true,reconciled:retry}}));if(!retry)process.exitCode=1;`);
+  f.git('add','.');f.git('commit','--quiet','-m','optional hook custody');
+  const prepared=prepareCapturedComposition(f.input,f.options);approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const home=join(root,'optional-only'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  const spawned=JSON.parse(execFileSync(process.execPath,[cli,'spawn','imported-expert','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--no-launch','--json'],{encoding:'utf8'}));
+  assert.equal(spawned.ok,true,'optional functionality does not become a required-hook failure');
+  assert.equal(spawned.result.hooksPending,true);assert.equal(spawned.result.cleanupRequired,true);
+  const row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(row.status,'spawned-cleanup-required');assert.equal(row.intents[0].state,'unconfirmed');
+  const metadata=JSON.parse(readFileSync(join(home,'instance.json'),'utf8'));assert.equal(metadata.captured.lifecycle,row.status);assert.equal(metadata.captured.hookFailures[0].required,false);
+  const saved=spawned.result.hookIntents[f.id];
+  assert.throws(()=>admitCapturedAction({deployment:f.deployment,resolution:prepared.resolution,home,action:{kind:'command',capability:f.id,name:'show'}}),{code:'selection-changed'},'optional semantics do not waive unsettled custody');
+  const result=activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home,retryIntents:{[f.id]:saved.executionId}});
+  assert.equal(result.cleanupRequired,false);assert.equal(result.hooksPending,false);assert.equal(result.hooks.meta[f.id].reconciled,true);
+  assert.equal(result.hooks.intents[f.id].executionId,saved.executionId);assert.equal(result.hooks.intents[f.id].attempt,2);
+  const done=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(done.status,'spawned-launch-pending');assert.equal(done.intents.length,1);assert.equal(done.intents[0].state,'completed');
 });
 
 test('source helper lookup preserves dedicated A/B authority without source or current selection',t=>{

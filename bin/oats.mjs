@@ -255,8 +255,9 @@ function capturedSpawn(selector, load, bail) {
       ...(error.capturedCustody ? { unconfirmed: true, custody: error.capturedCustody } : {}) });
     throw error;
   }
-  const result = { ...scaffold, hooksPending: false, launchPending: true, hookOrder: activated.hooks.order, warnings: activated.hooks.warnings };
-  if (JSON_MODE) jsonOk(result); else console.log(`Scaffolded ${result.instance} at ${result.home}; captured hooks complete, launch pending`);
+  const result = { ...scaffold, hooksPending: activated.hooksPending, cleanupRequired: activated.cleanupRequired, launchPending: true,
+    hookIntents: activated.hooks.intents, hookOrder: activated.hooks.order, warnings: activated.hooks.warnings };
+  if (JSON_MODE) jsonOk(result); else console.log(`Scaffolded ${result.instance} at ${result.home}; ${result.hooksPending ? "captured hook custody requires retry/reconciliation" : "captured hooks complete"}, launch pending`);
 }
 
 /** Exact-selector dispatch enters before any current-context resolver. Its
