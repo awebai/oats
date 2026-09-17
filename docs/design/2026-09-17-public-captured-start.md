@@ -69,6 +69,12 @@ For a persistent home, use its own binding. For a helper:
 2. Existing `spawn HELPER_NAME --deployment HELPER_DEPLOYMENT --resolution HELPER_ID --home NEW_HOME --no-launch --json` creates the fresh owned scaffold and runs retained hooks. It is not native dispatch.
 3. Invoke the new `session start` with SOURCE selectors, the same `--helper EXACT_KEY`, that owned home and the native request. The kernel revalidates the retained edge and context/human equality, then passes the HELPER binding to `startCapturedInstanceSession`. A source home or another helper home does not match and refuses.
 
+Passing a dedicated HELPER resolution directly to public `session start|restart`
+without the SOURCE edge refuses with `helper-not-selected`, before reading the
+native request or calling providers/backends. This applies to both tmux and Herdr;
+it emits no fabricated primary-shaped result or source/helper custody. The
+helper-ID scaffold stage above remains supported.
+
 An occupied home is not silently recreated. Hook failures/custody gaps remain held; this API does not add automatic hook replay or a compound scaffold/start transaction. Keep source completion calls on the source's saved binding, not the helper's inherited runtime selection. Static helper lookup uses the versioned availability/not-checked descriptor above; consumers require that qualified callable contract and real action result, never the lookup as proof of running status.
 
 ## Provider-chosen home addressability and retirement gap
@@ -99,4 +105,4 @@ Failure uses one nonzero envelope. Native uncertainty remains in `error.details.
 
 The public test prepares separate primary/helper launch records, removes source and poisons current config/lock, then uses CLI subprocesses for lookup, scaffold/hooks, native start, completed replay and restart. An actual fake-backend executable runs inert native executables; those processes verify indexed running admission before writing. This is not a private backend `io` seam or a real backend daemon/model.
 
-Refusals include unknown request/override fields, null/unsupported backend, wrong task, symlink request, conflicting flags, missing helper and wrong home, all before native backend access. A backend fixture executes the native process and then fails its response; public JSON retains unknown custody. Retry preserves the execution ID/attempt chain and never runs the process twice. Occupied helper homes and their metadata are retained. Source completion/publication policy, Pi managed loaders, live credentials/models, and provider runtime integration are not tested or accepted by this fixture.
+Refusals include unknown request/override fields, null/unsupported backend, wrong task, symlink request, conflicting flags, missing helper and wrong home, all before native backend access. Both backend fixtures additionally refuse direct helper-ID start/restart without the source edge, preserve metadata/index bytes and produce no backend/native effect, even when the supplied request file is absent (subject refusal precedes request reading). A backend fixture executes the native process and then fails its response; public JSON retains unknown custody. Retry preserves the execution ID/attempt chain and never runs the process twice. Occupied helper homes and their metadata are retained. Source completion/publication policy, Pi managed loaders, live credentials/models, and provider runtime integration are not tested or accepted by this fixture.

@@ -47,6 +47,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
+import { readCapturedResolution } from "../lib/captured-resolutions.mjs";
 import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
 import { portableScope } from "../lib/portable-state.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
@@ -298,6 +299,12 @@ function capturedSession(selector, bail) {
   const home = values.get("home"), retry = values.get("retry-intent");
   if (!home || !isAbsolute(home) || resolve(home) !== home || home.includes("\0")) bail("E_BAD_ARGS", "captured session needs a normalized absolute --home");
   if (retry !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(retry)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
+  const sourceExecutionBinding = { schemaVersion: 1, deployment: portableScope(selector.deployment), resolution: selector.resolution };
+  // Pure retained-subject check, before request files, provider or native calls.
+  // Dedicated helper IDs remain valid for scaffolding, not edge-less dispatch.
+  if (!values.has("helper") && readCapturedResolution(sourceExecutionBinding.deployment, sourceExecutionBinding.resolution).subject.kind === "helper") {
+    bail("helper-not-selected", "captured helper session needs SOURCE selectors plus --helper EXACT_SOURCE_HELPER_KEY");
+  }
   // Reuse the same bounded strict object-file transport. Preparation and native
   // request schemas remain separate; reject unknown fields before projection.
   let request = {};
@@ -307,7 +314,6 @@ function capturedSession(selector, bail) {
     if (Object.hasOwn(input, "backend") && (!input.backend || typeof input.backend !== "object" || Array.isArray(input.backend))) bail("E_BAD_ARGS", "a supplied native backend must be an explicit object, not omission");
     const { schemaVersion, ...fields } = input; request = fields;
   }
-  const sourceExecutionBinding = { schemaVersion: 1, deployment: portableScope(selector.deployment), resolution: selector.resolution };
   const helperSelection = values.has("helper") ? resolveCapturedHelper({ executionBinding: sourceExecutionBinding, helper: values.get("helper") }) : null;
   const executionBinding = helperSelection?.executionBinding ?? sourceExecutionBinding;
   try {

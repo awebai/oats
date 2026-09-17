@@ -254,6 +254,14 @@ test('public captured session dispatch follows retained helper edges and preserv
   const scaffold=run(['spawn','imported-expert',...sourceFlags,'--home',home,'--no-launch']);assert.equal(scaffold.ok,true);
   const helperScaffold=run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--no-launch']);assert.equal(helperScaffold.ok,true);
   assert.equal(existsSync(backendLog),false,'scaffold/hooks alone never allocate a native backend');
+  const helperBefore=readFileSync(join(helperHome,'instance.json')),indexPath=join(f.deployment,'.agents/portable/instance-references.json'),indexBefore=readFileSync(indexPath);
+  for(const action of ['start','restart'])for(const input of [request,join(root,'absent-native-request.json')]){
+    const refused=run(['session',action,'--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--request',input]);
+    assert.equal(refused.ok,false,'direct helper resolution must not dispatch without its source edge');assert.equal(refused.error.code,'helper-not-selected');
+    assert.equal(Object.hasOwn(refused,'result'),false);assert.equal(refused.error.details,undefined,'no fabricated source/helper/native custody');
+    assert.equal(existsSync(backendLog),false);assert.equal(existsSync(join(helperHome,'work/public-native.jsonl')),false);
+    assert.deepEqual(readFileSync(join(helperHome,'instance.json')),helperBefore);assert.deepEqual(readFileSync(indexPath),indexBefore);
+  }
   const startArgs=['session','start',...sourceFlags,'--home',home,'--request',request];
   for(const bad of [{...requestBody,io:{}},{...requestBody,runtime:'pi'},{...requestBody,schemaVersion:2},{...requestBody,backend:null},{...requestBody,backend:{...requestBody.backend,backend:'unsupported'}},{...requestBody,task:null}]){
     writeFileSync(request,JSON.stringify(bad));const refused=run(startArgs);assert.equal(refused.ok,false);assert.equal(existsSync(backendLog),false);
@@ -329,6 +337,16 @@ test('public captured Herdr shares native custody for primary/helper starts, res
   };
   for(const helperMode of [false,true]){
     const {home,args}=create(helperMode?'herdr-helper':'herdr-primary',helperMode),original=readFileSync(join(home,'instance.json'));
+    if(helperMode){
+      const indexPath=join(f.deployment,'.agents/portable/instance-references.json'),beforeIndex=readFileSync(indexPath),beforeCalls=calls();
+      for(const action of ['start','restart'])for(const input of [request,join(root,'absent-herdr-request.json')]){
+        const refused=run(['session',action,'--deployment',f.deployment,'--resolution',helper.id,'--home',home,'--request',input]);
+        assert.equal(refused.ok,false,'Herdr helper also requires its source edge');assert.equal(refused.error.code,'helper-not-selected');
+        assert.equal(Object.hasOwn(refused,'result'),false);assert.equal(refused.error.details,undefined);
+        assert.deepEqual(calls(),beforeCalls);assert.equal(existsSync(join(home,'work/herdr-effects.jsonl')),false);
+        assert.deepEqual(readFileSync(join(home,'instance.json')),original);assert.deepEqual(readFileSync(indexPath),beforeIndex);
+      }
+    }
     const poisoned={...JSON.parse(original),tmux:{session:'foreign',window:'foreign',socket:'/foreign/socket'}};writeFileSync(join(home,'instance.json'),JSON.stringify(poisoned));const count=calls().length;
     assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,count);writeFileSync(join(home,'instance.json'),original);
     const started=run(args);assert.equal(started.ok,true,JSON.stringify(started));assert.equal(started.result.backend,'herdr');assert.equal(started.result.target.socket,socket);assert.ok(started.result.target.workspaceId);assert.ok(started.result.target.paneId);assert.ok(started.result.target.terminalId);
