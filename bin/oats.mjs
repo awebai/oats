@@ -47,8 +47,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
-import { readPortableBytes } from "../lib/portable-files.mjs";
-import { parseStrictJson } from "../lib/portable-values.mjs";
+import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 
@@ -105,11 +104,10 @@ function prepareCmd() {
   try {
     let input;
     if (values.has("request")) {
-      // Closed transport alternative, checked before opening any input file.
-      if (values.size !== 1) fail("E_BAD_ARGS", "--request cannot be mixed with other preparation input flags");
-      const file = values.get("request");
-      if (!isAbsolute(file)) fail("E_BAD_ARGS", "--request needs an absolute regular JSON file");
-      input = parseStrictJson(readPortableBytes(file));
+      // The shared leaf owns request bytes/exclusivity; this router alone owns
+      // argv and has already refused explicit captured selectors.
+      input = readPortablePreparationRequest({ file: values.get("request"),
+        inputFlags: Object.fromEntries([...values].filter(([key]) => key !== "request")) });
     } else {
       const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
       if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");

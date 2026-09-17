@@ -33,10 +33,11 @@ test('prepare request is a closed bounded file transport and never strips unknow
     ['prepare','--request',missing,'--source','git:ssh://example.invalid/source.git'],
     ['prepare','--request',missing,'--request',request],
     ['prepare','--request'],['prepare','--request','request.json'],
+    ['prepare','--request',`${f.root}/./request.json`],
   ])f.refusal(args,'E_BAD_ARGS');
-  f.refusal(['prepare','--request',missing],'resource-not-found');
-  f.refusal(['prepare','--request',f.root],'invalid-declaration');
-  const link=join(f.root,'request-link.json');symlinkSync(request,link);f.refusal(['prepare','--request',link],'invalid-declaration');
+  f.refusal(['prepare','--request',missing],'E_BAD_ARGS');
+  f.refusal(['prepare','--request',f.root],'E_BAD_ARGS');
+  const link=join(f.root,'request-link.json');symlinkSync(request,link);f.refusal(['prepare','--request',link],'E_BAD_ARGS');
   for(const [name,body,code] of [
     ['malformed.json','{"secret":"REQUEST_SECRET",','invalid-declaration'],
     ['duplicate.json','{"deployment":"REQUEST_SECRET","deployment":"other"}','invalid-declaration'],
