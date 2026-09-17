@@ -7,10 +7,12 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { activateCapturedScaffold, admitCapturedAction, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
+import { activateCapturedScaffold, admitCapturedAction, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, startCapturedInstanceSession, startInstanceSession, restartInstanceSession, withCapturedBindingFile } from '../lib/core.mjs';
 import { commitCapturedResolution, readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
+import { nativeHistoryPath, historicalSessionRoots } from '../packages/record/lib/native-history.mjs';
+import { materializeCapturedDirectoryScaffold } from '../lib/captured-scaffold.mjs';
 import { validateWire } from './helpers/portable-schema-check.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
@@ -88,12 +90,70 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
   assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
+test('captured native start executes inert primary/helper processes through the existing backend with durable intent and history',t=>{
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-fixture'),backendBinary=join(root,'tmux-fixture');
+  writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
+    const index=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'),'utf8'));
+    const row=index.instances.find(r=>r.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(r=>r.executionId===e.OATS_EXECUTION_ID);
+    if(!intent||intent.state!=='running'||row.status!=='start-running')throw Error('native effect before admission');
+    fs.appendFileSync(p.join(process.cwd(),'work/native.jsonl'),JSON.stringify({instance:e.OATS_INSTANCE,incarnationId:e.OATS_INCARNATION_ID,executionId:e.OATS_EXECUTION_ID,args:process.argv.slice(2),keyPresent:!!e.ANTHROPIC_API_KEY})+'\\n');
+    fs.mkdirSync(p.join(e.CLAUDE_CONFIG_DIR,'projects'),{recursive:true});`,{mode:0o700});
+  writeFileSync(backendBinary,'#!/bin/sh\nexit 99\n',{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:{fromEnv:'FIXTURE_PROFILE'},ANTHROPIC_API_KEY:{fromEnv:'FIXTURE_KEY'}},model:'fixture-primary',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch,helperLaunches:{'example.action:worker':{...launch,model:'fixture-helper'}}},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const record=readCapturedResolution(f.deployment,prepared.resolution);assert.equal(record.dispatch.launch.executable,binary);
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned current config');
+  const env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true',FIXTURE_PROFILE:join(root,'native-profile'),FIXTURE_KEY:'DO_NOT_RECORD_FIXTURE_KEY',OATS_INSTANCE:'foreign',OATS_RESOLUTION:'foreign'};
+  const calls=[],io={exec:(selected,args,options)=>{
+    assert.equal(selected,backendBinary);calls.push(args);
+    if(args.includes('list-panes'))throw Object.assign(new Error("can't find window"),{stderr:"can't find window"});
+    if(args.includes('new-window')||args.includes('respawn-pane')){
+      const childEnv={...options.env};for(let i=0;i<args.length;i++)if(args[i]==='-e'){const pair=args[++i],at=pair.indexOf('=');childEnv[pair.slice(0,at)]=pair.slice(at+1);}
+      execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:args[args.indexOf('-c')+1],env:childEnv,encoding:'utf8'});
+    }
+    return '';
+  }};
+  for(const [instance,resolution,model] of [['native-primary',prepared.resolution,'fixture-primary'],['native-helper',record.helpers['example.action:worker'],'fixture-helper']]){
+    const home=join(root,instance),backend={backend:'tmux',binary:backendBinary,socket:join(root,`${instance}.sock`),session:'fixture'};
+    const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution,home,instance});activateCapturedScaffold({deployment:f.deployment,resolution,home});
+    const started=startCapturedInstanceSession(home,{deployment:f.deployment,resolution,backend,task:'inert task',env,io});
+    assert.equal(started.dispatchAccepted,true);assert.equal(started.incarnationId,scaffold.incarnationId);
+    const runs=()=>readFileSync(join(home,'work/native.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(runs().length,1);assert.equal(runs()[0].executionId,started.intent.executionId);assert.equal(runs()[0].incarnationId,scaffold.incarnationId);assert.equal(runs()[0].instance,instance);assert.equal(runs()[0].keyPresent,true);assert.ok(runs()[0].args.includes(model));
+    assert.deepEqual(historicalSessionRoots(home).cc,[join(env.FIXTURE_PROFILE,'projects')]);
+    const pending=JSON.parse(readFileSync(join(home,'.oats-start-pending.json'),'utf8'));assert.equal(pending.id,started.intent.executionId);assert.equal(pending.capturedIntent.executionId,started.intent.executionId);assert.equal(pending.nativeRecordId,started.nativeRecordId);assert.ok(existsSync(join(nativeHistoryPath(home),`${started.nativeRecordId}.json`)));
+    const beforeReplay=calls.length,replayed=startCapturedInstanceSession(home,{env,io,retryExecutionId:started.intent.executionId});
+    assert.equal(replayed.replayed,true);assert.equal(calls.length,beforeReplay);assert.equal(runs().length,1);
+    const restarted=restartInstanceSession(home,{env,io});assert.notEqual(restarted.intent.executionId,started.intent.executionId);assert.equal(restarted.incarnationId,scaffold.incarnationId);assert.equal(runs().length,2);
+    const before=calls.length;fs.renameSync(binary,`${binary}.preserved`);
+    assert.throws(()=>startInstanceSession(home,{env,io,model:undefined,runtime:undefined,launchConfig:undefined,yolo:undefined}),{code:'E_LAUNCH_EXECUTABLE'});assert.equal(calls.length,before,'preflight refusal precedes backend observation/stop');fs.renameSync(`${binary}.preserved`,binary);
+    const history=fs.readdirSync(nativeHistoryPath(home)).map(name=>readFileSync(join(nativeHistoryPath(home),name),'utf8')).join('');assert.ok(!history.includes(env.FIXTURE_KEY));
+    const row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(row.status,'start-dispatched');assert.equal(row.intents.filter(intent=>intent.action.kind==='session').length,2);assert.ok(row.intents.every(intent=>intent.state==='completed'));
+  }
+  const backend={backend:'tmux',binary:backendBinary,socket:join(root,'failure.sock'),session:'fixture'},failedHome=join(root,'native-uncertain');
+  scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:failedHome,instance:'native-uncertain'});activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home:failedHome});
+  let failure;try{startCapturedInstanceSession(failedHome,{backend,task:'uncertain inert task',env,io:{...io,failBeforeMetadataWrite:true}});}catch(error){failure=error;}
+  assert.equal(failure?.code,'E_SESSION_START_INCOMPLETE');assert.equal(failure.nativeCustody.unconfirmed,true);assert.ok(existsSync(failure.nativeCustody.pendingPath));assert.ok(failure.nativeCustody.pendingObservation.nativeRecordId);
+  const failedRef=failure.nativeCustody.intent,invocations=readFileSync(join(failedHome,'work/native.jsonl'),'utf8');
+  assert.throws(()=>startCapturedInstanceSession(failedHome,{env,io,retryExecutionId:failedRef.executionId}),{code:'E_SESSION_UNKNOWN'},'unknown exited dispatch is held, not launched twice under the same intent');
+  assert.equal(readFileSync(join(failedHome,'work/native.jsonl'),'utf8'),invocations);
+  const unresolved=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===failedHome).intents.at(-1);assert.equal(unresolved.executionId,failedRef.executionId);assert.equal(unresolved.attempt,2);assert.equal(unresolved.state,'unconfirmed');
+  const oldHome=join(root,'no-native-evidence');
+  materializeCapturedDirectoryScaffold({home:oldHome,instance:'no-native-evidence',loaded:loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'compose'}})});
+  const beforeCalls=calls.length;assert.throws(()=>startCapturedInstanceSession(oldHome,{backend,task:'never run',env,io}),{code:'migration-required'});assert.equal(calls.length,beforeCalls);assert.equal(existsSync(nativeHistoryPath(oldHome)),false,'old/unwitnessed native history is never backfilled');
+  const historyRoot=join(nativeHistoryPath(failedHome),'..');fs.renameSync(historyRoot,`${historyRoot}.preserved`);mkdirSync(historyRoot);
+  const beforeReplacement=calls.length;
+  assert.throws(()=>startCapturedInstanceSession(join(root,'native-primary'),{env,io}),{code:'integrity-drift'});assert.equal(calls.length,beforeReplacement,'native sidecar replacement refuses before backend access');
+  fs.rmdirSync(historyRoot);fs.renameSync(`${historyRoot}.preserved`,historyRoot);
+});
+
 test('explicit primary and helper launch inputs retain separate entrypoints and never use current runtime choices',t=>{
   const f=fixture(t),key='example.action:worker';
   f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("retained runtime A");\n');chmodSync(join(f.repo,'packages/action/cap/show.mjs'),0o755);
   f.git('add','.');f.git('commit','--quiet','-m','explicit runtime entrypoint');
   const launch={runtime:'claude',executable:{capability:f.id,command:'show'},args:['literal-A'],env:{FIXTURE_NATIVE_PROFILE:{fromEnv:'FIXTURE_PROFILE'}},model:'explicit-model-A',yolo:false};
-  for(const bad of [{...launch,model:null},{...launch,executable:'/usr/local/bin/ambient'},{...launch,env:{OATS_INVOCATION_CONTEXT_FILE:'/forged'}}]){
+  for(const bad of [{...launch,model:null},{...launch,executable:'ambient'},{...launch,env:{OATS_INVOCATION_CONTEXT_FILE:'/forged'}}]){
     assert.throws(()=>prepareCapturedComposition({...f.input,launch:bad},f.options));
     assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false,'malformed launch input refuses before publication');
   }
