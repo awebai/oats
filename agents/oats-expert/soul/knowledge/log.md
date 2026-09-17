@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Review**: [Delivery log](/stewardship/delivery-log.md) records fresh-flow slice acceptance (14 selected tests) and lifecycle fix-only partial closure (ten selected tests, two residual static P2s returned). Actual composition/request hookup is a separate delivered review candidate, not yet integrated or release-qualified.
 * **Review**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record ordinary-index byte closure at `ce8980ba`, with residual split-index metadata and special-file boundedness findings returned to the provider. One passing regression is not a repeated full gate or release qualification.
 
 ## 2026-09-16

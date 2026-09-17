@@ -24,6 +24,11 @@ decisions/ and referenced from here.
 
 ---
 
+## Fresh review queue — scoped closure and return (2026-09-17)
+- verdict: ACCEPTED the workspace-presence fix `0a1c143`, resource-only `36b0aa00`, request leaf `8822ccce` and pinned public fixture/docs through `f9292253`; no whole migration ancestry or production qualification. Exact archived execution: 14 selected tests passed, no findings.
+- lifecycle verdict: RETURNED exact `257c4b96` plus the supplied fix-only patch through `edb143cd`, excluding launch-input ancestry. Independent patch/archive equality verified; ten final selected tests passed. Retry-reference, error-rendering and current-view-receipt findings are scoped closed. Residual static findings: failure reporting lacks an expected lifecycle-status transition, and a post-hook index read can bypass observed-fact/error reporting. Owner received narrow correction scope; no changed-row overwrite or terminal-ready inference is permitted.
+- follow-up: complete resource/request-router hookup through `7a9c25d2` is a separate delivered review candidate. Preserve earlier reports at their exact pins; newer implementation does not retroactively widen their evidence. No runtime/helper launch, provider privacy, release or deployment claim follows.
+
 ## Standalone index-copy successor — scoped review (2026-09-17)
 - verdict: RETURNED — `ce8980ba` closes the original ordinary-index byte-preservation failure, but has two residual copy-boundary P2 findings. No source-main/release/activation is implied.
 - evidence: the one permitted existing custody regression passes in an exact isolated archive. Native Git 2.44 source shows split-index reads freshen original shared-index timestamps before split-index output suppression takes effect. Native Node 22 copy implementation opens a source before checking its type, allowing a special file to block outside the Git command timeout. The latter findings are static inspections, not executed reproductions.
