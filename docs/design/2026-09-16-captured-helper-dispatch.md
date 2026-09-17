@@ -30,7 +30,7 @@ The core result is:
  sourceExecutionBinding, executionBinding,
  helper:{key,name,subject}, context, responsibleHuman, workMode,
  launch:{schemaVersion:1,
-   api:{contract:'oats.captured-session',version:1,available:true},
+   api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},
    readiness:{status:'not-checked'}}}
 ```
 
@@ -70,6 +70,8 @@ oats session start --deployment SOURCE_DEPLOYMENT --resolution SOURCE_ID --helpe
 It revalidates the exact source edge, checks that the owned home belongs to that
 dedicated helper, and calls the existing captured native session transaction.
 See the [public native request contract](2026-09-17-public-captured-start.md).
+Both existing tmux and Herdr adapters now use the same tagged public request and
+native custody path; see [backend parity](2026-09-17-captured-backend-parity.md).
 The unreleased blanket `launch.status:unsupported` projection is replaced by the
 versioned availability/not-checked descriptor above. An old or unknown descriptor
 is unqualified ingress, not permission to guess support or silently ignore a

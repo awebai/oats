@@ -248,7 +248,7 @@ test('public captured session dispatch follows retained helper edges and preserv
   const sourceFlags=['--deployment',f.deployment,'--resolution',prepared.resolution.id],home=join(root,'public-primary'),helperHome=join(root,'public-helper');
   const request=join(root,'native-request.json'),requestBody={schemaVersion:1,backend:{backend:'tmux',binary:backendBinary,socket:join(root,'fixture.sock'),session:'fixture'},task:'inert public task'};
   writeFileSync(request,JSON.stringify(requestBody));
-  const availability={schemaVersion:1,api:{contract:'oats.captured-session',version:1,available:true},readiness:{status:'not-checked'}};
+  const availability={schemaVersion:1,api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},readiness:{status:'not-checked'}};
   const inspected=run(['inspect',...sourceFlags,'--helper','example.action:worker']);assert.equal(inspected.ok,true);assert.equal(inspected.result.helperSelection.executionBinding.resolution.id,helper.id);
   assert.deepEqual(inspected.result.nativeSession,availability);assert.deepEqual(inspected.result.helperSelection.launch,availability);assert.equal(existsSync(backendLog),false,'API discovery does not inspect a native backend');
   const scaffold=run(['spawn','imported-expert',...sourceFlags,'--home',home,'--no-launch']);assert.equal(scaffold.ok,true);
@@ -289,6 +289,70 @@ test('public captured session dispatch follows retained helper edges and preserv
   assert.equal(retried.ok,false);assert.equal(retried.error.code,'E_SESSION_UNKNOWN');assert.equal(retried.error.details.nativeCustody.intent.executionId,custody.intent.executionId);assert.equal(retried.error.details.nativeCustody.intent.attempt,2);assert.equal(runs(uncertainHome).length,1,'unknown effect never duplicates native execution');
   const indexed=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===uncertainHome),nativeIntents=indexed.intents.filter(intent=>intent.action.kind==='session');
   assert.equal(nativeIntents.length,1);assert.equal(nativeIntents[0].state,'unconfirmed');assert.equal(indexed.incarnationId,custody.intent.incarnationId);
+});
+
+test('public captured Herdr shares native custody for primary/helper starts, restarts and uncertain recovery',t=>{
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'herdr-native.cjs'),backendBinary=join(root,'herdr-fixture.cjs');
+  const stateFile=join(root,'herdr-state.json'),log=join(root,'herdr-calls.jsonl'),modeFile=join(root,'backend-mode'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),socket=join(root,'explicit-herdr.sock');
+  writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
+    const row=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'))).instances.find(row=>row.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(intent=>intent.executionId===e.OATS_EXECUTION_ID);
+    if(row?.status!=='start-running'||intent?.state!=='running'||!intent.receipt?.target?.terminalId)throw Error('Herdr effect lacks indexed target/intent custody');
+    fs.appendFileSync('work/herdr-effects.jsonl',JSON.stringify({id:e.OATS_EXECUTION_ID,incarnationId:e.OATS_INCARNATION_ID,resolution:e.OATS_RESOLUTION,args:process.argv.slice(2)})+'\\n');`,{mode:0o700});
+  writeFileSync(backendBinary,`#!${process.execPath}\nconst fs=require('node:fs'),cp=require('node:child_process'),a=process.argv.slice(2),e=process.env;
+    if(e.HERDR_SOCKET_PATH!==${JSON.stringify(socket)}||e.HERDR_SESSION)throw Error('ambient/wrong Herdr endpoint');
+    fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n');
+    const mode=fs.existsSync(${JSON.stringify(modeFile)})?fs.readFileSync(${JSON.stringify(modeFile)},'utf8'):'';
+    const s=fs.existsSync(${JSON.stringify(stateFile)})?JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)})):{count:0,panes:[],agents:[]};
+    const save=()=>fs.writeFileSync(${JSON.stringify(stateFile)},JSON.stringify(s));let result={};
+    if(a[0]==='api')result={snapshot:{protocol:mode==='bad-protocol'?19:20,panes:s.panes.map(p=>mode==='wrong-workspace'?{...p,workspace_id:'foreign'}:p),agents:s.agents}};
+    else if(a[0]==='workspace'&&a[1]==='create'){
+      const n=++s.count,pane={workspace_id:'w'+n,pane_id:'w'+n+':p1',terminal_id:'term_'+n,cwd:a[a.indexOf('--cwd')+1]};s.panes.push(pane);save();
+      if(mode==='lost-allocation'){console.error('lost allocation response');process.exit(1);}result={root_pane:pane};
+    }else if(a[0]==='pane'&&a[1]==='run'){
+      const pane=s.panes.find(p=>p.pane_id===a[2]);if(!pane)throw Error('wrong pane');cp.execFileSync('/bin/sh',['-c',a[3]],{cwd:pane.cwd,env:e,stdio:'pipe'});
+      if(mode==='lost-run'){s.agents=[{terminal_id:pane.terminal_id,agent_status:'working'}];save();console.error('lost dispatch response');process.exit(1);}
+      s.panes=s.panes.filter(p=>p!==pane);s.agents=[];save();
+    }else if(a[0]==='pane'&&a[1]==='process-info')result={process_info:{foreground_processes:[]}};
+    else throw Error('unexpected backend command');console.log(JSON.stringify({result}));`,{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:join(root,'profile')},model:'herdr-primary',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch,helperLaunches:{'example.action:worker':{...launch,model:'herdr-helper'}}},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const helper=readCapturedResolution(f.deployment,prepared.resolution).helpers['example.action:worker'];rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned source config');
+  const env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true',HERDR_SESSION:'poison-parent',HERDR_SOCKET_PATH:'/poison/socket'};
+  const run=args=>{const out=spawnSync(process.execPath,[cli,...args,'--json'],{cwd:root,env,encoding:'utf8',timeout:20000});assert.equal(out.error,undefined);return {status:out.status,...JSON.parse(out.stdout.trim())};};
+  const source=['--deployment',f.deployment,'--resolution',prepared.resolution.id],backend={backend:'herdr',binary:backendBinary,socket,protocol:20},request=join(root,'herdr-request.json');writeFileSync(request,JSON.stringify({schemaVersion:1,backend,task:'inert Herdr task'}));
+  const effects=home=>readFileSync(join(home,'work/herdr-effects.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  const calls=()=>existsSync(log)?readFileSync(log,'utf8').trim().split('\n').map(JSON.parse):[];
+  const create=(name,helperMode=true)=>{
+    const home=join(root,name);assert.equal(run(['spawn',helperMode?'worker':'imported-expert','--deployment',f.deployment,'--resolution',helperMode?helper.id:prepared.resolution.id,'--home',home,'--no-launch']).ok,true);
+    return {home,args:['session','start',...source,...(helperMode?['--helper','example.action:worker']:[]),'--home',home,'--request',request]};
+  };
+  for(const helperMode of [false,true]){
+    const {home,args}=create(helperMode?'herdr-helper':'herdr-primary',helperMode),original=readFileSync(join(home,'instance.json'));
+    const poisoned={...JSON.parse(original),tmux:{session:'foreign',window:'foreign',socket:'/foreign/socket'}};writeFileSync(join(home,'instance.json'),JSON.stringify(poisoned));const count=calls().length;
+    assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,count);writeFileSync(join(home,'instance.json'),original);
+    const started=run(args);assert.equal(started.ok,true,JSON.stringify(started));assert.equal(started.result.backend,'herdr');assert.equal(started.result.target.socket,socket);assert.ok(started.result.target.workspaceId);assert.ok(started.result.target.paneId);assert.ok(started.result.target.terminalId);
+    assert.equal(effects(home).length,1);assert.equal(effects(home)[0].id,started.result.intent.executionId);assert.equal(effects(home)[0].resolution,helperMode?helper.id:prepared.resolution.id);
+    assert.ok(effects(home)[0].args.includes(helperMode?'herdr-helper':'herdr-primary'));if(helperMode)assert.equal(started.result.sourceExecutionBinding.resolution.id,prepared.resolution.id);
+    const beforeReplay=calls().length;assert.equal(run([...args,'--retry-intent',started.result.intent.executionId]).result.replayed,true);assert.equal(calls().length,beforeReplay);
+    const restarted=run(args.map((arg,index)=>index===1?'restart':arg));assert.equal(restarted.ok,true,JSON.stringify(restarted));assert.notEqual(restarted.result.intent.executionId,started.result.intent.executionId);assert.equal(restarted.result.incarnationId,started.result.incarnationId);assert.equal(effects(home).length,2);
+    const metaPath=join(home,'instance.json'),saved=readFileSync(metaPath),meta=JSON.parse(saved);meta.sessionTarget.terminalId='foreign-terminal';writeFileSync(metaPath,JSON.stringify(meta));const before=calls().length;
+    assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,before);writeFileSync(metaPath,saved);
+    const baselines=join(root,'.oats-retirement/baselines'),baselinePath=fs.readdirSync(baselines).map(name=>join(baselines,name)).find(path=>JSON.parse(readFileSync(path)).home===home),baselineBytes=readFileSync(baselinePath);
+    const reset=JSON.parse(saved);reset.launched=false;delete reset.sessionTarget;writeFileSync(metaPath,JSON.stringify(reset));writeFileSync(baselinePath,JSON.stringify({...JSON.parse(baselineBytes),runtime:{launched:false}}));
+    assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,before,'reset metadata/baseline cannot erase indexed dispatch custody');
+    writeFileSync(metaPath,saved);writeFileSync(baselinePath,baselineBytes);
+  }
+  const uncertain=create('herdr-uncertain');writeFileSync(modeFile,'lost-run');const restartArgs=uncertain.args.map((arg,index)=>index===1?'restart':arg),failed=run(restartArgs);
+  assert.equal(failed.ok,false);const custody=failed.error.details.nativeCustody;assert.equal(custody.unconfirmed,true);assert.equal(effects(uncertain.home).length,1);
+  assert.ok(custody.pendingObservation.nativeRecordId);assert.ok(existsSync(join(nativeHistoryPath(uncertain.home),`${custody.pendingObservation.nativeRecordId}.json`)));assert.ok(custody.pendingObservation.target.terminalId);
+  rmSync(modeFile);const before=calls().length,adopted=run([...restartArgs,'--retry-intent',custody.intent.executionId]);
+  assert.equal(adopted.ok,true,JSON.stringify(adopted));assert.equal(adopted.result.reused,'adopted');assert.equal(adopted.result.intent.executionId,custody.intent.executionId);assert.equal(adopted.result.intent.attempt,2);assert.equal(effects(uncertain.home).length,1);assert.ok(calls().slice(before).every(args=>args[0]==='api'),'same-ID present observation never stops or dispatches twice');
+  const lost=create('herdr-lost-allocation');writeFileSync(modeFile,'lost-allocation');const lostResult=run(lost.args);assert.equal(lostResult.ok,false);
+  const lostCustody=lostResult.error.details.nativeCustody;assert.equal(lostCustody.pendingObservation.phase,'allocating');assert.equal(existsSync(join(lost.home,'work/herdr-effects.jsonl')),false);const beforeLostRetry=calls().length;rmSync(modeFile);
+  const held=run([...lost.args,'--retry-intent',lostCustody.intent.executionId]);assert.equal(held.error.code,'E_SESSION_UNKNOWN');assert.equal(held.error.details.nativeCustody.intent.executionId,lostCustody.intent.executionId);assert.equal(calls().length,beforeLostRetry,'unknown allocation cannot allocate again or guess identities');
+  const wrong=create('herdr-wrong-workspace');writeFileSync(modeFile,'wrong-workspace');const wrongResult=run(wrong.args);assert.equal(wrongResult.ok,false);assert.equal(existsSync(join(wrong.home,'work/herdr-effects.jsonl')),false);rmSync(modeFile);
+  const protocol=create('herdr-protocol');writeFileSync(modeFile,'bad-protocol');const beforeProtocol=calls().filter(args=>args[0]==='workspace').length;const rejected=run(protocol.args);assert.equal(rejected.error.code,'E_SESSION_UNKNOWN');assert.equal(calls().filter(args=>args[0]==='workspace').length,beforeProtocol);rmSync(modeFile);
 });
 
 test('explicit primary and helper launch inputs retain separate entrypoints and never use current runtime choices',t=>{
@@ -504,11 +568,11 @@ test('source helper lookup preserves dedicated A/B authority without source or c
     const resolved=resolveCapturedHelper({executionBinding:source.executionBinding,helper:key,name:'worker'});
     assert.equal(resolved.sourceExecutionBinding.resolution.id,source.resolution.id);assert.equal(resolved.executionBinding.resolution.id,helper.id);
     assert.equal(resolved.helper.subject.kind,'helper');assert.equal(resolved.helper.subject.provider.capability,'example.action');
-    assert.equal(resolved.workMode,'directory');assert.deepEqual(resolved.launch,{schemaVersion:1,api:{contract:'oats.captured-session',version:1,available:true},readiness:{status:'not-checked'}});assert.equal(resolved.responsibleHuman,null);
+    assert.equal(resolved.workMode,'directory');assert.deepEqual(resolved.launch,{schemaVersion:1,api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},readiness:{status:'not-checked'}});assert.equal(resolved.responsibleHuman,null);
     assert.equal(Object.hasOwn(resolved.launch,'status'),false,'no stale blanket unsupported/readiness claim');
     validateWire('CapturedNativeSessionAvailability',resolved.launch);
     assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,readiness:{status:'ready'}}));
-    assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,api:{...resolved.launch.api,version:2}}));
+    assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,api:{...resolved.launch.api,version:99}}));
     assert.equal(readCapturedResolution(f.deployment,helper).dispatch.launch,null,'API availability is not a launch recipe, approval or ready instance');
     const result=spawnSync(process.execPath,[cli,'inspect','--deployment',f.deployment,'--resolution',source.resolution.id,'--helper',key,'--composition','--json'],{encoding:'utf8'});
     assert.equal(result.status,0,result.stdout||result.stderr);const receipt=JSON.parse(result.stdout).result;

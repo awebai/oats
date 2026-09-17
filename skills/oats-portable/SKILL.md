@@ -81,6 +81,13 @@ The native request is a closed object, for example:
 {"schemaVersion":1,"backend":{"backend":"tmux","binary":"/absolute/tmux","socket":"/absolute/socket","session":"captured"},"task":"Explicit task"}
 ```
 
+For Herdr, replace only `backend` with
+`{"backend":"herdr","binary":"/absolute/herdr","socket":"/absolute/herdr.sock","protocol":20}`.
+Use an explicit existing operator-managed socket; this route never starts a
+Herdr daemon or falls back to tmux. Actual workspace/pane/terminal IDs arrive in
+the receipt after allocation, never from caller naming. API discovery advertises
+`oats.captured-session@2` with both backends and `readiness:not-checked`.
+
 Runtime/model/yolo come from the capture, never this request. Optional
 `stopGraceMs` is bounded 1–300000. No env/io/credential/provider/config fields.
 For an already scaffolded helper, pass the SOURCE selectors and add
@@ -90,7 +97,9 @@ binding. This revalidates the edge, not just a helper name.
 Use `session restart` for a distinct restart request in the same incarnation.
 Once stored, task/backend can be omitted to use owned values. Use
 `--retry-intent <saved-executionId>` only for an explicit replay/retry of that
-same logical request. Preserve `error.details.nativeCustody` and the indexed
+same logical request. An unknown Herdr allocation must remain held under its
+saved intent; never repeat workspace creation or guess its IDs from a label.
+Preserve `error.details.nativeCustody` and the indexed
 pending identity on uncertainty; never allocate another home/ID to disguise it.
 `dispatchAccepted` means native dispatch, not task completion/model health or
 privacy. A completed receipt replay may return `replayed:true` instead.
@@ -98,8 +107,8 @@ privacy. A completed receipt replay may return `replayed:true` instead.
 ## Current refusal boundary
 
 Captured wake/retire, unqualified managed runtime packages/contributions, extra
-native arguments, non-directory work targets and other initial backends still
-refuse. Do not strip selectors or call legacy forms as a workaround. A scaffold marked `spawn-failed-cleanup-required`
+native arguments, non-directory work targets and backends other than tmux/Herdr
+still refuse. Do not strip selectors or call legacy forms as a workaround. A scaffold marked `spawn-failed-cleanup-required`
 may contain external hook effects; preserve it and escalate rather than deleting
 it. A scaffold marked `spawned-launch-pending` is not a running instance.
 

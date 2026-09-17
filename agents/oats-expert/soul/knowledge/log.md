@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Update**: `skills/oats-portable` teaches the backend-tagged tmux/Herdr native request, versioned API availability separate from readiness, actual allocated Herdr target receipts, and holding unknown allocation identity without duplicate workspace creation or silent fallback.
 * **Update**: `skills/oats-portable` teaches staged captured scaffold/hooks then public native start/restart, exact source-to-helper selection, explicit native request inputs and preserved retry/unknown-effect identity. Backend dispatch is not model/task/privacy acceptance; unsupported runtime prerequisites and provider qualification remain explicit gates.
 
 ## 2026-09-16
