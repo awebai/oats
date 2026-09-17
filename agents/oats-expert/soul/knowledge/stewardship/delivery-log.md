@@ -24,6 +24,11 @@ decisions/ and referenced from here.
 
 ---
 
+## Fresh-source onboarding facade — reviewed integration (2026-09-17)
+- integrated: exact accepted eight-file `bba25ca4` artifact, patch SHA-256 `126e516bed2b07c2b067003faaf7037778807c137984d01abaab3ee731ccbc4a`. Independent context review accepted it against main7ab; later main differences were stewardship only. All eight resulting source blobs and six excluded already-adopted blobs matched. No resolution-shape context diff, migration/native code or duplicated request/resources were applied.
+- gate: 19 combined tests pass, zero failures/skips, including fresh inspection/witness cases, explicit pinned public consumers and scaffold/layout/normal retirement. Syntax, project, package dry-runs and strict knowledge validation pass; runtime source remains the tested staged tree. No new source review was conducted by the coordinator.
+- qualification: c5 preparation and exact257 no-launch fixtures retain their historical scope. This incremental integration does not rerun or relabel the earlier full C1 gate, prove current native/Herdr/provider behavior, adopt the roster/KB, or publish0.24. Real integrated runtime/provider acceptance remains outstanding.
+
 ## Standalone OKF — reviewed source-main checkpoint (2026-09-17)
 - delivered: provider main `ec5d7671799b3258aef69f9bbcf2c6480c4811ad`, normal fast-forward from `4b6d861ce44e5662303e150cc85095d0eb00d7e7`. Coordinator fetched/checked exact clean head, covered ancestry and corrected gate receipt before push; shared checkouts and tags were not changed.
 - review: assigned reviewer APPROVED SOURCE CHECKPOINT, confirming continuous coverage across all 33 commits through initial candidate, corrective/harvest/index closure, c24 wire and ec5 residual fixes. No new tests or source review were invented by the coordinator to widen that verdict.
