@@ -23,8 +23,8 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, loadCapturedDispatch, prepareCapturedComposition, withCapturedBindingFile,
-  readCapabilityLocks, writeCapabilityLock,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
+  readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
   approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
@@ -47,6 +47,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
+import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 
@@ -93,23 +94,33 @@ const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: 
 
 function prepareCmd() {
   const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
-  const values = new Map(), allowed = new Set(["dir", "source", "revision", "export", "alias", "workspace", "workspace-revision", "work"]);
+  const values = new Map(), allowed = new Set(["request", "dir", "source", "revision", "export", "alias", "workspace", "workspace-revision", "work"]);
   for (let index = 1; index < args.length; index++) {
     if (args[index] === "--json") continue;
     const key = args[index].startsWith("--") ? args[index].slice(2) : "";
     if (!allowed.has(key) || values.has(key) || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "prepare needs unique named source/context arguments; use prepare --help");
     values.set(key, args[++index]);
   }
-  const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
-  if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");
-  if (source ? !values.get("revision") || !values.get("export") : !values.get("workspace") || values.has("revision") || values.has("export")) fail("E_BAD_ARGS", "choose a complete source/revision/export reference or a workspace-advertised alias");
-  if (values.has("workspace-revision") && !values.has("workspace")) fail("E_BAD_ARGS", "--workspace-revision requires --workspace");
-  const origin = { kind: "operator", document: { kind: "operator", id: "oats-prepare" }, pointer: "/source" };
-  const input = { deployment, source: source ? { source, revision: values.get("revision"), soul: values.get("export"), alias } : alias, origin,
-    ...(values.has("work") ? { mode: values.get("work") } : {}),
-    ...(values.has("workspace") ? { workspace: { source: values.get("workspace"), origin: { ...origin, pointer: "/workspace" },
-      ...(values.has("workspace-revision") ? { revision: values.get("workspace-revision") } : {}) } } : {}) };
   try {
+    let input;
+    if (values.has("request")) {
+      // The shared leaf owns request bytes/exclusivity; this router alone owns
+      // argv and has already refused explicit captured selectors.
+      input = readPortablePreparationRequest({ file: values.get("request"),
+        inputFlags: Object.fromEntries([...values].filter(([key]) => key !== "request")) });
+    } else {
+      const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
+      if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");
+      if (source ? !values.get("revision") || !values.get("export") : !values.get("workspace") || values.has("revision") || values.has("export")) fail("E_BAD_ARGS", "choose a complete source/revision/export reference or a workspace-advertised alias");
+      if (values.has("workspace-revision") && !values.has("workspace")) fail("E_BAD_ARGS", "--workspace-revision requires --workspace");
+      const origin = { kind: "operator", document: { kind: "operator", id: "oats-prepare" }, pointer: "/source" };
+      input = { deployment, source: source ? { source, revision: values.get("revision"), soul: values.get("export"), alias } : alias, origin,
+        ...(values.has("work") ? { mode: values.get("work") } : {}),
+        ...(values.has("workspace") ? { workspace: { source: values.get("workspace"), origin: { ...origin, pointer: "/workspace" },
+          ...(values.has("workspace-revision") ? { revision: values.get("workspace-revision") } : {}) } } : {}) };
+    }
+    // Pass the whole request to the one public validator/resolver. Unknown
+    // fields are refused there, never filtered or filled from ambient state.
     const result = prepareCapturedComposition(input);
     if (!result.resolution) fail("needs-configuration", "preparation is incomplete; no executable resolution was published", result);
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
@@ -119,11 +130,11 @@ function prepareCmd() {
 /** Run one provider operation from immutable captured authority. A home is an
  * explicit target only: its stored binding must name this exact record. */
 function capturedOperation(selector, load, bail) {
-  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> --deployment <abs> --resolution <id> [--home <abs>] [--arg k=v ...] [--json]");
+  if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> --deployment <abs> --resolution <id> [--home <abs>] [--arg k=v ...] [--retry-intent <saved-id>] [--json]");
   const address = args[2], match = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
   if (!match) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
   const [, slot, name] = match, given = Object.create(null);
-  let home;
+  let home, retryExecutionId;
   for (let index = 3; index < args.length; index++) {
     const token = args[index];
     if (token === "--json") continue;
@@ -131,6 +142,11 @@ function capturedOperation(selector, load, bail) {
       const value = args[++index];
       if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute instance home");
       home = resolve(value); continue;
+    }
+    if (token === "--retry-intent") {
+      const value = args[++index];
+      if (retryExecutionId !== undefined || !value || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
+      retryExecutionId = value; continue;
     }
     if (token === "--arg") {
       const value = args[++index], eq = value?.indexOf("=") ?? -1;
@@ -167,8 +183,31 @@ function capturedOperation(selector, load, bail) {
   const declared = new Map(operation.args.map((entry) => [entry.name, entry]));
   for (const key of Object.keys(given)) if (!declared.has(key)) bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(key)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
   for (const entry of operation.args) if (entry.required && given[entry.name] === undefined) bail("E_BAD_ARGS", `${address} needs --arg ${entry.name}=<value>: ${entry.description || "required"}`);
-  const loaded = load({ kind: "operation", slot, name }), { capability, executable } = loaded;
+  const action = { kind: "operation", slot, name };
   const argFlags = operation.args.flatMap((entry) => given[entry.name] === undefined ? [] : [entry.flag, given[entry.name]]), cwd = home || selector.deployment;
+  if (operation.kind === "action" && !home) bail("admission-required", "scope mutation has no qualified incarnation/admission path; use an instance-scoped operation");
+  if (retryExecutionId !== undefined && operation.kind !== "action") bail("E_BAD_ARGS", "read-only operations do not retry mutation intents");
+  const admission = operation.kind === "action" ? admitCapturedAction({ deployment: selector.deployment, resolution: selector.resolution, home, action, input: { arguments: argFlags },
+    ...(retryExecutionId !== undefined ? { retryExecutionId } : {}) }) : null;
+  let settlement;
+  const admittedBail = (code, message, details) => bail(code, message, { ...details, ...(admission ? { intent: admission.intent } : {}),
+    ...(settlement ? { settlement, unconfirmed: settlement.state === "unconfirmed" } : {}) });
+  if (admission?.replayed) {
+    settlement = { state: "completed", receipt: admission.receipt };
+    if (!admission.replayable) admittedBail("needs-configuration", "completed operation cannot replay its retained outcome");
+    finishOperation({ r: { status: 0, stdout: JSON.stringify(admission.receipt) }, bail: admittedBail, address, provider, op: operation, argFlags, cwd, home, meta, intent: admission.intent }); return;
+  }
+  let loaded;
+  try { loaded = load(action, { invocationTarget: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
+    ...(admission ? { intent: admission.intent, priorReceipt: admission.receipt } : {}) }); }
+  catch (error) {
+    if (admission) {
+      settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: "blocked", receipt: admission.receipt });
+      settlement = { state: "blocked", receipt: admission.receipt };
+    }
+    admittedBail(error.code || "provider-unavailable", error.message);
+  }
+  const { capability, executable } = loaded;
   const env = { ...process.env };
   for (const key of Object.keys(env)) if (key.startsWith("OATS_") || key.startsWith("PI_AGENT_") || key === "PI_AGENTS_ROOT") delete env[key];
   Object.assign(env, {
@@ -180,15 +219,68 @@ function capturedOperation(selector, load, bail) {
   });
   if (meta) Object.assign(env, { OATS_INSTANCE: meta.instance, OATS_INSTANCE_HOME: home, OATS_HOME: home,
     PI_AGENT_INSTANCE: meta.instance, PI_AGENT_HOME: home, ...(meta.agent ? { OATS_AGENT: meta.agent } : {}) });
-  let child, cleanupError;
+  const invocation = loaded.invocation;
+  let child, cleanupError, started = false;
   try {
-    child = withCapturedBindingFile(loaded, bindingEnv => runCapturedOperationProcess({ file: executable.file,
-      args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...bindingEnv } }));
+    child = withCapturedInvocationContextFile(invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => {
+      if (admission) { beginCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action }); started = true; }
+      return runCapturedOperationProcess({ file: executable.file, args: [...executable.args, ...argFlags, "--json"], cwd, env: { ...env, ...contextEnv, ...bindingEnv } });
+    }));
   } catch (error) {
-    if (!error?.invocationCompleted) throw error;
+    if (!error?.invocationCompleted) {
+      if (admission) {
+        settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: started ? "unconfirmed" : "blocked", receipt: admission.receipt });
+        settlement = { state: started ? "unconfirmed" : "blocked", receipt: admission.receipt };
+      }
+      admittedBail(error.code || "E_OPERATION_RESULT", error.message, { unconfirmed: started });
+    }
     child = error.invocationResult; cleanupError = error;
   }
-  finishOperation({ r: child, bail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError });
+  if (admission) {
+    let envelope; try { envelope = JSON.parse(String(child.stdout || "").trim()); } catch { /* unconfirmed below */ }
+    const completed = !cleanupError && !child.error && child.status === 0 && envelope?.schemaVersion === 1 && envelope.ok === true;
+    const state = completed ? "completed" : "unconfirmed", receipt = envelope ?? parseEnvelopeText(String(child.stdout || "")) ?? admission.receipt;
+    try {
+      settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state, receipt, replayable: completed });
+      settlement = { state, receipt };
+    }
+    catch (error) { admittedBail("E_OPERATION_RESULT", "operation ran but outcome custody could not be confirmed", { unconfirmed: true, envelope, custody: { code: error.code, message: error.message } }); }
+  }
+  finishOperation({ r: child, bail: admittedBail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError, settlement, ...(admission ? { intent: admission.intent } : {}) });
+}
+
+/** Fresh explicit captured scaffold + spawn hooks. Placement is supplied by
+ * the operator; launch and non-directory work remain unsupported. */
+function capturedSpawn(selector, load, bail) {
+  const subject = args[1]; let home; let noLaunch = false;
+  if (!subject || subject.startsWith("-")) bail("E_BAD_ARGS", "captured spawn needs the retained subject name");
+  for (let index = 2; index < args.length; index++) {
+    const token = args[index];
+    if (token === "--json") continue;
+    if (token === "--no-launch") { if (noLaunch) bail("E_BAD_ARGS", "duplicate --no-launch"); noLaunch = true; continue; }
+    if (token === "--home") {
+      const value = args[++index];
+      if (home !== undefined || !value || value.startsWith("--") || !isAbsolute(value)) bail("E_BAD_ARGS", "--home needs one absolute new instance home");
+      home = resolve(value); continue;
+    }
+    bail("E_BAD_ARGS", `unsupported captured spawn argument ${JSON.stringify(token)}`);
+  }
+  if (!home || !noLaunch) bail("E_BAD_ARGS", "captured spawn currently requires --home <absolute new home> and --no-launch");
+  const inspected = load({ kind: "inspect" }), expected = inspected.record.subject.kind === "persistent" ? inspected.record.subject.soul.alias : inspected.record.subject.name;
+  if (subject !== expected) bail("E_HOME_MISMATCH", `captured resolution subject is ${expected}, not ${subject}`);
+  const scaffold = scaffoldCapturedInstance({ deployment: selector.deployment, resolution: selector.resolution, home, instance: basename(home) });
+  let activated;
+  try {
+    activated = activateCapturedScaffold({ deployment: selector.deployment, resolution: selector.resolution, home,
+      extraEnv: process.env.OATS_HOME_DIR ? { OATS_HOME_DIR: process.env.OATS_HOME_DIR } : {} });
+  } catch (error) {
+    if (error?.home) bail(error.code || "E_SPAWN_FAILED", error.message, { home: error.home, cleanupRequired: true, failures: error.provenance || [],
+      ...(error.capturedCustody ? { unconfirmed: true, custody: error.capturedCustody } : {}) });
+    throw error;
+  }
+  const result = { ...scaffold, hooksPending: activated.hooksPending, cleanupRequired: activated.cleanupRequired, launchPending: true,
+    hookIntents: activated.hooks.intents, hookOrder: activated.hooks.order, warnings: activated.hooks.warnings };
+  if (JSON_MODE) jsonOk(result); else console.log(`Scaffolded ${result.instance} at ${result.home}; ${result.hooksPending ? "captured hook custody requires retry/reconciliation" : "captured hooks complete"}, launch pending`);
 }
 
 /** Exact-selector dispatch enters before any current-context resolver. Its
@@ -197,7 +289,8 @@ function capturedCommand(selector) {
   const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
   try {
     const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-    const forbiddenContext = cmd === "operation" ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
+    const permitsHome = cmd === "operation" || cmd === "spawn";
+    const forbiddenContext = permitsHome ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
     if (head.some((arg) => forbiddenContext.includes(arg.split("=")[0]))) {
       fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
     }
@@ -210,13 +303,22 @@ function capturedCommand(selector) {
       return;
     }
     const target = { deployment: selector.deployment, resolution: selector.resolution };
-    const load = (action) => loadCapturedDispatch({ ...target, action });
+    const load = (action, extra = {}) => loadCapturedDispatch({ ...target, action, ...extra });
     if (cmd === "inspect") {
-      if (args.slice(1).some((arg) => !["--json", "--composition"].includes(arg))) fail("E_BAD_ARGS", "captured inspect accepts only --json and --composition");
-      const loaded = load({ kind: args.includes("--composition") ? "compose" : "inspect" });
-      const result = { resolution: selector.resolution, capture: loaded.record.capture,
+      let helperKey;
+      for (let index = 1; index < args.length; index++) {
+        if (["--json", "--composition"].includes(args[index])) continue;
+        if (args[index] !== "--helper" || helperKey !== undefined || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "captured inspect accepts --json, --composition and one --helper <exact-map-key>");
+        helperKey = args[++index];
+      }
+      const helperSelection = helperKey === undefined ? null : resolveCapturedHelper({ executionBinding: { schemaVersion: 1, ...target }, helper: helperKey });
+      const selected = helperSelection?.executionBinding ?? target;
+      const loaded = loadCapturedDispatch({ deployment: selected.deployment, resolution: selected.resolution, action: { kind: args.includes("--composition") ? "compose" : "inspect" } });
+      const result = { resolution: loaded.resolution, capture: loaded.record.capture,
+        ...(helperSelection ? { helperSelection } : {}),
         capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
           approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),
+        helpers: Object.entries(loaded.record.helpers).map(([key, resolution]) => ({ key, resolution })),
         hasComposition: !!loaded.record.dispatch.composition,
         ...(loaded.composition ? { composition: loaded.composition } : {}) };
       if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
@@ -232,6 +334,7 @@ function capturedCommand(selector) {
       return;
     }
     if (cmd === "operation") { capturedOperation(selector, load, fail); return; }
+    if (cmd === "spawn") { capturedSpawn(selector, load, fail); return; }
     if (!cmd || cmd.startsWith("-") || KERNEL_COMMANDS.has(cmd)) fail("unsupported-action", "this kernel command has not yet adopted captured selectors; no current-context fallback was used");
     if (!args[1] || args[1] === "--json" || head.some((arg) => HELP_WORDS.has(arg))) {
       const loaded = load({ kind: "inspect" });
@@ -249,9 +352,9 @@ function capturedCommand(selector) {
       OATS_SETTINGS: JSON.stringify(loaded.capability.settings),
       OATS_CLI_BIN: CLI_BIN, OATS_CONTEXT: selector.deployment, OATS_LEVEL: selector.deployment });
     const forwarded = args.slice(2); if (forwarded[0] === "--") forwarded.shift();
-    const child = withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
-      cwd: selector.deployment, env: { ...env, ...bindingEnv }, stdio: "inherit",
-    }));
+    const child = withCapturedInvocationContextFile(loaded.invocation, contextEnv => withCapturedBindingFile(loaded, bindingEnv => spawnSync(process.execPath, [loaded.executable.file, ...loaded.executable.args, ...forwarded], {
+      cwd: selector.deployment, env: { ...env, ...contextEnv, ...bindingEnv }, stdio: "inherit",
+    })));
     if (child.error) fail("E_CAPABILITY_BROKEN", child.error.message);
     process.exit(child.status ?? 1);
   } catch (error) { fail(error.code || "E_CAPABILITY_BROKEN", error.message); }
@@ -809,10 +912,9 @@ const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|cou
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = CAPTURED_OPERATION_TIMEOUT_MS;
-function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError }) {
+function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent, settlement }) {
   const stderr = String(r.stderr || "").trim();
-  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal));
-  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
+  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal) && (!settlement || !r.error));
   const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
   // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
   // by the exit status) carry what WAS observed in error.details, so a
@@ -820,6 +922,7 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   // provider managed to answer; they are never confirmed failures.
   const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}),
     ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}), ...(cleanupError ? { cleanup: { code: cleanupError.code || "E_OPERATION_CLEANUP", message: String(cleanupError.message || cleanupError).slice(0, 1000) } } : {}) });
+  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`, settlement ? observed(parseEnvelopeText(String(r.stdout || ""))) : undefined);
   if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
   // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
   // that agrees with it: contaminated output or a success envelope from a
@@ -850,7 +953,7 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   const receipt = {};
   if (typeof result.instance === "string" && result.instance !== meta?.instance) receipt.instance = result.instance;
   if (typeof result.home === "string" && result.home !== home) receipt.home = result.home;
-  const out = { ...base, ...receipt, result, ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
+  const out = { ...base, ...receipt, result, ...(intent ? { intent } : {}), ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}) };
   if (JSON_MODE) { jsonOk(out); return; }
   console.log(`${address} via ${provider.capability}@${provider.version || "?"} (${provider.command} ${op.command}) in ${shortPath(cwd)}: ok`);
   if (op.kind === "view") for (const d of result.documents) console.log(`  - ${d.label}${d.path ? ` (${shortPath(d.path)})` : ""}${d.text ? `: ${String(d.text).split("\n")[0].slice(0, 100)}` : ""}`);
@@ -4334,7 +4437,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -4699,14 +4802,24 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-// Explicit new-work preparation uses its own absolute --dir and source input;
-// an inherited command binding must not turn it into a current-context fallback.
-if (cmd === "prepare") {
+// Inspect explicit selectors with the existing parser before new-work routing,
+// including selectors before the command. Inherited captures are not prepare inputs.
+let captured;
+try { captured = capturedSelector(args, {}); }
+catch (error) {
+  if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
+  die(error.message);
+}
+if (cmd === "prepare" || captured?.args[0] === "prepare") {
+  if (captured) {
+    if (JSON_MODE) jsonFail("E_BAD_ARGS", "prepare is explicit new work and cannot use captured selectors");
+    die("prepare is explicit new work and cannot use captured selectors");
+  }
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   prepareCmd(); process.exit(0);
 }
-let captured;
-try { captured = capturedSelector(args); }
+// Other commands retain their existing explicit/inherited selection rules.
+try { captured ??= capturedSelector(args); }
 catch (error) {
   if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
   die(error.message);
@@ -5014,20 +5127,27 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             design, repo checkout only; see
                                             packages/experimental/README.md
 
+  oats prepare --request <absolute-json-file> [--json]
+                                            complete public preparation input; no mixed flags,
+                                            inherited binding, implicit setup or launch authority
   oats prepare --dir <abs> --source <git repo> --revision <ref> --export <path>
       --alias <name> [--work <mode>] [--json]  prepare retained commands and curriculum,
                                             no launch; provider gaps report incomplete
   oats prepare --dir <abs> --workspace <git repo> --alias <advertised alias>
-      [--workspace-revision <ref>] [--json]  same preparation through workspace imports
+      [--workspace-revision <ref>] [--work <mode>] [--json]
+                                            same preparation through workspace imports
   oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
-                                            inspect exact retained inputs, not today's configuration
+      [--helper <exact-map-key>]             inspect retained source/helper inputs, not today's configuration
   oats trust <capability> --deployment <abs> --resolution <id> [--json]
                                             explicitly approve that exact captured artifact
   oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]
                                             run the approved retained command; no ambient fallback
   oats operation run <layer>:<name> --deployment <abs> --resolution <id>
-      [--home <abs>] [--arg k=v ...] [--json]
-                                            run an exact retained provider operation
+      [--home <abs>] [--arg k=v ...] [--retry-intent <saved-id>] [--json]
+                                            home actions admit distinct requests; explicit retry reuses intent
+                                            scope views stay read-only; scope mutation is not yet qualified
+  oats spawn <captured subject> --deployment <abs> --resolution <id>
+      --home <abs> --no-launch [--json]      create a fresh directory scaffold and run captured hooks
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)

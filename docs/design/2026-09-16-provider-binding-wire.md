@@ -100,8 +100,13 @@ versioned projection, not aweb-specific kernel behavior.
 
 ## Check
 
-`input` is exactly `{binding,context,action}`. Binding is the complete immutable
-ProviderBinding1. Action is the requested captured action, not a new launch recipe.
+`input` is `{binding,context,action,invocation?}` with no other fields. Binding is
+the complete immutable ProviderBinding1. Action is the requested captured action,
+not a new launch recipe. Optional `invocation` is the same bounded
+CapturedInvocationContext1 projected for execution below; if present, its capability,
+context and action must match this request. It is not nullable: omit it for an explicit
+scope check without invocation data. Identity-dependent provider actions must refuse
+missing instance context. Normalize/bind do not accept this field.
 Result is exactly `{status,problems}`; status is ready/needs-configuration/
 authorization-required/unavailable. Problems is an array of code + optional message
 objects using the error-code set above. Ready requires an empty problems array.
@@ -153,6 +158,69 @@ must match the receipt. Captured lifecycle hook loading preflights every applica
 retained hook, exact approval, host requirement and provider readiness before the
 first lifecycle side effect, then preserves the existing hook metadata, warning,
 environment and required-hook result contract. The source receipt is exposed only
-to its binding owner. This establishes the hook/registration ABI; public captured
-spawn/start/restart/retire adoption is still unfinished and cannot fall back to
-current source or configuration.
+to its binding owner. This establishes the knowledge-source hook/registration ABI; it is not a generic
+messaging lifecycle contract.
+
+## Provider-neutral captured invocation context
+
+Captured commands, hooks and operations receive one private mode-`0600`
+`OATS_INVOCATION_CONTEXT_FILE`. Read-only checks receive that same validated data in
+`input.invocation` instead, NOT via a second file/environment source of authority.
+This enables setup-specific admission without requiring already-completed enrollment.
+The unreleased v1 payload is:
+
+```text
+{schemaVersion:1, executionBinding,
+ subject: <exact captured record subject>,
+ instance:null|{home,work,name,agent,incarnationId},
+ intent:null|{schemaVersion:1,executionId,incarnationId,attempt},
+ context, responsibleHuman, messagingChoice,
+ capability, action, priorReceipt}
+```
+
+The subject is the existing closed union: `{kind:'persistent',soul: SoulSelection}`
+or `{kind:'helper',provider: CapabilityArtifactRef,definition: ResourceRef,name}`.
+Helpers retain their exact provider artifact and definition, not an alias-derived
+identity. The shared subject/context codecs and structural schemas are reused.
+Overall limits are 512 KiB, depth 32 and 16384 entries; `priorReceipt` separately has
+128 KiB, depth 24 and 8192 entries. Its JSON is opaque and nullable, never credentials.
+
+The kernel derives it from the verified record, explicit target and that capability's
+current stored metadata/index before provider readiness or execution. Non-null instance
+facts and any supplied prior receipt must match the captured home's owned incarnation,
+record and indexed receipts; a scope action has instance:null and no invented home. A public broker check
+with invocation re-verifies the referenced record and matches the entire binding,
+artifact set and effective settings, not merely the request's syntactic shape.
+`action` is the
+existing exact loader action (`command` with capability/namespace and name, `hook`
+with capability/name, or `operation` with slot/name), not a new action table.
+`messagingChoice`
+carries the requested private floor and explicit wider set; it is intent, never proof
+of privacy/enrollment. `priorReceipt` is bounded opaque JSON owned by the selected
+capability. Credential values remain outside all three snapshots. Providers must use
+the exact execution/source/instance/context/human/action facts and reconcile retries
+against their prior receipt; they must not infer replacements from cwd, OS user,
+display name, source alias or ambient configuration.
+
+The file uses the same owned scratch, success/failure cleanup and observed-result
+preservation boundary as the binding/source snapshots. Captured hook dispatch recovers
+an observed opaque provider receipt even if several nested snapshot cleanups fail,
+including after a nonzero child exit. It records a required, unconfirmed cleanup
+failure rather than treating the hook as clean or discarding receipt-owned effects.
+This accounting is provider-neutral and does not interpret knowledge or messaging data.
+Existing
+`OATS_SOURCE_RECEIPT_FILE` remains the knowledge source-registration input, not a
+messaging-specific or general identity mechanism. Captured start/restart/retire and
+managed launch adoption remain unfinished and cannot fall back to current source or
+configuration.
+
+This addition is an unreleased coordinated wire change: both provider validators
+must accept optional `check.input.invocation` and the exact subject union before a
+new compatible provider pin is used. The new incarnation/intent fields also need
+coordinated successor consumers; earlier pins are not silently patched or claimed
+compatible. [Captured admission](2026-09-16-captured-admission.md) records opaque fresh
+incarnations and logical request IDs before effects using the existing home index.
+An explicit retry reuses its ID/receipt; identical distinct requests get distinct IDs.
+Composition/home/alias values are never replacement identities. Stable scheduler
+execution-ID propagation and actual captured launch remain unfinished. Admission
+authorizes an attempt/reconciliation, not duplicate native effects, enrollment or privacy.

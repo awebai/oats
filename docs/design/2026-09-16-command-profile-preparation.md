@@ -54,7 +54,11 @@ Valid retained orphan objects/records may survive later refusal or selection CAS
 shared immutable stores are never rolled back wholesale.
 
 Result fields include `status`, `resolution`, `executionBinding`, exact observed
-source revision, per-root software selections and problems. Complete results expose
+source revision, per-root software selections and problems. Programmatic standalone
+preparation may carry an explicit `standaloneContextKey` that is either non-empty
+opaque text or explicit null; it is stored literally in the existing standalone
+context. It conflicts with workspace context and is never derived from source/work
+paths or the OS user. Null does not qualify messaging. Complete results expose
 `responsibleHuman`: null means messaging is actually disabled; incomplete preparation
 does not manufacture that claim. Approval-required is separate from complete capture.
 No spawn/setup/launch/scheduler side effect occurs during preparation.

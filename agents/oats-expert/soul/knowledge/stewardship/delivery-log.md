@@ -24,6 +24,32 @@ decisions/ and referenced from here.
 
 ---
 
+## Approved captured-base assembly — local integration checkpoint (2026-09-17)
+- integrated scope: exact `257c4b96` prerequisites plus the independently accepted cumulative fix-only v2 patch; accepted portable resources/full composition, context-adapted `fdbd909b`, and original `7a9c25d2` request leaf/router. Supplied before/after hashes and final five request blobs matched. Unreviewed native/public/Herdr code and `packages/record` runtime are excluded.
+- evidence: 30 merged-tree checks passed, including the previously static-only direct workspace ingress case and the owned scaffold/layout/normal-retirement probe. Runtime source remained unchanged during execution. This local checkpoint is not a full combined gate, main push, release or native-model qualification.
+- review updates: independent fresh-directory and c77 contract reviews are accepted within their scopes; native `dd4eb82a` closes NS1–NS4 with four targeted tests, but its public-bridge parent and Herdr remain separate. Coordinator owns assembly/gates/delivery; reviewers own source verdicts.
+- next: commit the assembled candidate locally, run the coherent integration gates, and push normally only on readiness. The corrected standalone gate separately uses reviewer-confirmed non-Git isolation; the earlier failed run is preserved.
+
+## Standalone gate result and independent review ownership (2026-09-17)
+- gate: exact `ec5d767` complete run finished 149 pass / 121 fail / four skips; archived source unchanged. Many failures report directory-store Git custody against the surrounding repository. The assigned reviewer is triaging harness temp placement versus product behavior with at most two targeted cases; no blind full rerun, guard weakening or source-main push.
+- ownership: independent reviewers own source/contract verdicts; coordinator owns sequencing, integration, combined gates and delivery, not source review or code-failure diagnosis. Earlier coordinator-only fresh-directory checks remain evidence, with independent confirmation assigned. Existing reviewer-issued scope acceptances remain valid.
+- follow-up: preserve the failed run and obtain explicit corrected gate conditions or a developer-owned fix before rerunning. No new product defect count or deployment qualification is inferred solely from the failed harness run.
+
+## Provider index-copy residuals — closed; complete gate started (2026-09-17)
+- verdict: ACCEPTED exact `ec5d767` for both residual index-copy P2s. Ten named regressions pass under isolated Node 22/Git 2.44; no new findings. Supplied patch, touched base blobs and applicability to the original reviewed helper are independently verified. No whole c24 wire/provider lineage or runtime qualification follows from that scope.
+- behavior: native parsing uses an empty private Git context before rejecting split dependencies; bounded regular-descriptor acquisition refuses special/raced/oversized inputs without reading rejected sources. Original index/backing metadata and independent publication mode remain intact; no timestamp restoration, silent flattening or new parser.
+- next: coordinator fast-forwarded its isolated provider integration tree to this exact candidate and started one complete isolated standalone gate. Final result/source integrity remain pending; no main push, tag, release, helper launch or private-provider claim.
+
+## Fresh directory-witness successor — scoped acceptance (2026-09-17)
+- verdict: ACCEPTED `f92ca993` plus `bba25ca4` documentation within their narrow delta. Two new root-replacement/provisioning regressions passed in an isolated exact archive; reviewed code/test blobs remained exact. No blocking finding, no repeated full suite or whole-branch/migration approval.
+- behavior: ephemeral issued-inspection witnesses bind deployment or absent-path parent and work-directory identities; recheck before the existing mutation adapter, preserve ordinary project edits, require reinspection after replacement/provisioning. No public-schema/registry/resolver authority is added. This is a point-in-time check, not a lock against hostile concurrent writers or a substitute for core custody.
+- follow-up: source integration and coherent gates remain coordinator-owned; no runtime/provider/release qualification follows from this acceptance.
+
+## Native first-placement authority — peer finding routed (2026-09-17)
+- verdict: RETURNED within the native `2a3d785c` candidate scope. Static peer analysis identifies explicit/admitted endpoint A being displaced by residual fresh-home tmux metadata B through the reused never-launched allocator path. No counterexample was executed by that reviewer and no existing-target stop is claimed.
+- follow-up: lifecycle owner must reject contradictory residual placement before provider/backend calls and preserve the exact admitted endpoint through allocation. Add a narrow inert negative checking actual socket/session/window arguments; native reviewer corroborates without duplicating the issue. No new backend, metadata backfill or uncertain-effect replay authority is permitted.
+- boundary: approved earlier admission/curriculum/request integration and provider index pins remain separate. Core dispatch acceptance is not model/helper completion, captured-Pi qualification or privacy. Completed replay's provider inspection is a separate documented behavior note, not proof of no-provider-code replay.
+
 ## Fresh review queue — scoped closure and return (2026-09-17)
 - verdict: ACCEPTED the workspace-presence fix `0a1c143`, resource-only `36b0aa00`, request leaf `8822ccce` and pinned public fixture/docs through `f9292253`; no whole migration ancestry or production qualification. Exact archived execution: 14 selected tests passed, no findings.
 - lifecycle verdict: RETURNED exact `257c4b96` plus the supplied fix-only patch through `edb143cd`, excluding launch-input ancestry. Independent patch/archive equality verified; ten final selected tests passed. Retry-reference, error-rendering and current-view-receipt findings are scoped closed. Residual static findings: failure reporting lacks an expected lifecycle-status transition, and a post-hook index read can bypass observed-fact/error reporting. Owner received narrow correction scope; no changed-row overwrite or terminal-ready inference is permitted.

@@ -1,16 +1,20 @@
 ---
 name: oats-packages
 description: >-
-  How to acquire, lock, restore, trust, update, remove, and migrate OATS
-  distribution packages with the oats CLI. Use for package sources (git/local/
-  official catalog), oats-lock.json v2, all-or-nothing scope migration, exact restore,
-  per-capability executable trust, runtime dependency closures, or package
-  doctor failures. Triggers: "install a package", "oats install", "oats list",
-  "oats update", "oats remove", "oats migrate", "oats trust", "lockfileVersion",
-  "integrity drift", "package won't restore".
+  Use only for legacy uncaptured OATS package acquisition and mutable installed
+  store operations: oats install/update/remove, lock v1/v2, restore, migration,
+  and legacy trust. Triggers: "legacy package", "uncaptured oats install",
+  "oats-lock v2", or "legacy migration". For retained artifact-set/resolution
+  approval and diagnostics, load oats-portable-artifacts instead.
 ---
 
-# OATS distribution packages
+# Legacy uncaptured OATS distribution packages
+
+> **Legacy-only procedure.** The mutable installed store and lock v1/v2 flows
+> below prepare uncaptured deployments. They are not authority for an existing
+> captured resolution. Use **oats-portable-artifacts** for exact retained
+> inspection/approval; never restore or advance captured code through today's
+> lock or installed capability directory.
 
 A **package** is the install/update/review unit: one git repo (or local dir)
 with an `oats-package.json` exporting one or more **capabilities** (the

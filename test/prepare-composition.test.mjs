@@ -1,13 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, runCapturedProviderBinding, runCapturedLifecycleHooks, withCapturedBindingFile } from '../lib/core.mjs';
-import { readCapturedResolution } from '../lib/captured-resolutions.mjs';
+import { activateCapturedScaffold, admitCapturedAction, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
+import { commitCapturedResolution, readCapturedResolution } from '../lib/captured-resolutions.mjs';
+import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
+import { validateWire } from './helpers/portable-schema-check.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
   const root=mkdtempSync(join(tmpdir(),'oats-prepare-composition-')),repo=join(root,'repo'),deployment=join(root,'deployment');
@@ -20,7 +24,7 @@ function fixture(t, provider=false) {
   write('agents/expert/AGENTS.md','Expert instructions\n');symlinkSync('AGENTS.md',join(repo,'agents/expert/CLAUDE.md'));
   write('packages/action/oats-package.json',JSON.stringify({package:'example.package',version:'1.0.0',description:'Fixture',compatibility:{oats:'>=0.1.0'},capabilities:['cap']}));
   write('packages/action/cap/oats.json',JSON.stringify({capability:id,version:'1.0.0',description:'Fixture',command:'example-action',commands:{show:'show.mjs'},hooks:{spawn:{command:'./show.mjs',required:true}},settings:{limit:{default:3}},inject:'inject.md',skills:['skills/procedure'],agents:['agents/worker'],...(provider?{layer:'knowledge'}:{})}));
-  write('packages/action/cap/show.mjs','console.log("A");\n');write('packages/action/cap/inject.md','Capability instructions\n');
+  write('packages/action/cap/show.mjs','if(process.env.FAIL_CAPTURED_HOOK){console.log(JSON.stringify({meta:{created:true},warning:"fixture hook failed after effect"}));process.exit(1);}console.log("A");\n');write('packages/action/cap/inject.md','Capability instructions\n');
   write('packages/action/cap/skills/procedure/SKILL.md','# Procedure\n');
   write('packages/action/cap/agents/worker/soul.yaml','schemaVersion: 1\nname: worker\nwork: directory\n');
   write('packages/action/cap/agents/worker/AGENTS.md','Worker instructions\n');symlinkSync('AGENTS.md',join(repo,'packages/action/cap/agents/worker/CLAUDE.md'));
@@ -40,18 +44,250 @@ test('native preparation publishes complete source/curriculum/helper records, th
   const record=readCapturedResolution(f.deployment,result.resolution);
   assert.equal(record.choices['/settings/example.action/limit'].value,3);
   assert.ok(record.helpers['example.action:worker']);
-  assert.equal(record.dispatch.composition.skills.length,4);
+  assert.deepEqual(record.dispatch.composition.skills.map(skill=>skill.name).sort(),['oats-portable','oats-portable-artifacts','oats-portable-setup','procedure']);
+  assert.equal(record.dispatch.composition.skills.some(skill=>['oats','oats-config','oats-packages'].includes(skill.name)),false);
   assert.equal(record.dispatch.launch,null,'command/curriculum preparation does not invent a launch recipe');
+  const scaffoldParent=join(realpathSync(f.root),'scaffolds');mkdirSync(scaffoldParent);const scaffoldHome=join(scaffoldParent,'imported-expert-1');
+  assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'}),{code:'approval-required'});
+  assert.equal(existsSync(scaffoldHome),false,'blocked scaffold creates no home');
   rmSync(f.repo,{recursive:true});
   approveAvailableCapability(f.deployment,result.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'});
+  assert.equal(scaffold.hooksPending,true);assert.equal(scaffold.responsibleHuman,null);assert.equal(scaffold.executionBinding.resolution.id,result.resolution.id);
+  assert.equal(readFileSync(join(scaffoldHome,'AGENTS.md'),'utf8').startsWith('Expert instructions'),true);assert.equal(existsSync(join(scaffoldHome,'work')),true);
+  assert.ok(realpathSync(join(scaffoldHome,'soul')).includes('.agents/soul-artifacts/'),'home soul points to retained custody, not deleted source');
+  const scaffoldMeta=JSON.parse(readFileSync(join(scaffoldHome,'instance.json'),'utf8'));assert.equal(scaffoldMeta.captured.lifecycle,'scaffolded-hooks-pending');
+  assert.equal(scaffoldMeta.executionBinding.resolution.id,result.resolution.id);assert.equal(existsSync(join(scaffoldHome,'.agents/skills/procedure/SKILL.md')),true);
+  assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'}),{code:'E_INSTANCE_EXISTS'});
+  const activated=activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome});
+  assert.equal(activated.launchPending,true);assert.deepEqual(activated.hooks.order,[f.id]);
+  assert.equal(JSON.parse(readFileSync(join(scaffoldHome,'instance.json'),'utf8')).captured.lifecycle,'spawned-launch-pending');
+  const failedHome=join(scaffoldParent,'imported-expert-2');scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:failedHome,instance:'imported-expert-2'});
+  assert.throws(()=>activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome,extraEnv:{FAIL_CAPTURED_HOOK:'1'}}),error=>error.code==='E_REQUIRED_HOOK_FAILED'&&error.home===failedHome);
+  const failedMeta=JSON.parse(readFileSync(join(failedHome,'instance.json'),'utf8'));
+  assert.equal(failedMeta.captured.lifecycle,'spawn-failed-cleanup-required');assert.equal(failedMeta.capabilityMeta[f.id].created,true);assert.equal(existsSync(failedHome),true);
+  const indexed=readCapturedInstanceIndex(f.deployment).instances;
+  assert.deepEqual(indexed.map(row=>[row.instance,row.status]),[['imported-expert-1','spawned-launch-pending'],['imported-expert-2','spawn-failed-cleanup-required']]);
+  assert.notEqual(scaffoldMeta.incarnationId,failedMeta.incarnationId,'identical composition has independently minted incarnations');
+  assert.equal(indexed[0].incarnationId,scaffoldMeta.incarnationId);assert.equal(indexed[1].intents[0].state,'unconfirmed');
+  const firstIntent=failedMeta.captured.hookIntents[f.id];
+  assert.throws(()=>activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome}),{code:'invalid-resolution'});
+  const retried=activateCapturedScaffold({deployment:f.deployment,resolution:result.resolution,home:failedHome,retryIntents:{[f.id]:firstIntent.executionId}});
+  assert.equal(retried.incarnationId,failedMeta.incarnationId);assert.equal(retried.hooks.intents[f.id].executionId,firstIntent.executionId);assert.equal(retried.hooks.intents[f.id].attempt,2);
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances[1].intents.length,1,'retry never creates a replacement logical request');
   const action=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'command',namespace:'example-action',name:'show'}});
   assert.equal(execFileSync(process.execPath,[action.executable.file,...action.executable.args],{encoding:'utf8'}).trim(),'A');
-  const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'}});
+  const hook=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'hook',capability:f.id,name:'spawn'},
+    invocationTarget:{home:scaffoldHome,work:join(scaffoldHome,'work'),name:'imported-expert-1',agent:'imported-expert'}});
   assert.equal(hook.executable.file,action.executable.file); assert.deepEqual(hook.executable.args,[]);
   const helper=loadCapturedDispatch({deployment:f.deployment,resolution:record.helpers['example.action:worker'],action:{kind:'compose'}});
   assert.ok(helper.composition.text.startsWith('Worker instructions'));
-  assert.ok(loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition.text.includes('Capability instructions'));
+  const helperCommand=loadCapturedDispatch({deployment:f.deployment,resolution:record.helpers['example.action:worker'],action:{kind:'command',capability:f.id,name:'show'}});
+  assert.deepEqual(helperCommand.invocation.subject,structuredClone(helper.record.subject),'helper invocation retains exact provider artifact and definition, not an alias-derived identity');
+  const capturedComposition=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition;
+  assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
+  assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
+test('activation never publishes or cleans through home/work replacement during a retained hook',t=>{
+  const f=fixture(t),root=realpathSync(f.root);
+  f.write('packages/action/cap/show.mjs',`import {readFileSync,renameSync,symlinkSync} from 'node:fs';
+    const e=process.env,invocation=JSON.parse(readFileSync(e.OATS_INVOCATION_CONTEXT_FILE,'utf8'));
+    const target=e.FA1_MODE.startsWith('work')?e.OATS_INSTANCE_HOME+'/work':e.OATS_INSTANCE_HOME;
+    renameSync(target,target+'.preserved');
+    if(e.FA1_MODE.endsWith('link'))symlinkSync(e.FA1_FOREIGN,target);else renameSync(e.FA1_FOREIGN,target);
+    console.log(JSON.stringify({meta:{observedResource:'resource-before-custody-loss',incarnationId:invocation.instance.incarnationId,executionId:invocation.intent.executionId}}));
+    if(e.FA1_EXIT)process.exitCode=1;`);
+  f.git('add','.');f.git('commit','--quiet','-m','replacement during retained hook');
+  const prepared=prepareCapturedComposition(f.input,f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  for(const mode of ['home-dir','home-link','work-dir','work-link']){
+    const home=join(root,mode),foreign=join(root,`foreign-${mode}`);mkdirSync(foreign);
+    const foreignBytes=Buffer.from('foreign metadata, deliberately not JSON\n');writeFileSync(join(foreign,'instance.json'),foreignBytes);
+    const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:mode});
+    const originalBytes=readFileSync(join(home,'instance.json'));let failure;
+    try{activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home,extraEnv:{FA1_MODE:mode,FA1_FOREIGN:foreign,...(mode.endsWith('link')?{FA1_EXIT:'1'}:{})}});}catch(error){failure=error;}
+    assert.equal(failure?.code,'integrity-drift');assert.equal(failure.home,home);
+    const foreignAt=mode.endsWith('link')?foreign:mode.startsWith('home')?home:join(home,'work');
+    assert.deepEqual(readFileSync(join(foreignAt,'instance.json')),foreignBytes,'foreign metadata is byte-identical');
+    const originalAt=mode.startsWith('home')?`${home}.preserved`:home;
+    assert.deepEqual(readFileSync(join(originalAt,'instance.json')),originalBytes,'lost-custody path never publishes even on catch');
+    const row=readCapturedInstanceIndex(f.deployment).instances.find(entry=>entry.incarnationId===scaffold.incarnationId);
+    assert.equal(row.status,'spawn-failed-cleanup-required');assert.equal(row.intents[0].state,'unconfirmed');
+    assert.equal(row.intents[0].receipt.observedResource,'resource-before-custody-loss');assert.equal(row.custodyFailure.code,'integrity-drift');
+    assert.equal(failure.capturedCustody.meta[f.id].executionId,row.intents[0].executionId,'independent reporting retains the exact observed provider receipt');
+  }
+});
+
+test('activation failure reporting cannot overwrite a newer lifecycle row or receipt',t=>{
+  const f=fixture(t),root=realpathSync(f.root),indexFile=join(realpathSync(f.deployment),'.agents/portable/instance-references.json');
+  const savedIndex=join(root,'newer-index.json'),savedMetadata=join(root,'newer-metadata.json');
+  f.write('packages/action/cap/show.mjs',`import {readFileSync,writeFileSync} from 'node:fs';
+    const invocation=JSON.parse(readFileSync(process.env.OATS_INVOCATION_CONTEXT_FILE,'utf8'));
+    const index=JSON.parse(readFileSync(${JSON.stringify(indexFile)},'utf8')),row=index.instances.find(row=>row.incarnationId===invocation.instance.incarnationId);
+    const intent=row.intents.find(item=>item.executionId===invocation.intent.executionId);row.status='retire-running';intent.state='completed';intent.receipt={newer:'must-remain'};intent.replayable=true;
+    const bytes=JSON.stringify(index)+'\\n';writeFileSync(${JSON.stringify(indexFile)},bytes);writeFileSync(${JSON.stringify(savedIndex)},bytes);
+    const file=process.env.OATS_INSTANCE_HOME+'/instance.json',metadata=JSON.parse(readFileSync(file,'utf8'));metadata.captured.lifecycle='retire-running';
+    const meta=JSON.stringify(metadata)+'\\n';writeFileSync(file,meta);writeFileSync(${JSON.stringify(savedMetadata)},meta);
+    console.log(JSON.stringify({meta:{observed:'from-earlier-spawn'}}));`);
+  f.git('add','.');f.git('commit','--quiet','-m','newer lifecycle during hook');
+  const prepared=prepareCapturedComposition(f.input,f.options);approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const home=join(root,'newer-state');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'newer-state'});
+  let failure;try{activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});}catch(error){failure=error;}
+  assert.equal(failure?.code,'selection-changed');assert.equal(failure.home,home);
+  assert.equal(failure.capturedCustody.reportingFailure.code,'selection-changed');assert.equal(failure.capturedCustody.meta[f.id].observed,'from-earlier-spawn');
+  assert.deepEqual(readFileSync(indexFile),readFileSync(savedIndex),'newer row/status/receipt remains byte-identical');
+  assert.deepEqual(readFileSync(join(home,'instance.json')),readFileSync(savedMetadata),'publication does not clobber newer owned metadata either');
+});
+
+test('post-hook classification read failure preserves observed facts even when independent reporting fails',t=>{
+  const f=fixture(t),root=realpathSync(f.root),indexFile=join(realpathSync(f.deployment),'.agents/portable/instance-references.json');
+  f.write('packages/action/cap/show.mjs','console.log(JSON.stringify({meta:{observed:"settled-before-index-fault"}}));\n');
+  f.git('add','.');f.git('commit','--quiet','-m','observed classification receipt');
+  const prepared=prepareCapturedComposition(f.input,f.options);approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  for(const reportAlsoFails of [false,true]){
+    const instance=reportAlsoFails?'classification-report-fails':'classification-only',home=join(root,instance);
+    scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance});const before=readFileSync(join(home,'instance.json'));
+    let fired=false,failure;const original=fs.lstatSync;
+    // Controlled reader-boundary fault, not a claim of a real OS I/O failure.
+    fs.lstatSync=(path,...args)=>{
+      if(path===indexFile){
+        const direct=/at readCapturedInstanceIndex [^\n]*\n\s+at activateCapturedScaffold /.test(new Error().stack);
+        if(direct||fired&&reportAlsoFails){fired=true;throw Object.assign(new Error('synthetic post-hook index read failure'),{code:'E_TEST_INDEX_READ'});}
+      }
+      return original(path,...args);
+    };syncBuiltinESMExports();
+    try{activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});}catch(error){failure=error;}
+    finally{fs.lstatSync=original;syncBuiltinESMExports();}
+    assert.equal(fired,true,'fault reached the direct post-hook classification boundary');assert.equal(failure?.code,'E_TEST_INDEX_READ');assert.equal(failure.home,home);
+    assert.equal(failure.capturedCustody.meta[f.id].observed,'settled-before-index-fault');
+    const row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);
+    assert.equal(failure.capturedCustody.intents[f.id].executionId,row.intents[0].executionId);
+    assert.equal(row.intents[0].receipt.observed,'settled-before-index-fault');
+    assert.equal(row.status,reportAlsoFails?'spawn-hooks-running':'spawn-failed-cleanup-required');
+    if(reportAlsoFails)assert.equal(failure.capturedCustody.reportingFailure.code,'E_TEST_INDEX_READ');else assert.ok(failure.capturedCustody.report);
+    assert.deepEqual(readFileSync(join(home,'instance.json')),before,'unavailable classification cannot publish terminal metadata');
+  }
+});
+
+test('explicit empty activation retry and later preflight failure preserve indexed spawn references',t=>{
+  const f=fixture(t),root=realpathSync(f.root),bin=join(root,'host-bin'),host=join(bin,'oats-fa2-fixture-host');mkdirSync(bin);
+  const previousPath=process.env.PATH;process.env.PATH=`${bin}:${previousPath}`;t.after(()=>{process.env.PATH=previousPath;});
+  const manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json'),'utf8'));manifest.requires=[{command:'oats-fa2-fixture-host'}];
+  f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','host preflight requirement');
+  const prepared=prepareCapturedComposition(f.input,f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const makeHost=()=>{writeFileSync(host,'#!/bin/sh\nexit 0\n');chmodSync(host,0o755);};
+  const home=join(root,'preflight-empty');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'preflight-empty'});
+  const activate=(target,options={})=>activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home:target,...options});
+  assert.throws(()=>activate(home),{code:'E_REQUIRED_HOOK_FAILED'});
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home).intents.length,0);
+  assert.deepEqual(JSON.parse(readFileSync(join(home,'instance.json'),'utf8')).captured.hookIntents,{});
+  makeHost();assert.throws(()=>activate(home),{code:'invalid-resolution'});
+  const emptyRetry=activate(home,{retryIntents:{}});assert.equal(emptyRetry.hooksPending,false);assert.equal(emptyRetry.hooks.intents[f.id].attempt,1);
+  const later=join(root,'preflight-existing');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:later,instance:'preflight-existing'});
+  assert.throws(()=>activate(later,{extraEnv:{FAIL_CAPTURED_HOOK:'1'}}),{code:'E_REQUIRED_HOOK_FAILED'});
+  const readMeta=()=>JSON.parse(readFileSync(join(later,'instance.json'),'utf8'));
+  const saved=readMeta().captured.hookIntents[f.id],retryIntents={[f.id]:saved.executionId};
+  assert.throws(()=>activate(later,{retryIntents:{}}),{code:'invalid-resolution'},'empty retry cannot remint over an existing obligation');
+  rmSync(host);assert.throws(()=>activate(later,{retryIntents}),{code:'E_REQUIRED_HOOK_FAILED'});
+  assert.deepEqual(readMeta().captured.hookIntents[f.id],saved,'preflight failure preserves the exact saved ref');
+  assert.equal(readMeta().capabilityMeta[f.id].created,true);
+  makeHost();const retried=activate(later,{retryIntents});assert.equal(retried.hooks.intents[f.id].executionId,saved.executionId);assert.equal(retried.hooks.intents[f.id].attempt,2);
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===later).intents.length,1);
+});
+
+test('optional hook failure reports nonterminal custody and public spawn retains a usable exact retry route',t=>{
+  const f=fixture(t),root=realpathSync(f.root),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json'),'utf8'));
+  manifest.hooks.spawn.required=false;f.write('packages/action/cap/oats.json',JSON.stringify(manifest));
+  f.write('packages/action/cap/show.mjs',`import {existsSync,writeFileSync} from 'node:fs';const file=process.env.OATS_INSTANCE_HOME+'/work/attempted';
+    const retry=existsSync(file);writeFileSync(file,'owned effect');console.log(JSON.stringify({meta:{observed:true,reconciled:retry}}));if(!retry)process.exitCode=1;`);
+  f.git('add','.');f.git('commit','--quiet','-m','optional hook custody');
+  const prepared=prepareCapturedComposition(f.input,f.options);approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const home=join(root,'optional-only'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  const spawned=JSON.parse(execFileSync(process.execPath,[cli,'spawn','imported-expert','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--no-launch','--json'],{encoding:'utf8'}));
+  assert.equal(spawned.ok,true,'optional functionality does not become a required-hook failure');
+  assert.equal(spawned.result.hooksPending,true);assert.equal(spawned.result.cleanupRequired,true);
+  const row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(row.status,'spawned-cleanup-required');assert.equal(row.intents[0].state,'unconfirmed');
+  const metadata=JSON.parse(readFileSync(join(home,'instance.json'),'utf8'));assert.equal(metadata.captured.lifecycle,row.status);assert.equal(metadata.captured.hookFailures[0].required,false);
+  const saved=spawned.result.hookIntents[f.id];
+  assert.throws(()=>admitCapturedAction({deployment:f.deployment,resolution:prepared.resolution,home,action:{kind:'command',capability:f.id,name:'show'}}),{code:'selection-changed'},'optional semantics do not waive unsettled custody');
+  const result=activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home,retryIntents:{[f.id]:saved.executionId}});
+  assert.equal(result.cleanupRequired,false);assert.equal(result.hooksPending,false);assert.equal(result.hooks.meta[f.id].reconciled,true);
+  assert.equal(result.hooks.intents[f.id].executionId,saved.executionId);assert.equal(result.hooks.intents[f.id].attempt,2);
+  const done=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(done.status,'spawned-launch-pending');assert.equal(done.intents.length,1);assert.equal(done.intents[0].state,'completed');
+});
+
+test('full retained persistent/helper curriculum selects portable boundaries without legacy authority',t=>{
+  const f=fixture(t),prepared=prepareCapturedComposition(f.input,f.options),record=readCapturedResolution(f.deployment,prepared.resolution);
+  const nonDirectory=prepareCapturedComposition({...f.input,mode:'worktree'},f.options);
+  const originalBoundary=readFileSync(new URL('../injects/portable-instance-boundary.md',import.meta.url));
+  const originalDirectory=readFileSync(new URL('../injects/portable-work-directory.md',import.meta.url));
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned current configuration');
+  let retainedBoundary;
+  for(const resolution of [prepared.resolution,record.helpers['example.action:worker']]){
+    const loaded=loadCapturedDispatch({deployment:f.deployment,resolution,action:{kind:'compose'}}),text=loaded.composition.text;
+    validateWire('CapturedResolution',loaded.record);
+    const blocks=loaded.record.dispatch.composition.blocks;
+    assert.deepEqual(blocks.slice(0,3).map(block=>block.source),['kernel:oats-portable','kernel:instance-boundary','work-mode:directory'],'labels and order stay stable');
+    const boundary=blocks.find(block=>block.source==='kernel:instance-boundary').resource,directory=blocks.find(block=>block.source==='work-mode:directory').resource;
+    assert.equal(loaded.record.resources[boundary].path,'injects/portable-instance-boundary.md');
+    assert.equal(loaded.record.resources[directory].path,'injects/portable-work-directory.md');
+    retainedBoundary=loaded.resources.get(boundary);
+    assert.deepEqual(readFileSync(retainedBoundary),originalBoundary);assert.deepEqual(readFileSync(loaded.resources.get(directory)),originalDirectory);
+    assert.equal(existsSync(join(retainedBoundary,'..','instance-boundary.md')),false,'captured inventory excludes the old boundary');
+    assert.equal(existsSync(join(retainedBoundary,'..','work-directory.md')),false,'captured inventory excludes old directory doctrine');
+    assert.ok(text.includes(originalBoundary.toString('utf8').trim()));assert.ok(text.includes(originalDirectory.toString('utf8').trim()));
+    assert.match(text,/instance\.json\.executionBinding/);assert.match(text,/CLAUDE\.md -> AGENTS\.md/);
+    assert.match(text,/read-only retained source link/);assert.match(text,/instance-owned execution directory/);
+    assert.match(text,/cwd and a recorded `repo` path never select configuration/);
+    assert.match(text,/does not promise\s+implemented captured launch/);assert.match(text,/Missing authority is a hold/);
+    assert.doesNotMatch(text,/They resolve their\s+scope from the directory/);
+    assert.doesNotMatch(text,/context recorded as `repo` supplies configuration/);
+    assert.doesNotMatch(text,/Retirement removes the execution directory only after/);
+    assert.doesNotMatch(text,/oats (?:status|doctor|retire|session (?:start|restart))\b/);
+  }
+  const other=loadCapturedDispatch({deployment:f.deployment,resolution:nonDirectory.resolution,action:{kind:'compose'}});
+  const otherBlock=other.record.dispatch.composition.blocks.find(block=>block.source==='work-mode:worktree');
+  assert.equal(other.record.resources[otherBlock.resource].path,'injects/work-worktree.md','other modes are not silently remapped to directory');
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const unsupported=join(realpathSync(f.root),'unsupported-worktree');
+  assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:nonDirectory.resolution,home:unsupported,instance:'unsupported-worktree'}),{code:'needs-configuration'});assert.equal(existsSync(unsupported),false);
+  rmSync(retainedBoundary);
+  assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'compose'}}),{code:'integrity-drift'},'missing retained boundary cannot fall back to the current package');
+});
+
+test('source helper lookup preserves dedicated A/B authority without source or current selection',t=>{
+  const f=fixture(t),a=prepareCapturedComposition(f.input,f.options),key='example.action:worker';
+  const aRecord=readCapturedResolution(f.deployment,a.resolution),aHelper=aRecord.helpers[key];
+  f.write('packages/action/cap/agents/worker/AGENTS.md','Helper B instructions\n');
+  f.git('add','.');f.git('commit','--quiet','-m','helper B');
+  const b=prepareCapturedComposition(f.input,f.options),bHelper=readCapturedResolution(f.deployment,b.resolution).helpers[key];
+  assert.notEqual(aHelper.id,bHelper.id);assert.notEqual(a.resolution.id,aHelper.id);
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned config');writeFileSync(join(f.deployment,'oats-lock.json'),'poisoned lock');
+  const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  for(const [source,helper,text] of [[a,aHelper,'Worker instructions'],[b,bHelper,'Helper B instructions']]) {
+    const resolved=resolveCapturedHelper({executionBinding:source.executionBinding,helper:key,name:'worker'});
+    assert.equal(resolved.sourceExecutionBinding.resolution.id,source.resolution.id);assert.equal(resolved.executionBinding.resolution.id,helper.id);
+    assert.equal(resolved.helper.subject.kind,'helper');assert.equal(resolved.helper.subject.provider.capability,'example.action');
+    assert.equal(resolved.workMode,'directory');assert.equal(resolved.launch.status,'unsupported');assert.equal(resolved.responsibleHuman,null);
+    const result=spawnSync(process.execPath,[cli,'inspect','--deployment',f.deployment,'--resolution',source.resolution.id,'--helper',key,'--composition','--json'],{encoding:'utf8'});
+    assert.equal(result.status,0,result.stdout||result.stderr);const receipt=JSON.parse(result.stdout).result;
+    assert.equal(receipt.resolution.id,helper.id);assert.equal(receipt.helperSelection.sourceExecutionBinding.resolution.id,source.resolution.id);
+    assert.ok(receipt.composition.text.startsWith(text));
+  }
+  for(const helper of ['missing','constructor','__proto__']) assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper}),{code:'helper-not-selected'});
+  assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper:key,name:'different'}),{code:'invalid-resolution'});
+  const differentContext=structuredClone(readCapturedResolution(f.deployment,aHelper));differentContext.context={kind:'standalone',key:'other-helper-context'};
+  const differentRef=commitCapturedResolution(f.deployment,differentContext),sourceWithDifferent=structuredClone(aRecord);sourceWithDifferent.helpers[key]=differentRef;
+  const differentSource=commitCapturedResolution(f.deployment,sourceWithDifferent);
+  assert.throws(()=>resolveCapturedHelper({executionBinding:{...a.executionBinding,resolution:differentSource},helper:key}),{code:'needs-configuration'},'distinct context is held until explicit helper-request policy, never overwritten');
+  assert.equal(existsSync(join(f.deployment,'.agents','portable','instance-references.json')),false,'helper inspection admits no incarnation');
+  assert.equal(existsSync(join(f.deployment,'oats-schedules.json')),false,'helper inspection schedules nothing');
+  rmSync(join(f.deployment,'.agents','resolutions',`${aHelper.id}.json`));
+  assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper:key}));
+  assert.equal(resolveCapturedHelper({executionBinding:b.executionBinding,helper:key}).executionBinding.resolution.id,bHelper.id,'missing A cannot reselect B');
+});
+
 test('helper-authored provider policy refuses before helper or parent records can inherit the parent binding',t=>{
   const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
@@ -75,6 +311,16 @@ test('helper-authored provider policy refuses before helper or parent records ca
   assert.equal(existsSync(join(f.deployment,'.agents','resolutions')),false,'neither a contradictory helper nor a parent record was published');
 });
 
+test('standalone context key is explicit, opaque and preserved without workspace inference',t=>{
+  const f=fixture(t),key='provider-context:opaque/one';
+  const keyed=prepareCapturedComposition({...f.input,standaloneContextKey:key},f.options);
+  assert.equal(readCapturedResolution(f.deployment,keyed.resolution).context.key,key);
+  const disabled=prepareCapturedComposition({...f.input,standaloneContextKey:null},f.options);
+  assert.equal(readCapturedResolution(f.deployment,disabled.resolution).context.key,null);
+  assert.throws(()=>prepareCapturedComposition({...f.input,standaloneContextKey:''},f.options),{code:'invalid-declaration'});
+  assert.throws(()=>prepareCapturedComposition({...f.input,workspace:{source:f.input.source.source},standaloneContextKey:key},f.options),{code:'invalid-declaration'});
+});
+
 test('public prepare CLI uses the native transport and returns the exact immutable binding',t=>{
   const f=fixture(t),ssh=join(f.root,'fixture-ssh');
   // Native SSH transport with a controlled upload-pack endpoint: no network,
@@ -88,6 +334,46 @@ test('public prepare CLI uses the native transport and returns the exact immutab
   assert.equal(envelope.result.status,'approval-required');assert.equal(envelope.result.source.alias,'cli-expert');
   assert.equal(envelope.result.executionBinding.resolution.id,envelope.result.resolution.id);
   assert.equal(readCapturedResolution(f.deployment,envelope.result.resolution).subject.soul.alias,'cli-expert');
+  f.write('oats-workspace.yaml',JSON.stringify({schemaVersion:1,name:'Fixture',imports:[{source:'git:ssh://example.invalid/prepare.git',revision:'topic',soul:'agents/expert',alias:'workspace-expert'}]}));
+  f.git('add','.');f.git('commit','--quiet','-m','workspace flag control');
+  const workspace=JSON.parse(execFileSync(process.execPath,[cli,'prepare','--dir',f.deployment,'--workspace','git:ssh://example.invalid/prepare.git','--workspace-revision','topic','--alias','workspace-expert','--work','directory','--json'],{
+    encoding:'utf8',env:{...f.options.repositoryOptions.environment,GIT_SSH_COMMAND:ssh,GIT_SSH_VARIANT:'ssh'},
+  }));
+  assert.equal(workspace.ok,true);assert.equal(readCapturedResolution(f.deployment,workspace.result.resolution).context.kind,'workspace');
+});
+
+test('public request-file preparation preserves operator bindings and explicit contexts under poisoned inherited selectors',t=>{
+  const f=fixture(t,true),root=realpathSync(f.root),ssh=join(root,'request-ssh'),phaseLog=join(root,'phases');
+  const manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json'),'utf8'));
+  manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
+  f.write('packages/action/cap/oats.json',JSON.stringify(manifest));
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync,appendFileSync} from 'node:fs';
+    const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location';appendFileSync(${JSON.stringify(phaseLog)},r.phase+'\\n');let result;
+    if(r.phase==='normalize'){const operator=r.input.declarations.find(entry=>entry.kind==='operator');result={requirements:[],candidates:[{key,kind:'operator',value:operator.value.bindings.location,origin:operator.origins['/bindings/location']}],model:{}};}
+    else if(r.phase==='bind')result={payloadContract:'example.locations',payloadVersion:1,payload:{location:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
+    else result={status:'ready',problems:[]};console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
+  f.git('add','.');f.git('commit','--quiet','-m','request-file provider');const revision=f.git('rev-parse','HEAD');
+  writeFileSync(ssh,`#!/bin/sh\nexec git-upload-pack '${f.repo.replaceAll("'", "'\\''")}'\n`);chmodSync(ssh,0o700);
+  const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),environment={...f.options.repositoryOptions.environment,GIT_SSH_COMMAND:ssh,GIT_SSH_VARIANT:'ssh',
+    OATS_DEPLOYMENT:'malformed-inherited-deployment',OATS_RESOLUTION:'malformed-inherited-resolution',OATS_INSTANCE:'foreign-instance',PI_AGENT_HOME:'/foreign-home'};
+  for(const [label,key] of [['keyed','κ'.repeat(128)],['null',null]]){
+    const deployment=join(root,`request-${label}`);mkdirSync(deployment);
+    const request={...f.input,deployment,source:{...f.input.source,source:'git:ssh://example.invalid/prepare.git',alias:'request-expert'},standaloneContextKey:key,
+      operator:{policy:{},document:{kind:'operator',id:'request-fixture'},bindings:{location:'explicit-operator-location'}}};
+    const file=join(root,`${label}.json`);writeFileSync(file,JSON.stringify(request),{mode:0o600});
+    const before=existsSync(phaseLog)?readFileSync(phaseLog,'utf8'):'';
+    const pending=spawnSync(process.execPath,[cli,'prepare','--request',file,'--json'],{encoding:'utf8',env:environment});
+    assert.equal(pending.status,1,pending.stderr);const incomplete=JSON.parse(pending.stdout).error;
+    assert.equal(incomplete.code,'needs-configuration');assert.equal(incomplete.details.problems[0].code,'approval-required');
+    assert.equal(existsSync(phaseLog)?readFileSync(phaseLog,'utf8'):'',before,'unapproved provider phases do not run');
+    approveAvailableCapability(deployment,incomplete.details.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+    const prepared=JSON.parse(execFileSync(process.execPath,[cli,'prepare','--request',file,'--json'],{encoding:'utf8',env:environment}));
+    assert.equal(prepared.ok,true);assert.equal(prepared.result.status,'prepared');assert.equal(prepared.result.source.revision,revision);
+    const record=readCapturedResolution(deployment,prepared.result.resolution);
+    assert.deepEqual(structuredClone(record.context),{kind:'standalone',key});assert.equal(record.subject.soul.alias,'request-expert');
+    assert.equal(record.bindings.knowledge.payload.location,'explicit-operator-location');assert.equal(record.choices['/bindings/knowledge/location'].selectedBy.document.id,'request-fixture');
+    assert.deepEqual(JSON.parse(readFileSync(file,'utf8')),request,'transport does not rewrite or strip the request');
+  }
 });
 
 test('prepare-on-tick uses the real core adapter and captured CLI without injected preparation or admission',t=>{
@@ -150,20 +436,28 @@ test('preparation resolves approved provider fields in the same engine and never
   const f=fixture(t,true),manifestFile=join(f.repo,'packages/action/cap/oats.json'),soulFile=join(f.repo,'agents/expert/soul.yaml');
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
   manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
-  manifest.operations={probe:{command:'show',kind:'action',context:'scope',args:[{name:'label',flag:'--label',required:true}]},
-    'home-probe':{command:'show',kind:'action',context:'home'}};
+  manifest.operations={probe:{command:'show',kind:'view',context:'scope',args:[{name:'label',flag:'--label',required:true}]},
+    'scope-mutate':{command:'show',kind:'action',context:'scope'},'home-view':{command:'show',kind:'view',context:'home'},
+    'home-probe':{command:'show',kind:'action',context:'home',args:[{name:'label',flag:'--label'}]}};
   writeFileSync(manifestFile,JSON.stringify(manifest));
   const soul=JSON.parse(readFileSync(soulFile,'utf8'));soul.knowledge={contract:'example.locations',version:1,payload:{location:'A'}};
   writeFileSync(soulFile,JSON.stringify(soul));const hookMarker=join(f.root,'captured-hook-ran');
   f.write('packages/action/cap/show.mjs',`import {readFileSync,rmSync,statSync,writeFileSync} from 'node:fs';import {dirname} from 'node:path';
     const snapshot=process.env.OATS_BINDING_FILE,binding=JSON.parse(readFileSync(snapshot,'utf8'));
     const sourceSnapshot=process.env.OATS_SOURCE_RECEIPT_FILE??null,sourceReceipt=sourceSnapshot?JSON.parse(readFileSync(sourceSnapshot,'utf8')):null;
-    const result={location:binding.payload.location,snapshot,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
+    const invocationSnapshot=process.env.OATS_INVOCATION_CONTEXT_FILE??null,invocation=invocationSnapshot?JSON.parse(readFileSync(invocationSnapshot,'utf8')):null;
+    const result={documents:[],location:binding.payload.location,snapshot,invocationSnapshot,invocation,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
+    if(invocation?.intent){const ledger=JSON.parse(readFileSync(invocation.executionBinding.deployment+'/.agents/portable/instance-references.json','utf8'));const row=ledger.instances.find(row=>row.incarnationId===invocation.instance.incarnationId);const intent=row?.intents.find(item=>item.executionId===invocation.intent.executionId);if(!intent||intent.state!=='running'||intent.attempt!==invocation.intent.attempt)throw Error('effect before durable admission');}
+    if(process.env.OATS_OPERATION && process.argv.includes('negative-envelope')) {console.log(JSON.stringify({schemaVersion:1,ok:false,error:{code:'E_REMOTE',message:'service unavailable'},result:{id:'observed-resource'}}));process.exit(1);}
     if(process.env.OATS_OPERATION && process.argv.includes('cleanup-failure')) rmSync(dirname(snapshot),{recursive:true});
-    if(process.env.OATS_EVENT) writeFileSync(${JSON.stringify(hookMarker)},'ran');
-    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));`);
-  const unavailable=join(f.root,'provider-unavailable');
-  f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync} from 'node:fs';
+    if(process.env.OATS_EVENT) {
+      writeFileSync(${JSON.stringify(hookMarker)},'ran');
+      if(process.env.CLEANUP_CAPTURED_SNAPSHOTS) for(const path of [snapshot,sourceSnapshot,invocationSnapshot]) if(path) rmSync(dirname(path),{recursive:true});
+    }
+    console.log(JSON.stringify(process.env.OATS_EVENT?{meta:{sourceSnapshot,sourceIdentity:sourceReceipt?.sourceIdentity,executionBinding:sourceReceipt?.executionBinding,invocation}}:process.env.OATS_OPERATION?{schemaVersion:1,ok:true,result}:result));
+    if(process.env.OATS_EVENT && process.env.FAIL_CAPTURED_HOOK) process.exitCode=1;`);
+  const unavailable=join(f.root,'provider-unavailable'),checkContext=join(f.root,'provider-check-context.json');
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync,existsSync,writeFileSync} from 'node:fs';
     const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location'; let result;
     if(r.phase==='normalize') {
       const source=r.input.declarations.find(d=>d.kind==='soul'),operator=r.input.declarations.find(d=>d.kind==='operator');
@@ -171,7 +465,7 @@ test('preparation resolves approved provider fields in the same engine and never
       const candidates=operator?.value.bindings?.location===undefined?[]:[{key,kind:'operator',value:operator.value.bindings.location,origin:operator.origins['/bindings/location']}];
       result={requirements,candidates,model:{}};
     } else if(r.phase==='bind') result={payloadContract:'example.locations',payloadVersion:1,payload:{location:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
-    else result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};
+    else {if(process.env.OATS_INVOCATION_CONTEXT_FILE)throw Error('check has a second context authority');if(r.input.invocation)writeFileSync(${JSON.stringify(checkContext)},JSON.stringify(r.input.invocation));result=existsSync(${JSON.stringify(unavailable)})?{status:'unavailable',problems:[{code:'provider-unavailable'}]}:{status:'ready',problems:[]};}
     console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
   f.git('add','.');f.git('commit','--quiet','-m','source provider policy');
   const pending=prepareCapturedComposition(f.input,f.options);
@@ -193,18 +487,81 @@ test('preparation resolves approved provider fields in the same engine and never
   const operation=JSON.parse(execFileSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=exact','--json'],{encoding:'utf8'}));
   assert.equal(operation.ok,true);assert.equal(operation.result.result.location,'A');assert.deepEqual(operation.result.result.args,['--label','exact','--json']);
   assert.equal(operation.result.result.resolution,prepared.resolution.id);assert.equal(existsSync(operation.result.result.snapshot),false,'operation snapshot is removed before its receipt is rendered');
+  assert.deepEqual(operation.result.result.invocation.action,{kind:'operation',slot:'knowledge',name:'probe'});assert.equal(operation.result.result.invocation.capability,f.id);
+  assert.equal(operation.result.result.invocation.instance,null);assert.equal(existsSync(operation.result.result.invocationSnapshot),false,'invocation context is also transient');
+  assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),operation.result.result.invocation,'check and scope operation receive identical derived authority');
   const cleanup=spawnSync(process.execPath,[cli,'operation','run','knowledge:probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--arg','label=cleanup-failure','--json'],{encoding:'utf8'});
   assert.equal(cleanup.status,1);const cleanupFailure=JSON.parse(cleanup.stdout).error;
   assert.equal(cleanupFailure.code,'E_OPERATION_RESULT');assert.equal(cleanupFailure.details.unconfirmed,true);
   assert.equal(cleanupFailure.details.envelope.result.location,'A');assert.equal(cleanupFailure.details.envelope.result.args.includes('cleanup-failure'),true);
   assert.ok(cleanupFailure.details.cleanup.message,'cleanup diagnostic is retained with the observed provider receipt');
-  const home=join(f.root,'captured-home');mkdirSync(home);writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',agent:'expert',executionBinding:prepared.executionBinding}));
+  const scopeMutation=spawnSync(process.execPath,[cli,'operation','run','knowledge:scope-mutate','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--json'],{encoding:'utf8'});
+  assert.equal(JSON.parse(scopeMutation.stdout).error.code,'admission-required','scope mutation does not invent an incarnation');
+  const home=join(realpathSync(f.root),'captured-home');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home'});
+  const homeMetadata=JSON.parse(readFileSync(join(home,'instance.json'),'utf8'));
+  writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,capabilityMeta:{[f.id]:{identity:'prior-receipt'}}}));
   const homeCall=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(homeCall.status,0,homeCall.stdout||homeCall.stderr);const homeOperation=JSON.parse(homeCall.stdout);
   assert.equal(homeOperation.result.result.home,home);assert.deepEqual(homeOperation.result.target,{home,instance:'captured-home'});
+  assert.deepEqual(homeOperation.result.result.invocation.priorReceipt,{identity:'prior-receipt'});assert.equal(homeOperation.result.result.invocation.instance.agent,'imported-expert');
+  assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),homeOperation.result.result.invocation,'readiness receives target and prior receipt before the home operation');
+  const homeIntent=homeOperation.result.intent,homeArgv=[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'];
+  const receipt=structuredClone(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home).intents.at(-1).receipt);
+  for(const mirror of [{stale:'not-current'},undefined]){
+    writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,...(mirror===undefined?{}:{capabilityMeta:{[f.id]:mirror}})}));
+    const before=readFileSync(join(f.deployment,'.agents/portable/instance-references.json'));
+    const view=JSON.parse(execFileSync(process.execPath,homeArgv.map(value=>value==='knowledge:home-probe'?'knowledge:home-view':value),{encoding:'utf8'}));
+    assert.deepEqual(view.result.result.invocation.priorReceipt,receipt,'home view derives current indexed receipt despite stale/absent mirror');
+    assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),view.result.result.invocation,'view check/execution receive identical current authority');
+    assert.equal(view.result.result.invocation.intent,null);assert.deepEqual(readFileSync(join(f.deployment,'.agents/portable/instance-references.json')),before,'view admits no action');
+  }
+  const faultDriver=join(realpathSync(f.root),'inert-runner-fault.mjs');
+  writeFileSync(faultDriver,`import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';import {pathToFileURL} from 'node:url';
+    const original=cp.spawnSync;cp.spawnSync=(bin,args,options)=>options?.env?.OATS_OPERATION==='knowledge:home-probe'
+      ?{status:null,signal:'SIGKILL',error:Object.assign(new Error('inert runner fault'),{code:'EIO'}),stdout:JSON.stringify({schemaVersion:1,ok:false,error:{code:'E_REMOTE',message:'service unavailable'},result:{id:'observed-resource'}}),stderr:''}
+      :original(bin,args,options);syncBuiltinESMExports();process.argv[1]=${JSON.stringify(cli)};await import(pathToFileURL(process.argv[1]).href);`);
+  for(const kind of ['negative-envelope','runner-fault']){
+    const targetHome=join(realpathSync(f.root),kind);scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:targetHome,instance:kind});
+    const argv=homeArgv.map(value=>value===home?targetHome:value);
+    if(kind==='negative-envelope')argv.push('--arg','label=negative-envelope');else argv[0]=faultDriver;
+    const failure=spawnSync(process.execPath,argv,{encoding:'utf8'});assert.equal(failure.status,1,failure.stderr);
+    const error=JSON.parse(failure.stdout).error,row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===targetHome);
+    assert.equal(error.code,kind==='negative-envelope'?'E_REMOTE':'E_CAPABILITY_BROKEN');
+    assert.equal(error.details.unconfirmed,true);assert.equal(error.details.settlement.state,'unconfirmed');
+    assert.deepEqual(error.details.settlement.receipt,structuredClone(row.intents[0].receipt));assert.equal(error.details.envelope.result.id,'observed-resource');
+    assert.equal(error.details.intent.executionId,row.intents[0].executionId);assert.equal(row.intents[0].state,'unconfirmed');
+    if(kind==='runner-fault')assert.equal(error.details.signal,'SIGKILL','non-timeout runner error retains observation without being relabelled timeout');
+  }
+  const beforeReplay=readFileSync(checkContext);
+  const replayed=JSON.parse(execFileSync(process.execPath,[...homeArgv,'--retry-intent',homeIntent.executionId],{encoding:'utf8'}));
+  assert.deepEqual(replayed.result.intent,homeIntent);assert.deepEqual(readFileSync(checkContext),beforeReplay,'completed retry never runs readiness or provider effects');
+  const requestHome=join(realpathSync(f.root),'request-home');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:requestHome,instance:'request-home'});
+  const requestArgv=homeArgv.map(value=>value===home?requestHome:value);
+  const newA=JSON.parse(execFileSync(process.execPath,requestArgv,{encoding:'utf8'})),newB=JSON.parse(execFileSync(process.execPath,requestArgv,{encoding:'utf8'}));
+  assert.notEqual(newA.result.intent.executionId,newB.result.intent.executionId,'identical public requests do not collapse');
+  const failedArgv=[...requestArgv,'--arg','label=cleanup-failure'];
+  const failureA=JSON.parse(spawnSync(process.execPath,failedArgv,{encoding:'utf8'}).stdout).error;
+  assert.equal(failureA.details.unconfirmed,true);assert.ok(failureA.details.intent.executionId);
+  const failedRef=failureA.details.intent;
+  const held=JSON.parse(spawnSync(process.execPath,requestArgv,{encoding:'utf8'}).stdout).error;assert.equal(held.code,'selection-changed');
+  const failureB=JSON.parse(spawnSync(process.execPath,[...failedArgv,'--retry-intent',failedRef.executionId],{encoding:'utf8'}).stdout).error;
+  assert.equal(failureB.details.intent.executionId,failedRef.executionId);assert.equal(failureB.details.intent.attempt,2);
+  assert.equal(failureB.details.envelope.result.invocation.priorReceipt.result.invocation.intent.executionId,failedRef.executionId,'explicit retry consumes its own observed receipt');
+  const target={home,work:join(home,'work'),name:'captured-home',agent:'imported-expert'};
+  const checkBefore=readFileSync(checkContext),homeOptions={deployment:f.deployment,resolution:prepared.resolution,action:{kind:'hook',capability:f.id,name:'spawn'},invocationTarget:target};
+  for(const bad of [
+    {...homeOptions,invocationTarget:{...target,name:'replacement-instance'}},
+    {...homeOptions,invocationTarget:{...target,agent:'replacement-agent'}},
+    {...homeOptions,invocationTarget:{...target,work:join(f.root,'wrong-work')}},
+    {...homeOptions,priorReceipt:{identity:'forged-prior'}},
+    {...homeOptions,invocationTarget:null},
+  ]) { assert.throws(()=>loadCapturedDispatch(bad));assert.deepEqual(readFileSync(checkContext),checkBefore,'target/prior contradictions fail before provider check'); }
+  writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,responsibleHuman:{provider:'example.messaging',id:'invented-human'}}));
+  assert.throws(()=>loadCapturedDispatch(homeOptions));assert.deepEqual(readFileSync(checkContext),checkBefore);
+  writeFileSync(join(home,'instance.json'),JSON.stringify(homeMetadata));
   const sourceReceipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:prepared.executionBinding.deployment,agent:'imported-expert',instance:'captured-home',
     sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:prepared.executionBinding,responsibleHuman:null,binding:record.bindings.knowledge};
-  mkdirSync(sourceReceipt.work);
+  assert.ok(existsSync(sourceReceipt.work),'real scaffold supplies witnessed work ownership');
   const forgedReceipts=[
     {...sourceReceipt,role:'ambient replacement'},
     {...sourceReceipt,executionBinding:{...sourceReceipt.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}},
@@ -219,19 +576,51 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.equal(readFileSync(hookMarker,'utf8'),'ran');
   assert.deepEqual(hooks.order,[f.id]);assert.equal(JSON.stringify(hooks.meta[f.id].sourceIdentity),JSON.stringify(record.subject.soul.identity));
   assert.deepEqual(hooks.meta[f.id].executionBinding,prepared.executionBinding);assert.equal(existsSync(hooks.meta[f.id].sourceSnapshot),false,'source receipt snapshot is removed after the synchronous hook');
+  assert.equal(hooks.meta[f.id].invocation.action.name,'spawn');assert.equal(hooks.meta[f.id].invocation.priorReceipt.result.home,home,'latest indexed operation receipt survives metadata rewriting');
+  assert.equal(hooks.meta[f.id].invocation.instance.home,home);
+  let retryIntents={};
+  for (const failedChild of [false,true]) {
+    const incomplete=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:prepared.resolution,home,instance:'captured-home',agentName:'imported-expert',sourceReceipt,retryIntents,
+      extraEnv:{CLEANUP_CAPTURED_SNAPSHOTS:'1',...(failedChild?{FAIL_CAPTURED_HOOK:'1'}:{})}});
+    retryIntents=Object.fromEntries(Object.entries(incomplete.intents).map(([id,ref])=>[id,ref.executionId]));
+    assert.equal(incomplete.meta[f.id].executionBinding.resolution.id,prepared.resolution.id,'nested cleanup failures retain the actual provider receipt');
+    assert.equal(incomplete.meta[f.id].invocation.instance.home,home);
+    assert.equal(incomplete.failures.length,1);assert.equal(incomplete.failures[0].contract,'snapshot-cleanup');
+    assert.equal(incomplete.failures[0].required,true);assert.equal(incomplete.failures[0].unconfirmed,true);
+    assert.ok(incomplete.failures[0].cleanup.code);
+  }
   writeFileSync(join(home,'instance.json'),JSON.stringify({instance:'captured-home',executionBinding:{...prepared.executionBinding,resolution:{schemaVersion:1,id:'sha256-'+ '0'.repeat(64)}}}));
   const mismatch=spawnSync(process.execPath,[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'],{encoding:'utf8'});
   assert.equal(mismatch.status,1);assert.equal(JSON.parse(mismatch.stdout).error.code,'E_HOME_MISMATCH');
   const loaded=loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}});
+  const checkedContext=JSON.parse(readFileSync(checkContext,'utf8'));assert.equal(checkedContext.action.kind,'command');assert.equal(checkedContext.capability,f.id);
+  assert.equal(checkedContext.executionBinding.resolution.id,prepared.resolution.id);assert.equal(checkedContext.instance,null);
+  assert.deepEqual(checkedContext,JSON.parse(JSON.stringify(loaded.invocation)));
+  const capturedCheck={deployment:f.deployment,artifacts:record.artifacts,capability:f.id,phase:'check',settings:loaded.capability.settings,
+    input:{binding:record.bindings.knowledge,context:record.context,action:loaded.action,invocation:loaded.invocation}};
+  assert.equal(runCapturedProviderBinding(capturedCheck).status,'ready');
+  const brokerCheckBefore=readFileSync(checkContext);
+  for(const bad of [
+    {...capturedCheck,input:{...capturedCheck.input,invocation:{...loaded.invocation,subject:{...loaded.invocation.subject,soul:{...loaded.invocation.subject.soul,alias:'forged'}}}}},
+    {...capturedCheck,settings:{limit:99}},
+    {...capturedCheck,input:{...capturedCheck.input,binding:{...record.bindings.knowledge,payload:{location:'other-location'}}}},
+  ]) { assert.throws(()=>runCapturedProviderBinding(bad),{code:'invalid-resolution'});assert.deepEqual(readFileSync(checkContext),brokerCheckBefore,'public check cannot authorize a forged invocation'); }
+  assert.throws(()=>runCapturedProviderBinding({deployment:f.deployment,artifacts:record.artifacts,capability:f.id,phase:'check',settings:{limit:3},
+    input:{binding:record.bindings.knowledge,context:record.context,action:{kind:'command',capability:f.id,name:'show'}},invocationContextFile:checkContext}),
+    {code:'invalid-declaration'},'prospective binding callers cannot nominate a context-file authority');
   let failedSnapshot;
   assert.throws(()=>withCapturedBindingFile(loaded,env=>{failedSnapshot=env.OATS_BINDING_FILE;throw Error('fixture child failure');}),/fixture child failure/);
   assert.equal(existsSync(failedSnapshot),false,'failure also removes only the owned invocation snapshot');
   writeFileSync(unavailable,'not ready');
+  const blockedHome=join(realpathSync(f.root),'before-execution');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:blockedHome,instance:'before-execution'});
+  const blocked=JSON.parse(spawnSync(process.execPath,homeArgv.map(value=>value===home?blockedHome:value),{encoding:'utf8'}).stdout).error;
+  assert.equal(blocked.code,'provider-unavailable');assert.equal(blocked.details.settlement.state,'blocked');assert.equal(blocked.details.unconfirmed,false);
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===blockedHome).intents[0].state,'blocked');
   assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}}),{code:'provider-unavailable'},'mutable readiness is checked again, not cached as permanent record authority');
 });
 
 test('standalone OKF consumer prepares its actual retained binding payload with no kernel-private provider imports', {skip:!process.env.OATS_OKF_CONSUMER_REPO}, async t=>{
-  const f=fixture(t,true),provider=process.env.OATS_OKF_CONSUMER_REPO,revision=process.env.OATS_OKF_CONSUMER_REV;
+  const f=fixture(t,true),provider=process.env.OATS_OKF_CONSUMER_REPO,revision=process.env.OATS_OKF_CONSUMER_REV,cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
   assert.match(revision ?? '',/^[a-f0-9]{40}$/,'consumer must pin an exact provider commit');
   const archive=execFileSync('git',['-C',provider,'archive',revision,'oats-package'],{maxBuffer:16*1024*1024});
   const destination=join(f.repo,'packages/action');rmSync(destination,{recursive:true});mkdirSync(destination);
@@ -257,13 +646,13 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   const nodes=join(physicalRoot,'fixture-nodes.json');writeFileSync(nodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));
   mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   initBase(binding.payload.runtime.bindings,'private-kb',nodes,undefined,{confirm:true}); // Administrative fixture bootstrap only.
-  const sourceHome=join(physicalRoot,'captured-source'),sourceWork=join(sourceHome,'work');mkdirSync(sourceWork,{recursive:true});
-  const sourceReceipt={schemaVersion:1,kind:'persistent',home:sourceHome,work:sourceWork,context:ready.executionBinding.deployment,agent:'imported-expert',instance:'imported-expert-1',
-    sourceIdentity:record.subject.soul.identity,role:'Expert instructions\n',executionBinding:ready.executionBinding,responsibleHuman:null,binding};
-  const registered=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:ready.resolution,home:sourceHome,instance:sourceReceipt.instance,agentName:sourceReceipt.agent,
-    sourceReceipt,extraEnv:{OATS_HOME_DIR:join(physicalRoot,'host-state')}});
-  assert.deepEqual(registered.failures,[],JSON.stringify(registered));assert.equal(registered.meta['oats.okf'].memory,'okf-v2');
-  const descriptor=JSON.parse(readFileSync(registered.meta['oats.okf'].source,'utf8'));
+  const capturedHomes=join(physicalRoot,'captured-homes');mkdirSync(capturedHomes);const sourceHome=join(capturedHomes,'imported-expert-1');
+  const spawned=spawnSync(process.execPath,[cli,'spawn','imported-expert','--deployment',f.deployment,'--resolution',ready.resolution.id,'--home',sourceHome,'--no-launch','--json'],
+    {encoding:'utf8',env:{...process.env,OATS_HOME_DIR:join(physicalRoot,'host-state')}});
+  assert.equal(spawned.status,0,spawned.stdout||spawned.stderr);const spawnResult=JSON.parse(spawned.stdout).result;
+  assert.equal(spawnResult.home,sourceHome);assert.equal(spawnResult.launchPending,true);assert.deepEqual(spawnResult.hookOrder,['oats.okf']);
+  const sourceMeta=JSON.parse(readFileSync(join(sourceHome,'instance.json'),'utf8'));assert.equal(sourceMeta.capabilityMeta['oats.okf'].memory,'okf-v2');
+  const descriptor=JSON.parse(readFileSync(sourceMeta.capabilityMeta['oats.okf'].source,'utf8'));
   assert.deepEqual(descriptor.executionBinding,ready.executionBinding);assert.equal(descriptor.responsibleHuman,null);
   assert.equal(JSON.stringify(descriptor.sourceIdentity),JSON.stringify(record.subject.soul.identity));
   const schedules=JSON.parse(readFileSync(join(f.deployment,'oats-schedules.json'),'utf8')),schedule=schedules.jobs[`okf-${descriptor.id}`];
@@ -272,7 +661,7 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
   const poisonState=join(physicalRoot,'poison-state'),poisonBase=join(physicalRoot,'poison-base'),poisonNodes=join(physicalRoot,'poison-nodes.json');
   writeFileSync(poisonNodes,JSON.stringify({expert:{path:'expert',owner:'expert-owner'}}));mkdirSync(join(settings['bindings-file'],'..'),{recursive:true});
   writeFileSync(settings['bindings-file'],JSON.stringify({version:1,stateDir:poisonState,bases:{'private-kb':{id:'private-kb',kind:'directory',path:poisonBase}}}));
-  const poisonBytes=readFileSync(settings['bindings-file']),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  const poisonBytes=readFileSync(settings['bindings-file']);
   for(const [name,argv] of [['setup',['--source',join(physicalRoot,'missing-source.json')]],['init',['--base','private-kb','--nodes',poisonNodes,'--confirm']],
     ['migrate',['--legacy',join(physicalRoot,'legacy'),'--base','private-kb','--node','expert','--output',join(physicalRoot,'stage')]],
     ['unlock',['--lock',join(physicalRoot,'missing-lock'),'--token','no-token']]]) {
@@ -288,6 +677,45 @@ test('standalone OKF consumer prepares its actual retained binding payload with 
     return JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`import {loadInvocationKnowledgeBinding} from ${JSON.stringify(moduleUrl)}; const r=loadInvocationKnowledgeBinding();console.log(JSON.stringify({kind:r.kind,owner:r.binding.payload.owner}));`],{encoding:'utf8',env:{...process.env,...env}}));
   });
   assert.deepEqual(projected,{kind:'captured',owner:'expert-owner'});assert.equal(existsSync(invocation),false);
+});
+
+test('standalone aweb consumer accepts exact captured check and snapshot wire without native effects', {skip:!process.env.OATS_AWEB_CONSUMER_REPO}, async t=>{
+  const f=fixture(t,true),provider=process.env.OATS_AWEB_CONSUMER_REPO,revision=process.env.OATS_AWEB_CONSUMER_REV;
+  assert.match(revision??'',/^[a-f0-9]{40}$/,'consumer must pin an exact provider commit');
+  const archive=execFileSync('git',['-C',provider,'archive',revision,'oats-package'],{maxBuffer:16*1024*1024});
+  const destination=join(f.repo,'packages/action');rmSync(destination,{recursive:true});mkdirSync(destination);
+  execFileSync('tar',['-x','--strip-components=1','-C',destination],{input:archive});
+  const physical=realpathSync(f.root),tools=join(physical,'tools'),marker=join(physical,'native-aw-ran');mkdirSync(tools);
+  writeFileSync(join(tools,'aw'),`#!${process.execPath}\nimport {writeFileSync} from 'node:fs';writeFileSync(${JSON.stringify(marker)},'unexpected');process.exit(99);\n`,{mode:0o700});
+  const priorPath=process.env.PATH;process.env.PATH=`${tools}:${priorPath}`;t.after(()=>{process.env.PATH=priorPath;});
+  f.write('agents/expert/soul.yaml',JSON.stringify({schemaVersion:1,name:'expert',work:'directory',teams:[],requires:{messaging:{capability:'oats.aweb',source:'repo:packages/action',settings:{delivery:'session'}}}}));
+  f.git('add','-A');f.git('commit','--quiet','-m','real aweb wire consumer');
+  const human={provider:'oats.aweb',id:'human:fixture'},input={...f.input,standaloneContextKey:'explicit-fixture',operator:{policy:{},document:{kind:'operator',id:'aweb-consumer'},bindings:{responsibleHuman:human,wider:[]}}};
+  const pending=prepareCapturedComposition(input,f.options);assert.equal(pending.resolution,null,JSON.stringify(pending));
+  approveAvailableCapability(f.deployment,pending.selections[0].artifactSet,'oats.aweb',{kind:'operator',document:{kind:'operator',id:'fixture-approve'},pointer:'/approve'});
+  const prepared=prepareCapturedComposition(input,f.options);assert.equal(prepared.status,'prepared',JSON.stringify(prepared));
+  const record=readCapturedResolution(f.deployment,prepared.resolution),binding=record.bindings.messaging;
+  assert.deepEqual(JSON.parse(JSON.stringify(prepared.responsibleHuman)),human);assert.deepEqual(record.messagingChoice.wider,[]);
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poison: never select ambient provider state\n');
+  writeFileSync(join(f.deployment,'oats-lock.json'),'poisoned current lock');
+  const home=join(physical,'imported-expert-1');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'imported-expert-1'});
+  const inspected=loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'inspect'}}),capability=inspected.capabilities.get('oats.aweb');
+  const {buildCapturedInvocationContext,withCapturedInvocationContextFile}=await import('../lib/captured-invocation-context.mjs');
+  const action={kind:'hook',capability:'oats.aweb',name:'spawn'},invocation=buildCapturedInvocationContext({loaded:{...inspected,capability},action,
+    instance:{home,work:join(home,'work'),name:'imported-expert-1',agent:'imported-expert'}});
+  const checked=runCapturedProviderBinding({deployment:f.deployment,artifacts:record.artifacts,capability:'oats.aweb',phase:'check',settings:capability.settings,input:{binding,context:record.context,action,invocation}});
+  assert.notEqual(checked.status,'ready','accepted wire is not setup/privacy qualification');
+  const loaded={...inspected,capability};let contextFile,bindingFile;
+  const consumed=withCapturedInvocationContextFile(invocation,contextEnv=>withCapturedBindingFile(loaded,bindingEnv=>{
+    contextFile=contextEnv.OATS_INVOCATION_CONTEXT_FILE;bindingFile=bindingEnv.OATS_BINDING_FILE;
+    const module=pathToFileURL(join(capability.manifest._dir,'lib/invocation-context.mjs')).href;
+    return JSON.parse(execFileSync(process.execPath,['--input-type=module','-e',`import {loadCapturedAwebInvocation} from ${JSON.stringify(module)};const r=loadCapturedAwebInvocation();console.log(JSON.stringify({kind:r.kind,subject:r.context.subject}));`],{encoding:'utf8',env:{...process.env,...contextEnv,...bindingEnv}}));
+  }));
+  assert.equal(consumed.kind,'captured');assert.deepEqual(consumed.subject,JSON.parse(JSON.stringify(record.subject)));
+  assert.equal(existsSync(contextFile),false);assert.equal(existsSync(bindingFile),false);
+  assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',namespace:'aweb',name:'setup'}}),{code:'authorization-required'});
+  const blocked=activateCapturedScaffold.bind(null,{deployment:f.deployment,resolution:prepared.resolution,home});
+  assert.throws(blocked,{code:'E_REQUIRED_HOOK_FAILED'});assert.equal(existsSync(join(home,'.aw')),false);assert.equal(existsSync(marker),false,'no native aw was invoked');
 });
 
 test('workspace adoption conflicts follow qualified soul identity across aliases before package acquisition',t=>{

@@ -109,6 +109,37 @@ capability-owned behavior or explicit neutral contracts, not accidental OKF poli
 hardcoded into the new captured path. Do not blindly enable recursive harvesting
 or weaken existing guards while correcting that boundary.
 
+# Accepted helper/input implementation contract
+
+The bounded declaration design is accepted for implementation; it is not yet a claim
+that the codecs, paired providers or runtime behavior are shipped:
+
+- Each capability may declare its own closed `helperInjection` version-1 union:
+  `inherit`, `omit`, or `file` with its own contained path. Existing retained choices,
+  exact artifact/manifest origins and composition resources prove both the declaration
+  and its contribution. It cannot select software, change another contributor, or
+  silently override an authorized instruction choice. An applicable missing policy
+  remains unresolved; no blanket memory enabling follows.
+- An existing hook object may request `inputs.sourceReceipt:{version:1}`. Generic
+  invocation remains universal; SourceReceipt1 is optional explicit input with the
+  existing shape, canonical role body and actual same-owner binding/custody prerequisites.
+  Do not impose source-registration conventions on every knowledge provider or add a
+  second hook/action registry. Input omission is not consent.
+- Literal old `helper-knowledge` evidence remains readable, while the new publication
+  boundary rejects newly minted slot-derived omissions. Verify ownership, declared path,
+  witness and resource in both directions; primary/helper resource maps stay separate.
+- Absence of opt-in alone does not identify provider dependency. Qualify compatible
+  artifacts/readiness and distinguish new registration from deliberately retained old
+  descriptor/binding replay; do not add provider-name or slot heuristics.
+- Default OKF explicitly omits only its own helper injection and opts consuming spawn/
+  retire hooks into the source input, preserving commands and required semantics.
+  Registration, helper skip, recursion prevention and PR-only publication remain its
+  responsibility. The stateless soul-scaffold hook does not acquire that input.
+
+Independent paired implementation review and actual runtime/provider qualification are
+still required. These declarations do not themselves authorize execution or certify
+private messaging, helper completion or a release.
+
 # Related decisions
 
 [External knowledge custody](/decisions/external-knowledge-custody.md) records

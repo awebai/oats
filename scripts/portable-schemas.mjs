@@ -93,9 +93,28 @@ d.InstructionComposition = object({ schemaVersion: v1, mode: enumeration("worktr
 d.Dispatch = object({ schemaVersion: v1, providerManifests: map(s, cap), settingsChoices: map(map(s), cap), launch: nullable(ref("LaunchRecipe")),
   runtimePackages: list(ref("RuntimeResource")), hostRequirements: list({}), workTargetInputs: map(s), composition: ref("InstructionComposition") }, ["composition"]);
 d.Dispatch.allOf = [{ if: { type: "object", properties: { launch: { type: "object" } }, required: ["launch"] }, then: { type: "object", properties: { composition: ref("InstructionComposition") }, required: ["composition"] } }];
+d.CapturedSubject = one(object({ kind: { const: "persistent" }, soul: ref("SoulSelection") }),
+  object({ kind: { const: "helper" }, provider: ref("CapabilityArtifactRef"), definition: ref("ResourceRef"), name: slug }));
+d.ExecutionBinding = object({ schemaVersion: v1, deployment: s, resolution: ref("ResolutionRef") });
+d.CapturedAction = one(
+  object({ kind: enumeration("inspect", "compose") }),
+  object({ kind: { const: "command" }, capability: cap, name: s }),
+  object({ kind: { const: "command" }, namespace: s, name: s }),
+  object({ kind: { const: "hook" }, capability: cap, name: s }),
+  object({ kind: { const: "operation" }, slot: enumeration("knowledge", "messaging", "tasks"), name: s }));
+d.IncarnationId = { ...s, pattern: "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$" };
+d.CapturedIntentRef = object({ schemaVersion: v1, executionId: { ...s, pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+  incarnationId: ref("IncarnationId"), attempt: { type: "integer", minimum: 1, maximum: Number.MAX_SAFE_INTEGER } });
+d.CapturedInvocationContext = object({ schemaVersion: v1, executionBinding: ref("ExecutionBinding"),
+  subject: ref("CapturedSubject"), instance: nullable(object({ home: s, work: s, name: s, agent: s, incarnationId: ref("IncarnationId") })),
+  intent: nullable(ref("CapturedIntentRef")),
+  context: ref("Context"), responsibleHuman: nullable(ref("TeamRef")), messagingChoice: ref("MessagingChoice"),
+  capability: cap, action: ref("CapturedAction"), priorReceipt: {} });
+d.CapturedInvocationContext.description = "Bounded generic projection: exact subject union and validated record/instance equality are mandatory. Incarnation and intent are independently minted durable identities, never a resolution/home/name digest. A null intent grants no mutation authority. Prior receipt is opaque nullable JSON, not credentials.";
+d.ProviderCheckInput = object({ binding: ref("ProviderBinding"), context: ref("Context"),
+  action: { type: "object", required: ["kind"], properties: { kind: s } }, invocation: ref("CapturedInvocationContext") }, ["invocation"]);
 d.CapturedResolution = object({ schemaVersion: v1, capture: enumeration("prepared", "reconstructed"),
-  subject: one(object({ kind: { const: "persistent" }, soul: ref("SoulSelection") }),
-    object({ kind: { const: "helper" }, provider: ref("CapabilityArtifactRef"), definition: ref("ResourceRef"), name: slug })),
+  subject: ref("CapturedSubject"),
   context: ref("Context"), artifacts: ref("ArtifactSet"), choices: map(ref("Choice"), { pattern: "^/" }),
   bindings: { type: "object", additionalProperties: false, properties: Object.fromEntries(["knowledge", "messaging", "tasks"].map((slot) => [slot, ref("ProviderBinding")])) },
   messagingChoice: ref("MessagingChoice"), resources: map(ref("ResourceRef")), resourceBundles: list(ref("ResourceArtifactRef"), true),
@@ -121,6 +140,8 @@ export function portableSchemas() {
     description: "New private wire boundary; public consumer activation requires the explicit preparation/migration integration. See portable-v1.json for semantic verification requirements.", $ref: `${id}#/$defs/${definition}` });
   return { "portable.schema.json": shared,
     "captured-resolution.schema.json": entry("captured-resolution-v1", "CapturedResolution", "Captured resolution v1"),
+    "captured-invocation-context.schema.json": entry("captured-invocation-context-v1", "CapturedInvocationContext", "Captured invocation context v1"),
+    "provider-check-input.schema.json": entry("provider-check-input-v1", "ProviderCheckInput", "Provider check input v1"),
     "oats-lock-v3.schema.json": entry("selection-lock-v3", "Lock3", "Source-request selection lock v3"),
     "artifact-approvals.schema.json": entry("artifact-approvals-v1", "ApprovalLedger", "Exact capability approval ledger v1") };
 }
@@ -132,5 +153,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     if (write) writeFileSync(path, bytes);
     else if (readFileSync(path, "utf8") !== bytes) throw new Error(`generated schema drift: ${name}; run node scripts/portable-schemas.mjs --write`);
   }
-  console.log(`${write ? "wrote" : "checked"} four portable wire schemas`);
+  console.log(`${write ? "wrote" : "checked"} ${Object.keys(portableSchemas()).length} portable wire schemas`);
 }

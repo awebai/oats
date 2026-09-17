@@ -45,6 +45,7 @@ oats trust example.action --deployment /deployment --resolution sha256-… --jso
 oats trust example.action --deployment /deployment --artifact-set sha256-… --json
 oats example-action show --deployment /deployment --resolution sha256-… -- --detail
 oats operation run knowledge:view --deployment /deployment --resolution sha256-… --home /instance --arg mode=full --json
+oats spawn expert --deployment /deployment --resolution sha256-… --home /fresh/instances/expert-1 --no-launch --json
 ```
 
 The operation form loads the selected provider and operation declaration from the
@@ -107,3 +108,20 @@ configuration, including reserved environment/NUL rules) are supplied by core.
 This static validation does not qualify launch: launch action adoption and mutable
 host/provider gates are still separate work. No current lock/config/marketplace
 fallback and no inferred executable permission from diagnostic booleans.
+
+Core now also exposes a bounded scaffold-only adapter for a preselected explicit
+home. It requires exact executable approvals and retained `directory` work mode,
+then materializes the retained soul/helper link, composed instructions, copied skill
+trees, private directory work and `instance.json` execution binding/responsible-human
+metadata. `instance.json` explicitly records `scaffolded-hooks-pending`; no launch,
+non-directory work-target setup or roster discovery is implied. The public captured
+spawn route currently requires an explicit absolute new home and `--no-launch`; it does
+not infer placement, work or launch inputs. A separate exact activation step derives
+any source receipt from the record and runs the captured hook preflight/runner. Before
+hooks it publishes a durable captured-home reference outside the source/home, so source
+deletion cannot hide an uncertain lifecycle obligation. Success records
+`spawned-launch-pending`; required or uncertain hook failure keeps the home, hook metadata
+and `spawn-failed-cleanup-required` status in both metadata and the index rather than
+deleting possible external effects. The scaffold adapter creates the home exclusively and rolls
+back only its inode-owned home on pre-hook failure. Other work modes refuse until their
+work-target inputs are retained.
