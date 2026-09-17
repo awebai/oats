@@ -24,6 +24,13 @@ decisions/ and referenced from here.
 
 ---
 
+## Fresh flow and provider successor — coordinator review (2026-09-16)
+- verdict: RETURNED — lifecycle/admission `257c4b96` and onboarding `4d244ee2` remain branch candidates. Provider `b92a824` closes the residual pre-effect harvest finding but its full standalone integration gate still fails index-byte custody. No new source integration/release/deployment is implied.
+- findings: activation must not publish through a replaced home after detecting custody loss; explicit preflight retries must retain their references; optional functional failure cannot hide unsettled execution custody; public outcomes must agree with indexed uncertainty; views must use current indexed provider receipts. Active retained instructions must not reintroduce legacy context authority, and supplied falsy workspace values must not bypass standalone ingress validation.
+- evidence: authorized exact-archive review tests passed (admission 7, invocation/curriculum 11, onboarding 7, provider harvest closure 4). The complete provider gate reports 263 total / 259 pass / one index-preservation failure / three native opt-in skips. Owners received narrow corrective work; no test assertion, publication filter guard or unknown-effects boundary was weakened.
+- owner: coordinator reviews/integrates/pushes; lifecycle, fresh-setup and provider implementation owners fix their respective paths. Production delivery remains standing-authorized when actual readiness passes, without a new human checkpoint.
+- taught us: a failure path needs the same ownership gate as success. Presence and truthiness are not interchangeable for authority-bearing input. Read-only verification must preserve caller-owned index bytes, and a no-launch result is not a running-worker acceptance.
+
 ## Standalone OKF portable candidate — direct-main review (2026-09-16)
 - verdict: RETURNED at provider `388182cab282f2c490002af00d19794d047d7b35`, against released base `4b6d861`. Direct-main implementation delivery is authorized, but no source push/release/activation occurred while findings remain.
 - findings: captured worker creation and completion commands still use legacy/current selection; dotted aliases cannot be rebound by the external binding grammar; locator/identity validation admits secret-bearing URLs into retained or diagnostic data; owner lookup sees inherited properties; read-only Git staging may execute configured checkout filters. Corrective provider work and the generic captured-helper seam are assigned to their owners. Version/minimum metadata remains a separate publication gate.
