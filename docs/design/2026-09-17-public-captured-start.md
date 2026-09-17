@@ -71,6 +71,24 @@ For a persistent home, use its own binding. For a helper:
 
 An occupied home is not silently recreated. Hook failures/custody gaps remain held; this API does not add automatic hook replay or a compound scaffold/start transaction. Keep source completion calls on the source's saved binding, not the helper's inherited runtime selection. Static helper lookup uses the versioned availability/not-checked descriptor above; consumers require that qualified callable contract and real action result, never the lookup as proof of running status.
 
+## Provider-chosen home addressability and retirement gap
+
+A provider chooses a normalized absolute new home with a physical existing
+parent, then retains the returned home, incarnation, helper binding and hook/run
+receipts. Supported captured start/restart addresses that explicit home; it does
+not require an `agents/<soul>/instances` convention. Keep source completion on the
+source binding rather than deriving identity from this path.
+
+Captured public retirement is **not yet implemented** by this start/restart API.
+Legacy `retire --home` still enters agents-root/current-config machinery and is
+not a qualified workaround. Do not strip selectors, import private core helpers,
+guess an instance-root convention, force-delete or re-scaffold an uncertain home.
+Preserve the home/custody and hold complete ephemeral-worker lifecycle
+qualification until a public home-addressed captured retirement route is delivered
+and independently verified for both backends. API availability/version2 does not
+claim that missing lifecycle operation. A source candidate's commit/API version
+is also not its final published package compatibility floor.
+
 ## Result and failure custody
 
 Success uses the existing one-object CLI envelope `{schemaVersion:1,ok:true,result}`. Result includes the canonical selected `executionBinding`, existing native target/history/intent fields and, for `--helper`, exact `sourceExecutionBinding` and `helper:{key,name,subject}`. Initial dispatch has `dispatchAccepted:true`. Completed explicit replay returns `replayed:true` with the saved receipt and intent; it does not dispatch again or certify a currently live process.
