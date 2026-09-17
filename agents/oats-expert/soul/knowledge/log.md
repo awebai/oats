@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Review routing**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independent P1 RETURN of the shared producer, with a single closure/pairing reviewer and preserved reader approval. A successful semantic-guard bypass probe is not obscured by passing focused tests or promoted to an approved pairing.
 * **Integration**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record the independently accepted eight-file fresh onboarding integration, exact artifact/blob checks and19 passing combined cases plus static/package validation. Historical consumer pins are not upgraded to native/Herdr/provider or release readiness.
 * **Coordination**: [Repo state](/stewardship/repo-state.md) tracks separate execution-reader and helper-input provider candidates awaiting exact producer/schema pairing and independent review. A known old-schema rejection is preserved, not weakened or described as main/release readiness.
 * **Delivery**: [Delivery log](/stewardship/delivery-log.md) records standalone OKF source-main checkpoint `ec5d767` after continuous independent review coverage and corrected full gate270/0/4. No tag/install/mirror/runtime knowledge publication or fuller native/provider compatibility claim.

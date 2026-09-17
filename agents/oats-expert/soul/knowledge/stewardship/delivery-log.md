@@ -24,6 +24,11 @@ decisions/ and referenced from here.
 
 ---
 
+## Shared helper/input producer — independent P1 return (2026-09-17)
+- verdict: RETURNED exact `be2460c5`. A reviewer probe of the publishing semantic guard accepts an undeclared choice-less capability instruction block on a helper. Eight successful focused tests and syntax/generated-schema checks do not close this policy-publication bypass; initial scratch setup failures remain separately preserved evidence.
+- required closure: every capability-sourced block/omission in new helper publication must correspond exactly to its retained owner's policy. Preserve primary and literal historical read/reuse behavior, and add a regression through actual `commitCapturedResolution`, not only the standalone semantic verifier.
+- ownership/holds: one assigned reviewer owns this producer correction and separately identified schema/provider pairing; the other remains on public/native/Herdr work. Coordinator routes and integrates, not source-reviews. The reader approval is not revoked; provider declaration remains held, and no producer/schema pairing approval or main/release follows from this candidate.
+
 ## Fresh-source onboarding facade — reviewed integration (2026-09-17)
 - integrated: exact accepted eight-file `bba25ca4` artifact, patch SHA-256 `126e516bed2b07c2b067003faaf7037778807c137984d01abaab3ee731ccbc4a`. Independent context review accepted it against main7ab; later main differences were stewardship only. All eight resulting source blobs and six excluded already-adopted blobs matched. No resolution-shape context diff, migration/native code or duplicated request/resources were applied.
 - gate: 19 combined tests pass, zero failures/skips, including fresh inspection/witness cases, explicit pinned public consumers and scaffold/layout/normal retirement. Syntax, project, package dry-runs and strict knowledge validation pass; runtime source remains the tested staged tree. No new source review was conducted by the coordinator.
