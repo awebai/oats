@@ -28,7 +28,7 @@ Request files reuse the unchanged bounded strict object-file reader already used
 }
 ```
 
-First start needs task/backend. Later calls can use owned TASK.md and native endpoint. A supplied null backend is invalid, not omission. Core validates all backend fields, availability, task text/bounds, stop grace 1–300000ms and exact captured native prerequisites before backend access. Endpoint relocation and unsupported work/root/package/argument/contribution/backend paths refuse. Nothing is inferred from a current model/config alias.
+First start needs task/backend. Later calls can use owned TASK.md and native endpoint. A supplied null backend is invalid, not omission. Core validates all backend fields, availability, task text/bounds, stop grace 1–300000ms and exact captured native prerequisites before backend access. Endpoint relocation, contradictory residual native placement metadata and unsupported work/root/package/argument/contribution/backend paths refuse. First placement uses the exact admitted endpoint, not a legacy metadata fallback. Nothing is inferred from a current model/config alias.
 
 ## Persistent and helper stages
 
@@ -44,7 +44,7 @@ An occupied home is not silently recreated. Hook failures/custody gaps remain he
 
 Success uses the existing one-object CLI envelope `{schemaVersion:1,ok:true,result}`. Result includes the canonical selected `executionBinding`, existing native target/history/intent fields and, for `--helper`, exact `sourceExecutionBinding` and `helper:{key,name,subject}`. Initial dispatch has `dispatchAccepted:true`. Completed explicit replay returns `replayed:true` with the saved receipt and intent; it does not dispatch again or certify a currently live process.
 
-Failure uses one nonzero envelope. Native uncertainty remains in `error.details.nativeCustody`, including admitted intent, pending path and observed native/history evidence; `details.unconfirmed:true` is not flattened into an ordinary static error. Source/helper bindings remain distinguishable in failure details. Preserve that evidence. Retry with `--retry-intent` names the saved logical ID; it cannot silently rerun an exited/absent uncertain dispatch under the same ID. A new distinct restart request gets a new execution ID within the same incarnation. There is no metadata wipe, ID derived from a home/name, or borrowed provider credential/context.
+Failure uses one nonzero envelope. Native uncertainty remains in `error.details.nativeCustody`, including admitted intent, pending path and observed native/history evidence; `details.unconfirmed:true` is not flattened into an ordinary static error. Source/helper bindings remain distinguishable in failure details. Preserve that evidence. Lifecycle mismatch/held publication debt is returned separately as `error.details.custody` with indexed/metadata status and any saved intent/receipt, without claiming a new native effect. New requests cannot bypass cleanup-required even when its intent is completed; that completed publication debt stays held for explicit reconciliation. Retry with `--retry-intent` names the saved logical ID; it cannot silently rerun an exited/absent uncertain dispatch under the same ID. A present non-shell same-ID pending restart is adopted and returned without another stop/dispatch, just like start. A new distinct restart request gets a new execution ID within the same incarnation. There is no metadata wipe, ID derived from a home/name, or borrowed provider credential/context.
 
 ## Evidence
 

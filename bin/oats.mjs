@@ -318,6 +318,7 @@ function capturedSession(selector, bail) {
   } catch (error) {
     bail(error.code || "E_SESSION_START_FAILED", error.message, { home: error.home ?? home, executionBinding,
       ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}),
+      ...(error.capturedCustody ? { custody: error.capturedCustody } : {}),
       ...(error.nativeCustody ? { unconfirmed: true, nativeCustody: error.nativeCustody } : {}) });
   }
 }

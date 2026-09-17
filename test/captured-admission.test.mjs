@@ -46,6 +46,17 @@ test('new requests are distinct; retries retain logical identity/receipt and rej
   assert.equal(readCapturedInstanceIndex(f.deployment).instances[0].intents.length,2);
 });
 
+test('expected native source state is checked inside admission before mint or retry mutation',t=>{
+  const f=fixture(t),file=join(f.deployment,'.agents/portable/instance-references.json'),before=readFileSync(file);
+  assert.throws(()=>admitCapturedInstanceAction({...f.request,expectedStatus:'spawned-launch-pending'}),{code:'selection-changed'});
+  assert.deepEqual(readFileSync(file),before);
+  const admitted=admitCapturedInstanceAction({...f.request,expectedStatus:'scaffolded-hooks-pending'});
+  beginCapturedIntent({...f.request,intent:admitted.intent});settleCapturedIntent({...f.request,intent:admitted.intent,state:'unconfirmed',receipt:{observed:true}});
+  const retained=readFileSync(file);f.metadata.captured.lifecycle='retire-running';f.save();
+  assert.throws(()=>admitCapturedInstanceAction({...f.request,expectedStatus:'scaffolded-hooks-pending',retryExecutionId:admitted.intent.executionId}),{code:'selection-changed'});
+  assert.deepEqual(readFileSync(file),retained,'a stale metadata/index relationship cannot increment the retry attempt');
+});
+
 test('recreated home or replaced work never inherits prior incarnation custody, even with copied metadata',t=>{
   const f=fixture(t),a=admitCapturedInstanceAction(f.request);beginCapturedIntent({...f.request,intent:a.intent});
   renameSync(f.home,join(f.root,'preserved-old-home'));mkdirSync(join(f.home,'work'),{recursive:true});f.save();

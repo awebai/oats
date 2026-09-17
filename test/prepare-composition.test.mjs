@@ -39,6 +39,80 @@ function fixture(t, provider=false) {
   git('config','--file',config,`url.${pathToFileURL(repo).href}.insteadOf`,source.slice(4));git('add','.');git('commit','--quiet','-m','A');
   return {root,repo,deployment,id,write,git,commit:git('rev-parse','HEAD'),input:{deployment,source:{source,soul:'agents/expert',revision:'topic',alias:'imported-expert'}},options:{repositoryOptions:{environment,allowLocalGit:true}}};
 }
+function nativeCorrectionFixture(t) {
+  const f=fixture(t),root=realpathSync(f.root),home=join(root,'native-correction'),binary=join(root,'native.cjs'),backendBinary=join(root,'backend');
+  writeFileSync(binary,`#!${process.execPath}\nrequire('node:fs').appendFileSync('work/effects.jsonl',JSON.stringify({id:process.env.OATS_EXECUTION_ID,attempt:process.env.OATS_EXECUTION_ATTEMPT})+'\\n');`,{mode:0o700});
+  writeFileSync(backendBinary,'#!/bin/sh\nexit 99\n',{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:join(root,'profile')},model:'inert-fixture',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'native-correction'});activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});
+  rmSync(f.repo,{recursive:true});const calls=[];let present=false;
+  const backend={backend:'tmux',binary:backendBinary,socket:join(root,'admitted-A.sock'),session:'admitted-A'},env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true'};
+  const io={exec:(file,args,options)=>{
+    assert.equal(file,backendBinary,'no process inspection/stop outside the admitted backend');calls.push(args);
+    if(args.includes('list-panes')){
+      if(present)return '%7\t0\tclaude\t4242\n'; // synthetic present non-shell observation; no live model.
+      throw Object.assign(new Error("can't find window"),{stderr:"can't find window"});
+    }
+    if(args.includes('new-window')||args.includes('respawn-pane'))execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:home,env:options.env,encoding:'utf8'});
+    return '';
+  },kill:()=>assert.fail('same-id adoption must not stop a process')};
+  const options={deployment:f.deployment,resolution:prepared.resolution,backend,task:'inert task',env,io};
+  return {...f,root,home,backend,calls,options,setPresent:value=>{present=value;},indexFile:join(f.deployment,'.agents/portable/instance-references.json'),metaFile:join(home,'instance.json'),
+    effects:()=>readFileSync(join(home,'work/effects.jsonl'),'utf8').trim().split('\n').map(JSON.parse)};
+}
+
+test('native state preflight preserves newer lifecycle and holds completed publication debt',t=>{
+  const f=nativeCorrectionFixture(t),baseIndex=readFileSync(f.indexFile),baseMeta=readFileSync(f.metaFile);
+  for(const [indexed,metadata] of [['retire-running','spawned-launch-pending'],['spawn-failed-cleanup-required','spawned-launch-pending'],['retire-running','retire-running']]){
+    const ledger=JSON.parse(baseIndex),meta=JSON.parse(baseMeta);ledger.instances[0].status=indexed;meta.captured.lifecycle=metadata;
+    writeFileSync(f.indexFile,JSON.stringify(ledger));writeFileSync(f.metaFile,JSON.stringify(meta));
+    const beforeIndex=readFileSync(f.indexFile),beforeMeta=readFileSync(f.metaFile);
+    assert.throws(()=>startCapturedInstanceSession(f.home,f.options),error=>error.code==='selection-changed'&&error.capturedCustody.indexedStatus===indexed&&error.home===f.home);
+    assert.deepEqual(readFileSync(f.indexFile),beforeIndex);assert.deepEqual(readFileSync(f.metaFile),beforeMeta);assert.equal(f.calls.length,0);assert.equal(existsSync(join(f.home,'TASK.md')),false);
+  }
+  writeFileSync(f.indexFile,baseIndex);writeFileSync(f.metaFile,baseMeta);
+  const started=startCapturedInstanceSession(f.home,f.options),ledger=JSON.parse(readFileSync(f.indexFile)),meta=JSON.parse(readFileSync(f.metaFile));
+  ledger.instances[0].status='start-failed-cleanup-required';meta.captured.lifecycle='start-failed-cleanup-required';
+  writeFileSync(f.indexFile,JSON.stringify(ledger));writeFileSync(f.metaFile,JSON.stringify(meta));
+  const beforeIndex=readFileSync(f.indexFile),beforeMeta=readFileSync(f.metaFile),beforeCalls=f.calls.length;
+  for(const retry of [undefined,started.intent.executionId])assert.throws(()=>startCapturedInstanceSession(f.home,{...f.options,...(retry?{retryExecutionId:retry}:{})}),error=>error.code==='selection-changed'&&error.capturedCustody.intent.executionId===started.intent.executionId);
+  const request=join(f.root,'held-request.json');writeFileSync(request,JSON.stringify({schemaVersion:1,backend:f.backend,task:'inert task'}));
+  const cli=spawnSync(process.execPath,[fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),'session','start','--deployment',f.deployment,'--resolution',f.options.resolution.id,'--home',f.home,'--request',request,'--json'],{env:f.options.env,encoding:'utf8',timeout:20000});
+  assert.equal(cli.status,1);const error=JSON.parse(cli.stdout).error;assert.equal(error.details.custody.intent.executionId,started.intent.executionId);assert.equal(error.details.custody.held,true);
+  assert.equal(f.calls.length,beforeCalls);assert.equal(f.effects().length,1);assert.deepEqual(readFileSync(f.indexFile),beforeIndex);assert.deepEqual(readFileSync(f.metaFile),beforeMeta);
+});
+
+test('same-id uncertain restart adopts a present target without another stop or dispatch',t=>{
+  const f=nativeCorrectionFixture(t);let failure;
+  try{startCapturedInstanceSession(f.home,{...f.options,restart:true,io:{...f.options.io,failBeforeMetadataWrite:true}});}catch(error){failure=error;}
+  assert.equal(failure?.code,'E_SESSION_START_INCOMPLETE');const id=failure.nativeCustody.intent.executionId;
+  assert.equal(f.effects().length,1);const beforeCalls=f.calls.length;
+  assert.throws(()=>startCapturedInstanceSession(f.home,{...f.options,restart:true}),{code:'selection-changed'});assert.equal(f.calls.length,beforeCalls,'unconfirmed cleanup cannot become a new request');
+  f.setPresent(true);
+  const adopted=startCapturedInstanceSession(f.home,{...f.options,restart:true,retryExecutionId:id});
+  assert.equal(adopted.reused,'adopted');assert.equal(adopted.intent.executionId,id);assert.equal(adopted.intent.attempt,2);assert.equal(f.effects().length,1);
+  assert.deepEqual(f.calls.slice(beforeCalls).map(args=>args.includes('list-panes')),[true],'adoption only observes, never stops/allocates');
+  assert.equal(JSON.parse(readFileSync(f.indexFile)).instances[0].intents.at(-1).state,'completed');
+  f.setPresent(false);const distinct=startCapturedInstanceSession(f.home,{...f.options,restart:true});
+  assert.notEqual(distinct.intent.executionId,id);assert.equal(distinct.incarnationId,adopted.incarnationId);assert.equal(f.effects().length,2,'distinct new restart retains its ordinary dispatch path');
+});
+
+test('native first placement refuses residual endpoint B and allocates only admitted A',t=>{
+  const f=nativeCorrectionFixture(t),base=readFileSync(f.metaFile),index=readFileSync(f.indexFile);
+  for(const poison of [{tmux:{session:'B',window:'foreign-window',socket:join(f.root,'B.sock')}},{sessionTarget:{backend:'herdr'}},{backend:'herdr'}]){
+    writeFileSync(f.metaFile,JSON.stringify({...JSON.parse(base),...poison}));const before=readFileSync(f.metaFile);
+    assert.throws(()=>startCapturedInstanceSession(f.home,f.options),{code:'E_RUNTIME_AUTHORITY_MISMATCH'});
+    assert.equal(f.calls.length,0);assert.deepEqual(readFileSync(f.indexFile),index);assert.deepEqual(readFileSync(f.metaFile),before);assert.equal(existsSync(join(f.home,'TASK.md')),false);
+  }
+  writeFileSync(f.metaFile,base);const started=startCapturedInstanceSession(f.home,f.options);
+  assert.deepEqual(started.target,{backend:'tmux',session:f.backend.session,window:'native-correction',socket:f.backend.socket});
+  const allocation=f.calls.find(args=>args.includes('new-window'));
+  assert.equal(allocation[allocation.indexOf('-S')+1],f.backend.socket);assert.equal(allocation[allocation.indexOf('-t')+1],`=${f.backend.session}:`);assert.equal(allocation[allocation.indexOf('-n')+1],'native-correction');
+  assert.equal(f.effects().length,1);
+});
+
 test('native preparation publishes complete source/curriculum/helper records, then executes after source deletion',t=>{
   const f=fixture(t),result=prepareCapturedComposition(f.input,f.options);
   assert.equal(result.status,'approval-required');assert.equal(result.source.revision,f.commit);
@@ -91,7 +165,7 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
 test('captured native start executes inert primary/helper processes through the existing backend with durable intent and history',t=>{
-  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-fixture'),backendBinary=join(root,'tmux-fixture');
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-fixture.cjs'),backendBinary=join(root,'tmux-fixture');
   writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
     const index=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'),'utf8'));
     const row=index.instances.find(r=>r.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(r=>r.executionId===e.OATS_EXECUTION_ID);
@@ -149,7 +223,7 @@ test('captured native start executes inert primary/helper processes through the 
 });
 
 test('public captured session dispatch follows retained helper edges and preserves uncertain execution identity',t=>{
-  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-cli-fixture'),backendBinary=join(root,'tmux-cli-fixture');
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-cli-fixture.cjs'),backendBinary=join(root,'tmux-cli-fixture.cjs');
   const backendLog=join(root,'backend.jsonl'),uncertainFlag=join(root,'uncertain-backend'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
   writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
     const ledger=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'),'utf8'));
