@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -145,6 +147,57 @@ test('activation never publishes or cleans through home/work replacement during 
     assert.equal(row.status,'spawn-failed-cleanup-required');assert.equal(row.intents[0].state,'unconfirmed');
     assert.equal(row.intents[0].receipt.observedResource,'resource-before-custody-loss');assert.equal(row.custodyFailure.code,'integrity-drift');
     assert.equal(failure.capturedCustody.meta[f.id].executionId,row.intents[0].executionId,'independent reporting retains the exact observed provider receipt');
+  }
+});
+
+test('activation failure reporting cannot overwrite a newer lifecycle row or receipt',t=>{
+  const f=fixture(t),root=realpathSync(f.root),indexFile=join(realpathSync(f.deployment),'.agents/portable/instance-references.json');
+  const savedIndex=join(root,'newer-index.json'),savedMetadata=join(root,'newer-metadata.json');
+  f.write('packages/action/cap/show.mjs',`import {readFileSync,writeFileSync} from 'node:fs';
+    const invocation=JSON.parse(readFileSync(process.env.OATS_INVOCATION_CONTEXT_FILE,'utf8'));
+    const index=JSON.parse(readFileSync(${JSON.stringify(indexFile)},'utf8')),row=index.instances.find(row=>row.incarnationId===invocation.instance.incarnationId);
+    const intent=row.intents.find(item=>item.executionId===invocation.intent.executionId);row.status='retire-running';intent.state='completed';intent.receipt={newer:'must-remain'};intent.replayable=true;
+    const bytes=JSON.stringify(index)+'\\n';writeFileSync(${JSON.stringify(indexFile)},bytes);writeFileSync(${JSON.stringify(savedIndex)},bytes);
+    const file=process.env.OATS_INSTANCE_HOME+'/instance.json',metadata=JSON.parse(readFileSync(file,'utf8'));metadata.captured.lifecycle='retire-running';
+    const meta=JSON.stringify(metadata)+'\\n';writeFileSync(file,meta);writeFileSync(${JSON.stringify(savedMetadata)},meta);
+    console.log(JSON.stringify({meta:{observed:'from-earlier-spawn'}}));`);
+  f.git('add','.');f.git('commit','--quiet','-m','newer lifecycle during hook');
+  const prepared=prepareCapturedComposition(f.input,f.options);approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const home=join(root,'newer-state');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'newer-state'});
+  let failure;try{activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});}catch(error){failure=error;}
+  assert.equal(failure?.code,'selection-changed');assert.equal(failure.home,home);
+  assert.equal(failure.capturedCustody.reportingFailure.code,'selection-changed');assert.equal(failure.capturedCustody.meta[f.id].observed,'from-earlier-spawn');
+  assert.deepEqual(readFileSync(indexFile),readFileSync(savedIndex),'newer row/status/receipt remains byte-identical');
+  assert.deepEqual(readFileSync(join(home,'instance.json')),readFileSync(savedMetadata),'publication does not clobber newer owned metadata either');
+});
+
+test('post-hook classification read failure preserves observed facts even when independent reporting fails',t=>{
+  const f=fixture(t),root=realpathSync(f.root),indexFile=join(realpathSync(f.deployment),'.agents/portable/instance-references.json');
+  f.write('packages/action/cap/show.mjs','console.log(JSON.stringify({meta:{observed:"settled-before-index-fault"}}));\n');
+  f.git('add','.');f.git('commit','--quiet','-m','observed classification receipt');
+  const prepared=prepareCapturedComposition(f.input,f.options);approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  for(const reportAlsoFails of [false,true]){
+    const instance=reportAlsoFails?'classification-report-fails':'classification-only',home=join(root,instance);
+    scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance});const before=readFileSync(join(home,'instance.json'));
+    let fired=false,failure;const original=fs.lstatSync;
+    // Controlled reader-boundary fault, not a claim of a real OS I/O failure.
+    fs.lstatSync=(path,...args)=>{
+      if(path===indexFile){
+        const direct=/at readCapturedInstanceIndex [^\n]*\n\s+at activateCapturedScaffold /.test(new Error().stack);
+        if(direct||fired&&reportAlsoFails){fired=true;throw Object.assign(new Error('synthetic post-hook index read failure'),{code:'E_TEST_INDEX_READ'});}
+      }
+      return original(path,...args);
+    };syncBuiltinESMExports();
+    try{activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});}catch(error){failure=error;}
+    finally{fs.lstatSync=original;syncBuiltinESMExports();}
+    assert.equal(fired,true,'fault reached the direct post-hook classification boundary');assert.equal(failure?.code,'E_TEST_INDEX_READ');assert.equal(failure.home,home);
+    assert.equal(failure.capturedCustody.meta[f.id].observed,'settled-before-index-fault');
+    const row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);
+    assert.equal(failure.capturedCustody.intents[f.id].executionId,row.intents[0].executionId);
+    assert.equal(row.intents[0].receipt.observed,'settled-before-index-fault');
+    assert.equal(row.status,reportAlsoFails?'spawn-hooks-running':'spawn-failed-cleanup-required');
+    if(reportAlsoFails)assert.equal(failure.capturedCustody.reportingFailure.code,'E_TEST_INDEX_READ');else assert.ok(failure.capturedCustody.report);
+    assert.deepEqual(readFileSync(join(home,'instance.json')),before,'unavailable classification cannot publish terminal metadata');
   }
 });
 
