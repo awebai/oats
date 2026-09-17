@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-16
+timestamp: 2026-09-17
 ---
 
 # Delivery log
@@ -23,6 +23,12 @@ Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
 ---
+
+## Standalone index-copy successor — scoped review (2026-09-17)
+- verdict: RETURNED — `ce8980ba` closes the original ordinary-index byte-preservation failure, but has two residual copy-boundary P2 findings. No source-main/release/activation is implied.
+- evidence: the one permitted existing custody regression passes in an exact isolated archive. Native Git 2.44 source shows split-index reads freshen original shared-index timestamps before split-index output suppression takes effect. Native Node 22 copy implementation opens a source before checking its type, allowing a special file to block outside the Git command timeout. The latter findings are static inspections, not executed reproductions.
+- follow-up: provider owner received narrow correction/regression scope: isolate shared-index read dependencies or refuse before native freshening, safely acquire a regular index descriptor, preserve the original index and independent publication index. Keep raw-object, filtering, remote/auth and no-checkout protections; no copy-back, timestamp restoration or blind complete rerun. The earlier complete gate remains 259 pass / one failure / three skips until a new coherent gate is actually run.
+- taught us: redirecting one index pathname does not necessarily redirect native backing-file side effects; a regular-file check after a blocking open is too late. Targeted byte-preservation success must not become an unconditional custody claim.
 
 ## Fresh flow and provider successor — coordinator review (2026-09-16)
 - verdict: RETURNED — lifecycle/admission `257c4b96` and onboarding `4d244ee2` remain branch candidates. Provider `b92a824` closes the residual pre-effect harvest finding but its full standalone integration gate still fails index-byte custody. No new source integration/release/deployment is implied.

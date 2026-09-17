@@ -1,5 +1,8 @@
 # Knowledge Log
 
+## 2026-09-17
+* **Review**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record ordinary-index byte closure at `ce8980ba`, with residual split-index metadata and special-file boundedness findings returned to the provider. One passing regression is not a repeated full gate or release qualification.
+
 ## 2026-09-16
 * **Review**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record fresh admission/onboarding RETURNs, closed OKF before-effect harvest gate, and the remaining standalone full-suite index-custody failure. Standing production authorization removes repeated human milestone gates, not technical readiness/custody checks. Owners continue corrective work; no release/live acceptance is inferred.
 * **Review**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record authorized coordinator direct-main delivery for standalone OKF and RETURN of candidate `388182c` for worker-dispatch and input/custody findings. Targeted tests passed but do not prove captured subprocess closure; provider fixes and generic helper integration remain required. Runtime knowledge PR-only policy is unchanged.
