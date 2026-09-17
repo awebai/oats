@@ -47,6 +47,8 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
+import { readPortableBytes } from "../lib/portable-files.mjs";
+import { parseStrictJson } from "../lib/portable-values.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 
@@ -93,23 +95,34 @@ const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: 
 
 function prepareCmd() {
   const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
-  const values = new Map(), allowed = new Set(["dir", "source", "revision", "export", "alias", "workspace", "workspace-revision", "work"]);
+  const values = new Map(), allowed = new Set(["request", "dir", "source", "revision", "export", "alias", "workspace", "workspace-revision", "work"]);
   for (let index = 1; index < args.length; index++) {
     if (args[index] === "--json") continue;
     const key = args[index].startsWith("--") ? args[index].slice(2) : "";
     if (!allowed.has(key) || values.has(key) || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "prepare needs unique named source/context arguments; use prepare --help");
     values.set(key, args[++index]);
   }
-  const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
-  if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");
-  if (source ? !values.get("revision") || !values.get("export") : !values.get("workspace") || values.has("revision") || values.has("export")) fail("E_BAD_ARGS", "choose a complete source/revision/export reference or a workspace-advertised alias");
-  if (values.has("workspace-revision") && !values.has("workspace")) fail("E_BAD_ARGS", "--workspace-revision requires --workspace");
-  const origin = { kind: "operator", document: { kind: "operator", id: "oats-prepare" }, pointer: "/source" };
-  const input = { deployment, source: source ? { source, revision: values.get("revision"), soul: values.get("export"), alias } : alias, origin,
-    ...(values.has("work") ? { mode: values.get("work") } : {}),
-    ...(values.has("workspace") ? { workspace: { source: values.get("workspace"), origin: { ...origin, pointer: "/workspace" },
-      ...(values.has("workspace-revision") ? { revision: values.get("workspace-revision") } : {}) } } : {}) };
   try {
+    let input;
+    if (values.has("request")) {
+      // Closed transport alternative, checked before opening any input file.
+      if (values.size !== 1) fail("E_BAD_ARGS", "--request cannot be mixed with other preparation input flags");
+      const file = values.get("request");
+      if (!isAbsolute(file)) fail("E_BAD_ARGS", "--request needs an absolute regular JSON file");
+      input = parseStrictJson(readPortableBytes(file));
+    } else {
+      const deployment = values.get("dir"), alias = values.get("alias"), source = values.get("source");
+      if (!deployment || !isAbsolute(deployment) || !alias) fail("E_BAD_ARGS", "prepare needs --dir <absolute deployment> and --alias <name>");
+      if (source ? !values.get("revision") || !values.get("export") : !values.get("workspace") || values.has("revision") || values.has("export")) fail("E_BAD_ARGS", "choose a complete source/revision/export reference or a workspace-advertised alias");
+      if (values.has("workspace-revision") && !values.has("workspace")) fail("E_BAD_ARGS", "--workspace-revision requires --workspace");
+      const origin = { kind: "operator", document: { kind: "operator", id: "oats-prepare" }, pointer: "/source" };
+      input = { deployment, source: source ? { source, revision: values.get("revision"), soul: values.get("export"), alias } : alias, origin,
+        ...(values.has("work") ? { mode: values.get("work") } : {}),
+        ...(values.has("workspace") ? { workspace: { source: values.get("workspace"), origin: { ...origin, pointer: "/workspace" },
+          ...(values.has("workspace-revision") ? { revision: values.get("workspace-revision") } : {}) } } : {}) };
+    }
+    // Pass the whole request to the one public validator/resolver. Unknown
+    // fields are refused there, never filtered or filled from ambient state.
     const result = prepareCapturedComposition(input);
     if (!result.resolution) fail("needs-configuration", "preparation is incomplete; no executable resolution was published", result);
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
@@ -4791,14 +4804,24 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 try {
-// Explicit new-work preparation uses its own absolute --dir and source input;
-// an inherited command binding must not turn it into a current-context fallback.
-if (cmd === "prepare") {
+// Inspect explicit selectors with the existing parser before new-work routing,
+// including selectors before the command. Inherited captures are not prepare inputs.
+let captured;
+try { captured = capturedSelector(args, {}); }
+catch (error) {
+  if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
+  die(error.message);
+}
+if (cmd === "prepare" || captured?.args[0] === "prepare") {
+  if (captured) {
+    if (JSON_MODE) jsonFail("E_BAD_ARGS", "prepare is explicit new work and cannot use captured selectors");
+    die("prepare is explicit new work and cannot use captured selectors");
+  }
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   prepareCmd(); process.exit(0);
 }
-let captured;
-try { captured = capturedSelector(args); }
+// Other commands retain their existing explicit/inherited selection rules.
+try { captured ??= capturedSelector(args); }
 catch (error) {
   if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
   die(error.message);
@@ -5106,11 +5129,15 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             design, repo checkout only; see
                                             packages/experimental/README.md
 
+  oats prepare --request <absolute-json-file> [--json]
+                                            complete public preparation input; no mixed flags,
+                                            inherited binding, implicit setup or launch authority
   oats prepare --dir <abs> --source <git repo> --revision <ref> --export <path>
       --alias <name> [--work <mode>] [--json]  prepare retained commands and curriculum,
                                             no launch; provider gaps report incomplete
   oats prepare --dir <abs> --workspace <git repo> --alias <advertised alias>
-      [--workspace-revision <ref>] [--json]  same preparation through workspace imports
+      [--workspace-revision <ref>] [--work <mode>] [--json]
+                                            same preparation through workspace imports
   oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
       [--helper <exact-map-key>]             inspect retained source/helper inputs, not today's configuration
   oats trust <capability> --deployment <abs> --resolution <id> [--json]

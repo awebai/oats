@@ -273,6 +273,46 @@ test('public prepare CLI uses the native transport and returns the exact immutab
   assert.equal(envelope.result.status,'approval-required');assert.equal(envelope.result.source.alias,'cli-expert');
   assert.equal(envelope.result.executionBinding.resolution.id,envelope.result.resolution.id);
   assert.equal(readCapturedResolution(f.deployment,envelope.result.resolution).subject.soul.alias,'cli-expert');
+  f.write('oats-workspace.yaml',JSON.stringify({schemaVersion:1,name:'Fixture',imports:[{source:'git:ssh://example.invalid/prepare.git',revision:'topic',soul:'agents/expert',alias:'workspace-expert'}]}));
+  f.git('add','.');f.git('commit','--quiet','-m','workspace flag control');
+  const workspace=JSON.parse(execFileSync(process.execPath,[cli,'prepare','--dir',f.deployment,'--workspace','git:ssh://example.invalid/prepare.git','--workspace-revision','topic','--alias','workspace-expert','--work','directory','--json'],{
+    encoding:'utf8',env:{...f.options.repositoryOptions.environment,GIT_SSH_COMMAND:ssh,GIT_SSH_VARIANT:'ssh'},
+  }));
+  assert.equal(workspace.ok,true);assert.equal(readCapturedResolution(f.deployment,workspace.result.resolution).context.kind,'workspace');
+});
+
+test('public request-file preparation preserves operator bindings and explicit contexts under poisoned inherited selectors',t=>{
+  const f=fixture(t,true),root=realpathSync(f.root),ssh=join(root,'request-ssh'),phaseLog=join(root,'phases');
+  const manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json'),'utf8'));
+  manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
+  f.write('packages/action/cap/oats.json',JSON.stringify(manifest));
+  f.write('packages/action/cap/binding.mjs',`import {readFileSync,appendFileSync} from 'node:fs';
+    const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/location';appendFileSync(${JSON.stringify(phaseLog)},r.phase+'\\n');let result;
+    if(r.phase==='normalize'){const operator=r.input.declarations.find(entry=>entry.kind==='operator');result={requirements:[],candidates:[{key,kind:'operator',value:operator.value.bindings.location,origin:operator.origins['/bindings/location']}],model:{}};}
+    else if(r.phase==='bind')result={payloadContract:'example.locations',payloadVersion:1,payload:{location:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
+    else result={status:'ready',problems:[]};console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
+  f.git('add','.');f.git('commit','--quiet','-m','request-file provider');const revision=f.git('rev-parse','HEAD');
+  writeFileSync(ssh,`#!/bin/sh\nexec git-upload-pack '${f.repo.replaceAll("'", "'\\''")}'\n`);chmodSync(ssh,0o700);
+  const cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),environment={...f.options.repositoryOptions.environment,GIT_SSH_COMMAND:ssh,GIT_SSH_VARIANT:'ssh',
+    OATS_DEPLOYMENT:'malformed-inherited-deployment',OATS_RESOLUTION:'malformed-inherited-resolution',OATS_INSTANCE:'foreign-instance',PI_AGENT_HOME:'/foreign-home'};
+  for(const [label,key] of [['keyed','κ'.repeat(128)],['null',null]]){
+    const deployment=join(root,`request-${label}`);mkdirSync(deployment);
+    const request={...f.input,deployment,source:{...f.input.source,source:'git:ssh://example.invalid/prepare.git',alias:'request-expert'},standaloneContextKey:key,
+      operator:{policy:{},document:{kind:'operator',id:'request-fixture'},bindings:{location:'explicit-operator-location'}}};
+    const file=join(root,`${label}.json`);writeFileSync(file,JSON.stringify(request),{mode:0o600});
+    const before=existsSync(phaseLog)?readFileSync(phaseLog,'utf8'):'';
+    const pending=spawnSync(process.execPath,[cli,'prepare','--request',file,'--json'],{encoding:'utf8',env:environment});
+    assert.equal(pending.status,1,pending.stderr);const incomplete=JSON.parse(pending.stdout).error;
+    assert.equal(incomplete.code,'needs-configuration');assert.equal(incomplete.details.problems[0].code,'approval-required');
+    assert.equal(existsSync(phaseLog)?readFileSync(phaseLog,'utf8'):'',before,'unapproved provider phases do not run');
+    approveAvailableCapability(deployment,incomplete.details.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+    const prepared=JSON.parse(execFileSync(process.execPath,[cli,'prepare','--request',file,'--json'],{encoding:'utf8',env:environment}));
+    assert.equal(prepared.ok,true);assert.equal(prepared.result.status,'prepared');assert.equal(prepared.result.source.revision,revision);
+    const record=readCapturedResolution(deployment,prepared.result.resolution);
+    assert.deepEqual(structuredClone(record.context),{kind:'standalone',key});assert.equal(record.subject.soul.alias,'request-expert');
+    assert.equal(record.bindings.knowledge.payload.location,'explicit-operator-location');assert.equal(record.choices['/bindings/knowledge/location'].selectedBy.document.id,'request-fixture');
+    assert.deepEqual(JSON.parse(readFileSync(file,'utf8')),request,'transport does not rewrite or strip the request');
+  }
 });
 
 test('prepare-on-tick uses the real core adapter and captured CLI without injected preparation or admission',t=>{
