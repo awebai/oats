@@ -30,6 +30,31 @@ Request files reuse the unchanged bounded strict object-file reader already used
 
 First start needs task/backend. Later calls can use owned TASK.md and native endpoint. A supplied null backend is invalid, not omission. Core validates all backend fields, availability, task text/bounds, stop grace 1–300000ms and exact captured native prerequisites before backend access. Endpoint relocation, contradictory residual native placement metadata and unsupported work/root/package/argument/contribution/backend paths refuse. First placement uses the exact admitted endpoint, not a legacy metadata fallback. Nothing is inferred from a current model/config alias.
 
+## Read-only API availability, separate from readiness
+
+Public `inspect` returns `result.nativeSession`; helper inspection also returns
+the same value as `helperSelection.launch`:
+
+```json
+{"schemaVersion":1,"api":{"contract":"oats.captured-session","version":1,"available":true},"readiness":{"status":"not-checked"}}
+```
+
+This closed `CapturedNativeSessionAvailability` shape identifies the implemented
+callable request/result contract, not the selected record's or execution host's
+readiness. Core exposes the same static value through
+`capturedNativeSessionAvailability()`. Inspection has no target home/task/backend
+and performs no provider readiness/backend call, provisioning or admission. The
+descriptor stays `not-checked` before and after native dispatch; it never stores
+readiness as permanent authority. Missing launch recipes, approvals, supported
+roots/args/backends/contributions or clear custody still refuse during start.
+
+Consumers must recognize the contract/version, treat old/absent/unknown or
+contradictory descriptors as unqualified rather than fabricate a replacement,
+and still validate the actual action result/error and source/helper authority.
+API availability alone does not remove a provider's `E_CAPTURED_HELPER` gate or
+satisfy provider/runtime/Pi/privacy/release acceptance. The previous unreleased
+blanket helper launch-unsupported signal is not emitted alongside this descriptor.
+
 ## Persistent and helper stages
 
 For a persistent home, use its own binding. For a helper:
@@ -38,7 +63,7 @@ For a persistent home, use its own binding. For a helper:
 2. Existing `spawn HELPER_NAME --deployment HELPER_DEPLOYMENT --resolution HELPER_ID --home NEW_HOME --no-launch --json` creates the fresh owned scaffold and runs retained hooks. It is not native dispatch.
 3. Invoke the new `session start` with SOURCE selectors, the same `--helper EXACT_KEY`, that owned home and the native request. The kernel revalidates the retained edge and context/human equality, then passes the HELPER binding to `startCapturedInstanceSession`. A source home or another helper home does not match and refuses.
 
-An occupied home is not silently recreated. Hook failures/custody gaps remain held; this API does not add automatic hook replay or a compound scaffold/start transaction. Keep source completion calls on the source's saved binding, not the helper's inherited runtime selection. Original static helper lookup output retains its unsupported/no-readiness launch projection for compatibility; consumers use the new callable interface under a qualified version, not that old lookup as proof of running status.
+An occupied home is not silently recreated. Hook failures/custody gaps remain held; this API does not add automatic hook replay or a compound scaffold/start transaction. Keep source completion calls on the source's saved binding, not the helper's inherited runtime selection. Static helper lookup uses the versioned availability/not-checked descriptor above; consumers require that qualified callable contract and real action result, never the lookup as proof of running status.
 
 ## Result and failure custody
 

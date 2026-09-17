@@ -2015,6 +2015,53 @@
         }
       ]
     },
+    "CapturedNativeSessionAvailability": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "api": {
+          "type": "object",
+          "properties": {
+            "contract": {
+              "const": "oats.captured-session"
+            },
+            "version": {
+              "const": 1
+            },
+            "available": {
+              "const": true
+            }
+          },
+          "required": [
+            "contract",
+            "version",
+            "available"
+          ],
+          "additionalProperties": false
+        },
+        "readiness": {
+          "type": "object",
+          "properties": {
+            "status": {
+              "const": "not-checked"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "api",
+        "readiness"
+      ],
+      "additionalProperties": false,
+      "description": "Static callable interface availability only; no selected-record, provider, instance or host readiness is checked. Actual native action validation/receipts remain mandatory."
+    },
     "Problem": {
       "type": "object",
       "properties": {

@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -354,7 +354,7 @@ function capturedCommand(selector) {
       const helperSelection = helperKey === undefined ? null : resolveCapturedHelper({ executionBinding: { schemaVersion: 1, ...target }, helper: helperKey });
       const selected = helperSelection?.executionBinding ?? target;
       const loaded = loadCapturedDispatch({ deployment: selected.deployment, resolution: selected.resolution, action: { kind: args.includes("--composition") ? "compose" : "inspect" } });
-      const result = { resolution: loaded.resolution, capture: loaded.record.capture,
+      const result = { resolution: loaded.resolution, capture: loaded.record.capture, nativeSession: capturedNativeSessionAvailability(),
         ...(helperSelection ? { helperSelection } : {}),
         capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
           approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),

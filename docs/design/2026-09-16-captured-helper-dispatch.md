@@ -9,6 +9,7 @@ This API resolves exact helper authority; it does not qualify runtime launch.
 
 ```text
 resolveCapturedHelper({executionBinding, helper, name?})
+capturedNativeSessionAvailability() // static callable contract, not readiness
 
 oats inspect --deployment ABS --resolution SOURCE_ID --json
 oats inspect --deployment ABS --resolution SOURCE_ID --helper EXACT_MAP_KEY --json
@@ -28,12 +29,21 @@ The core result is:
 {schemaVersion:1,
  sourceExecutionBinding, executionBinding,
  helper:{key,name,subject}, context, responsibleHuman, workMode,
- launch:{status:'unsupported',reason:'captured-helper-launch-not-qualified'}}
+ launch:{schemaVersion:1,
+   api:{contract:'oats.captured-session',version:1,available:true},
+   readiness:{status:'not-checked'}}}
 ```
 
 `sourceExecutionBinding` remains the selection for provider completion/retry calls;
-`executionBinding` selects the helper. Static verification is not approval, mutable
-provider readiness, incarnation admission or launch. Missing keys/records/resources
+`executionBinding` selects the helper. `launch` advertises the versioned callable
+API only; public inspect also returns that descriptor as `result.nativeSession`
+for persistent/helper selections. `readiness.status:'not-checked'` is literal:
+inspection probes no native backend/provider, creates no home or intent, and
+cannot certify the requested instance/host. API availability remains true even
+when the retained record has no launch recipe or lacks approval. Consumers must
+understand the exact contract/version and obey actual start refusals/receipts.
+Static verification is not approval, mutable provider readiness, incarnation
+admission or launch. Missing keys/records/resources
 refuse even when a healthy newer selection exists. The initial supported subset
 requires matching captured source/helper contexts and human choices; distinct
 helper contexts/owners require explicit helper-request policy and currently refuse.
@@ -60,10 +70,11 @@ oats session start --deployment SOURCE_DEPLOYMENT --resolution SOURCE_ID --helpe
 It revalidates the exact source edge, checks that the owned home belongs to that
 dedicated helper, and calls the existing captured native session transaction.
 See the [public native request contract](2026-09-17-public-captured-start.md).
-The original static `launch:unsupported` lookup projection is unchanged: it is
-not a runtime-readiness certificate or a claim about the newer callable API.
-Providers must qualify this API at an exact compatible version before replacing
-their unsupported-helper guard. `launch:null` is never filled from current config;
+The unreleased blanket `launch.status:unsupported` projection is replaced by the
+versioned availability/not-checked descriptor above. An old or unknown descriptor
+is unqualified ingress, not permission to guess support or silently ignore a
+contradictory readiness signal. Providers must qualify this API at an exact
+compatible version before replacing their unsupported-helper guard. `launch:null` is never filled from current config;
 unsupported runtime prerequisites still refuse. Helper-authored policy holds and
 the existing recursion guards remain intact.
 

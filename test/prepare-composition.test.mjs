@@ -248,7 +248,9 @@ test('public captured session dispatch follows retained helper edges and preserv
   const sourceFlags=['--deployment',f.deployment,'--resolution',prepared.resolution.id],home=join(root,'public-primary'),helperHome=join(root,'public-helper');
   const request=join(root,'native-request.json'),requestBody={schemaVersion:1,backend:{backend:'tmux',binary:backendBinary,socket:join(root,'fixture.sock'),session:'fixture'},task:'inert public task'};
   writeFileSync(request,JSON.stringify(requestBody));
+  const availability={schemaVersion:1,api:{contract:'oats.captured-session',version:1,available:true},readiness:{status:'not-checked'}};
   const inspected=run(['inspect',...sourceFlags,'--helper','example.action:worker']);assert.equal(inspected.ok,true);assert.equal(inspected.result.helperSelection.executionBinding.resolution.id,helper.id);
+  assert.deepEqual(inspected.result.nativeSession,availability);assert.deepEqual(inspected.result.helperSelection.launch,availability);assert.equal(existsSync(backendLog),false,'API discovery does not inspect a native backend');
   const scaffold=run(['spawn','imported-expert',...sourceFlags,'--home',home,'--no-launch']);assert.equal(scaffold.ok,true);
   const helperScaffold=run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--no-launch']);assert.equal(helperScaffold.ok,true);
   assert.equal(existsSync(backendLog),false,'scaffold/hooks alone never allocate a native backend');
@@ -266,6 +268,9 @@ test('public captured session dispatch follows retained helper edges and preserv
   const started=run(startArgs);assert.equal(started.ok,true);assert.equal(started.result.dispatchAccepted,true);assert.equal(started.result.incarnationId,scaffold.result.incarnationId);
   const helperArgs=['session','start',...sourceFlags,'--helper','example.action:worker','--home',helperHome,'--request',request];
   const helperStarted=run(helperArgs);assert.equal(helperStarted.ok,true);assert.equal(helperStarted.result.executionBinding.resolution.id,helper.id);assert.equal(helperStarted.result.sourceExecutionBinding.resolution.id,prepared.resolution.id);assert.equal(helperStarted.result.helper.subject.kind,'helper');
+  const beforeInspect=readFileSync(backendLog,'utf8'),indexBeforeInspect=readFileSync(join(f.deployment,'.agents/portable/instance-references.json'));
+  assert.deepEqual(run(['inspect',...sourceFlags,'--helper','example.action:worker']).result.nativeSession,availability,'dispatch never turns static discovery into cached readiness');
+  assert.equal(readFileSync(backendLog,'utf8'),beforeInspect);assert.deepEqual(readFileSync(join(f.deployment,'.agents/portable/instance-references.json')),indexBeforeInspect);
   const runs=at=>readFileSync(join(at,'work/public-native.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
   assert.equal(runs(home)[0].resolution,prepared.resolution.id);assert.ok(runs(home)[0].args.includes('public-primary-model'));
   assert.equal(runs(helperHome)[0].resolution,helper.id);assert.ok(runs(helperHome)[0].args.includes('public-helper-model'));
@@ -499,10 +504,16 @@ test('source helper lookup preserves dedicated A/B authority without source or c
     const resolved=resolveCapturedHelper({executionBinding:source.executionBinding,helper:key,name:'worker'});
     assert.equal(resolved.sourceExecutionBinding.resolution.id,source.resolution.id);assert.equal(resolved.executionBinding.resolution.id,helper.id);
     assert.equal(resolved.helper.subject.kind,'helper');assert.equal(resolved.helper.subject.provider.capability,'example.action');
-    assert.equal(resolved.workMode,'directory');assert.equal(resolved.launch.status,'unsupported');assert.equal(resolved.responsibleHuman,null);
+    assert.equal(resolved.workMode,'directory');assert.deepEqual(resolved.launch,{schemaVersion:1,api:{contract:'oats.captured-session',version:1,available:true},readiness:{status:'not-checked'}});assert.equal(resolved.responsibleHuman,null);
+    assert.equal(Object.hasOwn(resolved.launch,'status'),false,'no stale blanket unsupported/readiness claim');
+    validateWire('CapturedNativeSessionAvailability',resolved.launch);
+    assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,readiness:{status:'ready'}}));
+    assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,api:{...resolved.launch.api,version:2}}));
+    assert.equal(readCapturedResolution(f.deployment,helper).dispatch.launch,null,'API availability is not a launch recipe, approval or ready instance');
     const result=spawnSync(process.execPath,[cli,'inspect','--deployment',f.deployment,'--resolution',source.resolution.id,'--helper',key,'--composition','--json'],{encoding:'utf8'});
     assert.equal(result.status,0,result.stdout||result.stderr);const receipt=JSON.parse(result.stdout).result;
     assert.equal(receipt.resolution.id,helper.id);assert.equal(receipt.helperSelection.sourceExecutionBinding.resolution.id,source.resolution.id);
+    assert.deepEqual(receipt.nativeSession,resolved.launch);assert.deepEqual(receipt.helperSelection.launch,resolved.launch);
     assert.ok(receipt.composition.text.startsWith(text));
   }
   for(const helper of ['missing','constructor','__proto__']) assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper}),{code:'helper-not-selected'});

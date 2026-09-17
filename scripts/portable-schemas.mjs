@@ -122,6 +122,10 @@ d.CapturedResolution = object({ schemaVersion: v1, capture: enumeration("prepare
 d.CapturedResolution.allOf = [{ if: { type: "object", properties: { capture: { const: "reconstructed" } }, required: ["capture"] },
   then: { type: "object", properties: { evidence: { type: "array", minItems: 1 } } } }];
 if (JSON.stringify(Object.keys(d.CapturedResolution.properties).sort()) !== JSON.stringify([...RESOLUTION_FIELDS].sort())) throw new Error("captured schema fields differ from runtime codec");
+d.CapturedNativeSessionAvailability = object({ schemaVersion: v1,
+  api: object({ contract: { const: "oats.captured-session" }, version: v1, available: { const: true } }),
+  readiness: object({ status: { const: "not-checked" } }) });
+d.CapturedNativeSessionAvailability.description = "Static callable interface availability only; no selected-record, provider, instance or host readiness is checked. Actual native action validation/receipts remain mandatory.";
 d.Problem = object({ code: s, message: s, origins, target: {}, details: {} }, ["target", "details"]);
 d.PackageRequest = object({ source: lockedSource, path: rootPath });
 d.Freshness = object({ state: enumeration("refreshed", "offline", "failed", "not-checked"),
