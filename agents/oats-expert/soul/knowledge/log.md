@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Creation**: [Portable role editions and explicit bootstrap helpers](/decisions/portable-role-editions-and-bootstrap.md) records proposed stable library exports, explicit adopter knowledge destinations and a distinct operator-root entry witness. All remain proposed for human direction; no project convention, parent-helper guard, source identity or runtime permission is silently changed.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independently completed producer P1, exact provider pairing, native Herdr/tmux and public PB1 closures. Preserve their separate source identities and historical returns; integrated runtime, real provider and release qualification remain pending.
 * **Coordination**: [Repo state](/stewardship/repo-state.md) tracks the schema/validator provider successor, corrective producer and native/Herdr commits as distinct pending review inputs. Positive pairing against the held producer and unchanged package-tree bytes do not substitute the required correction and exact successor verdicts.
 * **Review routing**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independent P1 RETURN of the shared producer, with a single closure/pairing reviewer and preserved reader approval. A successful semantic-guard bypass probe is not obscured by passing focused tests or promoted to an approved pairing.
