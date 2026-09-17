@@ -9,6 +9,7 @@ import { activateCapturedScaffold, admitCapturedAction, prepareCapturedCompositi
 import { commitCapturedResolution, readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
+import { validateWire } from './helpers/portable-schema-check.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
   const root=mkdtempSync(join(tmpdir(),'oats-prepare-composition-')),repo=join(root,'repo'),deployment=join(root,'deployment');
@@ -193,6 +194,45 @@ test('optional hook failure reports nonterminal custody and public spawn retains
   assert.equal(result.cleanupRequired,false);assert.equal(result.hooksPending,false);assert.equal(result.hooks.meta[f.id].reconciled,true);
   assert.equal(result.hooks.intents[f.id].executionId,saved.executionId);assert.equal(result.hooks.intents[f.id].attempt,2);
   const done=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(done.status,'spawned-launch-pending');assert.equal(done.intents.length,1);assert.equal(done.intents[0].state,'completed');
+});
+
+test('full retained persistent/helper curriculum selects portable boundaries without legacy authority',t=>{
+  const f=fixture(t),prepared=prepareCapturedComposition(f.input,f.options),record=readCapturedResolution(f.deployment,prepared.resolution);
+  const nonDirectory=prepareCapturedComposition({...f.input,mode:'worktree'},f.options);
+  const originalBoundary=readFileSync(new URL('../injects/portable-instance-boundary.md',import.meta.url));
+  const originalDirectory=readFileSync(new URL('../injects/portable-work-directory.md',import.meta.url));
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned current configuration');
+  let retainedBoundary;
+  for(const resolution of [prepared.resolution,record.helpers['example.action:worker']]){
+    const loaded=loadCapturedDispatch({deployment:f.deployment,resolution,action:{kind:'compose'}}),text=loaded.composition.text;
+    validateWire('CapturedResolution',loaded.record);
+    const blocks=loaded.record.dispatch.composition.blocks;
+    assert.deepEqual(blocks.slice(0,3).map(block=>block.source),['kernel:oats-portable','kernel:instance-boundary','work-mode:directory'],'labels and order stay stable');
+    const boundary=blocks.find(block=>block.source==='kernel:instance-boundary').resource,directory=blocks.find(block=>block.source==='work-mode:directory').resource;
+    assert.equal(loaded.record.resources[boundary].path,'injects/portable-instance-boundary.md');
+    assert.equal(loaded.record.resources[directory].path,'injects/portable-work-directory.md');
+    retainedBoundary=loaded.resources.get(boundary);
+    assert.deepEqual(readFileSync(retainedBoundary),originalBoundary);assert.deepEqual(readFileSync(loaded.resources.get(directory)),originalDirectory);
+    assert.equal(existsSync(join(retainedBoundary,'..','instance-boundary.md')),false,'captured inventory excludes the old boundary');
+    assert.equal(existsSync(join(retainedBoundary,'..','work-directory.md')),false,'captured inventory excludes old directory doctrine');
+    assert.ok(text.includes(originalBoundary.toString('utf8').trim()));assert.ok(text.includes(originalDirectory.toString('utf8').trim()));
+    assert.match(text,/instance\.json\.executionBinding/);assert.match(text,/CLAUDE\.md -> AGENTS\.md/);
+    assert.match(text,/read-only retained source link/);assert.match(text,/instance-owned execution directory/);
+    assert.match(text,/cwd and a recorded `repo` path never select configuration/);
+    assert.match(text,/does not promise\s+implemented captured launch/);assert.match(text,/Missing authority is a hold/);
+    assert.doesNotMatch(text,/They resolve their\s+scope from the directory/);
+    assert.doesNotMatch(text,/context recorded as `repo` supplies configuration/);
+    assert.doesNotMatch(text,/Retirement removes the execution directory only after/);
+    assert.doesNotMatch(text,/oats (?:status|doctor|retire|session (?:start|restart))\b/);
+  }
+  const other=loadCapturedDispatch({deployment:f.deployment,resolution:nonDirectory.resolution,action:{kind:'compose'}});
+  const otherBlock=other.record.dispatch.composition.blocks.find(block=>block.source==='work-mode:worktree');
+  assert.equal(other.record.resources[otherBlock.resource].path,'injects/work-worktree.md','other modes are not silently remapped to directory');
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const unsupported=join(realpathSync(f.root),'unsupported-worktree');
+  assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:nonDirectory.resolution,home:unsupported,instance:'unsupported-worktree'}),{code:'needs-configuration'});assert.equal(existsSync(unsupported),false);
+  rmSync(retainedBoundary);
+  assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'compose'}}),{code:'integrity-drift'},'missing retained boundary cannot fall back to the current package');
 });
 
 test('source helper lookup preserves dedicated A/B authority without source or current selection',t=>{
