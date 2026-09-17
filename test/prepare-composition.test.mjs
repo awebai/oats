@@ -336,7 +336,8 @@ test('preparation resolves approved provider fields in the same engine and never
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
   manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
   manifest.operations={probe:{command:'show',kind:'view',context:'scope',args:[{name:'label',flag:'--label',required:true}]},
-    'scope-mutate':{command:'show',kind:'action',context:'scope'},'home-probe':{command:'show',kind:'action',context:'home',args:[{name:'label',flag:'--label'}]}};
+    'scope-mutate':{command:'show',kind:'action',context:'scope'},'home-view':{command:'show',kind:'view',context:'home'},
+    'home-probe':{command:'show',kind:'action',context:'home',args:[{name:'label',flag:'--label'}]}};
   writeFileSync(manifestFile,JSON.stringify(manifest));
   const soul=JSON.parse(readFileSync(soulFile,'utf8'));soul.knowledge={contract:'example.locations',version:1,payload:{location:'A'}};
   writeFileSync(soulFile,JSON.stringify(soul));const hookMarker=join(f.root,'captured-hook-ran');
@@ -346,6 +347,7 @@ test('preparation resolves approved provider fields in the same engine and never
     const invocationSnapshot=process.env.OATS_INVOCATION_CONTEXT_FILE??null,invocation=invocationSnapshot?JSON.parse(readFileSync(invocationSnapshot,'utf8')):null;
     const result={documents:[],location:binding.payload.location,snapshot,invocationSnapshot,invocation,mode:statSync(snapshot).mode & 0o777,args:process.argv.slice(2),home:process.env.OATS_INSTANCE_HOME??null,resolution:process.env.OATS_RESOLUTION};
     if(invocation?.intent){const ledger=JSON.parse(readFileSync(invocation.executionBinding.deployment+'/.agents/portable/instance-references.json','utf8'));const row=ledger.instances.find(row=>row.incarnationId===invocation.instance.incarnationId);const intent=row?.intents.find(item=>item.executionId===invocation.intent.executionId);if(!intent||intent.state!=='running'||intent.attempt!==invocation.intent.attempt)throw Error('effect before durable admission');}
+    if(process.env.OATS_OPERATION && process.argv.includes('negative-envelope')) {console.log(JSON.stringify({schemaVersion:1,ok:false,error:{code:'E_REMOTE',message:'service unavailable'},result:{id:'observed-resource'}}));process.exit(1);}
     if(process.env.OATS_OPERATION && process.argv.includes('cleanup-failure')) rmSync(dirname(snapshot),{recursive:true});
     if(process.env.OATS_EVENT) {
       writeFileSync(${JSON.stringify(hookMarker)},'ran');
@@ -403,6 +405,32 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.deepEqual(homeOperation.result.result.invocation.priorReceipt,{identity:'prior-receipt'});assert.equal(homeOperation.result.result.invocation.instance.agent,'imported-expert');
   assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),homeOperation.result.result.invocation,'readiness receives target and prior receipt before the home operation');
   const homeIntent=homeOperation.result.intent,homeArgv=[cli,'operation','run','knowledge:home-probe','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--json'];
+  const receipt=structuredClone(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home).intents.at(-1).receipt);
+  for(const mirror of [{stale:'not-current'},undefined]){
+    writeFileSync(join(home,'instance.json'),JSON.stringify({...homeMetadata,...(mirror===undefined?{}:{capabilityMeta:{[f.id]:mirror}})}));
+    const before=readFileSync(join(f.deployment,'.agents/portable/instance-references.json'));
+    const view=JSON.parse(execFileSync(process.execPath,homeArgv.map(value=>value==='knowledge:home-probe'?'knowledge:home-view':value),{encoding:'utf8'}));
+    assert.deepEqual(view.result.result.invocation.priorReceipt,receipt,'home view derives current indexed receipt despite stale/absent mirror');
+    assert.deepEqual(JSON.parse(readFileSync(checkContext,'utf8')),view.result.result.invocation,'view check/execution receive identical current authority');
+    assert.equal(view.result.result.invocation.intent,null);assert.deepEqual(readFileSync(join(f.deployment,'.agents/portable/instance-references.json')),before,'view admits no action');
+  }
+  const faultDriver=join(realpathSync(f.root),'inert-runner-fault.mjs');
+  writeFileSync(faultDriver,`import cp from 'node:child_process';import {syncBuiltinESMExports} from 'node:module';import {pathToFileURL} from 'node:url';
+    const original=cp.spawnSync;cp.spawnSync=(bin,args,options)=>options?.env?.OATS_OPERATION==='knowledge:home-probe'
+      ?{status:null,signal:'SIGKILL',error:Object.assign(new Error('inert runner fault'),{code:'EIO'}),stdout:JSON.stringify({schemaVersion:1,ok:false,error:{code:'E_REMOTE',message:'service unavailable'},result:{id:'observed-resource'}}),stderr:''}
+      :original(bin,args,options);syncBuiltinESMExports();process.argv[1]=${JSON.stringify(cli)};await import(pathToFileURL(process.argv[1]).href);`);
+  for(const kind of ['negative-envelope','runner-fault']){
+    const targetHome=join(realpathSync(f.root),kind);scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:targetHome,instance:kind});
+    const argv=homeArgv.map(value=>value===home?targetHome:value);
+    if(kind==='negative-envelope')argv.push('--arg','label=negative-envelope');else argv[0]=faultDriver;
+    const failure=spawnSync(process.execPath,argv,{encoding:'utf8'});assert.equal(failure.status,1,failure.stderr);
+    const error=JSON.parse(failure.stdout).error,row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===targetHome);
+    assert.equal(error.code,kind==='negative-envelope'?'E_REMOTE':'E_CAPABILITY_BROKEN');
+    assert.equal(error.details.unconfirmed,true);assert.equal(error.details.settlement.state,'unconfirmed');
+    assert.deepEqual(error.details.settlement.receipt,structuredClone(row.intents[0].receipt));assert.equal(error.details.envelope.result.id,'observed-resource');
+    assert.equal(error.details.intent.executionId,row.intents[0].executionId);assert.equal(row.intents[0].state,'unconfirmed');
+    if(kind==='runner-fault')assert.equal(error.details.signal,'SIGKILL','non-timeout runner error retains observation without being relabelled timeout');
+  }
   const beforeReplay=readFileSync(checkContext);
   const replayed=JSON.parse(execFileSync(process.execPath,[...homeArgv,'--retry-intent',homeIntent.executionId],{encoding:'utf8'}));
   assert.deepEqual(replayed.result.intent,homeIntent);assert.deepEqual(readFileSync(checkContext),beforeReplay,'completed retry never runs readiness or provider effects');
@@ -483,6 +511,10 @@ test('preparation resolves approved provider fields in the same engine and never
   assert.throws(()=>withCapturedBindingFile(loaded,env=>{failedSnapshot=env.OATS_BINDING_FILE;throw Error('fixture child failure');}),/fixture child failure/);
   assert.equal(existsSync(failedSnapshot),false,'failure also removes only the owned invocation snapshot');
   writeFileSync(unavailable,'not ready');
+  const blockedHome=join(realpathSync(f.root),'before-execution');scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:blockedHome,instance:'before-execution'});
+  const blocked=JSON.parse(spawnSync(process.execPath,homeArgv.map(value=>value===home?blockedHome:value),{encoding:'utf8'}).stdout).error;
+  assert.equal(blocked.code,'provider-unavailable');assert.equal(blocked.details.settlement.state,'blocked');assert.equal(blocked.details.unconfirmed,false);
+  assert.equal(readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===blockedHome).intents[0].state,'blocked');
   assert.throws(()=>loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'command',capability:f.id,name:'show'}}),{code:'provider-unavailable'},'mutable readiness is checked again, not cached as permanent record authority');
 });
 

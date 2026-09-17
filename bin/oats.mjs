@@ -178,16 +178,22 @@ function capturedOperation(selector, load, bail) {
   if (retryExecutionId !== undefined && operation.kind !== "action") bail("E_BAD_ARGS", "read-only operations do not retry mutation intents");
   const admission = operation.kind === "action" ? admitCapturedAction({ deployment: selector.deployment, resolution: selector.resolution, home, action, input: { arguments: argFlags },
     ...(retryExecutionId !== undefined ? { retryExecutionId } : {}) }) : null;
-  const admittedBail = (code, message, details) => bail(code, message, { ...details, ...(admission ? { intent: admission.intent } : {}) });
+  let settlement;
+  const admittedBail = (code, message, details) => bail(code, message, { ...details, ...(admission ? { intent: admission.intent } : {}),
+    ...(settlement ? { settlement, unconfirmed: settlement.state === "unconfirmed" } : {}) });
   if (admission?.replayed) {
+    settlement = { state: "completed", receipt: admission.receipt };
     if (!admission.replayable) admittedBail("needs-configuration", "completed operation cannot replay its retained outcome");
     finishOperation({ r: { status: 0, stdout: JSON.stringify(admission.receipt) }, bail: admittedBail, address, provider, op: operation, argFlags, cwd, home, meta, intent: admission.intent }); return;
   }
   let loaded;
   try { loaded = load(action, { invocationTarget: meta ? { home, work: join(home, "work"), name: meta.instance, agent: meta.agent } : null,
-    ...(admission ? { intent: admission.intent, priorReceipt: admission.receipt } : { priorReceipt: meta?.capabilityMeta?.[providerId] ?? null }) }); }
+    ...(admission ? { intent: admission.intent, priorReceipt: admission.receipt } : {}) }); }
   catch (error) {
-    if (admission) settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: "blocked", receipt: admission.receipt });
+    if (admission) {
+      settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: "blocked", receipt: admission.receipt });
+      settlement = { state: "blocked", receipt: admission.receipt };
+    }
     admittedBail(error.code || "provider-unavailable", error.message);
   }
   const { capability, executable } = loaded;
@@ -211,7 +217,10 @@ function capturedOperation(selector, load, bail) {
     }));
   } catch (error) {
     if (!error?.invocationCompleted) {
-      if (admission) settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: started ? "unconfirmed" : "blocked", receipt: admission.receipt });
+      if (admission) {
+        settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: started ? "unconfirmed" : "blocked", receipt: admission.receipt });
+        settlement = { state: started ? "unconfirmed" : "blocked", receipt: admission.receipt };
+      }
       admittedBail(error.code || "E_OPERATION_RESULT", error.message, { unconfirmed: started });
     }
     child = error.invocationResult; cleanupError = error;
@@ -219,11 +228,14 @@ function capturedOperation(selector, load, bail) {
   if (admission) {
     let envelope; try { envelope = JSON.parse(String(child.stdout || "").trim()); } catch { /* unconfirmed below */ }
     const completed = !cleanupError && !child.error && child.status === 0 && envelope?.schemaVersion === 1 && envelope.ok === true;
-    try { settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state: completed ? "completed" : "unconfirmed",
-      receipt: envelope ?? parseEnvelopeText(String(child.stdout || "")) ?? admission.receipt, replayable: completed }); }
+    const state = completed ? "completed" : "unconfirmed", receipt = envelope ?? parseEnvelopeText(String(child.stdout || "")) ?? admission.receipt;
+    try {
+      settleCapturedIntent({ deployment: selector.deployment, home, intent: admission.intent, action, state, receipt, replayable: completed });
+      settlement = { state, receipt };
+    }
     catch (error) { admittedBail("E_OPERATION_RESULT", "operation ran but outcome custody could not be confirmed", { unconfirmed: true, envelope, custody: { code: error.code, message: error.message } }); }
   }
-  finishOperation({ r: child, bail: admittedBail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError, ...(admission ? { intent: admission.intent } : {}) });
+  finishOperation({ r: child, bail: admittedBail, address, provider: capability.manifest, op: operation, argFlags, cwd, home, meta, cleanupError, settlement, ...(admission ? { intent: admission.intent } : {}) });
 }
 
 /** Fresh explicit captured scaffold + spawn hooks. Placement is supplied by
@@ -889,10 +901,9 @@ const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|cou
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = CAPTURED_OPERATION_TIMEOUT_MS;
-function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent }) {
+function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent, settlement }) {
   const stderr = String(r.stderr || "").trim();
-  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal));
-  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`);
+  const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal) && (!settlement || !r.error));
   const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
   // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
   // by the exit status) carry what WAS observed in error.details, so a
@@ -900,6 +911,7 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   // provider managed to answer; they are never confirmed failures.
   const observed = (envelope) => ({ exit: r.status, signal: r.signal || null, unconfirmed: true, ...(envelope && typeof envelope === "object" ? { envelope } : {}),
     ...(stderr ? { stderr: stderr.slice(0, 2000) } : {}), ...(cleanupError ? { cleanup: { code: cleanupError.code || "E_OPERATION_CLEANUP", message: String(cleanupError.message || cleanupError).slice(0, 1000) } } : {}) });
+  if (r.error && !timedOut) bail("E_CAPABILITY_BROKEN", `${address}: ${r.error.message || r.error}`, settlement ? observed(parseEnvelopeText(String(r.stdout || ""))) : undefined);
   if (timedOut) bail("E_OPERATION_TIMEOUT", `${address} (${provider.capability} ${op.command}) did not finish within ${OPERATION_TIMEOUT_MS / 1000} s; its effects are unconfirmed`, observed(parseEnvelopeText(String(r.stdout || ""))));
   // Exactly one JSON-v1 envelope on stdout, nothing else, and an exit status
   // that agrees with it: contaminated output or a success envelope from a
