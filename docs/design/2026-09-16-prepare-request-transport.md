@@ -4,7 +4,7 @@
 oats prepare --request <absolute-regular-json-file> [--json]
 ```
 
-The JSON file is the **whole public `prepareCapturedComposition` input**—for fresh onboarding, only `buildFreshPreparationRequest(...).preparation`. It is not the onboarding result/ready-inspection wrapper, captured resolution/execution binding, private preparation scratch `directory`, or instance/work placement. No fields are filtered or inferred: the existing closed public validator rejects unknown fields.
+The JSON file is the **whole public `prepareCapturedComposition` input**—for fresh onboarding, only `buildFreshPreparationRequest(...).preparation`. It is not the onboarding result/ready-inspection wrapper, captured resolution/execution binding, private preparation scratch `directory`, or instance/work placement. No fields are filtered or inferred: the existing closed public validator rejects unknown fields. Preparation distinguishes workspace field presence from truthiness: every supplied workspace is validated, including null/false/zero/empty-string values, and it conflicts with any explicit standalone key. An absent workspace plus an explicit standalone null remains valid.
 
 The CLI uses `readPortableBytes` and `parseStrictJson` once, with their existing bounds: regular/no-follow descriptor read, at most 8 MiB, strict UTF-8/JSON, duplicate-key rejection, depth 64 and 100000 entries. There is no new request parser, resolver, recursive include syntax, stdin/eval mode or private scratch API. Diagnostic decoding errors identify the condition/position, not raw provider values. Requests must contain nonsecret declarations and credential references, never credential values.
 
