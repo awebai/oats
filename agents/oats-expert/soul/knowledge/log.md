@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Coordination**: [Repo state](/stewardship/repo-state.md) tracks separate execution-reader and helper-input provider candidates awaiting exact producer/schema pairing and independent review. A known old-schema rejection is preserved, not weakened or described as main/release readiness.
 * **Delivery**: [Delivery log](/stewardship/delivery-log.md) records standalone OKF source-main checkpoint `ec5d767` after continuous independent review coverage and corrected full gate270/0/4. No tag/install/mirror/runtime knowledge publication or fuller native/provider compatibility claim.
 * **Delivery**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record captured admission/preparation source delivery through `c1ff882b`, all eight exact-head gates passing (2674/0/3) and preserved scaffold evidence. Corrected standalone gate passes270/0/4; provider source-main/native/public/Herdr/release qualifications remain separate.
 * **Integration**: [Delivery log](/stewardship/delivery-log.md) records local assembly of independently accepted captured admission/curriculum/request changes with exact patch/blob checks and 30 passing merged-tree tests. Full gates/main delivery remain pending; native/public/Herdr and provider qualifications retain their separate scopes.
