@@ -85,6 +85,38 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
   assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
+test('explicit primary and helper launch inputs retain separate entrypoints and never use current runtime choices',t=>{
+  const f=fixture(t),key='example.action:worker';
+  f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("retained runtime A");\n');chmodSync(join(f.repo,'packages/action/cap/show.mjs'),0o755);
+  f.git('add','.');f.git('commit','--quiet','-m','explicit runtime entrypoint');
+  const launch={runtime:'claude',executable:{capability:f.id,command:'show'},args:['literal-A'],env:{FIXTURE_NATIVE_PROFILE:{fromEnv:'FIXTURE_PROFILE'}},model:'explicit-model-A',yolo:false};
+  for(const bad of [{...launch,model:null},{...launch,executable:'/usr/local/bin/ambient'},{...launch,env:{OATS_INVOCATION_CONTEXT_FILE:'/forged'}}]){
+    assert.throws(()=>prepareCapturedComposition({...f.input,launch:bad},f.options));
+    assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false,'malformed launch input refuses before publication');
+  }
+  assert.throws(()=>prepareCapturedComposition({...f.input,helperLaunches:{'example.action:not-selected':launch}},f.options),{code:'helper-not-selected'});
+  assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false);
+  const a=prepareCapturedComposition({...f.input,launch,helperLaunches:{[key]:{...launch,args:['helper-A'],model:'helper-model-A'}}},f.options);
+  const record=readCapturedResolution(f.deployment,a.resolution),helper=readCapturedResolution(f.deployment,record.helpers[key]);
+  assert.equal(record.dispatch.launch.model,'explicit-model-A');assert.equal(helper.dispatch.launch.model,'helper-model-A');
+  assert.deepEqual(helper.dispatch.launch.args,['helper-A']);assert.equal(record.dispatch.launch.executable,'captured-resource');
+  assert.equal(record.dispatch.launch.executableResource,`executable:${f.id}:command:show`);
+  f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("runtime B");\n');f.git('add','.');f.git('commit','--quiet','-m','runtime B');
+  const b=prepareCapturedComposition({...f.input,launch:{...launch,model:'explicit-model-B'}},f.options);
+  assert.notEqual(a.resolution.id,b.resolution.id);
+  const bRecord=readCapturedResolution(f.deployment,b.resolution);assert.equal(readCapturedResolution(f.deployment,bRecord.helpers[key]).dispatch.launch,null,'helper never inherits the primary runtime request');
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poison runtime/model config');
+  const retained=loadCapturedDispatch({deployment:f.deployment,resolution:a.resolution,action:{kind:'inspect'}});
+  const entry=retained.resources.get(retained.record.dispatch.launch.executableResource);
+  assert.match(readFileSync(entry,'utf8'),/retained runtime A/);assert.equal(retained.record.dispatch.launch.model,'explicit-model-A');
+  const tampered=structuredClone(record);tampered.dispatch.launch.executableResource='missing-runtime';
+  assert.throws(()=>commitCapturedResolution(f.deployment,tampered));
+  const g=fixture(t),manifest=JSON.parse(readFileSync(join(g.repo,'packages/action/cap/oats.json'),'utf8'));
+  manifest.requires=[{runtime:'claude',package:'fixture@marketplace'}];g.write('packages/action/cap/oats.json',JSON.stringify(manifest));g.git('add','.');g.git('commit','--quiet','-m','unqualified runtime root');
+  assert.throws(()=>prepareCapturedComposition({...g.input,launch},g.options),{code:'needs-configuration'});
+  assert.equal(existsSync(join(g.deployment,'.agents/resolutions')),false,'required runtime packages are not replaced with ambient discovery or partially published helpers');
+});
+
 test('source helper lookup preserves dedicated A/B authority without source or current selection',t=>{
   const f=fixture(t),a=prepareCapturedComposition(f.input,f.options),key='example.action:worker';
   const aRecord=readCapturedResolution(f.deployment,a.resolution),aHelper=aRecord.helpers[key];
