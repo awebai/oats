@@ -24,6 +24,12 @@ decisions/ and referenced from here.
 
 ---
 
+## Captured producer, paired provider and native/public corrections — scoped closures (2026-09-17)
+- producer: P1 CLOSED for exact be plus patch SHA-256 `a29db161dc87a90360ec2ecde1629b6b294835368ce8363c1eac7587f81f78ac`, producing tree `0c031114e965b08ac25b29ab456f48eedcf42c91`. Same correction delta is `59d5bd18`; full inherited commit ancestry is excluded. Independent real publication regression 1/1 plus syntax/six schemas passes. Original be RETURN and separately preserved positive baseline evidence remain unchanged.
+- provider: `57aaec7` schema/validator APPROVE with seven independent checks, but final pairing RETURN for the old producer identity. Repository-only `86bff1a` closes that P2 with actual accepted-producer pairing 2/2. Reader `f43996d` approval remains; old `0f`/`57aa` returns are historical, not relabelled. Distribution tree remains unchanged. Seeded retained-run and direct retire-hook fixtures are not worker launch or public retirement evidence.
+- native/public: `5d95175d` Herdr/tmux start/restart APPROVE with four independent tests and schema checks; `6b836ba1` separately closes direct-helper public PB1 with one new independent negative. Both reuse existing native custody and preserve SOURCE/helper selection boundaries. No whole-ancestry or real daemon/model/privacy qualification is inferred.
+- next: coordinator integrates and gates exact covered artifacts; reviewers own any remaining source/contract gaps. Isolated BE+P1/API1 pairing is not a later combined API2/native gate. Managed Pi roots/contributions, public wake/retire/recovery, real worker/provider acceptance, release floors and rollout remain outstanding. No implementation main push or release was performed by collecting these reports.
+
 ## Shared helper/input producer — independent P1 return (2026-09-17)
 - verdict: RETURNED exact `be2460c5`. A reviewer probe of the publishing semantic guard accepts an undeclared choice-less capability instruction block on a helper. Eight successful focused tests and syntax/generated-schema checks do not close this policy-publication bypass; initial scratch setup failures remain separately preserved evidence.
 - required closure: every capability-sourced block/omission in new helper publication must correspond exactly to its retained owner's policy. Preserve primary and literal historical read/reuse behavior, and add a regression through actual `commitCapturedResolution`, not only the standalone semantic verifier.

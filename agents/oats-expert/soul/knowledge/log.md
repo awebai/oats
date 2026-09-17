@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-17
+* **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independently completed producer P1, exact provider pairing, native Herdr/tmux and public PB1 closures. Preserve their separate source identities and historical returns; integrated runtime, real provider and release qualification remain pending.
 * **Coordination**: [Repo state](/stewardship/repo-state.md) tracks the schema/validator provider successor, corrective producer and native/Herdr commits as distinct pending review inputs. Positive pairing against the held producer and unchanged package-tree bytes do not substitute the required correction and exact successor verdicts.
 * **Review routing**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independent P1 RETURN of the shared producer, with a single closure/pairing reviewer and preserved reader approval. A successful semantic-guard bypass probe is not obscured by passing focused tests or promoted to an approved pairing.
 * **Integration**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record the independently accepted eight-file fresh onboarding integration, exact artifact/blob checks and19 passing combined cases plus static/package validation. Historical consumer pins are not upgraded to native/Herdr/provider or release readiness.
