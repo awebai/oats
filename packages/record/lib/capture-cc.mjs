@@ -21,13 +21,15 @@
 // un-ignoring a file later makes the next pass capture it normally.
 
 import { isUtf8 } from "node:buffer";
-import { closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
 import { finishTurn } from "./canonical.mjs";
 import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
 import { assertIdentity, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
+import { guardCapturedPath } from "./native-history.mjs";
+import { isDeepStrictEqual } from "node:util";
 
 export const SESSION_STREAM_SOURCE = "cc";
 
@@ -204,25 +206,29 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
   for (const file of files ?? fmt.listFiles(roots)) {
     const path = typeof file === "string" ? file : file.path;
     const expected = typeof file === "string" ? null : file.snapshot;
+    const capturedPi = typeof file === "string" ? undefined : file.capturedPi ?? expected?.capturedPi;
+    if (capturedPi && (fmt.source !== "pi" || (expected?.capturedPi && !isDeepStrictEqual(capturedPi, expected.capturedPi)))) throw new Error("protected capture proof/format differs from discovery");
+    guardCapturedPath(path, capturedPi);
     sessions++;
     const sessionId = fmt.sessionId(path);
     if (ign.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
       ignored++;
       continue; // never opened: nothing stored, nothing remembered
     }
-    const fd = openSync(path, "r");
+    const fd = openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
     try {
     const stat = fstatSync(fd);
-    const snapshot = identity(stat);
+    const snapshot = { ...identity(stat), ...(capturedPi ? { capturedPi } : {}) };
     if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes
     // Final home capture stages a descriptor-pinned snapshot. All attribution
     // and stability checks precede the first append, never a post-write alarm.
-    const sourceBytes = final || expected ? readRange(fd, 0, stat.size, path) : undefined;
+    const sourceBytes = final || expected || capturedPi ? readRange(fd, 0, stat.size, path, capturedPi) : undefined;
     if (expected && digest(sourceBytes.subarray(0, expected.size)) !== expected.hash) {
       throw new Error(`session source content changed since attribution: ${path}`);
     }
     if (sourceBytes) snapshot.hash = digest(sourceBytes);
     const verifySource = () => {
+      guardCapturedPath(path, capturedPi);
       if (sourceBytes) verifySnapshot(fd, path, snapshot);
     };
     verifySource();
@@ -251,7 +257,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
       continue;
     }
 
-    const chunk = sourceBytes ? sourceBytes.subarray(state.bytes) : readRange(fd, state.bytes, stat.size, path);
+    const chunk = sourceBytes ? sourceBytes.subarray(state.bytes) : readRange(fd, state.bytes, stat.size, path, capturedPi);
     // Phase 1: collect the COMPLETE lines of the chunk with their stamps.
     const lines = [];
     let scanned = 0;
@@ -314,6 +320,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     let freshBytes = 0;
     const flush = () => {
       if (fresh.length === 0) return;
+      verifySource(); // EVERY batch; earlier committed batches are never rolled back
       store.appendBatch(streamId, fresh);
       streams.add(streamId);
       appended += fresh.length;

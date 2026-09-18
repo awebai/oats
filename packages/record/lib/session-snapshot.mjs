@@ -3,6 +3,7 @@
 // the previous source's stream. Reads and validation use the SAME descriptor.
 import { createHash } from "node:crypto";
 import { fstatSync, readSync, statSync } from "node:fs";
+import { guardCapturedPath } from "./native-history.mjs";
 
 export function identity(stat) {
   if (!stat.isFile()) throw new Error("session source is not a regular file");
@@ -15,24 +16,30 @@ export function sameVersion(a, b) {
 }
 export function digest(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
-export function readRange(fd, start, size, path) {
+export function readRange(fd, start, size, path, capturedPi) {
+  guardCapturedPath(path, capturedPi);
   const buf = Buffer.alloc(size - start);
   let done = 0;
   while (done < buf.length) {
+    if (capturedPi) guardCapturedPath(path, capturedPi);
     const n = readSync(fd, buf, done, buf.length - done, start + done);
     if (n === 0) throw new Error(`short read of session source: ${path}`);
     done += n;
   }
+  if (capturedPi) guardCapturedPath(path, capturedPi);
   return buf;
 }
 
-export function hashPrefix(fd, size, path) {
+export function hashPrefix(fd, size, path, capturedPi) {
+  guardCapturedPath(path, capturedPi);
   const hash = createHash("sha256"), buf = Buffer.alloc(64 * 1024);
   for (let pos = 0; pos < size;) {
+    if (capturedPi) guardCapturedPath(path, capturedPi);
     const n = readSync(fd, buf, 0, Math.min(buf.length, size - pos), pos);
     if (n === 0) throw new Error(`short read of session source: ${path}`);
     hash.update(buf.subarray(0, n)); pos += n;
   }
+  if (capturedPi) guardCapturedPath(path, capturedPi);
   return hash.digest("hex");
 }
 
@@ -46,16 +53,18 @@ export function assertIdentity(stat, expected, path) {
 // A changed same-size file is not append growth. Verification happens before
 // journal writes; afterwards the buffer to append is independent of the path.
 export function verifySnapshot(fd, path, snapshot) {
+  guardCapturedPath(path, snapshot.capturedPi);
   const after = fstatSync(fd), named = statSync(path);
   assertIdentity(after, snapshot, path);
   assertIdentity(named, snapshot, path);
   if (!sameVersion(after, named)) throw new Error(`session source changed during capture: ${path}`);
-  if (sameVersion(after, snapshot)) return;
-  if (after.size <= snapshot.size || hashPrefix(fd, snapshot.size, path) !== snapshot.hash) {
+  if (sameVersion(after, snapshot)) { guardCapturedPath(path, snapshot.capturedPi); return; }
+  if (after.size <= snapshot.size || hashPrefix(fd, snapshot.size, path, snapshot.capturedPi) !== snapshot.hash) {
     throw new Error(`session source changed during capture: ${path}`);
   }
   // A second change while validating is uncertain, not absence of evidence.
   if (!sameVersion(after, fstatSync(fd)) || !sameVersion(after, statSync(path))) {
     throw new Error(`session source changed during verification: ${path}`);
   }
+  guardCapturedPath(path, snapshot.capturedPi);
 }

@@ -12,14 +12,14 @@
 // instance's own, and nothing outside it — not the parent workspace, not a
 // sibling home — is ever swept in.
 
-import { closeSync, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { basename, resolve, sep } from "node:path";
 import { isUtf8 } from "node:buffer";
 
 import { SESSION_FORMATS } from "./formats.mjs";
 import { hashPrefix, identity, sameVersion, verifySnapshot } from "./session-snapshot.mjs";
 import { sourceSessionEnvironment } from "./session-roots.mjs";
-import { historicalSessionRoots } from "./native-history.mjs";
+import { guardCapturedPath, historicalSessionRoots } from "./native-history.mjs";
 
 // A session's first lines can be large (Claude Code queue operations and
 // file-history snapshots run to 100 KB and more) and the first cwd-bearing
@@ -30,11 +30,12 @@ import { historicalSessionRoots } from "./native-history.mjs";
 const CHUNK_BYTES = 64 * 1024;
 export const CWD_SCAN_BOUND_BYTES = 8 * 1024 * 1024;
 
-function* wholeLines(fd, bound) {
+function* wholeLines(fd, bound, path, capturedPi) {
   const buf = Buffer.alloc(CHUNK_BYTES);
   let pieces = [], size = 0; // keep raw bytes across UTF-8/chunk boundaries
   let offset = 0;
   while (offset < bound) {
+    if (capturedPi) guardCapturedPath(path, capturedPi);
     const n = readSync(fd, buf, 0, Math.min(CHUNK_BYTES, bound - offset), offset);
     if (n === 0) break;
     offset += n;
@@ -73,17 +74,19 @@ function cwdOfLine(source, line) {
 
 /** Descriptor-derived attribution and (for accepted cwd) content witness.
  *  No cwd within `bound` means unknown format, torn input or no attribution. */
-export function sessionAttribution(source, path, { bound = CWD_SCAN_BOUND_BYTES, acceptCwd = () => true } = {}) {
-  const fd = openSync(path, "r");
+export function sessionAttribution(source, path, { bound = CWD_SCAN_BOUND_BYTES, acceptCwd = () => true, capturedPi } = {}) {
+  if (capturedPi && source !== "pi") throw new Error("protected Pi proof cannot qualify another format");
+  guardCapturedPath(path, capturedPi);
+  const fd = openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
   try {
-    const snapshot = identity(fstatSync(fd));
+    const snapshot = { ...identity(fstatSync(fd)), ...(capturedPi ? { capturedPi } : {}) };
     let cwd;
-    for (const line of wholeLines(fd, Math.min(bound, snapshot.size))) {
+    for (const line of wholeLines(fd, Math.min(bound, snapshot.size), path, capturedPi)) {
       cwd = cwdOfLine(source, line);
       if (cwd) break;
     }
     // Never hash/read the body of an unrelated or unattributable session.
-    if (cwd && acceptCwd(cwd)) snapshot.hash = hashPrefix(fd, snapshot.size, path);
+    if (cwd && acceptCwd(cwd)) snapshot.hash = hashPrefix(fd, snapshot.size, path, capturedPi);
     // Never combine attribution read from an old prefix with a new witness.
     // Discovery requires a stable read; append growth between discovery and
     // capture is supported by the witness's prefix hash.
@@ -133,17 +136,19 @@ export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, on
   // excluded, not filled from an unrelated observer. The opt-in fallback is
   // for standalone/legacy inventories, never proof of historical completeness.
   let context;
-  if (!roots && fallback !== "current-env") roots = historicalSessionRoots(home);
+  if (!roots && fallback !== "current-env") roots = historicalSessionRoots(home, { withProof: true });
   if (!roots) context = sourceSessionEnvironment(home, env);
   for (const fmt of Object.values(SESSION_FORMATS)) {
     const rs = roots ? (roots[fmt.source] ?? []) : fmt.defaultRoots(context.home, context.env, { cwd: home });
-    for (const path of fmt.listFiles(rs, { strict: true })) {
+    for (const entry of fmt.listFiles(rs, { strict: true })) {
+      const path = typeof entry === "string" ? entry : entry.path;
+      const capturedPi = typeof entry === "string" ? undefined : entry.capturedPi;
       const sessionId = fmt.sessionId(path);
       if (ignore?.ignores(path, [basename(path), sessionId, ...(fmt.ignoreKeys?.(path) ?? [])])) {
         onIgnored?.(fmt.source, path);
         continue;
       }
-      const { cwd, snapshot } = sessionAttribution(fmt.source, path, { bound, acceptCwd: cwd => within(canonical(cwd), target) });
+      const { cwd, snapshot } = sessionAttribution(fmt.source, path, { bound, capturedPi, acceptCwd: cwd => within(canonical(cwd), target) });
       if (!cwd) { if (onUnattributed) onUnattributed(fmt.source, path); continue; }
       if (!within(canonical(cwd), target)) continue;
       out.push({
@@ -155,8 +160,19 @@ export function sessionsForHome(home, { roots, onUnattributed, bound, ignore, on
         bytes: snapshot.size,
         mtime: new Date(snapshot.mtimeMs).toISOString(),
         snapshot,
+        ...(capturedPi ? { capturedPi } : {}),
       });
     }
   }
-  return out.sort((a, b) => a.mtime.localeCompare(b.mtime) || a.path.localeCompare(b.path));
+  out.sort((a, b) => a.mtime.localeCompare(b.mtime) || a.path.localeCompare(b.path));
+  const protectedRoots = (roots?.pi ?? []).filter(r => typeof r === "object" && r?.capturedPi);
+  if (protectedRoots.length) {
+    // Existing CLI iterates this same inventory again after its capture lock,
+    // including when it is empty. Retain root proof without synthetic sessions
+    // or a bin/parser change, and revalidate before certifying its boundaries.
+    const check = () => { for (const r of protectedRoots) guardCapturedPath(r.path, r.capturedPi); };
+    check();
+    Object.defineProperty(out, Symbol.iterator, { value: function* () { check(); yield* Array.prototype[Symbol.iterator].call(this); check(); } });
+  }
+  return out;
 }

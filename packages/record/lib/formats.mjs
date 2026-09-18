@@ -20,6 +20,7 @@ import { lstatSync, readdirSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { nativeDirectory } from "./session-roots.mjs";
+import { guardCapturedPath } from "./native-history.mjs";
 
 // Iterate JSONL lines of a buffer without materializing the whole file as
 // one string — real transcripts reach hundreds of MB (a 789 MB Codex
@@ -54,9 +55,16 @@ function* parsedLines(bytes) {
   }
 }
 
-function listJsonlFiles(root, maxDepth, { strict = false } = {}) {
+function listJsonlFiles(root, maxDepth, { strict = false } = {}, allowCaptured = false) {
+  const capturedPi = typeof root === "object" && root !== null ? root.capturedPi : undefined;
+  if (typeof root !== "string") {
+    if (!allowCaptured || !capturedPi || Object.keys(root).some(k => !["path", "capturedPi"].includes(k))) throw new Error("unsupported protected session inventory");
+    root = root.path;
+  }
+  guardCapturedPath(root, capturedPi);
   const out = [];
   const walk = (dir, depth) => {
+    guardCapturedPath(dir, capturedPi);
     let names;
     try {
       names = readdirSync(dir, { withFileTypes: true });
@@ -68,14 +76,16 @@ function listJsonlFiles(root, maxDepth, { strict = false } = {}) {
     }
     for (const entry of names.sort((a, b) => a.name.localeCompare(b.name))) {
       const path = join(dir, entry.name);
+      guardCapturedPath(path, capturedPi); // protected links refuse before traversal or native reads
       if (entry.name.endsWith(".jsonl") && !entry.isDirectory()) {
-        out.push(path); // privacy rules precede opening/statting source links
+        out.push(capturedPi ? { path, capturedPi } : path); // privacy rules precede opening/statting source links
       } else if (entry.isDirectory() || (entry.isSymbolicLink() && statSync(path).isDirectory())) {
         if (depth < maxDepth) walk(path, depth + 1);
       }
     }
   };
   walk(root, 0);
+  guardCapturedPath(root, capturedPi);
   return out;
 }
 
@@ -131,6 +141,7 @@ function ccRoots(home = homedir(), env = process.env, options = {}) {
 function listCcFiles(root, { strict = false } = {}) {
   const out = [];
   const entries = (dir, optional = false) => {
+    guardCapturedPath(dir);
     try { return readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)); }
     catch (err) { if (optional && err.code === "ENOENT") return []; throw err; }
   };
@@ -362,7 +373,7 @@ export const SESSION_FORMATS = {
   pi: {
     source: "pi",
     defaultRoots: piRoots,
-    listFiles: (roots, options) => roots.flatMap((r) => listJsonlFiles(r, 1, options)),
+    listFiles: (roots, options) => roots.flatMap((r) => listJsonlFiles(r, 1, options, true)),
     sessionId: piSessionId,
     extractText: extractPiText,
   },
