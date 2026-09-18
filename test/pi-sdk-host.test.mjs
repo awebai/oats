@@ -32,6 +32,8 @@ test("Pi host grammar separates closed operator args from one kernel history/mod
   assert.equal(f.argv.indexOf("--session-dir"), 2);
   assert.equal(f.argv.filter(value => value === "--session-dir").length, 1);
   assert.equal(options.thinkingLevel, "medium");
+  const colonModel = f.argv.map(value => value === f.recipe.model ? "native-provider/llama3.3:70b" : value);
+  assert.equal(parsePiHostArgv(colonModel).modelSelection.id, "llama3.3:70b", "opaque native IDs are not parsed as thinking suffixes");
   for (const args of [[], [...f.args, "--session", "/other"], [...f.args, "--native-auth-file", "/auth"], [...f.args, "--agent-dir", "/profile"], [...f.args, "--model", "other/model"], f.args.map(value => value === "print" ? "interactive" : value), f.args.map(value => value === "medium" ? "off" : value)]) assert.throws(() => parsePiHostRecipeArgs(args), { code: "E_PI_HOST_ARGS" });
   for (const argv of [f.argv.slice(2), [...f.argv, "--resume"], f.argv.map(value => value === join(f.home, "TASK.md") ? "/other/task" : value)]) assert.throws(() => parsePiHostArgv(argv), { code: "E_PI_HOST_ARGS" });
   for (const changes of [{ executable: "/bin/pi" }, { runtime: "claude" }, { env: { API_KEY: "fixture" } }, { yolo: true }, { model: "default" }, { model: "native-provider/*" }, { hooks: { launch: { pi: "--extension x" } } }]) assert.throws(() => validatePiHostRecipe({ ...f.recipe, ...changes }));
@@ -78,6 +80,7 @@ test("strict loader validates before SDK reads, pins exact skills and refuses ad
   drift = true;
   await assert.rejects(loader.reload(), /retained drift/);
   assert.equal(calls.length, 1, "drift refuses before another SDK resource read");
+  assert.throws(() => loader.getSkills(), { code: "E_PI_HOST_CURRICULUM" }, "failed reload invalidates the old view");
 });
 
 test("print runtime guard rejects history operations BEFORE delegating to actual runtime methods", () => {
