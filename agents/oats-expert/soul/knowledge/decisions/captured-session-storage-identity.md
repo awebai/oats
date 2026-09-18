@@ -7,8 +7,9 @@ tags: [architecture, portable-souls, runtime, custody, sessions]
 timestamp: 2026-09-18
 ---
 
-**Status: accepted by the human 2026-09-18; not yet implemented.** The approval
-is limited to the session-directory identity witness just proposed. It concerns
+**Status: accepted by the human 2026-09-18; enforcement implementation pending.**
+The human subsequently approved the exact five-library enforcement exception
+below. The approval remains limited to the session-directory identity witness. It concerns
 the directory containing native session history, not harness credentials, the
 SDK installation, runtime-bundle grants, a new account identity or a new general
 storage service.
@@ -67,16 +68,37 @@ needed within the accepted boundary:
 - Keep legacy path-only receipts literal. Do not backfill them into stronger
   evidence or let old readers silently accept an unsupported format. Document
   public-result and compatibility behavior before implementation.
-- Keep the native record package runtime unchanged within this proposed slice.
-  If a required enforcement boundary cannot use existing interfaces, report the
-  exact additional contract decision before touching that runtime; do not claim
-  protection that only some dependent paths actually enforce.
+- The original slice excluded record-runtime edits. After inspection established
+  that existing interfaces could not guard the actual dependent reads/appends,
+  the human explicitly approved edits to exactly five `packages/record/lib/`
+  files: `native-history.mjs`, `sessions-for-home.mjs`, `session-snapshot.mjs`,
+  `capture-cc.mjs`, and `formats.mjs`. The last is protected traversal only,
+  not transcript parsing. Relevant focused tests are included; recorder-bin,
+  parser, journal, store or index redesign remain outside this exception.
+  Do not claim protection that only some dependent paths actually enforce.
 
 Path-only attribution is not accepted as a substitute for this stronger guarantee.
 The human approval permits the smallest necessary versioned kernel index/pending/
 session-receipt witness extension, not arbitrary schema or authority expansion.
 The owner/reviewer still owns detailed design and source correctness; any change
 outside these bounds requires its own explicit decision.
+
+# Complete-pipeline advertisement
+
+The pinned synchronous record seam comprises `inspectCapturedPiRoot`,
+`prepareCapturedPiStart` and `assertCapturedPiStart`, with the existing native
+record identifier retained. `CAPTURED_PI_RECORD_VERSION === 2` in native-history
+must advertise the **complete** writer, discovery, snapshot/read, capture/append
+and traversal enforcement chain, not writer support alone. No v1 fallback,
+silent backfill or marker-only implementation qualifies.
+
+The maintainer retained this single advertisement rather than adding separate
+version exports to every internal module: the libraries ship together, and
+additional self-reported constants do not establish enforcement. Source review
+and behavioral checks must cover every dependent read and append boundary.
+The original process's pending/witness association also remains valid across
+same-execution reconciliation; an advanced retry counter is not a replacement
+identity or permission to borrow another process's proof.
 
 # Separate decisions remain separate
 

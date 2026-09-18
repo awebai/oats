@@ -22,6 +22,12 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Local captured host/worker integration and record enforcement exception (2026-09-18)
+- verdict: APPROVE scoped LOCAL source integration, NOT main delivery or release — framework through `77bc96a4`, provider through `85b9ec0`. Exact backend/host/helper/packaging deltas reviewed; PH1 same-execution retry correction closes the original process-association finding with9/9 focused checks. Provider16/16 includes real public admitted scaffold/staging/repeated prepare, without native model launch. Earlier separate adapter/inert/package checks remain literal; no new full-suite or runtime-readiness claim.
+- owner: lifecycle, fresh-source/packaging and provider implementation lanes · reviewer/integrator: maintainer under the human's streamlined workflow. Gate committed-payload/selector/exit-status findings close in `a30879c`; later gate behavior deliberately remains partial without actual process and SDK final-outcome evidence. Operation-triggered worker creation is not scheduled or always-on lifecycle harvesting.
+- direction: human explicitly approved exactly five record libraries and their focused guard tests; [session-storage identity](/decisions/captured-session-storage-identity.md) records the scope and exclusions. Implementation is now assigned, not yet qualified. Maintainer declines additional per-internal-module version exports for this cut, retaining the pinned single COMPLETE-pipeline advertisement. Owner reversal was not a provider source rejection; no duplicate patch or automatic revert is required.
+- taught us: preserve original pending/witness identity across reconciliation rather than equating a live process with the latest retry counter. Inventory, static availability, dispatch acceptance, model completion and durable publication are different observations; none substitutes for the next. Original broad full-gate positives cannot qualify newer runtime changes. No publication, install, credentials operation or runtime Git KB write occurred.
+
 ---
 
 ## Completion workflow — developers implement, maintainer reviews integrated source (2026-09-18)
