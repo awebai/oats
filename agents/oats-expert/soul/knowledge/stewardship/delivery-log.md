@@ -22,6 +22,13 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Record-v2 RV1 closure and native-policy regressions (2026-09-18)
+- verdict: RETURN then APPROVE exact record `8fcf5e85` + correction `e0c3232c`, locally integrated as `6416f407` / `26e81054`. Parent read all changed source and actual consumers, matched preimages/after blobs, and reproduced two foreign-descriptor reads before the original refusal. Correction binds opened descriptors before native and authority reads; six controlled ABA regressions now require zero foreign reads. Original failures and claim-loss evidence remain intact.
+- evidence: parent assembled36/36 record checks pass (including six unchanged legacy cases), plus unbound scaffold/layout/resources/normal-retirement1/1 and syntax/diff checks. Source-only qualification, not actual model/backend/history learning or release. Kernel Pi callback's literal v1-manifest assumption and outcome observation still need their owned integration; no bin/parser/store redesign or whole-branch ancestry was taken.
+- additional scope: exact native Claude/Codex policy regression/docs `09f4a5f0` integrated as `39587ea1`,6/6 parent checks, no runtime fix. Superseded `4dc8bd43` was not picked. Complete OATS home composition and normal native context/opt-in permissions remain distinct requirements.
+- owner: provider record lane and fresh-source regression lane · reviewer/integrator: maintainer; lifecycle owns remaining kernel/host consumer work.
+- taught us: expected receipt inventory must survive missing rows; surviving-directory enumeration cannot certify completeness. A restored path plus a post-read refusal cannot undo reads from an already-foreign descriptor. These are implementation boundaries inside the approved witness scope, not reasons to add a new store or restart architecture review.
+
 ## Claude Code/Codex full home and native launch policy (2026-09-18)
 - verdict: HUMAN DECISION RECORDED — complete resolved OATS homes, skills/capabilities/instructions and normal lifecycle remain; Claude Code/Codex may load ordinary native outside context. No Pi-style isolation requirement, implicit Pi dependency or default permission bypass for those runtimes.
 - owner: maintainer architecture record; fresh-source lane verifies narrow existing launch/default/opt-in behavior, lifecycle retains ownership of any demonstrated kernel correction.

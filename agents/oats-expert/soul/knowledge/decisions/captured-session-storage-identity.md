@@ -7,9 +7,11 @@ tags: [architecture, portable-souls, runtime, custody, sessions]
 timestamp: 2026-09-18
 ---
 
-**Status: accepted by the human 2026-09-18; enforcement implementation pending.**
-The human subsequently approved the exact five-library enforcement exception
-below. The approval remains limited to the session-directory identity witness. It concerns
+**Status: accepted by the human 2026-09-18; five-library guard source locally
+reviewed and integrated, actual native qualification pending.** The human
+subsequently approved the exact five-library enforcement exception below.
+The kernel consumer must accept the authorized manifest evolution without
+weakening its separate incarnation/home/intent custody checks. The approval remains limited to the session-directory identity witness. It concerns
 the directory containing native session history, not harness credentials, the
 SDK installation, runtime-bundle grants, a new account identity or a new general
 storage service.
@@ -99,6 +101,19 @@ and behavioral checks must cover every dependent read and append boundary.
 The original process's pending/witness association also remains valid across
 same-execution reconciliation; an advanced retry counter is not a replacement
 identity or permission to borrow another process's proof.
+
+The existing external history manifest must retain the expected existing receipt
+identifiers before pending publication/root effects. Enumerating surviving files
+cannot establish completeness after a receipt disappears. A narrowly versioned
+codec in that same manifest is within the approved custody work, not a new store
+or general admission index. Missing claimed evidence holds rather than becoming
+fresh history; incomplete legacy history must not be upgraded or backfilled.
+
+Before-read protection also concerns the opened descriptor, not only its path.
+A temporary ancestor redirect during open can leave a foreign descriptor even
+when the named path is normal again. Bind the descriptor to the witnessed,
+physically contained named source before reading; a later exception or refusal
+to append cannot undo an already-performed foreign read.
 
 # Separate decisions remain separate
 
