@@ -3,6 +3,22 @@ import assert from 'node:assert/strict';
 import { validateWire } from './helpers/portable-schema-check.mjs';
 import { validateCapturedSessionBackend,validateCapturedSessionTarget,assertCapturedSessionPlacement } from '../lib/captured-session-backend.mjs';
 
+test('captured Herdr22 schema and runtime boundaries preserve exact selected protocol',()=>{
+  for(const protocol of [20,22]){
+    const backend={backend:'herdr',binary:'/bin/herdr',socket:'/tmp/herdr.sock',protocol};
+    const target={...backend,workspaceId:'w',paneId:'p',terminalId:'t'};
+    validateCapturedSessionBackend(backend);validateCapturedSessionTarget(target,backend,'i');
+    validateWire('CapturedSessionRequest',{schemaVersion:1,backend,task:'explicit'});validateWire('CapturedSessionTarget',target);
+    assert.throws(()=>validateCapturedSessionTarget({...target,protocol:protocol===20?22:20},backend,'i'),{code:'E_RUNTIME_AUTHORITY_MISMATCH'});
+    assert.throws(()=>assertCapturedSessionPlacement({instance:'i',launched:true,sessionTarget:target},backend,[]),{code:'E_RUNTIME_AUTHORITY_MISMATCH'});
+    assertCapturedSessionPlacement({instance:'i',launched:true,sessionTarget:target},backend,[target]);
+  }
+  for(const protocol of [21,23,'22',null]){
+    const backend={backend:'herdr',binary:'/bin/herdr',socket:'/tmp/herdr.sock',protocol};
+    assert.throws(()=>validateCapturedSessionBackend(backend));assert.throws(()=>validateWire('CapturedSessionRequest',{schemaVersion:1,backend}));
+  }
+});
+
 test('captured native backend inputs are closed tagged endpoint shapes, not caller-created Herdr identities',()=>{
   const tmux={backend:'tmux',binary:'/bin/tmux',socket:'/tmp/tmux.sock',session:'fixture'},herdr={backend:'herdr',binary:'/bin/herdr',socket:'/tmp/herdr.sock',protocol:20};
   assert.equal(validateCapturedSessionBackend(tmux),tmux);assert.equal(validateCapturedSessionBackend(herdr),herdr);

@@ -2069,7 +2069,10 @@
               "description": "Runtime also requires a normalized absolute path without NUL."
             },
             "protocol": {
-              "const": 20
+              "enum": [
+                20,
+                22
+              ]
             }
           },
           "required": [
@@ -2132,7 +2135,10 @@
               "description": "Runtime also requires a normalized absolute path without NUL."
             },
             "protocol": {
-              "const": 20
+              "enum": [
+                20,
+                22
+              ]
             },
             "workspaceId": {
               "type": "string",
