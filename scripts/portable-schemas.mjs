@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { ORIGIN_KINDS, RESOLUTION_FIELDS } from "../lib/resolution-shape.mjs";
 import { CHOICE_KINDS } from "../lib/portable-choices.mjs";
 import { TREE_FORMAT, PACKAGE_FORMAT, BYTES_FORMAT } from "../lib/portable-digest.mjs";
-import { HERDR_PROTOCOLS } from "../lib/herdr.mjs";
+import { HERDR_SUPPORTED_PROTOCOLS } from "../lib/herdr.mjs";
 
 const id = "https://oats.dev/schemas/portable-v1.json";
 const s = { type: "string", minLength: 1 }, text = { type: "string" }, v1 = { const: 1 };
@@ -126,10 +126,10 @@ if (JSON.stringify(Object.keys(d.CapturedResolution.properties).sort()) !== JSON
 const nativePath = { ...s, pattern: "^/", description: "Runtime also requires a normalized absolute path without NUL." };
 d.CapturedSessionBackend = one(
   object({ backend: { const: "tmux" }, binary: nativePath, socket: nativePath, session: { ...s, pattern: "^[A-Za-z0-9_-]+$" } }),
-  object({ backend: { const: "herdr" }, binary: nativePath, socket: nativePath, protocol: enumeration(...HERDR_PROTOCOLS) }));
+  object({ backend: { const: "herdr" }, binary: nativePath, socket: nativePath, protocol: enumeration(...HERDR_SUPPORTED_PROTOCOLS) }));
 d.CapturedSessionTarget = one(
   object({ backend: { const: "tmux" }, socket: nativePath, session: s, window: s }),
-  object({ backend: { const: "herdr" }, binary: nativePath, socket: nativePath, protocol: enumeration(...HERDR_PROTOCOLS), workspaceId: s, paneId: s, terminalId: s }));
+  object({ backend: { const: "herdr" }, binary: nativePath, socket: nativePath, protocol: enumeration(...HERDR_SUPPORTED_PROTOCOLS), workspaceId: s, paneId: s, terminalId: s }));
 d.CapturedSessionRequest = object({ schemaVersion: v1, backend: ref("CapturedSessionBackend"), task: text,
   stopGraceMs: { type: "integer", minimum: 1, maximum: 300000 } }, ["backend", "task", "stopGraceMs"]);
 d.CapturedNativeSessionAvailability = object({ schemaVersion: v1,

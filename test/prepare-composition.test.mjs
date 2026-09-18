@@ -420,6 +420,11 @@ test('explicit primary and helper launch inputs retain separate entrypoints and 
   const retained=loadCapturedDispatch({deployment:f.deployment,resolution:a.resolution,action:{kind:'inspect'}});
   const entry=retained.resources.get(retained.record.dispatch.launch.executableResource);
   assert.match(readFileSync(entry,'utf8'),/retained runtime A/);assert.equal(retained.record.dispatch.launch.model,'explicit-model-A');
+  const helperSelection=resolveCapturedHelper({executionBinding:a.executionBinding,helper:key});
+  assert.deepEqual(helperSelection.launchSelection,{runtime:'claude',model:'helper-model-A'},'summary comes from verified helper A, not primary/current B');
+  assert.equal(resolveCapturedHelper({executionBinding:b.executionBinding,helper:key}).launchSelection,null,'an unselected helper launch stays null');
+  const inspect=execFileSync(process.execPath,[fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),'inspect','--deployment',f.deployment,'--resolution',a.resolution.id,'--helper',key,'--json'],{encoding:'utf8'});
+  assert.deepEqual(JSON.parse(inspect).result.helperSelection.launchSelection,{runtime:'claude',model:'helper-model-A'},'public read-only summary exposes only runtime/model, no env/argv/credentials');
   const tampered=structuredClone(record);tampered.dispatch.launch.executableResource='missing-runtime';
   assert.throws(()=>commitCapturedResolution(f.deployment,tampered));
   const g=fixture(t),manifest=JSON.parse(readFileSync(join(g.repo,'packages/action/cap/oats.json'),'utf8'));
@@ -615,10 +620,12 @@ test('source helper lookup preserves dedicated A/B authority without source or c
     assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,readiness:{status:'ready'}}));
     assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,api:{...resolved.launch.api,version:99}}));
     assert.equal(readCapturedResolution(f.deployment,helper).dispatch.launch,null,'API availability is not a launch recipe, approval or ready instance');
+    assert.equal(resolved.launchSelection,null);
     const result=spawnSync(process.execPath,[cli,'inspect','--deployment',f.deployment,'--resolution',source.resolution.id,'--helper',key,'--composition','--json'],{encoding:'utf8'});
     assert.equal(result.status,0,result.stdout||result.stderr);const receipt=JSON.parse(result.stdout).result;
     assert.equal(receipt.resolution.id,helper.id);assert.equal(receipt.helperSelection.sourceExecutionBinding.resolution.id,source.resolution.id);
     assert.deepEqual(receipt.nativeSession,resolved.launch);assert.deepEqual(receipt.helperSelection.launch,resolved.launch);
+    assert.equal(receipt.helperSelection.launchSelection,null);
     assert.ok(receipt.composition.text.startsWith(text));
   }
   for(const helper of ['missing','constructor','__proto__']) assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper}),{code:'helper-not-selected'});
