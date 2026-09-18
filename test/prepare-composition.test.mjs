@@ -86,6 +86,76 @@ test('captured Pi refuses legacy CLI reinterpretation and unsupported record gua
   }
 });
 
+test('captured Pi outcome public inspection wires actual kernel custody and shell status with an explicit SDK UNIT double',t=>{
+  if(nativeRecords.CAPTURED_PI_RECORD_VERSION!==2){t.skip('requires separately owned complete record-v2 integration');return;}
+  const f=fixture(t),root=realpathSync(f.root),sdk=join(root,'sdk-outcome-unit');mkdirSync(sdk);
+  const manifestPath=join(f.repo,'packages/action/cap/oats.json'),manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
+  delete manifest.hooks;writeFileSync(manifestPath,JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','no effectful hooks in unit host fixture');
+  writeFileSync(join(sdk,'package.json'),JSON.stringify({name:'@earendil-works/pi-coding-agent',version:'0.85.1',exports:{'.':{import:'./index.mjs'}}}));
+  // Public-shape SDK DOUBLE, no actual SDK services/auth/model/provider. Exercises
+  // the actual host, record-v2 APIs, completion shell and public inspection wire.
+  writeFileSync(join(sdk,'index.mjs'),`
+import {writeFileSync} from 'node:fs'; import {join,basename,dirname} from 'node:path';
+export const VERSION='0.85.1'; export const getAgentDir=()=>process.env.HOME;
+export const ModelRuntime={create:async()=>({getModel:(provider,id)=>({provider,id})})};
+export const SettingsManager={create:()=>({})};
+export const loadSkills=({skillPaths})=>({skills:skillPaths.map(filePath=>({name:basename(dirname(filePath)),filePath})),diagnostics:[]});
+export const createExtensionRuntime=()=>({});
+export const SessionManager={create:(cwd,dir)=>{const header={type:'session',version:3,id:'12345678-1234-4123-8123-123456789abc',cwd,timestamp:'2026-01-01T00:00:00Z'};const file=join(dir,'unit-sdk-session.jsonl');return {header,file,branch:[],getCwd:()=>cwd,getSessionDir:()=>dir,getHeader:()=>header,getSessionId:()=>header.id,getSessionFile:()=>file,getBranch(){return this.branch;}};}};
+export const createAgentSessionFromServices=async({sessionManager,model})=>({session:{sessionManager,model,messages:[]}});
+export const createAgentSessionRuntime=async(factory,options)=>{const built=await factory(options);let before;return {...built,setBeforeSessionInvalidate(fn){before=fn;},dispose(){before?.();}};};
+export async function runPrintMode(runtime,{initialMessage}){const code=initialMessage.includes('FAIL')?7:0;const session=runtime.session,m=session.sessionManager;
+const message={role:'assistant',provider:session.model.provider,model:session.model.id,stopReason:code?'error':'stop',timestamp:123,content:[{type:'text',text:'UNIT ONLY'}]};
+session.messages=[message];m.branch=[{type:'message',id:'actual-unit-entry',message}];writeFileSync(m.file,JSON.stringify(m.header)+'\\n'+JSON.stringify(m.branch[0])+'\\n');await runtime.dispose();return code;}
+`);
+  const launch={runtime:'pi',executable:PI_SDK_HOST,args:['--oats-pi-host','1','--mode','print','--thinking','medium','--sdk-root',sdk,'--sdk-version','0.85.1'],env:{},model:'native-provider/exact-model',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'unit'},pointer:'/approve'});
+  for(const backendName of ['tmux','herdr'])for(const fail of [false,true]){
+    const name=`unit-${backendName}-${fail?'fail':'success'}`,home=join(root,name);
+    scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:name});
+    activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});
+    const backend={backend:backendName,binary:process.execPath,socket:join(root,'unit.sock'),...(backendName==='tmux'?{session:'unit'}:{protocol:22})};
+    const env={PATH:join(process.execPath,'..')+':/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true'};let pane=null;
+    const io={exec:(file,args,options)=>{
+      assert.equal(file,process.execPath);
+      if(backendName==='herdr'){
+        assert.equal(options.env.HERDR_SOCKET_PATH,backend.socket);let result={};
+        if(args[0]==='api')result={snapshot:{protocol:22,panes:pane?[pane]:[],agents:[]}};
+        else if(args[0]==='workspace'){pane={workspace_id:'unit-workspace',pane_id:'unit-pane',terminal_id:'unit-terminal',cwd:home};result={root_pane:pane};}
+        else if(args[0]==='pane'&&args[1]==='run'){
+          const child=spawnSync('/bin/sh',['-c',args[3]],{cwd:home,env:options.env,encoding:'utf8'});
+          assert.equal(child.status,fail?7:0,child.stderr);pane=null;
+        }else assert.fail('unexpected inert Herdr call');
+        return JSON.stringify({result});
+      }
+      if(args.includes('list-panes'))throw Object.assign(new Error("can't find window"),{stderr:"can't find window"});
+      if(args.includes('new-window')||args.includes('respawn-pane'))execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:home,env:options.env,encoding:'utf8'});
+      return '';
+    }};
+    const started=startCapturedInstanceSession(home,{deployment:f.deployment,resolution:prepared.resolution,backend,task:fail?'FAIL unit':'STOP unit',env,io});
+    assert.equal(readFileSync(join(home,'.oats-start-exited'),'utf8'),started.intent.executionId+'\n');
+    const before=JSON.stringify(readCapturedInstanceIndex(f.deployment));
+    const query=()=>spawnSync(process.execPath,[fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),'session','inspect','--deployment',f.deployment,'--resolution',prepared.resolution.id,'--home',home,'--native-record',started.nativeRecordId,'--json'],{env,encoding:'utf8',timeout:20000});
+    const cli=query();
+    assert.equal(cli.status,0,cli.stdout+cli.stderr);const outcome=JSON.parse(cli.stdout).result.outcome;
+    assert.equal(outcome.qualified,!fail);assert.equal(outcome.status,fail?'failed':'succeeded');
+    assert.equal(outcome.processExitCode,fail?7:0);assert.equal(outcome.sdkExitCode,fail?7:0);
+    assert.equal(outcome.sdk.finalAssistant.entryId,'actual-unit-entry');assert.equal(outcome.authority.nativeRecordId,started.nativeRecordId);
+    assert.deepEqual(outcome.authority.intent,started.intent);assert.equal(JSON.stringify(readCapturedInstanceIndex(f.deployment)),before,'inspection does not admit or mutate');
+    const S=outcome.authority.sessionDir;fs.renameSync(S,S+'-original');fs.cpSync(S+'-original',S,{recursive:true});
+    const replaced=query();assert.equal(replaced.status,1);assert.equal(JSON.parse(replaced.stdout).error.code,'E_CAPTURED_PI_CUSTODY','copied outcomes in a replacement root cannot qualify');
+    assert.equal(JSON.stringify(readCapturedInstanceIndex(f.deployment)),before);
+  }
+});
+
+test('non-Pi native callback retains literal legacy manifest equality',t=>{
+  const f=nativeCorrectionFixture(t),before=JSON.stringify(readCapturedInstanceIndex(f.deployment));
+  writeFileSync(join(nativeHistoryPath(f.home),'history.json'),JSON.stringify({version:2,home:f.home,completeHistory:true,capturedPi:{incarnationId:'foreign',nativeRecordIds:[]}}));
+  assert.throws(()=>startCapturedInstanceSession(f.home,f.options),{code:'integrity-drift'});
+  assert.equal(f.calls.length,0);assert.equal(JSON.stringify(readCapturedInstanceIndex(f.deployment)),before);
+});
+
 test('native state preflight preserves newer lifecycle and holds completed publication debt',t=>{
   const f=nativeCorrectionFixture(t),baseIndex=readFileSync(f.indexFile),baseMeta=readFileSync(f.metaFile);
   for(const [indexed,metadata] of [['retire-running','spawned-launch-pending'],['spawn-failed-cleanup-required','spawned-launch-pending'],['retire-running','retire-running']]){

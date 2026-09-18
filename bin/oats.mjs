@@ -47,6 +47,7 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
+import { inspectCapturedPiOutcome } from "../lib/captured-pi-host.mjs";
 import { readCapturedResolution } from "../lib/captured-resolutions.mjs";
 import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
 import { portableScope } from "../lib/portable-state.mjs";
@@ -288,8 +289,9 @@ function capturedSpawn(selector, load, bail) {
 /** Native continuation of an already owned captured home. A helper selector is
  * an exact edge from the SOURCE record, not a name/current-config resolver. */
 function capturedSession(selector, bail) {
-  if (!["start", "restart"].includes(args[1])) bail("unsupported-action", "captured session supports only start/restart; no current-context fallback was used");
-  const values = new Map(), allowed = new Set(["home", "helper", "request", "retry-intent"]);
+  const inspecting = args[1] === "inspect";
+  if (!["start", "restart", "inspect"].includes(args[1])) bail("unsupported-action", "captured session supports start/restart or explicit Pi outcome inspect; no current-context fallback was used");
+  const values = new Map(), allowed = new Set(inspecting ? ["home", "helper", "native-record"] : ["home", "helper", "request", "retry-intent"]);
   for (let index = 2; index < args.length; index++) {
     if (args[index] === "--json") continue;
     const key = args[index].startsWith("--") ? args[index].slice(2) : "", value = args[index + 1];
@@ -299,6 +301,7 @@ function capturedSession(selector, bail) {
   const home = values.get("home"), retry = values.get("retry-intent");
   if (!home || !isAbsolute(home) || resolve(home) !== home || home.includes("\0")) bail("E_BAD_ARGS", "captured session needs a normalized absolute --home");
   if (retry !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(retry)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
+  if (inspecting && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(values.get("native-record") ?? "")) bail("E_BAD_ARGS", "captured Pi outcome inspect requires one explicit --native-record UUID");
   const sourceExecutionBinding = { schemaVersion: 1, deployment: portableScope(selector.deployment), resolution: selector.resolution };
   // Pure retained-subject check, before request files, provider or native calls.
   // Dedicated helper IDs remain valid for scaffolding, not edge-less dispatch.
@@ -317,6 +320,12 @@ function capturedSession(selector, bail) {
   const helperSelection = values.has("helper") ? resolveCapturedHelper({ executionBinding: sourceExecutionBinding, helper: values.get("helper") }) : null;
   const executionBinding = helperSelection?.executionBinding ?? sourceExecutionBinding;
   try {
+    if (inspecting) {
+      const outcome = inspectCapturedPiOutcome(home, { ...executionBinding, nativeRecordId: values.get("native-record") });
+      const result = { outcome, executionBinding, ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}) };
+      if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+      return;
+    }
     const native = startCapturedInstanceSession(home, { ...request, deployment: executionBinding.deployment, resolution: executionBinding.resolution,
       restart: args[1] === "restart", ...(retry !== undefined ? { retryExecutionId: retry } : {}) });
     const result = { ...native, executionBinding, ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}) };
@@ -4148,6 +4157,7 @@ function scheduleCmd() {
 
 async function sessionCmd() {
   try {
+    if (flag("native-record") !== undefined) throw Object.assign(new Error("--native-record outcome inspection requires exact captured deployment/resolution selectors"), { code: "E_BAD_ARGS" });
     const home = flag("home");
     let result;
     if (args[1] === "attach") {
@@ -5195,6 +5205,8 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             scope views stay read-only; scope mutation is not yet qualified
   oats spawn <captured subject> --deployment <abs> --resolution <id>
       --home <abs> --no-launch [--json]      create a fresh directory scaffold and run captured hooks
+  oats session inspect --deployment <abs> --resolution <id> --home <abs> --native-record <UUID> [--helper <exact-key>] --json
+                                           read-only Pi completion observation; not admission or readiness
   oats session start|restart --deployment <abs> --resolution <id> --home <abs>
       [--helper <exact-source-map-key>] [--request <abs-json>] [--retry-intent <saved-id>] [--json]
                                             dispatch the owned captured home via existing native custody;

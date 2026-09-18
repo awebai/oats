@@ -137,6 +137,49 @@ test("unit host refuses custody and empty task BEFORE SDK import, and never subs
   await assert.rejects(runPiSdkHost(f.argv, { cwd: f.home, verifyContext: () => f.selection, importSdk: async () => sdk }), { code: "E_PI_HOST_MODEL" });
 });
 
+test("unit completion callback observes public session before disposal, then actual native return", async t => {
+  const f = fixture(t), calls = [], sdk = unitSdk(f, calls);
+  const actual = { provider: "actually-observed", model: "actual-model", role: "assistant", stopReason: "length", timestamp: 123 };
+  let disposed = false;
+  sdk.createAgentSessionRuntime = async (factory, options) => {
+    const built = await factory(options); let before;
+    const session = { ...built.session, sessionManager: {
+      getHeader: () => { assert.equal(disposed, false); return { type: "session", version: 3, id: "actual-header", cwd: f.home, timestamp: "actual-timestamp" }; },
+      getSessionId: () => "actual-header", getSessionFile: () => join(f.sessionDir, "actual.jsonl"),
+      getBranch: () => [{ type: "message", id: "actual-entry", message: actual }],
+    }, messages: [actual] };
+    return { ...built, session, setBeforeSessionInvalidate(fn) { before = fn; }, dispose() { before?.(); disposed = true; calls.push(["dispose"]); } };
+  };
+  const run = sdk.runPrintMode;
+  sdk.runPrintMode = async (...args) => { await run(...args); return 7; };
+  let observed;
+  assert.equal(await runPiSdkHost(f.argv, { cwd: f.home, verifyContext: () => f.selection, importSdk: async () => sdk,
+    onOutcome(options, outcome, verified) { assert.equal(disposed, true); assert.equal(verified, f.selection); observed = outcome; } }), 7);
+  assert.equal(observed.exitCode, 7);
+  assert.equal(observed.observation.header.id, "actual-header");
+  assert.equal(observed.observation.finalAssistant.model, "actual-model", "actual SDK entry, not requested exact-model");
+  assert.equal(observed.observation.finalAssistant.stopReason, "length");
+  assert.equal(calls.filter(([name]) => name === "dispose").length, 1);
+});
+
+test("unit completion never defaults absent status to0 and unknown snapshot does not prevent disposal", async t => {
+  const f = fixture(t), calls = [], sdk = unitSdk(f, calls);
+  const create = sdk.createAgentSessionRuntime;
+  sdk.createAgentSessionRuntime = async (...args) => {
+    const runtime = await create(...args); let before;
+    return { ...runtime, setBeforeSessionInvalidate(fn) { before = fn; }, dispose() { before?.(); runtime.dispose(); } };
+  };
+  let observation;
+  await runPiSdkHost(f.argv, { cwd: f.home, verifyContext: () => f.selection, importSdk: async () => sdk,
+    onOutcome(_options, value) { observation = value; } });
+  assert.deepEqual(observation, { exitCode: 0, observation: null });
+  assert.equal(calls.filter(([name]) => name === "dispose").length, 1);
+  const run = sdk.runPrintMode;
+  sdk.runPrintMode = async (...args) => { await run(...args); return undefined; };
+  await assert.rejects(runPiSdkHost(f.argv, { cwd: f.home, verifyContext: () => f.selection, importSdk: async () => sdk,
+    onOutcome() { assert.fail("invalid native status must not publish evidence"); } }), { code: "E_PI_HOST_OUTCOME" });
+});
+
 test("host executable rejects arbitrary caller invocation with a nonsecret diagnostic", t => {
   const f = fixture(t), result = spawnSync(process.execPath, [PI_SDK_HOST, "--native-auth-file", "unit-secret-sentinel"], { cwd: f.home, encoding: "utf8", env: { PATH: process.env.PATH, HOME: f.root } });
   assert.equal(result.status, 1);
