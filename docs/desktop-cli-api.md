@@ -18,8 +18,11 @@ prints exactly one JSON object on stdout:
 ```
 
 `version` is the installed package's exact semver (e.g. `0.20.0`).
-Desktop 0.23 accepts `desktopApi === 1` and semver `>=0.22.0 <0.24.0`
-(the earlier Desktop 0.22 band was `>=0.22.0 <0.23.0`).
+Desktop 0.24 accepts `desktopApi === 1` and semver `>=0.22.0 <0.25.0`
+(the earlier Desktop 0.23 band was `>=0.22.0 <0.24.0`). This admits the paired
+0.24 CLI without changing Desktop API v1. It does not establish complete captured
+UI, backend, plugin, retirement or recovery parity; capability checks and explicit
+refusals below remain authoritative.
 
 Optional features are negotiated from the probe's `features` array. Starting
 an existing home requires `session-start`; named launch configurations and

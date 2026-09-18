@@ -12,8 +12,8 @@
 //
 // Every candidate is canonicalized to an absolute executable and accepted
 // ONLY if executable and `<bin> version --json` returns the v1 probe:
-//   {"schemaVersion":1,"name":"@awebai/oats","version":"0.23.x","desktopApi":1}
-// Desktop accepts desktopApi === 1 and semver >=0.22.0 <0.24.0 (the band is
+//   {"schemaVersion":1,"name":"@awebai/oats","version":"0.24.x","desktopApi":1}
+// Desktop accepts desktopApi === 1 and semver >=0.22.0 <0.25.0 (the band is
 // spelled ONCE, in ACCEPT_RANGE below — this line only paraphrases it).
 // API version — not source adjacency — is authoritative.
 //
@@ -36,9 +36,10 @@ export const DESKTOP_API = 1;
 // exist under the new name. The Desktop v1 surface is UNCHANGED across that
 // kernel bump (`version --json`, `spawn --json`, `okf harvest --json` —
 // test/cli-json-contract.test.mjs), so DESKTOP_API stays 1.
-// Widened through 0.23.x for directory workers and capture completeness. These
-// are additive; Desktop CLI API v1 and the 0.22.x floor remain unchanged.
-export const ACCEPT_RANGE = { min: [0, 22, 0], maxExclusive: [0, 24, 0] };
+// Widened through 0.24.x for the retained-execution first cut. Desktop CLI API
+// v1 and the 0.22.x floor remain unchanged; individual capability/refusal gates
+// still apply. Version acceptance does not assert captured UI/backend parity.
+export const ACCEPT_RANGE = { min: [0, 22, 0], maxExclusive: [0, 25, 0] };
 /** The band as humans read it — derived, never hand-spelled, so the probe
  * rejection reason, the backend's /api status and the degradation card can
  * never disagree with the numbers actually enforced above. */
