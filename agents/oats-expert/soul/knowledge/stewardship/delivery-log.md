@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-17
+timestamp: 2026-09-18
 ---
 
 # Delivery log
@@ -23,6 +23,14 @@ Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
 ---
+
+## Aweb exact-team readback — scoped approval; runtime evidence update (2026-09-18)
+- verdict: APPROVE exact `be9ac7edae0f3bb2e7898c4d0b4fa523132a941d` over `47be62fd`, tree `866bc88d`, within its four-file non-authorizing native readback/authority-ledger delta. Independent review verified exact patch/archive blobs, syntax, selected binding/receipt correspondence, bounded closed response and sanitized single-read failure; no source finding. Existing parent binding/receipt validators informed the review, not whole-ancestry approval.
+- evidence: preserved developer 12/12 offline readback/operation tests, manifest validation and separate unbound scaffold/retirement 1/1; no independent runtime rerun. The utility requires an injected authenticated client and always reports qualification not established. Structural controller syntax is not cryptographic proof. No production check/setup wiring, native effect, aweb source integration, release/install or privacy/readiness approval follows.
+- open: native responsible-human/actor delegation, hosted create/reuse/invite and collision/lost-response/key custody, exact credential-reference transport with origin/signature/certificate/non-revocation checks, human/context/team mapping, independently qualified grants and actual supported versions. Provider owns implementation/native evidence; reviewer owns code verdicts.
+- separate SDK evidence: the owner's public Pi 0.85.1 zero-plugin consumer experiment exercised actual session/runtime construction, reload, new-session creation and one prechecked owned switch, with identical selected prompt digests and zero model/auth/network operations. This is not TUI, real model, arbitrary UI history or retained OATS primary/helper/backend qualification. The missing nonempty-extension loader surface does not block this separate zero-plugin path; explicit host/eligibility/model/history integration remains to implement/review. No new ledger or contribution contract was approved.
+- date correction: the paired framework/provider source delivery described immediately below actually occurred on **2026-09-18**, confirmed by the merge/documentation commit dates and coordinator push receipt. Its original 2026-09-17 heading is retained as append-only history; the living repo view is corrected. Evidence scopes/results are unchanged.
+- taught us: metadata-only readback can reject mismatch without proving authority. Likewise, real SDK construction is stronger than custom-loader getters but still distinct from live model/backend acceptance.
 
 ## Integrated captured native/provider source — both mains delivered (2026-09-17)
 - verdict: SOURCE DELIVERED by normal fast-forward pushes — framework `280d0532` → `e0bccef0` (reviewed merge `cd938860` plus independently approved one-document correction), provider `ec5d767` → exact `86bff1a`. Remote main identities were read back after each push. No tag, version bump, install, mirror/catalog activation, production cutover or runtime knowledge publication occurred.

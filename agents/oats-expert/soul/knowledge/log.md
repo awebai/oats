@@ -1,5 +1,9 @@
 # Knowledge Log
 
+## 2026-09-18
+* **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independent scoped approval of aweb `be9ac7e` non-authorizing exact-team readback; native human/admin/client/grant qualification remains open. Record the separate owner's actual zero-plugin SDK consumer evidence without promoting it to live model/TUI/backend or general history readiness. Neither result approves new runtime-root/contribution contracts or aweb integration.
+* **Fix**: [Repo state](/stewardship/repo-state.md) corrects the paired source delivery date to 2026-09-18, verified from Git commit metadata and the coordinator push receipt; the [delivery log](/stewardship/delivery-log.md) appends the correction rather than rewriting its prior heading. Earlier gate results and scope limits remain unchanged.
+
 ## 2026-09-17
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record actual normal source-main delivery of reviewed native/provider integration (`cd938860` plus approved status-only `e0bccef0`) and standalone `86bff1a`. Actual paired3/3, standalone285/0/5, framework retry2704/0/3 and all eight gates pass; original2703/1/3 and independent1/1 remain distinct, with initial termination cause unproven. Pruned completed integration review waits from the living view. No runtime/timeout/assertion changes, new release, live model/provider qualification or pending-contract approval is implied.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record exact reviewed conflict resolutions applied in local native/provider integration, the standalone285/0/5 gate and corrected combined-harness static approval. Actual combined execution and all live-runtime/release claims remain pending.
