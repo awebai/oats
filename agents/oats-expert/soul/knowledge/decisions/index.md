@@ -1,5 +1,6 @@
 # Decisions
 
+* [Durable identity for captured native session storage](captured-session-storage-identity.md) - Require a narrowly versioned kernel-owned external identity witness when captured execution promises to reject replacement of the original native session directory.
 * [Harness authentication remains native and user-managed](harness-native-authentication.md) - OATS launches the selected harness in its existing authenticated context and delegates credential resolution and lifecycle to the harness rather than managing authentication itself.
 * [Proposed portable role editions and explicit bootstrap helpers](portable-role-editions-and-bootstrap.md) - Propose stable parallel role exports with explicit adopter-bound knowledge destinations and a separately proven operator-root helper entry for cold bootstrap.
 
