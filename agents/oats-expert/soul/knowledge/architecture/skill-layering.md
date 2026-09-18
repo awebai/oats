@@ -3,7 +3,7 @@ type: Area Guide
 title: Skill layering
 description: The content-layer rule for always-loaded instructions, on-demand skills, and index-first knowledge, plus exact capability-selected instance distribution.
 tags: [skills, memory, capabilities]
-timestamp: 2026-07-14
+timestamp: 2026-09-18
 ---
 
 # Content layers
@@ -27,11 +27,14 @@ instance's `.agents/skills`; the runtime adapter package is not a second skill
 resolution layer. Duplicate names error unless config explicitly selects an
 override. `instance.json` records every name and source.
 
-Pi disables ambient skill discovery and receives the one instance directory
-explicitly. Claude receives canonical project and config-home symlinks to the
-same directory. Workspace/config/package ancestor roots are not OATS runtime
-visibility surfaces. `oats-getting-started` is the sole ambient pre-workspace
-bootstrap.
+The selected strict Pi profile receives the one instance curriculum explicitly.
+[Claude Code and Codex launch normally](/decisions/claude-codex-native-launch.md):
+their complete resolved OATS instance home and skills remain, while native
+user/workspace/ancestor context and skills may also load. Do not replace their
+native profile/config home merely to suppress outside context. The exact OATS
+selection is still auditable; native coexistence is not another OATS resolver.
+`oats-getting-started` remains the pre-workspace bootstrap, distinct from an
+instantiated soul's complete composition.
 
 # Curriculum routing
 

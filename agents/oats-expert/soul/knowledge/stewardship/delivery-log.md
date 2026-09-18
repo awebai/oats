@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Claude Code/Codex full home and native launch policy (2026-09-18)
+- verdict: HUMAN DECISION RECORDED — complete resolved OATS homes, skills/capabilities/instructions and normal lifecycle remain; Claude Code/Codex may load ordinary native outside context. No Pi-style isolation requirement, implicit Pi dependency or default permission bypass for those runtimes.
+- owner: maintainer architecture record; fresh-source lane verifies narrow existing launch/default/opt-in behavior, lifecycle retains ownership of any demonstrated kernel correction.
+- taught us: exact materialization of what OATS supplies is distinct from exclusive control of everything a native harness loads. Preserve that distinction in claims/tests rather than omitting the instance composition or imposing Pi's profile on every runtime. Existing native flags are already conditional on selected yolo; no live configuration or native permission settings were rewritten.
+
 ## Local worker child-selector hygiene (2026-09-18)
 - verdict: APPROVE and locally integrate exact provider `3701f74` over `85b9ec0`; two-file change, one new focused unit passes plus syntax/diff checks. No full-gate repetition or native execution; source-main remains the earlier delivered provider revision.
 - owner: provider implementation lane · reviewer/integrator: maintainer.

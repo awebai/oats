@@ -1,19 +1,25 @@
 ---
 type: Decision
-title: Instantiated souls receive a strict curated runtime curriculum
+title: Selected instance curriculum and runtime-specific visibility
 status: accepted
-description: When OATS instantiates a soul, runtime adapters expose only the skills and instruction injections selected from the kernel, soul, and active capabilities, eliminating ambient skill noise while preserving provider-native tools and workflows.
+description: OATS materializes an exact selected curriculum, with strict Pi visibility and normal native context coexistence for Claude Code and Codex.
 tags: [architecture, skills, context, runtime, providers, composition]
-timestamp: 2026-07-26
+timestamp: 2026-09-18
 ---
 
-**Status: accepted by the founder 2026-07-26.** This decision supersedes the
-ambient-skill coexistence behavior in [config authorship and ambient skill
-coexistence](/decisions/config-authorship-and-ambient-skills.md). It restores
-strict instance composition as a core product promise and strengthens [skill
-layering](/architecture/skill-layering.md).
+**Status: accepted 2026-07-26, explicitly narrowed by the human 2026-09-18.**
+[Claude Code and Codex now use normal native launch](/decisions/claude-codex-native-launch.md),
+including ordinary native context and skills; their adapters need not enforce
+OATS-only visibility. Pi's selected strict profile remains unchanged. The original
+rejection of [ambient coexistence](/decisions/config-authorship-and-ambient-skills.md)
+is therefore no longer universal. Exact OATS composition and
+[skill layering](/architecture/skill-layering.md) remain common contracts.
 
-# Context
+# Original context
+
+The following rationale motivated the original universal target. The later
+human decision retains exact OATS composition but deliberately allows normal
+native context coexistence for Claude Code and Codex.
 
 A specialized agent should not start with a catalog of a hundred unrelated
 skills and hope the model ignores ninety-five of them. OATS already knows the
@@ -45,16 +51,16 @@ When OATS instantiates a soul, it resolves and materializes exactly:
    under the resolved local config; and
 4. explicit config-owned instruction blocks and approved overrides.
 
-Runtime adapters expose this instance-local composition as the agent's skill
-and instruction curriculum. They disable ambient discovery from user,
-workspace, ancestor, harness-package, and unrelated project roots. The
-pre-workspace getting-started bootstrap remains the narrow exception before an
-OATS instance exists.
+Runtime adapters expose this instance-local OATS composition. The selected
+strict Pi profile disables unrelated ambient skill/instruction discovery.
+Claude Code and Codex retain ordinary native discovery alongside it; OATS does
+not claim exclusive visibility there. Pre-workspace bootstrap remains distinct
+from composition of an existing OATS instance.
 
-`instance.json` records the complete selected skill/injection surface and its
-provenance. Duplicate names are resolved or rejected before launch according
-to the existing explicit override contract; ambient last-writer-wins behavior
-is not part of an OATS instance.
+`instance.json` records the selected OATS skill/injection surface and provenance,
+not every native resource visible in Claude Code or Codex. Duplicate names inside
+the OATS-managed set follow the explicit override contract; native coexistence
+and native discovery precedence are not a second OATS resolver.
 
 ## Scope of “only what it needs”
 
@@ -68,8 +74,9 @@ injections controlled by the OATS/runtime integration. It does not hide:
 
 This distinction preserves provider strengths. A Claude Code developer may
 still use Claude Code's native development workflow and tools; a Pi-based
-coordinator keeps Pi's interaction model. What they do not receive is an
-unselected ambient skill catalog or instruction set.
+coordinator keeps Pi's interaction model. The strict Pi profile excludes the
+unselected ambient catalog; Claude Code and Codex intentionally retain their
+normal native context under the later decision.
 
 A provider plugin, channel, or runtime extension required by an active
 capability is not ambient: it is part of the selected capability's declared,
@@ -77,21 +84,21 @@ locked, trusted composition and must appear in provenance.
 
 ## How users add skills
 
-A skill reaches an instantiated soul through an explicit source:
+A skill enters the OATS-managed composition through an explicit source:
 
 - put role-private behavior in the soul;
 - distribute reusable behavior in a package capability and assign it in
   `oats-config.yaml`; or
 - add an explicit config-owned instruction block where appropriate.
 
-This is more ceremony than ambient discovery, but it makes relevance,
-portability, review, and diagnosis explicit. Package profiles may recommend
-assignments, but local config remains authoritative and every capability stays
-independently targetable.
+This makes OATS-managed relevance, portability, review and diagnosis explicit.
+Claude Code and Codex may also discover native skills normally. Package profiles
+may recommend OATS assignments, but local config remains authoritative and every
+capability stays independently targetable.
 
 ## Runtime adapter requirement
 
-Every supported runtime adapter must provide a verified strict launch mode:
+The selected Pi adapter must provide a verified strict launch mode:
 
 - disable ambient skill and instruction discovery;
 - expose only the instance-local OATS composition;
@@ -101,26 +108,28 @@ Every supported runtime adapter must provide a verified strict launch mode:
 - carry parity tests proving the visible selected surface for each supported
   runtime.
 
-The exact Pi and Claude Code mechanisms are implementation details and must use
-supported runtime interfaces. The kernel remains provider-neutral; each thin
-adapter enforces the same composition contract.
+Use supported Pi interfaces. Claude Code and Codex instead follow their
+[normal native launch contract](/decisions/claude-codex-native-launch.md), without
+OATS-only isolation checks or default permission bypass. The kernel remains
+provider-neutral; exact OATS composition does not require identical native
+visibility policies.
 
 # Consequences
 
-- “No skill noise” becomes an honest instantiation-time product promise: an
-  OATS soul runs with the curriculum selected for its role and capabilities.
-- The full skill/injection surface is deterministic and auditable, not only
-  the OATS-managed subset.
-- Personal or workspace skills stop leaking into OATS instances; users must
-  package or assign them deliberately.
-- Provider-native tools and workflows remain available, so strict curation
-  does not flatten runtime strengths.
-- Runtime adapters gain a fail-closed isolation obligation and parity tests.
-- Current main does not yet satisfy this target contract; README present-tense
-  wording must wait for the implementation/release that restores strict
-  composition.
+- The OATS-supplied curriculum remains selected and auditable for every runtime.
+- Full visible skill/instruction exclusivity is a Pi-profile claim, not a
+  universal claim about Claude Code or Codex.
+- Claude Code and Codex preserve native personal/workspace context and skills;
+  no extra isolation adapter or Pi dependency is required for normal launch.
+- Native tools, workflows and user permission policy remain available.
+- Adapter tests verify the policy selected for that runtime, rather than impose
+  Pi's stricter visibility on all harnesses. README claims must match actual
+  implementation and released qualification.
 
-# Options considered
+# Original options considered
+
+These are historical reasons for the 2026-07-26 decision. The later explicit
+Claude Code/Codex native-launch decision supersedes their universal application.
 
 1. **Keep ambient coexistence and scope “no noise” to OATS-managed skills.**
    Rejected: the agent still sees unrelated skills and machine-specific

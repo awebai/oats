@@ -47,10 +47,13 @@ an already authenticated harness.
 
 ## Resource composition and authentication are different boundaries
 
-The [strict curriculum](/decisions/strict-instance-curriculum.md) still requires
-only the selected OATS instructions and skills, with existing managed-runtime
-resource approvals and source/helper/native custody preserved. It does not
-require isolating, cloning or replacing the user's native harness authentication.
+The [selected curriculum](/decisions/strict-instance-curriculum.md) and its OATS
+provenance remain controlled. The selected Pi profile restricts native visibility
+to that curriculum; [Claude Code and Codex launch normally](/decisions/claude-codex-native-launch.md)
+with their ordinary context/skills and native permission policy unless the user
+explicitly opts into bypass. Neither policy requires isolating, cloning or
+replacing native harness authentication. Existing source/helper/native custody
+and applicable managed-resource approvals remain separate obligations.
 
 Do not change HOME, native profile directories or authentication environment to
 an empty/private surrogate merely to make resource-isolation evidence pass.
@@ -63,10 +66,11 @@ the captured runtime/model selection and must not substitute an unrelated model,
 source or managed resource. Native credential resolution follows the harness's
 normal semantics; OATS does not impose its own replacement fallback chain.
 
-If a supported SDK interface cannot preserve both normal native authentication
-and the required resource/history boundaries, identify the precise interface
-limitation. Do not work around it with private APIs, copied credentials, a
-credential wrapper or unselected curriculum.
+If a supported SDK interface cannot preserve normal native authentication and
+the resource/history boundaries required for its selected profile, identify the
+precise limitation. Do not use private APIs, copied credentials or a credential
+wrapper. Pi's strict profile may not silently add unselected curriculum; ordinary
+Claude Code/Codex native context is permitted, not such a fallback.
 
 # Immediate application and limits
 

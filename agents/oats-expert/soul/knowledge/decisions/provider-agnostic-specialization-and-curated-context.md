@@ -4,7 +4,7 @@ title: Provider-agnostic specialization and curated agent context
 status: accepted
 description: OATS is positioned as the provider-agnostic framework that makes specialized agents first-class project artifacts, curates each agent's OATS-managed curriculum, compounds expertise, and coordinates mixed-runtime teams without flattening provider strengths.
 tags: [architecture, positioning, specialization, providers, skills, context, readme]
-timestamp: 2026-07-26
+timestamp: 2026-09-18
 ---
 
 **Status: accepted by the founder 2026-07-26.** This decision defines the
@@ -127,24 +127,26 @@ The README should teach this compact sequence:
 Detailed schemas, manifests, locks, and lifecycle reference should follow this
 mental model rather than lead the README.
 
-# Strict skill-curation claim
+# Runtime-scoped skill-curation claim
 
-Under the accepted [strict instance curriculum](/decisions/strict-instance-curriculum.md),
-spawn materializes the kernel, soul, and active-capability skills and
-instruction injections selected for the soul, records their provenance, and
-runtime adapters disable ambient skill/instruction discovery.
+Under the revised [instance curriculum](/decisions/strict-instance-curriculum.md),
+spawn materializes the selected kernel, soul and active-capability instructions
+and skills and records their OATS provenance. The selected Pi profile limits
+ambient skill/instruction discovery. The human explicitly chose
+[normal native launch for Claude Code and Codex](/decisions/claude-codex-native-launch.md),
+including their native context and skills, with permission bypass only on user
+opt-in.
 
-The product claim is specifically instantiation-time curriculum control:
+The universal claim is therefore about OATS-managed composition:
 
-> When OATS instantiates a soul, the agent sees the skills and instruction
-> injections selected for its role and active capabilities—not an ambient
-> catalog of unrelated skills.
+> OATS supplies the instructions and skills selected for each role and active
+> capabilities. Native visibility follows the chosen harness's policy.
 
-Strict curation does not remove source files, explicit prompts, built-in tools,
-or provider-native workflows. It preserves runtime strengths while eliminating
-unselected skill noise. Current main still carries the superseded ambient
-coexistence behavior, so present-tense README wording waits for the release
-that implements strict runtime-adapter enforcement.
+Do not advertise OATS-only visible context for every harness or make Pi a
+prerequisite for Claude Code/Codex launch. Native strengths, settings and user
+permission policy remain intact. New captured-feature parity requires its own
+actual qualification; the Pi-first implementation is not evidence for all
+runtimes.
 
 # README direction and timing
 
@@ -176,6 +178,6 @@ shipped.
   even when they bind a concrete external service.
 - Config ownership and independent capability targeting are core user value,
   not schema trivia.
-- “No skill noise” is an instantiation-time contract for skills and instruction
-  injections; runtime adapters must enforce it before the README makes the
-  claim in the present tense.
+- “No skill noise” universally describes the OATS-managed selection; exclusive
+  native visibility is limited to profiles that actually enforce it. Claude
+  Code/Codex native coexistence is intentional, not unfinished Pi-style isolation.
