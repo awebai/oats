@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Local worker child-selector hygiene (2026-09-18)
+- verdict: APPROVE and locally integrate exact provider `3701f74` over `85b9ec0`; two-file change, one new focused unit passes plus syntax/diff checks. No full-gate repetition or native execution; source-main remains the earlier delivered provider revision.
+- owner: provider implementation lane · reviewer/integrator: maintainer.
+- taught us: legacy `PI_AGENT_*` / `PI_AGENTS_ROOT` are OATS instance selectors, not native Pi auth/profile. Discard them at cross-instance child calls while preserving `HOME`, `PI_CODING_AGENT_DIR` and native Git/SSH/helper context. The earlier16-case result remains tied to its original source; this correction has separate evidence.
+
 ## Local captured host/worker integration and record enforcement exception (2026-09-18)
 - verdict: APPROVE scoped LOCAL source integration, NOT main delivery or release — framework through `77bc96a4`, provider through `85b9ec0`. Exact backend/host/helper/packaging deltas reviewed; PH1 same-execution retry correction closes the original process-association finding with9/9 focused checks. Provider16/16 includes real public admitted scaffold/staging/repeated prepare, without native model launch. Earlier separate adapter/inert/package checks remain literal; no new full-suite or runtime-readiness claim.
 - owner: lifecycle, fresh-source/packaging and provider implementation lanes · reviewer/integrator: maintainer under the human's streamlined workflow. Gate committed-payload/selector/exit-status findings close in `a30879c`; later gate behavior deliberately remains partial without actual process and SDK final-outcome evidence. Operation-triggered worker creation is not scheduled or always-on lifecycle harvesting.
