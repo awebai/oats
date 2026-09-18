@@ -1,5 +1,6 @@
 # Decisions
 
+* [Harness authentication remains native and user-managed](harness-native-authentication.md) - OATS launches the selected harness in its existing authenticated context and delegates credential resolution and lifecycle to the harness rather than managing authentication itself.
 * [Proposed portable role editions and explicit bootstrap helpers](portable-role-editions-and-bootstrap.md) - Propose stable parallel role exports with explicit adopter-bound knowledge destinations and a separately proven operator-root helper entry for cold bootstrap.
 
 * [Messaging capabilities consume kernel contracts and own provider behavior](messaging-capability-contract-boundary.md) - OATS supplies provider-neutral messaging intent and lifecycle contracts while the selected capability implements native identity, membership, transport and qualification.

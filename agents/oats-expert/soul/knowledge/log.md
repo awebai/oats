@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-18
+* **Decision**: [Harness authentication remains native and user-managed](/decisions/harness-native-authentication.md) records the human's accepted boundary: launch the selected already-authenticated harness with its normal native credential behavior, not an OATS auth-file selector, credential wrapper or API-key-only subset. [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) supersede that part of the Pi-host proposal while retaining strict curriculum/history custody and separate messaging authority. No implementation/live-auth approval or test rerun is implied.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery log](/stewardship/delivery-log.md) record independent scoped approval of aweb `be9ac7e` non-authorizing exact-team readback; native human/admin/client/grant qualification remains open. Record the separate owner's actual zero-plugin SDK consumer evidence without promoting it to live model/TUI/backend or general history readiness. Neither result approves new runtime-root/contribution contracts or aweb integration.
 * **Fix**: [Repo state](/stewardship/repo-state.md) corrects the paired source delivery date to 2026-09-18, verified from Git commit metadata and the coordinator push receipt; the [delivery log](/stewardship/delivery-log.md) appends the correction rather than rewriting its prior heading. Earlier gate results and scope limits remain unchanged.
 

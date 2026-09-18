@@ -24,6 +24,12 @@ decisions/ and referenced from here.
 
 ---
 
+## Harness authentication — accepted responsibility boundary (2026-09-18)
+- decision: [Harness authentication remains native and user-managed](/decisions/harness-native-authentication.md). Users authenticate the selected harness normally; OATS launches it in that native context rather than inspecting, wrapping or managing credentials. Native OAuth refresh/persistence and configured credential mechanisms remain harness behavior, not OATS reimplementations.
+- consequence: the proposed zero-plugin host's explicit auth-file argument, read-through CredentialStore and API-key-only subset are superseded. The prior credential-type question is withdrawn; users need not obtain or copy a key to fit an OATS adapter. Strict selected curriculum/history custody remain separate and unchanged, and other explicit host/placement choices still need their existing review.
+- routing: implementation owner and native reviewer received the accepted correction; the provider owner was informed of the helper-launch boundary. No runtime code, real auth/model call, credential inspection, login/config repair, extra test matrix or live permission followed from this decision. External messaging human/team/admin/grant authority remains distinct.
+- taught us: curating a harness's agent curriculum does not make OATS the owner of that harness's authentication. Preserve the user's working native setup instead of narrowing it to an adapter's convenient credential format.
+
 ## Aweb exact-team readback — scoped approval; runtime evidence update (2026-09-18)
 - verdict: APPROVE exact `be9ac7edae0f3bb2e7898c4d0b4fa523132a941d` over `47be62fd`, tree `866bc88d`, within its four-file non-authorizing native readback/authority-ledger delta. Independent review verified exact patch/archive blobs, syntax, selected binding/receipt correspondence, bounded closed response and sanitized single-read failure; no source finding. Existing parent binding/receipt validators informed the review, not whole-ancestry approval.
 - evidence: preserved developer 12/12 offline readback/operation tests, manifest validation and separate unbound scaffold/retirement 1/1; no independent runtime rerun. The utility requires an injected authenticated client and always reports qualification not established. Structural controller syntax is not cryptographic proof. No production check/setup wiring, native effect, aweb source integration, release/install or privacy/readiness approval follows.
