@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateWire } from "./helpers/portable-schema-check.mjs";
+import { canonicalJson } from "../lib/portable-values.mjs";
 import { captureManifestSettings } from "../lib/manifest-settings.mjs";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync, existsSync } from "node:fs";
 import { approveCapturedCapability, artifactApprovalKey, inspectCapturedApprovals, readApprovalLedger, validateApprovalLedger } from "../lib/artifact-approvals.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,7 @@ import { settingChoiceKey, soulConstraints } from "../lib/soul-constraints.mjs";
 import { artifactSetKey3, writeLock3 } from "../lib/portable-lock.mjs";
 import { retainPortableArtifact } from "../lib/portable-artifacts.mjs";
 import { commitCapturedResolution, readCapturedResolution, verifyResolutionInputs } from "../lib/captured-resolutions.mjs";
+import { captureHelperInjectionChoices } from "../lib/helper-injection-policy.mjs";
 
 const origin = { kind: "operator", document: { kind: "operator", id: "fixture-input" }, pointer: "/source" };
 function fixture(t) {
@@ -185,6 +187,112 @@ test("a captured helper is a separate exported helper record and survives remova
   assert.throws(() => commitCapturedResolution(f.scope, wrong), { code: "resolution-incomplete" });
   const wrongKind = structuredClone(parent); wrongKind.helpers.worker = parentRef;
   assert.throws(() => commitCapturedResolution(f.scope, wrongKind), { code: "invalid-resolution" });
+});
+
+test("storage refuses new legacy helper omissions while literal old records remain readable and reusable", (t) => {
+  const f = fixture(t), draft = f.build("legacy-evidence"), id = "example.action";
+  const directory = join(f.cap, "agents/worker"); mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "soul.yaml"), "name: worker\nwork: directory\n");
+  writeFileSync(join(directory, "AGENTS.md"), "Canonical worker body\n"); symlinkSync("AGENTS.md", join(directory, "CLAUDE.md"));
+  writeFileSync(join(f.cap, "inject.md"), "Legacy contribution\n");
+  const manifest = JSON.parse(readFileSync(join(f.cap, "oats.json"))); manifest.inject = "inject.md"; manifest.agents = ["agents/worker"];
+  writeFileSync(join(f.cap, "oats.json"), JSON.stringify(manifest));
+  const artifact = { kind: "capability", capability: id, integrity: treeIntegrity(f.cap) }; retainPortableArtifact(f.scope, f.cap, artifact);
+  draft.artifacts.capabilities[id].artifact = artifact;
+  for (const resource of Object.values(draft.resources)) resource.owner = artifact;
+  draft.subject = { kind: "helper", provider: artifact, name: "worker", definition: { owner: artifact, path: "agents/worker/soul.yaml", kind: "file" } };
+  draft.resources.body = { owner: artifact, path: "agents/worker/AGENTS.md", kind: "file" };
+  draft.dispatch.composition = { schemaVersion: 1, mode: "directory", body: "body", blocks: [], skills: [], omissions: [{ source: `capability:${id}`, reason: "helper-knowledge" }] };
+  const reference = { schemaVersion: 1, id: jsonIntegrity(draft).value }, root = join(f.scope, ".agents/resolutions"), path = join(root, `${reference.id}.json`);
+  // Direct storage caller bypasses the compiler: publication still refuses.
+  assert.throws(() => commitCapturedResolution(f.scope, draft), { code: "needs-configuration" });
+  assert.equal(existsSync(root), false, "refused legacy mint creates no store/staging");
+  // Literal historical fixture bytes only, not an old-kernel runtime claim.
+  mkdirSync(root); const bytes = canonicalJson(draft); writeFileSync(path, bytes, { mode: 0o600 });
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true });
+  assert.equal(readCapturedResolution(f.scope, reference).dispatch.composition.omissions[0].reason, "helper-knowledge");
+  assert.equal(verifyResolutionInputs(f.scope, reference).record.subject.kind, "helper");
+  assert.deepEqual(commitCapturedResolution(f.scope, draft), reference); assert.equal(readFileSync(path, "utf8"), bytes);
+  const fresh = structuredClone(draft); fresh.context.key = "distinct-publication";
+  assert.throws(() => commitCapturedResolution(f.scope, fresh), { code: "needs-configuration" });
+  assert.equal(existsSync(join(root, `${jsonIntegrity(fresh).value}.json`)), false);
+  // Removing the omission cannot bypass the missing explicit-policy guard.
+  fresh.dispatch.composition.omissions = [];
+  assert.throws(() => commitCapturedResolution(f.scope, fresh), { code: "needs-configuration" });
+});
+
+test("storage rejects undeclared helper contributions at publication without changing historical reuse or primary behavior", (t) => {
+  const f = fixture(t), draft = f.build("publication-guard"), persistent = structuredClone(draft.subject);
+  const id = "example.action", otherId = "example.b", other = join(f.root, "other-capability");
+  const directory = join(f.cap, "agents/worker"); mkdirSync(directory, { recursive: true }); mkdirSync(other);
+  writeFileSync(join(directory, "soul.yaml"), "name: worker\nwork: directory\n");
+  writeFileSync(join(directory, "AGENTS.md"), "Canonical worker body\n"); symlinkSync("AGENTS.md", join(directory, "CLAUDE.md"));
+  writeFileSync(join(f.cap, "inject.md"), "Declared A contribution\n");
+  const manifest = JSON.parse(readFileSync(join(f.cap, "oats.json")));
+  Object.assign(manifest, { agents: ["agents/worker"], inject: "inject.md", helperInjection: { version: 1, mode: "inherit" } });
+  const bytes = Buffer.from(JSON.stringify(manifest)); writeFileSync(join(f.cap, "oats.json"), bytes);
+  const artifact = { kind: "capability", capability: id, integrity: treeIntegrity(f.cap) }; retainPortableArtifact(f.scope, f.cap, artifact);
+  draft.artifacts.capabilities[id].artifact = artifact;
+  for (const resource of Object.values(draft.resources)) resource.owner = artifact;
+  // B has a contained ordinary file, but declares NEITHER inject nor helperInjection.
+  const otherBytes = Buffer.from(JSON.stringify({ capability: otherId, version: "1.0.0", description: "No instruction contribution" }));
+  writeFileSync(join(other, "oats.json"), otherBytes); writeFileSync(join(other, "ordinary.md"), "Undeclared B text\n");
+  const otherArtifact = { kind: "capability", capability: otherId, integrity: treeIntegrity(other) }; retainPortableArtifact(f.scope, other, otherArtifact);
+  draft.artifacts.capabilities[otherId] = { version: "1.0.0", artifact: otherArtifact,
+    origin: { kind: "local-capability", source: `path:${other}`, authoredAs: "path", witness: origin } };
+  draft.dispatch.providerManifests[otherId] = "other-manifest";
+  Object.assign(draft.resources, {
+    body: { owner: artifact, path: "agents/worker/AGENTS.md", kind: "file" },
+    "other-manifest": { owner: otherArtifact, path: "oats.json", kind: "manifest" },
+    "undeclared:example.b": { owner: otherArtifact, path: "ordinary.md", kind: "file" },
+  });
+  draft.subject = { kind: "helper", provider: artifact, name: "worker", definition: { owner: artifact, path: "agents/worker/soul.yaml", kind: "file" } };
+  const captured = captureHelperInjectionChoices({ requirements: [], candidates: [] }, [{ artifact, bytes }, { artifact: otherArtifact, bytes: otherBytes }]);
+  Object.assign(draft.choices, captured.choices);
+  const policy = captured.policies.get(id); draft.resources[policy.resourceKey] = policy.resource;
+  draft.dispatch.composition = { schemaVersion: 1, mode: "directory", body: "body", skills: [], omissions: [],
+    blocks: [{ source: policy.source, resource: policy.resourceKey, choice: policy.fact.key }] };
+  const referenceOf = record => ({ schemaVersion: 1, id: jsonIntegrity(record).value });
+  const root = join(f.scope, ".agents/resolutions"), bad = structuredClone(draft);
+  bad.dispatch.composition.blocks.push({ source: `capability:${otherId}`, resource: "undeclared:example.b" });
+  const overridden = structuredClone(bad), overrideKey = "/instructions/explicit-b";
+  Object.assign(overridden.choices, resolveChoices({ candidates: [{ key: overrideKey, kind: "operator", value: "undeclared:example.b", origin }] }).choices);
+  overridden.dispatch.composition.blocks.at(-1).choice = overrideKey;
+  const disabled = structuredClone(draft), disabledKey = "/instructions/disabled-b";
+  Object.assign(disabled.choices, resolveChoices({ candidates: [{ key: disabledKey, kind: "operator", value: null, origin }] }).choices);
+  disabled.dispatch.composition.omissions.push({ source: `capability:${otherId}`, reason: "disabled", choice: disabledKey });
+  const unselected = structuredClone(bad); unselected.dispatch.composition.blocks.at(-1).source = "capability:example.unselected";
+  rmSync(f.source, { recursive: true }); rmSync(f.cap, { recursive: true }); rmSync(other, { recursive: true });
+  for (const candidate of [bad, overridden, disabled, unselected]) {
+    // Real retained-input verification must succeed first: refusal must be the
+    // publication boundary, not a malformed record or missing source/resource.
+    validateWire("CapturedResolution", candidate);
+    verifyResolutionInputs(f.scope, referenceOf(candidate), { draft: candidate });
+    assert.throws(() => commitCapturedResolution(f.scope, candidate), { code: "invalid-resolution" });
+    assert.equal(existsSync(root), false, "refused publication creates no resolution store/staging");
+  }
+  // An applicable A policy + a silent B is legal; no invented B policy needed.
+  const cleanRef = commitCapturedResolution(f.scope, draft);
+  assert.equal(readCapturedResolution(f.scope, cleanRef).dispatch.composition.blocks.length, 1);
+  // Literal historical bytes are fixtures, not records minted by the new API.
+  for (const candidate of [bad, overridden, disabled, unselected]) {
+    const reference = referenceOf(candidate), path = join(root, `${reference.id}.json`), bytes = canonicalJson(candidate);
+    writeFileSync(path, bytes, { mode: 0o600 });
+    assert.equal(canonicalJson(readCapturedResolution(f.scope, reference)), bytes);
+    verifyResolutionInputs(f.scope, reference);
+    assert.deepEqual(commitCapturedResolution(f.scope, candidate), reference);
+    assert.equal(readFileSync(path, "utf8"), bytes, "literal old bytes never rewritten");
+    const fresh = structuredClone(candidate); fresh.context.key = "distinct-new-publication";
+    const files = readdirSync(root).sort();
+    assert.throws(() => commitCapturedResolution(f.scope, fresh), { code: "invalid-resolution" });
+    assert.deepEqual(readdirSync(root).sort(), files, "no new record or staging in existing store");
+  }
+  // Existing primary composition semantics are outside this helper-only guard.
+  const primary = structuredClone(bad); primary.subject = persistent;
+  primary.resources.body = { owner: persistent.soul.sourceArtifact, path: "AGENTS.md", kind: "file" };
+  delete primary.choices[policy.fact.key]; delete primary.dispatch.composition.blocks[0].choice;
+  const primaryRef = commitCapturedResolution(f.scope, primary);
+  assert.equal(readCapturedResolution(f.scope, primaryRef).subject.kind, "persistent");
 });
 
 test("repo package provenance is bound to the retained source snapshot, not only the old local pathname", (t) => {

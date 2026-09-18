@@ -33,6 +33,16 @@ test("unreachable or stubborn session cannot be reported stopped", () => {
   assert.throws(() => stopHerdr(target, fixture({ fail: true })), /unreachable/);
   assert.throws(() => stopHerdr(target, fixture({ stubborn: true })), /still present/);
 });
+test("captured Herdr inspection requires unambiguous workspace as well as pane/terminal identity", () => {
+  assert.throws(() => inspectHerdr(target, { ...fixture(), strictHerdrTarget: true }), /workspace\/pane\/terminal/);
+  const withPanes = panes => ({ strictHerdrTarget: true, exec: () => JSON.stringify({ result: { snapshot: { protocol: 20, panes, agents: [] } } }) });
+  const pane = { workspace_id: target.workspaceId, pane_id: target.paneId, terminal_id: target.terminalId };
+  assert.equal(inspectHerdr(target, withPanes([pane])).present, true);
+  assert.throws(() => inspectHerdr(target, withPanes([{ ...pane, workspace_id: "other" }])), /workspace\/pane\/terminal/);
+  assert.throws(() => inspectHerdr(target, withPanes([pane, pane])), /workspace\/pane\/terminal/);
+  assert.equal(inspectHerdr(target, withPanes([{ ...pane, terminal_id: "replacement" }])).present, false);
+});
+
 test("terminal input preserves literal content without harness-specific readiness policy", () => {
   const io = fixture({ status: "working" });
   const text = "Check aw; literal $(not-a-shell-command)";

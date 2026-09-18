@@ -142,10 +142,21 @@ no async worker may rely on the invocation file remaining. No credential value i
 part of the ProviderBinding contract. Abrupt process death can leave private scratch;
 it does not make that scratch selectable authority or justify unsafe cleanup.
 
+### Current paired execution transport versus explicit old ingress
+
+Current captured commands, operations and hooks with an actual selected provider binding receive BOTH `OATS_INVOCATION_CONTEXT_FILE` and `OATS_BINDING_FILE`. Generic invocation is universal; an additive/unbound capability legitimately has no binding snapshot. The supplemental source receipt is not a substitute for either input. Checks still use the existing stdin contract and optional inline invocation, not an additional file channel.
+
+The raw namespace-command route does not nominate an instance or admit an action. Source-independent existing-run completion therefore receives `instance:null`, `intent:null` and no instance-derived prior receipt, even after source-home deletion. The [existing-run completion boundary](2026-09-16-captured-admission.md#existing-provider-run-completion-after-source-home-deletion) keeps qualified retained provider-run custody separate from a new kernel mutation grant. No helper binding or invented live source identity substitutes for that authority.
+
+Binding/source-receipt-only fixtures represent explicitly OLD transport, not positives for the current paired reader. Missing, malformed or invalid-present current snapshots must not cause synthesized projections or silent fallback. Any deliberate old-ingress compatibility path is separately explicit and qualified against exact producer/provider pins; it does not silently upgrade old fixtures or alter the selected supplemental-input/registered-replay policy.
+
 ## Captured lifecycle registration input
 
 The kernel also has a bounded private `OATS_SOURCE_RECEIPT_FILE` projection for a
-synchronous captured lifecycle hook. Its exact v1 payload is the agreed
+synchronous captured lifecycle hook that explicitly selects
+`inputs.sourceReceipt:{version:1}` in its retained object-form declaration. No
+opt-in means no source snapshot, regardless of layer; generic invocation remains
+universal. See the [selected input contract](2026-09-17-capability-helper-input-contract.md). Its exact v1 payload is the agreed
 `{schemaVersion,kind,home,work,context,agent,instance,sourceIdentity,role,executionBinding,responsibleHuman,binding}`
 receipt. Persistent sources require their qualified captured soul identity; helper
 receipts require `sourceIdentity:null`. The context equals the durable execution
@@ -157,9 +168,13 @@ and normal success/failure cleanup posture as `OATS_BINDING_FILE`. The home argu
 must match the receipt. Captured lifecycle hook loading preflights every applicable
 retained hook, exact approval, host requirement and provider readiness before the
 first lifecycle side effect, then preserves the existing hook metadata, warning,
-environment and required-hook result contract. The source receipt is exposed only
-to its binding owner. This establishes the knowledge-source hook/registration ABI; it is not a generic
-messaging lifecycle contract.
+environment and required-hook result contract. Each selected receipt is derived only for its actual binding owner, from the
+verified canonical body and owned generic instance/action facts, before provider
+readiness/effects. Multiple opting providers get separate same-owner snapshots;
+unsolicited/contradictory explicit receipts refuse and caller extraEnv cannot
+nominate snapshot paths. No knowledge-slot dependency or automatic receipt is
+inferred. This supplemental input is not a generic messaging identity contract
+or permission for new registration through an absent-input fallback.
 
 ## Provider-neutral captured invocation context
 
@@ -209,8 +224,10 @@ including after a nonzero child exit. It records a required, unconfirmed cleanup
 failure rather than treating the hook as clean or discarding receipt-owned effects.
 This accounting is provider-neutral and does not interpret knowledge or messaging data.
 Existing
-`OATS_SOURCE_RECEIPT_FILE` remains the knowledge source-registration input, not a
-messaging-specific or general identity mechanism. Captured start/restart/retire and
+`OATS_SOURCE_RECEIPT_FILE` remains a selected supplemental source-context input,
+not a messaging-specific or general identity mechanism. Provider registration,
+helper skipping/recursion policy and qualified existing-descriptor replay stay
+provider-owned; absence alone does not identify a dependent/non-ready provider. Captured start/restart/retire and
 managed launch adoption remain unfinished and cannot fall back to current source or
 configuration.
 

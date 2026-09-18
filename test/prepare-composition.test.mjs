@@ -7,10 +7,12 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { activateCapturedScaffold, admitCapturedAction, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, withCapturedBindingFile } from '../lib/core.mjs';
+import { activateCapturedScaffold, admitCapturedAction, prepareCapturedComposition, loadCapturedDispatch, approveAvailableCapability, resolveCapturedHelper, runCapturedProviderBinding, runCapturedLifecycleHooks, scaffoldCapturedInstance, startCapturedInstanceSession, startInstanceSession, restartInstanceSession, withCapturedBindingFile } from '../lib/core.mjs';
 import { commitCapturedResolution, readCapturedResolution } from '../lib/captured-resolutions.mjs';
 import { readCapturedInstanceIndex } from '../lib/captured-instance-index.mjs';
 import { readLock3 } from '../lib/portable-lock.mjs';
+import { nativeHistoryPath, historicalSessionRoots } from '../packages/record/lib/native-history.mjs';
+import { materializeCapturedDirectoryScaffold } from '../lib/captured-scaffold.mjs';
 import { validateWire } from './helpers/portable-schema-check.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
@@ -23,7 +25,7 @@ function fixture(t, provider=false) {
   write('agents/expert/soul.yaml',JSON.stringify({schemaVersion:1,name:'expert',work:'directory',requires:provider?{knowledge:{capability:id,...selection}}:{capabilities:{[id]:selection}}}));
   write('agents/expert/AGENTS.md','Expert instructions\n');symlinkSync('AGENTS.md',join(repo,'agents/expert/CLAUDE.md'));
   write('packages/action/oats-package.json',JSON.stringify({package:'example.package',version:'1.0.0',description:'Fixture',compatibility:{oats:'>=0.1.0'},capabilities:['cap']}));
-  write('packages/action/cap/oats.json',JSON.stringify({capability:id,version:'1.0.0',description:'Fixture',command:'example-action',commands:{show:'show.mjs'},hooks:{spawn:{command:'./show.mjs',required:true}},settings:{limit:{default:3}},inject:'inject.md',skills:['skills/procedure'],agents:['agents/worker'],...(provider?{layer:'knowledge'}:{})}));
+  write('packages/action/cap/oats.json',JSON.stringify({capability:id,version:'1.0.0',description:'Fixture',command:'example-action',commands:{show:'show.mjs'},hooks:{spawn:{command:'./show.mjs',required:true,...(provider?{inputs:{sourceReceipt:{version:1}}}:{})}},settings:{limit:{default:3}},inject:'inject.md',helperInjection:{version:1,mode:provider?'omit':'inherit'},skills:['skills/procedure'],agents:['agents/worker'],...(provider?{layer:'knowledge'}:{})}));
   write('packages/action/cap/show.mjs','if(process.env.FAIL_CAPTURED_HOOK){console.log(JSON.stringify({meta:{created:true},warning:"fixture hook failed after effect"}));process.exit(1);}console.log("A");\n');write('packages/action/cap/inject.md','Capability instructions\n');
   write('packages/action/cap/skills/procedure/SKILL.md','# Procedure\n');
   write('packages/action/cap/agents/worker/soul.yaml','schemaVersion: 1\nname: worker\nwork: directory\n');
@@ -37,6 +39,80 @@ function fixture(t, provider=false) {
   git('config','--file',config,`url.${pathToFileURL(repo).href}.insteadOf`,source.slice(4));git('add','.');git('commit','--quiet','-m','A');
   return {root,repo,deployment,id,write,git,commit:git('rev-parse','HEAD'),input:{deployment,source:{source,soul:'agents/expert',revision:'topic',alias:'imported-expert'}},options:{repositoryOptions:{environment,allowLocalGit:true}}};
 }
+function nativeCorrectionFixture(t) {
+  const f=fixture(t),root=realpathSync(f.root),home=join(root,'native-correction'),binary=join(root,'native.cjs'),backendBinary=join(root,'backend');
+  writeFileSync(binary,`#!${process.execPath}\nrequire('node:fs').appendFileSync('work/effects.jsonl',JSON.stringify({id:process.env.OATS_EXECUTION_ID,attempt:process.env.OATS_EXECUTION_ATTEMPT})+'\\n');`,{mode:0o700});
+  writeFileSync(backendBinary,'#!/bin/sh\nexit 99\n',{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:join(root,'profile')},model:'inert-fixture',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:'native-correction'});activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});
+  rmSync(f.repo,{recursive:true});const calls=[];let present=false;
+  const backend={backend:'tmux',binary:backendBinary,socket:join(root,'admitted-A.sock'),session:'admitted-A'},env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true'};
+  const io={exec:(file,args,options)=>{
+    assert.equal(file,backendBinary,'no process inspection/stop outside the admitted backend');calls.push(args);
+    if(args.includes('list-panes')){
+      if(present)return '%7\t0\tclaude\t4242\n'; // synthetic present non-shell observation; no live model.
+      throw Object.assign(new Error("can't find window"),{stderr:"can't find window"});
+    }
+    if(args.includes('new-window')||args.includes('respawn-pane'))execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:home,env:options.env,encoding:'utf8'});
+    return '';
+  },kill:()=>assert.fail('same-id adoption must not stop a process')};
+  const options={deployment:f.deployment,resolution:prepared.resolution,backend,task:'inert task',env,io};
+  return {...f,root,home,backend,calls,options,setPresent:value=>{present=value;},indexFile:join(f.deployment,'.agents/portable/instance-references.json'),metaFile:join(home,'instance.json'),
+    effects:()=>readFileSync(join(home,'work/effects.jsonl'),'utf8').trim().split('\n').map(JSON.parse)};
+}
+
+test('native state preflight preserves newer lifecycle and holds completed publication debt',t=>{
+  const f=nativeCorrectionFixture(t),baseIndex=readFileSync(f.indexFile),baseMeta=readFileSync(f.metaFile);
+  for(const [indexed,metadata] of [['retire-running','spawned-launch-pending'],['spawn-failed-cleanup-required','spawned-launch-pending'],['retire-running','retire-running']]){
+    const ledger=JSON.parse(baseIndex),meta=JSON.parse(baseMeta);ledger.instances[0].status=indexed;meta.captured.lifecycle=metadata;
+    writeFileSync(f.indexFile,JSON.stringify(ledger));writeFileSync(f.metaFile,JSON.stringify(meta));
+    const beforeIndex=readFileSync(f.indexFile),beforeMeta=readFileSync(f.metaFile);
+    assert.throws(()=>startCapturedInstanceSession(f.home,f.options),error=>error.code==='selection-changed'&&error.capturedCustody.indexedStatus===indexed&&error.home===f.home);
+    assert.deepEqual(readFileSync(f.indexFile),beforeIndex);assert.deepEqual(readFileSync(f.metaFile),beforeMeta);assert.equal(f.calls.length,0);assert.equal(existsSync(join(f.home,'TASK.md')),false);
+  }
+  writeFileSync(f.indexFile,baseIndex);writeFileSync(f.metaFile,baseMeta);
+  const started=startCapturedInstanceSession(f.home,f.options),ledger=JSON.parse(readFileSync(f.indexFile)),meta=JSON.parse(readFileSync(f.metaFile));
+  ledger.instances[0].status='start-failed-cleanup-required';meta.captured.lifecycle='start-failed-cleanup-required';
+  writeFileSync(f.indexFile,JSON.stringify(ledger));writeFileSync(f.metaFile,JSON.stringify(meta));
+  const beforeIndex=readFileSync(f.indexFile),beforeMeta=readFileSync(f.metaFile),beforeCalls=f.calls.length;
+  for(const retry of [undefined,started.intent.executionId])assert.throws(()=>startCapturedInstanceSession(f.home,{...f.options,...(retry?{retryExecutionId:retry}:{})}),error=>error.code==='selection-changed'&&error.capturedCustody.intent.executionId===started.intent.executionId);
+  const request=join(f.root,'held-request.json');writeFileSync(request,JSON.stringify({schemaVersion:1,backend:f.backend,task:'inert task'}));
+  const cli=spawnSync(process.execPath,[fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),'session','start','--deployment',f.deployment,'--resolution',f.options.resolution.id,'--home',f.home,'--request',request,'--json'],{env:f.options.env,encoding:'utf8',timeout:20000});
+  assert.equal(cli.status,1);const error=JSON.parse(cli.stdout).error;assert.equal(error.details.custody.intent.executionId,started.intent.executionId);assert.equal(error.details.custody.held,true);
+  assert.equal(f.calls.length,beforeCalls);assert.equal(f.effects().length,1);assert.deepEqual(readFileSync(f.indexFile),beforeIndex);assert.deepEqual(readFileSync(f.metaFile),beforeMeta);
+});
+
+test('same-id uncertain restart adopts a present target without another stop or dispatch',t=>{
+  const f=nativeCorrectionFixture(t);let failure;
+  try{startCapturedInstanceSession(f.home,{...f.options,restart:true,io:{...f.options.io,failBeforeMetadataWrite:true}});}catch(error){failure=error;}
+  assert.equal(failure?.code,'E_SESSION_START_INCOMPLETE');const id=failure.nativeCustody.intent.executionId;
+  assert.equal(f.effects().length,1);const beforeCalls=f.calls.length;
+  assert.throws(()=>startCapturedInstanceSession(f.home,{...f.options,restart:true}),{code:'selection-changed'});assert.equal(f.calls.length,beforeCalls,'unconfirmed cleanup cannot become a new request');
+  f.setPresent(true);
+  const adopted=startCapturedInstanceSession(f.home,{...f.options,restart:true,retryExecutionId:id});
+  assert.equal(adopted.reused,'adopted');assert.equal(adopted.intent.executionId,id);assert.equal(adopted.intent.attempt,2);assert.equal(f.effects().length,1);
+  assert.deepEqual(f.calls.slice(beforeCalls).map(args=>args.includes('list-panes')),[true],'adoption only observes, never stops/allocates');
+  assert.equal(JSON.parse(readFileSync(f.indexFile)).instances[0].intents.at(-1).state,'completed');
+  f.setPresent(false);const distinct=startCapturedInstanceSession(f.home,{...f.options,restart:true});
+  assert.notEqual(distinct.intent.executionId,id);assert.equal(distinct.incarnationId,adopted.incarnationId);assert.equal(f.effects().length,2,'distinct new restart retains its ordinary dispatch path');
+});
+
+test('native first placement refuses residual endpoint B and allocates only admitted A',t=>{
+  const f=nativeCorrectionFixture(t),base=readFileSync(f.metaFile),index=readFileSync(f.indexFile);
+  for(const poison of [{tmux:{session:'B',window:'foreign-window',socket:join(f.root,'B.sock')}},{sessionTarget:{backend:'herdr'}},{backend:'herdr'}]){
+    writeFileSync(f.metaFile,JSON.stringify({...JSON.parse(base),...poison}));const before=readFileSync(f.metaFile);
+    assert.throws(()=>startCapturedInstanceSession(f.home,f.options),{code:'E_RUNTIME_AUTHORITY_MISMATCH'});
+    assert.equal(f.calls.length,0);assert.deepEqual(readFileSync(f.indexFile),index);assert.deepEqual(readFileSync(f.metaFile),before);assert.equal(existsSync(join(f.home,'TASK.md')),false);
+  }
+  writeFileSync(f.metaFile,base);const started=startCapturedInstanceSession(f.home,f.options);
+  assert.deepEqual(started.target,{backend:'tmux',session:f.backend.session,window:'native-correction',socket:f.backend.socket});
+  const allocation=f.calls.find(args=>args.includes('new-window'));
+  assert.equal(allocation[allocation.indexOf('-S')+1],f.backend.socket);assert.equal(allocation[allocation.indexOf('-t')+1],`=${f.backend.session}:`);assert.equal(allocation[allocation.indexOf('-n')+1],'native-correction');
+  assert.equal(f.effects().length,1);
+});
+
 test('native preparation publishes complete source/curriculum/helper records, then executes after source deletion',t=>{
   const f=fixture(t),result=prepareCapturedComposition(f.input,f.options);
   assert.equal(result.status,'approval-required');assert.equal(result.source.revision,f.commit);
@@ -88,6 +164,247 @@ test('native preparation publishes complete source/curriculum/helper records, th
   assert.ok(capturedComposition.text.includes('Capability instructions'));assert.ok(capturedComposition.text.includes('captured OATS composition'));
   assert.ok(capturedComposition.text.includes('Load **oats-portable**'));assert.doesNotMatch(capturedComposition.text,/Load the oats skill before/);
 });
+test('captured native start executes inert primary/helper processes through the existing backend with durable intent and history',t=>{
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-fixture.cjs'),backendBinary=join(root,'tmux-fixture');
+  writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
+    const index=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'),'utf8'));
+    const row=index.instances.find(r=>r.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(r=>r.executionId===e.OATS_EXECUTION_ID);
+    if(!intent||intent.state!=='running'||row.status!=='start-running')throw Error('native effect before admission');
+    fs.appendFileSync(p.join(process.cwd(),'work/native.jsonl'),JSON.stringify({instance:e.OATS_INSTANCE,incarnationId:e.OATS_INCARNATION_ID,executionId:e.OATS_EXECUTION_ID,args:process.argv.slice(2),keyPresent:!!e.ANTHROPIC_API_KEY})+'\\n');
+    fs.mkdirSync(p.join(e.CLAUDE_CONFIG_DIR,'projects'),{recursive:true});`,{mode:0o700});
+  writeFileSync(backendBinary,'#!/bin/sh\nexit 99\n',{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:{fromEnv:'FIXTURE_PROFILE'},ANTHROPIC_API_KEY:{fromEnv:'FIXTURE_KEY'}},model:'fixture-primary',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch,helperLaunches:{'example.action:worker':{...launch,model:'fixture-helper'}}},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const record=readCapturedResolution(f.deployment,prepared.resolution);assert.equal(record.dispatch.launch.executable,binary);
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned current config');
+  const env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true',FIXTURE_PROFILE:join(root,'native-profile'),FIXTURE_KEY:'DO_NOT_RECORD_FIXTURE_KEY',OATS_INSTANCE:'foreign',OATS_RESOLUTION:'foreign'};
+  const calls=[],io={exec:(selected,args,options)=>{
+    assert.equal(selected,backendBinary);calls.push(args);
+    if(args.includes('list-panes'))throw Object.assign(new Error("can't find window"),{stderr:"can't find window"});
+    if(args.includes('new-window')||args.includes('respawn-pane')){
+      const childEnv={...options.env};for(let i=0;i<args.length;i++)if(args[i]==='-e'){const pair=args[++i],at=pair.indexOf('=');childEnv[pair.slice(0,at)]=pair.slice(at+1);}
+      execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:args[args.indexOf('-c')+1],env:childEnv,encoding:'utf8'});
+    }
+    return '';
+  }};
+  for(const [instance,resolution,model] of [['native-primary',prepared.resolution,'fixture-primary'],['native-helper',record.helpers['example.action:worker'],'fixture-helper']]){
+    const home=join(root,instance),backend={backend:'tmux',binary:backendBinary,socket:join(root,`${instance}.sock`),session:'fixture'};
+    const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution,home,instance});activateCapturedScaffold({deployment:f.deployment,resolution,home});
+    const started=startCapturedInstanceSession(home,{deployment:f.deployment,resolution,backend,task:'inert task',env,io});
+    assert.equal(started.dispatchAccepted,true);assert.equal(started.incarnationId,scaffold.incarnationId);
+    const runs=()=>readFileSync(join(home,'work/native.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(runs().length,1);assert.equal(runs()[0].executionId,started.intent.executionId);assert.equal(runs()[0].incarnationId,scaffold.incarnationId);assert.equal(runs()[0].instance,instance);assert.equal(runs()[0].keyPresent,true);assert.ok(runs()[0].args.includes(model));
+    assert.deepEqual(historicalSessionRoots(home).cc,[join(env.FIXTURE_PROFILE,'projects')]);
+    const pending=JSON.parse(readFileSync(join(home,'.oats-start-pending.json'),'utf8'));assert.equal(pending.id,started.intent.executionId);assert.equal(pending.capturedIntent.executionId,started.intent.executionId);assert.equal(pending.nativeRecordId,started.nativeRecordId);assert.ok(existsSync(join(nativeHistoryPath(home),`${started.nativeRecordId}.json`)));
+    const beforeReplay=calls.length,replayed=startCapturedInstanceSession(home,{env,io,retryExecutionId:started.intent.executionId});
+    assert.equal(replayed.replayed,true);assert.equal(calls.length,beforeReplay);assert.equal(runs().length,1);
+    const restarted=restartInstanceSession(home,{env,io});assert.notEqual(restarted.intent.executionId,started.intent.executionId);assert.equal(restarted.incarnationId,scaffold.incarnationId);assert.equal(runs().length,2);
+    const before=calls.length;fs.renameSync(binary,`${binary}.preserved`);
+    assert.throws(()=>startInstanceSession(home,{env,io,model:undefined,runtime:undefined,launchConfig:undefined,yolo:undefined}),{code:'E_LAUNCH_EXECUTABLE'});assert.equal(calls.length,before,'preflight refusal precedes backend observation/stop');fs.renameSync(`${binary}.preserved`,binary);
+    const history=fs.readdirSync(nativeHistoryPath(home)).map(name=>readFileSync(join(nativeHistoryPath(home),name),'utf8')).join('');assert.ok(!history.includes(env.FIXTURE_KEY));
+    const row=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home);assert.equal(row.status,'start-dispatched');assert.equal(row.intents.filter(intent=>intent.action.kind==='session').length,2);assert.ok(row.intents.every(intent=>intent.state==='completed'));
+  }
+  const backend={backend:'tmux',binary:backendBinary,socket:join(root,'failure.sock'),session:'fixture'},failedHome=join(root,'native-uncertain');
+  scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home:failedHome,instance:'native-uncertain'});activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home:failedHome});
+  let failure;try{startCapturedInstanceSession(failedHome,{backend,task:'uncertain inert task',env,io:{...io,failBeforeMetadataWrite:true}});}catch(error){failure=error;}
+  assert.equal(failure?.code,'E_SESSION_START_INCOMPLETE');assert.equal(failure.nativeCustody.unconfirmed,true);assert.ok(existsSync(failure.nativeCustody.pendingPath));assert.ok(failure.nativeCustody.pendingObservation.nativeRecordId);
+  const failedRef=failure.nativeCustody.intent,invocations=readFileSync(join(failedHome,'work/native.jsonl'),'utf8');
+  assert.throws(()=>startCapturedInstanceSession(failedHome,{env,io,retryExecutionId:failedRef.executionId}),{code:'E_SESSION_UNKNOWN'},'unknown exited dispatch is held, not launched twice under the same intent');
+  assert.equal(readFileSync(join(failedHome,'work/native.jsonl'),'utf8'),invocations);
+  const unresolved=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===failedHome).intents.at(-1);assert.equal(unresolved.executionId,failedRef.executionId);assert.equal(unresolved.attempt,2);assert.equal(unresolved.state,'unconfirmed');
+  const oldHome=join(root,'no-native-evidence');
+  materializeCapturedDirectoryScaffold({home:oldHome,instance:'no-native-evidence',loaded:loadCapturedDispatch({deployment:f.deployment,resolution:prepared.resolution,action:{kind:'compose'}})});
+  const beforeCalls=calls.length;assert.throws(()=>startCapturedInstanceSession(oldHome,{backend,task:'never run',env,io}),{code:'migration-required'});assert.equal(calls.length,beforeCalls);assert.equal(existsSync(nativeHistoryPath(oldHome)),false,'old/unwitnessed native history is never backfilled');
+  const historyRoot=join(nativeHistoryPath(failedHome),'..');fs.renameSync(historyRoot,`${historyRoot}.preserved`);mkdirSync(historyRoot);
+  const beforeReplacement=calls.length;
+  assert.throws(()=>startCapturedInstanceSession(join(root,'native-primary'),{env,io}),{code:'integrity-drift'});assert.equal(calls.length,beforeReplacement,'native sidecar replacement refuses before backend access');
+  fs.rmdirSync(historyRoot);fs.renameSync(`${historyRoot}.preserved`,historyRoot);
+});
+
+test('public captured session dispatch follows retained helper edges and preserves uncertain execution identity',t=>{
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'native-cli-fixture.cjs'),backendBinary=join(root,'tmux-cli-fixture.cjs');
+  const backendLog=join(root,'backend.jsonl'),uncertainFlag=join(root,'uncertain-backend'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url));
+  writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
+    const ledger=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'),'utf8'));
+    const row=ledger.instances.find(row=>row.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(intent=>intent.executionId===e.OATS_EXECUTION_ID);
+    if(row?.status!=='start-running'||intent?.state!=='running')throw Error('public native execution lacks admission');
+    fs.appendFileSync(p.join(process.cwd(),'work/public-native.jsonl'),JSON.stringify({home:e.OATS_INSTANCE_HOME,resolution:e.OATS_RESOLUTION,incarnationId:e.OATS_INCARNATION_ID,executionId:e.OATS_EXECUTION_ID,args:process.argv.slice(2)})+'\\n');`,{mode:0o700});
+  writeFileSync(backendBinary,`#!${process.execPath}\nconst fs=require('node:fs'),cp=require('node:child_process'),args=process.argv.slice(2);
+    fs.appendFileSync(${JSON.stringify(backendLog)},JSON.stringify(args)+'\\n');
+    if(args.includes('list-panes')){console.error("can't find window");process.exit(1);}
+    if(args.includes('new-window')||args.includes('respawn-pane')){
+      const env={...process.env};for(let i=0;i<args.length;i++)if(args[i]==='-e'){const pair=args[++i],at=pair.indexOf('=');env[pair.slice(0,at)]=pair.slice(at+1);}
+      cp.execFileSync('/bin/sh',['-c',args.at(-1)],{cwd:args[args.indexOf('-c')+1],env,stdio:'pipe'});
+      if(fs.existsSync(${JSON.stringify(uncertainFlag)})){console.error('fixture response lost after native effect');process.exit(1);}
+    }`,{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:join(root,'profile')},model:'public-primary-model',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch,helperLaunches:{'example.action:worker':{...launch,model:'public-helper-model'}}},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const record=readCapturedResolution(f.deployment,prepared.resolution),helper=record.helpers['example.action:worker'];
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'invalid current config');writeFileSync(join(f.deployment,'oats-lock.json'),'invalid current lock');
+  const env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true',OATS_HOME_DIR:join(root,'isolated-oats'),OATS_DEPLOYMENT:'poison-parent',OATS_RESOLUTION:'poison-parent'};
+  const run=argv=>{const result=spawnSync(process.execPath,[cli,...argv,'--json'],{cwd:root,env,encoding:'utf8',timeout:20000});assert.equal(result.error,undefined);return {status:result.status,...JSON.parse(result.stdout.trim())};};
+  const sourceFlags=['--deployment',f.deployment,'--resolution',prepared.resolution.id],home=join(root,'public-primary'),helperHome=join(root,'public-helper');
+  const request=join(root,'native-request.json'),requestBody={schemaVersion:1,backend:{backend:'tmux',binary:backendBinary,socket:join(root,'fixture.sock'),session:'fixture'},task:'inert public task'};
+  writeFileSync(request,JSON.stringify(requestBody));
+  const availability={schemaVersion:1,api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},readiness:{status:'not-checked'}};
+  const inspected=run(['inspect',...sourceFlags,'--helper','example.action:worker']);assert.equal(inspected.ok,true);assert.equal(inspected.result.helperSelection.executionBinding.resolution.id,helper.id);
+  assert.deepEqual(inspected.result.nativeSession,availability);assert.deepEqual(inspected.result.helperSelection.launch,availability);assert.equal(existsSync(backendLog),false,'API discovery does not inspect a native backend');
+  const scaffold=run(['spawn','imported-expert',...sourceFlags,'--home',home,'--no-launch']);assert.equal(scaffold.ok,true);
+  const helperScaffold=run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--no-launch']);assert.equal(helperScaffold.ok,true);
+  assert.equal(existsSync(backendLog),false,'scaffold/hooks alone never allocate a native backend');
+  const helperBefore=readFileSync(join(helperHome,'instance.json')),indexPath=join(f.deployment,'.agents/portable/instance-references.json'),indexBefore=readFileSync(indexPath);
+  for(const action of ['start','restart'])for(const input of [request,join(root,'absent-native-request.json')]){
+    const refused=run(['session',action,'--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--request',input]);
+    assert.equal(refused.ok,false,'direct helper resolution must not dispatch without its source edge');assert.equal(refused.error.code,'helper-not-selected');
+    assert.equal(Object.hasOwn(refused,'result'),false);assert.equal(refused.error.details,undefined,'no fabricated source/helper/native custody');
+    assert.equal(existsSync(backendLog),false);assert.equal(existsSync(join(helperHome,'work/public-native.jsonl')),false);
+    assert.deepEqual(readFileSync(join(helperHome,'instance.json')),helperBefore);assert.deepEqual(readFileSync(indexPath),indexBefore);
+  }
+  const startArgs=['session','start',...sourceFlags,'--home',home,'--request',request];
+  for(const bad of [{...requestBody,io:{}},{...requestBody,runtime:'pi'},{...requestBody,schemaVersion:2},{...requestBody,backend:null},{...requestBody,backend:{...requestBody.backend,backend:'unsupported'}},{...requestBody,task:null}]){
+    writeFileSync(request,JSON.stringify(bad));const refused=run(startArgs);assert.equal(refused.ok,false);assert.equal(existsSync(backendLog),false);
+  }
+  writeFileSync(request,JSON.stringify(requestBody));
+  const requestLink=join(root,'request-link.json');symlinkSync(request,requestLink);
+  assert.equal(run(['session','start',...sourceFlags,'--home',home,'--request',requestLink]).error.code,'E_BAD_ARGS');
+  for(const tail of [['--model','ambient'],['--dir',root],['--home',home],['--retry-intent','bad/id']])assert.equal(run([...startArgs,...tail]).ok,false);
+  assert.equal(run(['session','start',...sourceFlags,'--helper','missing','--home',helperHome,'--request',request]).error.code,'helper-not-selected');
+  assert.equal(run(['session','start',...sourceFlags,'--helper','example.action:worker','--home',home,'--request',request]).error.code,'invalid-resolution');
+  assert.equal(existsSync(backendLog),false,'invalid requests/selectors refuse before native backend access');
+  const started=run(startArgs);assert.equal(started.ok,true);assert.equal(started.result.dispatchAccepted,true);assert.equal(started.result.incarnationId,scaffold.result.incarnationId);
+  const helperArgs=['session','start',...sourceFlags,'--helper','example.action:worker','--home',helperHome,'--request',request];
+  const helperStarted=run(helperArgs);assert.equal(helperStarted.ok,true);assert.equal(helperStarted.result.executionBinding.resolution.id,helper.id);assert.equal(helperStarted.result.sourceExecutionBinding.resolution.id,prepared.resolution.id);assert.equal(helperStarted.result.helper.subject.kind,'helper');
+  const beforeInspect=readFileSync(backendLog,'utf8'),indexBeforeInspect=readFileSync(join(f.deployment,'.agents/portable/instance-references.json'));
+  assert.deepEqual(run(['inspect',...sourceFlags,'--helper','example.action:worker']).result.nativeSession,availability,'dispatch never turns static discovery into cached readiness');
+  assert.equal(readFileSync(backendLog,'utf8'),beforeInspect);assert.deepEqual(readFileSync(join(f.deployment,'.agents/portable/instance-references.json')),indexBeforeInspect);
+  const runs=at=>readFileSync(join(at,'work/public-native.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  assert.equal(runs(home)[0].resolution,prepared.resolution.id);assert.ok(runs(home)[0].args.includes('public-primary-model'));
+  assert.equal(runs(helperHome)[0].resolution,helper.id);assert.ok(runs(helperHome)[0].args.includes('public-helper-model'));
+  assert.equal(runs(helperHome)[0].executionId,helperStarted.result.intent.executionId);assert.equal(runs(helperHome)[0].incarnationId,helperScaffold.result.incarnationId);
+  const backendBeforeReplay=readFileSync(backendLog,'utf8'),replayed=run([...helperArgs,'--retry-intent',helperStarted.result.intent.executionId]);
+  assert.equal(replayed.ok,true);assert.equal(replayed.result.replayed,true);assert.equal(readFileSync(backendLog,'utf8'),backendBeforeReplay);assert.equal(runs(helperHome).length,1);
+  const restarted=run(['session','restart',...sourceFlags,'--helper','example.action:worker','--home',helperHome]);
+  assert.equal(restarted.ok,true);assert.equal(restarted.result.incarnationId,helperScaffold.result.incarnationId);assert.notEqual(restarted.result.intent.executionId,helperStarted.result.intent.executionId);assert.equal(runs(helperHome).length,2);
+  const occupiedBefore=readFileSync(join(helperHome,'instance.json'),'utf8');assert.equal(run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',helperHome,'--no-launch']).error.code,'E_INSTANCE_EXISTS');assert.equal(readFileSync(join(helperHome,'instance.json'),'utf8'),occupiedBefore);
+  const uncertainHome=join(root,'public-uncertain');assert.equal(run(['spawn','worker','--deployment',f.deployment,'--resolution',helper.id,'--home',uncertainHome,'--no-launch']).ok,true);
+  writeFileSync(uncertainFlag,'lose backend response after effect');
+  const uncertainArgs=['session','start',...sourceFlags,'--helper','example.action:worker','--home',uncertainHome,'--request',request],failed=run(uncertainArgs);
+  assert.equal(failed.ok,false);assert.equal(failed.error.details.unconfirmed,true);assert.equal(failed.error.details.sourceExecutionBinding.resolution.id,prepared.resolution.id);
+  const custody=failed.error.details.nativeCustody;assert.equal(runs(uncertainHome).length,1);assert.equal(runs(uncertainHome)[0].executionId,custody.intent.executionId);assert.ok(existsSync(custody.pendingPath));
+  rmSync(uncertainFlag);const retried=run([...uncertainArgs,'--retry-intent',custody.intent.executionId]);
+  assert.equal(retried.ok,false);assert.equal(retried.error.code,'E_SESSION_UNKNOWN');assert.equal(retried.error.details.nativeCustody.intent.executionId,custody.intent.executionId);assert.equal(retried.error.details.nativeCustody.intent.attempt,2);assert.equal(runs(uncertainHome).length,1,'unknown effect never duplicates native execution');
+  const indexed=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===uncertainHome),nativeIntents=indexed.intents.filter(intent=>intent.action.kind==='session');
+  assert.equal(nativeIntents.length,1);assert.equal(nativeIntents[0].state,'unconfirmed');assert.equal(indexed.incarnationId,custody.intent.incarnationId);
+});
+
+test('public captured Herdr shares native custody for primary/helper starts, restarts and uncertain recovery',t=>{
+  const f=fixture(t),root=realpathSync(f.root),binary=join(root,'herdr-native.cjs'),backendBinary=join(root,'herdr-fixture.cjs');
+  const stateFile=join(root,'herdr-state.json'),log=join(root,'herdr-calls.jsonl'),modeFile=join(root,'backend-mode'),cli=fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),socket=join(root,'explicit-herdr.sock');
+  writeFileSync(binary,`#!${process.execPath}\nconst fs=require('node:fs'),p=require('node:path'),e=process.env;
+    const row=JSON.parse(fs.readFileSync(p.join(e.OATS_DEPLOYMENT,'.agents/portable/instance-references.json'))).instances.find(row=>row.incarnationId===e.OATS_INCARNATION_ID),intent=row?.intents.find(intent=>intent.executionId===e.OATS_EXECUTION_ID);
+    if(row?.status!=='start-running'||intent?.state!=='running'||!intent.receipt?.target?.terminalId)throw Error('Herdr effect lacks indexed target/intent custody');
+    fs.appendFileSync('work/herdr-effects.jsonl',JSON.stringify({id:e.OATS_EXECUTION_ID,incarnationId:e.OATS_INCARNATION_ID,resolution:e.OATS_RESOLUTION,args:process.argv.slice(2)})+'\\n');`,{mode:0o700});
+  writeFileSync(backendBinary,`#!${process.execPath}\nconst fs=require('node:fs'),cp=require('node:child_process'),a=process.argv.slice(2),e=process.env;
+    if(e.HERDR_SOCKET_PATH!==${JSON.stringify(socket)}||e.HERDR_SESSION)throw Error('ambient/wrong Herdr endpoint');
+    fs.appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n');
+    const mode=fs.existsSync(${JSON.stringify(modeFile)})?fs.readFileSync(${JSON.stringify(modeFile)},'utf8'):'';
+    const s=fs.existsSync(${JSON.stringify(stateFile)})?JSON.parse(fs.readFileSync(${JSON.stringify(stateFile)})):{count:0,panes:[],agents:[]};
+    const save=()=>fs.writeFileSync(${JSON.stringify(stateFile)},JSON.stringify(s));let result={};
+    if(a[0]==='api')result={snapshot:{protocol:mode==='bad-protocol'?19:20,panes:s.panes.map(p=>mode==='wrong-workspace'?{...p,workspace_id:'foreign'}:p),agents:s.agents}};
+    else if(a[0]==='workspace'&&a[1]==='create'){
+      const n=++s.count,pane={workspace_id:'w'+n,pane_id:'w'+n+':p1',terminal_id:'term_'+n,cwd:a[a.indexOf('--cwd')+1]};s.panes.push(pane);save();
+      if(mode==='lost-allocation'){console.error('lost allocation response');process.exit(1);}result={root_pane:pane};
+    }else if(a[0]==='pane'&&a[1]==='run'){
+      const pane=s.panes.find(p=>p.pane_id===a[2]);if(!pane)throw Error('wrong pane');cp.execFileSync('/bin/sh',['-c',a[3]],{cwd:pane.cwd,env:e,stdio:'pipe'});
+      if(mode==='lost-run'){s.agents=[{terminal_id:pane.terminal_id,agent_status:'working'}];save();console.error('lost dispatch response');process.exit(1);}
+      s.panes=s.panes.filter(p=>p!==pane);s.agents=[];save();
+    }else if(a[0]==='pane'&&a[1]==='process-info')result={process_info:{foreground_processes:[]}};
+    else throw Error('unexpected backend command');console.log(JSON.stringify({result}));`,{mode:0o700});
+  const launch={runtime:'claude',executable:binary,args:[],env:{CLAUDE_CONFIG_DIR:join(root,'profile')},model:'herdr-primary',yolo:false};
+  const prepared=prepareCapturedComposition({...f.input,launch,helperLaunches:{'example.action:worker':{...launch,model:'herdr-helper'}}},f.options);
+  approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const helper=readCapturedResolution(f.deployment,prepared.resolution).helpers['example.action:worker'];rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poisoned source config');
+  const env={PATH:'/usr/bin:/bin',HOME:root,SHELL:'/usr/bin/true',HERDR_SESSION:'poison-parent',HERDR_SOCKET_PATH:'/poison/socket'};
+  const run=args=>{const out=spawnSync(process.execPath,[cli,...args,'--json'],{cwd:root,env,encoding:'utf8',timeout:20000});assert.equal(out.error,undefined);return {status:out.status,...JSON.parse(out.stdout.trim())};};
+  const source=['--deployment',f.deployment,'--resolution',prepared.resolution.id],backend={backend:'herdr',binary:backendBinary,socket,protocol:20},request=join(root,'herdr-request.json');writeFileSync(request,JSON.stringify({schemaVersion:1,backend,task:'inert Herdr task'}));
+  const effects=home=>readFileSync(join(home,'work/herdr-effects.jsonl'),'utf8').trim().split('\n').map(JSON.parse);
+  const calls=()=>existsSync(log)?readFileSync(log,'utf8').trim().split('\n').map(JSON.parse):[];
+  const create=(name,helperMode=true)=>{
+    const home=join(root,name);assert.equal(run(['spawn',helperMode?'worker':'imported-expert','--deployment',f.deployment,'--resolution',helperMode?helper.id:prepared.resolution.id,'--home',home,'--no-launch']).ok,true);
+    return {home,args:['session','start',...source,...(helperMode?['--helper','example.action:worker']:[]),'--home',home,'--request',request]};
+  };
+  for(const helperMode of [false,true]){
+    const {home,args}=create(helperMode?'herdr-helper':'herdr-primary',helperMode),original=readFileSync(join(home,'instance.json'));
+    if(helperMode){
+      const indexPath=join(f.deployment,'.agents/portable/instance-references.json'),beforeIndex=readFileSync(indexPath),beforeCalls=calls();
+      for(const action of ['start','restart'])for(const input of [request,join(root,'absent-herdr-request.json')]){
+        const refused=run(['session',action,'--deployment',f.deployment,'--resolution',helper.id,'--home',home,'--request',input]);
+        assert.equal(refused.ok,false,'Herdr helper also requires its source edge');assert.equal(refused.error.code,'helper-not-selected');
+        assert.equal(Object.hasOwn(refused,'result'),false);assert.equal(refused.error.details,undefined);
+        assert.deepEqual(calls(),beforeCalls);assert.equal(existsSync(join(home,'work/herdr-effects.jsonl')),false);
+        assert.deepEqual(readFileSync(join(home,'instance.json')),original);assert.deepEqual(readFileSync(indexPath),beforeIndex);
+      }
+    }
+    const poisoned={...JSON.parse(original),tmux:{session:'foreign',window:'foreign',socket:'/foreign/socket'}};writeFileSync(join(home,'instance.json'),JSON.stringify(poisoned));const count=calls().length;
+    assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,count);writeFileSync(join(home,'instance.json'),original);
+    const started=run(args);assert.equal(started.ok,true,JSON.stringify(started));assert.equal(started.result.backend,'herdr');assert.equal(started.result.target.socket,socket);assert.ok(started.result.target.workspaceId);assert.ok(started.result.target.paneId);assert.ok(started.result.target.terminalId);
+    assert.equal(effects(home).length,1);assert.equal(effects(home)[0].id,started.result.intent.executionId);assert.equal(effects(home)[0].resolution,helperMode?helper.id:prepared.resolution.id);
+    assert.ok(effects(home)[0].args.includes(helperMode?'herdr-helper':'herdr-primary'));if(helperMode)assert.equal(started.result.sourceExecutionBinding.resolution.id,prepared.resolution.id);
+    const beforeReplay=calls().length;assert.equal(run([...args,'--retry-intent',started.result.intent.executionId]).result.replayed,true);assert.equal(calls().length,beforeReplay);
+    const restarted=run(args.map((arg,index)=>index===1?'restart':arg));assert.equal(restarted.ok,true,JSON.stringify(restarted));assert.notEqual(restarted.result.intent.executionId,started.result.intent.executionId);assert.equal(restarted.result.incarnationId,started.result.incarnationId);assert.equal(effects(home).length,2);
+    const metaPath=join(home,'instance.json'),saved=readFileSync(metaPath),meta=JSON.parse(saved);meta.sessionTarget.terminalId='foreign-terminal';writeFileSync(metaPath,JSON.stringify(meta));const before=calls().length;
+    assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,before);writeFileSync(metaPath,saved);
+    const baselines=join(root,'.oats-retirement/baselines'),baselinePath=fs.readdirSync(baselines).map(name=>join(baselines,name)).find(path=>JSON.parse(readFileSync(path)).home===home),baselineBytes=readFileSync(baselinePath);
+    const reset=JSON.parse(saved);reset.launched=false;delete reset.sessionTarget;writeFileSync(metaPath,JSON.stringify(reset));writeFileSync(baselinePath,JSON.stringify({...JSON.parse(baselineBytes),runtime:{launched:false}}));
+    assert.equal(run(args).error.code,'E_RUNTIME_AUTHORITY_MISMATCH');assert.equal(calls().length,before,'reset metadata/baseline cannot erase indexed dispatch custody');
+    writeFileSync(metaPath,saved);writeFileSync(baselinePath,baselineBytes);
+  }
+  const uncertain=create('herdr-uncertain');writeFileSync(modeFile,'lost-run');const restartArgs=uncertain.args.map((arg,index)=>index===1?'restart':arg),failed=run(restartArgs);
+  assert.equal(failed.ok,false);const custody=failed.error.details.nativeCustody;assert.equal(custody.unconfirmed,true);assert.equal(effects(uncertain.home).length,1);
+  assert.ok(custody.pendingObservation.nativeRecordId);assert.ok(existsSync(join(nativeHistoryPath(uncertain.home),`${custody.pendingObservation.nativeRecordId}.json`)));assert.ok(custody.pendingObservation.target.terminalId);
+  rmSync(modeFile);const before=calls().length,adopted=run([...restartArgs,'--retry-intent',custody.intent.executionId]);
+  assert.equal(adopted.ok,true,JSON.stringify(adopted));assert.equal(adopted.result.reused,'adopted');assert.equal(adopted.result.intent.executionId,custody.intent.executionId);assert.equal(adopted.result.intent.attempt,2);assert.equal(effects(uncertain.home).length,1);assert.ok(calls().slice(before).every(args=>args[0]==='api'),'same-ID present observation never stops or dispatches twice');
+  const lost=create('herdr-lost-allocation');writeFileSync(modeFile,'lost-allocation');const lostResult=run(lost.args);assert.equal(lostResult.ok,false);
+  const lostCustody=lostResult.error.details.nativeCustody;assert.equal(lostCustody.pendingObservation.phase,'allocating');assert.equal(existsSync(join(lost.home,'work/herdr-effects.jsonl')),false);const beforeLostRetry=calls().length;rmSync(modeFile);
+  const held=run([...lost.args,'--retry-intent',lostCustody.intent.executionId]);assert.equal(held.error.code,'E_SESSION_UNKNOWN');assert.equal(held.error.details.nativeCustody.intent.executionId,lostCustody.intent.executionId);assert.equal(calls().length,beforeLostRetry,'unknown allocation cannot allocate again or guess identities');
+  const wrong=create('herdr-wrong-workspace');writeFileSync(modeFile,'wrong-workspace');const wrongResult=run(wrong.args);assert.equal(wrongResult.ok,false);assert.equal(existsSync(join(wrong.home,'work/herdr-effects.jsonl')),false);rmSync(modeFile);
+  const protocol=create('herdr-protocol');writeFileSync(modeFile,'bad-protocol');const beforeProtocol=calls().filter(args=>args[0]==='workspace').length;const rejected=run(protocol.args);assert.equal(rejected.error.code,'E_SESSION_UNKNOWN');assert.equal(calls().filter(args=>args[0]==='workspace').length,beforeProtocol);rmSync(modeFile);
+});
+
+test('explicit primary and helper launch inputs retain separate entrypoints and never use current runtime choices',t=>{
+  const f=fixture(t),key='example.action:worker';
+  f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("retained runtime A");\n');chmodSync(join(f.repo,'packages/action/cap/show.mjs'),0o755);
+  f.git('add','.');f.git('commit','--quiet','-m','explicit runtime entrypoint');
+  const launch={runtime:'claude',executable:{capability:f.id,command:'show'},args:['literal-A'],env:{FIXTURE_NATIVE_PROFILE:{fromEnv:'FIXTURE_PROFILE'}},model:'explicit-model-A',yolo:false};
+  for(const bad of [{...launch,model:null},{...launch,executable:'ambient'},{...launch,env:{OATS_INVOCATION_CONTEXT_FILE:'/forged'}}]){
+    assert.throws(()=>prepareCapturedComposition({...f.input,launch:bad},f.options));
+    assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false,'malformed launch input refuses before publication');
+  }
+  assert.throws(()=>prepareCapturedComposition({...f.input,helperLaunches:{'example.action:not-selected':launch}},f.options),{code:'helper-not-selected'});
+  assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false);
+  const a=prepareCapturedComposition({...f.input,launch,helperLaunches:{[key]:{...launch,args:['helper-A'],model:'helper-model-A'}}},f.options);
+  const record=readCapturedResolution(f.deployment,a.resolution),helper=readCapturedResolution(f.deployment,record.helpers[key]);
+  assert.equal(record.dispatch.launch.model,'explicit-model-A');assert.equal(helper.dispatch.launch.model,'helper-model-A');
+  assert.deepEqual(helper.dispatch.launch.args,['helper-A']);assert.equal(record.dispatch.launch.executable,'captured-resource');
+  assert.equal(record.dispatch.launch.executableResource,`executable:${f.id}:command:show`);
+  f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("runtime B");\n');f.git('add','.');f.git('commit','--quiet','-m','runtime B');
+  const b=prepareCapturedComposition({...f.input,launch:{...launch,model:'explicit-model-B'}},f.options);
+  assert.notEqual(a.resolution.id,b.resolution.id);
+  const bRecord=readCapturedResolution(f.deployment,b.resolution);assert.equal(readCapturedResolution(f.deployment,bRecord.helpers[key]).dispatch.launch,null,'helper never inherits the primary runtime request');
+  rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poison runtime/model config');
+  const retained=loadCapturedDispatch({deployment:f.deployment,resolution:a.resolution,action:{kind:'inspect'}});
+  const entry=retained.resources.get(retained.record.dispatch.launch.executableResource);
+  assert.match(readFileSync(entry,'utf8'),/retained runtime A/);assert.equal(retained.record.dispatch.launch.model,'explicit-model-A');
+  const tampered=structuredClone(record);tampered.dispatch.launch.executableResource='missing-runtime';
+  assert.throws(()=>commitCapturedResolution(f.deployment,tampered));
+  const g=fixture(t),manifest=JSON.parse(readFileSync(join(g.repo,'packages/action/cap/oats.json'),'utf8'));
+  manifest.requires=[{runtime:'claude',package:'fixture@marketplace'}];g.write('packages/action/cap/oats.json',JSON.stringify(manifest));g.git('add','.');g.git('commit','--quiet','-m','unqualified runtime root');
+  assert.throws(()=>prepareCapturedComposition({...g.input,launch},g.options),{code:'needs-configuration'});
+  assert.equal(existsSync(join(g.deployment,'.agents/resolutions')),false,'required runtime packages are not replaced with ambient discovery or partially published helpers');
+});
+
 test('activation never publishes or cleans through home/work replacement during a retained hook',t=>{
   const f=fixture(t),root=realpathSync(f.root);
   f.write('packages/action/cap/show.mjs',`import {readFileSync,renameSync,symlinkSync} from 'node:fs';
@@ -269,10 +586,16 @@ test('source helper lookup preserves dedicated A/B authority without source or c
     const resolved=resolveCapturedHelper({executionBinding:source.executionBinding,helper:key,name:'worker'});
     assert.equal(resolved.sourceExecutionBinding.resolution.id,source.resolution.id);assert.equal(resolved.executionBinding.resolution.id,helper.id);
     assert.equal(resolved.helper.subject.kind,'helper');assert.equal(resolved.helper.subject.provider.capability,'example.action');
-    assert.equal(resolved.workMode,'directory');assert.equal(resolved.launch.status,'unsupported');assert.equal(resolved.responsibleHuman,null);
+    assert.equal(resolved.workMode,'directory');assert.deepEqual(resolved.launch,{schemaVersion:1,api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},readiness:{status:'not-checked'}});assert.equal(resolved.responsibleHuman,null);
+    assert.equal(Object.hasOwn(resolved.launch,'status'),false,'no stale blanket unsupported/readiness claim');
+    validateWire('CapturedNativeSessionAvailability',resolved.launch);
+    assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,readiness:{status:'ready'}}));
+    assert.throws(()=>validateWire('CapturedNativeSessionAvailability',{...resolved.launch,api:{...resolved.launch.api,version:99}}));
+    assert.equal(readCapturedResolution(f.deployment,helper).dispatch.launch,null,'API availability is not a launch recipe, approval or ready instance');
     const result=spawnSync(process.execPath,[cli,'inspect','--deployment',f.deployment,'--resolution',source.resolution.id,'--helper',key,'--composition','--json'],{encoding:'utf8'});
     assert.equal(result.status,0,result.stdout||result.stderr);const receipt=JSON.parse(result.stdout).result;
     assert.equal(receipt.resolution.id,helper.id);assert.equal(receipt.helperSelection.sourceExecutionBinding.resolution.id,source.resolution.id);
+    assert.deepEqual(receipt.nativeSession,resolved.launch);assert.deepEqual(receipt.helperSelection.launch,resolved.launch);
     assert.ok(receipt.composition.text.startsWith(text));
   }
   for(const helper of ['missing','constructor','__proto__']) assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper}),{code:'helper-not-selected'});
@@ -286,6 +609,130 @@ test('source helper lookup preserves dedicated A/B authority without source or c
   rmSync(join(f.deployment,'.agents','resolutions',`${aHelper.id}.json`));
   assert.throws(()=>resolveCapturedHelper({executionBinding:a.executionBinding,helper:key}));
   assert.equal(resolveCapturedHelper({executionBinding:b.executionBinding,helper:key}).executionBinding.resolution.id,bHelper.id,'missing A cannot reselect B');
+});
+
+test('helper instruction policies compose distinct retained maps and refuse forged declaration witnesses',t=>{
+  for(const mode of ['inherit','omit','file','file-only']){
+    const f=fixture(t),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
+    manifest.helperInjection={version:1,mode:mode==='file-only'?'file':mode,...(mode.startsWith('file')?{path:'helper.md'}:{})};
+    if(mode==='file-only')delete manifest.inject;
+    f.write('packages/action/cap/helper.md','Helper-only declared instruction\n');f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m',mode);
+    const result=prepareCapturedComposition(f.input,f.options),parent=readCapturedResolution(f.deployment,result.resolution),helperRef=parent.helpers['example.action:worker'],helper=readCapturedResolution(f.deployment,helperRef);
+    const key='instruction:capability:example.action',choice='/helpers/injections/example.action';
+    assert.equal(parent.choices[choice],undefined,'helper hard facts never enter primary choices');
+    assert.equal(parent.resources[key]?.path,mode==='file-only'?undefined:'inject.md');
+    assert.equal(helper.resources[key]?.path,mode==='omit'?undefined:mode==='inherit'?'inject.md':'helper.md');
+    assert.equal(helper.choices[choice].constraints[0].origin.pointer,'/helperInjection');
+    assert.deepEqual(helper.choices[choice].constraints[0].origin.document.owner,helper.artifacts.capabilities[f.id].artifact);
+    validateWire('CapturedResolution',helper);
+    rmSync(f.repo,{recursive:true});
+    const primaryText=loadCapturedDispatch({deployment:f.deployment,resolution:result.resolution,action:{kind:'compose'}}).composition.text;
+    const helperText=loadCapturedDispatch({deployment:f.deployment,resolution:helperRef,action:{kind:'compose'}}).composition.text;
+    assert.equal(primaryText.includes('Capability instructions'),mode!=='file-only');assert.equal(primaryText.includes('Helper-only declared instruction'),false);
+    assert.equal(helperText.includes('Capability instructions'),mode==='inherit');assert.equal(helperText.includes('Helper-only declared instruction'),mode.startsWith('file'));
+    if(mode==='omit')assert.deepEqual(structuredClone(helper.dispatch.composition.omissions),[{source:'capability:example.action',reason:'helper-policy',choice}]);
+    if(mode==='file'){
+      const wrongPath=structuredClone(helper);wrongPath.resources[key].path='inject.md';
+      assert.throws(()=>commitCapturedResolution(f.deployment,wrongPath),{code:'invalid-resolution'},'same resource key cannot substitute another existing file');
+      const forged=structuredClone(helper),integrity={format:'oats.bytes.v1',value:`sha256-${'0'.repeat(64)}`};
+      forged.choices[choice].selectedBy.document.integrity=integrity;forged.choices[choice].constraints[0].origin.document.integrity=integrity;
+      assert.throws(()=>commitCapturedResolution(f.deployment,forged),{code:'resolution-incomplete'},'same-valued forged origin does not witness manifest bytes');
+      const missing=structuredClone(helper);delete missing.choices[choice];delete missing.dispatch.composition.blocks.find(block=>block.source==='capability:example.action').choice;
+      assert.throws(()=>commitCapturedResolution(f.deployment,missing),{code:'resolution-incomplete'},'applicable declaration cannot disappear from the capture');
+      for(const override of [false,true]){
+        const conflict=structuredClone(helper),other='/injections/capability:example.action',origin={kind:'operator',document:{kind:'operator',id:'explicit-instruction-choice'},pointer:'/value'},value=override?'instruction:operator':null;
+        conflict.choices[other]={value,selectedBy:origin,constraints:[],considered:[{kind:'operator',value,origin,disposition:'selected'}]};
+        conflict.dispatch.composition.blocks=conflict.dispatch.composition.blocks.filter(block=>block.source!=='capability:example.action');
+        if(override){conflict.resources[value]={...conflict.resources[key],path:'inject.md'};conflict.dispatch.composition.blocks.push({source:'capability:example.action',resource:value,choice:other});}
+        else conflict.dispatch.composition.omissions.push({source:'capability:example.action',reason:'disabled',choice:other});
+        assert.throws(()=>commitCapturedResolution(f.deployment,conflict),{code:'invalid-resolution'},'independently authorized disable/override cannot silently displace helper policy');
+      }
+    }
+  }
+});
+
+test('missing helper policy or declared file refuses before publishing any helper or parent',t=>{
+  for(const policy of [undefined,{version:1,mode:'file',path:'missing.md'}]){
+    const f=fixture(t),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
+    if(policy===undefined)delete manifest.helperInjection;else manifest.helperInjection=policy;
+    f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','unresolved helper policy');
+    assert.throws(()=>prepareCapturedComposition(f.input,f.options),{code:policy===undefined?'needs-configuration':'resource-not-found'});
+    assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false,'no published helper/parent graph on missing explicit policy/resource');
+  }
+});
+
+function selectedHookInputFixture(t,{knowledgeOptIn=true,unboundOptIn=false}={}) {
+  const f=fixture(t),root=realpathSync(f.root),checks=join(root,'input-checks.jsonl'),effects=join(root,'input-effects.jsonl');
+  const selection={source:'repo:packages/action'},ids=['example.action','example.knowledge','example.tasks'];
+  f.write('agents/expert/soul.yaml',JSON.stringify({schemaVersion:1,name:'expert',work:'directory',requires:{capabilities:{'example.action':selection},knowledge:{capability:ids[1],...selection},tasks:{capability:ids[2],...selection}}}));
+  const pkg=JSON.parse(readFileSync(join(f.repo,'packages/action/oats-package.json')));pkg.capabilities=['cap','knowledge','tasks'];f.write('packages/action/oats-package.json',JSON.stringify(pkg));
+  const hook=`import {readFileSync,appendFileSync,statSync,rmSync} from 'node:fs';import {dirname} from 'node:path';
+    const e=process.env,inv=JSON.parse(readFileSync(e.OATS_INVOCATION_CONTEXT_FILE,'utf8'));
+    const binding=e.OATS_BINDING_FILE?JSON.parse(readFileSync(e.OATS_BINDING_FILE,'utf8')):null,receipt=e.OATS_SOURCE_RECEIPT_FILE?JSON.parse(readFileSync(e.OATS_SOURCE_RECEIPT_FILE,'utf8')):null;
+    if(inv.capability!==e.OATS_CAPABILITY||binding&&binding.capability!==inv.capability||receipt&&receipt.binding.capability!==inv.capability)throw Error('cross-owner input');
+    const index=JSON.parse(readFileSync(inv.executionBinding.deployment+'/.agents/portable/instance-references.json','utf8'));
+    const intent=index.instances.find(row=>row.incarnationId===inv.instance.incarnationId)?.intents.find(row=>row.executionId===inv.intent.executionId);
+    if(intent?.state!=='running')throw Error('input hook effect before admission');
+    const paths=[e.OATS_INVOCATION_CONTEXT_FILE,e.OATS_BINDING_FILE,e.OATS_SOURCE_RECEIPT_FILE].filter(Boolean),modes=paths.map(path=>statSync(path).mode&0o777);
+    appendFileSync(${JSON.stringify(effects)},JSON.stringify({owner:inv.capability,event:e.OATS_EVENT})+'\\n');
+    const meta={owner:inv.capability,receipt,bindingOwner:binding?.capability??null,paths,modes,kind:inv.subject.kind,incarnation:inv.instance.incarnationId,executionId:inv.intent.executionId};
+    console.log(JSON.stringify({meta}));
+    if(e.CLEAN_SELECTED_INPUT_OWNER===inv.capability)rmSync(dirname(e.OATS_SOURCE_RECEIPT_FILE),{recursive:true});`;
+  const input={sourceReceipt:{version:1}};
+  const generic=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
+  generic.hooks={spawn:{command:'show.mjs',required:true,...(unboundOptIn?{inputs:input}:{})},retire:'show.mjs'};
+  f.write('packages/action/cap/oats.json',JSON.stringify(generic));f.write('packages/action/cap/show.mjs',hook);
+  for(const slot of ['knowledge','tasks']){
+    const id=`example.${slot}`,optIn=slot==='tasks'||knowledgeOptIn;
+    f.write(`packages/action/${slot}/oats.json`,JSON.stringify({capability:id,version:'1.0.0',description:'Input owner fixture',layer:slot,command:`fixture-${slot}`,
+      commands:{phase:'phase.mjs',hook:'hook.mjs'},binding:{version:1,normalize:'phase',bind:'phase',check:'phase'},inject:'inject.md',helperInjection:{version:1,mode:'omit'},
+      hooks:{spawn:{command:'hook.mjs',required:true,...(optIn?{inputs:input}:{})},retire:{command:'hook.mjs',...(optIn?{inputs:input}:{})}}}));
+    f.write(`packages/action/${slot}/inject.md`,`${slot} injected upkeep, not canonical body\n`);f.write(`packages/action/${slot}/hook.mjs`,hook);
+    f.write(`packages/action/${slot}/phase.mjs`,`import {readFileSync,appendFileSync} from 'node:fs';const r=JSON.parse(readFileSync(0,'utf8'));
+      if(r.phase==='check'){if(process.env.OATS_SOURCE_RECEIPT_FILE||Object.keys(r.input).some(key=>!['binding','context','action','invocation'].includes(key)))throw Error('second check authority');appendFileSync(${JSON.stringify(checks)},JSON.stringify(r.input)+'\\n');}
+      const result=r.phase==='normalize'?{requirements:[],candidates:[],model:{}}:r.phase==='bind'?{payloadContract:'fixture.inputs',payloadVersion:1,payload:{owner:r.capability},credentialRefs:{},provenance:[]}:{status:'ready',problems:[]};
+      console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));`);
+  }
+  f.git('add','.');f.git('commit','--quiet','-m','explicit per-owner hook inputs');
+  const initial=prepareCapturedComposition(f.input,f.options);
+  for(const id of ids)approveAvailableCapability(f.deployment,initial.selections[0].artifactSet,id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+  const prepared=prepareCapturedComposition(f.input,f.options),record=readCapturedResolution(f.deployment,prepared.resolution);
+  rmSync(f.repo,{recursive:true});return {...f,root,checks,effects,ids,prepared,record};
+}
+
+test('selected hook inputs are per-owner canonical snapshots, never inferred from layer or extraEnv',t=>{
+  for(const knowledgeOptIn of [true,false]){
+    const f=selectedHookInputFixture(t,{knowledgeOptIn});
+    for(const [name,resolution,agent,body,kind] of [['source',f.prepared.resolution,'imported-expert','Expert instructions\n','persistent'],['helper',f.record.helpers['example.action:worker'],'worker','Worker instructions\n','helper']]){
+      const home=join(f.root,name);scaffoldCapturedInstance({deployment:f.deployment,resolution,home,instance:name});
+      const options={deployment:f.deployment,resolution,home,instance:name,agentName:agent,extraEnv:{OATS_SOURCE_RECEIPT_FILE:'/poison/source',OATS_BINDING_FILE:'/poison/binding',OATS_INVOCATION_CONTEXT_FILE:'/poison/invocation'}};
+      for(const event of ['spawn','retire']){
+        const result=runCapturedLifecycleHooks(event,options);assert.deepEqual(result.failures,[]);
+        for(const id of f.ids){
+          const meta=result.meta[id],selected=id==='example.tasks'||id==='example.knowledge'&&knowledgeOptIn;
+          assert.equal(meta.kind,kind);assert.equal(meta.owner,id);assert.ok(meta.executionId);assert.ok(meta.incarnation);assert.ok(meta.modes.every(mode=>mode===0o600));assert.ok(meta.paths.every(path=>!existsSync(path)),'all private snapshots cleaned');
+          assert.equal(meta.bindingOwner,id==='example.action'?null:id);
+          if(selected){assert.equal(meta.receipt.role,body);assert.equal(meta.receipt.context,f.prepared.executionBinding.deployment);assert.equal(meta.receipt.binding.capability,id);assert.equal(meta.receipt.kind,kind);assert.equal(meta.receipt.sourceIdentity===null,kind==='helper');assert.equal(meta.receipt.executionBinding.resolution.id,resolution.id);}
+          else assert.equal(meta.receipt,null,'no opt-in means no receipt, even for knowledge');
+        }
+        const paths=Object.values(result.meta).flatMap(meta=>meta.paths);assert.equal(new Set(paths).size,paths.length,'owners never share invocation/binding/source snapshots');
+      }
+    }
+  }
+});
+
+test('selected input prerequisites and unsolicited receipts refuse before checks, while cleanup retains observed custody',t=>{
+  const absent=selectedHookInputFixture(t,{unboundOptIn:true}),badHome=join(absent.root,'unbound');scaffoldCapturedInstance({deployment:absent.deployment,resolution:absent.prepared.resolution,home:badHome,instance:'unbound'});
+  assert.throws(()=>runCapturedLifecycleHooks('spawn',{deployment:absent.deployment,resolution:absent.prepared.resolution,home:badHome,instance:'unbound',agentName:'imported-expert'}),{code:'needs-configuration'});
+  assert.equal(existsSync(absent.checks),false);assert.equal(existsSync(absent.effects),false);
+  const f=selectedHookInputFixture(t,{knowledgeOptIn:false}),home=join(f.root,'no-consent');scaffoldCapturedInstance({deployment:f.deployment,resolution:f.prepared.resolution,home,instance:'no-consent'});
+  const receipt={schemaVersion:1,kind:'persistent',home,work:join(home,'work'),context:f.prepared.executionBinding.deployment,agent:'imported-expert',instance:'no-consent',sourceIdentity:f.record.subject.soul.identity,
+    role:'Expert instructions\n',executionBinding:f.prepared.executionBinding,responsibleHuman:null,binding:f.record.bindings.knowledge};
+  assert.throws(()=>runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:f.prepared.resolution,home,instance:'no-consent',agentName:'imported-expert',sourceReceipt:receipt}),{code:'invalid-resolution'});
+  assert.equal(existsSync(f.checks),false);assert.equal(existsSync(f.effects),false);
+  const damaged=runCapturedLifecycleHooks('spawn',{deployment:f.deployment,resolution:f.prepared.resolution,home,instance:'no-consent',agentName:'imported-expert',extraEnv:{CLEAN_SELECTED_INPUT_OWNER:'example.tasks'}});
+  const failure=damaged.failures.find(failure=>failure.capability==='example.tasks');assert.equal(failure.required,true);assert.equal(failure.unconfirmed,true);assert.equal(damaged.meta['example.tasks'].receipt.role,'Expert instructions\n');
+  const indexed=readCapturedInstanceIndex(f.deployment).instances.find(row=>row.home===home).intents.find(intent=>intent.capability==='example.tasks');assert.equal(indexed.state,'unconfirmed');assert.equal(indexed.receipt.executionId,damaged.intents['example.tasks'].executionId);
 });
 
 test('helper-authored provider policy refuses before helper or parent records can inherit the parent binding',t=>{

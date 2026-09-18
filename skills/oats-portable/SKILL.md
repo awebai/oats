@@ -3,7 +3,8 @@ name: oats-portable
 description: >-
   Use when operating a newly prepared captured OATS instance, invoking an exact
   retained command or provider operation, inspecting its immutable composition,
-  or creating an explicit fresh no-launch scaffold. Triggers: "captured OATS",
+  creating an explicit fresh scaffold, or starting its captured native session.
+  Triggers: "captured OATS",
   "portable soul", "resolution ID", "exact retained command", "fresh captured
   spawn". Do not use for legacy config-chain deployments.
 ---
@@ -49,7 +50,7 @@ oats inspect --deployment <source-deployment> --resolution <source-id> \
 Keep `sourceExecutionBinding` for provider completion commands and the returned
 `executionBinding` for the helper. Do not complete through a worker's inherited
 selector or use legacy helper-name discovery. Helper inspection is not worker
-launch; a running-helper request must remain blocked until launch is supported.
+launch; use the staged public start below and retain its actual dispatch result.
 
 A fresh captured directory scaffold is available only with explicit placement
 and no launch:
@@ -65,11 +66,49 @@ new and its parent physical. This command materializes retained instructions and
 skills, creates owned directory work, and runs captured spawn hooks. It does not
 select a work repository, launch a model, or infer a team.
 
+## Start the owned captured home
+
+After the explicit scaffold/hooks stage, start using the same retained authority:
+
+```bash
+oats session start --deployment <absolute-deployment> --resolution <sha256-id> \
+  --home <owned-home> --request <absolute-native-request-json> --json
+```
+
+The native request is a closed object, for example:
+
+```json
+{"schemaVersion":1,"backend":{"backend":"tmux","binary":"/absolute/tmux","socket":"/absolute/socket","session":"captured"},"task":"Explicit task"}
+```
+
+For Herdr, replace only `backend` with
+`{"backend":"herdr","binary":"/absolute/herdr","socket":"/absolute/herdr.sock","protocol":20}`.
+Use an explicit existing operator-managed socket; this route never starts a
+Herdr daemon or falls back to tmux. Actual workspace/pane/terminal IDs arrive in
+the receipt after allocation, never from caller naming. API discovery advertises
+`oats.captured-session@2` with both backends and `readiness:not-checked`.
+
+Runtime/model/yolo come from the capture, never this request. Optional
+`stopGraceMs` is bounded 1–300000. No env/io/credential/provider/config fields.
+For an already scaffolded helper, pass the SOURCE selectors and add
+`--helper <exact-map-key>`; the home must match the returned dedicated helper
+binding. This revalidates the edge, not just a helper name.
+
+Use `session restart` for a distinct restart request in the same incarnation.
+Once stored, task/backend can be omitted to use owned values. Use
+`--retry-intent <saved-executionId>` only for an explicit replay/retry of that
+same logical request. An unknown Herdr allocation must remain held under its
+saved intent; never repeat workspace creation or guess its IDs from a label.
+Preserve `error.details.nativeCustody` and the indexed
+pending identity on uncertainty; never allocate another home/ID to disguise it.
+`dispatchAccepted` means native dispatch, not task completion/model health or
+privacy. A completed receipt replay may return `replayed:true` instead.
+
 ## Current refusal boundary
 
-Captured start, restart, wake, retire, managed runtime packages, non-directory
-work targets, and launch are not yet public. Do not strip selectors or call the
-legacy forms as a workaround. A scaffold marked `spawn-failed-cleanup-required`
+Captured wake/retire, unqualified managed runtime packages/contributions, extra
+native arguments, non-directory work targets and backends other than tmux/Herdr
+still refuse. Do not strip selectors or call legacy forms as a workaround. A scaffold marked `spawn-failed-cleanup-required`
 may contain external hook effects; preserve it and escalate rather than deleting
 it. A scaffold marked `spawned-launch-pending` is not a running instance.
 

@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { ORIGIN_KINDS, RESOLUTION_FIELDS } from "../lib/resolution-shape.mjs";
 import { CHOICE_KINDS } from "../lib/portable-choices.mjs";
 import { TREE_FORMAT, PACKAGE_FORMAT, BYTES_FORMAT } from "../lib/portable-digest.mjs";
+import { HERDR_PROTOCOL } from "../lib/herdr.mjs";
 
 const id = "https://oats.dev/schemas/portable-v1.json";
 const s = { type: "string", minLength: 1 }, text = { type: "string" }, v1 = { const: 1 };
@@ -86,7 +87,7 @@ d.RuntimeResource = object({ runtime: s, package: s, resource: s, requiredBy: or
 d.LaunchRecipe = { type: "object", required: ["version", "runtime"], properties: { version: v1, runtime: enumeration("pi", "claude", "codex") },
   description: "Envelope only: the sole existing launch codec owns all remaining recipe fields and their interpretation." };
 d.InstructionBlock = object({ source: { ...s, pattern: "^(kernel|work-mode|capability|config):[A-Za-z0-9._:-]+$" }, resource: s, choice: s }, ["choice"]);
-d.InstructionOmission = object({ source: d.InstructionBlock.properties.source, reason: enumeration("disabled", "helper-knowledge"), choice: s }, ["choice"]);
+d.InstructionOmission = object({ source: d.InstructionBlock.properties.source, reason: enumeration("disabled", "helper-knowledge", "helper-policy"), choice: s }, ["choice"]);
 d.InstructionComposition = object({ schemaVersion: v1, mode: enumeration("worktree", "checkout", "attached", "workspace", "directory"), body: s,
   blocks: list(ref("InstructionBlock")), omissions: list(ref("InstructionOmission")),
   skills: list(object({ name: { ...s, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$" }, resource: s })) });
@@ -122,6 +123,19 @@ d.CapturedResolution = object({ schemaVersion: v1, capture: enumeration("prepare
 d.CapturedResolution.allOf = [{ if: { type: "object", properties: { capture: { const: "reconstructed" } }, required: ["capture"] },
   then: { type: "object", properties: { evidence: { type: "array", minItems: 1 } } } }];
 if (JSON.stringify(Object.keys(d.CapturedResolution.properties).sort()) !== JSON.stringify([...RESOLUTION_FIELDS].sort())) throw new Error("captured schema fields differ from runtime codec");
+const nativePath = { ...s, pattern: "^/", description: "Runtime also requires a normalized absolute path without NUL." };
+d.CapturedSessionBackend = one(
+  object({ backend: { const: "tmux" }, binary: nativePath, socket: nativePath, session: { ...s, pattern: "^[A-Za-z0-9_-]+$" } }),
+  object({ backend: { const: "herdr" }, binary: nativePath, socket: nativePath, protocol: { const: HERDR_PROTOCOL } }));
+d.CapturedSessionTarget = one(
+  object({ backend: { const: "tmux" }, socket: nativePath, session: s, window: s }),
+  object({ backend: { const: "herdr" }, binary: nativePath, socket: nativePath, protocol: { const: HERDR_PROTOCOL }, workspaceId: s, paneId: s, terminalId: s }));
+d.CapturedSessionRequest = object({ schemaVersion: v1, backend: ref("CapturedSessionBackend"), task: text,
+  stopGraceMs: { type: "integer", minimum: 1, maximum: 300000 } }, ["backend", "task", "stopGraceMs"]);
+d.CapturedNativeSessionAvailability = object({ schemaVersion: v1,
+  api: object({ contract: { const: "oats.captured-session" }, version: { const: 2 }, available: { const: true }, backends: { const: ["tmux", "herdr"] } }),
+  readiness: object({ status: { const: "not-checked" } }) });
+d.CapturedNativeSessionAvailability.description = "Static callable interface availability only; no selected-record, provider, instance or host readiness is checked. Actual native action validation/receipts remain mandatory.";
 d.Problem = object({ code: s, message: s, origins, target: {}, details: {} }, ["target", "details"]);
 d.PackageRequest = object({ source: lockedSource, path: rootPath });
 d.Freshness = object({ state: enumeration("refreshed", "offline", "failed", "not-checked"),

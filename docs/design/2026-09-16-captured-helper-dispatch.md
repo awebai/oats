@@ -9,6 +9,7 @@ This API resolves exact helper authority; it does not qualify runtime launch.
 
 ```text
 resolveCapturedHelper({executionBinding, helper, name?})
+capturedNativeSessionAvailability() // static callable contract, not readiness
 
 oats inspect --deployment ABS --resolution SOURCE_ID --json
 oats inspect --deployment ABS --resolution SOURCE_ID --helper EXACT_MAP_KEY --json
@@ -28,12 +29,21 @@ The core result is:
 {schemaVersion:1,
  sourceExecutionBinding, executionBinding,
  helper:{key,name,subject}, context, responsibleHuman, workMode,
- launch:{status:'unsupported',reason:'captured-helper-launch-not-qualified'}}
+ launch:{schemaVersion:1,
+   api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},
+   readiness:{status:'not-checked'}}}
 ```
 
 `sourceExecutionBinding` remains the selection for provider completion/retry calls;
-`executionBinding` selects the helper. Static verification is not approval, mutable
-provider readiness, incarnation admission or launch. Missing keys/records/resources
+`executionBinding` selects the helper. `launch` advertises the versioned callable
+API only; public inspect also returns that descriptor as `result.nativeSession`
+for persistent/helper selections. `readiness.status:'not-checked'` is literal:
+inspection probes no native backend/provider, creates no home or intent, and
+cannot certify the requested instance/host. API availability remains true even
+when the retained record has no launch recipe or lacks approval. Consumers must
+understand the exact contract/version and obey actual start refusals/receipts.
+Static verification is not approval, mutable provider readiness, incarnation
+admission or launch. Missing keys/records/resources
 refuse even when a healthy newer selection exists. The initial supported subset
 requires matching captured source/helper contexts and human choices; distinct
 helper contexts/owners require explicit helper-request policy and currently refuse.
@@ -51,10 +61,24 @@ oats spawn HELPER_NAME --deployment ABS --resolution HELPER_ID --home NEW_ABS_HO
 
 That route consumes the DEDICATED helper record and exact approvals/hooks, not a
 legacy name-only scaffold. It does not satisfy a request for a running worker.
-Captured helper runtime launch remains unsupported; a provider requiring a running
-worker must refuse until retained runtime/launch, incarnation/admitted-intent and
-cleanup contracts are qualified. `launch:null` is never filled from current config.
-Helper-authored policy holds and the existing recursion guards remain intact.
+A separate public captured start now follows this scaffold/hooks stage:
+
+```text
+oats session start --deployment SOURCE_DEPLOYMENT --resolution SOURCE_ID --helper EXACT_MAP_KEY --home OWNED_HELPER_HOME --request ABS_NATIVE_REQUEST_JSON --json
+```
+
+It revalidates the exact source edge, checks that the owned home belongs to that
+dedicated helper, and calls the existing captured native session transaction.
+See the [public native request contract](2026-09-17-public-captured-start.md).
+Both existing tmux and Herdr adapters now use the same tagged public request and
+native custody path; see [backend parity](2026-09-17-captured-backend-parity.md).
+The unreleased blanket `launch.status:unsupported` projection is replaced by the
+versioned availability/not-checked descriptor above. An old or unknown descriptor
+is unqualified ingress, not permission to guess support or silently ignore a
+contradictory readiness signal. Providers must qualify this API at an exact
+compatible version before replacing their unsupported-helper guard. `launch:null` is never filled from current config;
+unsupported runtime prerequisites still refuse. Helper-authored policy holds and
+the existing recursion guards remain intact.
 
 ## Completion belongs to the source selection
 

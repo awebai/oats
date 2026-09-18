@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, scaffoldCapturedInstance, withCapturedBindingFile, withCapturedInvocationContextFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -47,7 +47,9 @@ import { hostUnitStatus, installHostUnit, uninstallHostUnit } from "../lib/sched
 import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_BYTES } from "../lib/attachments.mjs";
 
 import { capturedSelector } from "../lib/captured-selector.mjs";
+import { readCapturedResolution } from "../lib/captured-resolutions.mjs";
 import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
+import { portableScope } from "../lib/portable-state.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 
@@ -283,13 +285,57 @@ function capturedSpawn(selector, load, bail) {
   if (JSON_MODE) jsonOk(result); else console.log(`Scaffolded ${result.instance} at ${result.home}; ${result.hooksPending ? "captured hook custody requires retry/reconciliation" : "captured hooks complete"}, launch pending`);
 }
 
+/** Native continuation of an already owned captured home. A helper selector is
+ * an exact edge from the SOURCE record, not a name/current-config resolver. */
+function capturedSession(selector, bail) {
+  if (!["start", "restart"].includes(args[1])) bail("unsupported-action", "captured session supports only start/restart; no current-context fallback was used");
+  const values = new Map(), allowed = new Set(["home", "helper", "request", "retry-intent"]);
+  for (let index = 2; index < args.length; index++) {
+    if (args[index] === "--json") continue;
+    const key = args[index].startsWith("--") ? args[index].slice(2) : "", value = args[index + 1];
+    if (!allowed.has(key) || values.has(key) || !value || value.startsWith("--")) bail("E_BAD_ARGS", "captured session needs unique named home/helper/request/retry arguments");
+    values.set(key, value); index++;
+  }
+  const home = values.get("home"), retry = values.get("retry-intent");
+  if (!home || !isAbsolute(home) || resolve(home) !== home || home.includes("\0")) bail("E_BAD_ARGS", "captured session needs a normalized absolute --home");
+  if (retry !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(retry)) bail("E_BAD_ARGS", "--retry-intent requires one saved executionId");
+  const sourceExecutionBinding = { schemaVersion: 1, deployment: portableScope(selector.deployment), resolution: selector.resolution };
+  // Pure retained-subject check, before request files, provider or native calls.
+  // Dedicated helper IDs remain valid for scaffolding, not edge-less dispatch.
+  if (!values.has("helper") && readCapturedResolution(sourceExecutionBinding.deployment, sourceExecutionBinding.resolution).subject.kind === "helper") {
+    bail("helper-not-selected", "captured helper session needs SOURCE selectors plus --helper EXACT_SOURCE_HELPER_KEY");
+  }
+  // Reuse the same bounded strict object-file transport. Preparation and native
+  // request schemas remain separate; reject unknown fields before projection.
+  let request = {};
+  if (values.has("request")) {
+    const input = readPortablePreparationRequest({ file: values.get("request") });
+    if (input.schemaVersion !== 1 || Object.keys(input).some(key => !["schemaVersion", "backend", "task", "stopGraceMs"].includes(key))) bail("E_BAD_ARGS", "native request must be version1 with only backend/task/stopGraceMs");
+    if (Object.hasOwn(input, "backend") && (!input.backend || typeof input.backend !== "object" || Array.isArray(input.backend))) bail("E_BAD_ARGS", "a supplied native backend must be an explicit object, not omission");
+    const { schemaVersion, ...fields } = input; request = fields;
+  }
+  const helperSelection = values.has("helper") ? resolveCapturedHelper({ executionBinding: sourceExecutionBinding, helper: values.get("helper") }) : null;
+  const executionBinding = helperSelection?.executionBinding ?? sourceExecutionBinding;
+  try {
+    const native = startCapturedInstanceSession(home, { ...request, deployment: executionBinding.deployment, resolution: executionBinding.resolution,
+      restart: args[1] === "restart", ...(retry !== undefined ? { retryExecutionId: retry } : {}) });
+    const result = { ...native, executionBinding, ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}) };
+    if (JSON_MODE) jsonOk(result); else console.log(`${result.replayed ? "Replayed captured dispatch receipt for" : "Dispatched captured native session for"} ${home}`);
+  } catch (error) {
+    bail(error.code || "E_SESSION_START_FAILED", error.message, { home: error.home ?? home, executionBinding,
+      ...(helperSelection ? { sourceExecutionBinding: helperSelection.sourceExecutionBinding, helper: helperSelection.helper } : {}),
+      ...(error.capturedCustody ? { custody: error.capturedCustody } : {}),
+      ...(error.nativeCustody ? { unconfirmed: true, nativeCustody: error.nativeCustody } : {}) });
+  }
+}
+
 /** Exact-selector dispatch enters before any current-context resolver. Its
  * child receives the same selector, never an invoking agent's ambient identity. */
 function capturedCommand(selector) {
   const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
   try {
     const end = args.indexOf("--"), head = end < 0 ? args : args.slice(0, end);
-    const permitsHome = cmd === "operation" || cmd === "spawn";
+    const permitsHome = cmd === "operation" || cmd === "spawn" || cmd === "session";
     const forbiddenContext = permitsHome ? ["--dir", "--server", "--soul", "--agents-root"] : ["--dir", "--home", "--server", "--soul", "--agents-root"];
     if (head.some((arg) => forbiddenContext.includes(arg.split("=")[0]))) {
       fail("E_BAD_ARGS", "captured selectors cannot be mixed with current-context selectors");
@@ -314,7 +360,7 @@ function capturedCommand(selector) {
       const helperSelection = helperKey === undefined ? null : resolveCapturedHelper({ executionBinding: { schemaVersion: 1, ...target }, helper: helperKey });
       const selected = helperSelection?.executionBinding ?? target;
       const loaded = loadCapturedDispatch({ deployment: selected.deployment, resolution: selected.resolution, action: { kind: args.includes("--composition") ? "compose" : "inspect" } });
-      const result = { resolution: loaded.resolution, capture: loaded.record.capture,
+      const result = { resolution: loaded.resolution, capture: loaded.record.capture, nativeSession: capturedNativeSessionAvailability(),
         ...(helperSelection ? { helperSelection } : {}),
         capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
           approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),
@@ -335,6 +381,7 @@ function capturedCommand(selector) {
     }
     if (cmd === "operation") { capturedOperation(selector, load, fail); return; }
     if (cmd === "spawn") { capturedSpawn(selector, load, fail); return; }
+    if (cmd === "session") { capturedSession(selector, fail); return; }
     if (!cmd || cmd.startsWith("-") || KERNEL_COMMANDS.has(cmd)) fail("unsupported-action", "this kernel command has not yet adopted captured selectors; no current-context fallback was used");
     if (!args[1] || args[1] === "--json" || head.some((arg) => HELP_WORDS.has(arg))) {
       const loaded = load({ kind: "inspect" });
@@ -5148,6 +5195,10 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             scope views stay read-only; scope mutation is not yet qualified
   oats spawn <captured subject> --deployment <abs> --resolution <id>
       --home <abs> --no-launch [--json]      create a fresh directory scaffold and run captured hooks
+  oats session start|restart --deployment <abs> --resolution <id> --home <abs>
+      [--helper <exact-source-map-key>] [--request <abs-json>] [--retry-intent <saved-id>] [--json]
+                                            dispatch the owned captured home via existing native custody;
+                                            version1 request: backend/task/stopGraceMs, no model override
 
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)

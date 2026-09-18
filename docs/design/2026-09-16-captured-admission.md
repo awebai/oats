@@ -66,4 +66,12 @@ Read-only scope checks can have no instance/intent. A null intent grants no muta
 - Non-admitted views omit a caller receipt assertion and let the same owned metadata/index builder derive it. They neither promote a stale `capabilityMeta` mirror over the index nor weaken rejection of explicitly supplied contradictory receipts. Readiness and execution receive the identical current projection without admitting a new action.
 - Scope mutation operations refuse `admission-required`; no scope incarnation is invented. `kind:view` inspection stays nonmutating. Raw capability commands without admitted instance context grant no setup authority; identity-dependent providers must continue refusing such mutation.
 
+## Existing provider-run completion after source-home deletion
+
+Raw captured completion commands (for example a qualified provider's `complete` or non-rejudging delivery `retry`) use the SOURCE deployment/resolution through the existing namespace command route. That route supplies `instance:null`, `intent:null` and no instance-derived `priorReceipt`; it does not recreate or impersonate the deleted source incarnation. There is currently no alternative kernel-admitted existing-run completion projection for a deleted home.
+
+The kernel verifies the retained selection, approved command and provider readiness. The provider must independently validate the already-retained source/run/observed-receipt custody and authorize only that existing continuation under its qualified contract. Null intent itself grants nothing: it cannot authorize fresh setup/enrollment/lifecycle, new execution/rejudgment or new source registration. Missing/mismatched existing-run authority refuses rather than synthesizing an instance, intent or legacy fallback. Provider completion keeps the source binding, never the helper binding; live-home operation admission is not a workaround for the deleted source.
+
+This describes current transport/authority separation, not an additional provider action registry, new execution permission or a provider qualification test.
+
 Actual managed-runtime launch, start/restart/wake/retire recovery, scheduler execution-ID propagation, and helper launch are not qualified by these tests. Next steps are explicit retained launch inputs, exact runtime-root retention, then native backend/history/work-custody integration with preflight-before-stop. No `--no-launch` result can stand in for successful helper execution.
