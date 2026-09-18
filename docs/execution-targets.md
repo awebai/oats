@@ -235,13 +235,23 @@ Set `yolo: true` in an `oats-config.yaml` to apply it to that scope. The closest
 scope wins; an optional `yolo` in soul.yaml overrides it; `oats spawn --yolo` or
 `--no-yolo` overrides both. `oats create` accepts those flags too. Desktop offers
 the same per-launch choice. With no setting, native policy is retained.
+Autonomous or unattended execution is not permission to synthesize `yolo: true`.
+Explicit user CLI/UI input or a user-selected configuration is the opt-in; explicit
+`false` remains false.
 
-Codex receives `--yolo` plus a launch-local trust setting for the generated
-instance home; Claude receives `--dangerously-skip-permissions`. Pi's existing
-project trust behavior is unchanged. `--no-yolo` removes the OATS bypass flags;
-it leaves the operator's native harness settings in force. Instance metadata
-records an explicitly resolved setting. This choice applies when starting an
-agent, not retroactively to running sessions.
+Only for an explicitly resolved true setting does OATS add Codex `--yolo` plus
+launch-local project trust, or Claude `--dangerously-skip-permissions`. `--no-yolo` removes the
+OATS-added bypass flags while native settings stay in force. Instance metadata
+records the resolved choice; this policy does not rewrite frozen recipes, live
+configuration or already-running sessions.
+
+Claude Code and Codex use their ordinary native context, skills, settings, plugins,
+profile and authentication. OATS supplies its normal AGENTS/CLAUDE/skill files and
+briefing; it does not impose OATS-only ambient-resource isolation or route these
+runtimes through the Pi SDK. Pi's selected strict SDK profile is unchanged. OATS
+composition integrity/provenance, source/helper authority, record attribution and
+guards, and admission/retry obligations remain separate and required; normal native
+context alone is not a Claude/Codex qualification failure.
 
 Desktop remote terminal requests contain only the server id and instance name.
 The selected installed CLI resolves the saved route and performs remote
