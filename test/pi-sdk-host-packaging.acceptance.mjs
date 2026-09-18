@@ -9,9 +9,9 @@ import { fileURLToPath } from "node:url";
 import { requireFiles } from "../scripts/check-package-dry-runs.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const entries = ["bin/oats-pi-sdk-host.mjs", "lib/pi-sdk-host.mjs", "lib/captured-pi-host.mjs", "lib/captured-pi-custody.mjs"];
+const entries = ["bin/oats-pi-sdk-host.mjs", "lib/pi-sdk-host.mjs", "lib/captured-pi-host.mjs", "lib/captured-pi-custody.mjs", "lib/captured-pi-outcome.mjs"];
 
-test("actual kernel npm inventory includes all four SDK host entry files", { timeout: 30_000 }, () => {
+test("actual kernel npm inventory includes all five SDK host entry files", { timeout: 30_000 }, () => {
   const [pack] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"],
     { cwd: root, encoding: "utf8", timeout: 25_000, maxBuffer: 8 * 1024 * 1024 }));
   assert.equal(pack.name, "@awebai/oats");
