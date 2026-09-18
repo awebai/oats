@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  HERDR_PROTOCOL, HERDR_PROTOCOLS, isSupportedHerdrProtocol,
+  HERDR_PROTOCOL, HERDR_SUPPORTED_PROTOCOLS, isSupportedHerdrProtocol,
   herdrSnapshot, allocateHerdr, inspectHerdr, launchHerdr, stopHerdr, inputHerdr, validHerdrTarget,
 } from "../lib/herdr.mjs";
 
@@ -26,7 +26,7 @@ function reader(value) {
 
 test("Herdr support is exactly numeric20/22 and retains the legacy20 default", () => {
   assert.equal(HERDR_PROTOCOL, 20);
-  assert.deepEqual(HERDR_PROTOCOLS, [20, 22]); assert.equal(Object.isFrozen(HERDR_PROTOCOLS), true);
+  assert.deepEqual(HERDR_SUPPORTED_PROTOCOLS, [20, 22]); assert.equal(Object.isFrozen(HERDR_SUPPORTED_PROTOCOLS), true);
   for (const protocol of [20, 22]) {
     assert.equal(isSupportedHerdrProtocol(protocol), true);
     assert.equal(validHerdrTarget(target(protocol)), true);

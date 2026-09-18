@@ -8,7 +8,7 @@ selection, not version negotiation or proof of an installed/running backend.
 
 - `HERDR_PROTOCOL` remains20 for existing legacy/default behavior. In particular,
   the unchanged legacy `ensureHerdr` path is not silently switched to22.
-- `HERDR_PROTOCOLS` is the frozen `[20,22]` set.
+- `HERDR_SUPPORTED_PROTOCOLS` is the frozen `[20,22]` set.
 - `isSupportedHerdrProtocol(value)` accepts only those numbers; no strings,
   omitted/null value, protocol21, future number or range is accepted.
 - `herdrSnapshot(target, io)` requires a supported explicit target protocol before
