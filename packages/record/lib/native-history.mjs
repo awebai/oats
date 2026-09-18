@@ -137,10 +137,22 @@ function privateJson(path) {
   try {
     const before = fstatSync(fd);
     if (!before.isFile() || before.nlink !== 1 || (before.mode & 0o777) !== 0o600 || (process.getuid && before.uid !== process.getuid()) || before.size > 256 * 1024) custodyError("invalid private captured receipt");
-    const bytes = Buffer.alloc(before.size + 1); let size = 0, n;
-    while (size < bytes.length && (n = readSync(fd, bytes, size, bytes.length - size, null))) size += n;
-    const after = fstatSync(fd), named = lstatSync(path);
-    for (const stat of [after, named]) if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino || stat.nlink !== 1 || stat.size !== before.size || stat.mtimeMs !== before.mtimeMs || stat.ctimeMs !== before.ctimeMs) custodyError("captured receipt changed while reading");
+    const assertNamedDescriptor = () => {
+      // Ancestor-link ABA during open may return a different regular/private FD.
+      // Check the actual physical named authority BEFORE reading that descriptor.
+      const named = physical(path), opened = fstatSync(fd);
+      for (const stat of [opened, named]) if (!stat.isFile() || stat.dev !== before.dev || stat.ino !== before.ino || stat.nlink !== 1 || stat.size !== before.size || stat.mtimeMs !== before.mtimeMs || stat.ctimeMs !== before.ctimeMs) custodyError("captured receipt descriptor differs from named authority");
+      physical(dirname(path), true);
+    };
+    assertNamedDescriptor();
+    const bytes = Buffer.alloc(before.size + 1); let size = 0;
+    while (size < bytes.length) {
+      assertNamedDescriptor();
+      const n = readSync(fd, bytes, size, bytes.length - size, null);
+      if (n === 0) break;
+      size += n;
+    }
+    assertNamedDescriptor();
     if (size !== before.size) custodyError("captured receipt size changed");
     const data = bytes.subarray(0, size);
     if (!isUtf8(data)) custodyError("captured receipt is not UTF-8");

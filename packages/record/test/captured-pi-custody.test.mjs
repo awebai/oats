@@ -11,6 +11,7 @@ import { CAPTURED_PI_RECORD_VERSION, initializeNativeHistory, nativeHistoryPath,
 import { sessionsForHome, sessionAttribution } from '../lib/sessions-for-home.mjs';
 import { captureSessions } from '../lib/capture-cc.mjs';
 import { SESSION_FORMATS } from '../lib/formats.mjs';
+import { readRange, hashPrefix } from '../lib/session-snapshot.mjs';
 import { RecordStore } from '../lib/store.mjs';
 const inc='11111111-1111-4111-8111-111111111111', ts='2026-09-18T10:00:00.000Z';
 function fixture(t){
@@ -159,6 +160,33 @@ test('root replaced between native open and first read is held before reading th
  patchFs('openSync',original=>(path,...args)=>{const fd=original(path,...args);if(path===f.file){nativeFd=fd;f.replace();}return fd;},()=>
   patchFs('readSync',original=>(fd,...args)=>{if(fd===nativeFd)reads++;return original(fd,...args);},()=>assert.throws(()=>sessionsForHome(f.home))));
  assert.equal(reads,0);assert.deepEqual(f.store.listStreams(),[]);
+});
+for(const boundary of ['attribution','direct capture','readRange','hashPrefix','manifest','receipt'])test(`RV1: ${boundary} refuses ancestor-link open ABA BEFORE foreign descriptor reads`,t=>{
+ const f=fixture(t),id=f.start(),proof={home:f.home,nativeRecordId:id};
+ const authorityFile=['manifest','receipt'].includes(boundary),parent=authorityFile?f.history:join(f.sessionDir,'child');
+ if(!authorityFile)fs.mkdirSync(parent);
+ const leaf=boundary==='manifest'?'history.json':boundary==='receipt'?id+'.json':'session.jsonl',path=join(parent,leaf);
+ if(!authorityFile)fs.writeFileSync(path,JSON.stringify({type:'session',cwd:f.home,timestamp:ts})+'\n');
+ const outside=join(f.base,'foreign-aba'),saved=join(f.base,'preserved-aba-parent');fs.mkdirSync(outside);
+ fs.writeFileSync(join(outside,leaf),JSON.stringify({type:'session',cwd:f.home,timestamp:ts,fixture:'FOREIGN-CONTROLLED-DATA'})+'\n',{mode:0o600});
+ let foreignFd,reads=0,foreignBytes=false,swapped=false;
+ const action=()=>{
+  if(boundary==='attribution')return sessionAttribution('pi',path,{capturedPi:proof});
+  if(boundary==='direct capture')return captureSessions(f.store,{owner:'fixture',files:[{path,capturedPi:proof}],format:'pi',final:true}); // deliberately NO discovery snapshot
+  if(boundary==='manifest')return inspectCapturedPiRoot(f.home,f.inspect);
+  if(boundary==='receipt')return assertCapturedPiStart(f.home,id,{...f.inspect,intent:f.intent});
+  const fd=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+  try{return boundary==='readRange'?readRange(fd,0,fs.fstatSync(fd).size,path,proof):hashPrefix(fd,fs.fstatSync(fd).size,path,proof);}finally{fs.closeSync(fd);}
+ };
+ let error;
+ patchFs('openSync',original=>(file,...args)=>{
+  if(file!==path)return original(file,...args);
+  fs.renameSync(parent,saved);fs.symlinkSync(outside,parent);swapped=true;
+  try{foreignFd=original(file,...args);return foreignFd;}finally{fs.unlinkSync(parent);fs.renameSync(saved,parent);}
+ },()=>patchFs('readSync',original=>(fd,buffer,...args)=>{
+  const n=original(fd,buffer,...args);if(fd===foreignFd){reads++;if(buffer.includes(Buffer.from('FOREIGN-CONTROLLED-DATA')))foreignBytes=true;}return n;
+ },()=>{try{action();}catch(e){error=e;}}));
+ assert.ok(swapped);assert.equal(reads,0,'rejecting AFTER a foreign read is not sufficient');assert.equal(foreignBytes,false);assert.ok(error,'the mismatched open descriptor must refuse');assert.deepEqual(f.store.listStreams(),[]);
 });
 test('contained-path validation rechecks the original root after checking the leaf',t=>{
  const f=fixture(t);f.start();f.transcript();let changed=false;

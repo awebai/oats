@@ -27,7 +27,7 @@ import { basename, dirname, join } from "node:path";
 import { finishTurn } from "./canonical.mjs";
 import { jsonlLines, SESSION_FORMATS } from "./formats.mjs";
 import { loadIgnore } from "./ignore.mjs";
-import { assertIdentity, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
+import { assertIdentity, assertProtectedDescriptor, digest, identity, readRange, verifySnapshot } from "./session-snapshot.mjs";
 import { guardCapturedPath } from "./native-history.mjs";
 import { isDeepStrictEqual } from "node:util";
 
@@ -217,6 +217,7 @@ export function captureSessions(store, { owner, roots, files, format = "cc", ign
     }
     const fd = openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
     try {
+    if (capturedPi) assertProtectedDescriptor(fd, path, capturedPi);
     const stat = fstatSync(fd);
     const snapshot = { ...identity(stat), ...(capturedPi ? { capturedPi } : {}) };
     if (expected) assertIdentity(stat, expected, path); // BEFORE reading bytes

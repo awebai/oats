@@ -17,7 +17,7 @@ import { basename, resolve, sep } from "node:path";
 import { isUtf8 } from "node:buffer";
 
 import { SESSION_FORMATS } from "./formats.mjs";
-import { hashPrefix, identity, sameVersion, verifySnapshot } from "./session-snapshot.mjs";
+import { assertProtectedDescriptor, hashPrefix, identity, sameVersion, verifySnapshot } from "./session-snapshot.mjs";
 import { sourceSessionEnvironment } from "./session-roots.mjs";
 import { guardCapturedPath, historicalSessionRoots } from "./native-history.mjs";
 
@@ -35,7 +35,7 @@ function* wholeLines(fd, bound, path, capturedPi) {
   let pieces = [], size = 0; // keep raw bytes across UTF-8/chunk boundaries
   let offset = 0;
   while (offset < bound) {
-    if (capturedPi) guardCapturedPath(path, capturedPi);
+    if (capturedPi) assertProtectedDescriptor(fd, path, capturedPi);
     const n = readSync(fd, buf, 0, Math.min(CHUNK_BYTES, bound - offset), offset);
     if (n === 0) break;
     offset += n;
@@ -79,6 +79,7 @@ export function sessionAttribution(source, path, { bound = CWD_SCAN_BOUND_BYTES,
   guardCapturedPath(path, capturedPi);
   const fd = openSync(path, capturedPi ? constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK : "r");
   try {
+    if (capturedPi) assertProtectedDescriptor(fd, path, capturedPi);
     const snapshot = { ...identity(fstatSync(fd)), ...(capturedPi ? { capturedPi } : {}) };
     let cwd;
     for (const line of wholeLines(fd, Math.min(bound, snapshot.size), path, capturedPi)) {
