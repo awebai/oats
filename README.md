@@ -400,7 +400,9 @@ AGENTS.md, Agent Skills, and OKF.
 
 Session backends and unattended launches are described in
 [execution targets](docs/execution-targets.md). Claude Code and Codex retain normal
-native context and permissions. Add `--yolo` or select `yolo: true` in configuration
+native context and permissions **alongside the complete resolved OATS instance home**:
+skills, capabilities, instructions, task, metadata, work placement and ordinary
+hooks/approvals are still supplied. Add `--yolo` or select `yolo: true` in configuration
 only for an explicit user opt-in to bypass; unattended execution does not imply it.
 Aweb owns shared event delivery; terminal transport alone does not enable a
 messaging broker.

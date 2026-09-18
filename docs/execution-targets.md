@@ -246,9 +246,12 @@ records the resolved choice; this policy does not rewrite frozen recipes, live
 configuration or already-running sessions.
 
 Claude Code and Codex use their ordinary native context, skills, settings, plugins,
-profile and authentication. OATS supplies its normal AGENTS/CLAUDE/skill files and
-briefing; it does not impose OATS-only ambient-resource isolation or route these
-runtimes through the Pi SDK. Pi's selected strict SDK profile is unchanged. OATS
+profile and authentication. OATS still builds the complete ordinary instance home:
+resolved skills, capabilities and resources, canonical AGENTS plus its CLAUDE alias,
+task, metadata and normal work placement. Resolution, approvals and lifecycle hooks
+are not skipped; normal native launch is not an empty/no-capability mode. Only outside
+native context/skill coexistence is relaxed: OATS does not impose an OATS-only ambient
+view or route these runtimes through the Pi SDK. Pi's selected strict SDK profile is unchanged. OATS
 composition integrity/provenance, source/helper authority, record attribution and
 guards, and admission/retry obligations remain separate and required; normal native
 context alone is not a Claude/Codex qualification failure.
