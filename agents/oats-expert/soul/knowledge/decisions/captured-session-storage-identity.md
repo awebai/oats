@@ -43,10 +43,12 @@ protection while simultaneously forbidding every necessary durable witness chang
 # Decision
 
 Choose option 2: permit the narrowly versioned kernel-owned witness in existing
-custody. The implementation owner closes the exact codec/state/compatibility
-contract with the assigned independent reviewer before code, then implements the
-bounded slice and obtains independent source review. No further general human
-milestone approval is needed within this boundary:
+custody. Under the human's subsequent delivery-workflow direction, developers
+close the exact codec/state/compatibility contract in their bounded implementation,
+and the maintainer integrates and reviews the combined candidate before main or
+release. Separate reviewer-instance and preimplementation handoff waits are not
+required for this delivery wave. No further general human milestone approval is
+needed within the accepted boundary:
 
 - Prefer an existing kernel index, pending receipt or session receipt. Version
   the changed shape explicitly; reuse an existing suitable directory-identity
