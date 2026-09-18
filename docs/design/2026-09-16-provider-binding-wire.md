@@ -124,8 +124,9 @@ A real provider acceptance is still required; fixture success is not certificati
 
 The captured action loader runs the provider's check against the verified record at
 each command/operation/hook load; non-ready blocks before the action. Inspection and
-instruction composition do not enroll or claim readiness. Full lifecycle consumers
-remain a separate integration step.
+instruction composition do not enroll or claim readiness. Captured hook dispatch and public captured native start/restart are implemented.
+Public captured retirement remains unimplemented; managed-runtime/Pi adoption and
+real-host readiness remain separate qualification steps.
 
 For synchronous captured CLI commands, core writes the exact ProviderBinding1 to a
 fresh private invocation directory outside the home and retained artifacts. It
@@ -227,9 +228,10 @@ Existing
 `OATS_SOURCE_RECEIPT_FILE` remains a selected supplemental source-context input,
 not a messaging-specific or general identity mechanism. Provider registration,
 helper skipping/recursion policy and qualified existing-descriptor replay stay
-provider-owned; absence alone does not identify a dependent/non-ready provider. Captured start/restart/retire and
-managed launch adoption remain unfinished and cannot fall back to current source or
-configuration.
+provider-owned; absence alone does not identify a dependent/non-ready provider. Captured hook dispatch and public captured
+start/restart are implemented; public captured retirement remains unimplemented.
+Managed-runtime/Pi adoption and real-host qualification remain outstanding. These
+captured paths must not fall back to current source or configuration.
 
 This addition is an unreleased coordinated wire change: both provider validators
 must accept optional `check.input.invocation` and the exact subject union before a
@@ -238,6 +240,8 @@ coordinated successor consumers; earlier pins are not silently patched or claime
 compatible. [Captured admission](2026-09-16-captured-admission.md) records opaque fresh
 incarnations and logical request IDs before effects using the existing home index.
 An explicit retry reuses its ID/receipt; identical distinct requests get distinct IDs.
-Composition/home/alias values are never replacement identities. Stable scheduler
-execution-ID propagation and actual captured launch remain unfinished. Admission
+Composition/home/alias values are never replacement identities. Actual captured native dispatch is implemented under indexed incarnation/intent
+custody. Stable scheduler execution-ID propagation and broader managed-runtime/Pi
+and real-host qualification remain outstanding; inert fixture dispatch does not
+prove model health or task completion. Admission
 authorizes an attempt/reconciliation, not duplicate native effects, enrollment or privacy.
