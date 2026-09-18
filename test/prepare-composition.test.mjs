@@ -14,6 +14,8 @@ import { readLock3 } from '../lib/portable-lock.mjs';
 import { nativeHistoryPath, historicalSessionRoots } from '../packages/record/lib/native-history.mjs';
 import { materializeCapturedDirectoryScaffold } from '../lib/captured-scaffold.mjs';
 import { validateWire } from './helpers/portable-schema-check.mjs';
+import { PI_SDK_HOST } from '../lib/pi-sdk-host.mjs';
+import * as nativeRecords from '../packages/record/lib/native-history.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
   const root=mkdtempSync(join(tmpdir(),'oats-prepare-composition-')),repo=join(root,'repo'),deployment=join(root,'deployment');
@@ -62,6 +64,27 @@ function nativeCorrectionFixture(t) {
   return {...f,root,home,backend,calls,options,setPresent:value=>{present=value;},indexFile:join(f.deployment,'.agents/portable/instance-references.json'),metaFile:join(home,'instance.json'),
     effects:()=>readFileSync(join(home,'work/effects.jsonl'),'utf8').trim().split('\n').map(JSON.parse)};
 }
+
+test('captured Pi refuses legacy CLI reinterpretation and unsupported record guards before effects',t=>{
+  const f=fixture(t),root=realpathSync(f.root),sdk=join(root,'sdk');mkdirSync(sdk);
+  writeFileSync(join(sdk,'package.json'),JSON.stringify({name:'@earendil-works/pi-coding-agent',version:'0.85.1',exports:{'.':{import:'./index.mjs'}}}));
+  writeFileSync(join(sdk,'index.mjs'),'throw new Error("not a live SDK test");');
+  for(const explicit of [false,true]){
+    // Once the separately owned real record guards exist, their integration is
+    // covered by their own tests; this negative branch proves the old reader hold.
+    if(explicit&&nativeRecords.CAPTURED_PI_RECORD_VERSION===2)continue;
+    const home=join(root,explicit?'sdk-home':'legacy-home');
+    const launch={runtime:'pi',executable:explicit?PI_SDK_HOST:process.execPath,args:explicit?['--oats-pi-host','1','--mode','print','--thinking','medium','--sdk-root',sdk,'--sdk-version','0.85.1']:[],env:{},model:'native-provider/exact-model',yolo:false};
+    const prepared=prepareCapturedComposition({...f.input,launch},f.options);
+    approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
+    scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:explicit?'sdk-home':'legacy-home'});
+    activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});
+    const before=JSON.stringify(readCapturedInstanceIndex(f.deployment));let calls=0;
+    assert.throws(()=>startCapturedInstanceSession(home,{backend:{backend:'tmux',binary:process.execPath,socket:join(root,'no-backend.sock'),session:'fixture'},task:'never run',io:{exec(){calls++;throw new Error('backend effect forbidden');}}}),{code:explicit?'E_PI_HOST_RECORD_UNAVAILABLE':'needs-configuration'});
+    assert.equal(calls,0);assert.equal(JSON.stringify(readCapturedInstanceIndex(f.deployment)),before);
+    assert.equal(existsSync(join(home,'.oats-start-pending.json')),false);
+  }
+});
 
 test('native state preflight preserves newer lifecycle and holds completed publication debt',t=>{
   const f=nativeCorrectionFixture(t),baseIndex=readFileSync(f.indexFile),baseMeta=readFileSync(f.metaFile);
