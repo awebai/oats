@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { requireFiles } from "../scripts/check-package-dry-runs.mjs";
 
 // These are kernel-addressed shipped files, not a new public SDK module API.
-const hostFiles = ["bin/oats-pi-sdk-host.mjs", "lib/pi-sdk-host.mjs", "lib/captured-pi-host.mjs"];
+const hostFiles = ["bin/oats-pi-sdk-host.mjs", "lib/pi-sdk-host.mjs", "lib/captured-pi-host.mjs", "lib/captured-pi-custody.mjs"];
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 test("kernel package exports cover the explicit SDK host without a second CLI or library API", () => {
