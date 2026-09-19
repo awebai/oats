@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Complete native Claude/Codex home regression (2026-09-18)
+- verdict: APPROVE exact three-file `cfe2df42`, locally integrated as `0583c32c`. One new controlled parent case passes for both runtimes; previous six planning cases retain their original evidence, not a claimed seven-case rerun.
+- owner: fresh-source/regression lane · reviewer/integrator: maintainer.
+- taught us: ordinary native launch still includes actual resolved capability acquisition, required-hook trust gates, complete selected resources/instructions/task/work and normal lifecycle. The new fixture proves those behaviors with inert hooks and untouched runtime/backend tripwires, not fabricated metadata or a no-capability home. Source-only tests/docs: no native model, permission UI, auth or captured-retirement qualification.
+
 ## Record-v2 RV1 closure and native-policy regressions (2026-09-18)
 - verdict: RETURN then APPROVE exact record `8fcf5e85` + correction `e0c3232c`, locally integrated as `6416f407` / `26e81054`. Parent read all changed source and actual consumers, matched preimages/after blobs, and reproduced two foreign-descriptor reads before the original refusal. Correction binds opened descriptors before native and authority reads; six controlled ABA regressions now require zero foreign reads. Original failures and claim-loss evidence remain intact.
 - evidence: parent assembled36/36 record checks pass (including six unchanged legacy cases), plus unbound scaffold/layout/resources/normal-retirement1/1 and syntax/diff checks. Source-only qualification, not actual model/backend/history learning or release. Kernel Pi callback's literal v1-manifest assumption and outcome observation still need their owned integration; no bin/parser/store redesign or whole-branch ancestry was taken.
