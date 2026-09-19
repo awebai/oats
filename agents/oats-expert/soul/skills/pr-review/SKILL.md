@@ -80,6 +80,14 @@ BEFORE retiring — it is the last gate of the review.
   soul changes that are not already on GitHub `main`, return it for branch
   rebuilding or for those base commits to land through their own maintainer
   path first. See `knowledge/lessons/pr-branch-merge-range-scope.md`.
+- **Green tests and clean diffs do not clear standing holds**: before merging
+  ancestry you did not write, search project prose and decisions for holds on
+  the content being landed (`held`, `hold`, `excluded`, `must not`, `never
+  integrate`). If a named held commit may be in play, check ancestry first with
+  `git merge-base --is-ancestor <held> <head>`; for cherry-picks, rebases, or
+  reimplementations, compare stable patch-ids as evidence of equivalent text.
+  Treat "merge everything" as work scope, not permission to lift a hold. See
+  `knowledge/lessons/green-tests-do-not-lift-a-scope-hold.md`.
 - **Green OKF commands can still hide producer warnings**: when a PR touches
   knowledge bundles, inspect `npm run validate:okf` output per bundle, not only
   the exit status or the final “Strict OKF validation passed” summary. Treat
