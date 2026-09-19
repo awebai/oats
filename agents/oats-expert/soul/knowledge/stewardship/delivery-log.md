@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Canonical documentation publication verified; adoption gaps scoped (2026-09-19)
+- verdict: DELIVERED to main as `edd82f82884a73331a2732d6d242f4536c81423f`, verified by remote ref and GitHub contents readback; source worktree clean. Twelve Markdown files, strict OKF 89/0/0, 56 local links/anchors and diff check pass. The prior entry records the approved direction; this records actual publication.
+- owner: maintainer documentation/stewardship. Desktop implementation is next under the revised human sequence, not evidence of completed deployment or parity.
+- taught us: multi-operator adoption needs an explicit shared-versus-local guide and witnessed setup evidence. Capability-owned co-location is an accepted option, not an implemented OKF2.x profile or scheduled release. Public visibility, same-repository storage and mutable soul paths are distinct; Git or messaging connectivity alone proves neither replicated config nor shared runtime state. Record these gaps without importing deployment-specific state into the canonical soul.
+
 ## Founder-approved canonical OATS and knowledge explanation (2026-09-19)
 - verdict: DOCUMENTATION APPROVED by the human after iterative review, for direct main publication. README explains specialised teams, provider-independent choices, capability building blocks and the free ADE. Existing `docs/knowledge-theory.md` consolidates the detailed model rather than creating a competing canonical document.
 - direction: centralised per-soul knowledge is the default, not kernel policy. Capabilities own procedures and learning, including supported alternative placements; immutable captured artifacts stay immutable. Ephemeral developers/reviewers and long-running expertise instances are both legitimate. Skills, durable judgment, situated context and ongoing state are distinct. Speciation/widening can follow sustained work even within a long-lived instance; automation and clone/redirect protocols remain implementation work.
