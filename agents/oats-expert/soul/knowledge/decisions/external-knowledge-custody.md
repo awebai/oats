@@ -1,11 +1,19 @@
 ---
 type: Decision
-title: Knowledge leaves souls and Git-backed harvesting delivers through PRs
-description: All durable knowledge moves outside souls, working instances receive an instructional write prohibition, and independent harvesters propose Git-backed updates through pull requests.
+title: Default external knowledge custody and PR-only Git delivery
+description: The default integration keeps durable knowledge externally with independent judgment and PR-only Git delivery, without imposing its placement on other capabilities.
 tags: [knowledge, memory, custody, architecture]
-timestamp: 2026-09-16
+timestamp: 2026-09-19
 ---
 # Status
+
+**Placement scope clarified on September19:**
+[centralised per-soul defaults and flexible knowledge capabilities](/decisions/flexible-knowledge-and-instance-expertise.md)
+make external placement a default, not a universal kernel rule. Alternative
+capabilities may support co-located OAS-style knowledge with explicit mutable
+custody; retained source artifacts remain immutable. Ownership routes harvests,
+not a duty for ordinary working souls to maintain the base directly. The Git
+PR-only custody and source-independent judgment commitments below remain.
 
 Accepted direction from 2026-09-13. The default OKF Git/directory stores,
 source-independent harvesting and PR delivery have since been implemented and
@@ -30,11 +38,12 @@ instance's worktree, and direct-commit versus PR custody.
 
 # Decision
 
-1. **All knowledge leaves the soul.** There is no retained knowledge bundle
-   inside a soul, including for general expertise. Knowledge may still be
-   specialized for a soul; its durable location is external. This rules out
-   the option of keeping reusable knowledge inside the soul while moving
-   only project knowledge. Skill placement was not changed by this ruling.
+1. **The default integration keeps knowledge outside the soul definition.**
+   Knowledge may remain specialised per soul while its accepted home is external.
+   This was the September13 relocation choice for the default rework; the
+   September19 clarification permits other capability models and placements.
+   It is not a kernel prohibition on co-located knowledge. Skill placement and
+   the immutability of captured source artifacts are unchanged.
 2. **For now, the working instance's write prohibition is explicit OKF
    injection guidance.** It is not a claim of filesystem isolation or
    mechanical refusal through arbitrary shell commands. Completion tests
@@ -55,7 +64,7 @@ instance's worktree, and direct-commit versus PR custody.
    all agents in a workspace/team have access to its configured knowledge
    repositories. Do not implement a public/private distinction, per-agent
    repository ACLs, or disclosure-routing policy in this version. `reads`
-   selects initial context; `owns` defines maintenance and promotion routing;
+   selects initial context; `owns` defines promotion routing;
    neither grants GitHub permissions. This later same-day simplification
    removes the proposed audience/declassification design from initial scope.
 

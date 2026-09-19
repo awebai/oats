@@ -1,5 +1,13 @@
 # Knowledge — layer 2
 
+For the canonical design, defaults and alternatives, start with
+[Knowledge, instances and evolving expertise](knowledge-theory.md). This page is
+an operational guide to the version-scoped OKF implementation below, not a universal
+knowledge layout or learning policy. The default direction is centralised per-soul
+knowledge; other capabilities may provide different procedures and placements,
+including co-location, without writing into immutable captured artifacts. For the
+newer captured path, also read the [0.24 release scope](release-notes/v0.24.0.md).
+
 Specialization is accumulated judgment: decisions and rationale, rejected
 alternatives, discovered limits, and maintained context that changes what a
 future instance does. It is not a second description of the code.
@@ -126,7 +134,8 @@ nonoverlapping subdirectories with an `index.md` and `log.md`; each has one stab
 owner. Base roots have their own index and append-only log. Stable owner IDs must
 not ambiguously identify different souls within one state namespace.
 
-`owns` means responsibility and write routing; `reads` means initial context.
+`owns` identifies harvest destinations; it does not make a working instance the
+author or direct maintainer of the base. `reads` selects initial context.
 **Neither is an ACL.** All configured bases are discoverable/readable. Missing
 bindings, owner declarations, base metadata or indexes fail required spawn rather
 than silently bootstrapping empty knowledge.

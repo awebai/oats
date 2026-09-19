@@ -1,8 +1,19 @@
 # Souls and instances
 
-Souls and instances are the two layers the OATS kernel owns. A soul is the
-expert. An instance is a named incarnation of that expert, with its own ID,
-home, worktree, and lifecycle. It is not the same thing as one chat session.
+Souls and instances are the two layers the OATS kernel owns. A soul defines a
+reusable specialisation. An instance is a named working incarnation, with its own
+ID, home, work view and lifecycle—not necessarily one task or chat session.
+
+An instance may be ephemeral, such as a developer or reviewer doing bounded work,
+or long-running, carrying planning, investigation and domain understanding across
+many tasks. Lifetime does not itself change the soul's identity. See the
+[canonical knowledge and specialisation model](knowledge-theory.md) for how skills,
+shared knowledge, working context and state differ.
+
+This operational guide includes the configuration-based soul and lifecycle forms.
+Portable source definitions and captured lifecycle have their own versioned scope;
+see the [0.24 release notes](release-notes/v0.24.0.md) rather than assuming every
+legacy example below applies to a captured instance.
 
 ## Soul anatomy
 
@@ -45,10 +56,12 @@ runtime-specific guidance, while keeping `AGENTS.md` canonical.
 
 ## Instance anatomy
 
-An instance is transient, but it is not a single chat session. It is the
-identity of one instantiated soul while that work is alive. Several sessions,
-compactions, restarts, or model switches can happen inside the same instance
-before it is retired.
+An instance has a lifecycle, but need not be short-lived. It is the identity of
+one instantiated soul while its assignment is alive. Supported session continuations,
+compactions and restarts can preserve that continuity. Model or harness changes must
+follow the selected execution profile; they are not permission to reinterpret a
+captured recipe. Retirement should account for valuable context and unfinished work,
+not assume an experienced instance is cheap to replace.
 
 An instance has a home directory, a task, and a worktree when the work mode
 needs one. Its runtime setup is composed from the canonical soul plus

@@ -3,9 +3,16 @@ type: Decision
 title: OATS provides a reference knowledge theory while capabilities own runtime behavior
 description: OATS maintains canonical default knowledge theory and an authoring expert, while each knowledge capability supplies its complete runtime behavior and may choose a different theory.
 tags: [knowledge, memory, harvest, providers, architecture]
-timestamp: 2026-09-16
+timestamp: 2026-09-19
 ---
 # Status
+
+The September19 [flexible knowledge and instance-expertise decision](/decisions/flexible-knowledge-and-instance-expertise.md)
+reaffirms this boundary: centralised per-soul knowledge is the default, while
+capabilities choose their procedures, learning model and placement, including
+supported co-located alternatives. The canonical public explanation is
+[docs/knowledge-theory.md](https://github.com/awebai/oats/blob/main/docs/knowledge-theory.md).
+This is not an assertion that every alternative profile is already implemented.
 
 Accepted on 2026-09-13 and explicitly reaffirmed on 2026-09-16: **OATS provides
 contracts; knowledge capabilities and harvesters provide functionality.** The

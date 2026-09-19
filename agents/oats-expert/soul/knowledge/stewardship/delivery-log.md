@@ -22,6 +22,13 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Founder-approved canonical OATS and knowledge explanation (2026-09-19)
+- verdict: DOCUMENTATION APPROVED by the human after iterative review, for direct main publication. README explains specialised teams, provider-independent choices, capability building blocks and the free ADE. Existing `docs/knowledge-theory.md` consolidates the detailed model rather than creating a competing canonical document.
+- direction: centralised per-soul knowledge is the default, not kernel policy. Capabilities own procedures and learning, including supported alternative placements; immutable captured artifacts stay immutable. Ephemeral developers/reviewers and long-running expertise instances are both legitimate. Skills, durable judgment, situated context and ongoing state are distinct. Speciation/widening can follow sustained work even within a long-lived instance; automation and clone/redirect protocols remain implementation work.
+- consistency: operational guides receive scope pointers, and earlier external-only/default decisions are explicitly clarified. Historical untracked September16 originals are preserved; no private deployment examples are copied into reusable soul knowledge. No runtime, package version, skill implementation or deployment change in this delivery.
+- owner: maintainer documentation/architecture record. Human also authorises a fresh Desktop implementation child after main delivery, with copied historical notes and the new supplied designs; actual launch/implementation is separate evidence.
+- taught us: documenting a useful default must not turn it into an accidental kernel requirement. A novice-facing overview and one detailed canonical guide are clearer than parallel competing accounts.
+
 ## Read-only deployment handoff and preserved-source boundary (2026-09-19)
 - verdict: ACCEPT guidance, not source-identity/provider/cutover authority. Handoff uses exact0.24 public request, approval, SOURCE helper, native outcome and operation-worker contracts. Parent confirms five preserved declaration hashes/aliases and absent export index; owner separately reports unchanged ownership/read/write edges, curated seed bodies and onboarding parity. No candidate builder, source adaptation, provisioning or KB publication was run.
 - owner: fresh-source/deployment lane · disposition: maintainer.

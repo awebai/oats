@@ -1,5 +1,13 @@
 # The OATS contracts
 
+For the current conceptual boundary, see the [OATS overview](../README.md) and
+[canonical knowledge model](knowledge-theory.md#kernel-contracts-and-capability-behaviour).
+The September19 decisions make centralised per-soul knowledge a default, not a
+kernel requirement. Knowledge capabilities own their procedures, learning and
+placement; the same replaceable-contract principle applies to messaging and tasks.
+The historical shipped/prepared/proposed sections below are not a new API schema
+or proof that every proposed profile is implemented.
+
 Status: contracts on paper (migration step 2 of
 [the 2026-09-03 architecture proposal](2026-09-03-architecture-proposal.md)).
 Sections distinguish **shipped**, **prepared** and **proposed** behavior.
@@ -132,7 +140,12 @@ kernel's code has no branch that names either.
 **Shipped kernel contract.** Zero or one knowledge capability per soul,
 selected under `capabilities.layers.knowledge`. `none` creates no
 provider memory or harvest flow and does not delete existing state. The kernel
-owns neither the format nor a mandatory promotion doctrine.
+owns neither the format nor a mandatory promotion doctrine. It must not require
+one per-soul directory, a topic taxonomy, a universal harvester or an external-only
+knowledge layout. A capability supplies the actual supported read/write model;
+co-location never authorises mutation of an immutable captured source artifact.
+The three fundamental slots do not limit additive capabilities for other skills,
+tools and ways of working.
 
 **Prepared reference implementation: oats.okf 2.0.0 / framework v0.23.1.**
 All accepted knowledge is external. Explicit bindings name Git or non-Git
@@ -142,7 +155,7 @@ fails working-source spawn, never creates an empty substitute.
 
 *Read.* Sources consult immutable accepted views, index-first and selectively.
 Prior rationale should be consulted rather than re-derived. OKF's `owns` routes
-responsibility and `reads` chooses starting context: neither is an ACL, and all
+harvest destinations and `reads` chooses starting context: neither is an ACL, and all
 configured bases are discoverable/readable. Cannot-write is instruction, not an
 OS sandbox. A directory publication journal blocks fresh views; Git readers see
 only the accepted branch, not an open PR.
