@@ -22,6 +22,23 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Human-authorised forward record correction accepted (2026-09-19)
+- verdict: APPROVE exact `0060dbe8b0c8b470083d9a14c78ef4653d567b9a` and continuation from repaired history. Human disposition chooses forward correction without lifting the held optimisation's scope restriction and explicitly accepts that `54b07ee6` remains an ancestor. No retrospective approval or history erasure.
+- evidence: independent fetch, complete correction read, exact four-path inventory and four postimage comparisons against `3f51acf3`; whole `packages/record` tree equals `9137bba602ec04603dbfb9d51b81359c5a8dd0ce`. Every other path equals prior `635fc7e6`; net difference from the approved baseline is only the independent messaging-reach documentation. Integrator reports 223/223 record tests; reviewer separately passes the scaffold/layout/resource/normal-retirement probe (1/1, no runtime/backend launch), without rerunning a broad suite or relabelling reported tests as independent evidence.
+- owner: integrating maintainer supplies the human-authorised correction; reviewing maintainer confirms scope and normally fast-forwards while preserving pending stewardship work. No release/tag/install/native-auth change or new permission follows.
+- taught us: repair a scope violation forward to the latest approved state, not an older pre-custody ancestor. Preserve unrelated improvements and truthful history; a hold on active content is not lifted merely because repaired history must retain the original merge.
+
+## Held-scope confirmation; forward correction proposed (2026-09-19)
+- verdict: DISPOSITION PENDING. The integrating maintainer confirms no subsequent human approval lifted the held patch; no repair has been performed. Recommend a coordinated forward-only correction restoring the four affected record files to `3f51acf3`, preserving later approved custody work, independent messaging documentation and all other paths. This recommendation is not execution authority.
+- owner: human scope decision, then coordinated maintainer review of the exact corrective or explicitly retained delta. A forward revert retains the original ancestry; an honest recorded decision must permit the repaired history rather than claim the patch was never merged.
+- taught us: do not use broad merge authority or green tests to infer an exception to a specific hold. Stable patch-id detects a normalized textual delta, not every semantically related rewrite; normal merges do not rewrite original commit SHAs.
+
+## Parallel record merge observed; held scope escalated (2026-09-19)
+- verdict: REVIEW HOLD on adopting/releasing the already published `635fc7e6` advance. Independent fetch and complete net-diff read confirm five files, +114/-18; the four record files reproduce held `54b07ee6`'s stable patch-id `21b53623067540c09d632b49d2f81ae1b931eda6`, and the held commit is now in ancestry. Request explicit superseding human authority and exact tested-revision/review evidence; do not equate author-reported green tests with lifting the hold.
+- owner: parallel integrating maintainer; reconciliation requested by stewardship. No local runtime acceptance, release/tag change, unilateral revert or history rewrite was performed. This finding is about a confirmed scope exclusion, not a demonstrated runtime defect.
+- related documentation review: RETURN the pasted collaboration-guide draft for version/layout, config/lock/trust, instruction composition, shared-resource conflict and messaging-liveness corrections; no exact revised file/commit has been approved.
+- taught us: a small merge tree diff can still be exactly the previously held patch. Inspect both ancestry and net content; coordinate scope decisions across maintainers instead of relying on duplicate commit counts or successful tests.
+
 ## Canonical documentation publication verified; adoption gaps scoped (2026-09-19)
 - verdict: DELIVERED to main as `edd82f82884a73331a2732d6d242f4536c81423f`, verified by remote ref and GitHub contents readback; source worktree clean. Twelve Markdown files, strict OKF 89/0/0, 56 local links/anchors and diff check pass. The prior entry records the approved direction; this records actual publication.
 - owner: maintainer documentation/stewardship. Desktop implementation is next under the revised human sequence, not evidence of completed deployment or parity.
