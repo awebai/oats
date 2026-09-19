@@ -161,39 +161,18 @@ function lastJournalLine(store, streamId) {
 // detected (only growth is; a shrink triggers a rescan via the size
 // check in the caller). Transcript writers are append-only in practice.
 function offsetFromJournal(store, streamId, sourcePath, final, sourceBytes) {
-  // Validate the history while retaining only its final complete turn.
-  let last;
-  for (const turn of store.iterateStream(streamId)) last = turn;
-  if (last === undefined) return { bytes: 0, line: 0, lastTs: "" };
+  const turns = store.readStream(streamId);
+  if (turns.length === 0) return { bytes: 0, line: 0, lastTs: "" };
+  const last = turns[turns.length - 1];
   const lastLine = last.provenance?.origin?.line ?? 0;
+  const bytes = sourceBytes ?? readFileSync(sourcePath);
   let line = 0;
   let offset = 0;
-  let scanned = 0;
-  const scan = (bytes) => {
-    let from = 0;
-    while (line < lastLine) {
-      const nl = bytes.indexOf(10, from);
-      if (nl === -1) break;
-      line++;
-      from = nl + 1;
-      offset = scanned + from;
-    }
-    scanned += bytes.length;
-  };
-  if (sourceBytes != null) {
-    // Final/attributed passes must use their descriptor-pinned snapshot.
-    // That snapshot still holds the full source; this change does not bound it.
-    scan(sourceBytes);
-  } else {
-    const fd = openSync(sourcePath, "r");
-    try {
-      const bytes = Buffer.allocUnsafe(65536);
-      while (line < lastLine) {
-        const n = readSync(fd, bytes, 0, bytes.length, null);
-        if (n === 0) break;
-        scan(bytes.subarray(0, n));
-      }
-    } finally { closeSync(fd); }
+  while (line < lastLine && offset < bytes.length) {
+    const nl = bytes.indexOf(10, offset);
+    if (nl === -1) break;
+    line++;
+    offset = nl + 1;
   }
   if (final && line < lastLine) throw new Error(`session source is shorter than its captured journal: ${sourcePath}`);
   return { bytes: offset, line, lastTs: last.ts ?? "" };
