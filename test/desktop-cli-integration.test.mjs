@@ -108,7 +108,7 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     assert.equal(s.ok, true, JSON.stringify(s));
     assert.equal(s.version, "0.22.0");
     assert.equal(s.source, "env");
-    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.22.0 <0.24.0" });
+    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.22.0 <0.25.0" });
     // The recovery command is DERIVED from this app's own version, so it names
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
@@ -148,30 +148,32 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // Band edges through the REAL discovery path, not just acceptProbe: the
 // v0.19.0 readiness blocker was an app whose band excluded the kernel its own
 // release published, so it degraded to observation-only in the field while
-// every unit test passed. These two fakes are the released kernel this
-// Desktop ships beside (accepted) and the next minor (rejected).
-test("desktop server: a released 0.23.x CLI is ACCEPTED and 0.24.0 is REJECTED at the band ceiling", async () => {
-  const okDir = mkdtempSync(join(tmpdir(), "oats-cli020-"));
-  const ok021 = fakeCli(okDir, { version: "0.23.0" });
-  const a = await startServer({ OATS_DESKTOP_OATS_BIN: ok021.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
-  try {
-    const s = await (await fetch(`http://127.0.0.1:${a.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
-    assert.equal(s.ok, true, `0.23.0 rejected by discovery: ${JSON.stringify(s.tried)}`);
-    assert.equal(s.version, "0.23.0");
-    assert.equal(s.bin, ok021.real);
-    assert.equal(s.relations, true, "a 0.23.x CLI is above the spawn-relations floor");
-  } finally { a.proc.kill(); }
+// every unit test passed. Preserve 0.23.x acceptance, accept the paired 0.24.x
+// kernel, and reject the next minor at the exclusive ceiling.
+test("desktop server: released 0.23.x and 0.24.x CLIs are ACCEPTED and 0.25.0 is REJECTED at the band ceiling", async () => {
+  for (const version of ["0.23.0", "0.24.0"]) {
+    const okDir = mkdtempSync(join(tmpdir(), "oats-cli-compatible-"));
+    const compatible = fakeCli(okDir, { version });
+    const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
+    try {
+      const s = await (await fetch(`http://127.0.0.1:${a.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
+      assert.equal(s.ok, true, `${version} rejected by discovery: ${JSON.stringify(s.tried)}`);
+      assert.equal(s.version, version);
+      assert.equal(s.bin, compatible.real);
+      assert.equal(s.relations, true, `${version} is above the spawn-relations floor`);
+    } finally { a.proc.kill(); }
+  }
 
-  const badDir = mkdtempSync(join(tmpdir(), "oats-cli021-"));
-  const next = fakeCli(badDir, { version: "0.24.0" });
+  const badDir = mkdtempSync(join(tmpdir(), "oats-cli-ceiling-"));
+  const next = fakeCli(badDir, { version: "0.25.0" });
   const b = await startServer({ OATS_DESKTOP_OATS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
-    assert.equal(s.ok, false, "0.24.0 is past the exclusive ceiling and must not become the mutation binary");
+    assert.equal(s.ok, false, "0.25.0 is past the exclusive ceiling and must not become the mutation binary");
     const tried = s.tried.find((t) => t.path === next.real);
     assert.ok(tried, "the rejected candidate is in diagnostics");
-    assert.match(tried.reason, /outside >=0\.22\.0 <0\.24\.0/);
-    assert.equal(tried.version, "0.24.0");
+    assert.match(tried.reason, /outside >=0\.22\.0 <0\.25\.0/);
+    assert.equal(tried.version, "0.25.0");
   } finally { b.proc.kill(); }
 });
 
