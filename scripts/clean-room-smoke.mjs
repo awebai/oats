@@ -119,7 +119,7 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const bundledVersion = JSON.parse(readFileSync(join(kernelRoot, "capabilities/oats-okf/oats.json"), "utf8")).version;
   assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
-  assert.equal(bundledVersion, "2.0.0");
+  assert.equal(bundledVersion, "2.1.0");
   gitRepo(officialRepo);
   const okfCommit = run("git", ["-C", officialRepo, "rev-parse", "HEAD"], { capture: true }).trim();
   const okfAlias = "agents/memory-harvest/CLAUDE.md";

@@ -7,7 +7,8 @@ function keys(value, allowed, label, code='E_CONFIG') {
 }
 export function settings() {
   const s = JSON.parse(process.env.OATS_SETTINGS || '{}');
-  keys(s,['bindings-file','harvest-runtime','harvest-model'],'OATS_SETTINGS');
+  keys(s,['bindings-file','state-dir','harvest-runtime','harvest-model'],'OATS_SETTINGS');
+  if(s['state-dir']!==undefined && (typeof s['state-dir']!=='string' || !isAbsolute(s['state-dir']) || resolve(s['state-dir'])!==s['state-dir'])) fail('E_CONFIG','state-dir must be a normalized absolute path');
   if(s['harvest-runtime']!==undefined && !['pi','claude','codex'].includes(s['harvest-runtime'])) fail('E_CONFIG','invalid harvest-runtime');
   if(s['harvest-model']!==undefined && (typeof s['harvest-model']!=='string' || !s['harvest-model'].trim())) fail('E_CONFIG','harvest-model must be a nonempty string');
   return s;

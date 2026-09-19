@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oats.dev/schemas/okf-portable-payload.schema.json",
+  "title": "OATS OKF effective portable binding payload",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+    },
+    "directory": {
+      "type": "object",
+      "required": ["id", "kind", "path"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "kind": {"const": "directory"},
+        "path": {"type": "string", "pattern": "^/"}
+      },
+      "additionalProperties": false
+    },
+    "git": {
+      "type": "object",
+      "required": ["id", "kind", "repository", "root", "acceptedBranch", "pr"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "kind": {"const": "git"},
+        "repository": {"type": "string", "pattern": "^(?!(?:https://[^/]*@|ssh://[^/@]*:[^/@]*@))(?:(?:https|ssh)://|git@)[^\\s?#]+$"},
+        "root": {"type": "string", "minLength": 1},
+        "acceptedBranch": {"type": "string", "minLength": 1},
+        "pr": {
+          "type": "object",
+          "required": ["repository"],
+          "properties": {"repository": {"type": "string", "pattern": "^[\\w.-]+/[\\w.-]+$"}},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "store": {"oneOf": [{"$ref": "#/$defs/directory"}, {"$ref": "#/$defs/git"}]},
+    "read": {
+      "type": "object",
+      "required": ["store", "node"],
+      "properties": {"store": {"$ref": "#/$defs/identifier"}, "node": {"$ref": "#/$defs/identifier"}},
+      "additionalProperties": false
+    },
+    "own": {
+      "type": "object",
+      "required": ["store", "node", "steward"],
+      "properties": {"store": {"$ref": "#/$defs/identifier"}, "node": {"$ref": "#/$defs/identifier"}, "steward": {"$ref": "#/$defs/identifier"}},
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "string",
+      "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)/)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}/(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+    }
+  },
+  "type": "object",
+  "required": ["owner", "stores", "reads", "owns", "runtime", "execution"],
+  "properties": {
+    "owner": {"$ref": "#/$defs/identifier"},
+    "stores": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/identifier"},
+      "additionalProperties": {"$ref": "#/$defs/store"}
+    },
+    "reads": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/read"}},
+    "owns": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/own"}},
+    "runtime": {
+      "type": "object",
+      "required": ["descriptorFile", "bindings", "declaration"],
+      "properties": {
+        "descriptorFile": {"type": "string", "pattern": "^/"},
+        "bindings": {
+          "type": "object",
+          "required": ["version", "stateDir", "bases"],
+          "properties": {
+            "version": {"const": 1},
+            "stateDir": {"type": "string", "pattern": "^/"},
+            "bases": {
+              "type": "object",
+              "minProperties": 1,
+              "propertyNames": {"$ref": "#/$defs/identifier"},
+              "additionalProperties": {"$ref": "#/$defs/store"}
+            }
+          },
+          "additionalProperties": false
+        },
+        "declaration": {
+          "type": "object",
+          "required": ["version", "owner", "reads", "owns"],
+          "properties": {
+            "version": {"const": 1},
+            "owner": {"$ref": "#/$defs/identifier"},
+            "reads": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/reference"}},
+            "owns": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/reference"}}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": ["runtime", "model"],
+      "properties": {
+        "runtime": {"oneOf": [{"const": "pi"}, {"const": "claude"}, {"const": "codex"}]},
+        "model": {"oneOf": [{"type": "null"}, {"type": "string", "minLength": 1}]}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

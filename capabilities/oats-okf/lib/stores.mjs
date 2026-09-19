@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, exec, cleanEnv, fail, relPath, overlaps, resolve } from './io.mjs';
 import { metadata, noGit } from './config.mjs';
@@ -15,14 +17,41 @@ export function validateBase(root, base) {
   if(result.errors.length || result.warnings.length) fail('E_VALIDATION', [...result.errors,...result.warnings].join('; '));
   return {files,meta,digest:digest(files)};
 }
-function clone(base, dest) {
+function rawBlob(cwd,oid) {
+  const result=spawnSync('git',['--no-replace-objects','-c','core.hooksPath=/dev/null','-C',cwd,'cat-file','blob',oid],{cwd,env:gitEnv(),timeout:30000,maxBuffer:16*1024*1024});
+  if(result.error || result.status!==0) fail('E_COMMAND','Git object read failed');
+  return result.stdout;
+}
+function materializeGitObjects(base,dest,head) {
+  immutableCommit(dest,head);
+  const entries=gitTreeEntries(dest,head);
+  // Preflight paths/modes before materialization. No checkout/smudge/process/
+  // working-tree-encoding conversion: accepted bytes come directly from OIDs.
+  for(const [p,entry] of entries) {
+    relPath(p);const inBase=base.root==='.' || p===base.root || p.startsWith(base.root+'/');
+    if(!['100644','100755','120000','160000'].includes(entry.mode) || (entry.mode==='160000'?entry.type!=='commit':entry.type!=='blob')) fail('E_PATH','unsupported Git tree entry');
+    if(inBase && !['100644','100755'].includes(entry.mode)) fail('E_PATH','symlink or submodule in knowledge base is not allowed');
+  }
+  // Index/HEAD updates do not apply content filters. They preserve the normal
+  // Git worktree needed by existing diff/publication guards without checkout.
+  git(dest,['read-tree',head]);git(dest,['update-ref','--no-deref','HEAD',head]);
+  for(const [p,entry] of entries) {
+    const target=safePath(join(dest,p));fs.mkdirSync(dirname(target),{recursive:true});
+    if(entry.mode==='160000') {fs.mkdirSync(target);continue;}
+    const bytes=rawBlob(dest,entry.oid);
+    if(entry.mode==='120000') fs.symlinkSync(bytes.toString('utf8'),target);
+    else {fs.writeFileSync(target,bytes,{flag:'wx',mode:entry.mode==='100755'?0o755:0o644});fs.chmodSync(target,entry.mode==='100755'?0o755:0o644);}
+  }
+}
+function clone(base, dest, selectedHead) {
   safePath(dest);
   if(fs.existsSync(dest)) fail('E_PATH',`staging destination exists: ${dest}`);
   fs.mkdirSync(dirname(dest),{recursive:true});
   git(dirname(dest),['clone','--no-hardlinks','--no-checkout','--',base.repository,dest]);
   git(dest,['fetch','origin',`refs/heads/${base.acceptedBranch}`]);
-  const head=git(dest,['rev-parse','FETCH_HEAD']);
-  git(dest,['checkout','--detach',head]);
+  const head=selectedHead ?? git(dest,['rev-parse','FETCH_HEAD']);
+  verifyRemote(base,dest);
+  materializeGitObjects(base,dest,head);
   // Reject a linked bundle even if Git happily checked the link out.
   safePath(join(dest,base.root));
   return head;
@@ -62,28 +91,79 @@ export function allowedChanges(before, after, meta, owned) {
   }
   return changed;
 }
-export function verifyGitScope(base, dest, baseline, { checkModes = true } = {}) {
-  const names=git(dest,['diff','--name-only','-z',baseline,'--']).split('\0').filter(Boolean);
-  // A restored working file can conceal a staged, unauthorized index entry.
-  names.push(...git(dest,['diff','--cached','--name-only','-z',baseline,'--']).split('\0').filter(Boolean));
-  names.push(...git(dest,['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean));
-  if(base.root!=='.' && names.some(p=>!p.startsWith(base.root+'/'))) fail('E_OWNER','Git worker touched files outside its knowledge base');
-  // --others without exclude-standard includes ignored additions as well.
-  // Unchanged code symlinks outside the base are not knowledge and need not be
-  // traversed. Bundle symlinks are rejected by validateBase/tree.
-  const extra=git(dest,['ls-files','--others','-z']).split('\0').filter(Boolean);
-  if(base.root!=='.' && extra.some(p=>!p.startsWith(base.root+'/'))) fail('E_OWNER','untracked/ignored file outside knowledge');
-  if(checkModes) {
-    // Harvest judgments authorize content, not executable-bit edits. Inspect
-    // the filesystem against frozen objects, not core.fileMode or index flags.
-    for(const [p,entry] of gitTreeEntries(dest,baseline)) {
-      if(!['100644','100755'].includes(entry.mode)) continue;
-      const path=join(dest,p);
-      let stat;try {stat=fs.lstatSync(path);} catch(e) {if(e.code==='ENOENT' || e.code==='ENOTDIR') continue;throw e;}
-      if(stat.isFile() && (stat.mode & 0o100 ? '100755':'100644')!==entry.mode) fail('E_OWNER',`harvest cannot change Git file mode: ${p}`);
+const INDEX_SNAPSHOT_LIMIT=16*1024*1024;
+const indexFailure=()=>fail('E_INDEX','Git verification requires a stable regular self-contained index within 16 MiB');
+function readVerificationIndex(source) {
+  let fd;
+  try {
+    const before=fs.lstatSync(safePath(source),{bigint:true});
+    const regular=stat=>stat.isFile() && stat.size>=0n && stat.size<=BigInt(INDEX_SNAPSHOT_LIMIT);
+    const same=stat=>regular(stat) && ['dev','ino','size','mtimeNs','ctimeNs'].every(key=>stat[key]===before[key]);
+    if(!regular(before) || typeof fs.constants.O_NOFOLLOW!=='number' || typeof fs.constants.O_NONBLOCK!=='number') indexFailure();
+    // lstat alone races. NONBLOCK prevents a swapped FIFO from hanging open;
+    // NOFOLLOW plus descriptor identity/type checks precede every byte read.
+    fd=fs.openSync(source,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+    if(!same(fs.fstatSync(fd,{bigint:true})) || !same(fs.lstatSync(safePath(source),{bigint:true}))) indexFailure();
+    const bytes=Buffer.alloc(Number(before.size));
+    for(let offset=0;offset<bytes.length;) {
+      const count=fs.readSync(fd,bytes,offset,bytes.length-offset,offset);
+      if(!count) indexFailure();offset+=count;
     }
+    if(!same(fs.fstatSync(fd,{bigint:true})) || !same(fs.lstatSync(safePath(source),{bigint:true}))) indexFailure();
+    return bytes;
+  } catch {indexFailure();}
+  finally {if(fd!==undefined) fs.closeSync(fd);}
+}
+function withVerificationIndex(cwd,fn) {
+  // Git 2.44 diff refreshes even with optional locks disabled. Use a COPY,
+  // never a worker-index write/restore or the private publication index.
+  const scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-verify-index-')),owned=fs.lstatSync(scratch);
+  try {
+    const index=join(scratch,'index'),source=resolve(cwd,git(cwd,['rev-parse','--git-path','index']));
+    fs.writeFileSync(index,readVerificationIndex(source),{flag:'wx',mode:0o600});
+    const env={...cleanEnv(),GIT_INDEX_FILE:index},format=git(cwd,['rev-parse','--show-object-format']);
+    if(!['sha1','sha256'].includes(format)) indexFailure();
+    // Native split-index parsing freshens backing files BEFORE splitIndex=false
+    // takes effect. Preflight in an EMPTY private gitdir: original sharedindex
+    // files are never searched/opened, and missing dependencies refuse. Merely
+    // putting a backing copy beside GIT_INDEX_FILE would not isolate that read.
+    const gitdir=join(scratch,'repository');
+    git(scratch,['init','--bare','--quiet','--template=',`--object-format=${format}`,gitdir]);
+    try {
+      const shared=git(scratch,['--no-optional-locks','-c','core.splitIndex=false','-c','core.fsmonitor=false','rev-parse','--shared-index-path'],{env:{...env,GIT_DIR:gitdir}});
+      if(shared) indexFailure();
+    } catch {indexFailure();}
+    return fn(args=>git(cwd,['--no-optional-locks','-c','diff.autoRefreshIndex=true','-c','core.splitIndex=false',...args],{env}));
+  } finally {
+    const current=fs.lstatSync(scratch);
+    if(!current.isDirectory() || current.dev!==owned.dev || current.ino!==owned.ino) fail('E_INDEX','Git verification scratch ownership changed; cleanup refused');
+    fs.rmSync(scratch,{recursive:true,force:true});
   }
-  verifyRemote(base,dest);
+}
+export function verifyGitScope(base, dest, baseline, { checkModes = true } = {}) {
+  return withVerificationIndex(dest,read=>{
+    const names=read(['diff','--name-only','-z',baseline,'--']).split('\0').filter(Boolean);
+    // A restored working file can conceal a staged, unauthorized index entry.
+    names.push(...read(['diff','--cached','--name-only','-z',baseline,'--']).split('\0').filter(Boolean));
+    names.push(...read(['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean));
+    if(base.root!=='.' && names.some(p=>!p.startsWith(base.root+'/'))) fail('E_OWNER','Git worker touched files outside its knowledge base');
+    // --others without exclude-standard includes ignored additions as well.
+    // Unchanged code symlinks outside the base are not knowledge and need not be
+    // traversed. Bundle symlinks are rejected by validateBase/tree.
+    const extra=read(['ls-files','--others','-z']).split('\0').filter(Boolean);
+    if(base.root!=='.' && extra.some(p=>!p.startsWith(base.root+'/'))) fail('E_OWNER','untracked/ignored file outside knowledge');
+    if(checkModes) {
+      // Harvest judgments authorize content, not executable-bit edits. Inspect
+      // the filesystem against frozen objects, not core.fileMode or index flags.
+      for(const [p,entry] of gitTreeEntries(dest,baseline)) {
+        if(!['100644','100755'].includes(entry.mode)) continue;
+        const path=join(dest,p);
+        let stat;try {stat=fs.lstatSync(path);} catch(e) {if(e.code==='ENOENT' || e.code==='ENOTDIR') continue;throw e;}
+        if(stat.isFile() && (stat.mode & 0o100 ? '100755':'100644')!==entry.mode) fail('E_OWNER',`harvest cannot change Git file mode: ${p}`);
+      }
+    }
+    verifyRemote(base,dest);
+  });
 }
 // Caller MUST hold the cooperative base lock. Intent is durable before journal
 // installation; publishing is durable AFTER it and BEFORE the first accepted
@@ -305,8 +385,7 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
 }
 
 export function recoveryStage(base, stage, proposal, dest) {
-  clone(base,dest);
-  git(dest,['checkout','--detach',stage.head]);
+  clone(base,dest,stage.head);
   const root=join(dest,base.root);
   for(const p of Object.keys(proposal.before)) if(!(p in proposal.after)) fs.rmSync(safePath(join(root,p)),{force:true});
   materialize(root,proposal.after);validateBase(root,base);

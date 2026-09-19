@@ -1,0 +1,268 @@
+import { TextDecoder } from 'node:util';
+import { validateInvocationShape } from './invocation-shape.mjs';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join, resolve } from 'node:path';
+import { fs, safePath } from './io.mjs';
+import {
+  KNOWLEDGE_CONTRACT,
+  KNOWLEDGE_CONTRACT_VERSION,
+  bindKnowledgeDomain,
+  checkKnowledgeRuntime,
+  normalizeKnowledgeBindingCandidates,
+  normalizeKnowledgeDeclaration,
+  renderKnowledgeRuntime,
+  sameJson,
+} from './portable-binding.mjs';
+import { validateBindings } from './config.mjs';
+import { stageBase, validateBase } from './stores.mjs';
+
+export const BINDING_WIRE_LIMITS=Object.freeze({bytes:1024*1024,depth:32,entries:16384});
+const CAPABILITY='oats.okf',SLOT='knowledge';
+const phases=new Set(['normalize','bind','check']);
+const unsupportedCapturedCommands=new Set(['setup','init','migrate','unlock']);
+const declarationKinds=new Set(['soul','workspace','adoption','operator']);
+const errorCodes=new Set(['needs-configuration','requirement-conflict','invalid-binding','authorization-required','host-requirement-missing','provider-unavailable','provider-not-qualified']);
+const obj=value=>value!==null && typeof value==='object' && !Array.isArray(value);
+const wireError=code=>{throw Object.assign(new Error(code),{wireCode:code});};
+function keys(value,allowed,required,label) {
+  if(!obj(value)) wireError('invalid-binding');
+  for(const key of Object.keys(value)) if(!allowed.includes(key)) wireError('invalid-binding');
+  for(const key of required) if(!Object.hasOwn(value,key)) wireError('invalid-binding');
+  return value;
+}
+function absolute(value) {return typeof value==='string' && isAbsolute(value) && resolve(value)===value;}
+
+class StrictJsonParser {
+  constructor(text,{depth,entries}) {this.text=text;this.maxDepth=depth;this.maxEntries=entries;this.at=0;this.entries=0;}
+  whitespace() {while(/[\u0009\u000a\u000d\u0020]/.test(this.text[this.at] || '')) this.at++;}
+  count() {if(++this.entries>this.maxEntries) wireError('invalid-binding');}
+  string() {
+    if(this.text[this.at]!=='"') wireError('invalid-binding');
+    const start=this.at++;
+    while(this.at<this.text.length) {
+      const code=this.text.charCodeAt(this.at++);
+      if(code===0x22) {try{return JSON.parse(this.text.slice(start,this.at));}catch{wireError('invalid-binding');}}
+      if(code<0x20) wireError('invalid-binding');
+      if(code===0x5c) {
+        const escaped=this.text[this.at++];
+        if(escaped==='u') {if(!/^[0-9a-fA-F]{4}$/.test(this.text.slice(this.at,this.at+4))) wireError('invalid-binding');this.at+=4;}
+        else if(!'"\\/bfnrt'.includes(escaped || '')) wireError('invalid-binding');
+      }
+    }
+    wireError('invalid-binding');
+  }
+  value(depth=1) {
+    this.whitespace();const char=this.text[this.at];
+    if(char==='"') return this.string();
+    if(char==='{') {
+      if(depth>this.maxDepth) wireError('invalid-binding');this.at++;this.whitespace();
+      const result=Object.create(null),seen=new Set();if(this.text[this.at]==='}') {this.at++;return result;}
+      while(true) {
+        this.whitespace();const key=this.string();if(seen.has(key)) wireError('invalid-binding');seen.add(key);this.count();
+        this.whitespace();if(this.text[this.at++]!==':') wireError('invalid-binding');result[key]=this.value(depth+1);this.whitespace();
+        const next=this.text[this.at++];if(next==='}') return result;if(next!==',') wireError('invalid-binding');
+      }
+    }
+    if(char==='[') {
+      if(depth>this.maxDepth) wireError('invalid-binding');this.at++;this.whitespace();
+      const result=[];if(this.text[this.at]===']') {this.at++;return result;}
+      while(true) {this.count();result.push(this.value(depth+1));this.whitespace();const next=this.text[this.at++];if(next===']') return result;if(next!==',') wireError('invalid-binding');}
+    }
+    for(const [token,value] of [['true',true],['false',false],['null',null]]) if(this.text.startsWith(token,this.at)) {this.at+=token.length;return value;}
+    const match=/^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/.exec(this.text.slice(this.at));
+    if(!match) wireError('invalid-binding');this.at+=match[0].length;const number=Number(match[0]);if(!Number.isFinite(number)) wireError('invalid-binding');return number;
+  }
+  parse() {this.whitespace();const value=this.value();this.whitespace();if(this.at!==this.text.length) wireError('invalid-binding');return value;}
+}
+
+export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
+  if(!Buffer.isBuffer(bytes)) bytes=Buffer.from(bytes);
+  if(bytes.length>limits.bytes) wireError('invalid-binding');
+  let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{wireError('invalid-binding');}
+  return new StrictJsonParser(text,limits).parse();
+}
+
+function request(value,phase) {
+  keys(value,['schemaVersion','phase','slot','capability','settings','input'],['schemaVersion','phase','slot','capability','settings','input'],'binding request');
+  if(value.schemaVersion!==1 || value.phase!==phase || value.slot!==SLOT || value.capability!==CAPABILITY || !obj(value.settings)) wireError('invalid-binding');
+  return value;
+}
+function declaration(value) {
+  keys(value,['kind','value','origin','origins'],['kind','value','origin','origins'],'provider declaration');
+  if(!declarationKinds.has(value.kind) || !obj(value.value) || !obj(value.origin) || !obj(value.origins)) wireError('invalid-binding');
+  return value;
+}
+function contract(value,{required=false}={}) {
+  if(value===undefined) {if(required) wireError('needs-configuration');return null;}
+  if(!obj(value) || value.contract!==KNOWLEDGE_CONTRACT || value.version!==KNOWLEDGE_CONTRACT_VERSION) wireError('invalid-binding');
+  return value;
+}
+function runtimeSettings(settings) {
+  keys(settings,['bindings-file','state-dir','harvest-runtime','harvest-model'],[], 'OKF settings');
+  const descriptorFile=settings['bindings-file'],stateDir=settings['state-dir'],runtime=settings['harvest-runtime'],model=settings['harvest-model'] ?? null;
+  if(!absolute(descriptorFile) || !absolute(stateDir) || !['pi','claude','codex'].includes(runtime) || (model!==null && (typeof model!=='string' || !model.trim()))) wireError('needs-configuration');
+  return {descriptorFile,stateDir,execution:{runtime,model}};
+}
+function normalizePhase(req) {
+  keys(req.input,['declarations','context'],['declarations','context'],'normalize input');
+  if(!Array.isArray(req.input.declarations) || !obj(req.input.context)) wireError('invalid-binding');
+  const requirements=[],candidates=[];let domain=null;
+  for(const raw of req.input.declarations) {
+    const item=declaration(raw);
+    if(item.kind==='soul') {
+      const envelope=contract(item.value.knowledge,{required:true});
+      if(domain) wireError('requirement-conflict');
+      domain=normalizeKnowledgeDeclaration(envelope,{origin:item.origin,origins:item.origins,pointer:'/knowledge/payload'});
+      continue;
+    }
+    if(item.kind==='workspace') {
+      const stores=item.value.knowledge?.stores;
+      if(stores===undefined) continue;
+      if(!Array.isArray(stores)) wireError('invalid-binding');
+      stores.forEach((rawStore,index)=>{
+        if(!obj(rawStore)) wireError('invalid-binding');
+        if(rawStore.contract!==KNOWLEDGE_CONTRACT) return;
+        const store=contract(rawStore);
+        keys(store.payload,['bindings'],['bindings'],'workspace OKF payload');
+        candidates.push(...normalizeKnowledgeBindingCandidates({bindings:store.payload.bindings,kind:'workspace-default',origin:item.origin,origins:item.origins,pointer:`/knowledge/stores/${index}/payload/bindings`}));
+      });
+      continue;
+    }
+    if(item.value.bindings===undefined) continue;
+    candidates.push(...normalizeKnowledgeBindingCandidates({bindings:item.value.bindings,kind:item.kind==='adoption'?'import-adoption':'operator',origin:item.origin,origins:item.origins,pointer:'/bindings'}));
+  }
+  if(!domain) wireError('needs-configuration');
+  requirements.push(...domain.requirements);candidates.unshift(...domain.candidates);
+  return {requirements,candidates,model:{domain,runtime:runtimeSettings(req.settings)}};
+}
+function choiceMap(value) {
+  if(!obj(value)) wireError('invalid-binding');
+  for(const [key,choice] of Object.entries(value)) {
+    if(!key.startsWith('/bindings/knowledge/') || key.includes('//') || /~(?![01])/.test(key)) wireError('invalid-binding');
+    keys(choice,['value','selectedBy','constraints','considered'],['value','selectedBy','constraints','considered'],'knowledge choice');
+    if(!Array.isArray(choice.constraints) || !Array.isArray(choice.considered) || (choice.selectedBy!==null && !obj(choice.selectedBy))) wireError('invalid-binding');
+  }
+  return value;
+}
+function bindPhase(req) {
+  keys(req.input,['model','choices','context'],['model','choices','context'],'bind input');if(!obj(req.input.context)) wireError('invalid-binding');
+  keys(req.input.model,['domain','runtime'],['domain','runtime'],'OKF binding model');
+  keys(req.input.model.runtime,['stateDir','descriptorFile','execution'],['stateDir','descriptorFile','execution'],'OKF runtime model');
+  let bound;try{bound=bindKnowledgeDomain({model:req.input.model.domain,choices:choiceMap(req.input.choices)});}catch(error){if(/unresolved knowledge binding/.test(error.message)) wireError('needs-configuration');throw error;}
+  const runtime=renderKnowledgeRuntime({domain:bound.payload,...req.input.model.runtime});
+  return {payloadContract:bound.contract,payloadVersion:bound.version,payload:{...bound.payload,runtime,execution:req.input.model.runtime.execution},credentialRefs:bound.credentialRefs,provenance:bound.provenance};
+}
+function bindingPayload(binding) {
+  keys(binding,['schemaVersion','capability','payloadContract','payloadVersion','payload','credentialRefs','provenance'],['schemaVersion','capability','payloadContract','payloadVersion','payload','credentialRefs','provenance'],'provider binding');
+  if(binding.schemaVersion!==1 || binding.capability!==CAPABILITY || binding.payloadContract!==KNOWLEDGE_CONTRACT || binding.payloadVersion!==KNOWLEDGE_CONTRACT_VERSION || !Array.isArray(binding.provenance)) wireError('invalid-binding');
+  if(!obj(binding.credentialRefs) || Object.keys(binding.credentialRefs).length) wireError('invalid-binding');
+  keys(binding.payload,['owner','stores','reads','owns','runtime','execution'],['owner','stores','reads','owns','runtime','execution'],'OKF binding payload');
+  const domain={owner:binding.payload.owner,stores:binding.payload.stores,reads:binding.payload.reads,owns:binding.payload.owns};
+  const runtime=renderKnowledgeRuntime({domain,stateDir:binding.payload.runtime?.bindings?.stateDir,descriptorFile:binding.payload.runtime?.descriptorFile});
+  if(!sameJson(runtime,binding.payload.runtime)) wireError('invalid-binding');
+  keys(binding.payload.execution,['runtime','model'],['runtime','model'],'OKF worker execution');
+  if(!['pi','claude','codex'].includes(binding.payload.execution.runtime) || (binding.payload.execution.model!==null && (typeof binding.payload.execution.model!=='string' || !binding.payload.execution.model.trim()))) wireError('invalid-binding');
+  return {domain,runtime,execution:binding.payload.execution};
+}
+
+/** Pure projection for durable source registration and later source-free work. */
+export function sourceRuntimeFromKnowledgeBinding(binding) {
+  const {domain,runtime,execution}=bindingPayload(binding);
+  return {owner:domain.owner,bindings:{file:runtime.descriptorFile,...runtime.bindings},decl:runtime.declaration,execution:{...execution}};
+}
+
+const invocationError=()=>{throw Object.assign(new Error('invalid captured provider binding snapshot'),{code:'E_BINDING'});};
+export function readPrivateInvocationJson(file) {
+  if(!absolute(file)) invocationError();
+  let fd;
+  try {
+    if(safePath(file)!==file) invocationError();
+    const before=fs.lstatSync(file),uid=typeof process.getuid==='function'?process.getuid():null;
+    if(!before.isFile() || before.nlink!==1 || before.size>BINDING_WIRE_LIMITS.bytes || (before.mode&0o077)!==0 || (uid!==null && before.uid!==uid)) invocationError();
+    fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
+    const opened=fs.fstatSync(fd);
+    if(!opened.isFile() || opened.nlink!==1 || opened.dev!==before.dev || opened.ino!==before.ino || opened.size>BINDING_WIRE_LIMITS.bytes || (opened.mode&0o077)!==0 || (uid!==null && opened.uid!==uid)) invocationError();
+    const bytes=Buffer.alloc(Math.min(BINDING_WIRE_LIMITS.bytes+1,opened.size+1));let length=0;
+    while(length<bytes.length) {const count=fs.readSync(fd,bytes,length,bytes.length-length,null);if(!count) break;length+=count;}
+    const after=fs.fstatSync(fd);
+    if(length>BINDING_WIRE_LIMITS.bytes || after.size!==opened.size || after.mtimeMs!==opened.mtimeMs) invocationError();
+    return parseBindingJson(bytes.subarray(0,length));
+  } catch(error) {if(error?.code==='E_BINDING') throw error;invocationError();}
+  finally {if(fd!==undefined) fs.closeSync(fd);}
+}
+
+/** Load only the parent-owned transient ProviderBinding1 snapshot when present.
+ * Absence is an explicit legacy mode; every present-file defect fails closed. */
+export function loadInvocationKnowledgeBinding(env=process.env) {
+  if(!Object.hasOwn(env,'OATS_BINDING_FILE')) return {kind:'legacy'};
+  const file=env.OATS_BINDING_FILE,binding=readPrivateInvocationJson(file);
+  let runtime;try{runtime=sourceRuntimeFromKnowledgeBinding(binding);}catch{invocationError();}
+  return {kind:'captured',file,binding,runtime};
+}
+function problem(code) {return {code};}
+function providerActionName(action) {
+  if(action.kind==='operation' && action.slot===SLOT) return action.name;
+  if(action.kind!=='command') return null;
+  if(action.namespace==='okf' || action.capability===CAPABILITY) return action.name;
+  if(typeof action.name==='string' && action.name.startsWith('okf:')) return action.name.slice(4);
+  return null;
+}
+function checkPhase(req) {
+  keys(req.input,['binding','context','action','invocation'],['binding','context','action'],'check input');
+  if(!obj(req.input.context) || !obj(req.input.action)) wireError('invalid-binding');
+  if(Object.hasOwn(req.input,'invocation')) validateInvocationShape(req.input.invocation,{capability:CAPABILITY,context:req.input.context,action:req.input.action});
+  const {runtime}=bindingPayload(req.input.binding),action=req.input.action,name=providerActionName(action);
+  const harvestInvocation=req.input.invocation;
+  const admittedHarvest=name==='harvest' && action.kind==='operation' && action.slot==='knowledge' && action.name==='harvest'
+    && harvestInvocation?.subject.kind==='persistent' && harvestInvocation.instance!==null && !!harvestInvocation.intent;
+  if(name && (unsupportedCapturedCommands.has(name) || name==='run-source' || (name==='harvest' && !admittedHarvest))) return {status:'needs-configuration',problems:[problem('provider-not-qualified')]};
+  if(action.kind==='hook' && action.name==='soul-scaffold') return {status:'ready',problems:[]};
+  let bindings;try{bindings=validateBindings(runtime.bindings,runtime.descriptorFile);}catch{return {status:'needs-configuration',problems:[problem('needs-configuration')]};}
+  const accepted={},gitBases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git');
+  if(gitBases.length>64) return {status:'unavailable',problems:[problem('provider-not-qualified')]};
+  let scratch=null;
+  try {
+    if(gitBases.length) scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-binding-check-'));
+    for(const [alias,base] of Object.entries(bindings.bases)) accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias))).meta;
+    checkKnowledgeRuntime({rendered:runtime,accepted});
+  } catch(error) {
+    if(error.code==='E_COMMAND') return {status:'unavailable',problems:[problem('provider-unavailable')]};
+    if(['E_OWNER','E_BASE','E_VALIDATION','E_DIRECTORY_GIT','E_CONFIRM'].includes(error.code)) return {status:'needs-configuration',problems:[problem('provider-not-qualified')]};
+    return {status:'unavailable',problems:[problem('provider-unavailable')]};
+  } finally {
+    if(scratch) fs.rmSync(scratch,{recursive:true,force:true});
+  }
+  return {status:'ready',problems:[]};
+}
+
+export function handleBindingRequest(phase,value) {
+  if(!phases.has(phase)) wireError('invalid-binding');
+  const req=request(value,phase);
+  if(phase==='normalize') return normalizePhase(req);
+  if(phase==='bind') return bindPhase(req);
+  return checkPhase(req);
+}
+function response(phase,body) {return {schemaVersion:1,phase,slot:SLOT,capability:CAPABILITY,...body};}
+function errorCode(error) {if(errorCodes.has(error?.wireCode)) return error.wireCode;if(error?.code==='E_OWNER') return 'requirement-conflict';return 'invalid-binding';}
+function enforceOutputLimits(value,depth=1,state={entries:0}) {
+  if(depth>BINDING_WIRE_LIMITS.depth) wireError('provider-not-qualified');
+  if(value===null || typeof value!=='object') return;
+  for(const child of Array.isArray(value)?value:Object.values(value)) {
+    if(++state.entries>BINDING_WIRE_LIMITS.entries) wireError('provider-not-qualified');
+    enforceOutputLimits(child,depth+1,state);
+  }
+}
+export async function runBindingWire(phase,input=process.stdin,output=process.stdout) {
+  let answer;
+  try {
+    const chunks=[];let length=0;
+    for await(const chunk of input) {const bytes=Buffer.from(chunk);length+=bytes.length;if(length>BINDING_WIRE_LIMITS.bytes) wireError('invalid-binding');chunks.push(bytes);}
+    const result=handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
+    answer=response(phase,{ok:true,result});
+  } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:{code:errorCode(error)}});}
+  let bytes;
+  try {enforceOutputLimits(answer);bytes=Buffer.from(JSON.stringify(answer)+'\n');if(bytes.length>BINDING_WIRE_LIMITS.bytes) wireError('provider-not-qualified');}
+  catch {bytes=Buffer.from(JSON.stringify(response(phases.has(phase)?phase:'check',{ok:false,error:{code:'provider-not-qualified'}}))+'\n');}
+  output.write(bytes);
+  return answer.ok;
+}

@@ -1,7 +1,51 @@
 import { randomUUID } from 'node:crypto';
-import { fs, join, dirname, resolve, safePath, readJSON, save, atomic, materialize, hash, withLock, oats, fail, tree, overlaps, syncDir } from './io.mjs';
+import { fs, join, dirname, resolve, safePath, readJSON, save, atomic, materialize, hash, withLock, oats, fail, tree, overlaps, syncDir, identifier, relPath } from './io.mjs';
 import { loadBindings, declaration, metadata, resolveNodes, bindingFingerprint, settings, validateBindings } from './config.mjs';
 import { stageBase } from './stores.mjs';
+import { loadInvocationKnowledgeBinding, readPrivateInvocationJson, sourceRuntimeFromKnowledgeBinding } from './binding-wire.mjs';
+import { sameJson } from './portable-binding.mjs';
+import { qualifiedSoulIdentity } from './source-contract.mjs';
+
+const obj=value=>value!==null && typeof value==='object' && !Array.isArray(value);
+function exact(value,allowed,required,label) {
+  if(!obj(value)) fail('E_SOURCE',`${label} must be an object`);
+  for(const key of Object.keys(value)) if(!allowed.includes(key)) fail('E_SOURCE',`unknown ${label} property: ${key}`);
+  for(const key of required) if(!Object.hasOwn(value,key)) fail('E_SOURCE',`${label} requires ${key}`);
+  return value;
+}
+function absolute(value,label) {if(typeof value!=='string' || !value || resolve(value)!==value) fail('E_SOURCE',`${label} must be a normalized absolute path`);return value;}
+function executionBinding(value) {
+  exact(value,['schemaVersion','deployment','resolution'],['schemaVersion','deployment','resolution'],'execution binding');
+  exact(value.resolution,['schemaVersion','id'],['schemaVersion','id'],'resolution reference');
+  if(value.schemaVersion!==1 || value.resolution.schemaVersion!==1 || typeof value.resolution.id!=='string' || !/^sha256-[a-f0-9]{64}$/.test(value.resolution.id)) fail('E_SOURCE','invalid execution binding');
+  absolute(value.deployment,'execution deployment');return JSON.parse(JSON.stringify(value));
+}
+function human(value) {
+  if(value===null) return null;
+  exact(value,['provider','id'],['provider','id'],'responsible human');
+  if(typeof value.provider!=='string' || !value.provider || typeof value.id!=='string' || !value.id) fail('E_SOURCE','invalid responsible human');
+  return JSON.parse(JSON.stringify(value));
+}
+export function validateCapturedReceipt(home,receipt) {
+  exact(receipt,['schemaVersion','kind','home','work','context','agent','instance','sourceIdentity','role','executionBinding','responsibleHuman','binding'],['schemaVersion','kind','home','work','context','agent','instance','sourceIdentity','role','executionBinding','responsibleHuman','binding'],'captured source receipt');
+  if(receipt.schemaVersion!==1 || !['persistent','helper'].includes(receipt.kind)) fail('E_SOURCE','unsupported captured source receipt');
+  home=absolute(home,'registration home');const receiptHome=absolute(receipt.home,'receipt home');if(home!==receiptHome) fail('E_SOURCE','registration home differs from receipt');
+  const work=absolute(receipt.work,'receipt work'),context=absolute(receipt.context,'receipt context'),binding=sourceRuntimeFromKnowledgeBinding(receipt.binding),execution=executionBinding(receipt.executionBinding);
+  if(context!==execution.deployment) fail('E_SOURCE','receipt context differs from execution deployment');
+  identifier(receipt.agent);identifier(receipt.instance);
+  if(typeof receipt.role!=='string' || Buffer.byteLength(receipt.role)>128*1024) fail('E_SOURCE','captured role must be text up to 128KiB');
+  const sourceIdentity=receipt.sourceIdentity===null?null:qualifiedSoulIdentity(receipt.sourceIdentity);
+  if((receipt.kind==='persistent')!==(sourceIdentity!==null)) fail('E_SOURCE','persistent receipt needs qualified source identity; helper needs null');
+  return {home,work,context,binding,execution,sourceIdentity,responsibleHuman:human(receipt.responsibleHuman)};
+}
+export function loadInvocationSourceReceipt(home,env=process.env) {
+  if(!Object.hasOwn(env,'OATS_SOURCE_RECEIPT_FILE')) return {mode:'legacy'};
+  if(!Object.hasOwn(env,'OATS_BINDING_FILE')) fail('E_SOURCE','captured source receipt requires its provider binding snapshot');
+  let receipt;try{receipt=readPrivateInvocationJson(env.OATS_SOURCE_RECEIPT_FILE);}catch{fail('E_SOURCE','invalid captured source receipt snapshot');}
+  const validated=validateCapturedReceipt(safePath(home),receipt),invocation=loadInvocationKnowledgeBinding(env);
+  if(invocation.kind!=='captured' || !sameJson(invocation.binding,receipt.binding)) fail('E_SOURCE','source receipt binding differs from invocation snapshot');
+  return {mode:'captured',receipt,validated};
+}
 export const markerPath = home => join(home,'.okf-source.json');
 export const statusPath = source => join(dirname(source.file),'status.json');
 export const saveStatus = (source,status) => save(statusPath(source),status);
@@ -25,6 +69,19 @@ export function loadSource(file) {
   const {file:bindingsFile,...bindingsDoc}=s.bindings;
   const checked=validateBindings(bindingsDoc,bindingsFile,{sourceHome:s.home,sourceWork:s.work});
   if(bindingFingerprint(checked)!==s.bindingFingerprint) fail('E_SOURCE','frozen bindings fingerprint mismatch');
+  if(s.providerBinding!==undefined) {
+    let frozen;try{frozen=sourceRuntimeFromKnowledgeBinding(s.providerBinding);}catch{fail('E_SOURCE','invalid frozen provider binding');}
+    const actual={owner:s.owner,bindings:{file:bindingsFile,version:checked.version,stateDir:checked.stateDir,bases:checked.bases},decl:s.decl,execution:s.execution};
+    if(!sameJson(frozen,actual)) fail('E_SOURCE','frozen provider binding differs from source runtime');
+    exact(s.registration,['schemaVersion','kind'],['schemaVersion','kind'],'source registration');
+    if(s.registration.schemaVersion!==1 || s.registration.kind!=='captured' || !sameJson(qualifiedSoulIdentity(s.sourceIdentity),s.sourceIdentity)) fail('E_SOURCE','invalid captured source registration');
+    executionBinding(s.executionBinding);human(s.responsibleHuman);
+  } else if(s.registration!==undefined || s.sourceIdentity!==undefined || s.executionBinding!==undefined || s.responsibleHuman!==undefined) fail('E_SOURCE','partial captured source descriptor');
+  const invocation=loadInvocationKnowledgeBinding();
+  if(invocation.kind==='captured') {
+    if(s.providerBinding===undefined) fail('E_MIGRATION','legacy source descriptor cannot consume a captured provider binding');
+    if(!sameJson(invocation.binding,s.providerBinding)) fail('E_SOURCE','invocation provider binding differs from frozen source');
+  }
   return {...s,file};
 }
 export function homeSource(home) { const m=readJSON(markerPath(home)); const s=loadSource(m.source); if(s.id!==m.id || s.home!==home) fail('E_SOURCE','home identity does not match durable source');return s; }
@@ -74,8 +131,61 @@ function finishRegistration(source) {
   fs.mkdirSync(join(source.home,'notes'),{recursive:true});
   scheduleSource(source);return source;
 }
+function capturedOwner(bindings,owner,identity) {
+  const file=join(bindings.stateDir,'owners.json'),row={schemaVersion:1,kind:'captured-qualified-soul',identity};
+  withLock(join(bindings.stateDir,'owners.lock'),()=>{
+    const owners=fs.existsSync(file)?readJSON(file):{};if(!obj(owners)) fail('E_OWNER','invalid owner registry');const prior=Object.hasOwn(owners,owner)?owners[owner]:undefined;
+    if(typeof prior==='string') fail('E_MIGRATION','legacy owner registry evidence requires explicit qualified-identity migration');
+    if(prior!==undefined && (!obj(prior) || prior.schemaVersion!==1 || prior.kind!=='captured-qualified-soul' || !sameJson(prior.identity,identity))) fail('E_OWNER','stable owner ID already identifies a different qualified soul');
+    if(prior===undefined) {owners[owner]=row;save(file,owners);}
+  });
+}
+function sameCapturedReceipt(source,receipt,validated) {
+  return source.registration?.schemaVersion===1 && source.registration.kind==='captured'
+    && source.home===validated.home && source.work===validated.work && source.context===validated.context
+    && source.agent===receipt.agent && source.instance===receipt.instance && source.role===receipt.role
+    && sameJson(source.sourceIdentity,validated.sourceIdentity) && sameJson(source.executionBinding,validated.execution)
+    && sameJson(source.responsibleHuman,validated.responsibleHuman) && sameJson(source.providerBinding,receipt.binding);
+}
+export function registerCaptured(home,receipt) {
+  home=safePath(home);const captured=validateCapturedReceipt(home,receipt),invocation=loadInvocationKnowledgeBinding();
+  if(invocation.kind==='captured' && !sameJson(invocation.binding,receipt.binding)) fail('E_SOURCE','lifecycle receipt binding differs from invocation snapshot');
+  if(receipt.kind==='helper') return {skipped:'service'};
+  if(fs.existsSync(markerPath(home))) {
+    const source=homeSource(home);if(!sameCapturedReceipt(source,receipt,captured)) fail('E_SOURCE','captured registration receipt differs from durable source');
+    return finishRegistration(source);
+  }
+  safePath(join(home,'knowledge'));
+  if(fs.existsSync(join(home,'knowledge'))) fail('E_VIEW','unregistered knowledge view exists; preserve it and inspect before registering');
+  if(['.okf-harvest-record.json','.okf-harvest-record.next.json'].some(path=>fs.existsSync(join(home,path)))) fail('E_MIGRATION','legacy source watermarks require explicit migration before captured registration');
+  if(overlaps(home,captured.context) && captured.context.startsWith(home)) fail('E_PATH','captured deployment context cannot be in disposable home');
+  const {file:bindingsFile,...bindingsDoc}=captured.binding.bindings;
+  const bindings={file:bindingsFile,...validateBindings(bindingsDoc,bindingsFile,{sourceHome:home,sourceWork:captured.work})};
+  fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});capturedOwner(bindings,captured.binding.owner,captured.sourceIdentity);
+  const id=randomUUID(),dir=join(bindings.stateDir,'sources',id),source={version:1,id,home,work:captured.work,context:captured.context,
+    agent:receipt.agent,instance:receipt.instance,owner:captured.binding.owner,decl:captured.binding.decl,role:receipt.role,bindings,
+    bindingFingerprint:bindingFingerprint(bindings),execution:captured.binding.execution,providerBinding:JSON.parse(JSON.stringify(receipt.binding)),
+    registration:{schemaVersion:1,kind:'captured'},sourceIdentity:captured.sourceIdentity,executionBinding:captured.execution,
+    responsibleHuman:captured.responsibleHuman,created:new Date().toISOString()};
+  const file=join(dir,'source.json'),pending=registrationView(source);fs.mkdirSync(dir,{recursive:true,mode:0o700});
+  try {
+    source.acceptedView=views(bindings,source.decl,pending);source.acceptedNodes=Object.fromEntries(Object.entries(source.acceptedView).map(([alias,row])=>[alias,row.nodes]));
+    save(file,source);save(join(dir,'status.json'),{version:1,captured:{notes:[],threads:{},inputs:[]},processed:[],delivered:{},accepted:{},retired:false,auto:true,activeRun:null});
+    save(markerPath(home),{version:1,id,source:file});
+  } catch(error) {
+    if(!fs.existsSync(markerPath(home))) {fs.rmSync(pending,{recursive:true,force:true});fs.rmSync(dir,{recursive:true,force:true});}
+    throw error;
+  }
+  return finishRegistration({...source,file});
+}
+
 export function register(home) {
   home=safePath(home);
+  const invocation=loadInvocationKnowledgeBinding();
+  if(invocation.kind==='captured') {
+    if(fs.existsSync(markerPath(home))) return finishRegistration(homeSource(home));
+    fail('E_MIGRATION','captured provider binding requires durable captured-source registration; current soul/config fallback is forbidden');
+  }
   if(service(home)) return {skipped:'service'};
   if(fs.existsSync(markerPath(home))) return finishRegistration(homeSource(home));
   safePath(join(home,'knowledge'));
@@ -216,7 +326,11 @@ export function capture(source,{final=false,deadlineMs=85000}={}) {
   });
 }
 export function scheduleSource(source) {
-  const spec={id:`okf-${source.id}`,kind:'command',enabled:loadStatus(source).auto,cron:source.bindings.cron,tz:source.bindings.tz,cwd:source.context,argv:['oats','okf','run-source','--source',source.file,'--soul',source.agent,'--json']};
+  const captured=source.registration?.schemaVersion===1 && source.registration.kind==='captured';
+  const argv=captured?['oats','okf','run-source','--source',source.file,'--deployment',source.executionBinding.deployment,'--resolution',source.executionBinding.resolution.id,'--json']
+    :['oats','okf','run-source','--source',source.file,'--soul',source.agent,'--json'];
+  const spec={id:`okf-${source.id}`,kind:'command',enabled:loadStatus(source).auto,cron:source.bindings.cron,tz:source.bindings.tz,cwd:source.context,argv,
+    ...(captured?{definitionVersion:2,recurrencePolicy:'capture',responsibleHuman:source.responsibleHuman}: {})};
   const file=join(dirname(source.file),'schedule.json');
   try {
     save(file,spec);
@@ -230,7 +344,13 @@ export function scheduleSource(source) {
       result=oats(['schedule','show',spec.id,'--dir',source.context,'--json'],source.context);
     }
     const actual=result?.schedule;
-    if(!actual || typeof actual.enabled!=='boolean' || ['id','kind','cron','tz','cwd','argv'].some(k=>JSON.stringify(actual[k])!==JSON.stringify(spec[k]))) fail('E_SCHEDULE','source schedule definition differs; inspect and repair explicitly');
+    if(!actual || typeof actual.enabled!=='boolean' || ['id','kind','cron','tz','cwd','argv','definitionVersion','recurrencePolicy'].some(k=>JSON.stringify(actual[k])!==JSON.stringify(spec[k]))) fail('E_SCHEDULE','source schedule definition differs; inspect and repair explicitly');
+    if(captured) {
+      const responsible=actual.execution && Object.hasOwn(actual.execution,'responsibleHuman')?actual.execution.responsibleHuman
+        :Object.hasOwn(actual,'responsibleHuman')?actual.responsibleHuman:undefined;
+      if(!sameJson(responsible,spec.responsibleHuman)) fail('E_SCHEDULE','captured source schedule responsible human differs');
+      if(actual.execution && (actual.execution.deployment!==source.executionBinding.deployment || actual.execution.resolution?.id!==source.executionBinding.resolution.id)) fail('E_SCHEDULE','captured source schedule execution binding differs');
+    }
     updateStatus(source,status=>{status.schedule={id:spec.id,status:'ready',result};});return result;
   } catch(e) {
     updateStatus(source,status=>{status.schedule={...(status.schedule || {}),id:spec.id,status:'failed',error:e.message};});throw e;

@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oats.dev/schemas/okf-portable-declaration.schema.json",
+  "title": "OATS OKF portable knowledge declaration",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^(?!(?:constructor|__proto__|prototype|toString|valueOf)$)[a-zA-Z0-9][a-zA-Z0-9._-]{0,95}$"
+    },
+    "directory": {
+      "type": "object",
+      "required": ["id", "kind", "path"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "kind": {"const": "directory"},
+        "path": {"type": "string", "pattern": "^path:/"}
+      },
+      "additionalProperties": false
+    },
+    "git": {
+      "type": "object",
+      "required": ["id", "kind", "repository", "root", "acceptedBranch", "pr"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "kind": {"const": "git"},
+        "repository": {"type": "string", "pattern": "^(?!(?:https://[^/]*@|ssh://[^/@]*:[^/@]*@))(?:(?:https|ssh)://|git@)[^\\s?#]+$"},
+        "root": {"type": "string", "minLength": 1},
+        "acceptedBranch": {"type": "string", "minLength": 1},
+        "pr": {
+          "type": "object",
+          "required": ["repository"],
+          "properties": {"repository": {"type": "string", "pattern": "^[\\w.-]+/[\\w.-]+$"}},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "locator": {"oneOf": [{"$ref": "#/$defs/directory"}, {"$ref": "#/$defs/git"}]},
+    "store": {
+      "oneOf": [
+        {"type": "object", "required": ["fixed"], "properties": {"fixed": {"$ref": "#/$defs/locator"}}, "additionalProperties": false},
+        {"type": "object", "required": ["default"], "properties": {"default": {"$ref": "#/$defs/locator"}}, "additionalProperties": false},
+        {"type": "object", "required": ["inherit"], "properties": {"inherit": {"type": "string", "minLength": 1}}, "additionalProperties": false}
+      ]
+    }
+  },
+  "type": "object",
+  "required": ["contract", "version", "payload"],
+  "properties": {
+    "contract": {"const": "oats.okf.locations"},
+    "version": {"const": 1},
+    "payload": {
+      "type": "object",
+      "required": ["owner", "stores", "reads", "owns"],
+      "properties": {
+        "owner": {"$ref": "#/$defs/identifier"},
+        "stores": {
+          "type": "object",
+          "propertyNames": {"$ref": "#/$defs/identifier"},
+          "additionalProperties": {"$ref": "#/$defs/store"}
+        },
+        "reads": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "required": ["store", "node"],
+            "properties": {"store": {"$ref": "#/$defs/identifier"}, "node": {"$ref": "#/$defs/identifier"}},
+            "additionalProperties": false
+          }
+        },
+        "owns": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "required": ["node"],
+            "properties": {"node": {"$ref": "#/$defs/identifier"}, "destination": {"$ref": "#/$defs/identifier"}},
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

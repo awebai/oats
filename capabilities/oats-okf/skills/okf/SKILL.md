@@ -107,10 +107,51 @@ node <skill-dir>/scripts/okf-validate.mjs <bundle-dir> --strict   # + producer l
 
 Lints in a bundle you're *consuming* are noise — read on regardless.
 
+## Portable source and store declarations
+
+When the portable binding interface is active (planned OATS >=0.24.0; not yet a
+published provider baseline), treat the source declaration as policy and the
+captured ProviderBinding as execution authority:
+
+- In `oats.okf.locations@1`, `fixed` is source-owned, `default` is rebindable,
+  and `inherit` requires an external binding such as `write.default`.
+- Qualify every read and owned node by its declared store. A read grants no
+  write authority. Never infer the sole readable store as a destination.
+- Workspace store envelopes put concrete provider choices under
+  `payload.bindings`. Workspace, adoption, and operator values remain separate
+  inputs to the shared resolver; OKF does not select their precedence.
+- Durable placement is explicit selected settings: physical absolute
+  `bindings-file` and `state-dir`, plus selected `harvest-runtime` and optional
+  `harvest-model`. Never derive state from an instance home.
+- Provider codecs run only after exact retained executable approval. Their
+  populated binding is not proof of readiness, enrollment, credentials, privacy
+  or publication authority. Respect typed non-ready results.
+- Captured source descriptors freeze binding/runtime/source identity. Later
+  reads and workers use those bytes after source/config deletion. Never replace
+  them with today's soul, workspace, settings or bindings file.
+- `responsibleHuman: null` means messaging was explicitly disabled. Missing is
+  unknown, not disabled.
+- New captured source schedules are definition v2 with `capture`, explicit
+  deployment/resolution selectors and saved `--json`; they do not use `--soul`.
+- Captured `setup`, `init`, `migrate`, and `unlock` are deliberate refusals.
+  Provisioning/migration remains a separate explicit operator path.
+
+The broker-owned `binding-normalize`, `binding-bind`, and `binding-check`
+manifest commands are not manual recipes. Do not invoke them from a working
+agent or copy transient `OATS_BINDING_FILE`/`OATS_SOURCE_RECEIPT_FILE` paths.
+Those private mode-0600 files exist only for one synchronous captured invocation.
+
 ## External bases and native tools
 
 Ordinary working agents consult `oats okf read --base ALIAS --path node/index.md`
-and `oats okf refresh`. Staged writers use native file tools only under roots
+and `oats okf refresh`. When inspecting a source, treat the additive `authority`
+object literally: `captured` includes recorded qualified identity/execution;
+`legacy` or `invalid` means migration/evidence is still required. A
+responsible-human status of `disabled` comes only from explicit null; `unknown`
+is not permission to assume messaging is off. The summary deliberately omits
+opaque bindings, provenance, credential references and transient snapshot paths.
+
+Staged writers use native file tools only under roots
 listed in work/staging.json. Always validate the WHOLE base, not an isolated
 node: absolute Markdown links can cross node boundaries. Complete performs this
 validation again and refuses any errors or producer warnings.

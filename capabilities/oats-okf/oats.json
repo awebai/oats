@@ -1,9 +1,9 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "compatibility": {
-    "oats": ">=0.23.0"
+    "oats": ">=0.24.0"
   },
   "layer": "knowledge",
   "description": "External OKF bases with owned nodes, immutable reader views, durable per-source evidence, independent workers, verified Git PR and recoverable non-Git directory delivery.",
@@ -22,7 +22,10 @@
       "description": "Optional model pin for the selected harvest runtime, for example to use a cheaper model: a Pi provider/model or a native Claude/Codex model. When omitted, each harness uses its configured default."
     },
     "bindings-file": {
-      "description": "Absolute path to the capability-local version:1 JSON bindings document. Required for working sources; bases and durable state resolve relative to that document."
+      "description": "Absolute host-owned path identifying the version:1 bindings document. Portable binding preparation captures the selected document payload and never rereads this path."
+    },
+    "state-dir": {
+      "description": "Absolute host-owned durable state directory for portable bindings. It is never derived from an instance home."
     }
   },
   "agents": [
@@ -42,16 +45,37 @@
     "refresh": "bin/oats-okf.mjs refresh",
     "init": "bin/oats-okf.mjs init",
     "migrate": "bin/oats-okf.mjs migrate",
-    "unlock": "bin/oats-okf.mjs unlock"
+    "unlock": "bin/oats-okf.mjs unlock",
+    "binding-normalize": "bin/oats-okf-binding.mjs normalize",
+    "binding-bind": "bin/oats-okf-binding.mjs bind",
+    "binding-check": "bin/oats-okf-binding.mjs check"
+  },
+  "binding": {
+    "version": 1,
+    "normalize": "binding-normalize",
+    "bind": "binding-bind",
+    "check": "binding-check"
   },
   "inject": "injects/okf.md",
+  "helperInjection": {
+    "version": 1,
+    "mode": "omit"
+  },
   "hooks": {
     "soul-scaffold": "bin/oats-okf.mjs soul-scaffold",
     "spawn": {
       "command": "bin/oats-okf.mjs spawn",
-      "required": true
+      "required": true,
+      "inputs": {
+        "sourceReceipt": { "version": 1 }
+      }
     },
-    "retire": "bin/oats-okf.mjs retire"
+    "retire": {
+      "command": "bin/oats-okf.mjs retire",
+      "inputs": {
+        "sourceReceipt": { "version": 1 }
+      }
+    }
   },
   "operations": {
     "inspect": {
@@ -64,7 +88,11 @@
       "kind": "action",
       "command": "harvest",
       "context": "home",
-      "description": "Capture this source into durable custody and request an independent worker."
+      "description": "Capture this source into durable custody and request an independent worker.",
+      "args": [
+        {"name": "native-request", "flag": "--native-request", "required": false, "description": "Captured operations require an explicit absolute backend-only native request JSON; provider owns the worker task."},
+        {"name": "worker-mode", "flag": "--worker-mode", "required": false, "description": "Captured worker mode: prepare or launch (default launch); legacy behavior is unchanged when absent."}
+      ]
     }
   }
 }

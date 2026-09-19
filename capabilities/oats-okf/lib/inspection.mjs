@@ -1,5 +1,6 @@
 import { fs, join, dirname, safePath, fail, oats } from './io.mjs';
 import { markerPath, loadStatus } from './sources.mjs';
+import { qualifiedSoulIdentity } from './source-contract.mjs';
 
 // Keep the v1 labeled-document contract, including its explicit per-document
 // preview cap. The JSON envelope itself must drain in full through stdout.
@@ -84,13 +85,27 @@ export function workingDocuments(source,status=loadStatus(source)) {
   if(error) fail(error.code==='E_PATH'?'E_PATH':'E_INSPECT_FAILED',error.message);
   return {liveMemory:{available:true,reason:'live',observedAt},documents};
 }
+export function capturedAuthority(source) {
+  const fields=['registration','providerBinding','sourceIdentity','executionBinding','responsibleHuman'],present=fields.filter(key=>Object.hasOwn(source,key));
+  const base={schemaVersion:1};
+  if(!present.length) return {...base,registration:'legacy',capture:'unknown',migrationRequired:true,responsibleHuman:{status:'unknown'}};
+  const binding=source.executionBinding,identity=source.sourceIdentity,complete=source.registration?.schemaVersion===1 && source.registration.kind==='captured'
+    && source.providerBinding && typeof source.providerBinding==='object' && identity && typeof identity==='object' && !Array.isArray(identity)
+    && binding?.schemaVersion===1 && typeof binding.deployment==='string' && binding.resolution?.schemaVersion===1 && typeof binding.resolution.id==='string'
+    && Object.hasOwn(source,'responsibleHuman');
+  const invalid={...base,registration:'invalid',capture:'invalid',migrationRequired:true,responsibleHuman:{status:'unknown'}};
+  if(!complete) return invalid;
+  try {if(Buffer.byteLength(JSON.stringify({identity,binding}))>64*1024) return invalid;qualifiedSoulIdentity(identity);} catch {return invalid;}
+  return {...base,registration:'captured',capture:'recorded',migrationRequired:false,sourceIdentity:JSON.parse(JSON.stringify(identity)),executionBinding:JSON.parse(JSON.stringify(binding)),
+    responsibleHuman:{status:source.responsibleHuman===null?'disabled':'specified'}};
+}
 export function inspect(source) {
   const status=loadStatus(source),working=workingDocuments(source,status);
   let health;try {health=oats(['schedule','list','--dir',source.context,'--json'],source.context).scheduler;} catch(e) {health={active:false,error:e.message};}
   const documents=[...working.documents,{label:'Durable processing receipts',kind:'text',path:join(dirname(source.file),'status.json'),text:JSON.stringify(status,null,2)}];
   return {
     summary:`OKF ${source.id}: ${status.captured.inputs.length-status.processed.length} unprocessed inputs; ${status.retired?'source retired':'source not retired'}; ${working.liveMemory.available?`${working.documents.length} working-memory documents`:`live memory unavailable (${working.liveMemory.reason})`}`,
-    source:source.file,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,
+    source:source.file,owns:source.decl.owns,reads:source.decl.reads,bases:source.bindings.bases,authority:capturedAuthority(source),
     acceptedView:source.acceptedView,status,scheduler:health,liveMemory:working.liveMemory,documents
   };
 }
