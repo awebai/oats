@@ -4,14 +4,15 @@ title: Durable identity for captured native session storage
 status: accepted
 description: Require a narrowly versioned kernel-owned external identity witness when captured execution promises to reject replacement of the original native session directory.
 tags: [architecture, portable-souls, runtime, custody, sessions]
-timestamp: 2026-09-18
+timestamp: 2026-09-19
 ---
 
-**Status: accepted by the human 2026-09-18; five-library guard source locally
-reviewed and integrated, actual native qualification pending.** The human
-subsequently approved the exact five-library enforcement exception below.
-The kernel consumer must accept the authorized manifest evolution without
-weakening its separate incarnation/home/intent custody checks. The approval remains limited to the session-directory identity witness. It concerns
+**Status: accepted by the human 2026-09-18; five-library guards, kernel consumer
+and completion observer reviewed and integrated. Scoped real primary/helper
+start, replay, restart and protected capture passed on both native backends on
+2026-09-19.** The human approved the exact five-library enforcement exception
+below. The kernel consumer accepts the authorized manifest evolution while
+retaining its separate incarnation/home/intent custody checks. The approval remains limited to the session-directory identity witness. It concerns
 the directory containing native session history, not harness credentials, the
 SDK installation, runtime-bundle grants, a new account identity or a new general
 storage service.
@@ -113,7 +114,9 @@ Before-read protection also concerns the opened descriptor, not only its path.
 A temporary ancestor redirect during open can leave a foreign descriptor even
 when the named path is normal again. Bind the descriptor to the witnessed,
 physically contained named source before reading; a later exception or refusal
-to append cannot undo an already-performed foreign read.
+to append cannot undo an already-performed foreign read. The same requirement
+applies to authority and completion JSON: an earlier stat and a post-read root
+check do not establish which opened file supplied the bytes.
 
 # Separate decisions remain separate
 
@@ -124,5 +127,8 @@ provider allowlist or login operation.
 
 Strict selected curriculum, explicit host/model/mode selection, capability
 approvals, source/helper edges and existing native intent/target custody remain
-required. The supported offline SDK consumer seam is not a real model/backend
-qualification, and approving this witness does not turn it into one.
+required. The offline SDK consumer seam and witness approval were not themselves
+real model/backend qualification. The later scoped live acceptance is separately
+recorded in [repo state](/stewardship/repo-state.md); it does not qualify broader
+retirement/recovery, interactive/plugin profiles, private-provider authority or
+publication/deployment.

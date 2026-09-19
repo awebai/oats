@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-18
+timestamp: 2026-09-19
 ---
 
 # Delivery log
@@ -21,6 +21,16 @@ before retiring — merge or return, always. Format:
 
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
+
+## Scoped native acceptance and local 0.24.0/2.1.0 release pairing (2026-09-19)
+- verdict: APPROVE and locally integrate exact kernel outcome8c/306, provider gatec55, provider metadataf20 and framework pairingb01; final local framework runtime/pairing checkpoint `c9ba5798`, provider `f20f8e5`. No unrelated ancestry, duplicate record picks or held changes. These are not yet source-main/tag/publication/deployment claims.
+- source review: outcome reader's stat-and-open ancestor ABA was reproduced before the correction; current named-file/descriptor binding now precedes every bounded read. Kernel delegates approved record manifest mutation while retaining independent ownership checks; the genuine unwitnessed-root negative and coupled public test require actual record-v2, not a conditional skip. Parent26 focused plus3 coupled plus3 packaging cases and scaffold1/1 pass; SDK/backend doubles remain explicitly non-live evidence. Gatec55 review and14 focused cases pass without changing its public seam.
+- actual native evidence: exact `ad89ef2c` / `c55b814` passed the real source-deleted/config-poisoned gate on both tmux and Herdr in184.449s, unchanged source. Four primary/operation-created SOURCE-worker process and SDK outcomes qualified exit0 with protected turn correspondence; each worker processed independent judgment, accepted directory knowledge changes and left zero inputs. An earlier empty-owned-endpoint failure before model dispatch is preserved; no claimed home/root was repaired. A fresh controlled endpoint supplied the valid precondition.
+- continuation evidence: a separately reviewed bounded parent probe passed four exact completed-intent replays without new native records, then four distinct actual restarts with new native IDs under the same incarnations/witnessed roots. Qualified outcomes and captured turns carried the instruction heading and selected-skill read; a controlled unselected ancestor canary was absent from observed turns. Native HOME/profile/auth remained normal; no credential copying/repair or backend spoofing. This is native continuation/resource evidence, not new knowledge-lifecycle or public-retirement proof.
+- release pairing: f20 changes only versions/floors in three manifests plus current guidance/test; all28 other distribution entries retain exact raw Git identity. Parent validator and metadata1/1 pass. b01 mirror subtree exactly equals f20; all38 inventory entries and wrappers match immutable objects, all25 preimages match the parent tree, and parent4/4 current metadata/actual npm inventory/packed-byte/alias-omission checks pass. Inventory remains pending; npm omission of the source alias is not repaired or called a complete Git payload.
+- installed evidence: the old bundled2.0 candidate smoke passes separately. The new0.24.0 release-stamped export with2.1.0 passes actual outside-checkout kernel/adapter installation and smoke, version probe and shipped-JS syntax. The bare export initially lacked its declared YAML dependency, before installed smoke; that setup failure is retained. Installing declared production dependencies allowed the previously uncompleted checks to pass in26.744s, source unchanged. Final assembled controlled scaffold/layout/resources/normal-retirement1/1 passes without a backend/model.
+- owner: lifecycle, provider and fresh-source/packaging lanes; reviewer/integrator and real-run operator: maintainer.
+- taught us: actual successful SDK/process observations and genuine domain receipts close a different evidence gap from dispatch acceptance. A metadata-only successor changes artifact identity and compatibility even when executable bytes are unchanged; qualify the real release-stamped artifact pair rather than rebranding an older installed smoke. Remaining private/provider, Git-PR, interactive/plugin, scheduled and broader lifecycle/deployment claims stay separate. Original delivery targets remain missed.
 
 ## Complete native Claude/Codex home regression (2026-09-18)
 - verdict: APPROVE exact three-file `cfe2df42`, locally integrated as `0583c32c`. One new controlled parent case passes for both runtimes; previous six planning cases retain their original evidence, not a claimed seven-case rerun.
