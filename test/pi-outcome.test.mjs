@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import fs, { lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { piOutcomePath, writePiOutcome, readPiOutcome, writePiExitMarker, summarizePiOutcome } from "../lib/captured-pi-outcome.mjs";
@@ -151,6 +152,66 @@ test("root drift during publication/read holds and retains original partial evid
   assert.equal(readFileSync(piOutcomePath(f.sessionDir + "-original", id, "sdk")).length, 0);
   assert.throws(() => readPiOutcome("sdk", f.authority, f.check), /unit root replaced/);
   assert.throws(() => readFileSync(piOutcomePath(f.sessionDir, id, "sdk")), { code: "ENOENT" });
+});
+
+for (const kind of ["sdk", "process"]) for (const phase of ["open", "stat-and-open"]) {
+  test(`outcome ${kind} rejects ancestor ${phase} ABA BEFORE foreign descriptor bytes`, t => {
+    const f = fixture(t), path = piOutcomePath(f.sessionDir, id, kind);
+    const observed = { ...(kind === "sdk" ? f.sdk.observed : f.process.observed), exitCode: 7 };
+    const original = writePiOutcome(kind, f.authority, observed, f.check);
+    const foreign = join(f.root, "foreign"), savedRoot = f.sessionDir + "-retained";
+    mkdirSync(foreign);
+    writeFileSync(join(foreign, basename(path)), JSON.stringify({ ...original, observed: { ...observed, exitCode: 0 } }), { mode: 0o600 });
+    const originalFs = { lstatSync: fs.lstatSync, openSync: fs.openSync, readSync: fs.readSync };
+    let swapped = false, opened = false, fd, foreignReads = 0, failure;
+    const swap = () => { renameSync(f.sessionDir, savedRoot); symlinkSync(foreign, f.sessionDir); swapped = true; };
+    const restore = () => { if (swapped) { rmSync(f.sessionDir); renameSync(savedRoot, f.sessionDir); swapped = false; } };
+    try {
+      fs.lstatSync = (file, ...args) => {
+        if (file === path && phase === "stat-and-open" && !swapped && !opened) swap();
+        return originalFs.lstatSync(file, ...args);
+      };
+      fs.openSync = (file, ...args) => {
+        if (file !== path || opened) return originalFs.openSync(file, ...args);
+        if (!swapped) swap();
+        fd = originalFs.openSync(file, ...args); opened = true;
+        restore(); // original root/name restored BEFORE open returns its foreign FD
+        return fd;
+      };
+      fs.readSync = (openedFd, ...args) => {
+        if (openedFd === fd) foreignReads++;
+        return originalFs.readSync(openedFd, ...args);
+      };
+      syncBuiltinESMExports();
+      try { readPiOutcome(kind, f.authority, f.check); } catch (error) { failure = error; }
+    } finally { Object.assign(fs, originalFs); syncBuiltinESMExports(); restore(); }
+    assert.equal(opened, true, "actual ancestor ABA must be exercised");
+    assert.equal(foreignReads, 0, "no foreign outcome byte may be read, even if post-read proof would refuse");
+    assert.ok(failure, "foreign descriptor must refuse, not return substituted successful evidence");
+    assert.equal(JSON.parse(readFileSync(path, "utf8")).observed.exitCode, 7, "original failure evidence remains intact");
+  });
+}
+
+test("outcome descriptor is rebound before a second bounded content read", t => {
+  const f = fixture(t), path = piOutcomePath(f.sessionDir, id, "process");
+  writePiOutcome("process", f.authority, f.process.observed, f.check);
+  const originalFs = { openSync: fs.openSync, readSync: fs.readSync };
+  let fd, reads = 0, failure;
+  try {
+    fs.openSync = (file, ...args) => { const opened = originalFs.openSync(file, ...args); if (file === path) fd = opened; return opened; };
+    fs.readSync = (opened, bytes, offset, length, position) => {
+      if (opened !== fd) return originalFs.readSync(opened, bytes, offset, length, position);
+      reads++;
+      const n = originalFs.readSync(opened, bytes, offset, Math.min(length, 1), position);
+      if (reads === 1) { renameSync(path, path + ".retained"); writeFileSync(path, "foreign-replacement"); }
+      return n;
+    };
+    syncBuiltinESMExports();
+    try { readPiOutcome("process", f.authority, f.check); } catch (error) { failure = error; }
+  } finally { Object.assign(fs, originalFs); syncBuiltinESMExports(); }
+  assert.equal(reads, 1, "named-file replacement must refuse BEFORE a second read");
+  assert.equal(failure?.code, "E_PI_HOST_OUTCOME");
+  assert.equal(readFileSync(path, "utf8"), "foreign-replacement", "no cleanup or repair");
 });
 
 test("private process-observer argv cannot become launch-selection/request authority", () => {

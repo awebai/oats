@@ -99,7 +99,12 @@ sdkVersion}` selection. It is attribution, NOT an additional authorization.
 The original attempt remains original even when same-ID reconciliation advances
 the index counter (PH1). Existing/partial/conflicting receipt files are not
 rewritten, adopted or cleaned up. File and directory sync plus custody checks
-surround publication. These files are neither root witnesses nor native JSONL;
+surround publication. Before ANY content read, and again before every bounded
+read, the opened outcome descriptor must match the CURRENT physically named
+regular file under original-root proof. An earlier stat can itself come from a
+redirected ancestor; a restored root or a post-read exception is not FD authority.
+Size/version stability checks remain, with no bytes read to discover a mismatch.
+These files are neither root witnesses nor native JSONL;
 the record3API, native inventory, S formula, v1 readers and capture parsing are
 unchanged. Their presence never establishes root ownership.
 
@@ -189,9 +194,12 @@ The previously completed public SDK consumer proof remains separate and closed.
 The existing `.oats-start-exited` ID marker still does not contain a success code.
 The new completion receipts/query are implemented as bounded kernel consumers;
 unit doubles and inert shells are not actual SDK/model/backend qualification.
-A conditional integration fixture exercises actual kernel/record/CLI wiring with
-an explicitly FAKE SDK after separately owned complete record-v2 is integrated;
-when absent it is skipped, not called passing runtime evidence.
+The coupled integration fixture REQUIRES actual complete record-v2 source (no
+skip/stub of record support), exercising kernel/record/CLI wiring on both backend
+paths with an explicitly FAKE SDK and inert transport. The bounded negative case
+uses an existing unwitnessed S and retains legacy CLI refusal, rather than an
+obsolete assumption that record support is absent. Neither fixture is actual
+native SDK/model/backend qualification.
 Real acceptance must observe SDK-created native session/assistant turns and
 actual capture/recall under the completed witness guards, on BOTH selected native
 backends. Do not fabricate process names, sessions, worker runs or learning.

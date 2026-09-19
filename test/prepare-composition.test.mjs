@@ -15,6 +15,7 @@ import { nativeHistoryPath, historicalSessionRoots } from '../packages/record/li
 import { materializeCapturedDirectoryScaffold } from '../lib/captured-scaffold.mjs';
 import { validateWire } from './helpers/portable-schema-check.mjs';
 import { PI_SDK_HOST } from '../lib/pi-sdk-host.mjs';
+import { capturedPiSessionDirectory } from '../lib/captured-pi-custody.mjs';
 import * as nativeRecords from '../packages/record/lib/native-history.mjs';
 import { addSchedule, readState, tickWorkspace } from '../lib/schedule.mjs';
 function fixture(t, provider=false) {
@@ -65,29 +66,29 @@ function nativeCorrectionFixture(t) {
     effects:()=>readFileSync(join(home,'work/effects.jsonl'),'utf8').trim().split('\n').map(JSON.parse)};
 }
 
-test('captured Pi refuses legacy CLI reinterpretation and unsupported record guards before effects',t=>{
+test('captured Pi refuses legacy CLI reinterpretation and an unowned existing history root before effects',t=>{
   const f=fixture(t),root=realpathSync(f.root),sdk=join(root,'sdk');mkdirSync(sdk);
   writeFileSync(join(sdk,'package.json'),JSON.stringify({name:'@earendil-works/pi-coding-agent',version:'0.85.1',exports:{'.':{import:'./index.mjs'}}}));
   writeFileSync(join(sdk,'index.mjs'),'throw new Error("not a live SDK test");');
   for(const explicit of [false,true]){
-    // Once the separately owned real record guards exist, their integration is
-    // covered by their own tests; this negative branch proves the old reader hold.
-    if(explicit&&nativeRecords.CAPTURED_PI_RECORD_VERSION===2)continue;
     const home=join(root,explicit?'sdk-home':'legacy-home');
     const launch={runtime:'pi',executable:explicit?PI_SDK_HOST:process.execPath,args:explicit?['--oats-pi-host','1','--mode','print','--thinking','medium','--sdk-root',sdk,'--sdk-version','0.85.1']:[],env:{},model:'native-provider/exact-model',yolo:false};
     const prepared=prepareCapturedComposition({...f.input,launch},f.options);
     approveAvailableCapability(f.deployment,prepared.selections[0].artifactSet,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
     scaffoldCapturedInstance({deployment:f.deployment,resolution:prepared.resolution,home,instance:explicit?'sdk-home':'legacy-home'});
     activateCapturedScaffold({deployment:f.deployment,resolution:prepared.resolution,home});
+    // Complete record support is present. A pre-existing UNWITNESSED root is a
+    // genuine unqualified state, not a stubbed version flag or obsolete premise.
+    if(explicit)mkdirSync(capturedPiSessionDirectory(home));
     const before=JSON.stringify(readCapturedInstanceIndex(f.deployment));let calls=0;
-    assert.throws(()=>startCapturedInstanceSession(home,{backend:{backend:'tmux',binary:process.execPath,socket:join(root,'no-backend.sock'),session:'fixture'},task:'never run',io:{exec(){calls++;throw new Error('backend effect forbidden');}}}),{code:explicit?'E_PI_HOST_RECORD_UNAVAILABLE':'needs-configuration'});
+    assert.throws(()=>startCapturedInstanceSession(home,{backend:{backend:'tmux',binary:process.execPath,socket:join(root,'no-backend.sock'),session:'fixture'},task:'never run',io:{exec(){calls++;throw new Error('backend effect forbidden');}}}),{code:explicit?'E_CAPTURED_PI_CUSTODY':'needs-configuration'});
     assert.equal(calls,0);assert.equal(JSON.stringify(readCapturedInstanceIndex(f.deployment)),before);
     assert.equal(existsSync(join(home,'.oats-start-pending.json')),false);
   }
 });
 
 test('captured Pi outcome public inspection wires actual kernel custody and shell status with an explicit SDK UNIT double',t=>{
-  if(nativeRecords.CAPTURED_PI_RECORD_VERSION!==2){t.skip('requires separately owned complete record-v2 integration');return;}
+  assert.equal(nativeRecords.CAPTURED_PI_RECORD_VERSION,2,'coupled observer qualification requires actual complete record-v2 source');
   const f=fixture(t),root=realpathSync(f.root),sdk=join(root,'sdk-outcome-unit');mkdirSync(sdk);
   const manifestPath=join(f.repo,'packages/action/cap/oats.json'),manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
   delete manifest.hooks;writeFileSync(manifestPath,JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','no effectful hooks in unit host fixture');
