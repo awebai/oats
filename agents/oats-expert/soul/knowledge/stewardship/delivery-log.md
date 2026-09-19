@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Read-only deployment handoff and preserved-source boundary (2026-09-19)
+- verdict: ACCEPT guidance, not source-identity/provider/cutover authority. Handoff uses exact0.24 public request, approval, SOURCE helper, native outcome and operation-worker contracts. Parent confirms five preserved declaration hashes/aliases and absent export index; owner separately reports unchanged ownership/read/write edges, curated seed bodies and onboarding parity. No candidate builder, source adaptation, provisioning or KB publication was run.
+- owner: fresh-source/deployment lane · disposition: maintainer.
+- taught us: a preserved legacy soul is not automatically a schema-valid advertised portable source. The accepted Git publisher/export identity and immutable reference are concrete human-owned cutover inputs; do not invent a bootstrap owner, adopt a pending library edition or silently disable messaging to bypass them. Actual0.24 router/validators also expose a stale setup-skill paragraph; correcting that guidance is distinct from adding runtime behavior. Release/install success remains separate from roster, accepted-KB and private-team rollout.
+
 ## Release v0.24.0, manual bump PR #22 and published-artifact verification (2026-09-19)
 - verdict: PUBLISHED — immutable tag object `3dfa22c016e339fac6a7c1fe00d8058a214514d6` at `b5829fd176967ce88d607770c75767267e36a1aa`. [Release run35433822989](https://github.com/awebai/oats/actions/runs/35433822989) passed build/test, three Desktop build/smoke legs, both npm publishes and GitHub release publication with six installers/checksums. Only final automated bump-PR creation failed, with the established organization restriction.
 - registry evidence: publish logs record both0.24.0 versions. Initial local packument/version queries were inconsistent; exact canonical public version endpoints subsequently returned both versions and immutable tarball integrity. No registry/auth repair, forced publish or tag movement was performed or needed; publication is not inferred solely from job ordering.
