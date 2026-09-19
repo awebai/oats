@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Desktop integration band preflight correction (2026-09-19)
+- verdict: APPROVE exact one-file `c97ddf00`, integrated as `7352c16d`; exact preimage and complete delta reviewed, parent affected real-server/fake-CLI cases2/2 pass with syntax/diff clean.
+- owner: fresh-source/packaging lane · reviewer/integrator: maintainer.
+- taught us: updating a compatibility locator's unit tests does not update every server-integration assertion. Preserve the prior accepted minor, add the paired minor and move rejection to the actual exclusive ceiling. This corrects two stale expectations, not production behavior;39 separate unstamped-source floor refusals stay intact for the existing tag-versioning lane. No model, GUI, runtime/floor/version change or publication claim.
+
 ## First-cut source-main delivery and OKF v2.1.0 publication (2026-09-19)
 - verdict: SOURCE DELIVERED — normal fast-forward pushes/readback put framework `0999f4a8` and provider `f20f8e5` on main. Reviewed runtime/pairing scope and all earlier evidence limits remain; no held ancestry or force operation.
 - provider publication: immutable annotated `v2.1.0` tag object `ebd5d817a22e453ee49bf4cfb07eb94a58bcc03c` peels to `f20f8e57a22bdffb48b34dee9bcbc03a9e0704db`; [GitHub release](https://github.com/awebai/oats-okf/releases/tag/v2.1.0) is published, not draft/prerelease. Exact-head standalone CI succeeded. Distribution tree `d5bd8a525400f6d8e188110b4a6ea6e0d55c3874` requires kernel>=0.24.0.
