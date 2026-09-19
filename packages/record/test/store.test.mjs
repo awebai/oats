@@ -110,6 +110,26 @@ test("appendBatch chunked writes produce the same journal as one write", (t) => 
   assert.equal(b.readStream("alice~notes").length, 20);
 });
 
+test("cold append validates across read chunks before repair or writing", (t) => {
+  const store = tempStore(t);
+  const first = finishTurn(noteCore("alice", "é".repeat(40000)));
+  const next = finishTurn(noteCore("alice", "after history"));
+  store.appendBatch("alice~notes", [first]);
+  const path = store.journalPath("alice~notes");
+  const history = readFileSync(path);
+  assert.ok(history.length > 65536);
+  const damaged = Buffer.concat([history, Buffer.from("broken interior\n{\"torn")]);
+  writeFileSync(path, damaged);
+  const fresh = new RecordStore(store.root, { owner: "alice" });
+  assert.throws(() => fresh.appendBatch("alice~notes", [next]),
+    new RegExp(`corrupt interior journal line at byte ${history.length}`));
+  assert.deepEqual(readFileSync(path), damaged, "failed validation changes no bytes");
+
+  writeFileSync(path, Buffer.concat([history, Buffer.from('{"torn')]));
+  fresh.appendBatch("alice~notes", [next]);
+  assert.deepEqual(fresh.readStream("alice~notes").map((turn) => turn.id), [first.id, next.id]);
+});
+
 test("appendCore dedupes by content id", (t) => {
   const store = tempStore(t, "alice");
   const core = noteCore("alice", "same");
