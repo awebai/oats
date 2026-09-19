@@ -22,6 +22,14 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Release v0.24.0, manual bump PR #22 and published-artifact verification (2026-09-19)
+- verdict: PUBLISHED — immutable tag object `3dfa22c016e339fac6a7c1fe00d8058a214514d6` at `b5829fd176967ce88d607770c75767267e36a1aa`. [Release run35433822989](https://github.com/awebai/oats/actions/runs/35433822989) passed build/test, three Desktop build/smoke legs, both npm publishes and GitHub release publication with six installers/checksums. Only final automated bump-PR creation failed, with the established organization restriction.
+- registry evidence: publish logs record both0.24.0 versions. Initial local packument/version queries were inconsistent; exact canonical public version endpoints subsequently returned both versions and immutable tarball integrity. No registry/auth repair, forced publish or tag movement was performed or needed; publication is not inferred solely from job ordering.
+- PR #22: maintainer created the rescue from exact automation head `fce080b2`, read the full five-file diff and semantically proved only package/lock-root versions changed. Four-gate APPROVE recorded as a structured comment for the shared-account PR; expected-head squash merge produced `08c692d3`, normal local fast-forward followed. No source/runtime/dependency change or unpublished-version workaround.
+- artifact verification: downloaded the actual registry tarballs and verified their reported integrity, then reused the existing clean-room assertions with only acquisition redirected to those original bytes.22.859s/exit0, actual outside-checkout installed kernel/core/adapter and OKF2.1 hooks/read/custody/seeded-completion/normal-retirement checks; runtime/backend tripwires untouched. This is published-artifact evidence, not fresh model learning or a completed workspace/private-provider cutover.
+- owner: maintainer release/integration lane. Deployment-specific runtime installation and remaining rollout state stay in deployment-owned records.
+- taught us: a terminal workflow failure after publication can be bookkeeping, not failed artifacts. Verify exact registry/release state and rescue the version PR; never retag a published release or substitute a source-tree smoke for installed bytes. Scope live source acceptance, deterministic published-artifact checks and actual workspace deployment separately.
+
 ## Desktop integration band preflight correction (2026-09-19)
 - verdict: APPROVE exact one-file `c97ddf00`, integrated as `7352c16d`; exact preimage and complete delta reviewed, parent affected real-server/fake-CLI cases2/2 pass with syntax/diff clean.
 - owner: fresh-source/packaging lane · reviewer/integrator: maintainer.
