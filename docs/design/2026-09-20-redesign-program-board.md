@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-20 23:10Z · main `7f519053`+ · OATS v0.24.1 · OKF v2.1.1 · oats-framework/v1.1.0 · **oats-knowledge main 8d67eab4 (public)**
+**Last update:** 2026-09-21 00:10Z · main `0e3bf643`+ · OATS v0.24.1 · OKF v2.1.1 · oats-framework/v1.1.0 · oats-knowledge main 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + **all seven** member indexes (oats-dev#1, oats-linear#1 merged after access) + five imports pinned · ✅ live inspect ready-for-preparation · 🔄 **fresh-deployment gate (P1.5) assigned to Juan's side** | lead, Antares/Juan | second-operator prepare/approve/scaffold/start report |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + all seven member indexes + five imports · ✅ **second-operator gate run (Juan's side, 2026-09-20)**: discover/fetch/resolve/materialize/approve the whole graph from the public definition WORKS; preparation stops at the declared aweb 1.10.3 hold; **5 kernel seams found** → fix in flight | lead, L, Antares/Juan | L `fix/second-operator-prepare-seams` → 0.24.2 → identical re-run |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 P implementing aweb 1.11.0 adapter (codec + captured-execution + check) against kernel floor 0.24.1 | P | review aweb PR; release 1.11.0; bump catalog |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1 merged (PR28) + tag `oats-framework/v1.1.0` · ✅ D2 merged (PR29): creation writes explicit removable `oats.core`; declared ⇒ no legacy kernel skills · ⬜ D3 onboarding | P, L | assign D3 to L now |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged (PR26) · ✅ `oats.framework` listed with `oats.core`/`oats.setup`/`oats.knowledge-theory` aliases (42ad7e55); `oats install oats.framework` verified from the tag | M | Desktop view → S8 |
@@ -31,6 +31,14 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ oats-dev#1 (main 6e164ee3) and oats-linear#1 (main a2121e48) merged after Juan granted write access — M's exact commits 0434f4ef / 8c183c37.
 - ⬜ `imports:` pin of `souls/oats-expert` at its published revision (after member indexes).
 - ⬜ Fresh local deployment from the shared definition (P1.5) — the real acceptance gate.
+
+## S2 — second-operator gate report (Antares, Juan's machine, 2026-09-20)
+Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → ready-for-preparation, membership eligible, source `souls/oats-kernel-expert@caa341f3`. `prepare` resolved and materialized `oats-package@caa341f3`, `oats.okf@v2.1.1`, `oats.aweb@v1.10.3`, `oats.core`, `oats.setup`, `oats.knowledge-theory` + soul; artifact-set approvals worked. Terminal: `needs-configuration` + `provider-not-qualified` (aweb 1.10.3 has no binding interface) — expected. Seams (assigned to L, one PR, priority):
+1. `inspect --request` requires `workTarget`; `prepare --request` refuses it (`buildFreshPreparationRequest` exists but the CLI never uses it).
+2. `prepare` on the absent deployment inspect blessed → raw `ENOENT` + host path through the JSON envelope.
+3. `prepare` writes lock v3; `oats trust <cap> --dir` rejects it (`unsupported lockfileVersion 3`) → dead end from `--help`.
+4. The working `trust --deployment --artifact-set <sha256>` route is absent from `--help`.
+5. Problems carry `origins: []` and no slot/capability; aweb's missing interface masks OKF diagnostics — a valid and a bogus `stores.oats` binding produce byte-identical output. **Fix first.**
 
 ## S3 — Messaging (aweb) on the new infrastructure
 - Facts: released aweb 1.10.3 has no binding interface; broker refuses. aw 1.36.1 broker calls `oats session inspect/input --home H`; never restarts stopped runtime; strict-Pi print mode can't take session input.
