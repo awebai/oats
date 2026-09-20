@@ -1003,6 +1003,10 @@ function fingerprint(root) {
     for (const ent of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
       const abs = join(dir, ent.name);
       const rel = prefix ? `${prefix}/${ent.name}` : ent.name;
+      // Git internals are not stable under byte comparison: newer git runs background
+      // maintenance during the fixture's own commands and leaves transient files such
+      // as .git/objects/maintenance.lock that vanish between readdir and lstat.
+      if (rel === ".git") continue;
       const st = lstatSync(abs);
       if (st.isSymbolicLink()) out.push(`${rel} symlink -> ${readlinkSync(abs)}`);
       else if (st.isDirectory()) { out.push(`${rel} dir ${(st.mode & 0o777).toString(8)}`); walk(abs, rel); }

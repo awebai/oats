@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-21
+* **Release**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record OATS 0.24.3 — the five second-operator `prepare` seams fixed and the corrected acceptance (identical pair is correct output; fix = attribution/specificity) captured as a maintainer lesson.
 * **Release**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record OATS 0.24.2 publication — the [official capabilities decision](/decisions/official-capabilities-oats-core-setup-and-marketplace.md) is shipped end to end (`oats onboard`, explicit `oats.core`, `oats.framework` 1.1.1, aweb 1.11.0 pairing); the second-operator seams remain open for 0.24.3. [Lesson](/lessons/version-bump-grep-tests-before-push.md) extended with bundled-copy parity.
 
 ## 2026-09-20

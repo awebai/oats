@@ -16,31 +16,30 @@ members:
 defaults:
   tasks: none
 
-# Imports pin the five framework expert editions exported by this same repository
-# at the reviewed revision that published them with their explicit oats.core
-# declaration. Importing is selection, not activation, enrollment or approval.
+# Imports pin the six framework soul editions exported by this same repository at the
+# released v0.24.3 revision (explicit oats.core, oats.okf@v2.1.1, oats.aweb@v1.11.0). Importing is selection, not activation, enrollment or approval.
 imports:
   - source: git:github.com/awebai/oats
     soul: souls/oats-expert
-    revision: caa341f34009e37006567419a983d5a743037a79
+    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
     alias: oats-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-kernel-expert
-    revision: caa341f34009e37006567419a983d5a743037a79
+    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
     alias: oats-kernel-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-desktop-expert
-    revision: caa341f34009e37006567419a983d5a743037a79
+    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
     alias: oats-desktop-expert
   - source: git:github.com/awebai/oats
     soul: souls/market-research-expert
-    revision: caa341f34009e37006567419a983d5a743037a79
+    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
     alias: market-research-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-assistant
-    revision: caa341f34009e37006567419a983d5a743037a79
+    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
     alias: oats-assistant
   - source: git:github.com/awebai/oats
     soul: souls/oats-setup-expert
-    revision: 0aad753c5bc2cfb6338f69f8e4c37b123a068891
+    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
     alias: oats-setup-expert

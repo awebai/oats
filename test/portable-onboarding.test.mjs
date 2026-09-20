@@ -85,7 +85,7 @@ test("explicit onboarding inspection separates source, deployment, work target, 
   assert.equal(prepared.persisted, false); assert.equal(prepared.preparation.deployment, deployment);
   assert.deepEqual(prepared.preparation.source, result.source.reference);
   assert.deepEqual(prepared.preparation.workspace, workspace); assert.deepEqual(prepared.preparation.member, member);
-  assert.deepEqual(Object.keys(prepared.preparation).sort(), ["allowLocalPaths", "deployment", "member", "mode", "origin", "source", "workspace"], "handoff is the exact public prepare input, with no private scratch directory");
+  assert.deepEqual(Object.keys(prepared.preparation).sort(), ["allowLocalPaths", "deployment", "member", "mode", "origin", "source", "workTarget", "workspace"], "handoff is the exact public prepare input, with no private scratch directory");
   assert.equal(Object.hasOwn(prepared.preparation, "directory"), false);
   assert.equal(prepared.workTarget.path, workTarget); assert.equal(existsSync(deployment), false);
   assert.throws(() => buildFreshPreparationRequest(result, { directory: join(root, "private-scratch") }), { code: "invalid-declaration" });
@@ -229,7 +229,7 @@ test("standalone source inspection never follows publisher workspace or invents 
   assert.equal(f.calls.some((call) => call.source === W), false, "publisher backlink is parsed but never followed without explicit workspace input");
   const prepared = buildFreshPreparationRequest(result);
   assert.equal(prepared.preparation.standaloneContextKey, "operator-context-1");
-  assert.deepEqual(Object.keys(prepared.preparation).sort(), ["allowLocalPaths", "deployment", "origin", "source", "standaloneContextKey"]);
+  assert.deepEqual(Object.keys(prepared.preparation).sort(), ["allowLocalPaths", "deployment", "origin", "source", "standaloneContextKey", "workTarget"]);
   assert.equal(Object.hasOwn(prepared.preparation, "directory"), false);
   assert.throws(() => inspectPortableOnboarding({ deployment, workTarget, source: reference, origin, workspace: { source: W, origin }, standaloneContextKey: "ambiguous" }, { repositories: f.repositories }), { code: "invalid-declaration" });
 });
