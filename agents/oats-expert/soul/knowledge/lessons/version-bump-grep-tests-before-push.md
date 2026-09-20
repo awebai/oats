@@ -19,9 +19,13 @@ version pins (`release-packaging`, `workspace-repository-layout`,
 
 # Rule
 
-- Before committing any version/ref bump: `rg -n "<old-version>"` across
-  `test/`, `docs/release-notes/`, `README.md`, scripts and mirrors, and update
-  every intentional pin in the same commit.
+- Before committing any version/ref bump: `rg -n "<old-version>"` across the
+  WHOLE repo (`test/`, `scripts/` — the clean-room smoke pins the mirrored OKF
+  version too —, `docs/`, `README.md`, mirrors, CI workflows), and update every
+  intentional pin in the same commit. The same release later failed CI's
+  tarball smoke on a pin in `scripts/clean-room-smoke.mjs` that a `test/`-only
+  sweep missed; the tag had to be recut (allowed only because publish had not
+  run).
 - Never chain `git push` behind a test command whose output is piped through
   a filter; read the summary first, then commit and push as a separate step.
 - Pinned-version tests are a feature (they catch silent drift); the cost is
