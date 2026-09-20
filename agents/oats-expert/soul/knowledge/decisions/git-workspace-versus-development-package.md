@@ -18,6 +18,13 @@ This does not remove the published package, change a catalog entry, adopt a
 workspace, grant membership or migrate a deployment. Concrete source exports,
 knowledge visibility and operator choices remain explicit decisions.
 
+The subsequent human-directed order is workspace/portable adoption first, then
+knowledge centralisation and the five expertise souls. The
+[execution plan](https://github.com/awebai/oats/blob/main/docs/design/2026-09-20-workspace-and-portable-adoption-plan.md)
+uses this repository separation as its recommended target and preserves the
+published development package during transition. Choosing the workspace home
+must not silently choose all portable source identities or approve live cutover.
+
 # The distinction
 
 - A **workspace definition** describes shared organisational composition:

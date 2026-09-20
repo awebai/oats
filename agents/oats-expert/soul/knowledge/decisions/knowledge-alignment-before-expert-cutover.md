@@ -20,6 +20,16 @@ The earlier [expert rebuild](/decisions/expert-souls-and-knowledge-rebuild.md) a
 [source-edition proposal](/decisions/portable-role-editions-and-bootstrap.md)
 remain relevant, with their separate approval boundaries intact.
 
+# Sequence clarification
+
+The human subsequently directed workspace/portable adoption first, followed by
+centralised knowledge and the five expertise souls. This proposal's default
+profile, curation and learning checks now fit phase2 of the
+[execution plan](https://github.com/awebai/oats/blob/main/docs/design/2026-09-20-workspace-and-portable-adoption-plan.md).
+Only demonstrated generic contract/provider readiness gaps needed for workspace
+adoption belong in phase1. Do not start the corpus move before that foundation
+works, or interpret the plan as approval for every future knowledge mechanism.
+
 # Context
 
 The 0.24.0/2.1.0 release supplies substantial retained execution, provider binding,
