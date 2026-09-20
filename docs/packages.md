@@ -402,7 +402,7 @@ sources; installing a kernel does not advance existing package locks:
 {
   "packages": {
     "oats.okf": { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.0.0", "path": "oats-package" },
-    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.1.0", "path": "oats-package" },
+    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.1.1", "path": "oats-package" },
     "oats.dev": { "url": "https://github.com/awebai/oats-dev.git", "ref": "v1.0.0", "path": "oats-package" }
   },
   "capabilities": { "oats.review": "oats.dev" }
@@ -429,7 +429,7 @@ integrity checks. Git transport preserves the canonical source alias.
 
 The `oats.framework` distribution package is a separate Git payload in this
 repository's `oats-package/`, excluded from the kernel npm tarball. The catalog
-entry selects the published `oats-framework/v1.1.0` tag, which exports three
+entry selects the published `oats-framework/v1.1.1` tag, which exports three
 capabilities: `oats.core` (day-to-day operation: `oats-operate`, `oats-souls`
 and the "you run on OATS" briefing — declared explicitly on every soul by
 default at creation and removable), `oats.setup` (OATS Soul Setup: `oats-config`,

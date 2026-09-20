@@ -40,3 +40,7 @@ imports:
     soul: souls/oats-assistant
     revision: caa341f34009e37006567419a983d5a743037a79
     alias: oats-assistant
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-setup-expert
+    revision: 0aad753c5bc2cfb6338f69f8e4c37b123a068891
+    alias: oats-setup-expert

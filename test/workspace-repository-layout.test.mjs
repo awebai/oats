@@ -80,7 +80,7 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   assert.ok(ws.members.every(m => !Object.hasOwn(m, "revision")), "observe host defaults, never guess main or future commits");
   // Stage two: the five editions are published, so the workspace pins each import to the exact
   // reviewed commit that exported them with explicit oats.core. Full SHA, same repository, one alias each.
-  assert.deepEqual(ws.imports.map(i => [i.soul, i.alias]), EDITIONS.map(([name]) => [`souls/${name}`, name]));
+  assert.deepEqual(ws.imports.map(i => [i.soul, i.alias]), EXPORTED_NAMES.map(name => [`souls/${name}`, name]));
   for (const item of ws.imports) {
     assert.equal(item.source, parseRepositorySource(SOURCE).normalized);
     assert.match(item.revision, /^[a-f0-9]{40}$/, "import revision is an immutable commit, not a branch");
