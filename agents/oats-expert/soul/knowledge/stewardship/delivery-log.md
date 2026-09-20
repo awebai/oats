@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Evening wave: PR27, PR28, PR29, PR30 + releases (2026-09-20)
+- verdict: MERGED all; released OATS v0.24.1 (tag recut once before publish for a scripts/ version pin; second CI run hit a flaky cli-lifecycle test → rerun green; bump PR #31 manual), OKF v2.1.1, `oats-framework/v1.1.0`. Maintainer follow-ups: catalog `oats.framework` + aliases; five souls declare `oats.core`; workspace imports pinned at caa341f3; layout test moved to stage two.
+- owner: L (PR27 custody, PR29 D2), P (PR28 D1), M (PR30 S6).
+- taught us: a distribution package tag (`oats-framework/vX`) decoupled from the kernel `vX.Y.Z` tag lets capability releases ship without a kernel cut; verify a release by actually acquiring from the tag (`oats install oats.framework`) and creating a soul, not by reading the diff. Same-repo `repo:<path>` sources require parsing the soul as a source document with a snapshot — tests that parse editions as operator input will refuse them.
+
 ## Redesign wave: PR23, PR24, PR26 + four member indexes (2026-09-20)
 - verdict: MERGED all. PR23 (M) metadata/source edition, layout 5/5. PR24 (L) full gate 1621/0; `inspect --request` accepted as public inspection route, not parked. PR26 (M) marketplace policy, validate 396 links, catalog reader unaffected. Member-index PRs oats-okf#3/aweb#1/authoring#1/jira#1: one 6-line root `oats.yaml` each, pushed by M, merged by lead.
 - owner: M (migration-peer), L (lifecycle-peer); lead pushed nothing on M's behalf — the two remaining repos need account access, not a workaround.
