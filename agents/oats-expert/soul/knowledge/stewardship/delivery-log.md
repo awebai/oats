@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR41 provider reasons + inspect superset → OATS v0.24.4 (2026-09-21)
+- verdict: MERGED (`ef211d3e`) + PUBLISHED (tag `816afb0f`, bump #42). Provider fixed reasons cross the binding wire by exact match against manifest `binding.reasons` or reviewed bundled lists; `binding.keys` accepted shape-only; `inspect --request` accepts prepare's fields as `ignored`; CLI renders problem `key`. Full gate 1657/1653/0/4 by author and maintainer.
+- owner: L; findings and verdict wording from the independent second operator (Antares, Juan's machine); compatibility-floor trap and literal lists from P.
+- taught us: (1) a "specificity" gap can be a kernel *mechanism* discarding data the provider already made safe — trace the wire before assigning text work to providers; (2) a closed manifest validator makes any new manifest field a hard floor bump for every provider that declares it — decide "kernel first, providers floor on it" before the provider release, not at publish; (3) a flat shared operator namespace with no ownership rule deadlocks the first two providers whose key sets overlap and blames the innocent slot; (4) a fix to the source that produced a diagnostic makes that diagnostic irreproducible from main — regression fixtures must pin synthetic input.
+
 ## PR36 five second-operator seams → OATS v0.24.3 (2026-09-21)
 - verdict: MERGED + PUBLISHED. Attribution by slot/capability/origins with kernel-fixed messages; no short-circuit across slots; typed v3 trust/absent-deployment holds; help; workTarget/emit-prepare-request. Focused 53/0 (lead), full 1640/0 (owner). Release run needed one flake rerun (maintenance.lock); snapshot walks now skip `.git`.
 - owner: L; fixtures from Juan's side (Antares); root-cause trace by L confirmed by P.
