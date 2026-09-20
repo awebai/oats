@@ -1,8 +1,12 @@
 # Framework capability payload
 
-This Git-distributed OATS package exports three independently selected resource
-capabilities. Package identity/version and capability identities/versions are
-separate; see `oats-package.json` and each `oats.json` for the exact metadata.
+The Git-distributed **oats.framework 1.1.0** source candidate exports three
+independently selected resource capabilities. Package identity/version and
+capability identities/versions are separate; see `oats-package.json` and each
+`oats.json` for the exact metadata. The former distribution identity was
+`oats.knowledge-theory`; that capability id is unchanged. This rename does not
+migrate old locked package identities: preserve their exact published sources
+and catalog compatibility, and never hand-edit an existing lock to force it.
 
 | Capability | Resources | Authority |
 | --- | --- | --- |

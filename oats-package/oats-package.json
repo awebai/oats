@@ -1,6 +1,6 @@
 {
-  "package": "oats.knowledge-theory",
-  "version": "1.0.1",
+  "package": "oats.framework",
+  "version": "1.1.0",
   "description": "Explicit OATS operation and setup guidance plus optional reference knowledge theory and authoring expert.",
   "compatibility": { "oats": ">=0.24.0" },
   "capabilities": ["capabilities/oats-knowledge-theory", "capabilities/oats-core", "capabilities/oats-setup"]

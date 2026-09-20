@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CAPABILITY_PATH = "capabilities/oats-knowledge-theory";
-export const DISTRIBUTION_PACKAGE_ID = "oats.knowledge-theory";
+export const DISTRIBUTION_PACKAGE_ID = "oats.framework";
 export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup"];
 const validateCapability = new Ajv2020({ allErrors: true, strict: false }).compile(
   JSON.parse(readFileSync(join(REPO_ROOT, "docs/capability-manifest.schema.json"), "utf8")),
