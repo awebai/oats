@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-20 19:50Z · main `03f94464`+ · OKF `v2.1.1` · OATS `v0.24.1` tagged (CI publishing)
+**Last update:** 2026-09-20 21:30Z · main `375b9f42` · OATS **v0.24.1 published** · OKF `v2.1.1` · `oats-framework/v1.1.0`
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -10,13 +10,13 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
-| S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ shipped 0.24 / **OKF 2.1.1 released** (PR4 merged; mirror, catalog ref, soul source bumped) | P | done for this phase; OATS 0.24.1 cut after L's custody fix |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ PR23, PR24, **PR27** (home-route captured custody) merged · ✅ member `oats.yaml` on main in oats-okf/aweb/authoring/jira · 🔄 **v0.24.1** release in CI · ⛔ oats-dev, oats-linear (no push access; bundles ready for the human) | M, L, lead | verify 0.24.1 publish; human pushes bundles; pin imports; fresh deployment gate |
-| S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 codec PR2 + custody WIP · needs profile pin | P | lead pins pilot profile + answers authority question |
-| S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | 🔄 D1 in progress (P, `feat/d1-oats-core-setup`, package → `oats.framework` 1.1.0) · 🔄 D2 in progress (L) · ⬜ D3 | P (D1), L (D2, D3) | review D1/D2 PRs; assign D3 after D2 |
-| S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged PR26 (`docs/official-marketplace.md`, policy pointer) · ⬜ `oats.core`/`oats.setup` entries after D1 release | M | add entries at D1 release |
-| S6 | Five expert souls created in the oats repo (`souls/<name>/`) | 🔄 assigned to M (`feat/s6-expert-soul-editions`) from the reviewed candidate; `souls/oats-expert` on main | M | review PR; `oats.core` follow-up after D1 |
-| S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | 🟡 35 curated concepts uncommitted on local `curation/expert-knowledge`; bootstrap proven on personal repo; `awebai/oats-knowledge` EMPTY, private | lead + human (visibility) | decide visibility; publish curation as PR; point souls' `stores.oats` at it |
+| S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + indexes + **five imports pinned** (375b9f42) · ✅ live `oats inspect --request` against published main → ready-for-preparation · ⛔ oats-dev, oats-linear indexes (no push access) | lead | human pushes bundles; fresh deployment prepare/approve/scaffold/start gate |
+| S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 P implementing aweb 1.11.0 adapter (codec + captured-execution + check) against kernel floor 0.24.1 | P | review aweb PR; release 1.11.0; bump catalog |
+| S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1 merged (PR28) + tag `oats-framework/v1.1.0` · ✅ D2 merged (PR29): creation writes explicit removable `oats.core`; declared ⇒ no legacy kernel skills · ⬜ D3 onboarding | P, L | assign D3 to L now |
+| S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged (PR26) · ✅ `oats.framework` listed with `oats.core`/`oats.setup`/`oats.knowledge-theory` aliases (42ad7e55); `oats install oats.framework` verified from the tag | M | Desktop view → S8 |
+| S6 | Five expert souls created in the oats repo (`souls/<name>/`) | ✅ all five on main (PR30 + caa341f3): explicit `oats.core` (repo:oats-package), oats.okf@v2.1.1, exported + imported | M, lead | legacy `agents/` roster cutover after S7 |
+| S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | 🟡 35 curated concepts uncommitted locally; `awebai/oats-knowledge` EMPTY/private · ⛔ visibility undecided | lead + human | decide visibility → publish → bind `stores.oats` → fresh-reader proof |
 | S8 | Desktop parity (marketplace view, soul creation with `oats.core`, onboarding flow) | ⬜ after S4/S5 | fresh Desktop engineer (blocked: `claude` absent) | pick runtime; spawn |
 
 ## S1 — Knowledge capability contract rework
@@ -39,6 +39,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ **PR27 merged (5af848fc)**: HOME-only session route applies existing captured custody; refuses before transport on drift. Full gate 1626/1632 (2 pre-existing env failures reproduced on main). Ships in **v0.24.1** — the kernel floor the aweb adapter gates on.
 
 ## S4 — `oats.core` / `oats.setup` / onboarding
+- ✅ **D1 merged PR28 (70b10822)**, distribution tag `oats-framework/v1.1.0` on 9930dcfb; **D2 merged PR29 (9930dcfb)** full gate 1634/0. Verified live: `oats create` writes `requires.capabilities.oats.core` with the catalog source; `oats install oats.framework` acquires all three capabilities from the tag.
 - ✅ Decision + plan D1–D4 on main 18af53be; docs reference as accepted-not-shipped.
 - 🔄 **D1** (P, started 16:29Z; package identity confirmed: rename distribution package to `oats.framework` 1.1.0, capabilities 1.0.0, `oats.knowledge-theory` unchanged) package `oats.core` (`oats-operate`, `oats-souls`, oats.md injection) and `oats.setup` (oats-config, oats-packages, adoption guidance) under `oats-package/capabilities/`. Owner P.
 - 🔄 **D2** (L, after custody fix) soul creation writes explicit `requires.capabilities.oats.core`; kernel skill list de-ambiented (one-release coexistence); checked-in souls updated. Owner L.
@@ -50,6 +51,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ **D4 merged PR26 (786490ae)**: `docs/official-marketplace.md`, `package-catalog.json` policy pointer (inert to the reader), README/packages/capabilities links, D3 sketch in adoption guide. ⬜ entries for `oats.core`/`oats.setup` at D1 release. Desktop view → S8.
 
 ## S6 — Five expert souls in the oats repo
+- ✅ **PR30 merged (40a579dc)** + maintainer follow-up **caa341f3**: all five declare `oats.core: {source: repo:oats-package}`, oats.okf@v2.1.1; `oats.yaml` exports all five; `oats-workspace.yaml` imports all five at caa341f3 (375b9f42). Live inspection against published main resolves them.
 - Roster (decided): `oats-expert`, `oats-kernel-expert`, `oats-desktop-expert`, `market-research-expert`, `oats-assistant`.
 - 🟡 Candidate: `expert-roster` worktree (b5e233b9 + 519 uncommitted changes: five `agents/<name>/soul/` + legacy roster deletions). Reviewed earlier; NOT committed.
 - ✅ `souls/oats-expert` transitional edition on main already declares owns/reads for the five nodes.
