@@ -30,9 +30,18 @@ operator's identity, and the error landed on the *innocent* slot.
    A provider MUST consume only the keys it owns and MUST ignore every
    other key. Validating a foreign key is a provider defect.
 2. **Declared owned keys.** A provider manifest lists its owned operator
-   keys under `binding.keys` (exact key names or `prefix.` patterns such as
-   `stores.`). Providers without the field are treated as owning only what
-   they consume; the kernel cannot filter for them.
+   keys under `binding.keys`. Each entry is either an exact key (`wider`)
+   or a namespace claim written with a trailing dot (`stores.`), which owns
+   every key under that prefix — OKF's store aliases are soul- and
+   operator-chosen, so a literal list cannot express them. No other pattern
+   syntax. Providers without the field are treated as owning only what they
+   consume; the kernel cannot filter for them.
+2b. **Ownership is unique, and the kernel enforces it.** If two selected
+   providers claim the same key or overlapping namespaces, preparation is
+   refused at composition time with a typed problem naming both
+   capabilities and the claim — a packaging defect, detectable the moment
+   the capability set is known, and not something an operator can fix.
+   Last-writer-wins is rejected because it silently recreates this bug.
 3. **Kernel uses the declaration** when present: forwards each provider only
    its owned keys (defense in depth), attributes a rejected key to the slot
    whose provider owns it, and reports a key owned by **no** selected
@@ -49,6 +58,10 @@ operator's identity, and the error landed on the *innocent* slot.
 - Manifest schema gains optional `binding.keys` beside `binding.reasons`.
 - The second-operator fixtures gain a mixed-provider request (both
   `stores.oats` and `wider` present) that must resolve knowledge.
+- Regression fixtures for a provider reason must pin the input that produces
+  it: `messaging workspace must declare private: per-human` is no longer
+  reproducible from main after 906b1558 — use a synthetic workspace
+  document without the policy, not a fresh checkout.
 
 # Rejected
 
