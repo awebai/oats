@@ -82,7 +82,7 @@ test("transitional role preserves external owner/read routing and hard knowledge
   const parsed = soul(), declaration = parsed.declaration;
   assert.equal(declaration.name, "oats-expert"); assert.equal(declaration.work, "directory");
   assert.deepEqual(JSON.parse(JSON.stringify(declaration.requires)), {
-    knowledge: { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.0#oats-package" },
+    knowledge: { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.1#oats-package" },
     messaging: { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.10.3#oats-package" },
   });
   const model = normalizeKnowledgeDeclaration(declaration.knowledge, { origins: parsed.origins, origin });

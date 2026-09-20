@@ -43,9 +43,9 @@ test("release alignment rejects stale lock metadata even when all three manifest
 });
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
-  assert.equal(json("capabilities/oats-okf/oats.json").version, "2.1.0");
+  assert.equal(json("capabilities/oats-okf/oats.json").version, "2.1.1");
   assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.24.0");
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.1.0");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.1.1");
   const theory = json("package-catalog.json").packages["oats.knowledge-theory"];
   assert.equal(theory.ref, "v0.23.0", "catalog uses the already published theory source, not this pending release tag");
   assert.equal(theory.path, "oats-package");
