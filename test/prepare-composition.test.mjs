@@ -214,7 +214,7 @@ test('native preparation publishes complete source/curriculum/helper records, th
   const record=readCapturedResolution(f.deployment,result.resolution);
   assert.equal(record.choices['/settings/example.action/limit'].value,3);
   assert.ok(record.helpers['example.action:worker']);
-  assert.deepEqual(record.dispatch.composition.skills.map(skill=>skill.name).sort(),['oats-portable','oats-portable-artifacts','oats-portable-setup','procedure']);
+  assert.deepEqual(record.dispatch.composition.skills.map(skill=>skill.name).sort(),['oats-portable','oats-portable-artifacts','procedure']);
   assert.equal(record.dispatch.composition.skills.some(skill=>['oats','oats-config','oats-packages'].includes(skill.name)),false);
   assert.equal(record.dispatch.launch,null,'command/curriculum preparation does not invent a launch recipe');
   const scaffoldParent=join(realpathSync(f.root),'scaffolds');mkdirSync(scaffoldParent);const scaffoldHome=join(scaffoldParent,'imported-expert-1');

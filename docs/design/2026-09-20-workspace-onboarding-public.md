@@ -1,0 +1,124 @@
+# Public source inspection for same-repository workspace onboarding
+
+This increment supplies the missing public adapter around the EXISTING portable
+onboarding facade. It does not define another workspace format, parser, resolver,
+registry, identity or permission. Source/member declarations remain separately
+owned; production capability/profile readiness is not established by the fixture.
+
+## Read-only entry
+
+```sh
+oats inspect --request /absolute/inspection.json --json
+```
+
+This mode accepts only one request file and `--json`. Explicit captured selectors
+or current-context flags conflict before file reads; inherited captured environment
+is not new-work input. Other existing inspect modes are unchanged. The shared
+bounded strict JSON request reader feeds the existing inspection validator intact:
+unknown fields are not dropped, and no missing context comes from current config.
+
+The public core export `inspectPortableOnboarding(input, {repositoryOptions}?)`
+owns one transient repository transaction and its guarded cleanup. Its input is
+the existing facade contract:
+
+```json
+{
+  "deployment": "/operator/deployments/example",
+  "workTarget": "/operator/projects/example",
+  "source": "advertised-alias",
+  "origin": {"kind":"operator","document":{"kind":"operator","id":"setup"},"pointer":"/source"},
+  "workspace": {
+    "source": "git:https://example.org/team/framework.git",
+    "origin": {"kind":"operator","document":{"kind":"operator","id":"setup"},"pointer":"/workspace"}
+  },
+  "member": {
+    "source": "git:https://example.org/team/framework.git",
+    "origin": {"kind":"operator","document":{"kind":"operator","id":"setup"},"pointer":"/member"}
+  }
+}
+```
+
+These paths/references are placeholders. Workspace and member may identify the
+SAME repository. They still require explicit workspace admission, a member
+backlink and matching observed commits. Omitted repository revisions observe the
+hosting default branch; they do not guess `main` or create circular future pins.
+
+Independent adoption replaces workspace/member with an explicit source reference
+`{source, soul, revision, alias}` and explicit `standaloneContextKey` (opaque string
+or null). It does not follow the source publisher's workspace backlink or inherit
+its development defaults/teams. A member check is optional; without one, import
+reports `not-requested` membership, never enrollment.
+
+## Metadata is not authority or provider readiness
+
+Normal JSON envelope `result` retains schemaVersion1 and the existing statuses:
+`ready-for-preparation`, `needs-configuration`, `separate-deployment-required`.
+`ok:true` means the observation succeeded, including a truthful hold. Separate
+fields expose source identity/revision/export metadata, deployment/work paths,
+workspace identity/import locators, reciprocal observations, declared teams and
+non-effect claims. Inspection executes no provider, hook, approval or native
+backend and writes no deployment state; repository scratch is transient.
+
+The public projection deliberately does NOT expose `source.reference` as a
+reusable mutation input. Opaque adoption values and provider declaration payloads
+have not been classified by their owner and are omitted. Import summaries expose
+`adoptionPresent`; knowledge export summaries expose contract/version and
+`payloadOmitted`. Top-level `omitted:{providerPayloads:true,adoptionValues:true}`
+states that this is a metadata view, not a lossless request or a safe-payload claim.
+It is not an issued `buildFreshPreparationRequest` witness, even in the same
+process. Keep the original authored input for an explicit preparation request.
+
+Existing managed deployment state is preserved and reported, not repaired or
+migrated. An absent selected path requires explicit operator provisioning and
+reinspection. The serialized inspection does not lock the filesystem or authorize
+later mutation; preparation retains its own existing validation/custody rules.
+The inspected work target does not become source identity or an implied placement
+choice. Supported captured directory scaffolds own their separate H/work.
+
+## Existing preparation and retained execution
+
+`oats prepare --request` already accepts deployment/source/origin, workspace/member
+OR standalone context, operator policy/bindings, mode/local-input authorization,
+launch and helperLaunches. Do not pass the inspection result or workTarget/catalog
+wrapper. Exact executable approval is separate. A required provider whose binding
+code is unapproved may return `needs-configuration` with an `approval-required`
+problem and exact artifact-set/capability requests, before any record exists:
+
+```sh
+oats trust <capability> --deployment <D> --artifact-set <returned-id> --json
+oats prepare --request /absolute/preparation.json --json
+oats inspect --deployment <D> --resolution <R> --composition --json
+oats spawn <subject> --deployment <D> --resolution <R> --home <new-H> --no-launch --json
+oats session start --deployment <D> --resolution <R> --home <H> --request /absolute/native.json --json
+```
+
+Repreparation after explicit approval is ordinary continuation in the selected,
+now-managed deployment; do not delete its state to make fresh preflight pass.
+Required hooks still run under their admitted custody with `--no-launch`; a parsed
+binding or team declaration is not proof of an enrolled/ready native provider.
+Native request version1 supplies backend/task/optional stopGraceMs, not a new
+model or current launch selection. Complete OATS home resources remain composed.
+Native auth stays native and permission bypass requires explicit user opt-in.
+
+## Limits and focused evidence
+
+`test/workspace-onboarding-public.test.mjs` uses current public CLI/core, actual
+Git and a bounded local SSH upload-pack fixture, contract-shaped inert provider
+codecs/hooks, and inert native/backend executables. It covers self-membership,
+reciprocal stale observations, independent adoption, non-effect/opaque-output
+boundaries, exact approval, full retained resources, source deletion/current
+config poison, required-provider failure BEFORE native admission/backend effects,
+and original-incarnation native dispatch plus receipt-based stopped observation.
+No production provider/SDK/model/server or host installation is exercised.
+
+Captured input/wake and public captured retirement remain explicit unsupported
+boundaries; a stopped terminal observation is not permission to deliver a captured
+message or retire through legacy fallback. Session-delivered messaging must retain
+its required wake contract; a start-only fixture does not qualify that profile.
+Non-directory placement is not supplied by inspecting a Git work target. These
+limits go to their owners as precise seams, not silent requirement removal.
+
+The user requested removal of `oats-portable-setup` and no new skills in this
+increment. Fresh kernel composition no longer selects that skill; existing
+retained snapshots are unchanged. This document and CLI help describe the public
+adapter, not a replacement skill or a claim of completed workspace deployment.

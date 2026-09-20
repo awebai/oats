@@ -23,7 +23,7 @@ import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-c
 import {
   LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
   acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
   officialCapabilityPackage, officialPackageCatalog,
@@ -94,6 +94,21 @@ const JSON_MODE = args.includes("--json");
 const CLI_BIN = realpathSync(fileURLToPath(import.meta.url));
 const jsonFail = (code, message, details) => { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: String(message), ...(details !== undefined ? { details } : {}) } })); process.exit(1); };
 const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: true, result })); };
+
+function inspectOnboardingCmd() {
+  const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
+  let file;
+  for (let index = 1; index < args.length; index++) {
+    if (args[index] === "--json") continue;
+    if (args[index] !== "--request" || file !== undefined || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "source inspection accepts one --request <absolute-json> and --json only");
+    file = args[++index];
+  }
+  try {
+    const input = readPortablePreparationRequest({ file });
+    const result = inspectPortableOnboarding(input);
+    if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
+  } catch (error) { fail(error.code || "E_INSPECT_FAILED", error.message); }
+}
 
 function prepareCmd() {
   const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
@@ -4867,6 +4882,16 @@ catch (error) {
   if (JSON_MODE) jsonFail(error.code || "E_BAD_ARGS", error.message);
   die(error.message);
 }
+const sourceInspection = (cmd === "inspect" || captured?.args[0] === "inspect")
+  && args.some(arg => arg === "--request" || arg.startsWith("--request="));
+if (sourceInspection) {
+  if (captured) {
+    if (JSON_MODE) jsonFail("E_BAD_ARGS", "source inspection is explicit new work and cannot use captured selectors");
+    die("source inspection is explicit new work and cannot use captured selectors");
+  }
+  if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
+  inspectOnboardingCmd(); process.exit(0);
+}
 if (cmd === "prepare" || captured?.args[0] === "prepare") {
   if (captured) {
     if (JSON_MODE) jsonFail("E_BAD_ARGS", "prepare is explicit new work and cannot use captured selectors");
@@ -5184,6 +5209,9 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             design, repo checkout only; see
                                             packages/experimental/README.md
 
+  oats inspect --request <absolute-json-file> [--json]
+                                            read-only fresh source/workspace/member metadata;
+                                            no current config, provider execution or preparation authority
   oats prepare --request <absolute-json-file> [--json]
                                             complete public preparation input; no mixed flags,
                                             inherited binding, implicit setup or launch authority
