@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 01:40Z · main `b92f0d07` · OATS v0.24.1 · OKF v2.1.1 · oats-framework/v1.1.0 · **aweb v1.11.0** · oats-knowledge 8d67eab4
+**Last update:** 2026-09-21 04:10Z · main `feef2a2f`+ · **OATS v0.24.2 tagged (CI)** · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,11 +11,11 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + all seven member indexes + five imports · ✅ **second-operator gate run (Juan's side, 2026-09-20)**: discover/fetch/resolve/materialize/approve the whole graph from the public definition WORKS; preparation stops at the declared aweb 1.10.3 hold; **5 kernel seams found** → fix in flight | lead, L, Antares/Juan | L `fix/second-operator-prepare-seams` → 0.24.2 → identical re-run |
-| S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ **aweb 1.11.0 released** (PR3 merged 862f156): binding interface + HOME-route session readiness; floor `>=0.24.2` · ⬜ catalog/soul pin bump with the 0.24.2 cut · ⬜ second-operator re-run | P, lead | cut 0.24.2 → bump → Antares re-run |
-| S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1 merged (PR28) + tag `oats-framework/v1.1.0` · ✅ D2 merged (PR29): creation writes explicit removable `oats.core`; declared ⇒ no legacy kernel skills · ⬜ D3 onboarding | P, L | assign D3 to L now |
-| S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged (PR26) · ✅ `oats.framework` listed with `oats.core`/`oats.setup`/`oats.knowledge-theory` aliases (42ad7e55); `oats install oats.framework` verified from the tag | M | Desktop view → S8 |
-| S6 | Five expert souls created in the oats repo (`souls/<name>/`) | ✅ all five on main (PR30 + caa341f3): explicit `oats.core` (repo:oats-package), oats.okf@v2.1.1, exported + imported | M, lead | legacy `agents/` roster cutover after S7 |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + seven indexes + **six imports** (five experts @caa341f3, setup expert @0aad753c) · ✅ second-operator gate run · 🔄 five seams → L, target 0.24.3 | lead, L, Antares | seams PR; Antares re-run on 0.24.2 (aweb 1.11.0) |
+| S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ aweb 1.11.0 released · ✅ **catalog + six editions pin v1.11.0 (0.24.2)** · ⬜ second-operator re-run | P, lead | Antares re-run |
+| S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
+| S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |
+| S6 | Five expert souls created in the oats repo (`souls/<name>/`) | ✅ five + `oats-setup-expert` on main, all declaring `oats.core`, exported + imported | M, L, lead | legacy `agents/` cutover after S7 proof |
 | S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | ✅ **repo PUBLIC; PR #1 merged → main 8d67eab4, 25 accepted concepts**, owners = published souls, validator pinned OKF 2.1.1 · 🔄 fresh-reader proof assigned to Juan's side · ⬜ legacy in-soul knowledge decommission | lead, Antares/Juan | fresh-reader + PR-learning proof; then retire `agents/*/soul/knowledge` |
 | S8 | Desktop parity (marketplace view, soul creation with `oats.core`, onboarding flow) | ⬜ after D3 · **host offered: Juan's machine (has `claude`)** — accepted | fresh Desktop engineer on Juan's host | brief + spawn params after D3 |
 
@@ -48,6 +48,7 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 - ✅ **PR27 merged (5af848fc)**: HOME-only session route applies existing captured custody; refuses before transport on drift. Full gate 1626/1632 (2 pre-existing env failures reproduced on main). Ships in **v0.24.1** — the kernel floor the aweb adapter gates on.
 
 ## S4 — `oats.core` / `oats.setup` / onboarding
+- ✅ **D3 merged PR35 (37c5c012)**: `oats onboard` classic local bootstrap; edition `souls/oats-setup-expert` (core+setup, provider defaults `none`, no knowledge owner). Full gate 1639/0. Live: onboard → acquire `oats.framework` 1.1.1 @0aad753c → soul declares both caps at that commit → scaffold-only spawn composes exactly `oats-operate, oats-souls, oats-config, oats-packages, oats-workspace-setup` + the `oats.core` injection, no legacy kernel skills. Baseline hygiene fixed on main (a96f24df).
 - ✅ **D1 merged PR28 (70b10822)**, distribution tag `oats-framework/v1.1.0` on 9930dcfb; **D2 merged PR29 (9930dcfb)** full gate 1634/0. Verified live: `oats create` writes `requires.capabilities.oats.core` with the catalog source; `oats install oats.framework` acquires all three capabilities from the tag.
 - ✅ Decision + plan D1–D4 on main 18af53be; docs reference as accepted-not-shipped.
 - 🔄 **D1** (P, started 16:29Z; package identity confirmed: rename distribution package to `oats.framework` 1.1.0, capabilities 1.0.0, `oats.knowledge-theory` unchanged) package `oats.core` (`oats-operate`, `oats-souls`, oats.md injection) and `oats.setup` (oats-config, oats-packages, adoption guidance) under `oats-package/capabilities/`. Owner P.
