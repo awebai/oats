@@ -137,9 +137,12 @@ before claiming an operational pilot; metadata-only repository indexes change no
 of these runtime facts.
 
 Stage one used an empty imports list until source publication. All six imports
-now pin **`3156e4de23a02b0de86a45b2471cb893cd8f75db`**, the released
-[OATS v0.24.3](release-notes/v0.24.3.md) source revision, through the later reviewed
-workspace update `638206b9`. The five knowledge-owning experts therefore select
+now pin **`906b1558633766cf489451f9b68016216acaa63b`** (after
+[OATS v0.24.3](release-notes/v0.24.3.md)), the reviewed revision at which the
+workspace declares the per-human private team policy (`teams: {private: per-human}`)
+and every messaging edition carries its `teams: []` declaration — without them the
+aweb provider cannot normalize in workspace context, as the second operator found.
+Workspace update `f3ee31e0`. The five knowledge-owning experts therefore select
 OKF2.1.1 and aweb1.11.0 with explicit core; setup remains provider-independent,
 requiring core/setup and defaulting all three fundamental layers to none. It is
 not a sixth knowledge owner. This deliberate repin, not a catalog/kernel upgrade
@@ -150,7 +153,7 @@ approval, enrollment or a running pilot.
 ## Preserve source-before-import publication order
 
 1. Publish complete, reviewed source editions before pinning them. All six imports
-   use `3156e4de23a02b0de86a45b2471cb893cd8f75db` (v0.24.3). Future revisions must
+   use `906b1558633766cf489451f9b68016216acaa63b`. Future revisions must
    likewise exist before their import update.
    Never use an invented SHA, a mutable branch or an unreviewed local candidate
    as the accepted source.
@@ -178,7 +181,7 @@ approval, enrollment or a running pilot.
    imports:
      - source: git:github.com/awebai/oats
        soul: souls/oats-expert
-       revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+       revision: 906b1558633766cf489451f9b68016216acaa63b
        alias: oats-expert
    ```
 
