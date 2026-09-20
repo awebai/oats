@@ -22,6 +22,9 @@ const EDITIONS = [
   ["market-research-expert", "2a073e37-2114-474d-917d-29cf3333932f", ["sourced-market-research"]],
   ["oats-assistant", "2dab92c7-701d-4101-bc7f-09acf4fc374e", ["oats-onboarding"]],
 ];
+// The bootstrap edition is exported separately; the workspace still imports
+// only the five published expertise editions until the maintainer pins it.
+const EXPORTED_NAMES = [...EDITIONS.map(([name]) => name), "oats-setup-expert"];
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SOURCE = "git:github.com/awebai/oats", EXPORT = "souls/oats-expert";
 const origin = { kind: "operator", document: { kind: "operator", id: "workspace-layout-test" }, pointer: "/source" };
@@ -54,7 +57,7 @@ function fixture(t) {
     git(repo, "config", "uploadpack.allowFilter", "true"); git(repo, "config", "uploadpack.allowAnySHA1InWant", "true");
     if (n === 0) {
       for (const name of ["oats.yaml", "oats-workspace.yaml"]) write(join(repo, name), bytes(name));
-      for (const [name] of EDITIONS) cpSync(join(ROOT, "souls", name), join(repo, "souls", name), { recursive: true, verbatimSymlinks: true });
+      for (const name of EXPORTED_NAMES) cpSync(join(ROOT, "souls", name), join(repo, "souls", name), { recursive: true, verbatimSymlinks: true });
       // Every edition declares oats.core from this repository's own oats-package payload.
       cpSync(join(ROOT, "oats-package"), join(repo, "oats-package"), { recursive: true, verbatimSymlinks: true, filter: (src) => !src.includes("/node_modules") });
     } else {
@@ -86,14 +89,14 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   assert.deepEqual({ ...ws.declaration.defaults }, { tasks: "none" });
   assert.equal(member.workspace.source, ws.members[0].source);
   assert.equal(Object.hasOwn(member.workspace, "revision"), false);
-  assert.deepEqual(member.exports.souls.map(s => [s.path, s.definition]), EDITIONS.map(([name]) => [`souls/${name}`, `souls/${name}/soul.yaml`]));
+  assert.deepEqual(member.exports.souls.map(s => [s.path, s.definition]), EXPORTED_NAMES.map(name => [`souls/${name}`, `souls/${name}/soul.yaml`]));
   assert.deepEqual(member.exports.packages.map(p => p.path), ["oats-package", "capabilities/oats-authoring"]);
   for (const entry of member.exports.packages) assert.ok(lstatSync(join(ROOT, entry.path, "oats-package.json")).isFile());
   for (const declaration of [ws.declaration, member.exports]) assert.equal(Object.hasOwn(declaration, "knowledge"), false, "phase2 corpus is not advertised");
   assert.equal(Object.hasOwn(ws.declaration, "teams"), false, "no private team identity invented");
   const ajv = new Ajv({ strict: true, ownProperties: true });
   for (const name of ["soul", "oats-workspace", "oats-member"]) ajv.addSchema(JSON.parse(bytes(`docs/${name}.schema.json`)));
-  for (const [uri, value] of [...EDITIONS.map(([name]) => ["soul", soul(name).declaration]), ["workspace", ws.declaration], ["member", member.declaration]]) {
+  for (const [uri, value] of [...EXPORTED_NAMES.map(name => ["soul", soul(name).declaration]), ["workspace", ws.declaration], ["member", member.declaration]]) {
     const validate = ajv.getSchema(`https://oats.dev/schemas/${uri}-v1.json`);
     assert.equal(validate(value), true, JSON.stringify(validate.errors));
   }
