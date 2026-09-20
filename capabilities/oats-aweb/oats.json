@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.10.3",
+  "version": "1.11.0",
   "compatibility": {
-    "oats": ">=0.22.3"
+    "oats": ">=0.24.2"
   },
   "layer": "messaging",
   "description": "Messaging layer via aweb: per-instance team identities + native aw mail/chat skills + cross-machine team roster.",
@@ -64,7 +64,16 @@
   "inject": "injects/aweb.md",
   "commands": {
     "roster": "bin/oats-aweb.mjs roster",
-    "setup": "bin/oats-aweb.mjs setup"
+    "setup": "bin/oats-aweb.mjs setup",
+    "binding-normalize": "bin/oats-aweb-binding.mjs normalize",
+    "binding-bind": "bin/oats-aweb-binding.mjs bind",
+    "binding-check": "bin/oats-aweb-binding.mjs check"
+  },
+  "binding": {
+    "version": 1,
+    "normalize": "binding-normalize",
+    "bind": "binding-bind",
+    "check": "binding-check"
   },
   "hooks": {
     "spawn": {
