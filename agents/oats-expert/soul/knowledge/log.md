@@ -1,5 +1,8 @@
 # Knowledge Log
 
+## 2026-09-21
+* **Release**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record OATS 0.24.2 publication — the [official capabilities decision](/decisions/official-capabilities-oats-core-setup-and-marketplace.md) is shipped end to end (`oats onboard`, explicit `oats.core`, `oats.framework` 1.1.1, aweb 1.11.0 pairing); the second-operator seams remain open for 0.24.3. [Lesson](/lessons/version-bump-grep-tests-before-push.md) extended with bundled-copy parity.
+
 ## 2026-09-20
 * **Delivery**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record the public `oats-knowledge` base accepted on main (25 concepts) and all seven workspace member indexes published; the second-operator gate and fresh-reader proof are delegated to the other operator's side.
 * **Release**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record OATS v0.24.1, OKF v2.1.1 and `oats.framework` 1.1.0 publication; the [official capabilities decision](/decisions/official-capabilities-oats-core-setup-and-marketplace.md) is now implemented for `oats.core`/`oats.setup`/catalog/explicit default, with onboarding (D3) and Desktop still open.

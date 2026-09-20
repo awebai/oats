@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 04:10Z · main `feef2a2f`+ · **OATS v0.24.2 tagged (CI)** · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
+**Last update:** 2026-09-21 05:00Z · main `04e930e7` · **OATS v0.24.2 published** · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + seven indexes + **six imports** (five experts @caa341f3, setup expert @0aad753c) · ✅ second-operator gate run · 🔄 five seams → L, target 0.24.3 | lead, L, Antares | seams PR; Antares re-run on 0.24.2 (aweb 1.11.0) |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + seven indexes + six imports · ✅ **0.24.2 published** (onboard verified from the npm tarball) · 🔄 Antares re-run requested · 🔄 five seams → L, 0.24.3 | lead, L, Antares | re-run report; seams PR |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ aweb 1.11.0 released · ✅ **catalog + six editions pin v1.11.0 (0.24.2)** · ⬜ second-operator re-run | P, lead | Antares re-run |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |

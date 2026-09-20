@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## OATS v0.24.2 + oats.framework 1.1.1 + aweb 1.11.0 pins (2026-09-21)
+- verdict: PUBLISHED (npm 0.24.2 both packages; GitHub release; bump PR #37). Includes PR33 (launchSelection/OATS_CLI_BIN), PR34 (operator shape), PR35 (D3 `oats onboard`, full gate 1639/0), P's prestaged aweb pin patches, six workspace imports, baseline hygiene (goldens empty catalog; lazy ajv).
+- owner: L (D3, PR33), P (aweb 1.11.0, PR34, pin patches), M (S6 editions, docs), lead (wave integration, releases, live probes).
+- taught us: verify a release by exercising the published tarball (`oats onboard` from empty dir), not by reading the diff; a catalog pin bump for a bundled capability requires byte-syncing the bundled copy (recut once); keep release notes honest about what is NOT in the cut (the five seams) so the independent re-run has a correct expectation.
+
 ## oats-knowledge PR #1 — curated base accepted (2026-09-20)
 - verdict: MERGED (8d67eab4) after the repo went public. 25 concepts, owners = published soul UUIDs, roadmap snapshot re-verified before merge (it still described 0.23.1/OKF 2.0.0 — a stale roadmap must not ship as accepted knowledge), validator pinned to OKF v2.1.1.
 - owner: lead (curation preserved from the earlier audit), Juan (visibility).
