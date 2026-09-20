@@ -5,14 +5,14 @@ description: >-
   oats-config.yaml cascade, including legacy activation, agent types, targeting,
   overrides, and templates. Triggers: "legacy oats-config", "uncaptured config",
   "oats use", or "agent type". For portable source/workspace preparation, load
-  oats-portable-setup instead; this legacy policy never fills a captured record.
+  oats-soul-setup instead; this legacy policy never fills a captured record.
 ---
 
 # Configuring legacy uncaptured OATS
 
 > **Legacy-only procedure.** The cascading scopes, agent-type targeting and
 > closest-team rules below are compatibility behavior for uncaptured instances.
-> They are not portable composition authorities. Use **oats-portable-setup** for
+> They are not portable composition authorities. Use **oats-soul-setup** for
 > the source/workspace two-authority model and never consult this cascade as a
 > fallback during captured preparation or dispatch.
 

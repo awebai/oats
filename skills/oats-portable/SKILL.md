@@ -112,5 +112,5 @@ still refuse. Do not strip selectors or call legacy forms as a workaround. A sca
 may contain external hook effects; preserve it and escalate rather than deleting
 it. A scaffold marked `spawned-launch-pending` is not a running instance.
 
-Use **oats-portable-setup** for preparation and context choices. Use
+Use **oats-soul-setup** for preparation and context choices. Use
 **oats-portable-artifacts** for exact approval and retained A/B diagnostics.

@@ -59,5 +59,5 @@ or source checkout.
 - Partial or unknown historical evidence is inspectable but never executable.
 - No unattended approval, background refresh, or automatic advancement exists.
 
-Use **oats-portable-setup** to create a new preparation transaction. Use
+Use **oats-soul-setup** to create a new preparation transaction. Use
 **oats-portable** to invoke the resulting exact record.
