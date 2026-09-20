@@ -138,9 +138,9 @@ metadata readiness, not provider binding, approval, enrollment or a running pilo
 
    Preserve payloads, versions, old tags and legacy templates. This does not
    activate oats.dev, messaging or either optional task integration. Indexes are
-   published in oats-okf, oats-aweb, oats-authoring and oats-jira; oats-dev and
-   oats-linear remain blocked on human repository access. Their publication can
-   proceed separately from the framework's own source imports.
+   published on `main` in all six capability repositories (oats-okf, oats-aweb,
+   oats-authoring, oats-jira, oats-dev, oats-linear); their publication proceeded
+   separately from the framework's own source imports.
 3. A subsequent workspace commit pins the published source, never itself or a
    future commit. The current first import is:
 
