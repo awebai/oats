@@ -61,7 +61,7 @@ setup skill is recreated here.
 
 The skills state release-scoped limitations. In particular, oats-aweb 1.10.3
 lacks portable binding support; **oats-aweb 1.11.0** (requires OATS >=0.24.2)
-adds it and qualifies only an input-capable Claude/Codex profile with explicit
+adds it; **1.11.1** (OATS >=0.24.4) declares its fixed reasons so the kernel can show them. It and qualifies only an input-capable Claude/Codex profile with explicit
 `delivery: session` — a strict-Pi print primary still reports
 `needs-configuration`. Required messaging cannot be disabled to make an
 adoption pass. Metadata, preparation, native readiness,

@@ -7,6 +7,7 @@ import {
   KNOWLEDGE_CONTRACT,
   KNOWLEDGE_CONTRACT_VERSION,
   bindKnowledgeDomain,
+  bindingChoiceKey,
   checkKnowledgeRuntime,
   normalizeKnowledgeBindingCandidates,
   normalizeKnowledgeDeclaration,
@@ -24,6 +25,22 @@ const declarationKinds=new Set(['soul','workspace','adoption','operator']);
 const errorCodes=new Set(['needs-configuration','requirement-conflict','invalid-binding','authorization-required','host-requirement-missing','provider-unavailable','provider-not-qualified']);
 const obj=value=>value!==null && typeof value==='object' && !Array.isArray(value);
 const wireError=code=>{throw Object.assign(new Error(code),{wireCode:code});};
+// Private diagnostic marker and closed literal vocabulary. Never serialize a
+// caught exception's message, supplied value, path, alias or unknown key.
+const settingDiagnostic=Symbol('runtime-setting-diagnostic');
+const settingMessages=Object.freeze({
+  'bindings-file:missing':'setting bindings-file is required (absolute host path)',
+  'bindings-file:invalid':'setting bindings-file must be a normalized absolute host path',
+  'state-dir:missing':'setting state-dir is required (absolute host path)',
+  'state-dir:invalid':'setting state-dir must be a normalized absolute host path',
+  'harvest-runtime:missing':'setting harvest-runtime is required (pi, claude or codex)',
+  'harvest-runtime:invalid':'setting harvest-runtime must be pi, claude or codex',
+  'harvest-model:invalid':'setting harvest-model must be null or a non-empty string',
+});
+function settingError(reason) {
+  if(!Object.hasOwn(settingMessages,reason)) wireError('invalid-binding');
+  throw Object.assign(new Error('needs-configuration'),{wireCode:'needs-configuration',[settingDiagnostic]:settingMessages[reason]});
+}
 function keys(value,allowed,required,label) {
   if(!obj(value)) wireError('invalid-binding');
   for(const key of Object.keys(value)) if(!allowed.includes(key)) wireError('invalid-binding');
@@ -100,13 +117,29 @@ function contract(value,{required=false}={}) {
 function runtimeSettings(settings) {
   keys(settings,['bindings-file','state-dir','harvest-runtime','harvest-model'],[], 'OKF settings');
   const descriptorFile=settings['bindings-file'],stateDir=settings['state-dir'],runtime=settings['harvest-runtime'],model=settings['harvest-model'] ?? null;
-  if(!absolute(descriptorFile) || !absolute(stateDir) || !['pi','claude','codex'].includes(runtime) || (model!==null && (typeof model!=='string' || !model.trim()))) wireError('needs-configuration');
+  for(const name of ['bindings-file','state-dir']) {
+    if(settings[name]===undefined) settingError(`${name}:missing`);
+    if(!absolute(settings[name])) settingError(`${name}:invalid`);
+  }
+  if(runtime===undefined) settingError('harvest-runtime:missing');
+  if(!['pi','claude','codex'].includes(runtime)) settingError('harvest-runtime:invalid');
+  if(model!==null && (typeof model!=='string' || !model.trim())) settingError('harvest-model:invalid');
   return {descriptorFile,stateDir,execution:{runtime,model}};
+}
+// Shared maps contain other providers' opaque values. Ownership comes from
+// this source's declared/default/required knowledge addresses, not from a value
+// looking like a locator or a blanket stores.* prefix. Validate OWN values later.
+function ownedBindings(bindings,ownedKeys) {
+  return Object.fromEntries(Object.entries(bindings).filter(([name])=>{
+    let key;try{key=bindingChoiceKey(name);}catch{return false;}
+    return ownedKeys.has(key);
+  }));
 }
 function normalizePhase(req) {
   keys(req.input,['declarations','context'],['declarations','context'],'normalize input');
   if(!Array.isArray(req.input.declarations) || !obj(req.input.context)) wireError('invalid-binding');
-  const requirements=[],candidates=[];let domain=null;
+  const requirements=[],candidates=[],bindingInputs=[];let domain=null;
+  const collect=input=>{if(!obj(input.bindings)) wireError('invalid-binding');bindingInputs.push(input);};
   for(const raw of req.input.declarations) {
     const item=declaration(raw);
     if(item.kind==='soul') {
@@ -124,14 +157,19 @@ function normalizePhase(req) {
         if(rawStore.contract!==KNOWLEDGE_CONTRACT) return;
         const store=contract(rawStore);
         keys(store.payload,['bindings'],['bindings'],'workspace OKF payload');
-        candidates.push(...normalizeKnowledgeBindingCandidates({bindings:store.payload.bindings,kind:'workspace-default',origin:item.origin,origins:item.origins,pointer:`/knowledge/stores/${index}/payload/bindings`}));
+        collect({bindings:store.payload.bindings,kind:'workspace-default',origin:item.origin,origins:item.origins,pointer:`/knowledge/stores/${index}/payload/bindings`});
       });
       continue;
     }
     if(item.value.bindings===undefined) continue;
-    candidates.push(...normalizeKnowledgeBindingCandidates({bindings:item.value.bindings,kind:item.kind==='adoption'?'import-adoption':'operator',origin:item.origin,origins:item.origins,pointer:'/bindings'}));
+    collect({bindings:item.value.bindings,kind:item.kind==='adoption'?'import-adoption':'operator',origin:item.origin,origins:item.origins,pointer:'/bindings'});
   }
   if(!domain) wireError('needs-configuration');
+  // Collect first so declaration order cannot change who owns a binding. Keep
+  // all declared addresses, including dotted aliases and explicit/implicit
+  // write.default or custom inheritance; the kernel still resolves precedence.
+  const ownedKeys=new Set([...domain.requirements,...domain.candidates].map(item=>item.key));
+  for(const input of bindingInputs) candidates.push(...normalizeKnowledgeBindingCandidates({...input,bindings:ownedBindings(input.bindings,ownedKeys)}));
   requirements.push(...domain.requirements);candidates.unshift(...domain.candidates);
   return {requirements,candidates,model:{domain,runtime:runtimeSettings(req.settings)}};
 }
@@ -152,12 +190,20 @@ function bindPhase(req) {
   const runtime=renderKnowledgeRuntime({domain:bound.payload,...req.input.model.runtime});
   return {payloadContract:bound.contract,payloadVersion:bound.version,payload:{...bound.payload,runtime,execution:req.input.model.runtime.execution},credentialRefs:bound.credentialRefs,provenance:bound.provenance};
 }
-function bindingPayload(binding) {
+function bindingPayload(binding,{diagnoseSettings=false}={}) {
   keys(binding,['schemaVersion','capability','payloadContract','payloadVersion','payload','credentialRefs','provenance'],['schemaVersion','capability','payloadContract','payloadVersion','payload','credentialRefs','provenance'],'provider binding');
   if(binding.schemaVersion!==1 || binding.capability!==CAPABILITY || binding.payloadContract!==KNOWLEDGE_CONTRACT || binding.payloadVersion!==KNOWLEDGE_CONTRACT_VERSION || !Array.isArray(binding.provenance)) wireError('invalid-binding');
   if(!obj(binding.credentialRefs) || Object.keys(binding.credentialRefs).length) wireError('invalid-binding');
   keys(binding.payload,['owner','stores','reads','owns','runtime','execution'],['owner','stores','reads','owns','runtime','execution'],'OKF binding payload');
   const domain={owner:binding.payload.owner,stores:binding.payload.stores,reads:binding.payload.reads,owns:binding.payload.owns};
+  if(diagnoseSettings) {
+    const bound=binding.payload;
+    if(!obj(bound.runtime) || !obj(bound.runtime.bindings) || !obj(bound.execution)) wireError('invalid-binding');
+    // Check the retained values, not mutable request settings. Existing full
+    // envelope/canonical-runtime/execution guards still run below on success.
+    runtimeSettings({'bindings-file':bound.runtime.descriptorFile,'state-dir':bound.runtime.bindings.stateDir,
+      'harvest-runtime':bound.execution.runtime,'harvest-model':bound.execution.model});
+  }
   const runtime=renderKnowledgeRuntime({domain,stateDir:binding.payload.runtime?.bindings?.stateDir,descriptorFile:binding.payload.runtime?.descriptorFile});
   if(!sameJson(runtime,binding.payload.runtime)) wireError('invalid-binding');
   keys(binding.payload.execution,['runtime','model'],['runtime','model'],'OKF worker execution');
@@ -211,7 +257,7 @@ function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['binding','context','action'],'check input');
   if(!obj(req.input.context) || !obj(req.input.action)) wireError('invalid-binding');
   if(Object.hasOwn(req.input,'invocation')) validateInvocationShape(req.input.invocation,{capability:CAPABILITY,context:req.input.context,action:req.input.action});
-  const {runtime}=bindingPayload(req.input.binding),action=req.input.action,name=providerActionName(action);
+  const {runtime}=bindingPayload(req.input.binding,{diagnoseSettings:true}),action=req.input.action,name=providerActionName(action);
   const harvestInvocation=req.input.invocation;
   const admittedHarvest=name==='harvest' && action.kind==='operation' && action.slot==='knowledge' && action.name==='harvest'
     && harvestInvocation?.subject.kind==='persistent' && harvestInvocation.instance!==null && !!harvestInvocation.intent;
@@ -244,6 +290,10 @@ export function handleBindingRequest(phase,value) {
 }
 function response(phase,body) {return {schemaVersion:1,phase,slot:SLOT,capability:CAPABILITY,...body};}
 function errorCode(error) {if(errorCodes.has(error?.wireCode)) return error.wireCode;if(error?.code==='E_OWNER') return 'requirement-conflict';return 'invalid-binding';}
+function errorProblem(error) {
+  const code=errorCode(error),message=error?.[settingDiagnostic];
+  return {code,...(code==='needs-configuration' && Object.values(settingMessages).includes(message)?{message}:{})};
+}
 function enforceOutputLimits(value,depth=1,state={entries:0}) {
   if(depth>BINDING_WIRE_LIMITS.depth) wireError('provider-not-qualified');
   if(value===null || typeof value!=='object') return;
@@ -259,7 +309,7 @@ export async function runBindingWire(phase,input=process.stdin,output=process.st
     for await(const chunk of input) {const bytes=Buffer.from(chunk);length+=bytes.length;if(length>BINDING_WIRE_LIMITS.bytes) wireError('invalid-binding');chunks.push(bytes);}
     const result=handleBindingRequest(phase,parseBindingJson(Buffer.concat(chunks,length)));
     answer=response(phase,{ok:true,result});
-  } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:{code:errorCode(error)}});}
+  } catch(error) {answer=response(phases.has(phase)?phase:'check',{ok:false,error:errorProblem(error)});}
   let bytes;
   try {enforceOutputLimits(answer);bytes=Buffer.from(JSON.stringify(answer)+'\n');if(bytes.length>BINDING_WIRE_LIMITS.bytes) wireError('provider-not-qualified');}
   catch {bytes=Buffer.from(JSON.stringify(response(phases.has(phase)?phase:'check',{ok:false,error:{code:'provider-not-qualified'}}))+'\n');}

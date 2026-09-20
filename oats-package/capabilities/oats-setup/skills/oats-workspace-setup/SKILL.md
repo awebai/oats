@@ -143,7 +143,7 @@ request or multi-provider configuration:
     "policy": {
       "knowledge": {
         "capability": "oats.okf",
-        "source": "git:github.com/awebai/oats-okf@v2.1.1#oats-package",
+        "source": "git:github.com/awebai/oats-okf@v2.1.2#oats-package",
         "settings": {
           "bindings-file": "/absolute/operator-owned/okf/bindings.json",
           "state-dir": "/absolute/operator-owned/okf/state",
@@ -187,10 +187,13 @@ native permission intent, explicit backend endpoint, and provider-owned bindings
   (manifest default: `pi`). `harvest-model` is optional to the codec, but the
   captured Pi helper requires an explicit model matching its retained selection.
   A temporary acceptance store is not production KB adoption.
-- OKF 2.1.1 missing host settings refuse during **normalize**, before a valid
-  binding exists. Its wire error is code-only `needs-configuration`, not a clear
-  missing-field message from `check`; kernel attribution alone cannot supply
-  provider text that was never emitted. Git locators are only structurally
+- Missing host settings refuse during **normalize**, before a valid binding
+  exists. OKF 2.1.1 emits code-only `needs-configuration`. **OKF >=2.1.2** (the
+  edition pin, OATS >=0.24.4) names missing/invalid runtime settings in provider
+  `error.message`, using fixed setting names/constraints, never supplied values,
+  and OATS >=0.24.4 shows that text beside the slot and capability. Its check
+  path diagnoses the retained bound settings, not mutable request overrides.
+  Git locators are only structurally
   validated at normalize/bind. Repository existence/access and accepted base,
   owner and node readiness are evaluated by OKF **check**, which may stage a Git
   checkout using normal operator-authorized transport. Metadata inspection is not
@@ -241,12 +244,12 @@ from ambient config, old captured selectors or metadata-only output.
 
 ## 6. Report limits, not a false ready state
 
-oats-aweb 1.10.3 lacks the portable binding interface; **oats-aweb 1.11.0**
+oats-aweb 1.10.3 lacks the portable binding interface; **oats-aweb 1.11.0** (1.11.1 on OATS >=0.24.4 names its reasons)
 (OATS >=0.24.2) adds it, qualifying only an input-capable Claude/Codex profile with
 `delivery: session`. Correct metadata alone cannot make a messaging-required pilot
 operational.
 A codec-only candidate with an unconditional readiness refusal is not a completed
-native adapter. Published **OKF 2.1.1** additionally accepts retained ordinary
+native adapter. Published **OKF 2.1.2** additionally accepts retained ordinary
 Claude/Codex helper choices, including native-default model intent, with the
 complete approved capability closure. Pi still requires an explicit model and
 the sole-OKF helper profile; this release does not qualify enriched Pi messaging.

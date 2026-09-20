@@ -106,26 +106,26 @@ onboarding and legacy roster/knowledge cutover remain separate.
   Store `oats` requires the explicit `stores.oats` binding; no publisher writer,
   production store or grants are supplied. An acceptance fixture is parent-owned
   and cannot be counted as production knowledge adoption.
-- Current authored expert editions require knowledge **oats.okf@2.1.1** and
-  messaging **oats.aweb@1.11.0**, not optional defaults. These published revisions
+- Current authored expert editions require knowledge **oats.okf@2.1.2** and
+  messaging **oats.aweb@1.11.1** (both OATS >=0.24.4), not optional defaults. These published revisions
   are **not proof that their combined bindings/runtime profile is ready**. The provider
   owner supplies that evidence and any subsequently reviewed compatible revision.
   Do not replace either requirement with none or erase a read edge to launch.
 
 At those authored revisions, the provider boundary is concrete:
 
-- Published OKF2.1.1 supports `inherit: stores.oats`, normalized to
+- Published OKF 2.1.2 supports `inherit: stores.oats`, normalized to
   `/bindings/knowledge/stores/oats`. The explicit `destination: oats` preserves
   routing; omitting it would instead require `write.default`. No new schema,
   owner or production locator is needed for this declaration.
 - aweb 1.10.3 (`24efa6f9`) has no portable binding interface; **aweb 1.11.0**
-  (`v1.11.0`, OATS >=0.24.2) adds it and the five editions now pin it. Its `check`
+  (`v1.11.0`, OATS >=0.24.2) adds it; **1.11.1** (OATS >=0.24.4) is code-identical and declares its fixed reasons and owned operator keys, and the five editions pin it. Its `check`
   qualifies only an input-capable Claude/Codex primary with an explicit private team
   and `delivery: session`; strict-Pi print reports `needs-configuration`. Status is on
   the [program board](design/2026-09-20-redesign-program-board.md). Qualification
   is HOME-route operational custody only: not human/native-principal delegation,
   private grants, broker delivery or model consumption.
-- Published OKF2.1.1 accepts retained Claude/Codex helpers with the complete approved
+- Published OKF 2.1.2 accepts retained Claude/Codex helpers with the complete approved
   capability closure and native-default model intent. Strict Pi still requires an
   explicit model and the sole-OKF profile; Pi plus messaging remains unqualified.
   This provider release alone is not combined-profile acceptance. Do not silently
@@ -143,7 +143,7 @@ workspace declares the per-human private team policy (`teams: {private: per-huma
 and every messaging edition carries its `teams: []` declaration — without them the
 aweb provider cannot normalize in workspace context, as the second operator found.
 Workspace update `f3ee31e0`. The five knowledge-owning experts therefore select
-OKF2.1.1 and aweb1.11.0 with explicit core; setup remains provider-independent,
+OKF 2.1.2 and aweb 1.11.1 with explicit core; setup remains provider-independent,
 requiring core/setup and defaulting all three fundamental layers to none. It is
 not a sixth knowledge owner. This deliberate repin, not a catalog/kernel upgrade
 alone, advances the selected source requirements. Successful source inspection,

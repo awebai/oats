@@ -10,10 +10,10 @@ requires:
       source: repo:oats-package
   knowledge:
     capability: oats.okf
-    source: git:github.com/awebai/oats-okf@v2.1.1#oats-package
+    source: git:github.com/awebai/oats-okf@v2.1.2#oats-package
   messaging:
     capability: oats.aweb
-    source: git:github.com/awebai/oats-aweb@v1.11.0#oats-package
+    source: git:github.com/awebai/oats-aweb@v1.11.1#oats-package
 defaults:
   tasks: none
 # Messaging declaration consumed by the selected provider: no wider team memberships
