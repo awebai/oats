@@ -23,29 +23,29 @@ teams:
   private: per-human
 
 # Imports pin the six framework soul editions exported by this same repository at the
-# released v0.24.3 revision (explicit oats.core, oats.okf@v2.1.1, oats.aweb@v1.11.0). Importing is selection, not activation, enrollment or approval.
+# reviewed revision that declares messaging teams and the per-human private policy. Importing is selection, not activation, enrollment or approval.
 imports:
   - source: git:github.com/awebai/oats
     soul: souls/oats-expert
-    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+    revision: 906b1558633766cf489451f9b68016216acaa63b
     alias: oats-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-kernel-expert
-    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+    revision: 906b1558633766cf489451f9b68016216acaa63b
     alias: oats-kernel-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-desktop-expert
-    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+    revision: 906b1558633766cf489451f9b68016216acaa63b
     alias: oats-desktop-expert
   - source: git:github.com/awebai/oats
     soul: souls/market-research-expert
-    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+    revision: 906b1558633766cf489451f9b68016216acaa63b
     alias: market-research-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-assistant
-    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+    revision: 906b1558633766cf489451f9b68016216acaa63b
     alias: oats-assistant
   - source: git:github.com/awebai/oats
     soul: souls/oats-setup-expert
-    revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
+    revision: 906b1558633766cf489451f9b68016216acaa63b
     alias: oats-setup-expert
