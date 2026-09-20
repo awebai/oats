@@ -44,14 +44,13 @@ create/spawn/retire. A team roster does not select a work repository for spawn.
 
 ## Onboarding with the setup expert
 
-For a kernel build that includes `oats onboard` (check `oats onboard --help`),
-start in an explicit empty deployment:
+On **OATS 0.24.2 or later**, start in an explicit empty deployment:
 
 ```bash
 oats onboard --dir /absolute/new-deployment --json
 ```
 
-This command is **not present in the published 0.24.0/0.24.1 kernels**. It is a
+`oats onboard` ships from 0.24.2 (earlier kernels refuse it). It is a
 classic local bootstrap, not captured preparation or workspace enrollment. It
 acquires `oats.framework` from the official catalog, exact-locks its artifacts,
 selects only `oats.core` and `oats.setup` for the new local `oats-setup-expert`,
