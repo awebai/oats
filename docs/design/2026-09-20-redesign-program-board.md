@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-20 17:40Z · main `87292f40` · OKF `v2.1.1`
+**Last update:** 2026-09-20 19:50Z · main `03f94464`+ · OKF `v2.1.1` · OATS `v0.24.1` tagged (CI publishing)
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ shipped 0.24 / **OKF 2.1.1 released** (PR4 merged; mirror, catalog ref, soul source bumped) | P | done for this phase; OATS 0.24.1 cut after L's custody fix |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ PR23 + PR24 merged · ✅ member `oats.yaml` on main in oats-okf/aweb/authoring/jira · ⛔ oats-dev, oats-linear (no push access, human) | M, L, lead | human grants access → push 0434f4ef/8c183c37; then pin imports; then fresh deployment gate |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ PR23, PR24, **PR27** (home-route captured custody) merged · ✅ member `oats.yaml` on main in oats-okf/aweb/authoring/jira · 🔄 **v0.24.1** release in CI · ⛔ oats-dev, oats-linear (no push access; bundles ready for the human) | M, L, lead | verify 0.24.1 publish; human pushes bundles; pin imports; fresh deployment gate |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 codec PR2 + custody WIP · needs profile pin | P | lead pins pilot profile + answers authority question |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | 🔄 D1 in progress (P, `feat/d1-oats-core-setup`, package → `oats.framework` 1.1.0) · 🔄 D2 in progress (L) · ⬜ D3 | P (D1), L (D2, D3) | review D1/D2 PRs; assign D3 after D2 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged PR26 (`docs/official-marketplace.md`, policy pointer) · ⬜ `oats.core`/`oats.setup` entries after D1 release | M | add entries at D1 release |
@@ -28,7 +28,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ **PR23 merged f6d5a89b**: `oats-workspace.yaml` (7 members, `imports: []`), `oats.yaml` (exports souls/oats-expert, oats-package, capabilities/oats-authoring), transitional `souls/oats-expert/` edition, `docs/workspace-adoption.md`, layout tests.
 - ✅ **PR24 merged da38e5a9**: deletion of `skills/oats-portable-setup` + `oats inspect --request` read-only seam (ACCEPTED as the public inspection route); full gate 1621/0.
 - ✅ Member `oats.yaml` merged to main: oats-okf #3 (fec78a20), oats-aweb #1 (069ea2f6), oats-authoring #1 (54183a6a), oats-jira #1 (2f855daf).
-- ⛔ oats-dev (0434f4ef) and oats-linear (8c183c37): neither M nor the lead's GitHub account has push — **human must grant access or push**.
+- ⛔ oats-dev (0434f4ef) and oats-linear (8c183c37): neither M nor the lead's GitHub account has push — **human must grant access or push**; verified git bundles + instructions prepared by the lead (`parallel/member-index-bundles/` in the lead's instance home).
 - ⬜ `imports:` pin of `souls/oats-expert` at its published revision (after member indexes).
 - ⬜ Fresh local deployment from the shared definition (P1.5) — the real acceptance gate.
 
@@ -36,7 +36,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - Facts: released aweb 1.10.3 has no binding interface; broker refuses. aw 1.36.1 broker calls `oats session inspect/input --home H`; never restarts stopped runtime; strict-Pi print mode can't take session input.
 - 🔄 oats-aweb **PR2** codec (165b20e) + uncommitted `lib/captured-execution.mjs` (6/6).
 - ✅ Lead answered (d9d912a4): pilot primary = Pi strict print host explicit model; helper = Pi sole-OKF (Claude/Codex allowed by 2.1.1); authority = existing HOME route + L's custody fix, gated on `oats >=0.24.1`; no new grant mechanism. P delivers aweb 1.11.0 PR. 
-- 🔄 L finding c21e36ff accepted; fix assigned (L, `fix/home-route-captured-custody`): reuse `readCapturedInstanceAuthority` on the HOME-only route, refuse before transport.
+- ✅ **PR27 merged (5af848fc)**: HOME-only session route applies existing captured custody; refuses before transport on drift. Full gate 1626/1632 (2 pre-existing env failures reproduced on main). Ships in **v0.24.1** — the kernel floor the aweb adapter gates on.
 
 ## S4 — `oats.core` / `oats.setup` / onboarding
 - ✅ Decision + plan D1–D4 on main 18af53be; docs reference as accepted-not-shipped.
