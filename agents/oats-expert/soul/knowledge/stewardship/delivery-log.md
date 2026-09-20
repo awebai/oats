@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Human implementation GO; independent Phase1 lanes assigned (2026-09-20)
+- verdict: IMPLEMENTATION AUTHORISED for the approved framework-hosted workspace plan, using existing developers with lead review/integration. Workspace/source metadata, kernel/public-flow behavior and canonical provider readiness have separate file ownership; other-repository metadata is root-index-only to avoid provider collisions.
+- scope: phase1 includes a parallel existing-role edition at `souls/oats-expert/` with preserved owner/read routing, not the five-role/corpus cutover or an operator-root helper API. Exact source publication comes before import pinning. Developer feature branches/PRs are reviewed; main/release/deployment actions stay coordinated by the lead.
+- taught us: independence requires explicit write surfaces and shared interface contracts, not merely different task titles. Begin implementation of bounded slices, report concrete cross-lane seams, and reserve combined live acceptance for the integrated result. A dispatched assignment is not a completed delivery.
+
 ## Framework-hosted workspace alternative reflected in plan (2026-09-20)
 - verdict: RECOMMENDATION REVISED, not deployment approval. The human proposes hosting the workspace in `oats` and keeping `oats-dev` for development capabilities. The plan now prefers that layout over repurposing the capability repository; the workspace-first/knowledge-second phase order is unchanged.
 - evidence: workspace/member schemas and discovery implementation keep the two file contracts separate and do not require different repository identities; the concrete reciprocal observations remain an adoption check. Source import parses but does not follow the publisher's workspace backlink.

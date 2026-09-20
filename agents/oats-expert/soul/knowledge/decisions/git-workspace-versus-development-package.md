@@ -1,24 +1,26 @@
 ---
 type: Decision
-title: Proposed Git workspace composition separate from development capability packaging
+title: Git workspace composition separate from development capability packaging
 description: Use a Git-backed workspace definition for shared team composition while keeping reusable development behavior and legacy package compatibility separate.
-status: proposed
+status: accepted
 tags: [workspace, packages, portable-souls, configuration, rollout]
 timestamp: 2026-09-20
 ---
 
 # Status
 
-Latest recommendation for human review: host the OATS development workspace
-definition in the `oats` framework repository and keep `oats-dev` focused on
-reusable development capabilities. The human raised this alternative after the
-initial proposal to reuse `oats-dev` as the workspace repository. Both arrangements
-are valid; co-hosting in `oats` preserves the development package's distinct purpose
-without adding a repository or repurposing its home.
+Accepted by the human on 2026-09-20, with implementation directed through the
+existing developers under lead supervision/review: host the OATS development
+workspace definition in the `oats` framework repository and keep `oats-dev`
+focused on reusable development capabilities. This selects the alternative raised
+after the initial proposal to reuse `oats-dev` as the workspace repository. Both
+arrangements are valid; the chosen co-hosting preserves the development package's
+distinct purpose without adding a repository or repurposing its home.
 
-This does not remove the published package, change a catalog entry, adopt a
-workspace, grant membership or migrate a deployment. Concrete source exports,
-knowledge visibility and operator choices remain explicit decisions.
+The decision authorises the planned declaration/integration work, not automatic
+package removal, executable trust, enrollment or live migration. Actual publication,
+provider readiness and local adoption must be verified. Knowledge visibility and
+any new authority still require explicit choices.
 
 The subsequent human-directed order is workspace/portable adoption first, then
 knowledge centralisation and the five expertise souls. The
@@ -79,7 +81,7 @@ restore when a valid lock records its source revision and integrity.
 
 # Options and recommendation
 
-1. **Host the workspace definition in `oats`.** Latest recommendation: the
+1. **Host the workspace definition in `oats`.** Selected: the
    framework repository carries `oats-workspace.yaml` alongside its own `oats.yaml`
    exports; `oats-dev` remains a development-capability repository. Workspace policy
    shares the framework repository's access and review lifecycle. Generic framework

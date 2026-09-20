@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-20
 
-**Status:** human-directed phase order; implementation plan for review. This document does not claim that the repositories or deployments have already been converted, or approve unspecified new contracts or live mutations.
+**Status:** Phase1 implementation authorised by the human, using the existing developers under lead supervision/review. The workspace home is confirmed as `oats`; `oats-dev` remains development capabilities. This does not claim completed conversion or authorise unspecified new contracts, credential operations or live deployment mutations.
 
 ## Goal and order
 
@@ -14,7 +14,7 @@ The second phase does not run as an unrelated bulk migration while the first is 
 
 ## Target arrangement
 
-Recommended repository responsibilities, revised after considering a framework-hosted workspace. This changes the proposed workspace home, not the two-phase order:
+Approved repository responsibilities following the framework-hosted workspace choice. The two-phase order is unchanged:
 
 | Repository | Role in the new setup |
 |---|---|
@@ -26,7 +26,7 @@ Recommended repository responsibilities, revised after considering a framework-h
 | `oats-jira`, `oats-linear` | Optional task capabilities; workspace membership does not activate them |
 | `oats-knowledge` | Curated accepted expertise, not executable soul definitions, working transcripts or a copy of framework documentation |
 
-A workspace is a logical role and does not require a dedicated repository. The latest recommendation is to co-host it in `oats`, preserving `oats-dev`'s capability purpose. Keep the `oats.dev` package where its reusable behavior is useful; separately review compatibility and the legacy template. Preserve published tags/payloads and exact restores. Merely adopting the workspace does not activate every capability.
+A workspace is a logical role and does not require a dedicated repository. The human has selected co-hosting in `oats`, preserving `oats-dev`'s capability purpose. Keep the `oats.dev` package where its reusable behavior is useful; separately review compatibility and the legacy template. Preserve published tags/payloads and exact restores. Merely adopting the workspace does not activate every capability.
 
 `oats-workspace.yaml` and `oats.yaml` have separate contracts even when co-located. Admit the framework repository explicitly if it participates as a member, and verify matching reciprocal observations. Importing a public OATS soul or installing the framework must NOT implicitly select or enroll an adopter in the framework's development workspace. A separate workspace repository remains an option if independent permissions or lifecycle become necessary.
 
@@ -61,7 +61,7 @@ Produce one bounded implementation checklist from the actual current code and ch
 
 **Owner:** workspace/deployment owner, reviewed by the integration lead.
 
-Under the proposed framework-hosted arrangement, add `oats-workspace.yaml` to `oats` using the shipped schema, alongside that repository's separate `oats.yaml` export index:
+Add `oats-workspace.yaml` to the confirmed workspace home `oats` using the shipped schema, alongside that repository's separate `oats.yaml` export index:
 
 - Intended members, selected source imports with real reviewed revisions and aliases.
 - Shared defaults bounded by soul requirements, not a new repository-level policy hierarchy.
@@ -192,6 +192,17 @@ The five experts run from portable sources in the shared workspace, consult the 
 
 # Execution and review discipline
 
+The initial implementation lanes are deliberately disjoint:
+
+| Lane | Owns | Does not own |
+|---|---|---|
+| Workspace/source declarations | Framework workspace/member indexes, transitional `souls/oats-expert/` edition preserving its existing logical owner, setup guide and metadata tests; other capability repositories' root `oats.yaml` only | Kernel or provider runtime, provider README/tests, framework mirrors, corpus migration |
+| Kernel/onboarding | Public preparation/lifecycle glue, same-repository workspace regression coverage and portable-setup skill | Root workspace/member indexes, soul editions, provider payloads, record optimisation |
+| Capability/provider readiness | Canonical OKF/aweb payloads, manifests, skills/docs/tests and actual profile-readiness facts | Kernel/record, root member indexes, soul editions, framework mirrors/catalog |
+| Integration lead | Scope/interface arbitration, exact review/integration, shared stewardship, release coordination and combined deployment acceptance | Unilateral changes to another operator's credentials, identity or local deployment |
+
+The phase1 transitional source is an edition of the existing overall expert, not the full five-role rebuild or an invented bootstrap owner. Source publication precedes workspace import pinning to its actual approved revision. An owner reports a precise cross-lane seam rather than patching another lane's files. No new review agents or per-edit permission loops are required for agreed work.
+
 - One redesign lead owns the cross-repository plan, dependency order, scope questions and integration picture. Contributors deliver bounded agreed work and exact diffs/PRs; no wholesale branch merges that import unrelated or held work.
 - Workspace/source metadata and compatibility work can proceed in parallel once their shared identities/contracts are agreed. Provider changes are reviewed against concrete missing seams, not speculative replacement architectures.
 - Local operator approval remains necessary for installation, executable trust, identity/team changes, deployment cutover and disclosure. Lead coordination is not authority over unrelated deployments.
@@ -201,7 +212,7 @@ The five experts run from portable sources in the shared workspace, consult the 
 
 # Decisions to settle at the appropriate boundary
 
-- Confirm the revised recommendation: `oats` hosts the workspace; `oats-dev` remains development capabilities. Settle exact reusable source/export paths. A dedicated workspace repository is optional, not an architectural prerequisite.
+- Workspace home is settled: `oats` hosts it and `oats-dev` remains development capabilities. Phase1 authorises the parallel existing-role edition at `souls/oats-expert/`; preserve its logical owner and settle any remaining source-policy details before publishing. Final five-role publication/cutover remains phase2, not permission to replace the live roster now.
 - Confirm knowledge visibility and public-safe content before phase2 publication; this need not block the phase1 contract inventory.
 - Agree the exact pilot/provider/runtime profile and its supported lifecycle. No hidden fallback to an easier profile.
 - Review any newly identified generic contract or bootstrap authority change explicitly. Existing accepted constraints do not need repeated approval.
