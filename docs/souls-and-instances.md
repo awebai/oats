@@ -54,6 +54,31 @@ in a soul bundle; see [knowledge](knowledge.md) for its prepared version scope.
 Future integrations may add expert-specific artifacts such as rule files or
 runtime-specific guidance, while keeping `AGENTS.md` canonical.
 
+## OATS operational knowledge is a capability
+
+New souls declare `requires.capabilities.oats.core` with a Git source resolved
+from the official package catalog. `oats create` and new local-soul scaffolds
+write that requirement; `--no-oats-core` explicitly omits it. If the catalog has
+no published revision yet, creation reports `needs-configuration` (also in JSON
+`notes`) and leaves the requirement absent rather than inventing a source.
+Declaring a capability is not acquiring, activating or approving it: those remain
+normal deployment/preparation steps. The Desktop server currently has no
+soul-creation endpoint; `oats soul set` edits existing definitions only.
+
+The dependency is visible and removable in `soul.yaml`. Updating an existing
+local soul preserves its requirements—including a deliberate removal—rather
+than applying the creation default again. For the one-release transition,
+a declaration of **either `oats.core` or `oats.setup`** suppresses the entire
+legacy kernel operational skill list (`oats`, `oats-config`, `oats-packages`)
+and `kernel:oats` injection. This also prevents setup's moved skill names from
+colliding with the kernel copies; no skill override is needed for this case.
+Without either declaration, legacy composition is unchanged.
+`oats doctor --soul <name>` reports an absent `oats.core` as an informational
+deprecation notice, not an error. Instance-boundary, work-mode and
+configuration-declared briefings remain kernel-owned. Existing captured records
+keep their retained resources; this does not migrate them or retire the kernel
+skill files yet.
+
 ## Instance anatomy
 
 An instance has a lifecycle, but need not be short-lived. It is the identity of
