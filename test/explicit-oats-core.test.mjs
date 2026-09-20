@@ -75,6 +75,36 @@ test('declared oats.core replaces legacy operational injection and skills throug
   assert.equal(readFileSync(join(created.soul, 'soul.yaml'), 'utf8'), bytes, 'composition never inserts a requirement');
 });
 
+for (const declared of [['oats.setup'], ['oats.core', 'oats.setup']]) {
+  test(`declared ${declared.join(' + ')} suppresses ambient legacy skills without overrides or duplicate names`, t => {
+    const f = fixture(t), skillNames = { 'oats.core': ['oats-operate', 'oats-souls'], 'oats.setup': ['oats-config', 'oats-packages', 'oats-workspace-setup'] };
+    for (const id of declared) {
+      const cap = join(f.context, '.agents/capabilities/owned', id);
+      f.write(join(cap, 'oats.json'), { capability: id, version: '1.0.0', description: 'Inert resource fixture', skills: ['skills'], ...(id === 'oats.core' ? { inject: 'inject.md' } : {}) });
+      if (id === 'oats.core') f.write(join(cap, 'inject.md'), 'DECLARED-CORE-OPERATIONS');
+      for (const name of skillNames[id]) f.write(join(cap, 'skills', name, 'SKILL.md'), `# ${name}\nOwned by ${id}, not kernel.\n`);
+    }
+    f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n' + declared.map(id => `    ${id}:\n      global: true\n`).join(''));
+    const created = createAgent(f.root, { name: 'configured', work: 'directory', runtime: 'claude', oatsCore: false });
+    const file = join(created.soul, 'soul.yaml');
+    f.write(file, readFileSync(file, 'utf8') + `requires: ${JSON.stringify({ capabilities: Object.fromEntries(declared.map(id => [id, { source: 'repo:oats-package' }])) })}\n`);
+    const agent = findAgent(f.root, 'configured'), composition = composeInstanceAgentsMd(created.soul, f.context, 'configured', 'directory', 'persistent');
+    assert.equal(composition.blocks.some(b => b.source === 'kernel:oats'), false);
+    assert.equal(composition.blocks.filter(b => b.source === 'capability:oats.core').length, declared.includes('oats.core') ? 1 : 0);
+    assert.ok(composition.blocks.some(b => b.source === 'kernel:instance-boundary'));
+    assert.ok(composition.blocks.some(b => b.source === 'work-mode:directory'));
+    const resources = planInstanceResources({ resolved: composition.resolved, soulDir: created.soul, agent, contextDir: f.context, composition });
+    assert.equal(resources.some(r => r.source === 'kernel' && r.type === 'skill-tree'), false);
+    const tripwire = join(f.base, 'runtime-invoked');
+    writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\necho invoked > '${tripwire}'\nexit 98\n`, { mode: 0o700 });
+    const spawned = spawnInstance(f.root, agent, { purpose: 'setup-probe', launch: false });
+    assert.deepEqual(readdirSync(join(spawned.home, '.agents/skills')).sort(), declared.flatMap(id => skillNames[id]).sort());
+    for (const name of skillNames['oats.setup']) assert.match(readFileSync(join(spawned.home, '.agents/skills', name, 'SKILL.md'), 'utf8'), /Owned by oats.setup, not kernel/);
+    assert.doesNotMatch(readFileSync(join(spawned.home, 'AGENTS.md'), 'utf8'), /<!-- oats:kernel:oats /);
+    retireInstance(f.root, spawned.instance); assert.equal(existsSync(spawned.home), false); assert.equal(existsSync(tripwire), false);
+  });
+}
+
 test('doctor reports absent oats.core informationally and preserves legacy composition for the transition', t => {
   const f = fixture(t), created = createAgent(f.root, { name: 'legacy', work: 'directory', oatsCore: false });
   const before = readFileSync(join(created.soul, 'soul.yaml'), 'utf8'), message = 'soul legacy has no oats.core capability; kernel-shipped operational skills are deprecated';

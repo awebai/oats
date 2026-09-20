@@ -68,10 +68,13 @@ soul-creation endpoint; `oats soul set` edits existing definitions only.
 The dependency is visible and removable in `soul.yaml`. Updating an existing
 local soul preserves its requirements—including a deliberate removal—rather
 than applying the creation default again. For the one-release transition,
-a declaration of `oats.core` suppresses the legacy kernel operational skills
-(`oats`, `oats-config`, `oats-packages`) and `kernel:oats` injection. Without it,
-legacy composition is unchanged and `oats doctor --soul <name>` prints an
-informational deprecation notice, not an error. Instance-boundary, work-mode and
+a declaration of **either `oats.core` or `oats.setup`** suppresses the entire
+legacy kernel operational skill list (`oats`, `oats-config`, `oats-packages`)
+and `kernel:oats` injection. This also prevents setup's moved skill names from
+colliding with the kernel copies; no skill override is needed for this case.
+Without either declaration, legacy composition is unchanged.
+`oats doctor --soul <name>` reports an absent `oats.core` as an informational
+deprecation notice, not an error. Instance-boundary, work-mode and
 configuration-declared briefings remain kernel-owned. Existing captured records
 keep their retained resources; this does not migrate them or retire the kernel
 skill files yet.
