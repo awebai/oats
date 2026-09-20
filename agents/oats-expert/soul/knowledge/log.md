@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-20
+* **Delivery**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record the public `oats-knowledge` base accepted on main (25 concepts) and all seven workspace member indexes published; the second-operator gate and fresh-reader proof are delegated to the other operator's side.
 * **Release**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record OATS v0.24.1, OKF v2.1.1 and `oats.framework` 1.1.0 publication; the [official capabilities decision](/decisions/official-capabilities-oats-core-setup-and-marketplace.md) is now implemented for `oats.core`/`oats.setup`/catalog/explicit default, with onboarding (D3) and Desktop still open.
 * **Lesson**: [Version bumps sweep test pins](/lessons/version-bump-grep-tests-before-push.md) — releasing OKF 2.1.1 briefly pushed red pinned-version tests because the push was chained behind a filtered test result.
 * **Review**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record the merged redesign wave (PR23, PR24, PR26, four member indexes) and point to the new program board as the living cross-stream status; remaining human blockers (two repos' push access, knowledge repo visibility, Desktop runtime) are listed explicitly.
