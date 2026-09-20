@@ -9,6 +9,10 @@ configuration cascade, package lock, similarly named capability, or source path.
 Load **oats-portable** before invoking or reasoning about captured OATS commands.
 Load **oats-portable-artifacts** for exact retained inspection and approval. Do not load the legacy **oats**,
 **oats-config**, or **oats-packages** procedures to fill a captured input.
+If this retained composition includes **oats.core**, its **oats-operate** and
+**oats-souls** skills are capability resources, not implicit kernel additions.
+Use only the resources actually included; a missing capability is not permission
+to fetch or substitute a current version.
 
 Captured start/restart use exact retained launch inputs and supported native
 endpoints. Captured wake/retire, unqualified runtime contributions and non-directory

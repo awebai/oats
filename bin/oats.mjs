@@ -505,6 +505,10 @@ function resolveForDoctor(ctx, soulName, { json } = {}) {
     die(`${e.message}`);
   }
 }
+function operationalKnowledgeNote(composition, soulName) {
+  return composition && !composition.oatsCoreDeclared
+    ? `soul ${soulName} has no oats.core capability; kernel-shipped operational skills are deprecated` : null;
+}
 function doctorComposition(ctx, soulName) {
   if (!soulName) return undefined;
   const root = findRoot(ctx);
@@ -1259,7 +1263,8 @@ function doctorJson(dir) {
       hooks: Object.keys(r.layers[l].hooks || {}), missingRequires: r.layers[l].missingRequires,
       provenance: r.provenance[l],
     } : { provenance: r.provenance[l] || null }])),
-    kernelInjection: r.kernelInjection,
+    kernelInjection: composition?.resolved.kernelInjection ?? r.kernelInjection,
+    information: operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : [],
     injects: r.injects,
     capabilities: r.capabilities.map((c) => ({ id: c.id, layer: c.layer, command: c.command, origin: c.origin, provenance: c.provenance, settings: c.settings, skills: c.skills, inject: c.inject, hooks: Object.keys(c.hooks || {}), trust: c.trust })),
     acquired: Object.fromEntries(Object.entries(mans).map(([n, m]) => [n, { layer: m.layer, command: m.command, version: m.version, dir: m._dir, origin: m._origin, description: m.description }])),
@@ -1288,6 +1293,7 @@ function doctor(dir) {
   const soulName = flag("soul");
   const chain = configChain(ctx);
   const r = resolveForDoctor(ctx, soulName);
+  const composition = doctorComposition(ctx, soulName);
   console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
 
   // Kernel/bridge version skew (published in lockstep from one tag).
@@ -1332,7 +1338,8 @@ function doctor(dir) {
   }
 
   console.log("\nKernel injection:");
-  console.log(`  oats: ${r.kernelInjection?.inject ? shortPath(r.kernelInjection.inject) : "none"}  [${r.kernelInjection?.provenance || "default"}]`);
+  const kernelInjection = composition?.resolved.kernelInjection ?? r.kernelInjection;
+  console.log(`  oats: ${kernelInjection?.inject ? shortPath(kernelInjection.inject) : "none"}  [${kernelInjection?.provenance || "default"}]`);
 
   console.log("\nUnconditional injections (outermost→innermost):");
   if (r.injects.length === 0) console.log("  (none)");
@@ -1440,7 +1447,8 @@ function doctor(dir) {
   }
 
   if (soulName) {
-    const composition = doctorComposition(ctx, soulName);
+    const information = operationalKnowledgeNote(composition, soulName);
+    if (information) console.log(`\nINFO: ${information}`);
     console.log(`\nFinal composed AGENTS.md for ${soulName}:\n\n${composition.text}`);
   } else console.log("\nPass --soul <name> to inspect final composed AGENTS.md.");
 }
@@ -3928,16 +3936,17 @@ function spawnCmd() {
     if (!agent && !instrFile && !defFile) {
       const def = listAgentDefs(process.cwd()).find((d) => d.name === name);
       if (!def) bail("E_UNKNOWN_AGENT", `unknown agent "${name}" (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"}; importable defs: ${listAgentDefs(process.cwd()).map((d) => d.name).join(", ") || "none"}) — pass --instructions-file or --def-file to create a local agent`);
-      agent = upsertLocalAgent(root, { name: def.name, file: def.path, repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model") });
+      agent = upsertLocalAgent(root, { name: def.name, file: def.path, repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model"), oatsCore: !args.includes("--no-oats-core") });
     } else if (!agent || agent.kind === "local") {
       agent = upsertLocalAgent(root, {
-        name, file: defFile, instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
+        name, file: defFile, instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined, oatsCore: !args.includes("--no-oats-core"),
         repo: flag("repo"), work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo: yoloFlag(),
       });
     } else {
       bail("E_BAD_ARGS", `"${name}" is a persistent agent — spawn it without --instructions-file/--def-file`);
     }
   }
+  for (const information of agent.notes || []) note(`[${information.code}] ${information.message}`);
   // Lineage is explicit: --relation child|sibling|parent|unrelated anchors the new
   // instance to --relative-to <instance>. --parent X is sugar for
   // --relative-to X --relation child (agents spawning sub-agents pass their own
@@ -4224,7 +4233,7 @@ async function paneCmd() {
 function createCmd() {
   const yolo = yoloFlag();
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--runtime pi|claude|codex] [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]");
+  if (!name || name.startsWith("--")) die("usage: oats create <name> [--local] [--no-oats-core] [--description <d>] [--type <agent-type>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--runtime pi|claude|codex] [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]");
   const local = args.includes("--local");
   const startDir = dirFlag();
   // `create` BOOTSTRAPS a deployment: with no agents/ or local-agents/ yet,
@@ -4243,11 +4252,12 @@ function createCmd() {
   }
   const instrFile = flag("instructions-file");
   const r = coreCreateAgent(root, {
-    name, local, description: flag("description"), type: flag("type"), repo: flag("repo") || (flag("work") === "directory" ? undefined : defaultRepo(process.cwd())),
+    name, local, oatsCore: !args.includes("--no-oats-core"), description: flag("description"), type: flag("type"), repo: flag("repo") || (flag("work") === "directory" ? undefined : defaultRepo(process.cwd())),
     work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo,
     instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
   });
   if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
+  for (const information of r.notes || []) console.error(`[${information.code}] ${information.message}`);
   if (bootstrapped) console.log(`Created deployment root ${shortPath(root)} (this scope had no agents/ yet)`);
   console.log(`Created ${r.kind === "local" ? "LOCAL agent (uncommitted — soul lives in local-agents/, gitignored)" : "agent"} "${r.agent}" — soul at ${shortPath(r.soul)}`);
   console.log(`Edit ${shortPath(join(r.soul, "AGENTS.md"))} to define its role, then: oats spawn ${r.agent} --task "..."`);
@@ -5028,7 +5038,7 @@ Usage:
       --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
                                             advertise session-upload (oats 0.22.13 or later)
-  oats create <name> [--local]               create an agent soul; --local = full
+  oats create <name> [--local] [--no-oats-core] create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
       [--model <m>] [--yolo|--no-yolo] [--instructions-file <f>]
@@ -5058,6 +5068,7 @@ Usage:
   oats spawn <agent> [--task <text>]         spawn an instance (tmux/Herdr; --no-launch
       [--purpose <slug>] [--repo <r>]       = scaffold only); --instructions-file/
       [--parent <instance>]                 --def-file creates a local agent;
+      [--no-oats-core]                      omit the default only on NEW local souls;
       [--relation child|sibling|parent|unrelated]    --relation + --relative-to anchor the
       [--relative-to <instance>]            new instance to an existing one; --parent X
       [--relative-root <agents-root>]       disambiguates same-named team anchors
