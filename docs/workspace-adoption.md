@@ -5,11 +5,24 @@ source-complete exports and declares its own reciprocal membership. `oats-dev`
 remains a development-capability repository, including `oats.review`; membership
 neither activates that package nor replaces its existing configuration templates.
 
-This is phase 1: a shared repository graph and a transitional portable edition of
-**the existing oats-expert**. It is not the five-role rebuild, the curated knowledge
-cutover, a shared live runtime, a private-team enrollment or Desktop feature parity.
+This guide covers the shared repository graph and portable expert source editions,
+beginning with **the existing oats-expert**. Source publication is not a live
+five-role roster or curated knowledge cutover, a shared runtime, private-team
+enrollment or Desktop feature parity.
 The [phase plan](design/2026-09-20-workspace-and-portable-adoption-plan.md) and
 [knowledge model](knowledge-theory.md) retain those separate boundaries.
+
+## The five framework experts
+
+The indexed source editions are `oats-expert`, `oats-kernel-expert`,
+`oats-desktop-expert`, `market-research-expert` and `oats-assistant`. Each declares
+`owns` for its own same-named node and `reads` for the other four through logical
+store `oats`, preserving the reviewed owner UUIDs. These are knowledge-routing and
+context declarations, not access grants or proof of accepted knowledge. The parallel
+`souls/` editions neither replace the legacy `agents/` roster nor adopt the curated
+KB or change live instances; actual adoption still needs compatible providers and
+explicit bindings. Their `oats.core` dependency is a separate follow-up after D1
+actually exports that capability, not a promise of an unavailable package today.
 
 ## Shared versus local
 

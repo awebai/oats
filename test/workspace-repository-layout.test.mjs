@@ -12,14 +12,22 @@ import { planSoftwareChoices } from "../lib/portable-composition.mjs";
 import { createRepositoryTransaction } from "../lib/repository-observation.mjs";
 import { createWorkspaceDiscovery } from "../lib/workspace-discovery.mjs";
 import { normalizeKnowledgeDeclaration } from "../capabilities/oats-okf/lib/portable-binding.mjs";
+import { parseConfigData } from "../lib/config-data.mjs";
 
+const EDITIONS = [
+  ["oats-expert", "c448f593-9b2d-4c48-a679-1c468bda5beb", ["git-tag-release", "pr-review"]],
+  ["oats-kernel-expert", "4f532e2d-72f6-4dd0-9743-c9eeab2809ba", []],
+  ["oats-desktop-expert", "76085278-3874-4382-9f7a-f11de3dbceb4", ["accessible-desktop-interactions", "electron-live-verification"]],
+  ["market-research-expert", "2a073e37-2114-474d-917d-29cf3333932f", ["sourced-market-research"]],
+  ["oats-assistant", "2dab92c7-701d-4101-bc7f-09acf4fc374e", ["oats-onboarding"]],
+];
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SOURCE = "git:github.com/awebai/oats", EXPORT = "souls/oats-expert";
 const origin = { kind: "operator", document: { kind: "operator", id: "workspace-layout-test" }, pointer: "/source" };
 const bytes = path => readFileSync(join(ROOT, path));
 const workspace = () => parseWorkspaceDefinition(bytes("oats-workspace.yaml"));
 const index = () => parseMemberExports(bytes("oats.yaml"));
-const soul = () => parsePortableSoul(bytes(`${EXPORT}/soul.yaml`), { origin: origin.document });
+const soul = (name = "oats-expert") => parsePortableSoul(bytes(`souls/${name}/soul.yaml`), { origin: origin.document });
 
 // Actual native Git and the production discovery/projection path, with public
 // locators mapped to isolated local repositories. These member fixture indexes
@@ -42,7 +50,7 @@ function fixture(t) {
     git(repo, "config", "uploadpack.allowFilter", "true"); git(repo, "config", "uploadpack.allowAnySHA1InWant", "true");
     if (n === 0) {
       for (const name of ["oats.yaml", "oats-workspace.yaml"]) write(join(repo, name), bytes(name));
-      cpSync(join(ROOT, EXPORT), join(repo, EXPORT), { recursive: true, verbatimSymlinks: true });
+      for (const [name] of EDITIONS) cpSync(join(ROOT, "souls", name), join(repo, "souls", name), { recursive: true, verbatimSymlinks: true });
     } else {
       write(join(repo, "oats.yaml"), JSON.stringify({ schemaVersion: 1, workspace: { source: SOURCE }, exports: { packages: [{ path: "oats-package" }] } }));
     }
@@ -65,14 +73,14 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   assert.deepEqual({ ...ws.declaration.defaults }, { tasks: "none" });
   assert.equal(member.workspace.source, ws.members[0].source);
   assert.equal(Object.hasOwn(member.workspace, "revision"), false);
-  assert.deepEqual(member.exports.souls.map(s => [s.path, s.definition]), [[EXPORT, `${EXPORT}/soul.yaml`]]);
+  assert.deepEqual(member.exports.souls.map(s => [s.path, s.definition]), EDITIONS.map(([name]) => [`souls/${name}`, `souls/${name}/soul.yaml`]));
   assert.deepEqual(member.exports.packages.map(p => p.path), ["oats-package", "capabilities/oats-authoring"]);
   for (const entry of member.exports.packages) assert.ok(lstatSync(join(ROOT, entry.path, "oats-package.json")).isFile());
   for (const declaration of [ws.declaration, member.exports]) assert.equal(Object.hasOwn(declaration, "knowledge"), false, "phase2 corpus is not advertised");
   assert.equal(Object.hasOwn(ws.declaration, "teams"), false, "no private team identity invented");
   const ajv = new Ajv({ strict: true, ownProperties: true });
   for (const name of ["soul", "oats-workspace", "oats-member"]) ajv.addSchema(JSON.parse(bytes(`docs/${name}.schema.json`)));
-  for (const [uri, value] of [["soul", soul().declaration], ["workspace", ws.declaration], ["member", member.declaration]]) {
+  for (const [uri, value] of [...EDITIONS.map(([name]) => ["soul", soul(name).declaration]), ["workspace", ws.declaration], ["member", member.declaration]]) {
     const validate = ajv.getSchema(`https://oats.dev/schemas/${uri}-v1.json`);
     assert.equal(validate(value), true, JSON.stringify(validate.errors));
   }
@@ -104,6 +112,55 @@ test("transitional role preserves external owner/read routing and hard knowledge
   assert.ok(bytes(`${EXPORT}/skills/pr-review/references/reviewed-delivery.md`).length > 0);
 });
 
+test("five expert editions preserve owners, own-node/four-read routing and contained current skill references", () => {
+  for (const [name, owner, privateSkills] of EDITIONS) {
+    const root = join(ROOT, "souls", name), parsed = soul(name), d = parsed.declaration;
+    assert.equal(d.name, name); assert.equal(d.work, "directory");
+    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.knowledge)), { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.0#oats-package" });
+    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.messaging)), { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.10.3#oats-package" });
+    assert.equal(d.defaults.tasks, "none");
+    assert.equal(d.requires.capabilities?.["oats.core"], undefined, "D1 core declaration is a separate actual-payload follow-up");
+    const model = normalizeKnowledgeDeclaration(d.knowledge, { origins: parsed.origins, origin });
+    assert.equal(model.owner, owner);
+    assert.deepEqual(model.owns.map(n => [n.node, n.destination]), [[name, "oats"]]);
+    assert.deepEqual(model.reads.map(n => [n.store, n.node]), EDITIONS.filter(([other]) => other !== name).map(([other]) => ["oats", other]));
+    assert.deepEqual(model.requirements.map(r => [r.key, r.kind]), [["/bindings/knowledge/stores/oats", "required"]]);
+    assert.deepEqual(model.candidates, [], "no production writer/store default");
+    for (const path of ["okf.json", "knowledge", "work", "instances", "STATE.md", "log.md"]) assert.equal(existsSync(join(root, path)), false);
+    assert.equal(lstatSync(join(root, "AGENTS.md")).isFile(), true);
+    assert.equal(readlinkSync(join(root, "CLAUDE.md")), "AGENTS.md");
+    const instructions = readFileSync(join(root, "AGENTS.md"), "utf8");
+    assert.doesNotMatch(instructions, /`(?:oats|oats-config|oats-packages|okf\.json)`|oats-portable-setup|oats-soul-setup/, "no obsolete or removed instruction/skill pointer");
+    const skillRoot = join(root, "skills"), actualSkills = existsSync(skillRoot) ? readdirSync(skillRoot).sort() : [];
+    assert.deepEqual(actualSkills, privateSkills);
+    if (name !== "oats-expert") {
+      const domain = instructions.split("## Domain workflows\n\n")[1]?.split("\n\n##")[0];
+      assert.ok(domain, `${name}: domain workflow instructions`);
+      const references = [...domain.matchAll(/`([a-z0-9-]+)`/g)].map(match => match[1]).sort();
+      assert.deepEqual(references, name === "oats-kernel-expert" ? ["integration-authoring"] : privateSkills, "every named domain procedure is contained or explicitly conditional below");
+    }
+    for (const skill of privateSkills) {
+      const dir = join(skillRoot, skill), text = readFileSync(join(dir, "SKILL.md"), "utf8"), frontmatter = text.match(/^---\n([\s\S]*?)\n---(?:\n|$)/);
+      assert.ok(frontmatter, `${name}/${skill}: frontmatter`);
+      const header = parseConfigData(frontmatter[1]).value;
+      assert.equal(header.name, skill); assert.ok(typeof header.description === "string" && header.description.length > 0);
+      for (const match of text.matchAll(/(?:\]\(|`)(references\/[A-Za-z0-9._/-]+\.md)(?:\)|`)/g)) {
+        assert.equal(match[1].split("/").includes(".."), false);
+        assert.ok(lstatSync(join(dir, match[1])).isFile(), `${name}/${skill}: contained ${match[1]}`);
+      }
+    }
+  }
+  // This shared procedure is explicitly conditional, not a fabricated private
+  // skill or an unannounced additional source requirement.
+  const kernel = bytes("souls/oats-kernel-expert/AGENTS.md").toString();
+  assert.match(kernel, /belongs to `oats\.authoring`/);
+  assert.match(kernel, /only when that capability is explicitly selected/);
+  assert.match(kernel, /report the curriculum gap/);
+  assert.ok(lstatSync(join(ROOT, "capabilities/oats-authoring/skills/integration-authoring/SKILL.md")).isFile());
+  assert.match(bytes("souls/oats-assistant/skills/oats-onboarding/SKILL.md").toString(), /required knowledge and messaging cannot be disabled/);
+  assert.match(bytes("souls/oats-assistant/skills/oats-onboarding/references/first-task.md").toString(), /classic OATS 0\.23 compatibility/);
+});
+
 test("real Git publication order permits later immutable source imports and matching reciprocal observations", t => {
   const f = fixture(t), sourceCommit = f.git(f.framework, "rev-parse", "HEAD");
   const later = structuredClone(workspace().declaration);
@@ -128,6 +185,22 @@ test("real Git publication order permits later immutable source imports and matc
   assert.deepEqual(readFileSync(join(destination, EXPORT, "skills/pr-review/references/reviewed-delivery.md")), bytes(`${EXPORT}/skills/pr-review/references/reviewed-delivery.md`));
   assert.equal(existsSync(join(destination, "agents")), false, "no legacy/live roster is copied");
   assert.equal(existsSync(join(destination, "oats-workspace.yaml")), false);
+  for (const [name, , skills] of EDITIONS.slice(1)) {
+    const selected = discovery.importSoul({ source: SOURCE, soul: `souls/${name}`, revision: sourceCommit, alias: name }, { origin });
+    const target = join(f.root, `projection-${name}`);
+    tx.materialize(selected.observation, selected.roots, target);
+    for (const file of ["AGENTS.md", "soul.yaml"]) assert.deepEqual(readFileSync(join(target, `souls/${name}/${file}`)), bytes(`souls/${name}/${file}`));
+    assert.equal(readlinkSync(join(target, `souls/${name}/CLAUDE.md`)), "AGENTS.md");
+    for (const skill of skills) {
+      const path = `souls/${name}/skills/${skill}`;
+      assert.deepEqual(readFileSync(join(target, path, "SKILL.md")), bytes(`${path}/SKILL.md`));
+      if (existsSync(join(ROOT, path, "references"))) for (const ref of readdirSync(join(ROOT, path, "references"))) {
+        assert.deepEqual(readFileSync(join(target, path, "references", ref)), bytes(`${path}/references/${ref}`));
+      }
+    }
+    assert.equal(existsSync(join(target, "agents")), false);
+    assert.equal(existsSync(join(target, `souls/${name}/knowledge`)), false);
+  }
 });
 
 test("standalone consumption does not read or adopt the publisher workspace", t => {

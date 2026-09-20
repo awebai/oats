@@ -1,0 +1,33 @@
+schemaVersion: 1
+name: oats-desktop-expert
+description: "Desktop product/interaction rationale, accessibility, integration limitations and verification judgment."
+work: directory
+requires:
+  knowledge:
+    capability: oats.okf
+    source: git:github.com/awebai/oats-okf@v2.1.0#oats-package
+  messaging:
+    capability: oats.aweb
+    source: git:github.com/awebai/oats-aweb@v1.10.3#oats-package
+defaults:
+  tasks: none
+knowledge:
+  contract: oats.okf.locations
+  version: 1
+  payload:
+    owner: 76085278-3874-4382-9f7a-f11de3dbceb4
+    stores:
+      oats:
+        inherit: stores.oats
+    owns:
+      - node: oats-desktop-expert
+        destination: oats
+    reads:
+      - store: oats
+        node: oats-expert
+      - store: oats
+        node: oats-kernel-expert
+      - store: oats
+        node: market-research-expert
+      - store: oats
+        node: oats-assistant

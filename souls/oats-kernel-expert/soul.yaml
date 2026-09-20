@@ -1,0 +1,33 @@
+schemaVersion: 1
+name: oats-kernel-expert
+description: "Kernel-to-capability contract rationale, deliberate constraints, compatibility and trust tradeoffs."
+work: directory
+requires:
+  knowledge:
+    capability: oats.okf
+    source: git:github.com/awebai/oats-okf@v2.1.0#oats-package
+  messaging:
+    capability: oats.aweb
+    source: git:github.com/awebai/oats-aweb@v1.10.3#oats-package
+defaults:
+  tasks: none
+knowledge:
+  contract: oats.okf.locations
+  version: 1
+  payload:
+    owner: 4f532e2d-72f6-4dd0-9743-c9eeab2809ba
+    stores:
+      oats:
+        inherit: stores.oats
+    owns:
+      - node: oats-kernel-expert
+        destination: oats
+    reads:
+      - store: oats
+        node: oats-expert
+      - store: oats
+        node: oats-desktop-expert
+      - store: oats
+        node: market-research-expert
+      - store: oats
+        node: oats-assistant

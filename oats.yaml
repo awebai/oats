@@ -7,6 +7,18 @@ exports:
     - path: souls/oats-expert
       definition: souls/oats-expert/soul.yaml
       description: Transitional portable edition of the existing OATS framework expert.
+    - path: souls/oats-kernel-expert
+      definition: souls/oats-kernel-expert/soul.yaml
+      description: Kernel contracts, rationale, compatibility and trust expertise.
+    - path: souls/oats-desktop-expert
+      definition: souls/oats-desktop-expert/soul.yaml
+      description: Desktop product, interaction and verification expertise.
+    - path: souls/market-research-expert
+      definition: souls/market-research-expert/soul.yaml
+      description: Dated, attributable market research and positioning evidence.
+    - path: souls/oats-assistant
+      definition: souls/oats-assistant/soul.yaml
+      description: Persistent user-facing adoption, configuration and expert handoff.
   packages:
     - path: oats-package
       description: Optional knowledge-theory capability and authoring expert.
