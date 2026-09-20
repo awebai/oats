@@ -43,7 +43,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ Decision + plan D1–D4 on main 18af53be; docs reference as accepted-not-shipped.
 - 🔄 **D1** (P, started 16:29Z; package identity confirmed: rename distribution package to `oats.framework` 1.1.0, capabilities 1.0.0, `oats.knowledge-theory` unchanged) package `oats.core` (`oats-operate`, `oats-souls`, oats.md injection) and `oats.setup` (oats-config, oats-packages, adoption guidance) under `oats-package/capabilities/`. Owner P.
 - 🔄 **D2** (L, after custody fix) soul creation writes explicit `requires.capabilities.oats.core`; kernel skill list de-ambiented (one-release coexistence); checked-in souls updated. Owner L.
-- ⬜ **D3** onboarding creates + instantiates `oats-setup-expert` (edition in `souls/`). Owner L (+M edition).
+- 🔄 **D3** (L, in progress) onboarding creates `oats-setup-expert` (edition in `souls/`); CLI verb **`oats onboard`** — `oats setup` is already the record capture-setup command and stays untouched.
 - Exit: fresh onboarding → running setup expert; created soul shows `oats.core`; kernel ships no ambient operational skill.
 
 ## S5 — Official marketplace
