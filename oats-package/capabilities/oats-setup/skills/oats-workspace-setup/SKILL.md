@@ -128,6 +128,27 @@ Do not pass an inspection result/private scratch/workTarget wrapper as preparati
 input, mix request mode with other prepare flags, or fill gaps from inherited
 OATS selectors/current classic config.
 
+The preparation request's optional `operator` object has **required** `policy`
+and `document` fields, and only these **optional** fields: `localBase`,
+`allowLocalPaths`, `sourceContext`, `bindings`. Software/provider/source/settings
+selections belong in `operator.policy`; provider-owned values belong in the
+sibling `operator.bindings`, not directly under `operator` or inside `policy`.
+For example, this is an **operator fragment**, not a complete preparation request:
+
+```json
+{
+  "operator": {
+    "policy": {},
+    "document": { "kind": "operator", "id": "local-preparation" },
+    "bindings": {}
+  }
+}
+```
+
+Keep `policy: {}` even when no software override is needed. Fill bindings as the
+selected providers require; empty bindings are not a readiness claim. `document`
+identifies input provenance, not executable trust or native authorization.
+
 For the chosen profile supply all required capabilities, exact runtime/model and
 native permission intent, explicit backend endpoint, and provider-owned bindings:
 
