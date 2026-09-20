@@ -85,6 +85,15 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
     assert.equal(item.source, parseRepositorySource(SOURCE).normalized);
     assert.match(item.revision, /^[a-f0-9]{40}$/, "import revision is an immutable commit, not a branch");
     assert.equal(execFileSync("git", ["-C", ROOT, "cat-file", "-t", item.revision], { encoding: "utf8" }).trim(), "commit");
+    // The pinned edition must not lag the current one on provider versions: a second
+    // operator imports the PINNED bytes, so a stale pin silently re-selects an old
+    // provider (this happened with aweb 1.10.3 vs 1.11.0 while five pins stayed behind).
+    const pinned = parsePortableSoul(execFileSync("git", ["-C", ROOT, "show", `${item.revision}:${item.soul}/soul.yaml`]), { origin: sourceDocument(item.alias) }).declaration;
+    const current = soul(item.alias).declaration;
+    for (const slot of ["knowledge", "messaging"]) {
+      assert.deepEqual(JSON.parse(JSON.stringify(pinned.requires?.[slot] ?? null)), JSON.parse(JSON.stringify(current.requires?.[slot] ?? null)), `${item.alias}: pinned ${slot} requirement lags the current edition — repin the import`);
+    }
+    assert.deepEqual(Object.keys(pinned.requires?.capabilities ?? {}).sort(), Object.keys(current.requires?.capabilities ?? {}).sort(), `${item.alias}: pinned capability set differs from the current edition`);
   }
   assert.deepEqual({ ...ws.declaration.defaults }, { tasks: "none" });
   assert.equal(member.workspace.source, ws.members[0].source);
