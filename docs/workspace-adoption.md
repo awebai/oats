@@ -47,6 +47,30 @@ roster/curation and every old home, lock, source, pending job, history and workt
   owner supplies that evidence and any subsequently reviewed compatible revision.
   Do not replace either requirement with none or erase a read edge to launch.
 
+At these starting pins, the provider boundary is concrete:
+
+- Published OKF2.1.0 already supports `inherit: stores.oats`, normalized to
+  `/bindings/knowledge/stores/oats`. The explicit `destination: oats` preserves
+  routing; omitting it would instead require `write.default`. No new schema,
+  owner or production locator is needed for this declaration.
+- Released aweb1.10.3 (`24efa6f9`) has **no mandatory portable binding interface**,
+  so it currently blocks this pilot's portable preparation. Candidate
+  [aweb PR2](https://github.com/awebai/oats-aweb/pull/2), `165b20e7`, adds codecs;
+  it is not a reviewed/published successor or native lifecycle qualification.
+  Human/native-principal, private-context, admin/grant and admitted-lifecycle
+  requirements remain provider/integration-owner work.
+- Published OKF2.1.0's captured worker profile retains its strict Pi,
+  explicit-model and sole-OKF limitation. Candidate
+  [OKF PR4](https://github.com/awebai/oats-okf/pull/4), `7cff887c`, preserves retained
+  Claude/Codex/null-model intent and the approved helper capability closure;
+  review is pending, not published2.1.0 behavior. Pi plus messaging is still
+  unqualified. Do not silently switch runtimes, force a model, or drop capabilities.
+
+These are explicit readiness holds, not reasons to weaken the source. Parent must
+select reviewed compatible provider revisions and update the source pin deliberately
+before claiming an operational pilot; metadata-only repository indexes change none
+of these runtime facts.
+
 The workspace intentionally starts with **`imports: []`**. A source cannot pin a
 future commit containing itself. This first commit is publishable source metadata,
 not an already usable/adopted pilot graph or a phase-1 exit verdict.
@@ -181,14 +205,24 @@ Before preparing, the integration lead must supply:
   `source: "oats-expert"` after the real import is published, and `mode: "directory"`.
   Standalone callers instead give the complete `{source,soul,revision,alias}`
   reference and an explicit standalone context; they do not inherit this workspace.
-- Explicit provider-specific settings and bindings, including `stores.oats`,
-  `state-dir`/`bindings-file` where required, and real messaging human/context inputs.
-  The acceptance store must support the preserved owner **and all four read nodes**.
-  Its existence/access/registration and messaging readiness are not YAML facts.
-- A qualified runtime/model/resource profile and any required helper launch capture.
-  An old default-OKF-only learning gate does not qualify a combined aweb profile.
-  If provider or kernel support is missing, stop at that typed result; do not bypass
-  it with a legacy route, a dropped capability or a fabricated helper identity.
+- Explicit provider-specific settings and bindings. OKF preparation needs selected
+  absolute `bindings-file` and `state-dir`, `harvest-runtime`, and the `stores.oats`
+  binding; an omitted `harvest-model` preserves native-default intent. The parent-owned
+  acceptance fixture must supply an accepted node registry supporting the preserved
+  owner **and all four read nodes**. This is not accepted production KB publication;
+  Git destinations remain PR-only.
+- Actual messaging human/context inputs and the pilot's explicit **`delivery: session`**
+  setting (aweb's default is channel). Supply it in the complete supported
+  `operator.policy.messaging` selection: capability, matching selected source and
+  `settings: {delivery: session}`. Retain host requirements, session `ifInstalled`
+  minimums and any selected authoring requirements. Selecting session delivery neither
+  adds the missing1.10.3 binding adapter nor supplies captured wake/input authority.
+- A qualified primary/helper runtime/model/resource profile. Capture the intended
+  helper selection in `helperLaunches["oats.okf:memory-harvest"]`, not the legacy
+  `souls.memory-harvest` configuration. Do not replace retained intent to fit an easier
+  runtime profile. An old default-OKF-only learning gate does not qualify a combined
+  aweb profile. If provider or kernel support is missing, stop at that typed result;
+  do not bypass it with a legacy route, a dropped capability or a fabricated identity.
 
 The existing public routes are stepwise (D/R/H are returned or explicitly approved
 values, not names inferred from cwd):
