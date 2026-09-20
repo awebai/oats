@@ -13,7 +13,14 @@ oats inspect --request /absolute/inspection.json --json
 oats inspect --request /absolute/inspection.json --emit-prepare-request /absolute/preparation.json --json
 ```
 
-This mode accepts one request file, optional `--emit-prepare-request`, and `--json`. Explicit captured selectors
+This mode accepts one request file, optional `--emit-prepare-request`, and `--json`.
+The 0.24.4 follow-up also accepts the complete preparation request's `operator`,
+`launch`, `helperLaunches`, `mode`, and `allowLocalPaths` fields. Inspection ignores
+their semantics: it does not validate provider payloads, select a runtime/model,
+execute a codec, or authorize local acquisition. `ignored: [...]` lists only the
+present field NAMES in a stable order; values stay out of the metadata view and
+`omitted.*` remains true. Preparation still validates those fields normally.
+Unknown fields remain errors. Explicit captured selectors
 or current-context flags conflict before file reads; inherited captured environment
 is not new-work input. Other existing inspect modes are unchanged. The shared
 bounded strict JSON request reader feeds the existing inspection validator intact:
@@ -80,6 +87,12 @@ A held inspection cannot emit a fresh preparation request. Core callers can
 explicitly request this data via `{includePrepareRequest:true}`; the default
 metadata projection and its omissions are unchanged.
 
+The explicit export preserves authored prepare-only fields privately through the
+existing builder, without interpreting them; it must not silently drop operator
+bindings or launch/helper choices. They remain unvalidated until preparation.
+This does not expose their values in normal metadata or turn ignored values into
+inspection authority.
+
 The file is reusable new-work input, NOT a stored resolution, approval, admission,
 or serialized ready-inspection permission. Preparation performs fresh validation
 and observations, including re-resolving any mutable source selectors. Provider
@@ -132,6 +145,10 @@ provenance where available. A no-interface provider is identified with kernel-kn
 manifest/version facts. Other supported slots still normalize, resolve through
 the same choice engine, and bind if their own choices are resolved; any required
 slot problem still prevents publication. Provider free text is not passed through.
+The 0.24.4 follow-up preserves only exact fixed reasons declared by the selected
+manifest (or its reviewed kernel compatibility list when absent); see the
+[binding wire](2026-09-16-provider-binding-wire.md). Human CLI output also shows a
+problem's existing choice key, without inventing new key/provider semantics.
 Different opaque inputs need not produce different public errors if both fail the
 same provider prerequisite. In particular, missing OKF host runtime settings can
 hold both syntactically valid Git locators; preparation does not test whether a

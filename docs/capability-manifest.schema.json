@@ -178,7 +178,21 @@
         "version": { "const": 1 },
         "normalize": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "bind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-        "check": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+        "check": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "reasons": {
+          "description": "Fixed nonsecret diagnostic strings allowed across the binding wire by exact match only. 1-64 unique printable ASCII strings of 1-200 characters, no braces/interpolation, operator values or paths. Omission uses the kernel's per-capability compatibility list when available; an invalid declaration never falls back.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200, "not": { "pattern": "[{}]|[^\\x20-\\x7e]" } }
+        },
+        "keys": {
+          "description": "Owned operator-key declarations: exact names or trailing-dot namespaces, no other pattern syntax. Kernel 0.24.4 validates shape only; filtering, overlap checks and ownership attribution are deferred to 0.25. Providers must ignore foreign keys themselves.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_-]*\\.?$(?![\\s\\S])" }
+        }
       }
     },
     "operations": {

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { decodeBindingResponse, validateBindingRequest } from '../lib/provider-binding-wire.mjs';
+import { providerReasons } from '../lib/provider-reasons.mjs';
 import { invocationFixture } from './helpers/captured-invocation.mjs';
 import { validateWire } from './helpers/portable-schema-check.mjs';
 const origin={kind:'soul-requirement',document:{kind:'operator',id:'fixture-source'},pointer:'/knowledge'};
@@ -26,6 +27,57 @@ test('binding wire rejects malformed, duplicate, oversized and cross-provider ou
   const error=JSON.stringify({schemaVersion:1,phase:'normalize',slot:'knowledge',capability:'example.knowledge',ok:false,error:{code:'needs-configuration',message:'secret-do-not-echo'}});
   assert.deepEqual(decodeBindingResponse(error,request),{ok:false,error:{code:'needs-configuration'}});
 });
+test('only exact trusted reason literals cross error and check responses; output cannot declare its own whitelist',()=>{
+  const reason='fixed configuration reason',reasons=[reason];
+  const failure=message=>JSON.stringify({schemaVersion:1,phase:request.phase,slot:request.slot,capability:request.capability,ok:false,error:{code:'needs-configuration',message}});
+  assert.deepEqual(decodeBindingResponse(failure(reason),request,{reasons}),{ok:false,error:{code:'needs-configuration',message:reason}});
+  for(const message of ['private-operator-value','/private/operator/store',reason+' ',reason+' /private/path',reason.replace('fixed','ﬁxed'),'fixed café']) {
+    assert.deepEqual(decodeBindingResponse(failure(message),request,{reasons}),{ok:false,error:{code:'needs-configuration'}});
+  }
+  assert.deepEqual(decodeBindingResponse(failure(reason),request,{reasons:[]}),{ok:false,error:{code:'needs-configuration'}});
+  const forged=JSON.parse(failure(reason));forged.error.reasons=[reason];
+  assert.throws(()=>decodeBindingResponse(JSON.stringify(forged),request),{code:'invalid-binding-output'});
+  const cross=JSON.parse(failure(reason));cross.capability='example.other';
+  assert.throws(()=>decodeBindingResponse(JSON.stringify(cross),request,{reasons}),{code:'invalid-binding-output'});
+  const check={...request,phase:'check',input:{context:request.input.context,action:{kind:'inspect'},binding:{schemaVersion:1,capability:request.capability,payloadContract:'example.locations',payloadVersion:1,payload:{},credentialRefs:{},provenance:[]}}};
+  const answer=JSON.stringify({schemaVersion:1,phase:'check',slot:check.slot,capability:check.capability,ok:true,result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:reason},{code:'needs-configuration',message:'/private/operator/store'}]}});
+  assert.deepEqual(decodeBindingResponse(answer,check,{reasons}).result,{status:'needs-configuration',problems:[{code:'needs-configuration',message:reason},{code:'needs-configuration'}]});
+});
+
+test('complete bundled reasons are capability-scoped, explicit declarations override them and code-only stays code-only',()=>{
+  for(const [capability,slot,count,example] of [
+    ['oats.aweb','messaging',30,'messaging workspace must declare private: per-human'],
+    ['oats.okf','knowledge',7,'setting bindings-file is required (absolute host path)'],
+  ]) {
+    const selected={...request,capability,slot},reasons=providerReasons({capability});
+    assert.equal(reasons.length,count); assert.ok(reasons.includes(example)); assert.ok(Object.isFrozen(reasons));
+    const encode=message=>JSON.stringify({schemaVersion:1,phase:selected.phase,slot,capability,ok:false,error:{code:'needs-configuration',...(message===undefined?{}:{message})}});
+    for(const message of reasons) {
+      assert.deepEqual(decodeBindingResponse(encode(message),selected),{ok:false,error:{code:'needs-configuration',message}});
+      assert.deepEqual(decodeBindingResponse(encode(message+' '),selected),{ok:false,error:{code:'needs-configuration'}});
+    }
+    for(const declared of [['different fixed reason']]) {
+      const manifest={capability,binding:{reasons:declared}};
+      assert.deepEqual(decodeBindingResponse(encode(example),selected,{reasons:providerReasons(manifest)}),{ok:false,error:{code:'needs-configuration'}});
+    }
+    assert.throws(()=>providerReasons({capability,binding:{reasons:[]}}),{code:'invalid-declaration'}, 'present invalid declarations never fall back');
+    assert.deepEqual(decodeBindingResponse(encode(undefined),selected),{ok:false,error:{code:'needs-configuration'}},'no missing-item inference for released code-only providers');
+  }
+  const foreign={...request,capability:'example.other'};
+  const message=providerReasons({capability:'oats.aweb'})[0];
+  const error=JSON.stringify({schemaVersion:1,phase:foreign.phase,slot:foreign.slot,capability:foreign.capability,ok:false,error:{code:'needs-configuration',message}});
+  assert.deepEqual(decodeBindingResponse(error,foreign),{ok:false,error:{code:'needs-configuration'}});
+});
+
+test('non-ready successful check envelopes retain only whitelisted private-team reasons without changing shape',()=>{
+  const capability='oats.aweb',slot='messaging',message='an explicit private-team binding is required';
+  const check={...request,capability,slot,phase:'check',input:{context:request.input.context,action:{kind:'inspect'},binding:{schemaVersion:1,capability,payloadContract:'fixture.messaging',payloadVersion:1,payload:{},credentialRefs:{},provenance:[]}}};
+  const encode=value=>JSON.stringify({schemaVersion:1,phase:'check',capability,slot,ok:true,result:{status:'needs-configuration',problems:[{code:'needs-configuration',message:value}]}});
+  assert.deepEqual(decodeBindingResponse(encode(message),check),{ok:true,result:{status:'needs-configuration',problems:[{code:'needs-configuration',message}]}});
+  assert.deepEqual(decodeBindingResponse(encode(message+' /private/path'),check),{ok:true,result:{status:'needs-configuration',problems:[{code:'needs-configuration'}]}});
+  assert.deepEqual(decodeBindingResponse(encode(message),check,{reasons:['another fixed reason']}),{ok:true,result:{status:'needs-configuration',problems:[{code:'needs-configuration'}]}});
+});
+
 test('check invocation is optional and matches the existing action, context and capability wire',()=>{
   const invocation=invocationFixture({capability:request.capability});
   const check={...request,phase:'check',input:{binding:{schemaVersion:1,capability:request.capability,payloadContract:'example.locations',payloadVersion:1,payload:{},credentialRefs:{},provenance:[]},

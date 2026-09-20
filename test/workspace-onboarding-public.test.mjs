@@ -103,6 +103,115 @@ function secondOperatorRequest(f, name) {
   return input;
 }
 
+test("inspection accepts the complete preparation request without evaluating or exposing its prepare-only fields", t => {
+  const f = fixture(t), input = secondOperatorRequest(f, "prepare-valid-request.json");
+  const native = join(f.bin, "never-run"), effect = join(f.root, "forbidden-launch");
+  write(native, `#!/bin/sh\nprintf forbidden > ${quote(effect)}\nexit 99\n`); chmodSync(native, 0o700);
+  Object.assign(input, { workTarget: f.workTarget, mode: "directory", allowLocalPaths: false,
+    launch: { runtime: "claude", executable: native, args: [], env: {}, model: opaque, yolo: false }, helperLaunches: {} });
+  input.operator.bindings.destination = opaque;
+  mkdirSync(input.deployment);
+  const file = f.request("complete-superset", input), exported = join(f.root, "complete-export.json");
+  const inspected = f.run(["inspect", "--request", file, "--emit-prepare-request", exported]);
+  assert.equal(inspected.status, 0, inspected.stdout + inspected.stderr);
+  assert.deepEqual(inspected.envelope.result.ignored, ["operator", "launch", "helperLaunches", "mode", "allowLocalPaths"]);
+  assert.deepEqual(inspected.envelope.result.omitted, { providerPayloads: true, adoptionValues: true });
+  assert.ok(!inspected.stdout.includes(opaque));
+  assert.equal(existsSync(f.phaseLog), false); assert.equal(existsSync(effect), false);
+  assert.equal(existsSync(join(input.deployment, ".agents")), false);
+  const converted = JSON.parse(readFileSync(exported, "utf8"));
+  for (const key of inspected.envelope.result.ignored) assert.deepEqual(converted[key], input[key], `explicit export preserves ${key}, without evaluating it`);
+  assert.equal(lstatSync(exported).mode & 0o777, 0o600);
+  const pending = f.run(["prepare", "--request", file]);
+  assert.equal(pending.status, 1, pending.stdout); assert.ok(pending.envelope.error.details, pending.stdout);
+  for (const selection of pending.envelope.error.details.selections) for (const capability of selection.approvalRequired) {
+    const approved = f.run(["trust", capability, "--deployment", input.deployment, "--artifact-set", selection.artifactSet]);
+    assert.equal(approved.status, 0, approved.stdout + approved.stderr);
+  }
+  const prepared = f.run(["prepare", "--request", file]);
+  assert.equal(prepared.status, 0, prepared.stdout + prepared.stderr);
+  const record = readCapturedResolution(input.deployment, prepared.envelope.result.resolution);
+  assert.equal(record.bindings.knowledge.payload.destination, opaque); assert.equal(record.dispatch.launch.model, opaque);
+  assert.equal(record.dispatch.launch.yolo, false); assert.equal(existsSync(effect), false);
+  const phases = readFileSync(f.phaseLog, "utf8");
+  // These are deliberately invalid PREPARATION values; inspection only observes
+  // source/deployment/work metadata and reports that it ignored the fields.
+  const ignored = { ...input, operator: { unknown: opaque }, launch: opaque, helperLaunches: [opaque], mode: false, allowLocalPaths: opaque };
+  const metadata = f.run(["inspect", "--request", f.request("invalid-but-ignored", ignored)]);
+  assert.equal(metadata.status, 0, metadata.stdout); assert.ok(!metadata.stdout.includes(opaque));
+  assert.deepEqual(metadata.envelope.result.ignored, inspected.envelope.result.ignored);
+  assert.equal(readFileSync(f.phaseLog, "utf8"), phases); assert.equal(existsSync(effect), false);
+});
+
+function refusingMessaging(f, reasons) {
+  // Main now declares this policy. Reproduce the historical omission only in
+  // this owned synthetic workspace, never by assuming today's source is broken.
+  const workspaceFile = join(f.repo, "oats-workspace.yaml"), workspace = JSON.parse(readFileSync(workspaceFile, "utf8"));
+  delete workspace.teams.private; write(workspaceFile, workspace);
+  const soulFile = join(f.repo, "souls/pilot/soul.yaml"), soul = JSON.parse(readFileSync(soulFile, "utf8"));
+  soul.requires.messaging = { capability: "oats.aweb", source: "repo:packages/messaging" }; write(soulFile, soul);
+  const indexFile = join(f.repo, "oats.yaml"), index = JSON.parse(readFileSync(indexFile, "utf8"));
+  index.exports.packages.push({ path: "packages/messaging" }); write(indexFile, index);
+  write(join(f.repo, "packages/messaging/oats-package.json"), { package: "fixture.messaging", version: "1.0.0", description: "Inert messaging reason fixture, not released aweb", compatibility: { oats: ">=0.24.0" }, capabilities: ["cap"] });
+  write(join(f.repo, "packages/messaging/cap/oats.json"), { capability: "oats.aweb", version: "1.11.0", description: "Inert codec only", layer: "messaging",
+    commands: { phase: "phase.mjs" }, binding: { version: 1, normalize: "phase", bind: "phase", check: "phase", keys: ["diagnostic"], ...(reasons === undefined ? {} : { reasons }) } });
+  write(join(f.repo, "packages/messaging/cap/phase.mjs"), `import {readFileSync,appendFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(0,'utf8'));appendFileSync(${JSON.stringify(f.phaseLog)},'messaging '+r.phase+'\\n');
+if(r.input.declarations.find(d=>d.kind==='workspace')?.value.teams?.private==='per-human')throw Error('fixture must reproduce a missing private policy');
+const op=r.input.declarations.find(d=>d.kind==='operator'),message=op?.value.bindings?.diagnostic;
+if(!Object.hasOwn(op.value.bindings,'stores.oats'))throw Error('0.24.4 validates keys shape only; foreign values remain forwarded and ignored');
+console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:false,error:{code:'needs-configuration',...(message===null?{}:{message:message??'messaging workspace must declare private: per-human'})}}));\n`);
+  f.git("add", "."); f.git("commit", "--quiet", "-m", "inert provider reason transport");
+}
+
+test("approved provider fixed reasons survive broker and CLI; unsafe text stays behind the wire", t => {
+  const f = fixture(t), safe = "fixture messaging requires reviewed configuration";
+  refusingMessaging(f, [safe]);
+  const input = secondOperatorRequest(f, "prepare-valid-request.json");
+  input.operator.bindings.diagnostic = safe; mkdirSync(input.deployment);
+  const file = f.request("declared-reason", input), pending = f.run(["prepare", "--request", file]);
+  assert.equal(pending.status, 1); assert.equal(existsSync(f.phaseLog), false);
+  assert.ok(!pending.stdout.includes(safe), "no provider reason before executing an approved codec");
+  for (const selection of pending.envelope.error.details.selections) for (const capability of selection.approvalRequired) {
+    assert.equal(f.run(["trust", capability, "--deployment", input.deployment, "--artifact-set", selection.artifactSet]).status, 0);
+  }
+  const result = f.run(["prepare", "--request", file]);
+  assert.equal(result.status, 1);
+  const problem = result.envelope.error.details.problems.find(p => p.capability === "oats.aweb");
+  assert.equal(problem.slot, "messaging"); assert.equal(problem.message, safe); assert.ok(problem.origins.length > 0);
+  const prose = spawnSync(process.execPath, [CLI, "prepare", "--request", file], { cwd: f.workTarget, env: f.env, encoding: "utf8", timeout: 30000 });
+  assert.equal(prose.status, 1); assert.equal(prose.stdout, ""); assert.ok(prose.stderr.includes(safe));
+  for (const message of [opaque, `${f.root}/private-operator-value`, `${safe}: ${opaque}`, "messaging workspace must declare private: per-human", null]) {
+    input.operator.bindings.diagnostic = message;
+    const bad = f.run(["prepare", "--request", f.request("unlisted-reason", input)]);
+    assert.equal(bad.status, 1); assert.equal(bad.envelope.error.details.resolution, null);
+    assert.equal(bad.envelope.error.details.problems.find(p => p.capability === "oats.aweb").message, "oats.aweb messaging normalize binding could not be prepared");
+    if (message !== null) assert.ok(!bad.stdout.includes(message), "free text, paths, operator values and bundled reasons not declared by this manifest stay hidden");
+  }
+});
+
+test("recorded second-operator pair surfaces the bundled per-human reason from an approved inert aweb stub", t => {
+  assert.equal(capturedFixture("prepare-valid-result.json"), capturedFixture("prepare-bogus-result.json"));
+  const f = fixture(t); refusingMessaging(f);
+  const requests = ["prepare-valid-request.json", "prepare-bogus-request.json"].map(name => secondOperatorRequest(f, name));
+  mkdirSync(requests[0].deployment);
+  const pending = f.run(["prepare", "--request", f.request("before-approval", requests[0])]);
+  assert.equal(pending.status, 1); assert.equal(existsSync(f.phaseLog), false);
+  for (const selection of pending.envelope.error.details.selections) for (const capability of selection.approvalRequired) {
+    assert.equal(f.run(["trust", capability, "--deployment", requests[0].deployment, "--artifact-set", selection.artifactSet]).status, 0);
+  }
+  const problems = requests.map((input, index) => {
+    const result = f.run(["prepare", "--request", f.request(`recorded-pair-${index}`, input)]);
+    assert.equal(result.status, 1); assert.equal(result.envelope.error.details.resolution, null);
+    return result.envelope.error.details.problems.find(p => p.capability === "oats.aweb");
+  });
+  for (const problem of problems) {
+    assert.equal(problem.slot, "messaging"); assert.equal(problem.code, "needs-configuration");
+    assert.equal(problem.message, "messaging workspace must declare private: per-human"); assert.ok(problem.origins.length > 0);
+  }
+  assert.deepEqual(problems[0], problems[1], "same declared reason for both locators; no remote validation or manufactured inequality");
+});
+
 test("second-operator before pair stays byte-identical; independent binding diagnostics are attributed without masking other slots", t => {
   assert.equal(capturedFixture("prepare-valid-result.json"), capturedFixture("prepare-bogus-result.json"));
   assert.equal(capturedFixture("wire/prepare-valid-result.json"), capturedFixture("wire/prepare-bogus-result.json"));
@@ -139,6 +248,8 @@ test("second-operator before pair stays byte-identical; independent binding diag
   assert.deepEqual(problem.origins.map(o => o.pointer).sort(), ["/bindings/stores.oats/root", "/knowledge/payload/root"]);
   assert.notDeepEqual(good.problems, bad.problems, "source hard-root constraint differs; NOT a real remote-existence claim");
   assert.equal(readFileSync(f.phaseLog, "utf8"), "normalize\nbind\nnormalize\n", "valid knowledge binds despite unsupported messaging; only conflicted slot skips bind");
+  const prose = spawnSync(process.execPath, [CLI, "prepare", "--request", bogusFile], { cwd: f.workTarget, env: f.env, encoding: "utf8", timeout: 30000 });
+  assert.equal(prose.status, 1); assert.ok(prose.stderr.includes(JSON.stringify(problem.key)), "human diagnostics show the existing choice key beside the message");
 });
 
 test("second-operator trust --dir on a v3 deployment gives exact approval guidance without approving or changing locks", t => {
