@@ -16,7 +16,27 @@ members:
 defaults:
   tasks: none
 
-# Publication stage 1: export the source before pinning its import. The next
-# reviewed workspace revision may import the actual published source commit.
-# An empty import list is deliberately NOT a usable/adopted pilot graph.
-imports: []
+# Imports pin the five framework expert editions exported by this same repository
+# at the reviewed revision that published them with their explicit oats.core
+# declaration. Importing is selection, not activation, enrollment or approval.
+imports:
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-expert
+    revision: caa341f34009e37006567419a983d5a743037a79
+    alias: oats-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-kernel-expert
+    revision: caa341f34009e37006567419a983d5a743037a79
+    alias: oats-kernel-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-desktop-expert
+    revision: caa341f34009e37006567419a983d5a743037a79
+    alias: oats-desktop-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/market-research-expert
+    revision: caa341f34009e37006567419a983d5a743037a79
+    alias: market-research-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-assistant
+    revision: caa341f34009e37006567419a983d5a743037a79
+    alias: oats-assistant

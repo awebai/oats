@@ -75,7 +75,14 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   const ws = workspace(), member = index();
   assert.deepEqual(ws.members.map(m => m.source), ["oats", "oats-dev", "oats-okf", "oats-aweb", "oats-authoring", "oats-jira", "oats-linear"].map(name => `git:https://github.com/awebai/${name}.git`));
   assert.ok(ws.members.every(m => !Object.hasOwn(m, "revision")), "observe host defaults, never guess main or future commits");
-  assert.deepEqual(ws.imports, [], "stage one does not pretend an unpublished source import is ready");
+  // Stage two: the five editions are published, so the workspace pins each import to the exact
+  // reviewed commit that exported them with explicit oats.core. Full SHA, same repository, one alias each.
+  assert.deepEqual(ws.imports.map(i => [i.soul, i.alias]), EDITIONS.map(([name]) => [`souls/${name}`, name]));
+  for (const item of ws.imports) {
+    assert.equal(item.source, parseRepositorySource(SOURCE).normalized);
+    assert.match(item.revision, /^[a-f0-9]{40}$/, "import revision is an immutable commit, not a branch");
+    assert.equal(execFileSync("git", ["-C", ROOT, "cat-file", "-t", item.revision], { encoding: "utf8" }).trim(), "commit");
+  }
   assert.deepEqual({ ...ws.declaration.defaults }, { tasks: "none" });
   assert.equal(member.workspace.source, ws.members[0].source);
   assert.equal(Object.hasOwn(member.workspace, "revision"), false);
