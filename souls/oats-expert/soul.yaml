@@ -16,6 +16,9 @@ requires:
     source: git:github.com/awebai/oats-aweb@v1.11.0#oats-package
 defaults:
   tasks: none
+# Messaging declaration consumed by the selected provider: no wider team memberships
+# requested; the operator's private per-human team (workspace policy) is the only one.
+teams: []
 knowledge:
   contract: oats.okf.locations
   version: 1

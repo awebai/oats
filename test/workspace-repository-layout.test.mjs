@@ -102,7 +102,10 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   assert.deepEqual(member.exports.packages.map(p => p.path), ["oats-package", "capabilities/oats-authoring"]);
   for (const entry of member.exports.packages) assert.ok(lstatSync(join(ROOT, entry.path, "oats-package.json")).isFile());
   for (const declaration of [ws.declaration, member.exports]) assert.equal(Object.hasOwn(declaration, "knowledge"), false, "phase2 corpus is not advertised");
-  assert.equal(Object.hasOwn(ws.declaration, "teams"), false, "no private team identity invented");
+  // Messaging policy, not identity: the workspace declares the accepted per-human private
+  // team POLICY (required by the aweb provider to normalize in workspace context) and
+  // names no team id, provider or alias — nothing here enrolls anyone.
+  assert.deepEqual(JSON.parse(JSON.stringify(ws.declaration.teams)), { private: "per-human" }, "private policy only; no team identity invented");
   const ajv = new Ajv({ strict: true, ownProperties: true });
   for (const name of ["soul", "oats-workspace", "oats-member"]) ajv.addSchema(JSON.parse(bytes(`docs/${name}.schema.json`)));
   for (const [uri, value] of [...EXPORTED_NAMES.map(name => ["soul", soul(name).declaration]), ["workspace", ws.declaration], ["member", member.declaration]]) {
