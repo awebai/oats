@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 17:30Z · main `6f98c7c9`+ · **OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.1 · oats-framework/v1.1.2 ALL PUBLISHED**; six imports @ `08c68ece` · oats-knowledge 8d67eab4
+**Last update:** 2026-09-21 18:10Z · main `86b5f924`+ · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.1 · oats-framework/v1.1.2 · imports @ `08c68ece` · **S2 EXIT GATE MET (independent operator)**
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ 0.24.3 gate run: knowledge slot resolves via the workspace route; seams 1–4 fixed, 5 attributed · ✅ **messaging source defect found and fixed (906b1558: per-human policy + soul teams)**, imports repinned f3ee31e0 · 🔄 final re-run for a published resolution + OKF check probe | lead, Antares | re-run; then S2 closed |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ **EXIT GATE MET on the 0.24.4 wave (independent operator, Juan's machine, 2026-09-21)**: from published definitions alone — discovery, membership, resolution, exact approval, knowledge bound to public `oats-knowledge` via OKF 2.1.2, messaging normalized — a fresh outside operator reaches a **single, fully-named, operator-owned requirement** (`/bindings/messaging/responsibleHuman`). Named reasons in one run. · 🔄 optional coda: Juan's `responsibleHuman` → first published second-operator resolution → OKF `check` probe (a declined identity is also a legitimate end state) | lead, Antares | coda only; S2 closed on the gate's own terms |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ aweb 1.11.0 released · ✅ **catalog + six editions pin v1.11.0 (0.24.2)** · ⬜ second-operator re-run | P, lead | Antares re-run |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |
@@ -49,6 +49,18 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 ## S2 — settings-aware run (Antares, direct source route on main, aweb 1.11.0, 2026-09-21)
 - With `bindings-file`/`state-dir`/`harvest-runtime: pi` and the public `oats-knowledge` bound as base `oats`: **the knowledge slot binds** (OKF problem gone). `harvest-model` is optional per manifest; aweb 1.11.0 declares exactly one setting (`delivery`).
 - **aweb 1.11.0 is the only remaining hold** (`needs-configuration`, identical for `delivery: session` and `channel` on 0.24.2's unattributed output). No resolution publishes → OKF `check` probe not reachable yet. 0.24.3 run will show the attributed aweb message (expected: private-team binding / Pi session-input).
+
+## S2 — acceptance run on the 0.24.4 wave (Antares, Juan's machine, 2026-09-21) — EXIT GATE MET
+
+Fresh directory and deployment, `@awebai/oats@0.24.4`, policy sources v2.1.2 / v1.11.1, `wider: []`, request otherwise unchanged from the 0.24.3 run; wave verified independently first (npm, both provider tags, main `86b5f924`, six imports @ `08c68ece`).
+
+- inspect: exit 0, `ignored: ["operator","launch"]`, six imports @ `08c68ece`, `ready-for-preparation` — **seam 1 closed**.
+- prepare → two `approval-required` → approved via the printed `--artifact-set` commands → prepare: **knowledge binds with `wider: []` present (deadlock fixed)**; the single remaining problem is `{code: needs-configuration, slot: messaging, key: /bindings/messaging/responsibleHuman}`.
+- `bindings-file` removed → `setting bindings-file is required (absolute host path)` in one run — the named-reason criterion ("one run instead of six") met. `wider` removed → both messaging keys attributed separately.
+- Operator's observation, adopted: `required value has no concrete binding` is generic text but the `key` carries the address; sufficient — no more spend on the string.
+- **Operator's verdict (verbatim):** *"An outside operator on a fresh machine, holding none of the authoring state, now reaches a single, fully-named, legitimately-operator-owned requirement: `/bindings/messaging/responsibleHuman`. Everything else — source discovery, workspace membership, artifact resolution, exact approval, knowledge binding to the public `oats-knowledge` base through OKF 2.1.2, messaging normalize — resolves from the published definitions alone. That is the S2 exit gate met … not 'it works', but 'every remaining item is named and belongs to the operator'."*
+- Coda: the operator has put `responsibleHuman` to Juan as a real decision; if supplied, R publishes and the OKF `check` probe runs (typed status/problems only). If declined, that is a legitimate end state and is recorded as such.
+- Four acceptance trees retained on the operator's side (0.24.1–0.24.4) — every later check is a repeat, not a rebuild.
 
 ## S2 — 0.24.3 gate run (Antares, Juan's machine, 2026-09-21) — verdict
 - Seams 1, 3, 4 **fixed**; seam 2 fixed as typed (message does not echo the path — deliberate, consistent with no host diagnostics; expectation corrected); seam 5 **half**: attribution (slot/capability/full origins) fixed; naming the missing item only where the kernel knows it. The specificity half is provider-side: OKF 2.1.2 (assigned) and an aweb follow-up.

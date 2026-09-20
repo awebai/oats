@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-21
+* **Milestone**: S2 exit gate met by the independent second operator on the 0.24.4 wave — every remaining item named and operator-owned. Recorded on the [program board](https://github.com/awebai/oats/blob/main/docs/design/2026-09-20-redesign-program-board.md) with the operator's verbatim verdict.
 * **Decision**: [Operator bindings ownership](/decisions/operator-bindings-ownership.md) — second operator deadlocked between messaging's `wider` and OKF validating it as a store locator; rule: flat map, providers ignore foreign keys, declare owned keys, kernel names truly unowned keys.
 * **Decision**: [Provider reasons cross the wire](/decisions/provider-problem-reasons-cross-the-wire.md) — after the second operator needed six runs to learn a one-line cause the adapter had already made safe, whitelisted fixed reasons are surfaced in preparation problems; free text stays refused.
 * **Release**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record OATS 0.24.3 — the five second-operator `prepare` seams fixed and the corrected acceptance (identical pair is correct output; fix = attribution/specificity) captured as a maintainer lesson.
