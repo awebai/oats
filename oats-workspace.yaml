@@ -1,0 +1,22 @@
+schemaVersion: 1
+name: oats-development
+
+# Membership is reciprocal discovery, not capability activation or enrollment.
+# Omitted revisions use the hosting provider's observed default branch; there is
+# no guessed main branch or circular future workspace/member commit pin.
+members:
+  - source: git:github.com/awebai/oats
+  - source: git:github.com/awebai/oats-dev
+  - source: git:github.com/awebai/oats-okf
+  - source: git:github.com/awebai/oats-aweb
+  - source: git:github.com/awebai/oats-authoring
+  - source: git:github.com/awebai/oats-jira
+  - source: git:github.com/awebai/oats-linear
+
+defaults:
+  tasks: none
+
+# Publication stage 1: export the source before pinning its import. The next
+# reviewed workspace revision may import the actual published source commit.
+# An empty import list is deliberately NOT a usable/adopted pilot graph.
+imports: []
