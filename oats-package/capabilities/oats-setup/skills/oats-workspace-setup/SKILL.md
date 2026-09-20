@@ -133,21 +133,46 @@ and `document` fields, and only these **optional** fields: `localBase`,
 `allowLocalPaths`, `sourceContext`, `bindings`. Software/provider/source/settings
 selections belong in `operator.policy`; provider-owned values belong in the
 sibling `operator.bindings`, not directly under `operator` or inside `policy`.
-For example, this is an **operator fragment**, not a complete preparation request:
+Minimal complete **OKF operator fragment** for a soul using `inherit: stores.oats`
+(and `destination: oats` if it declares ownership), not a complete preparation
+request or multi-provider configuration:
 
 ```json
 {
   "operator": {
-    "policy": {},
+    "policy": {
+      "knowledge": {
+        "capability": "oats.okf",
+        "source": "git:github.com/awebai/oats-okf@v2.1.1#oats-package",
+        "settings": {
+          "bindings-file": "/absolute/operator-owned/okf/bindings.json",
+          "state-dir": "/absolute/operator-owned/okf/state",
+          "harvest-runtime": "pi",
+          "harvest-model": "REPLACE_WITH_EXPLICIT_PI_MODEL"
+        }
+      }
+    },
     "document": { "kind": "operator", "id": "local-preparation" },
-    "bindings": {}
+    "bindings": {
+      "stores.oats": {
+        "id": "example-kb",
+        "kind": "git",
+        "repository": "https://github.com/example/knowledge.git",
+        "root": ".",
+        "acceptedBranch": "main",
+        "pr": { "repository": "example/knowledge" }
+      }
+    }
   }
 }
 ```
 
-Keep `policy: {}` even when no software override is needed. Fill bindings as the
-selected providers require; empty bindings are not a readiness claim. `document`
-identifies input provenance, not executable trust or native authorization.
+Replace example paths, model, repository, branch and base ID with operator-chosen
+values matching the selected reviewed source and an initialized accepted OKF base;
+no directory, identity, owner or store is provisioned by this example. Keep other
+required provider inputs and the source's owner/read/write declarations intact.
+`document` identifies input provenance, not executable trust or native authorization.
+An empty `policy: {}` is structurally valid but does NOT supply OKF host settings.
 
 For the chosen profile supply all required capabilities, exact runtime/model and
 native permission intent, explicit backend endpoint, and provider-owned bindings:
@@ -155,10 +180,22 @@ native permission intent, explicit backend endpoint, and provider-owned bindings
 - OKF 2.1.x supports logical inheritance such as `inherit: stores.oats`, mapped to
   `/bindings/knowledge/stores/oats`. An explicit ownership `destination: oats`
   uses that store; omitting destination intentionally requires `write.default`.
-  Supply the actual store locator, accepted owned/read nodes, absolute host-owned
-  `bindings-file` / `state-dir`, and `harvest-runtime`. Omitted `harvest-model`
-  preserves native-default intent; whether the selected runtime supports it is
-  a separate check. A temporary acceptance store is not production KB adoption.
+  Under the complete `operator.policy.knowledge` selection, `settings` MUST supply
+  `bindings-file` and `state-dir`: normalized absolute host-owned paths chosen by
+  the operator. Neither has a manifest default; neither comes from `stores.oats`,
+  an instance home, or a kernel guess. Select `harvest-runtime` deliberately
+  (manifest default: `pi`). `harvest-model` is optional to the codec, but the
+  captured Pi helper requires an explicit model matching its retained selection.
+  A temporary acceptance store is not production KB adoption.
+- OKF 2.1.1 missing host settings refuse during **normalize**, before a valid
+  binding exists. Its wire error is code-only `needs-configuration`, not a clear
+  missing-field message from `check`; kernel attribution alone cannot supply
+  provider text that was never emitted. Git locators are only structurally
+  validated at normalize/bind. Repository existence/access and accepted base,
+  owner and node readiness are evaluated by OKF **check**, which may stage a Git
+  checkout using normal operator-authorized transport. Metadata inspection is not
+  that check. Different valid-looking locators may share a safe preparation error;
+  never echo/hash opaque values or add a hidden remote probe to force inequality.
 - Messaging needs actual responsible-human/context/native-team inputs. If the
   intended delivery is session-based, select `settings: {delivery: session}` in
   the complete supported `operator.policy.messaging` capability/source selection;
