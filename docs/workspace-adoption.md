@@ -61,7 +61,7 @@ introduced by this guide.
   Store `oats` requires the explicit `stores.oats` binding; no publisher writer,
   production store or grants are supplied. An acceptance fixture is parent-owned
   and cannot be counted as production knowledge adoption.
-- Knowledge **oats.okf@2.1.0** and messaging **oats.aweb@1.10.3** are explicit hard
+- Knowledge **oats.okf@2.1.1** and messaging **oats.aweb@1.10.3** are explicit hard
   requirements, not optional defaults. They are published starting revisions,
   **not proof that their combined bindings/runtime profile is ready**. The provider
   owner supplies that evidence and any subsequently reviewed compatible revision.
