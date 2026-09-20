@@ -9,10 +9,12 @@ timestamp: 2026-09-20
 
 # Status
 
-Proposed for human review: use the existing official `oats-dev` repository as the
-OATS development workspace repository rather than create a redundant workspace
-repository or keep expressing new team composition primarily as the `oats.dev`
-package's legacy config template.
+Latest recommendation for human review: host the OATS development workspace
+definition in the `oats` framework repository and keep `oats-dev` focused on
+reusable development capabilities. The human raised this alternative after the
+initial proposal to reuse `oats-dev` as the workspace repository. Both arrangements
+are valid; co-hosting in `oats` preserves the development package's distinct purpose
+without adding a repository or repurposing its home.
 
 This does not remove the published package, change a catalog entry, adopt a
 workspace, grant membership or migrate a deployment. Concrete source exports,
@@ -41,8 +43,16 @@ must not silently choose all portable source identities or approve live cutover.
 Git-backed workspaces are an existing Portable Souls contract, not a proposed
 new configuration parser. The relevant files are `oats-workspace.yaml` for the
 workspace and `oats.yaml` for repository exports and optional workspace backlinks.
-Membership requires reciprocal admission; importing an external soul or consuming
-a package does not automatically make its repository a member.
+These two files may coexist in the same repository: the workspace is a logical
+role, not a requirement for a dedicated Git repository. Membership still requires
+reciprocal admission, including explicit admission/backlink when the host repository
+also participates as a member. The existing discovery code has no rule requiring
+the workspace and member repository identities to differ; qualify the concrete
+same-repository layout during adoption.
+
+Importing an external soul or consuming a package does not automatically make its
+repository a member or select its publisher's workspace. This is especially important
+when the generic framework and its own development workspace share a repository.
 
 Workspace defaults remain bounded by soul requirements and explicit adoption or
 operator choices. Team references are not enrollment, knowledge declarations are
@@ -69,21 +79,30 @@ restore when a valid lock records its source revision and integrity.
 
 # Options and recommendation
 
-1. **Create a separate workspace repository.** Clear naming, but adds another
-   repository without an identified architectural need.
-2. **Use `oats-dev` as the workspace repository.** Recommended: give its root a
-   clear workspace purpose while retaining legacy package sources/tags as needed.
-3. **Keep a config-template package as the primary composition mechanism.**
-   Retains the old setup approach instead of exercising the shipped Git workspace
-   model; still valid for legacy consumers, but not the proposed new default.
+1. **Host the workspace definition in `oats`.** Latest recommendation: the
+   framework repository carries `oats-workspace.yaml` alongside its own `oats.yaml`
+   exports; `oats-dev` remains a development-capability repository. Workspace policy
+   shares the framework repository's access and review lifecycle. Generic framework
+   consumers are not automatically enrolled in this development workspace.
+2. **Use `oats-dev` as the workspace repository.** Valid alternative, initially
+   recommended, but mixes that repository's existing capability/package role with
+   shared team composition. It is not necessary if retaining its dedicated purpose
+   is preferable.
+3. **Create a separate workspace repository.** Useful if workspace policy needs
+   independent access control or a different review/release lifecycle. No such
+   requirement has yet been established. Moving the workspace later is an explicit
+   identity/adoption transition, not a transparent directory rename.
+4. **Keep a config-template package as the primary composition mechanism.**
+   Remains supported for legacy consumers, but does not exercise the proposed Git
+   workspace setup.
 
 The recommended separation is:
 
 | Surface | Responsibility |
 |---|---|
-| Workspace repository | `oats-workspace.yaml`, intended repository membership, explicit soul imports, shared defaults and onboarding documentation |
-| Framework/source libraries | Kernel/Desktop code and deliberately published reusable soul definitions/exports |
-| Capability repositories | Actual knowledge, messaging, tasks and other reusable behavior |
+| Workspace role, hosted in `oats` | `oats-workspace.yaml`, intended repository membership, explicit soul imports, shared defaults and onboarding documentation |
+| Framework/source-library role, also in `oats` | Kernel/Desktop code and deliberately published reusable soul definitions through `oats.yaml` |
+| Capability repositories, including `oats-dev` | Actual development, knowledge, messaging, tasks and other reusable behavior |
 | Knowledge repository | Curated accepted expertise, with explicit visibility and acceptance policy |
 | Operator deployment | Local realization, execution state, credentials and operator-owned choices |
 
@@ -103,8 +122,10 @@ Do not silently move those identities merely because a workspace home is selecte
   remain a separately selectable capability/skill resource; a workspace file
   does not replace the implementation. Do not delete it merely because the old
   template is no longer the preferred setup path.
-- Deprecating the legacy package/template is a separate reviewed change with
-  explicit guidance, not an automatic consequence of adding a workspace file.
+- Keep `oats.dev` as the development-capability package if its behavior is useful;
+  separately align its requirements, exports and optional legacy template with the
+  new composition path. Deprecation of any package/template is a distinct reviewed
+  change, not an automatic consequence of adding a workspace file.
 - Preserve each deployment's deliberate model, messaging-delivery and helper
   identity policy. Translate intent against the new contracts rather than copy
   old selector spellings blindly; required capabilities may not be disabled to

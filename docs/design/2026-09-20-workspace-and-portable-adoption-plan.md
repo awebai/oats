@@ -14,27 +14,29 @@ The second phase does not run as an unrelated bulk migration while the first is 
 
 ## Target arrangement
 
-Recommended repository responsibilities:
+Recommended repository responsibilities, revised after considering a framework-hosted workspace. This changes the proposed workspace home, not the two-phase order:
 
 | Repository | Role in the new setup |
 |---|---|
-| `oats-dev` | Shared development workspace: `oats-workspace.yaml`, intended membership, source imports, defaults and operator-facing setup guidance |
-| `oats` | Kernel, adapters and Desktop; recommended publisher for the deliberately indexed portable OATS soul editions |
+| `oats` | Kernel, adapters, Desktop and portable soul exports through `oats.yaml`; also hosts the shared development workspace in `oats-workspace.yaml` |
+| `oats-dev` | Reusable OATS development capabilities, including selected review skills/behavior; no longer responsible for defining the new workspace through a package template |
 | `oats-okf` | Reference knowledge capability and its complete reading/capture/judgment/delivery behavior |
 | `oats-aweb` | Messaging capability and its provider-owned identity/team/wake behavior |
 | `oats-authoring` | Reusable authoring support |
 | `oats-jira`, `oats-linear` | Optional task capabilities; workspace membership does not activate them |
 | `oats-knowledge` | Curated accepted expertise, not executable soul definitions, working transcripts or a copy of framework documentation |
 
-Reuse `oats-dev` rather than add a redundant workspace repository. Its existing `oats.dev` package is a separate concern: preserve published tags/payloads and exact legacy restores. The new setup need not select that package merely because the workspace uses the same repository. Its reusable review skills/capability must not disappear accidentally when the legacy template ceases to be the preferred setup path.
+A workspace is a logical role and does not require a dedicated repository. The latest recommendation is to co-host it in `oats`, preserving `oats-dev`'s capability purpose. Keep the `oats.dev` package where its reusable behavior is useful; separately review compatibility and the legacy template. Preserve published tags/payloads and exact restores. Merely adopting the workspace does not activate every capability.
+
+`oats-workspace.yaml` and `oats.yaml` have separate contracts even when co-located. Admit the framework repository explicitly if it participates as a member, and verify matching reciprocal observations. Importing a public OATS soul or installing the framework must NOT implicitly select or enroll an adopter in the framework's development workspace. A separate workspace repository remains an option if independent permissions or lifecycle become necessary.
 
 The shared workspace is **not a shared live runtime**. Each operator retains local deployment mappings, runtime/authentication, state and explicit approvals. Config and nonsecret lock/template provenance can be Git-shared where supported; credentials and live instance state cannot. Git access, organizational admission, executable approval and messaging enrollment remain distinct.
 
 ## Verified starting point
 
 - Kernel/Pi/Desktop0.24.0 and OKF2.1.0 are released. Workspace/source codecs, discovery, retained composition and scoped execution/provider machinery already exist. This is not a kernel rewrite from zero.
-- A read-only September20 inventory found no root `oats-workspace.yaml` in `oats-dev` and no root `oats.yaml` in the framework or the six inspected capability/development repositories. The selected knowledge repository is not yet initialized. These observations must be refreshed against exact heads before editing.
-- The default development package still supplies a legacy config template and `oats.review`; it is not yet the proposed Git workspace.
+- A read-only September20 inventory found no root `oats-workspace.yaml` in either `oats` or `oats-dev` and no root `oats.yaml` in the framework or the six inspected capability/development repositories. The selected knowledge repository is not yet initialized. These observations must be refreshed against exact heads before editing.
+- The default development package still supplies a legacy config template and `oats.review`; these are capability/template exports, not a Git workspace definition.
 - The checked-in roster remains legacy. A five-role candidate and curated corpus are preserved but not validly published/adopted as the new portable setup.
 - Earlier live native/directory-learning evidence is valuable but does not prove our actual Git workspace, two-operator deployment, private messaging or Git-PR learning cutover.
 - Current source contains the approved forward correction of the accidentally integrated held record patch. Preserve repaired history and its active-content exclusion; do not reopen that incident or repeat closed test matrices.
@@ -59,7 +61,7 @@ Produce one bounded implementation checklist from the actual current code and ch
 
 **Owner:** workspace/deployment owner, reviewed by the integration lead.
 
-Add the actual `oats-workspace.yaml` to `oats-dev` using the shipped schema:
+Under the proposed framework-hosted arrangement, add `oats-workspace.yaml` to `oats` using the shipped schema, alongside that repository's separate `oats.yaml` export index:
 
 - Intended members, selected source imports with real reviewed revisions and aliases.
 - Shared defaults bounded by soul requirements, not a new repository-level policy hierarchy.
@@ -199,7 +201,7 @@ The five experts run from portable sources in the shared workspace, consult the 
 
 # Decisions to settle at the appropriate boundary
 
-- Confirm `oats-dev` as workspace home and the exact reusable source/export paths. Do not create an extra workspace repository without a reason.
+- Confirm the revised recommendation: `oats` hosts the workspace; `oats-dev` remains development capabilities. Settle exact reusable source/export paths. A dedicated workspace repository is optional, not an architectural prerequisite.
 - Confirm knowledge visibility and public-safe content before phase2 publication; this need not block the phase1 contract inventory.
 - Agree the exact pilot/provider/runtime profile and its supported lifecycle. No hidden fallback to an easier profile.
 - Review any newly identified generic contract or bootstrap authority change explicitly. Existing accepted constraints do not need repeated approval.

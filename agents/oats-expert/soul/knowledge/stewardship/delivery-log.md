@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Framework-hosted workspace alternative reflected in plan (2026-09-20)
+- verdict: RECOMMENDATION REVISED, not deployment approval. The human proposes hosting the workspace in `oats` and keeping `oats-dev` for development capabilities. The plan now prefers that layout over repurposing the capability repository; the workspace-first/knowledge-second phase order is unchanged.
+- evidence: workspace/member schemas and discovery implementation keep the two file contracts separate and do not require different repository identities; the concrete reciprocal observations remain an adoption check. Source import parses but does not follow the publisher's workspace backlink.
+- taught us: workspace definition, source library and capability package are distinct responsibilities, not necessarily three different repositories. Co-location must not turn framework consumption into implicit organizational admission.
+
 ## Workspace-first execution sequence planned (2026-09-20)
 - verdict: HUMAN-DIRECTED ORDER RECORDED; execution plan prepared, not an implementation or cutover claim. Phase1 is a real shared Git workspace, repository exports/admission and usable portable adoption; phase2 is the coherent knowledge profile, curated corpus and five expertise souls; full Desktop parity follows.
 - evidence: existing workspace/member schemas and declaration/onboarding contracts read; bounded repository inventory confirms missing published workspace/member indexes in the inspected maintained repositories. The development package's published manifest still contains both a legacy template and review behavior, which must not be conflated with a workspace definition or deleted accidentally.
