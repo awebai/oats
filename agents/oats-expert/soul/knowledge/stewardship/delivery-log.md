@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Redesign coordination lead explicitly assigned (2026-09-19)
+- verdict: HUMAN DIRECTION RECORDED. One accountable lead coordinates the current Portable Souls, knowledge/capability and Desktop redesign; cross-checkout contributors bring new scope, changes and integrations through that lead and deliver exact reviewed deltas. Ordinary work within agreed scope continues without new per-edit permission gates.
+- boundary: technical coordination does not replace local operator approval for deployment changes, native authentication, executable trust or migration. Runtime upgrades, adopted config snapshots and active-instance instructions are separate facts; older installed knowledge procedures must not stand in for current framework direction.
+- taught us: shared repository and messaging access are not shared project context. Keep a current version-scoped briefing and explicit integration ownership, with live aliases and machine-specific inventory in deployment handoffs rather than the reusable soul.
+
 ## Human-authorised forward record correction accepted (2026-09-19)
 - verdict: APPROVE exact `0060dbe8b0c8b470083d9a14c78ef4653d567b9a` and continuation from repaired history. Human disposition chooses forward correction without lifting the held optimisation's scope restriction and explicitly accepts that `54b07ee6` remains an ancestor. No retrospective approval or history erasure.
 - evidence: independent fetch, complete correction read, exact four-path inventory and four postimage comparisons against `3f51acf3`; whole `packages/record` tree equals `9137bba602ec04603dbfb9d51b81359c5a8dd0ce`. Every other path equals prior `635fc7e6`; net difference from the approved baseline is only the independent messaging-reach documentation. Integrator reports 223/223 record tests; reviewer separately passes the scaffold/layout/resource/normal-retirement probe (1/1, no runtime/backend launch), without rerunning a broad suite or relabelling reported tests as independent evidence.
