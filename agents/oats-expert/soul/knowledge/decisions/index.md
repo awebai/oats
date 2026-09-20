@@ -1,5 +1,6 @@
 # Decisions
 
+* [Proposed bounded knowledge alignment before expert cutover](knowledge-alignment-before-expert-cutover.md) - Align the generic boundary and default knowledge capability with the accepted expertise model, then qualify a curated five-role knowledge cutover without waiting for every alternative or future mechanism.
 * [Claude Code and Codex use normal native launch with explicit permission bypass](claude-codex-native-launch.md) - Claude Code and Codex retain ordinary native context, skills and permission behavior; OATS adds bypass flags only for an explicit user opt-in.
 
 * [Durable identity for captured native session storage](captured-session-storage-identity.md) - Require a narrowly versioned kernel-owned external identity witness when captured execution promises to reject replacement of the original native session directory.

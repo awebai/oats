@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-19
+timestamp: 2026-09-20
 ---
 
 # Delivery log
@@ -21,6 +21,9 @@ before retiring — merge or return, always. Format:
 
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
+
+## Redesign coordination timestamp correction (2026-09-20)
+- verdict: CHRONOLOGY FIX. The lead assignment and commit `78dcc16b` occurred on September20, confirmed by the commit timestamp and current UTC date. The earlier entry's September19 heading carried the prior session date; it is preserved below as history, not a second assignment or a changed scope. Living repo-state is corrected. No runtime or deployment change.
 
 ## Redesign coordination lead explicitly assigned (2026-09-19)
 - verdict: HUMAN DIRECTION RECORDED. One accountable lead coordinates the current Portable Souls, knowledge/capability and Desktop redesign; cross-checkout contributors bring new scope, changes and integrations through that lead and deliver exact reviewed deltas. Ordinary work within agreed scope continues without new per-edit permission gates.

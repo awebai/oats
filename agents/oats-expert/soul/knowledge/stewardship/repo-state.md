@@ -3,7 +3,7 @@ type: Reference
 title: Repo state — the living picture of the OATS repo
 description: Always-current snapshot of what is on main, what is in flight (PRs, features, running instances), recent deliveries, and open threads. Every oats-expert instance updates the relevant subsection whenever it changes that reality (merge, release, spawn, retire, delivery).
 tags: [stewardship, repo-state, living]
-timestamp: 2026-09-19
+timestamp: 2026-09-20
 ---
 # Repo state — the living picture
 
@@ -215,7 +215,9 @@ Earlier dated entries below are delivery history, not current deployment, proces
 
 ## In flight
 
-- **One accountable redesign lead (2026-09-19)** — human direction assigns the current Portable Souls, knowledge/capability and Desktop redesign to one coordination/integration lead. Contributors across checkouts and machines route new redesign scope, contract/provider/template changes, migration proposals and public explanations through that lead before implementation or integration; agreed work proceeds normally with exact deltas and proportionate review. Main delivery is coordinated, not inferred from branch mergeability or passing tests. This is a project coordination rule, not a new kernel authority: each operator retains deployment, trust and native-auth decisions. Agent handoffs must distinguish current canonical direction and release scope from older installed capability instructions and editable adopted-template snapshots; a kernel/package update does not migrate or refresh those automatically. No unrequested capability upgrade, template sync or live migration follows.
+- **Knowledge alignment before expert cutover proposed (2026-09-20)** — the human asks whether to align contracts with the September19 decisions before moving the curated knowledge and five-role roster. The [bounded proposal](/decisions/knowledge-alignment-before-expert-cutover.md) recommends distinguishing existing support, guidance drift, provider work and genuinely missing generic seams; then qualifying the centralised per-soul Git path before cutover. It does not require every alternative profile or future speciation/cloning mechanism first. This is a proposal for priority/scope review, not new API, visibility, source-export, live-migration or operator-root-helper approval.
+
+- **One accountable redesign lead (2026-09-20)** — human direction assigns the current Portable Souls, knowledge/capability and Desktop redesign to one coordination/integration lead. Contributors across checkouts and machines route new redesign scope, contract/provider/template changes, migration proposals and public explanations through that lead before implementation or integration; agreed work proceeds normally with exact deltas and proportionate review. Main delivery is coordinated, not inferred from branch mergeability or passing tests. This is a project coordination rule, not a new kernel authority: each operator retains deployment, trust and native-auth decisions. Agent handoffs must distinguish current canonical direction and release scope from older installed capability instructions and editable adopted-template snapshots; a kernel/package update does not migrate or refresh those automatically. No unrequested capability upgrade, template sync or live migration follows.
 
 - **Next Desktop wave authorised (2026-09-19)** — canonical documentation is now on main. The human directs a fresh Desktop engineer with selected historical notes to implement supplied designs and new/Git-based flows next. This supersedes the previous deployment-before-Desktop scheduling hold, not runtime/provider safety, implementation boundaries or evidence requirements. Historical notes are context, not copied identity, credentials or unfinished-operation authority; no completed implementation is claimed here.
 

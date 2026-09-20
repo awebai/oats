@@ -1,5 +1,9 @@
 # Knowledge Log
 
+## 2026-09-20
+* **Creation**: [Proposed bounded knowledge alignment before expert cutover](/decisions/knowledge-alignment-before-expert-cutover.md) recommends an evidence-based boundary/provider alignment phase, then the curated five-role Git knowledge cutover, without making unimplemented alternatives or automatic restructuring prerequisites. Human priority/scope review and concrete deployment/source/publication choices remain outstanding.
+* **Fix**: The redesign lead assignment and commit `78dcc16b` occurred on September20, not the carried September19 heading below. [Repo state](/stewardship/repo-state.md) now uses the verified date; [delivery history](/stewardship/delivery-log.md) preserves the original entry and records this correction. No change to the approved coordination scope.
+
 ## 2026-09-19
 * **Update**: [Stewardship](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) record human direction for one accountable redesign coordination/integration lead across contributing checkouts, while preserving local operator authority. Current project context must be conveyed independently of older installed capabilities, adopted template snapshots and running-instance instructions.
 * **Update**: [Repo state](/stewardship/repo-state.md) and [delivery history](/stewardship/delivery-log.md) close the held-patch repair blocker: human-authorised forward correction `0060dbe8` restores the exact approved record tree, preserves unrelated documentation and permits continuation from truthful retained ancestry. The active-content hold remains; independent source proof and one scaffold/retirement check are separate from the integrator's 223 reported record tests.
