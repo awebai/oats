@@ -385,6 +385,9 @@ function capturedCommand(selector) {
       const selected = helperSelection?.executionBinding ?? target;
       const loaded = loadCapturedDispatch({ deployment: selected.deployment, resolution: selected.resolution, action: { kind: args.includes("--composition") ? "compose" : "inspect" } });
       const result = { resolution: loaded.resolution, capture: loaded.record.capture, nativeSession: capturedNativeSessionAvailability(),
+        launchSelection: loaded.record.dispatch.launch === null ? null : {
+          runtime: loaded.record.dispatch.launch.runtime, model: loaded.record.dispatch.launch.model,
+        },
         ...(helperSelection ? { helperSelection } : {}),
         capabilities: [...loaded.capabilities.values()].map(({ id, manifest }) => ({ id, version: manifest.version,
           approval: loaded.approvals.find((entry) => entry.artifact.capability === id).status })),
