@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 07:15Z · main `4c45b64e` · **OATS v0.24.3 published** · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
+**Last update:** 2026-09-21 08:00Z · main `3ce40aaa` · OATS v0.24.3 · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -39,6 +39,12 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 3. `prepare` writes lock v3; `oats trust <cap> --dir` rejects it (`unsupported lockfileVersion 3`) → dead end from `--help`.
 4. The working `trust --deployment --artifact-set <sha256>` route is absent from `--help`.
 5. Problems carry `origins: []` and no slot/capability, so a valid and a bogus `stores.oats` binding produce byte-identical output. **Root cause (L's trace):** both OKF `normalize` calls refused because the operator request had no OKF runtime settings (`bindings-file`, `state-dir` — absolute host paths, no defaults); the message never said so. Fix = attribute problems by slot/capability and name the missing item; the identical pair is correct output for that input and stays identical. Guidance for the required settings → P (oats-workspace-setup).
+
+## S2 — second-operator re-run on 0.24.2 (Antares, Juan's machine, 2026-09-21)
+- Found the five expert imports still pinned at `caa341f3` (aweb 1.10.3) while the setup expert was at `0aad753c` — the one repinned soul was the one that never exercises aweb. Fixed: all six imports at v0.24.3 `3156e4de` (638206b9); new layout guard fails when a pin's provider requirements lag the current edition (3ce40aaa, verified to catch the miss).
+- **aweb 1.11.0 qualifies**: via the direct source route on current main, `provider-not-qualified` disappeared → `approval-required` → after approval both slots on the settings hold. Confirms L's root cause.
+- `oats onboard --workspace git:github.com/awebai/oats` from a fresh dir: clean (acquired 1.1.1, both caps, spawn printed not run); scaffold composed exactly the five capability skills, both trusted, no hooks.
+- Seams 1–5 reproduced identically on 0.24.2 (baseline); fixed in 0.24.3. Gate decisions given: `harvest-model` arbitrary for the gate; aweb slot `delivery: session` without a private-team binding → expected typed `needs-configuration` naming the binding (Juan's team identity is never guessed).
 
 ## S3 — Messaging (aweb) on the new infrastructure
 - ✅ **aweb PR3 merged → v1.11.0 (93f8ab96)**: `binding {normalize,bind,check}` on the existing wire; `check` = HOME-route operational custody only (explicit private team, `delivery: session`, kernel ≥0.24.2 via caller-owned `OATS_CLI_BIN`, retained `launchSelection` must be input-capable Claude/Codex; strict-Pi print → `needs-configuration`, never downgraded). Native adapter over existing `aw` commands with physical identity-dir custody and redacted tokens. Standalone 30/0; coupling 14/0 vs kernel b92f0d07. PR33 (launchSelection projection, OATS_CLI_BIN in codec env) merged b92f0d07.
