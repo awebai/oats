@@ -58,17 +58,22 @@ or workspace membership alone does not make a package official.
 Contact and license evidence may live in the package/repository documentation;
 this policy does not invent new catalog or manifest fields.
 
-## Planned first set
+## Listed first set
 
-- Already listed: `oats.okf`, `oats.aweb`, `oats.authoring`, `oats.jira`,
-  `oats.linear`, `oats.dev` and `oats.knowledge-theory`.
-- **Planned, not yet listed:** `oats.core` for OATS operation/soul guidance, and
-  `oats.setup` for OATS Soul Setup, configuration and package guidance. Add their
-  catalog entries only after their actual D1 package releases exist and pass
-  review. They are not available merely because this document names them.
+- Listed capabilities: `oats.okf`, `oats.aweb`, `oats.authoring`, `oats.jira`,
+  `oats.linear`, `oats.dev`, `oats.knowledge-theory`, `oats.core` and `oats.setup`.
+- **`oats.framework` 1.1.0** is listed at tag `oats-framework/v1.1.0` in
+  `awebai/oats`, payload root `oats-package`. The `oats.core`, `oats.setup` and
+  `oats.knowledge-theory` aliases select that distribution; package identity is
+  distinct from capability identity. Core supplies operation/soul guidance;
+  setup supplies OATS Soul Setup, configuration and package guidance.
 
-The [workspace adoption guide](workspace-adoption.md) describes the separate
-planned setup-expert flow. No package is silently added to an existing soul.
+These entries are in the current repository catalog. An older installed CLI keeps
+its bundled catalog; publication here does not update that installation or rewrite
+old source references, locks or tags. Follow that CLI's supported acquisition path.
+The [workspace adoption guide](workspace-adoption.md) distinguishes the published
+capabilities and five expert imports from the still-pending D3 setup-expert flow.
+No package is silently added to an existing soul.
 
 ## Updates, deprecation and removal
 

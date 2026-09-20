@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-20 21:30Z · main `375b9f42` · OATS **v0.24.1 published** · OKF `v2.1.1` · `oats-framework/v1.1.0`
+**Last update:** 2026-09-21 00:10Z · main `0e3bf643`+ · OATS v0.24.1 · OKF v2.1.1 · oats-framework/v1.1.0 · oats-knowledge main 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,13 +11,13 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + indexes + **five imports pinned** (375b9f42) · ✅ live `oats inspect --request` against published main → ready-for-preparation · ⛔ oats-dev, oats-linear indexes (no push access) | lead | human pushes bundles; fresh deployment prepare/approve/scaffold/start gate |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + all seven member indexes + five imports · ✅ **second-operator gate run (Juan's side, 2026-09-20)**: discover/fetch/resolve/materialize/approve the whole graph from the public definition WORKS; preparation stops at the declared aweb 1.10.3 hold; **5 kernel seams found** → fix in flight | lead, L, Antares/Juan | L `fix/second-operator-prepare-seams` → 0.24.2 → identical re-run |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 P implementing aweb 1.11.0 adapter (codec + captured-execution + check) against kernel floor 0.24.1 | P | review aweb PR; release 1.11.0; bump catalog |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1 merged (PR28) + tag `oats-framework/v1.1.0` · ✅ D2 merged (PR29): creation writes explicit removable `oats.core`; declared ⇒ no legacy kernel skills · ⬜ D3 onboarding | P, L | assign D3 to L now |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged (PR26) · ✅ `oats.framework` listed with `oats.core`/`oats.setup`/`oats.knowledge-theory` aliases (42ad7e55); `oats install oats.framework` verified from the tag | M | Desktop view → S8 |
 | S6 | Five expert souls created in the oats repo (`souls/<name>/`) | ✅ all five on main (PR30 + caa341f3): explicit `oats.core` (repo:oats-package), oats.okf@v2.1.1, exported + imported | M, lead | legacy `agents/` roster cutover after S7 |
-| S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | 🟡 35 curated concepts uncommitted locally; `awebai/oats-knowledge` EMPTY/private · ⛔ visibility undecided | lead + human | decide visibility → publish → bind `stores.oats` → fresh-reader proof |
-| S8 | Desktop parity (marketplace view, soul creation with `oats.core`, onboarding flow) | ⬜ after S4/S5 | fresh Desktop engineer (blocked: `claude` absent) | pick runtime; spawn |
+| S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | ✅ **repo PUBLIC; PR #1 merged → main 8d67eab4, 25 accepted concepts**, owners = published souls, validator pinned OKF 2.1.1 · 🔄 fresh-reader proof assigned to Juan's side · ⬜ legacy in-soul knowledge decommission | lead, Antares/Juan | fresh-reader + PR-learning proof; then retire `agents/*/soul/knowledge` |
+| S8 | Desktop parity (marketplace view, soul creation with `oats.core`, onboarding flow) | ⬜ after D3 · **host offered: Juan's machine (has `claude`)** — accepted | fresh Desktop engineer on Juan's host | brief + spawn params after D3 |
 
 ## S1 — Knowledge capability contract rework
 - ✅ Provider-neutral contract, binding wire v1, helper/input contract, retained execution: OATS 0.24.0 + OKF 2.1.0 (f20f8e57) published.
@@ -28,9 +28,17 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ **PR23 merged f6d5a89b**: `oats-workspace.yaml` (7 members, `imports: []`), `oats.yaml` (exports souls/oats-expert, oats-package, capabilities/oats-authoring), transitional `souls/oats-expert/` edition, `docs/workspace-adoption.md`, layout tests.
 - ✅ **PR24 merged da38e5a9**: deletion of `skills/oats-portable-setup` + `oats inspect --request` read-only seam (ACCEPTED as the public inspection route); full gate 1621/0.
 - ✅ Member `oats.yaml` merged to main: oats-okf #3 (fec78a20), oats-aweb #1 (069ea2f6), oats-authoring #1 (54183a6a), oats-jira #1 (2f855daf).
-- ⛔ oats-dev (0434f4ef) and oats-linear (8c183c37): neither M nor the lead's GitHub account has push — **human must grant access or push**; verified git bundles + instructions prepared by the lead (`parallel/member-index-bundles/` in the lead's instance home).
+- ✅ oats-dev#1 (main 6e164ee3) and oats-linear#1 (main a2121e48) merged after Juan granted write access — M's exact commits 0434f4ef / 8c183c37.
 - ⬜ `imports:` pin of `souls/oats-expert` at its published revision (after member indexes).
 - ⬜ Fresh local deployment from the shared definition (P1.5) — the real acceptance gate.
+
+## S2 — second-operator gate report (Antares, Juan's machine, 2026-09-20)
+Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → ready-for-preparation, membership eligible, source `souls/oats-kernel-expert@caa341f3`. `prepare` resolved and materialized `oats-package@caa341f3`, `oats.okf@v2.1.1`, `oats.aweb@v1.10.3`, `oats.core`, `oats.setup`, `oats.knowledge-theory` + soul; artifact-set approvals worked. Terminal: `needs-configuration` + `provider-not-qualified` (aweb 1.10.3 has no binding interface) — expected. Seams (assigned to L, one PR, priority):
+1. `inspect --request` requires `workTarget`; `prepare --request` refuses it (`buildFreshPreparationRequest` exists but the CLI never uses it).
+2. `prepare` on the absent deployment inspect blessed → raw `ENOENT` + host path through the JSON envelope.
+3. `prepare` writes lock v3; `oats trust <cap> --dir` rejects it (`unsupported lockfileVersion 3`) → dead end from `--help`.
+4. The working `trust --deployment --artifact-set <sha256>` route is absent from `--help`.
+5. Problems carry `origins: []` and no slot/capability; aweb's missing interface masks OKF diagnostics — a valid and a bogus `stores.oats` binding produce byte-identical output. **Fix first.**
 
 ## S3 — Messaging (aweb) on the new infrastructure
 - Facts: released aweb 1.10.3 has no binding interface; broker refuses. aw 1.36.1 broker calls `oats session inspect/input --home H`; never restarts stopped runtime; strict-Pi print mode can't take session input.
@@ -43,7 +51,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ✅ Decision + plan D1–D4 on main 18af53be; docs reference as accepted-not-shipped.
 - 🔄 **D1** (P, started 16:29Z; package identity confirmed: rename distribution package to `oats.framework` 1.1.0, capabilities 1.0.0, `oats.knowledge-theory` unchanged) package `oats.core` (`oats-operate`, `oats-souls`, oats.md injection) and `oats.setup` (oats-config, oats-packages, adoption guidance) under `oats-package/capabilities/`. Owner P.
 - 🔄 **D2** (L, after custody fix) soul creation writes explicit `requires.capabilities.oats.core`; kernel skill list de-ambiented (one-release coexistence); checked-in souls updated. Owner L.
-- ⬜ **D3** onboarding creates + instantiates `oats-setup-expert` (edition in `souls/`). Owner L (+M edition).
+- 🔄 **D3** (L, in progress) onboarding creates `oats-setup-expert` (edition in `souls/`); CLI verb **`oats onboard`** — `oats setup` is already the record capture-setup command and stays untouched.
 - Exit: fresh onboarding → running setup expert; created soul shows `oats.core`; kernel ships no ambient operational skill.
 
 ## S5 — Official marketplace
@@ -58,15 +66,16 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - 🔄 Assigned to M (17:05Z): create `souls/<name>/` editions for the other four from the candidate; each declares `oats.core` explicitly (S4 rule) + `oats.okf`/`oats.aweb` sources; export in `oats.yaml`. Legacy `agents/` roster retirement is a separate, later cutover.
 
 ## S7 — Centralised knowledge in `oats-knowledge`
+- ✅ Juan made the repo PUBLIC (2026-09-20). Bootstrap history pushed to main; **PR #1 merged (8d67eab4)**: 25 curated concepts, roadmap re-verified to the 0.24.1 baseline and 2026-09-20 decisions, validator pinned to OKF v2.1.1, strict OKF 25/0/0, ownership tests 24/24.
 - 🟡 Curated corpus: 35 concepts (five nodes) on local `curation/expert-knowledge` in `/Users/pepe-reyero/OATS-workspace/oats-knowledge`, **uncommitted**. Bootstrap + one PR-only harvest already proven on `josep-reyero/oats-knowledge` (3 commits).
 - ⛔ Target `awebai/oats-knowledge` is EMPTY and PRIVATE; **visibility undecided** (stated requirement: public). Human decision needed before publishing.
 - ⬜ Then: push bootstrap + curation as PR to awebai; bind `stores.oats` in the pilot deployment; prove fresh-reader + Git-PR learning with the new souls; retire old in-soul knowledge (`agents/*/soul/knowledge`) as a final cutover.
 
 ## S8 — Desktop parity
+- Finding (L, D2 audit): the Desktop server has **no soul-creation endpoint** today (roster reads, existing-soul edits/capability operations, instance spawn only). Soul creation with explicit `oats.core`, the marketplace view and the onboarding flow are new Desktop features, not wiring.
 - ⬜ After S4/S5: official marketplace view/search; soul creation showing `oats.core`; onboarding flow; redesign parity vs `Oats UX Redesign and Desktop Discovery (1)`.
 - ⛔ Fresh `oats-desktop-engineer` not spawned: `claude` not on PATH → choose Pi/Codex or install (human).
 
 ## Blockers needing the human
-1. `awebai/oats-knowledge` visibility (public vs private) — gates S7 publication.
-2. Push access to `awebai/oats-dev` and `awebai/oats-linear` for `josep-reyero` (or human pushes M's exact commits 0434f4ef / 8c183c37 as `oats.yaml`) — gates S2 completion.
-3. Desktop engineer runtime (Claude absent) — gates S8.
+- ~~oats-knowledge visibility~~ → PUBLIC (Juan). ~~oats-dev/oats-linear access~~ → granted, indexes merged. ~~Desktop runtime~~ → Juan's machine hosts the Desktop lane (has `claude`).
+- None open at 23:10Z. Juan's side (Antares) takes: (a) fresh-deployment gate P1.5, (c) fresh-reader proof, (b) Desktop host after D3.

@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## oats-knowledge PR #1 — curated base accepted (2026-09-20)
+- verdict: MERGED (8d67eab4) after the repo went public. 25 concepts, owners = published soul UUIDs, roadmap snapshot re-verified before merge (it still described 0.23.1/OKF 2.0.0 — a stale roadmap must not ship as accepted knowledge), validator pinned to OKF v2.1.1.
+- owner: lead (curation preserved from the earlier audit), Juan (visibility).
+- taught us: validate the knowledge tree from its root — per-node strict runs report cross-node links as broken; and re-read Roadmap-type concepts against the current baseline before accepting a harvest, since strict OKF cannot see staleness.
+
 ## Evening wave: PR27, PR28, PR29, PR30 + releases (2026-09-20)
 - verdict: MERGED all; released OATS v0.24.1 (tag recut once before publish for a scripts/ version pin; second CI run hit a flaky cli-lifecycle test → rerun green; bump PR #31 manual), OKF v2.1.1, `oats-framework/v1.1.0`. Maintainer follow-ups: catalog `oats.framework` + aliases; five souls declare `oats.core`; workspace imports pinned at caa341f3; layout test moved to stage two.
 - owner: L (PR27 custody, PR29 D2), P (PR28 D1), M (PR30 S6).
