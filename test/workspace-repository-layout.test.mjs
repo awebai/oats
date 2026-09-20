@@ -102,6 +102,49 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   }
 });
 
+test("setup is a separate sixth repository-sourced export, not a sixth knowledge owner or workspace import", t => {
+  const name = "oats-setup-expert", path = `souls/${name}`, parsed = soul(name), declaration = parsed.declaration;
+  const validate = new Ajv({ strict: true, ownProperties: true }).compile(JSON.parse(bytes("docs/soul.schema.json")));
+  assert.equal(validate(declaration), true, JSON.stringify(validate.errors));
+  assert.equal(declaration.schemaVersion, 1); assert.equal(declaration.name, name); assert.equal(declaration.work, "directory");
+  assert.deepEqual(JSON.parse(JSON.stringify(declaration.requires)), { capabilities: {
+    "oats.core": { source: "repo:oats-package" }, "oats.setup": { source: "repo:oats-package" },
+  } });
+  assert.deepEqual({ ...declaration.defaults }, { knowledge: "none", messaging: "none", tasks: "none" });
+  assert.equal(Object.hasOwn(declaration, "knowledge"), false); assert.equal(Object.hasOwn(declaration, "owner"), false);
+  assert.deepEqual(readdirSync(join(ROOT, path)).sort(), ["AGENTS.md", "CLAUDE.md", "soul.yaml"], "no private knowledge/owner payload is bundled");
+  assert.equal(lstatSync(join(ROOT, path, "AGENTS.md")).isFile(), true);
+  assert.ok(bytes(`${path}/AGENTS.md`).length > 0);
+  assert.equal(lstatSync(join(ROOT, path, "CLAUDE.md")).isSymbolicLink(), true);
+  assert.equal(readlinkSync(join(ROOT, path, "CLAUDE.md")), "AGENTS.md");
+  assert.equal(EDITIONS.length, 5); assert.equal(EDITIONS.some(([entry]) => entry === name), false);
+  assert.equal(workspace().imports.length, 5); assert.equal(workspace().imports.some(entry => entry.alias === name), false);
+  assert.ok(index().exports.souls.some(entry => entry.path === path && entry.definition === `${path}/soul.yaml`));
+
+  // Exercise the actual fixture copy and source discovery at an observed local
+  // fixture commit. This is not a published setup import or a provider launch.
+  const f = fixture(t), tx = f.transaction(), discovery = createWorkspaceDiscovery(tx), revision = f.git(f.framework, "rev-parse", "HEAD");
+  const imported = discovery.importSoul({ source: SOURCE, soul: path, revision, alias: name }, { origin });
+  const base = { identity: imported.identity, soul: imported.soul }, plan = planSoftwareChoices(base);
+  assert.equal(plan.status, "resolved"); assert.deepEqual(Object.keys(plan.capabilities).sort(), ["oats.core", "oats.setup"]);
+  assert.deepEqual({ ...plan.providers }, { knowledge: null, messaging: null, tasks: null });
+  for (const id of ["oats.core", "oats.setup"]) {
+    assert.equal(plan.capabilities[id].source.kind, "repo");
+    assert.deepEqual({ ...plan.capabilities[id].source.anchor }, { source: parseRepositorySource(SOURCE).normalized, revision });
+    assert.equal(planSoftwareChoices({ ...base, operator: { document: origin.document, policy: { capabilities: { [id]: false } } } }).status, "conflict", `${id} remains a hard requirement`);
+  }
+  const optional = planSoftwareChoices({ ...base, operator: { document: origin.document, policy: {
+    messaging: { capability: "fixture.messaging", source: "git:https://example.invalid/messaging.git@v1#oats-package" },
+  } } });
+  assert.equal(optional.status, "resolved"); assert.equal(optional.providers.messaging, "fixture.messaging", "none is an overridable default, not a hard prohibition or readiness claim");
+  const unanchored = parsePortableSoul(bytes(`${path}/soul.yaml`), { origin: origin.document });
+  assert.throws(() => planSoftwareChoices({ identity: imported.identity, soul: unanchored }), { code: "needs-configuration" }, "repo: needs its declaring source at planning, not a guessed cwd/adopter repository");
+  const target = join(f.root, "setup-projection"); tx.materialize(imported.observation, imported.roots, target);
+  for (const file of ["soul.yaml", "AGENTS.md"]) assert.deepEqual(readFileSync(join(target, path, file)), bytes(`${path}/${file}`));
+  assert.equal(readlinkSync(join(target, path, "CLAUDE.md")), "AGENTS.md");
+  assert.equal(existsSync(join(target, path, "knowledge")), false); assert.equal(existsSync(join(target, "agents")), false);
+});
+
 test("transitional role preserves external owner/read routing and hard knowledge plus messaging requirements", () => {
   const parsed = soul(), declaration = parsed.declaration;
   assert.equal(declaration.name, "oats-expert"); assert.equal(declaration.work, "directory");
