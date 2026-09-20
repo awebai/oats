@@ -50,6 +50,10 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 - With `bindings-file`/`state-dir`/`harvest-runtime: pi` and the public `oats-knowledge` bound as base `oats`: **the knowledge slot binds** (OKF problem gone). `harvest-model` is optional per manifest; aweb 1.11.0 declares exactly one setting (`delivery`).
 - **aweb 1.11.0 is the only remaining hold** (`needs-configuration`, identical for `delivery: session` and `channel` on 0.24.2's unattributed output). No resolution publishes → OKF `check` probe not reachable yet. 0.24.3 run will show the attributed aweb message (expected: private-team binding / Pi session-input).
 
+## Kernel defect found at peer retirement (2026-09-21) — 0.25 lifecycle item
+
+`oats retire oats-expert-scheduler-peer` (self and spawner retry) fails closed: *recovered Git index/status disagreed with the source*. Cause: `preserveRetirementWork` clones the branch recorded in `instance.json` (`feat/portable-scheduler-captures`, tip e0c3232c) while the worktree is checked out on `docs/okf-host-runtime-settings` (5919a547); the status comparison cannot agree. Verified by hand: worktree clean, both branches pushed, every deliverable merged (oats PR39, oats-okf PR5, oats-aweb PR4); the only dirt is two untracked files in a nested scratch clone that are already on aweb main since 1.11.0. **Nothing unpreserved.** Instance left `RETIRING`; no branch/metadata/force surgery. Fix scoped to **0.25 (L)**: derive the recovery branch from the worktree, record drift as a typed observation. Lesson: `lessons/retire-recovery-uses-recorded-branch-not-checked-out-branch.md`.
+
 ## S2 — acceptance run on the 0.24.4 wave (Antares, Juan's machine, 2026-09-21) — EXIT GATE MET
 
 Fresh directory and deployment, `@awebai/oats@0.24.4`, policy sources v2.1.2 / v1.11.1, `wider: []`, request otherwise unchanged from the 0.24.3 run; wave verified independently first (npm, both provider tags, main `86b5f924`, six imports @ `08c68ece`).
