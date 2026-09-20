@@ -3,25 +3,25 @@
   "generatedBy": "scripts/check-okf-mirror.mjs --finalize --source <standalone-repository> --final-tag <tag> --final-commit <full-oid>",
   "distributionPath": "oats-package",
   "capabilityPath": "capabilities/oats-okf",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "source": {
     "repository": "https://github.com/awebai/oats-okf.git",
     "branch": "integrate/portable-okf",
-    "head": "f20f8e57a22bdffb48b34dee9bcbc03a9e0704db",
+    "head": "01b48dfc9d763b5b8cc4606aea3e361bf2ef783d",
     "dirty": false,
     "workingTreeStatus": []
   },
   "release": {
     "status": "published",
-    "finalMergedCommit": "f20f8e57a22bdffb48b34dee9bcbc03a9e0704db",
-    "plannedTag": "v2.1.0",
-    "finalTag": "v2.1.0",
+    "finalMergedCommit": "01b48dfc9d763b5b8cc4606aea3e361bf2ef783d",
+    "plannedTag": "v2.1.1",
+    "finalTag": "v2.1.1",
     "published": true,
     "remote": "origin",
-    "tagObject": "ebd5d817a22e453ee49bf4cfb07eb94a58bcc03c"
+    "tagObject": "6042d1b6479587180fce2b80edf23acb0dd1b62f"
   },
-  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"2.1.0\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.24.0\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
-  "distributionManifestSha256": "9c4ad7001d4f4dfc18941bdd51803b9c25ef6882aa4895e9e729bcfdfe713db3",
+  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"2.1.1\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.24.0\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
+  "distributionManifestSha256": "d6f7b697762fcf335ebde4f13f29224e62d7c0f0e73118fc03bcef3e2197b3ec",
   "distributionLicenseText": "MIT License\n\nCopyright (c) 2026 OATS Framework\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
   "distributionLicenseSha256": "549762a3949c109455d73fabcd2340e98bd32ecbb6fea0fcac9ba7f5d41e52fd",
   "entries": [
@@ -99,8 +99,8 @@
       "path": "lib/captured-worker.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 11851,
-      "sha256": "b134d8fd5142da868fe52a89028301b6a0aac147b7377da47da06baba8e5d002"
+      "size": 12572,
+      "sha256": "987558ebda791198f61481405e036cc729e5837cc7896fbbf2fa22e4ed1b72ac"
     },
     {
       "path": "lib/config.mjs",
@@ -184,7 +184,7 @@
       "type": "file",
       "mode": "100644",
       "size": 3460,
-      "sha256": "521e04f168521e076bfecc2bc813984b0fbc41d3ba63a6ce61fbee8db9ae8738"
+      "sha256": "77a647a67f347fa503c17ca16cbdeba8ff9d6a66fe42d8d4cb966a10f656a67c"
     },
     {
       "path": "schemas",
@@ -263,7 +263,7 @@
       "sha256": "a784569cd80ebc1e31cc7a0699f013b3ce449712dd3fe052e986be217c1b07f1"
     }
   ],
-  "snapshotSha256": "854c9a51e1dc7bddec11ca898f162465e51783515a3230a6c1db3f45528ec187",
+  "snapshotSha256": "78910ddc060c23df9ac88a69efb636d1de6546f10af2df415a72a8ae4597b3ed",
   "distributionManifestMode": "100644",
   "distributionLicenseMode": "100644"
 }
