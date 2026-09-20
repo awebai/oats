@@ -46,7 +46,14 @@ operator's identity, and the error landed on the *innocent* slot.
    and candidate keys. The future kernel filter therefore forwards the
    union of the manifest declaration and the provider's own normalized
    requirement/candidate keys — which is exactly the provider-side rule OKF
-   2.1.2 implements. Declarations: OKF `["stores.", "write.default"]`;
+   2.1.2 implements. Declarations: OKF `["stores."]` for now — `write.default`
+   is a dotted *exact* key and the 0.24.4 grammar (`^[A-Za-z][A-Za-z0-9_-]*\.?$`)
+   admits a dot only as a terminal namespace marker, so the published kernel
+   would reject it (L, 2026-09-21). OKF pushes `write.default` as a normalized
+   requirement key, so the union rule owns it without a declaration; the
+   grammar is widened to dotted exact keys in the 0.25 enforcement change,
+   after which OKF declares `["stores.", "write.default"]`. Published 0.24.4
+   is not recut for a field it does not enforce;
    aweb `["responsibleHuman", "privateTeam", "wider"]` (workspace and
    adoption team aliases come from `teams`/`teamAliases` documents, not
    `operator.bindings`, so they are not operator keys).
