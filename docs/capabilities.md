@@ -4,6 +4,10 @@ A **capability package** is OATS's reusable distribution unit. It can contribute
 skills, instance instructions, requirements, namespaced commands, and approved
 lifecycle hooks. Configuration—not the package—decides which souls receive it.
 
+The [official marketplace policy](official-marketplace.md) defines the reviewed
+package list and its acceptance criteria. Finding an official capability does not
+install, activate or approve it; those remain explicit, separate choices.
+
 An **integration** is a capability package that implements one exclusive
 fundamental layer: `knowledge`, `messaging`, or `tasks`. General capabilities
 claim no layer and compose additively.

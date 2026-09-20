@@ -3,9 +3,21 @@ type: Decision
 title: Rebuild OATS knowledge in a dedicated repository around domain-expert souls
 description: After the knowledge implementation is complete, create a separate OATS knowledge repository and rebuild domain-expert souls through a strict audit of current and inherited knowledge rather than bulk migration.
 tags: [knowledge, souls, expertise, migration, roadmap]
-timestamp: 2026-09-13
+timestamp: 2026-09-20
 ---
 # Status and sequencing
+
+**Sequence clarified by the human on 2026-09-20:** first put OATS development on
+its shared Git-workspace and Portable Souls architecture, including the workspace
+repository, member exports and usable local adoption. Then centralise the curated
+knowledge and publish/adopt the five expertise souls; full Desktop parity follows.
+The [execution plan](https://github.com/awebai/oats/blob/main/docs/design/2026-09-20-workspace-and-portable-adoption-plan.md)
+defines bounded work packages and exit gates. Generic readiness gaps needed by
+phase1 belong there; the default knowledge profile and corpus/roster cutover are
+phase2. This accepts the order, not unspecified new contracts, source identities,
+knowledge visibility or live migration effects. The [knowledge alignment proposal](/decisions/knowledge-alignment-before-expert-cutover.md)
+and [workspace/package distinction](/decisions/git-workspace-versus-development-package.md)
+remain scoped inputs to that plan.
 
 Accepted human direction on 2026-09-13. **Execute after the current knowledge
 implementation is complete and verified**, not as a parallel mass rename or

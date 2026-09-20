@@ -212,4 +212,4 @@ oats recall "a phrase from your completed task"
 ```
 
 Capture respects privacy exclusions. Native turns are content-addressed; signed
-aweb messages retain their source signatures. See [the turn record](../README.md#the-turn-record).
+aweb messages retain their source signatures. See [where the turn record fits](2026-09-03-architecture-proposal.md#where-the-turn-record-fits).

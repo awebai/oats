@@ -3,7 +3,7 @@ type: Reference
 title: Delivery log — every PR that reached (or was returned from) the main gate
 description: Append-only record kept by per-PR maintainer instances — PR number, scope, verdict per gate, merge or return, and anything the review taught about the codebase. The stewardship counterpart of git history — the WHY next to the what.
 tags: [stewardship, deliveries, append-only]
-timestamp: 2026-09-19
+timestamp: 2026-09-20
 ---
 
 # Delivery log
@@ -21,6 +21,62 @@ before retiring — merge or return, always. Format:
 
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
+
+## Redesign wave: PR23, PR24, PR26 + four member indexes (2026-09-20)
+- verdict: MERGED all. PR23 (M) metadata/source edition, layout 5/5. PR24 (L) full gate 1621/0; `inspect --request` accepted as public inspection route, not parked. PR26 (M) marketplace policy, validate 396 links, catalog reader unaffected. Member-index PRs oats-okf#3/aweb#1/authoring#1/jira#1: one 6-line root `oats.yaml` each, pushed by M, merged by lead.
+- owner: M (migration-peer), L (lifecycle-peer); lead pushed nothing on M's behalf — the two remaining repos need account access, not a workaround.
+- taught us: when the lead is the bottleneck, the queue must be worked in risk order (metadata → docs → kernel) with focused gates plus one full gate for kernel changes, and new lanes assigned the moment their files stop overlapping open PRs. `gh pr review --approve` refuses on own-account PRs when the author shares the account; comment + merge is the working path.
+
+## Distribution direction: oats.core / oats.setup / official marketplace (2026-09-20)
+- verdict: ACCEPTED direction, recorded as decision + plan work packages D1–D4; implementation not assigned yet (await integration of open phase1 PRs to avoid `lib/core.mjs`/skills overlap).
+- key rule: `oats.core` is written into each soul definition at creation, visible and removable — the kernel does not add it by magic. `instance-boundary` remains kernel.
+- taught us: when a shipped mechanism already exists (`officialPackageCatalog()`), the decision is to name and govern it, not to build a parallel registry.
+
+## Adoption-first runtime necessity gate (2026-09-20)
+- verdict: HOLD speculative runtime expansion; continue declarations and existing-path validation. Read the current kernel WIP: its new inspection command/wrapper is a new convenience surface, not yet evidence that the released preparation/adoption route is broken. Preserve it separately pending necessity, rather than making a newly written test define an unapproved requirement.
+- provider finding: the released aweb1.10.3 manifest lacks the binding interface that the captured broker requires. The in-progress codec/check draft still always refuses native readiness, so it cannot be accepted as completing messaging adoption. Request the minimum real code/input/authority gap and usable path before widening the change. No runtime or provider delta integrated.
+- taught us: assign adoption outcomes, not presumed code changes. Separate shipped architecture, missing provider adaptation, missing operator inputs and optional usability work; successful declaration parsing or a better refusal is not completed deployment.
+
+## Human implementation GO; independent Phase1 lanes assigned (2026-09-20)
+- verdict: IMPLEMENTATION AUTHORISED for the approved framework-hosted workspace plan, using existing developers with lead review/integration. Workspace/source metadata, kernel/public-flow behavior and canonical provider readiness have separate file ownership; other-repository metadata is root-index-only to avoid provider collisions.
+- scope: phase1 includes a parallel existing-role edition at `souls/oats-expert/` with preserved owner/read routing, not the five-role/corpus cutover or an operator-root helper API. Exact source publication comes before import pinning. Developer feature branches/PRs are reviewed; main/release/deployment actions stay coordinated by the lead.
+- taught us: independence requires explicit write surfaces and shared interface contracts, not merely different task titles. Begin implementation of bounded slices, report concrete cross-lane seams, and reserve combined live acceptance for the integrated result. A dispatched assignment is not a completed delivery.
+
+## Framework-hosted workspace alternative reflected in plan (2026-09-20)
+- verdict: RECOMMENDATION REVISED, not deployment approval. The human proposes hosting the workspace in `oats` and keeping `oats-dev` for development capabilities. The plan now prefers that layout over repurposing the capability repository; the workspace-first/knowledge-second phase order is unchanged.
+- evidence: workspace/member schemas and discovery implementation keep the two file contracts separate and do not require different repository identities; the concrete reciprocal observations remain an adoption check. Source import parses but does not follow the publisher's workspace backlink.
+- taught us: workspace definition, source library and capability package are distinct responsibilities, not necessarily three different repositories. Co-location must not turn framework consumption into implicit organizational admission.
+
+## Workspace-first execution sequence planned (2026-09-20)
+- verdict: HUMAN-DIRECTED ORDER RECORDED; execution plan prepared, not an implementation or cutover claim. Phase1 is a real shared Git workspace, repository exports/admission and usable portable adoption; phase2 is the coherent knowledge profile, curated corpus and five expertise souls; full Desktop parity follows.
+- evidence: existing workspace/member schemas and declaration/onboarding contracts read; bounded repository inventory confirms missing published workspace/member indexes in the inspected maintained repositories. The development package's published manifest still contains both a legacy template and review behavior, which must not be conflated with a workspace definition or deleted accidentally.
+- owner: designated redesign lead coordinates repository/kernel/provider owners and reviews exact deltas; local operators retain deployment and disclosure choices. Real source/profile/learning exit gates distinguish metadata publication from adoption, and future knowledge features are not automatic prerequisites.
+- taught us: adopting the architecture in the project's own repositories is a separate deliverable from shipping its primitives. Define that shared foundation before moving accepted knowledge and changing the expert roster.
+
+## Redesign coordination timestamp correction (2026-09-20)
+- verdict: CHRONOLOGY FIX. The lead assignment and commit `78dcc16b` occurred on September20, confirmed by the commit timestamp and current UTC date. The earlier entry's September19 heading carried the prior session date; it is preserved below as history, not a second assignment or a changed scope. Living repo-state is corrected. No runtime or deployment change.
+
+## Redesign coordination lead explicitly assigned (2026-09-19)
+- verdict: HUMAN DIRECTION RECORDED. One accountable lead coordinates the current Portable Souls, knowledge/capability and Desktop redesign; cross-checkout contributors bring new scope, changes and integrations through that lead and deliver exact reviewed deltas. Ordinary work within agreed scope continues without new per-edit permission gates.
+- boundary: technical coordination does not replace local operator approval for deployment changes, native authentication, executable trust or migration. Runtime upgrades, adopted config snapshots and active-instance instructions are separate facts; older installed knowledge procedures must not stand in for current framework direction.
+- taught us: shared repository and messaging access are not shared project context. Keep a current version-scoped briefing and explicit integration ownership, with live aliases and machine-specific inventory in deployment handoffs rather than the reusable soul.
+
+## Human-authorised forward record correction accepted (2026-09-19)
+- verdict: APPROVE exact `0060dbe8b0c8b470083d9a14c78ef4653d567b9a` and continuation from repaired history. Human disposition chooses forward correction without lifting the held optimisation's scope restriction and explicitly accepts that `54b07ee6` remains an ancestor. No retrospective approval or history erasure.
+- evidence: independent fetch, complete correction read, exact four-path inventory and four postimage comparisons against `3f51acf3`; whole `packages/record` tree equals `9137bba602ec04603dbfb9d51b81359c5a8dd0ce`. Every other path equals prior `635fc7e6`; net difference from the approved baseline is only the independent messaging-reach documentation. Integrator reports 223/223 record tests; reviewer separately passes the scaffold/layout/resource/normal-retirement probe (1/1, no runtime/backend launch), without rerunning a broad suite or relabelling reported tests as independent evidence.
+- owner: integrating maintainer supplies the human-authorised correction; reviewing maintainer confirms scope and normally fast-forwards while preserving pending stewardship work. No release/tag/install/native-auth change or new permission follows.
+- taught us: repair a scope violation forward to the latest approved state, not an older pre-custody ancestor. Preserve unrelated improvements and truthful history; a hold on active content is not lifted merely because repaired history must retain the original merge.
+
+## Held-scope confirmation; forward correction proposed (2026-09-19)
+- verdict: DISPOSITION PENDING. The integrating maintainer confirms no subsequent human approval lifted the held patch; no repair has been performed. Recommend a coordinated forward-only correction restoring the four affected record files to `3f51acf3`, preserving later approved custody work, independent messaging documentation and all other paths. This recommendation is not execution authority.
+- owner: human scope decision, then coordinated maintainer review of the exact corrective or explicitly retained delta. A forward revert retains the original ancestry; an honest recorded decision must permit the repaired history rather than claim the patch was never merged.
+- taught us: do not use broad merge authority or green tests to infer an exception to a specific hold. Stable patch-id detects a normalized textual delta, not every semantically related rewrite; normal merges do not rewrite original commit SHAs.
+
+## Parallel record merge observed; held scope escalated (2026-09-19)
+- verdict: REVIEW HOLD on adopting/releasing the already published `635fc7e6` advance. Independent fetch and complete net-diff read confirm five files, +114/-18; the four record files reproduce held `54b07ee6`'s stable patch-id `21b53623067540c09d632b49d2f81ae1b931eda6`, and the held commit is now in ancestry. Request explicit superseding human authority and exact tested-revision/review evidence; do not equate author-reported green tests with lifting the hold.
+- owner: parallel integrating maintainer; reconciliation requested by stewardship. No local runtime acceptance, release/tag change, unilateral revert or history rewrite was performed. This finding is about a confirmed scope exclusion, not a demonstrated runtime defect.
+- related documentation review: RETURN the pasted collaboration-guide draft for version/layout, config/lock/trust, instruction composition, shared-resource conflict and messaging-liveness corrections; no exact revised file/commit has been approved.
+- taught us: a small merge tree diff can still be exactly the previously held patch. Inspect both ancestry and net content; coordinate scope decisions across maintainers instead of relying on duplicate commit counts or successful tests.
 
 ## Canonical documentation publication verified; adoption gaps scoped (2026-09-19)
 - verdict: DELIVERED to main as `edd82f82884a73331a2732d6d242f4536c81423f`, verified by remote ref and GitHub contents readback; source worktree clean. Twelve Markdown files, strict OKF 89/0/0, 56 local links/anchors and diff check pass. The prior entry records the approved direction; this records actual publication.

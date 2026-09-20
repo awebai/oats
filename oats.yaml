@@ -1,0 +1,17 @@
+schemaVersion: 1
+workspace:
+  source: git:github.com/awebai/oats
+
+exports:
+  souls:
+    - path: souls/oats-expert
+      definition: souls/oats-expert/soul.yaml
+      description: Transitional portable edition of the existing OATS framework expert.
+  packages:
+    - path: oats-package
+      description: Optional knowledge-theory capability and authoring expert.
+    - path: capabilities/oats-authoring
+      description: Contained authoring capability package; not an implicit workspace default.
+
+# No knowledge export: the phase-2 corpus, visibility and acceptance are separate.
+# Public source imports do not follow this workspace backlink as adopter policy.

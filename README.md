@@ -11,6 +11,8 @@ OATS—**Open Agent Team Specification**—is a framework for building, running 
 
 **Capabilities are the building blocks of an OATS setup.** When you define an agent, you choose its capabilities. Each provides the know-how and tools for knowledge systems, messaging, task coordination or any other workflows, tools or ways of working. We provide defaults to get started, but you can adapt existing capabilities or create fully custom ones to shape how your agents work and which tools they use.
 
+The [official marketplace](docs/official-marketplace.md) is the reviewed list of official packages; listing is not executable approval.
+
 For example, a kernel expert, a UX expert and a customer-support expert can share capabilities for learning and coordination, while each has specific capabilities for its own area of expertise.
 
 Through your capabilities, you remain in control of:

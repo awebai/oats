@@ -1,406 +1,117 @@
 # The OATS contracts
 
-For the current conceptual boundary, see the [OATS overview](../README.md) and
-[canonical knowledge model](knowledge-theory.md#kernel-contracts-and-capability-behaviour).
-The September19 decisions make centralised per-soul knowledge a default, not a
-kernel requirement. Knowledge capabilities own their procedures, learning and
-placement; the same replaceable-contract principle applies to messaging and tasks.
-The historical shipped/prepared/proposed sections below are not a new API schema
-or proof that every proposed profile is implemented.
+OATS supplies common contracts; capabilities supply behavior. The current architecture combines [Git workspaces and portable sources](workspaces.md), retained instance execution and provider-owned knowledge, messaging and tasks.
 
-Status: contracts on paper (migration step 2 of
-[the 2026-09-03 architecture proposal](2026-09-03-architecture-proposal.md)).
-Sections distinguish **shipped**, **prepared** and **proposed** behavior.
-The knowledge section describes the prepared OKF v2 integration; its release
-gates are explicit in [v0.23.1 notes](release-notes/v0.23.1.md). A
-proposed clause describes the contract the kernel will be refactored toward;
-it is not a claim about current behavior, and the shipped documents
-([souls and instances](souls-and-instances.md),
-[capabilities](capabilities.md), [implementation](implementation.md)) remain
-authoritative for what the code does now.
-
-The rule the contracts serve:
-
-> Every main component is replaceable by another that offers the same
-> contract, with the exception of OATS itself. OATS knows only contracts.
-
-A contract is finished when two implementations satisfy it and a soul runs
-unchanged behind each. Each section ends with that test.
+This page is the current conceptual map, not a replacement for the versioned schemas or a claim that every provider/profile is implemented. Use [release scope](release-notes/v0.24.0.md) and actual readiness results. Earlier contract inventories remain in [Git history](https://github.com/awebai/oats/blob/249899a9a1ae865cc640fbc52b3585765fba473f/docs/layers.md); dated designs are navigated through the [design index](design/README.md).
 
 ## How the pieces fit
 
 ```text
-soul ─────────── declares which contracts it needs, never which implementation
-  │
-  ├── soul type ── the policy unit: capabilities, knowledge scope, reach
-  │
-  └── capabilities ── implementations bound by configuration
-        ├── knowledge   (exclusive slot)
-        ├── tasks       (exclusive slot)
-        ├── communication (exclusive slot; called "messaging" in config today)
-        ├── capture     (proposed slot)
-        └── additive capabilities (any number)
-
-instance = (soul, runtime provider, work target?, task)
+Git workspace definition
+  ├── admits repositories with reciprocal backlinks
+  ├── supplies bounded defaults and provider declarations
+  └── imports exported souls by source reference and revision
+        └── soul declares requirements, defaults and software sources
+              └── preparation resolves and retains an approved composition
+                    └── instance runs against an independent work target
+                          ├── knowledge capability
+                          ├── messaging capability
+                          ├── tasks capability
+                          └── any additional capabilities
 ```
 
-The kernel owns the soul format, the soul type, the capability manifest and
-lifecycle events, and instantiation. Everything else is an implementation
-behind one of the contracts below.
+The workspace definition, source repository, local deployment, work target and messaging team are different identities. They may share a repository or machine without becoming interchangeable authority.
 
 ## Soul format
 
-**Shipped.** A soul is a directory: `soul.yaml` (name, kind, description,
-repo, work, runtime, model, type), `AGENTS.md` (the operating definition),
-`skills/`, and whatever a knowledge implementation adds. It is committed and
-reviewed like code, and it never runs by itself.
+Portable `soul.yaml` uses `schemaVersion: 1`, a name, optional role/runtime/work preferences and explicit requirements/defaults. Canonical `AGENTS.md`, its `CLAUDE.md` alias and the declared resources provide the operating curriculum. See the [schema](soul.schema.json).
 
-**Contract.** A soul declares *which contracts it needs*, not which
-implementation fills them. Its `AGENTS.md` speaks of "your knowledge", "your
-task layer", "your messaging"; the bound capability's injected block says
-what those are in this installation. A soul that names a tracker, a mail
-system, or a knowledge format in its own text is not portable and is
-malformed under this contract.
+A soul can require a concrete implementation **and its source**, or require a provider by presence with supported defaults/operator choice. Naming OKF or a tracker does not make a soul malformed: it makes a particular source policy explicit. A source that genuinely promises interchangeable implementations must use compatible requirements and test that claim.
 
-A soul is runtime-neutral as an artifact. Anything derived from it for one
-runtime (a compiled native session, a finetune reference) is a realization
-artifact attached to the (soul, runtime) pair, never soul content.
+Concrete capability selections carry `source`; software must not be inferred from an ambient installation or the publisher's unshared config. Imports retain source identity and revision rather than creating local forks. Source updates do not silently rewrite an existing instance's retained curriculum.
 
-**Test.** One packaged soul runs in an installation bound to Jira and in one
-bound to Linear with no change to its files.
+Classic `kind`/`type`/`repo` declarations and config-targeted agent types are a compatibility model, not mandatory fields or a third policy tier in portable resolution. See [souls and instances](souls-and-instances.md) and [classic configuration](configuration.md).
 
-## Soul type
+## Workspace, repository and adoption contracts
 
-**Shipped.** Config declares agent types by name under `agent-types:`; a soul
-opts in with `type: <name>` in `soul.yaml`; capability entries target
-`global`, `agent-types`, or `souls`, and settings resolve soul over type over
-global, then by config closeness.
+- `oats-workspace.yaml` declares intended members, defaults, imports and optional provider-owned stores/team/catalog references.
+- `oats.yaml` advertises a repository's actual soul/package/knowledge exports and, for membership, a workspace backlink.
+- Membership requires compatible observations on both sides; folder adjacency or a copied declaration is not admission.
+- External source import does not adopt the publisher's workspace. A framework repository may host its own development workspace without imposing it on consumers.
+- Operator choices and workspace defaults must respect source requirements. Git read access is not write permission, executable approval or messaging enrollment.
 
-**Contract.** The soul type is the policy unit. It decides:
-
-- which capabilities a soul of that type receives, and with which settings;
-- what knowledge it may read (custody scope) and whether it may write
-  knowledge (a harvester is a type permitted to write);
-- its communication **reach**, in both directions.
-
-The proposed `reach` field is a monotone ladder, each level including the
-ones below. This is an intended contract, not a currently enforced setting:
-
-```text
-reach: owner     # only agents owned by the same human
-reach: team      # any agent in the deployment's team
-reach: org       # any team in the same organization
-reach: external  # agents outside the organization
-```
-
-"No communication" is not a level; it is the communication slot set to
-`none`. The intended `reach` contract covers whom an instance may address
-and who may address it; implementation and qualification of enforcement in
-both directions are still required.
-
-**Current limitation.** The aweb implementation does not enforce this ladder.
-In particular, `reach: owner` is not implementable through its current inbound
-settings: `team_and_contacts` admits verified same-team senders as well as
-contacts, and the compatibility spellings `contacts-only` and `contacts_only`
-normalize to that mode. They do not enforce owner-only access. Neither a type
-declaration nor acceptance of a configuration command proves message admission,
-outbound restrictions, or knowledge visibility. See the
-[identity and membership amendment](design/2026-09-08-expert-assisted-deployment-proposal.md#membership-reach-and-visibility-are-separate)
-for the current provider boundary and required qualification.
-
-**Proposed.** The type is exported to hooks and dispatched commands as
-`OATS_SOUL_TYPE`; packages may ship types; a type may declare `reach`.
-
-**Test.** Two souls of different types, spawned in one installation, receive
-different capability sets and different knowledge scopes with no per-soul
-configuration.
+The [workspace guide](workspaces.md) explains these boundaries and the [declaration contract](design/2026-09-15-portable-declarations.md) defines their versioned forms.
 
 ## Capability manifest and lifecycle events
 
-**Shipped.** A capability is a set of scripts, skills, and docs with an
-`oats.json` manifest declaring: `capability` (id), optional `layer`,
-`skills`, `inject`, `commands`, `requires` (host commands and runtime
-packages), `environment` (launch variables it may contribute, vendor-prefixed),
-and `hooks`. Accepted events are `soul-scaffold`, `spawn`, and `retire`. Hooks
-receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
-`OATS_HOME` (with `OATS_INSTANCE_HOME` as its alias), `OATS_AGENT`,
-`OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`, `OATS_ROOT`, `OATS_LEVEL`,
-`OATS_SETTINGS`, `OATS_META`, and the team variables, and may return `meta`, `brief`, `warning`, runtime-specific
-`launch` arguments, and (spawn only) `env`. Only a spawn hook may be
-`required`. The full contract, including trust and rollback, is in
-[capabilities](capabilities.md) and is not restated here.
+A capability's `oats.json` declares its identity, optional fundamental `layer`, resources, host/runtime prerequisites, commands, operations and supported lifecycle contributions. A distribution package's `oats-package.json` exports one or more capabilities; a package is not itself an active integration or workspace.
 
-**Contract.** The event list is the API that makes capabilities composable
-and changes rarely. An implementation of any slot below is a capability that
-declares that slot as its `layer`; two active capabilities cannot fill one
-slot for one soul. Packages talk to the kernel only through the structured
-CLI boundary (`oats ... --json`, `OATS_CLI_BIN`), never by importing kernel
-files; see [package-runtime-api](design/package-runtime-api.md).
+The current [manifest schema](capability-manifest.schema.json) includes the published binding interface and helper/input declarations. A manifest shape alone does not certify its implementation:
 
-**Proposed.** A fourth event, `harvest`, run by `oats harvest` for every
-active capability that declares it, with the same environment as `spawn`
-plus the instance whose ephemeral state is to be promoted. The knowledge
-implementation's harvest hook is how promotion is triggered without the
-kernel knowing the knowledge format.
+- Captured fundamental providers expose their declared normalize/bind/check phases through the existing broker. The kernel resolves their fields without implementing their domain model.
+- Commands/hooks execute only with the appropriate exact artifact approval and invocation authority.
+- Helper behavior and optional source-receipt inputs are declared by their owner, not guessed from a layer name.
+- Required setup/capture outcomes cannot be silently omitted to make a launch or cleanup appear successful.
+- Legacy hook environment and captured binding/invocation inputs are distinct contracts. A legacy hook is not automatically safe for retained execution.
 
-**Test.** Two capabilities filling the same slot in two installations; the
-kernel's code has no branch that names either.
+Use [capability details](capabilities.md), the [provider wire](design/2026-09-16-provider-binding-wire.md), [helper/input contract](design/2026-09-17-capability-helper-input-contract.md) and [package runtime boundary](design/package-runtime-api.md).
 
-## The knowledge contract
+## The three fundamental slots
 
-**Shipped kernel contract.** Zero or one knowledge capability per soul,
-selected under `capabilities.layers.knowledge`. `none` creates no
-provider memory or harvest flow and does not delete existing state. The kernel
-owns neither the format nor a mandatory promotion doctrine. It must not require
-one per-soul directory, a topic taxonomy, a universal harvester or an external-only
-knowledge layout. A capability supplies the actual supported read/write model;
-co-location never authorises mutation of an immutable captured source artifact.
-The three fundamental slots do not limit additive capabilities for other skills,
-tools and ways of working.
+Knowledge, messaging and tasks are exclusive provider slots: zero or one selected implementation of each per composition. `none` is an explicit permitted choice only where requirements allow it. Additional capabilities are unlimited and nonexclusive; the three slots do not limit domain tools or workflows.
 
-**Prepared reference implementation: oats.okf 2.0.0 / framework v0.23.1.**
-All accepted knowledge is external. Explicit bindings name Git or non-Git
-bases; `soul/okf.json` declares stable ownership and read references, while
-`okf-base.json` identifies accepted nodes. Missing configuration or knowledge
-fails working-source spawn, never creates an empty substitute.
+### The knowledge contract
 
-*Read.* Sources consult immutable accepted views, index-first and selectively.
-Prior rationale should be consulted rather than re-derived. OKF's `owns` routes
-harvest destinations and `reads` chooses starting context: neither is an ACL, and all
-configured bases are discoverable/readable. Cannot-write is instruction, not an
-OS sandbox. A directory publication journal blocks fresh views; Git readers see
-only the accepted branch, not an open PR.
+The kernel supplies selection, retained identity/resources, approval, invocation/lifecycle context, independent helper execution and truthful outcomes. It does not mandate OKF, memory filenames, a taxonomy, a harvester or external-only mutable placement.
 
-*Capture and judgment.* Working agents capture state/log/notes; durable source
-custody also copies full native record windows through the public CLI. A separate
-worker judges from frozen input without needing the source home, worktree or
-model. Source retirement waits for certified capture, not a model or GitHub.
-Workers use independent `directory` execution and never edit source notes or
-soul skills. Existing hooks and per-source command schedules supply this flow;
-the proposed generic `harvest` event above is not implemented or required.
+The knowledge capability supplies organization, stores, readers, evidence capture, judgment, maintenance and delivery/acceptance policy. Mutable knowledge is never permission to alter immutable retained software/source artifacts.
 
-*Delivery custody.* Knowledge placement, not soul residency or work mode,
-determines delivery. All Git bases use verified PR-only delivery with separate
-merge-visible acceptance. Genuine non-Git directories use cooperative locks,
-baseline comparison, journalled publication and validated receipts, without Git
-or gh. There is no direct Git fallback and no cross-base distributed transaction.
-Source descriptors, proposals and processing/delivery/acceptance receipts outlive
-source retirement. Inspection can show matching live Markdown plus durable
-receipts; missing/reused homes cannot supply live memory for an old source.
+The reference OKF model uses centralised per-soul knowledge, stable ownership/read routing, independent promotion and PR-only Git delivery. `owns` routes harvests; `reads` selects context; neither is an ACL. Directory publication, a proposed PR, an accepted merge and a fresh reader's observation are separate facts.
 
-*Reference promotion doctrine.* OKF accepts durable behavior-changing judgment
-that is not recoverable merely by reading code: rationale, rejected alternatives,
-discovered limits and maintained slow state. It rejects code descriptions, task
-residue, secrets and verbatim third-party messages. Human-accepted decisions keep
-acceptance evidence; maintained state needs an owner and freshness discipline.
-One canonical concept is preferable to copied claims. These are the default
-capability's choices, not a compulsory judge for every knowledge implementation.
+Alternatives may choose different placement or learning procedures. A supported co-located profile is not implied merely because the architecture allows one. See [knowledge theory](knowledge-theory.md), [version-scoped operations](knowledge.md) and [provider-neutral boundary](design/2026-09-16-knowledge-capability-contract.md).
 
-See [the runtime guide](knowledge.md) and [v1 migration](knowledge-migration.md)
-for current commands and constraints. The [reference theory](knowledge-theory.md)
-and [authoring curriculum](knowledge-capability-authoring.md) are optional;
-capabilities may adopt, adapt or replace them and own their complete runtime.
+### The tasks contract
 
-**Test.** OKF's Git and directory providers exercise independent custody within
-one capability. A second knowledge capability with a different model remains a
-separate replaceability test; two OKF providers do not prove that test by
-renaming them as two integrations.
+A task provider owns work assignment, claims, status, blockers, outcomes and handoff procedures. OATS supplies the selected capability/runtime boundary, not one mandatory tracker workflow. Jira and Linear are available integrations; no tasks provider is mandatory when source requirements permit none.
 
-## The tasks contract
+Messaging is conversation, not automatically task state. Accepted knowledge may explain a decision or important situation without duplicating the tracker.
 
-**Shipped.** The `tasks` slot. Bundled implementations are `oats.jira`
-(the `jira-tasks` protocol via `acli`) and `oats.linear` (JSON-first
-`oats linear` commands and the `linear-tasks` skill). There is no default;
-`tasks: none` is valid.
+### The communication contract
 
-**Contract.** Where shared work state lives and how an instance claims,
-updates, blocks, hands off, and completes work, taught by the implementation's
-injected block and skill. An instance is identified to the tracker in a way
-that survives the instance (today a label, `agent-<instance-name>`). Task
-state, status, and outcomes live in the tracker; conversation lives in the
-communication slot; the two are not merged even when one tool offers both.
+The current slot name is **`messaging`**. The capability owns native identity, addressing, team membership, transport, wake delivery and qualification. A team alias in a workspace is a declaration, not proof that an actor is enrolled or a privacy property is enforced.
 
-Verdicts and review outcomes are task records. That is how verification
-enters the model without a component: a reviewer is a soul type, and what it
-concludes is written where work state lives.
+The released aweb1.10.3 integration supports its legacy setup/lifecycle path but lacks the captured provider-binding interface required for a new portable profile. That capability needs adaptation and real qualification; a codec that always refuses readiness is not completed messaging support.
 
-**Test.** Jira and Linear already satisfy it; a third (beads, GitHub Issues)
-is the proof that the contract is not a description of either.
+The earlier proposed `reach` ladder is **not an enforced universal field**. In particular, aweb's `team_and_contacts` includes verified same-team senders; the compatibility spellings `contacts-only` and `contacts_only` do not establish owner-only admission. A config command succeeding proves neither inbound/outbound restrictions nor knowledge visibility. See the [identity/membership amendment](design/2026-09-08-expert-assisted-deployment-proposal.md#membership-reach-and-visibility-are-separate) and [messaging boundary](design/2026-09-16-messaging-capability-contract.md).
 
-## The communication contract
+Roster membership is not a live process or a responsive session. Retirement may leave provider-side records or incomplete cleanup; inspect the actual outcome rather than promising aliases disappear.
 
-**Shipped.** The `messaging` slot. The bundled implementation is `oats.aweb`:
-a team-scoped aweb identity minted per instance at spawn (alias = instance
-name) by a required spawn hook and deleted at retire, the `aweb-messaging`,
-`aweb-team-membership`, and `aweb-identity` skills, `oats aweb roster` and
-`oats aweb setup`, and channel-plugin launch arguments so a session is woken
-by incoming mail. `messaging: none` is valid.
+## Runtime and work-target contracts
 
-**Contract.** How an instance becomes reachable and reaches others. The
-implementation supplies:
+The selected runtime owns its normal model/authentication/profile mechanisms. OATS supplies complete composed resources, task, work selection and retained execution authority; it does not copy or repair credentials or enable permission bypass merely because a session is unattended.
 
-- an address for the instance, discoverable by teammates, and the roster
-  that lists them across machines;
-- durable asynchronous mail and synchronous chat, with reply and
-  acknowledgement state;
-- a wake-up signal when work arrives, with the decision to resume or launch
-  left to the runtime owner;
-- enforcement of the soul type's `reach`, outbound by what the address can
-  reach and inbound by who may deliver to it;
-- a statement of whether the address can outlive the instance. For a durable
-  specialist the answer should be yes, realized however the implementation
-  chooses (for aweb: a soul-level identity served through per-instance
-  grants).
+Pi, Claude Code and Codex have version/profile-specific support. Claude Code and Codex retain normal native context and permissions; strict selected Pi execution has its own verified profile limits. Tmux and Herdr are backend choices, not soul identities. A source can support several realizations without every combination being qualified.
 
-Communication is only communication. Task coordination lives in the tasks
-slot.
+The work target is independent of source publication and knowledge placement. Preserve the selected work-mode discipline and ownership. Unsupported required lifecycle, wake, plugin or recovery behavior must remain explicit, not be replaced with an easier hidden profile. See [execution targets](execution-targets.md) and the [release notes](release-notes/v0.24.0.md).
 
-*Fully local.* It must remain possible to run everything filesystem-based and
-fully local, meaning with no dependency on a hosted service the operator
-cannot replace. Communication needs a server; a self-hosted one on localhost
-satisfies the constraint. What the implementation must hold on *its*
-servers, and the traffic that must pass through them, is minimized. For aweb
-today every delivery passes through an aweb server, hosted or self-hosted on
-localhost with the reserved `local` namespace (`aweb-abhw` records the open
-decision on a lighter local server). `reach: owner` maps to a contacts-only
-inbound mode that aweb does not ship yet (`aweb-abhx`).
+## Kernel briefings versus operational capabilities
 
-**Proposed.** The slot is renamed from `messaging` to `communication` in
-documentation first; the config key stays `messaging` until a release
-decides otherwise.
+The kernel owns only what describes the layout it creates: the `instance-boundary` briefing (home versus `work/`), the selected work-mode briefing and config-declared injections. Knowing how to *operate* OATS (status, spawn, retire, soul discovery) and how to *configure* it (workspaces, packages, trust) is capability content — accepted as the official capabilities `oats.core` (explicit default on every soul, removable) and `oats.setup` (held by the onboarding-created `oats-setup-expert`). At the0.24 baseline those skills are still kernel-shipped; see the [workspace guide](workspaces.md#how-a-soul-knows-oats-accepted-direction-not-yet-shipped) and the adoption plan's distribution packages.
 
-**Test.** aweb and a second implementation (a Slack bridge, an A2A gateway)
-behind the same injected promises; a soul's `AGENTS.md` unchanged between
-them.
+## Capture and knowledge are separate
 
-## The capture contract (proposed)
+The native turn record is an evidence substrate, not accepted knowledge or a compulsory fourth fundamental slot. A capability decides which evidence it consumes and how it judges it. Source attribution, before-read custody and incomplete-outcome handling remain necessary wherever those guarantees are promised.
 
-**Shipped, outside the slot model.** On machines where `oats setup` has run,
-`packages/record` captures Claude Code, Pi, and Codex transcripts plus aw
-client logs. It skips sources matched by the local record's ignore list. It
-stores captured turns in an append-only, content-addressed record with a search
-index (`oats setup`, `oats capture`, `oats recall`). It is not a capability. A knowledge capability may consume source-targeted
-capture/recall through the supported CLI boundary, as OKF v2 does.
+A successful capture is not a completed judgment; completed judgment is not accepted Git knowledge. Source loss or retirement must not erase pending obligations or make an uncertain record complete. See [the record package](../packages/record/README.md) and the relevant versioned lifecycle contracts.
 
-**Contract.** The format of ephemeral state. Two kinds satisfy it: an agent's
-own notes (its report of what mattered, today created by the knowledge
-implementation) and a captured session (ground truth). The harvester may
-consume either or both. Clothes, the optional spawn-time selection of past
-conversation, are one consumer of the same contract and depend on nothing
-else in this document. Capture never mediates the harness and fails visibly;
-a silent capture gap is worse than none.
+## Replaceability without invented readiness
 
-**Proposed.** `capture` becomes a slot; `packages/record` is wrapped as a
-bundled, framework-trusted capability whose spawn hook records the
-instance-to-session mapping; `oats setup`, `oats capture`, and `oats recall`
-become kernel aliases resolving to the active capture implementation.
-Whether capture is exclusive or additive is open.
+A capability boundary is useful when implementations can differ without a new kernel-owned version of their behavior. But:
 
-**Test.** The record beside a notes-only implementation; the harvester reads
-both.
+- Two stores within OKF are not proof of a genuinely different knowledge model.
+- Schema validation is not native authority, provider readiness or learning.
+- A working old configuration does not prove compatibility with a new captured profile.
+- Workspace membership does not select every capability a member exports.
+- Published primitives and documentation do not constitute a completed deployment.
 
-## The runtime provider contract (proposed)
-
-**Shipped.** Two runtimes, `pi` and `claude`, selected by `soul.yaml` or
-`--runtime`, launched in a local tmux window; the branching lives inside
-`spawnInstance`. The worked example in the
-[proposal](2026-09-03-architecture-proposal.md#worked-example-todays-pi-launch-as-bundle-and-handle)
-names today's launch in the contract's terms.
-
-**Contract.** OATS hands a provider a realization bundle and receives an
-instance handle:
-
-```text
-bundle
-  instructions            the composed AGENTS.md
-  skills                  the exact materialized tree
-  environment, launch args   what active capabilities contributed
-  task                    TASK.md
-  model preference        resolved
-  realization artifacts   per (soul, runtime); empty by default
-
-handle
-  observe   is it running; where the session transcript is
-  steer     attach or send input, where supported
-  stop
-```
-
-The provider decides how the bundle becomes a running agent. It knows
-nothing of tmux; the **platform** (today tmux: session, window, working
-directory) is a separate module with launch, alive, stop, and list. The
-handle is recorded in `instance.json` with a kind; the existing `tmux` field
-is kept beside it.
-
-A provider declares which runtime packages the active capabilities require
-of it and verifies them before launch; it never installs them. A provider
-without a filesystem receives the bundle as a document rather than files;
-how is open.
-
-**Test.** Pi and Claude Code behind one interface with `spawnInstance` free of
-runtime names, proven by the golden fixtures (step 1). A hosted provider is
-the second real implementation and is not built until one asks.
-
-## The soul store contract (proposed)
-
-**Shipped.** Souls live under `agents/` (committed) or `local-agents/`
-(never committed) at a scope, and capability packages may ship souls under
-`agents:` in their manifest. Three lookups find them; instance homes live in
-the soul-owning repository's primary checkout.
-
-**Contract.** A store lists souls, finds one by name, and says where its
-instances live. The filesystem is the single implementation; a package and a
-provider registry are the candidates that would prove the contract.
-Separating the store from the work target is what removes the repository
-from the architecture: today one path decides who the soul is, where its
-knowledge lives, and what it works on.
-
-**Test.** A soul found through a second store, instantiated with the same
-bundle.
-
-## The work target contract
-
-**Shipped.** Five modes decide what `<instance-home>/work` is and what
-discipline the instance follows: `worktree` (an isolated branch), `checkout`
-(the shared current branch), `attached` (another instance's tree),
-`workspace` (the whole team scope, read-only), plus explicit `directory`
-(instance-owned non-Git execution for independent workers). A config may run a
-setup script inside each fresh worktree. Retirement preserves ordinary work,
-quarantines incomplete cleanup, and never removes a shared tree. The
-generated instructions state the home/work boundary before the mode block.
-
-**Contract.** The work target is a parameter of instantiation independent of
-where the soul is stored. Each mode is a module that prepares the view,
-states its discipline, and knows how to retire it safely, with the
-retirement baseline and inspection alongside. The four Git/context modes retain
-their existing semantics; directory execution never acts as an implicit fallback.
-
-**Proposed.** An additional target, `none`, for instances that operate on nothing
-(a mail-only agent). It replaces no mode.
-
-**Test.** An instance of one soul spawned with each target, the same soul
-files throughout.
-
-## The package contract
-
-**Shipped, and not touched by the migration.** Acquisition, exact version and
-commit, payload and artifact integrity, dependency closure, executable trust,
-and transactional restore; see [packages](packages.md),
-[capabilities](capabilities.md), and the
-[package-engine contract](design/package-engine-contract.md).
-
-**Proposed.** A package may also ship soul types.
-
-## The replaceability test, summarized
-
-| Contract | Implementations today | Second implementation |
-| --- | --- | --- |
-| Knowledge | `oats.okf` | plain Markdown or wiki |
-| Tasks | `oats.jira`, `oats.linear` | beads, GitHub Issues |
-| Communication | `oats.aweb` | Slack bridge, A2A gateway |
-| Capture | `packages/record`, OKF notes | either alone |
-| Runtime provider | Pi, Claude Code (entangled) | a hosted provider |
-| Soul store | filesystem | package, provider registry |
-| Work target | worktree, checkout, attached, workspace | `none` |
-
-Where only one implementation exists, the contract is still a description of
-that one; those rows are the work.
+Use the same kernel contracts, preserve declared requirements and verify the specific supported profile. New generic authority or schema semantics require an explicit decision rather than an undocumented bypass.

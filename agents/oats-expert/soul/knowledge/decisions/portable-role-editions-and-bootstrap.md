@@ -2,17 +2,24 @@
 type: Decision
 title: Proposed portable role editions and explicit bootstrap helpers
 description: Propose stable parallel role exports with explicit adopter-bound knowledge destinations and a separately proven operator-root helper entry for cold bootstrap.
-status: proposed
+status: partially-accepted
 tags: [architecture, portable-souls, source-identity, knowledge, bootstrap]
-timestamp: 2026-09-17
+timestamp: 2026-09-20
 ---
 
 # Status
 
-**Proposed for human decision, not approved source identities or a new helper API.**
-Declaration/import examples have syntax and pure normalization evidence only.
-The proposal does not qualify release revisions, role execution, provider readiness
-or a cold-bootstrap helper. Existing independently reviewed code keeps its scope.
+**Partially accepted for implementation on 2026-09-20.** Under the approved
+workspace-first plan, publish a transitional edition of the existing overall expert
+at `souls/oats-expert/` in the framework repository, preserving its reviewed logical
+owner and read/write routing rather than creating a new bootstrap owner. Publication
+must precede importing an actual reviewed immutable revision. This is a bounded
+phase1 source-layout slice, not the phase2 five-role/corpus cutover.
+
+The remaining final-role policy choices and operator-root helper API below stay
+proposed. Declaration/import examples alone do not qualify role execution, provider
+readiness, releases or cold bootstrap. Existing independently reviewed code keeps
+its scope; no helper authority is gained from this layout decision.
 
 # Context
 
