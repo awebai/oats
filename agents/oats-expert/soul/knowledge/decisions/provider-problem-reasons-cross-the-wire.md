@@ -43,6 +43,29 @@ discarding a message the provider had already made safe.
    code-only → OKF 2.1.2 names the missing setting; aweb 1.11.0 sends
    reasons but 1.11.1 also serializes them on every refusal path).
 
+# Compatibility and rollout (added 2026-09-21 after P's floor question)
+
+`validateBindingInterface` (`lib/provider-binding.mjs`) is closed: every
+released kernel rejects a manifest whose `binding` block carries an unknown
+field, at manifest load (`core.mjs`), not only in preparation. Therefore:
+
+- **Kernel first.** 0.24.4 opens the validator to optional `binding.reasons`
+  (and `binding.keys`, see the ownership decision) with these bounds:
+  array, unique, 1–64 entries, each a non-empty string ≤ 200 chars,
+  printable ASCII, no `{}`/`${}` interpolation markers. Kernel keeps a wire
+  `message` iff byte-equal to an entry; check `result.problems[].message`
+  follows the same rule.
+- **Providers that declare the field floor on the kernel that reads it**:
+  OKF 2.1.2 and aweb 1.11.1 set `requires.oats: ">=0.24.4"`. A provider
+  release is never published with a field the floor kernel cannot load.
+- **Fallback list is not a compatibility shim.** The kernel-bundled
+  per-capability constants exist for providers that have not declared the
+  field yet (OKF 2.1.1 code-only, aweb 1.11.0), not to let manifests skip
+  the declaration.
+- Ordering of the 0.24.4 wave: kernel 0.24.4 tag → OKF 2.1.2 + aweb 1.11.1
+  releases (floor 0.24.4) → mirror/catalog/edition pins → second-operator
+  re-run on all three.
+
 # Consequences
 
 - The security boundary is unchanged in kind — only provider-declared
