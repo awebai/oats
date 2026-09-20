@@ -8,6 +8,7 @@ import Ajv from "ajv";
 import { parseMemberExports, parseWorkspaceDefinition } from "../lib/workspace-definition.mjs";
 import { parsePortableSoul } from "../lib/portable-soul.mjs";
 import { parseRepositorySource } from "../lib/source-spec.mjs";
+import { bytesIntegrity } from "../lib/portable-digest.mjs";
 import { planSoftwareChoices } from "../lib/portable-composition.mjs";
 import { createRepositoryTransaction } from "../lib/repository-observation.mjs";
 import { createWorkspaceDiscovery } from "../lib/workspace-discovery.mjs";
@@ -27,7 +28,10 @@ const origin = { kind: "operator", document: { kind: "operator", id: "workspace-
 const bytes = path => readFileSync(join(ROOT, path));
 const workspace = () => parseWorkspaceDefinition(bytes("oats-workspace.yaml"));
 const index = () => parseMemberExports(bytes("oats.yaml"));
-const soul = (name = "oats-expert") => parsePortableSoul(bytes(`souls/${name}/soul.yaml`), { origin: origin.document });
+// Editions declare `repo:oats-package`, so they are parsed as a repository document
+// (the production discovery path), never as an operator input without a snapshot.
+const sourceDocument = (name) => ({ kind: "source", source: parseRepositorySource(SOURCE).normalized, revision: "0".repeat(40), path: `souls/${name}/soul.yaml`, integrity: bytesIntegrity(bytes(`souls/${name}/soul.yaml`)) });
+const soul = (name = "oats-expert") => parsePortableSoul(bytes(`souls/${name}/soul.yaml`), { origin: sourceDocument(name) });
 
 // Actual native Git and the production discovery/projection path, with public
 // locators mapped to isolated local repositories. These member fixture indexes
@@ -51,6 +55,8 @@ function fixture(t) {
     if (n === 0) {
       for (const name of ["oats.yaml", "oats-workspace.yaml"]) write(join(repo, name), bytes(name));
       for (const [name] of EDITIONS) cpSync(join(ROOT, "souls", name), join(repo, "souls", name), { recursive: true, verbatimSymlinks: true });
+      // Every edition declares oats.core from this repository's own oats-package payload.
+      cpSync(join(ROOT, "oats-package"), join(repo, "oats-package"), { recursive: true, verbatimSymlinks: true, filter: (src) => !src.includes("/node_modules") });
     } else {
       write(join(repo, "oats.yaml"), JSON.stringify({ schemaVersion: 1, workspace: { source: SOURCE }, exports: { packages: [{ path: "oats-package" }] } }));
     }
@@ -90,6 +96,7 @@ test("transitional role preserves external owner/read routing and hard knowledge
   const parsed = soul(), declaration = parsed.declaration;
   assert.equal(declaration.name, "oats-expert"); assert.equal(declaration.work, "directory");
   assert.deepEqual(JSON.parse(JSON.stringify(declaration.requires)), {
+    capabilities: { "oats.core": { source: "repo:oats-package" } },
     knowledge: { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.1#oats-package" },
     messaging: { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.10.3#oats-package" },
   });
@@ -116,10 +123,10 @@ test("five expert editions preserve owners, own-node/four-read routing and conta
   for (const [name, owner, privateSkills] of EDITIONS) {
     const root = join(ROOT, "souls", name), parsed = soul(name), d = parsed.declaration;
     assert.equal(d.name, name); assert.equal(d.work, "directory");
-    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.knowledge)), { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.0#oats-package" });
+    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.knowledge)), { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.1#oats-package" });
     assert.deepEqual(JSON.parse(JSON.stringify(d.requires.messaging)), { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.10.3#oats-package" });
     assert.equal(d.defaults.tasks, "none");
-    assert.equal(d.requires.capabilities?.["oats.core"], undefined, "D1 core declaration is a separate actual-payload follow-up");
+    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.capabilities)), { "oats.core": { source: "repo:oats-package" } }, "explicit, removable day-to-day capability from this repository's payload");
     const model = normalizeKnowledgeDeclaration(d.knowledge, { origins: parsed.origins, origin });
     assert.equal(model.owner, owner);
     assert.deepEqual(model.owns.map(n => [n.node, n.destination]), [[name, "oats"]]);

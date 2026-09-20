@@ -3,9 +3,14 @@ name: oats-desktop-expert
 description: "Desktop product/interaction rationale, accessibility, integration limitations and verification judgment."
 work: directory
 requires:
+  capabilities:
+    oats.core:
+      # Day-to-day OATS operation (oats-operate, oats-souls). Explicit and removable;
+      # retained from this repository's oats-package at the same reviewed revision.
+      source: repo:oats-package
   knowledge:
     capability: oats.okf
-    source: git:github.com/awebai/oats-okf@v2.1.0#oats-package
+    source: git:github.com/awebai/oats-okf@v2.1.1#oats-package
   messaging:
     capability: oats.aweb
     source: git:github.com/awebai/oats-aweb@v1.10.3#oats-package

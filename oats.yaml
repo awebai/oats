@@ -21,7 +21,7 @@ exports:
       description: Persistent user-facing adoption, configuration and expert handoff.
   packages:
     - path: oats-package
-      description: Optional knowledge-theory capability and authoring expert.
+      description: oats.framework distribution — oats.core, oats.setup and the optional knowledge-theory capability.
     - path: capabilities/oats-authoring
       description: Contained authoring capability package; not an implicit workspace default.
 
