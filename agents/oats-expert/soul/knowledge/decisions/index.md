@@ -1,5 +1,6 @@
 # Decisions
 
+* [Provider problem reasons cross the binding wire as whitelisted fixed text](provider-problem-reasons-cross-the-wire.md) - The kernel keeps a provider's declared fixed safe reason on the binding wire and surfaces it beside slot/capability/origins; free text is still refused.
 * [Kernel skills become official capabilities — oats.core, oats.setup and the reviewed official marketplace](official-capabilities-oats-core-setup-and-marketplace.md) - Operational skills ship as oats.core (explicit default on every soul, removable) and oats.setup (held by an onboarding-created oats-setup-expert); the oats repository's reviewed package list is the official marketplace, seeded with the fundamentals.
 * [Git workspace composition separate from development capability packaging](git-workspace-versus-development-package.md) - Use a Git-backed workspace definition for shared team composition while keeping reusable development behavior and legacy package compatibility separate.
 * [Proposed bounded knowledge alignment before expert cutover](knowledge-alignment-before-expert-cutover.md) - Align the generic boundary and default knowledge capability with the accepted expertise model, then qualify a curated five-role knowledge cutover without waiting for every alternative or future mechanism.
