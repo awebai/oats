@@ -99,6 +99,7 @@ test("transitional role preserves external owner/read routing and hard knowledge
   for (const absent of ["knowledge", "okf.json", "instances", "work", "STATE.md", "log.md"]) assert.equal(existsSync(join(ROOT, EXPORT, absent)), false);
   assert.equal(readlinkSync(join(ROOT, EXPORT, "CLAUDE.md")), "AGENTS.md");
   assert.equal(lstatSync(join(ROOT, EXPORT, "AGENTS.md")).isFile(), true);
+  assert.doesNotMatch(bytes(`${EXPORT}/AGENTS.md`).toString(), /oats-portable-setup/, "no dangling promise of the human-removed setup skill");
   assert.deepEqual(readdirSync(join(ROOT, EXPORT, "skills")).sort(), ["git-tag-release", "pr-review"]);
   assert.ok(bytes(`${EXPORT}/skills/pr-review/references/reviewed-delivery.md`).length > 0);
 });

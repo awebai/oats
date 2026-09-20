@@ -103,6 +103,69 @@ Importing the exported soul directly does **not** follow the publisher's workspa
 as adopter policy. A different workspace, or an explicitly standalone operator,
 may consume it without membership in the OATS development workspace.
 
+## Inspect source metadata before preparation
+
+The public source inspector is implemented in **PR24, commit
+`bc598c484fd097fc5707fd4a33b7877ca00e5da3`**. Use this section only after the
+integration owner supplies a reviewed CLI containing that implementation. It is
+**not a command supported by the original 0.24.0 release**: that older inspect
+route can ignore the request flag and consult ambient classic configuration.
+Do not infer availability from the version floor of a capability.
+
+```sh
+oats inspect --request /absolute/inspection.json --json
+```
+
+After the real workspace import from publication step 3 exists, the authored
+inspection input may use the same repository for workspace, member and source:
+
+```json
+{
+  "deployment": "/operator/deployments/oats-pilot",
+  "workTarget": "/operator/projects/oats",
+  "source": "oats-expert",
+  "origin": {
+    "kind": "operator",
+    "document": {"kind": "operator", "id": "workspace-adoption"},
+    "pointer": "/source"
+  },
+  "workspace": {
+    "source": "git:github.com/awebai/oats",
+    "origin": {
+      "kind": "operator",
+      "document": {"kind": "operator", "id": "workspace-adoption"},
+      "pointer": "/workspace"
+    }
+  },
+  "member": {
+    "source": "git:github.com/awebai/oats",
+    "origin": {
+      "kind": "operator",
+      "document": {"kind": "operator", "id": "workspace-adoption"},
+      "pointer": "/member"
+    }
+  }
+}
+```
+
+The paths are operator-selected examples, not host defaults or new grants.
+Independent adoption uses the full source/soul/revision/alias reference and an
+explicit standalone context instead of workspace/member. Do not mix this inspect
+mode with current-context flags or captured deployment/resolution selectors.
+
+The result is **non-authorizing metadata**, not provider readiness: even `ok:true`
+may carry `needs-configuration` or `separate-deployment-required`. A
+`ready-for-preparation` observation still has no approval or enrollment effect.
+Provider payloads and opaque adoption values are deliberately omitted. Preserve
+the original authored inputs; neither the result nor its inspection request is a
+preparation request or an issued mutation witness. In particular, `workTarget`
+and inspection catalog wrappers are not accepted preparation fields.
+
+The inspector owns transient repository scratch but writes no deployment state.
+Missing paths need explicit operator provisioning and reinspection, not automatic
+repair. Observing a project work target does not change the separate captured H/work
+placement. Existing retained inspect remains the later exact-record inspection.
+
 ## Prepare a fresh local pilot only after the profile is qualified
 
 Use the selected installed compatible CLI. Do not turn this source check into a
@@ -145,8 +208,13 @@ Do not mix other preparation flags into request-file mode. A needs-configuration
 approval result is not a ready instance. A scaffold materializes resources and may
 run approved hooks; it is not a message exchange or model session. Actual dispatch,
 continuation, native capture, messaging and learning require the integration owner's
-qualified profile and receipts. Consult the current installed public help and the
-provider's supported commands; this guide introduces no new CLI grammar.
+qualified profile and receipts. Captured wake/input and public captured retirement
+remain unsupported; a stopped-home observation is not delivery or retirement authority.
+A session-delivered messaging profile therefore cannot pass on start-only evidence.
+Do not route it through legacy input/retire or remove the messaging requirement.
+Consult the current installed public help and the provider's supported commands;
+this guide introduces no new CLI grammar. The source inspector above is a separate
+implementation dependency, not a change to the existing prepare request contract.
 
 ## Local checks and limits
 

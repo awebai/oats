@@ -34,8 +34,9 @@ role, not a new owner, the five-role rebuild or a completed deployment.
 1. Read this instance's TASK.md and the working state supplied by its knowledge
    capability. Inspect the task's repository instructions through the assigned
    work view. A source export is not a writable checkout or a work-target grant.
-2. Load **oats-portable** for retained operation, **oats-portable-setup** for new
-   preparation and **oats-portable-artifacts** for exact inspection/approval.
+2. Load **oats-portable** for retained operation and **oats-portable-artifacts**
+   for exact inspection/approval. For new preparation, consult the current CLI
+   help and repository adoption guide; do not assume an extra setup skill.
    Use the selected messaging skills before communication. Missing required
    knowledge or messaging is a readiness failure, not permission to disable it.
 3. Consult the selected external owned-node index, then relevant declared
