@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 05:00Z · main `04e930e7` · **OATS v0.24.2 published** · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
+**Last update:** 2026-09-21 07:15Z · main `4c45b64e` · **OATS v0.24.3 published** · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + seven indexes + six imports · ✅ **0.24.2 published** (onboard verified from the npm tarball) · 🔄 Antares re-run requested · 🔄 five seams → L, 0.24.3 | lead, L, Antares | re-run report; seams PR |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + seven indexes + six imports · ✅ **0.24.3 published — all five second-operator seams fixed (PR36)**, seam 2 verified from the tarball · 🔄 Antares re-run on 0.24.3 requested | lead, Antares | re-run report → S2 exit gate verdict |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ aweb 1.11.0 released · ✅ **catalog + six editions pin v1.11.0 (0.24.2)** · ⬜ second-operator re-run | P, lead | Antares re-run |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |
@@ -33,7 +33,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ⬜ Fresh local deployment from the shared definition (P1.5) — the real acceptance gate.
 
 ## S2 — second-operator gate report (Antares, Juan's machine, 2026-09-20)
-Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → ready-for-preparation, membership eligible, source `souls/oats-kernel-expert@caa341f3`. `prepare` resolved and materialized `oats-package@caa341f3`, `oats.okf@v2.1.1`, `oats.aweb@v1.10.3`, `oats.core`, `oats.setup`, `oats.knowledge-theory` + soul; artifact-set approvals worked. Terminal: `needs-configuration` + `provider-not-qualified` (aweb 1.10.3 has no binding interface) — expected. Seams (assigned to L, one PR, priority):
+Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → ready-for-preparation, membership eligible, source `souls/oats-kernel-expert@caa341f3`. `prepare` resolved and materialized `oats-package@caa341f3`, `oats.okf@v2.1.1`, `oats.aweb@v1.10.3`, `oats.core`, `oats.setup`, `oats.knowledge-theory` + soul; artifact-set approvals worked. Terminal: `needs-configuration` + `provider-not-qualified` (aweb 1.10.3 has no binding interface) — expected. Seams — **all fixed in PR36 (913c4f9e), shipped in 0.24.3**:
 1. `inspect --request` requires `workTarget`; `prepare --request` refuses it (`buildFreshPreparationRequest` exists but the CLI never uses it).
 2. `prepare` on the absent deployment inspect blessed → raw `ENOENT` + host path through the JSON envelope.
 3. `prepare` writes lock v3; `oats trust <cap> --dir` rejects it (`unsupported lockfileVersion 3`) → dead end from `--help`.

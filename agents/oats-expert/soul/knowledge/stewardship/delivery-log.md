@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR36 five second-operator seams → OATS v0.24.3 (2026-09-21)
+- verdict: MERGED + PUBLISHED. Attribution by slot/capability/origins with kernel-fixed messages; no short-circuit across slots; typed v3 trust/absent-deployment holds; help; workTarget/emit-prepare-request. Focused 53/0 (lead), full 1640/0 (owner). Release run needed one flake rerun (maintenance.lock); snapshot walks now skip `.git`.
+- owner: L; fixtures from Juan's side (Antares); root-cause trace by L confirmed by P.
+- taught us: an independent operator's byte-identical failure pair can be CORRECT output for the input — trace the provider phase before demanding the outputs differ; the fix is specificity and attribution, never manufactured inequality. Byte-snapshot tests must skip `.git` internals (git background maintenance is not deterministic on CI).
+
 ## OATS v0.24.2 + oats.framework 1.1.1 + aweb 1.11.0 pins (2026-09-21)
 - verdict: PUBLISHED (npm 0.24.2 both packages; GitHub release; bump PR #37). Includes PR33 (launchSelection/OATS_CLI_BIN), PR34 (operator shape), PR35 (D3 `oats onboard`, full gate 1639/0), P's prestaged aweb pin patches, six workspace imports, baseline hygiene (goldens empty catalog; lazy ajv).
 - owner: L (D3, PR33), P (aweb 1.11.0, PR34, pin patches), M (S6 editions, docs), lead (wave integration, releases, live probes).
