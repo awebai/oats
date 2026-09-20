@@ -136,22 +136,22 @@ select reviewed compatible provider revisions and update the source pin delibera
 before claiming an operational pilot; metadata-only repository indexes change none
 of these runtime facts.
 
-Stage one used an empty imports list until source publication. Stage two is now
-committed: the five expertise imports pin **`caa341f34009e37006567419a983d5a743037a79`**,
-added by the later workspace commit `375b9f42`. The sixth, provider-independent
-setup import pins **`0aad753c5bc2cfb6338f69f8e4c37b123a068891`**; it is not a sixth
-knowledge owner. The older five imported definitions still require **aweb 1.10.3**,
-even though today's authored editions require 1.11.0. A catalog/kernel upgrade does
-not advance those source pins; a deliberate reviewed import update is needed to
-consume the newer requirements. No such repin follows from onboarding itself.
-Live source inspection resolved the five expert aliases as `ready-for-preparation`;
-that is metadata readiness, not binding, approval, enrollment or a running pilot.
+Stage one used an empty imports list until source publication. All six imports
+now pin **`3156e4de23a02b0de86a45b2471cb893cd8f75db`**, the released
+[OATS v0.24.3](release-notes/v0.24.3.md) source revision, through the later reviewed
+workspace update `638206b9`. The five knowledge-owning experts therefore select
+OKF2.1.1 and aweb1.11.0 with explicit core; setup remains provider-independent,
+requiring core/setup and defaulting all three fundamental layers to none. It is
+not a sixth knowledge owner. This deliberate repin, not a catalog/kernel upgrade
+alone, advances the selected source requirements. Successful source inspection,
+including `ready-for-preparation`, is still metadata readiness—not binding,
+approval, enrollment or a running pilot.
 
 ## Preserve source-before-import publication order
 
-1. Publish complete, reviewed source editions before pinning them. The five expert
-   imports use `caa341f34009e37006567419a983d5a743037a79`; setup uses its separate
-   published revision above. Future revisions must likewise exist before import.
+1. Publish complete, reviewed source editions before pinning them. All six imports
+   use `3156e4de23a02b0de86a45b2471cb893cd8f75db` (v0.24.3). Future revisions must
+   likewise exist before their import update.
    Never use an invented SHA, a mutable branch or an unreviewed local candidate
    as the accepted source.
 2. In each of the six repositories, review a root `oats.yaml` against its actual
@@ -178,12 +178,12 @@ that is metadata readiness, not binding, approval, enrollment or a running pilot
    imports:
      - source: git:github.com/awebai/oats
        soul: souls/oats-expert
-       revision: caa341f34009e37006567419a983d5a743037a79
+       revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
        alias: oats-expert
    ```
 
-   The [actual workspace](../oats-workspace.yaml) contains those five expert imports
-   and the setup import at its separate revision; this excerpt is not the full list.
+   The [actual workspace](../oats-workspace.yaml) contains all six imports at that
+   same revision; this excerpt is not the full list.
    The layout test checks all six imports and source-document declarations. Do not
    change stable export paths or owners merely because the workspace advances.
 4. Qualify reciprocal admission at the now-published observations. A missing
