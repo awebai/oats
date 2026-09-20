@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Redesign wave: PR23, PR24, PR26 + four member indexes (2026-09-20)
+- verdict: MERGED all. PR23 (M) metadata/source edition, layout 5/5. PR24 (L) full gate 1621/0; `inspect --request` accepted as public inspection route, not parked. PR26 (M) marketplace policy, validate 396 links, catalog reader unaffected. Member-index PRs oats-okf#3/aweb#1/authoring#1/jira#1: one 6-line root `oats.yaml` each, pushed by M, merged by lead.
+- owner: M (migration-peer), L (lifecycle-peer); lead pushed nothing on M's behalf — the two remaining repos need account access, not a workaround.
+- taught us: when the lead is the bottleneck, the queue must be worked in risk order (metadata → docs → kernel) with focused gates plus one full gate for kernel changes, and new lanes assigned the moment their files stop overlapping open PRs. `gh pr review --approve` refuses on own-account PRs when the author shares the account; comment + merge is the working path.
+
 ## Distribution direction: oats.core / oats.setup / official marketplace (2026-09-20)
 - verdict: ACCEPTED direction, recorded as decision + plan work packages D1–D4; implementation not assigned yet (await integration of open phase1 PRs to avoid `lib/core.mjs`/skills overlap).
 - key rule: `oats.core` is written into each soul definition at creation, visible and removable — the kernel does not add it by magic. `instance-boundary` remains kernel.
