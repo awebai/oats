@@ -11,9 +11,11 @@ description: >-
 # Workspace and source-complete setup
 
 Distilled from the existing workspace-adoption guide and accepted preparation
-flow. Command baseline: **OATS 0.24.0**. This is the `oats.setup` capability's
-procedure, not a new kernel setup command or a recreation of the removed kernel
-setup skill. Ask before writes, acquisition, approval, enrollment or spawning.
+flow. Preparation/execution baseline: **OATS 0.24.0**; the read-only source
+inspection step below requires the later merged implementation named there.
+This is the `oats.setup` capability's procedure, not a new kernel setup command
+or a recreation of the removed kernel setup skill. Ask before writes,
+acquisition, approval, enrollment or spawning.
 
 ## 1. Agree what is shared and what remains local
 
@@ -79,7 +81,39 @@ Official capability discovery uses the reviewed catalog in the oats repository.
 New entries need actual published package revisions; discovery is not installation
 or executable trust. Do not promise install-by-ID before a catalog entry exists.
 
-## 4. Gather the complete nonsecret preparation input
+## 4. Inspect source metadata, then author the preparation input
+
+The read-only source inspector is implemented by merged PR24, framework commit
+`da38e5a9646b6fc83593a0df95a70d24ed4324ec`. Use a reviewed CLI containing that
+implementation (or a later release that includes it), not merely a CLI satisfying
+this capability's version floor. The **original 0.24.0 release** lacks this route
+and can ignore the request flag and consult ambient classic configuration.
+
+```sh
+oats inspect --request /absolute/inspection.json --json
+```
+
+Its authored inspection input uses `deployment`, `workTarget`, `source` and
+`origin`, plus explicit `workspace` (and optional `member` / `catalogIndexes`)
+or `standaloneContextKey`. Source can be an advertised workspace alias or the
+full `{source,soul,revision,alias}` reference. Workspace/member requests carry
+their own existing origins and still require matching reciprocal observations;
+standalone adoption does not inherit the publisher's workspace. Do not combine
+this request mode with current-context flags or captured selectors.
+
+The result is **non-authorizing metadata**, not a preparation request or issued
+fresh-mutation witness. `ok: true` may report `needs-configuration` or
+`separate-deployment-required`; even `ready-for-preparation` confers no approval,
+enrollment or provider readiness. Opaque provider payloads/adoption values are
+omitted, and `source.reference` is not returned as reusable mutation input.
+Keep the original authored inputs. Inspection owns transient repository scratch
+but writes no deployment state and runs no provider codec, hook or native runtime.
+It does not lock paths against later changes. Preparation retains its own
+validation/custody rules.
+
+If using the original 0.24.0 CLI, omit this unavailable inspection convenience
+and use the existing explicit preparation stages below; do not invoke classic
+inspection as a portable fallback or treat it as a fresh preparation witness.
 
 Use a fresh explicit physical deployment/home where existing managed state
 conflicts. Missing paths need approved operator provisioning, not automatic repair.
@@ -142,10 +176,10 @@ native start/custody details, **oats-packages** for exact approvals, and
 **oats-config** only for deliberately classic compatibility settings.
 
 There is no `oats workspace init` or `oats workspace adopt` in this baseline.
-Do not use the proposed `oats inspect --request` on released0.24: that route can
-ignore the request and consult ambient classic config. No such source-inspection
-command is required by the stages above; use only a reviewed CLI that actually
-implements any later surface and its documented input/result contract.
+The read-only inspector above is a separate, version-scoped observation route;
+its result and its `workTarget` / catalog wrapper are not valid substitutes for
+the original complete typed preparation request. Missing inputs are not filled
+from ambient config, old captured selectors or metadata-only output.
 
 ## 6. Report limits, not a false ready state
 
