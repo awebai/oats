@@ -26,6 +26,26 @@ owner registry belongs in the public workspace. The uninitialized phase-2 knowle
 repository is not advertised as a ready knowledge export. Preserve the parked
 roster/curation and every old home, lock, source, pending job, history and worktree.
 
+## Planned onboarding: OATS Soul Setup (D3)
+
+**Not shipped in OATS 0.24.** The planned onboarding flow creates and instantiates
+`oats-setup-expert`, declaring both `oats.core` and `oats.setup` from the
+[official marketplace](official-marketplace.md). Their package releases and this
+onboarding flow are future work, not existing catalog entries or a new command
+introduced by this guide.
+
+- The setup expert will help the operator adopt repositories, select capabilities
+  and carry out the normal prepare/approve/scaffold/start steps. It bypasses no
+  executable approval, provider readiness, identity or permission boundary.
+- Every soul created by that flow will declare `requires.capabilities.oats.core`
+  and its source explicitly. The operator can remove or replace that dependency
+  by editing the authored definition, not a captured record; the kernel will not
+  silently reinsert an absent one.
+- The CLI/Desktop entry point remains separately implemented and reviewed. Do not
+  invent a workspace init/adopt command, create a setup soul from this sketch, or
+  treat a planned package as installed. Existing instances and retained resources
+  are not rewritten by the plan.
+
 ## What this first source commit establishes
 
 - `oats-workspace.yaml` explicitly admits `oats` and the six intended capability
