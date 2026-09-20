@@ -19,6 +19,13 @@ version pins (`release-packaging`, `workspace-repository-layout`,
 
 # Rule
 
+- A catalog ref bump for a bundled capability (`capabilities/<id>/` copies of
+  `oats.okf`, `oats.aweb`) is not complete until the bundled copy is byte-synced
+  to the newly pinned payload — `test/capabilities.test.mjs` "bundled
+  capabilities carry the versions package-catalog.json pins" enforces the
+  version, and the clean-room smoke uses the copy as the official payload. The
+  0.24.2 cut was recut once for exactly this after the aweb 1.11.0 pin.
+
 - Before committing any version/ref bump: `rg -n "<old-version>"` across the
   WHOLE repo (`test/`, `scripts/` — the clean-room smoke pins the mirrored OKF
   version too —, `docs/`, `README.md`, mirrors, CI workflows), and update every
