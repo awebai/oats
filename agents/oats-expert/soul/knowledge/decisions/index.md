@@ -1,5 +1,6 @@
 # Decisions
 
+* [Kernel skills become official capabilities — oats.core, oats.setup and the reviewed official marketplace](official-capabilities-oats-core-setup-and-marketplace.md) - Operational skills ship as oats.core (explicit default on every soul, removable) and oats.setup (held by an onboarding-created oats-setup-expert); the oats repository's reviewed package list is the official marketplace, seeded with the fundamentals.
 * [Git workspace composition separate from development capability packaging](git-workspace-versus-development-package.md) - Use a Git-backed workspace definition for shared team composition while keeping reusable development behavior and legacy package compatibility separate.
 * [Proposed bounded knowledge alignment before expert cutover](knowledge-alignment-before-expert-cutover.md) - Align the generic boundary and default knowledge capability with the accepted expertise model, then qualify a curated five-role knowledge cutover without waiting for every alternative or future mechanism.
 * [Claude Code and Codex use normal native launch with explicit permission bypass](claude-codex-native-launch.md) - Claude Code and Codex retain ordinary native context, skills and permission behavior; OATS adds bypass flags only for an explicit user opt-in.

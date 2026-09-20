@@ -22,6 +22,16 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Distribution direction: oats.core / oats.setup / official marketplace (2026-09-20)
+- verdict: ACCEPTED direction, recorded as decision + plan work packages D1–D4; implementation not assigned yet (await integration of open phase1 PRs to avoid `lib/core.mjs`/skills overlap).
+- key rule: `oats.core` is written into each soul definition at creation, visible and removable — the kernel does not add it by magic. `instance-boundary` remains kernel.
+- taught us: when a shipped mechanism already exists (`officialPackageCatalog()`), the decision is to name and govern it, not to build a parallel registry.
+
+## Adoption-first runtime necessity gate (2026-09-20)
+- verdict: HOLD speculative runtime expansion; continue declarations and existing-path validation. Read the current kernel WIP: its new inspection command/wrapper is a new convenience surface, not yet evidence that the released preparation/adoption route is broken. Preserve it separately pending necessity, rather than making a newly written test define an unapproved requirement.
+- provider finding: the released aweb1.10.3 manifest lacks the binding interface that the captured broker requires. The in-progress codec/check draft still always refuses native readiness, so it cannot be accepted as completing messaging adoption. Request the minimum real code/input/authority gap and usable path before widening the change. No runtime or provider delta integrated.
+- taught us: assign adoption outcomes, not presumed code changes. Separate shipped architecture, missing provider adaptation, missing operator inputs and optional usability work; successful declaration parsing or a better refusal is not completed deployment.
+
 ## Human implementation GO; independent Phase1 lanes assigned (2026-09-20)
 - verdict: IMPLEMENTATION AUTHORISED for the approved framework-hosted workspace plan, using existing developers with lead review/integration. Workspace/source metadata, kernel/public-flow behavior and canonical provider readiness have separate file ownership; other-repository metadata is root-index-only to avoid provider collisions.
 - scope: phase1 includes a parallel existing-role edition at `souls/oats-expert/` with preserved owner/read routing, not the five-role/corpus cutover or an operator-root helper API. Exact source publication comes before import pinning. Developer feature branches/PRs are reviewed; main/release/deployment actions stay coordinated by the lead.

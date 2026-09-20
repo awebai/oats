@@ -10,6 +10,8 @@
 2. Centralise the curated knowledge and adopt the five expertise souls on that foundation.
 3. Complete Desktop design/feature parity against the resulting supported flows.
 
+A distribution work package (below, D1–D4) accompanies phase1: the kernel's operational skills become the official capabilities `oats.core` and `oats.setup`, every soul declares `oats.core` explicitly by default, onboarding creates an `oats-setup-expert`, and the official marketplace is the reviewed list in this repository.
+
 The second phase does not run as an unrelated bulk migration while the first is still changing underneath it. Necessary generic knowledge/provider boundary fixes belong in phase1; default OKF behavior and the actual corpus/roster cutover belong in phase2.
 
 ## Target arrangement
@@ -18,7 +20,7 @@ Approved repository responsibilities following the framework-hosted workspace ch
 
 | Repository | Role in the new setup |
 |---|---|
-| `oats` | Kernel, adapters, Desktop and portable soul exports through `oats.yaml`; also hosts the shared development workspace in `oats-workspace.yaml` |
+| `oats` | Kernel, adapters, Desktop and portable soul exports through `oats.yaml`; hosts the shared development workspace in `oats-workspace.yaml`; ships the official capabilities `oats.core` and `oats.setup` and the reviewed official package list (`package-catalog.json`) |
 | `oats-dev` | Reusable OATS development capabilities, including selected review skills/behavior; no longer responsible for defining the new workspace through a package template |
 | `oats-okf` | Reference knowledge capability and its complete reading/capture/judgment/delivery behavior |
 | `oats-aweb` | Messaging capability and its provider-owned identity/team/wake behavior |
@@ -92,6 +94,8 @@ Coordinate publication of backlinks and workspace admission. One side alone is n
 
 **Owner:** kernel/lifecycle owner and the owners of the selected capabilities.
 
+This is **adoption and validation first**, not a mandate to write new runtime code. Exercise the already shipped paths with correct declarations and inputs before changing them. A new inspection convenience is not automatically an adoption blocker; preserve it as a separate proposal unless necessity is demonstrated. Provider adaptation must identify the minimum usable completion path, not merely replace one refusal with a later refusal.
+
 Close only demonstrated gaps needed by the chosen workspace/profile:
 
 - Public inspection/preparation, explicit artifact approval, retained resolution, scaffold and native start through supported CLI/API paths.
@@ -123,6 +127,60 @@ New package defaults or executable changes require appropriate release/pinning/a
 The shared workspace and repository declarations are published and discoverable; a fresh deployment can select a real portable source and complete the supported prepare/approve/scaffold/start path with its declared requirements. Required lifecycle/provider limitations are resolved or explicitly constrain the qualified profile. Both operators understand the same shared definition and their own local differences. Old live deployments remain preserved.
 
 **Seven YAML files alone do not satisfy this gate.** Nor does an isolated fixture establish production provider readiness. No claim that the five new knowledge-backed experts are adopted is made yet.
+
+# Distribution — official capabilities and the official marketplace
+
+**Status:** direction accepted by the human on 2026-09-20 (decision `agents/oats-expert/soul/knowledge/decisions/official-capabilities-oats-core-setup-and-marketplace.md`). Runs alongside phase1 once the current lanes' PRs are integrated; it changes how OATS itself is distributed and must be in place before phase2 souls are published, since those souls declare their capabilities explicitly.
+
+Today the skills that teach an agent to operate OATS (`oats`, `oats-config`, `oats-packages`) and the "you run on OATS" injection are ambient kernel content. Under Portable Souls a soul declares its capabilities and their sources, so this knowledge must be packaged as capabilities a soul can declare, remove or replace.
+
+## D1 — package `oats.core` and `oats.setup` from the oats repository
+
+**Owner:** capability/provider owner (packaging), reviewed by the integration lead.
+
+- `oats.core` — day-to-day operation, present on every soul by default: skill `oats-operate` (status, spawn, retire, doctor, lifecycle, instance layout) and skill `oats-souls` (soul discovery, spawn relations/linkage, roster, workspace-member souls), plus the former `injects/oats.md` injection.
+- `oats.setup` — deployment and workspace configuration ("OATS Soul Setup"): the former `oats-config` and `oats-packages` skills, workspace adoption guidance and package acquisition/trust/lock knowledge.
+- Both live under the framework's `oats-package/capabilities/` beside `oats-knowledge-theory`, are exported through the repository package manifest and `oats.yaml`, and are versioned/locked like any package. Content is moved from the existing skills, not re-authored; stale claims are corrected in the move.
+- The `instance-boundary` injection, work-mode briefings and config-declared injections **stay kernel-owned** — they describe the layout the kernel itself creates.
+
+**Deliverable:** two installable capabilities with manifests and focused inventory tests; the kernel unchanged except for registering nothing new.
+
+## D2 — explicit default `oats.core` on every soul; kernel skills de-ambiented
+
+**Owner:** kernel/lifecycle owner.
+
+- Every soul-creation path (CLI, Desktop, setup guidance) writes `requires.capabilities.oats.core` with its source into the soul definition. It is visible in the file and the user can remove it.
+- The kernel does **not** inject `oats.core` when absent; `oats doctor` reports a soul that has neither `oats.core` nor a deliberate opt-out note, as information, not an error.
+- The hard-coded kernel skill list and the `kernel:oats` injection are retired once souls carry `oats.core`. Transition: both coexist for one release, with existing kernel-listed skills marked deprecated in favor of the capability.
+- Existing checked-in souls in this repository are updated to declare `oats.core` explicitly as part of the same change.
+
+**Deliverable:** soul definitions are honest about OATS operational knowledge; no hidden kernel dependency.
+
+## D3 — onboarding creates and instantiates `oats-setup-expert`
+
+**Owner:** kernel/lifecycle owner, with the workspace/source owner for the soul edition.
+
+- Onboarding a new workspace (or a fresh deployment of one) produces a soul `oats-setup-expert` whose definition declares **both** `oats.core` and `oats.setup`, prepares/approves its artifacts under the normal approval bar, and instantiates it.
+- The setup expert then drives adoption: declaring/adopting member repositories, selecting fundamental-layer capabilities, creating further souls (each with explicit `oats.core`), and walking the operator through trust/approval steps. Setup becomes a conversation with a competent soul, not a wall of flags.
+- No new bootstrap authority: prepare/approve/scaffold/start remain the shipped path; onboarding only chooses the first soul and its capabilities. The entry point (CLI verb, Desktop flow, or both) and its relation to the version-scoped `oats init`/`oats use` compatibility path is proposed and reviewed separately; do not document a command before it exists.
+- The soul edition itself is source-complete and exported from the oats repository like the other framework souls.
+
+**Deliverable:** one reproducible path from "empty workspace" to a running `oats-setup-expert` that can configure the rest.
+
+## D4 — the official marketplace is the reviewed list in the oats repository
+
+**Owner:** workspace/source owner (list and docs); Desktop owner for the view in the parity phase.
+
+- `package-catalog.json` in `awebai/oats` (read today by `officialPackageCatalog()`) **is** the official marketplace. Listing = official. Do not build a second registry.
+- Officialness is granted by a reviewed PR to that file — for external packages too. That review is the safety gate: we control what is called official even when we do not host the code. Document the acceptance criteria (source-complete package, pinned immutable ref, payload root, trust posture, maintainer contact).
+- First entries: `oats.core`, `oats.setup`, `oats.okf`, `oats.aweb`, `oats.authoring`, `oats.jira`, `oats.linear`, `oats.dev`, `oats.knowledge-theory` (the fundamentals are already listed; add the two new ones once released).
+- Discovery is universal (CLI and Desktop marketplace view/search present official packages as assignable to a soul); installation still goes through acquisition, lock and per-capability executable trust. Discoverable is not installed; installed is not approved.
+
+**Deliverable:** documented official-list policy and seeded list; Desktop view tracked under phase3 parity.
+
+### Distribution exit gate
+
+A fresh workspace onboarding yields an `oats-setup-expert` whose definition shows `oats.core` and `oats.setup` resolved from the official list; a soul created by that expert shows `oats.core` explicitly and still runs after the user removes it; the kernel ships no ambient operational skill. Framework souls in this repository declare `oats.core`.
 
 # Phase 2 — centralise knowledge and adopt the five expert souls
 
@@ -200,6 +258,8 @@ The initial implementation lanes are deliberately disjoint:
 | Kernel/onboarding | Public preparation/lifecycle glue, same-repository workspace regression coverage and portable-setup skill | Root workspace/member indexes, soul editions, provider payloads, record optimisation |
 | Capability/provider readiness | Canonical OKF/aweb payloads, manifests, skills/docs/tests and actual profile-readiness facts | Kernel/record, root member indexes, soul editions, framework mirrors/catalog |
 | Integration lead | Scope/interface arbitration, exact review/integration, shared stewardship, release coordination and combined deployment acceptance | Unilateral changes to another operator's credentials, identity or local deployment |
+
+Distribution lanes (D1–D4) map onto the same owners: capability/provider readiness packages the two capabilities (D1); kernel/onboarding owns the explicit default, kernel de-ambienting and the setup-expert onboarding (D2, D3); workspace/source declarations own the official list and its policy docs (D4). They are assigned only after the current phase1 PRs are integrated, to avoid overlapping edits in `lib/core.mjs` and the skills tree.
 
 The phase1 transitional source is an edition of the existing overall expert, not the full five-role rebuild or an invented bootstrap owner. Source publication precedes workspace import pinning to its actual approved revision. An owner reports a precise cross-lane seam rather than patching another lane's files. No new review agents or per-edit permission loops are required for agreed work.
 
