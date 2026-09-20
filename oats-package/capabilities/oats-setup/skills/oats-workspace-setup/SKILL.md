@@ -131,7 +131,7 @@ OATS selectors/current classic config.
 For the chosen profile supply all required capabilities, exact runtime/model and
 native permission intent, explicit backend endpoint, and provider-owned bindings:
 
-- OKF 2.1.0 supports logical inheritance such as `inherit: stores.oats`, mapped to
+- OKF 2.1.x supports logical inheritance such as `inherit: stores.oats`, mapped to
   `/bindings/knowledge/stores/oats`. An explicit ownership `destination: oats`
   uses that store; omitting destination intentionally requires `write.default`.
   Supply the actual store locator, accepted owned/read nodes, absolute host-owned
@@ -186,10 +186,12 @@ from ambient config, old captured selectors or metadata-only output.
 Released **oats-aweb capability 1.10.3** lacks the portable binding interface;
 correct metadata alone cannot make a messaging-required pilot operational.
 A codec-only candidate with an unconditional readiness refusal is not a completed
-native adapter. Published **OKF 2.1.0** captured-worker selection is strict Pi,
-explicit-model and sole-OKF; unreviewed ordinary-profile changes do not qualify
-an enriched Pi profile. Never remove a required provider or silently change the
-runtime/model to fit a simpler fixture.
+native adapter. Published **OKF 2.1.1** additionally accepts retained ordinary
+Claude/Codex helper choices, including native-default model intent, with the
+complete approved capability closure. Pi still requires an explicit model and
+the sole-OKF helper profile; this release does not qualify enriched Pi messaging.
+Never remove a required provider or silently change the runtime/model to fit a
+simpler fixture.
 
 A scaffold materializes resources and may run approved required hooks. It is not
 a model session, message exchange or worker completion. Session registration or
