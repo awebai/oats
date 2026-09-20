@@ -36,6 +36,20 @@ operator's identity, and the error landed on the *innocent* slot.
    operator-chosen, so a literal list cannot express them. No other pattern
    syntax. Providers without the field are treated as owning only what they
    consume; the kernel cannot filter for them.
+2a. **Two kinds of owned key, both honest.** A provider owns (i) the fixed
+   keys and namespaces its code consumes regardless of source — declared in
+   `binding.keys` — and (ii) addresses the *source* names and the provider
+   consumes because the source requires them (OKF's `inherit` addresses
+   such as `custom.location`, which the soul chooses). Kind (ii) is not
+   declarable in a manifest and is never guessed with a wildcard: it is
+   already visible to the kernel as the provider's normalized requirement
+   and candidate keys. The future kernel filter therefore forwards the
+   union of the manifest declaration and the provider's own normalized
+   requirement/candidate keys — which is exactly the provider-side rule OKF
+   2.1.2 implements. Declarations: OKF `["stores.", "write.default"]`;
+   aweb `["responsibleHuman", "privateTeam", "wider"]` (workspace and
+   adoption team aliases come from `teams`/`teamAliases` documents, not
+   `operator.bindings`, so they are not operator keys).
 2b. **Ownership is unique, and the kernel enforces it.** If two selected
    providers claim the same key or overlapping namespaces, preparation is
    refused at composition time with a typed problem naming both
