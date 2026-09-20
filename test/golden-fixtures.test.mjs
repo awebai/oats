@@ -371,7 +371,11 @@ exit 0
     GIT_AUTHOR_NAME: "Golden", GIT_AUTHOR_EMAIL: "golden@example.invalid",
     GIT_COMMITTER_NAME: "Golden", GIT_COMMITTER_EMAIL: "golden@example.invalid",
   });
-  delete env.OATS_PACKAGE_CATALOG; // empty catalog: nothing can reach the network
+  // A genuinely EMPTY catalog: nothing can reach the network, and soul creation cannot
+  // resolve oats.core, so the goldens keep exercising the legacy ambient-skill composition.
+  const emptyCatalog = join(HERMETIC_HOME, "empty-package-catalog.json");
+  write(emptyCatalog, JSON.stringify({ packages: {}, capabilities: {} }));
+  env.OATS_PACKAGE_CATALOG = emptyCatalog;
   delete env.PI_AGENTS_ROOT;
 
   const git = (...argv) => execFileSync("git", ["-C", repo, ...argv], { env, stdio: ["ignore", "pipe", "pipe"] });

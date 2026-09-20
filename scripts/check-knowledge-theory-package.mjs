@@ -2,8 +2,7 @@
 // Canonical docs -> optional Git package curriculum. No deployment/config effects.
 // This is a complete source-payload gate, not an npm regular-file subset gate.
 import assert from "node:assert/strict";
-import Ajv2020 from "ajv/dist/2020.js";
-import { parse as parseYaml } from "yaml";
+import { createRequire } from "node:module";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,9 +11,18 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CAPABILITY_PATH = "capabilities/oats-knowledge-theory";
 export const DISTRIBUTION_PACKAGE_ID = "oats.framework";
 export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup"];
-const validateCapability = new Ajv2020({ allErrors: true, strict: false }).compile(
-  JSON.parse(readFileSync(join(REPO_ROOT, "docs/capability-manifest.schema.json"), "utf8")),
-);
+// Dev-only validators load lazily so syntax-only checks (release lane, --syntax-only)
+// work in a checkout without node_modules; a missing dependency then fails only
+// the manifest/frontmatter checks that actually need it.
+const require = createRequire(import.meta.url);
+let capabilityValidator, yamlParser;
+function validateCapability(value) {
+  capabilityValidator ??= new (require("ajv/dist/2020.js"))({ allErrors: true, strict: false }).compile(
+    JSON.parse(readFileSync(join(REPO_ROOT, "docs/capability-manifest.schema.json"), "utf8")),
+  );
+  const ok = capabilityValidator(value); validateCapability.errors = capabilityValidator.errors; return ok;
+}
+function parseYaml(text) { yamlParser ??= require("yaml").parse; return yamlParser(text); }
 export const SKILL_PATH = "skills/knowledge-capability-authoring";
 export const EXPERT_PATH = "agents/knowledge-theory-expert";
 
