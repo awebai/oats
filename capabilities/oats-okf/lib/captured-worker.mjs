@@ -61,11 +61,19 @@ export function validateWorkerSelection(source,context,request,inspected){
   if(h?.key!==CAPTURED_WORKER_KEY||h.name!=='memory-harvest'||subject?.kind!=='helper'||subject.name!==h.name||subject.provider?.kind!=='capability'||subject.provider.capability!=='oats.okf'||!same(subject.provider,subject.definition?.owner))fail('E_CAPTURED_HELPER','wrong qualified helper identity');
   const api={schemaVersion:1,api:{contract:'oats.captured-session',version:2,available:true,backends:['tmux','herdr']},readiness:{status:'not-checked'}};
   if(!same(selected.launch,api)||!same(inspected.nativeSession,api))fail('E_CAPTURED_HELPER','unknown captured native public API');
-  // Exact retained model/runtime data is required; API availability alone is
-  // never qualification. Missing public selection stays closed, no private read.
+  // Preserve the exact retained selection. Ordinary Claude/Codex may select
+  // null to use their own native model configuration; Pi's strict SDK slice
+  // still needs an explicit model and its previously qualified sole-OKF profile.
+  // API availability/approval is NOT native readiness. The unchanged public
+  // scaffold/start path enforces the entire retained resource/hook closure.
   const launch=selected.launchSelection;
-  if(!obj(launch)||launch.runtime!==source.execution.runtime||launch.runtime!=='pi'||typeof launch.model!=='string'||!launch.model.trim()||(source.execution.model!==null&&launch.model!==source.execution.model))fail('E_CAPTURED_HELPER','retained helper launch runtime/model missing or mismatched');
-  if(!Array.isArray(inspected.capabilities)||inspected.capabilities.length!==1||inspected.capabilities[0].id!=='oats.okf'||inspected.capabilities[0].approval!=='approved')fail('E_CAPTURED_HELPER','only the exact approved default-OKF helper profile is qualified in this slice');
+  if(!obj(launch)||launch.runtime!==source.execution.runtime||!['pi','claude','codex'].includes(launch.runtime)
+    || !(launch.model===null?launch.runtime!=='pi':typeof launch.model==='string'&&!!launch.model.trim())
+    || (source.execution.model!==null&&launch.model!==source.execution.model))fail('E_CAPTURED_HELPER','retained helper launch runtime/model missing or mismatched');
+  const capabilities=inspected.capabilities;
+  if(!Array.isArray(capabilities)||!capabilities.length||capabilities.some(c=>!obj(c)||typeof c.id!=='string'||!/^(?:@?[a-z0-9][a-z0-9._-]*[./])[a-z0-9][a-z0-9._/-]*$/.test(c.id)||!['approved','not-required'].includes(c.approval))
+    || new Set(capabilities.map(c=>c.id)).size!==capabilities.length||!capabilities.some(c=>c.id==='oats.okf'&&c.approval==='approved'))fail('E_CAPTURED_HELPER','complete selected helper capability closure requires current approval');
+  if(launch.runtime==='pi'&&capabilities.length!==1)fail('E_CAPTURED_HELPER','enriched strict-Pi helper profile is not qualified; required capabilities were not removed');
   if(binding(selected.executionBinding).deployment!==source.executionBinding.deployment||!same(inspected.resolution,selected.executionBinding.resolution))fail('E_CAPTURED_HELPER','helper inspection resolution/deployment differs');
   return {schemaVersion:1,sourceBinding:JSON.parse(JSON.stringify(source.executionBinding)),helperBinding:JSON.parse(JSON.stringify(selected.executionBinding)),helper:JSON.parse(JSON.stringify(h)),request,requestHash:hash(request),sourceIntent:JSON.parse(JSON.stringify(context.intent)),sourceIncarnationId:context.instance.incarnationId,launchSelection:JSON.parse(JSON.stringify(launch))};
 }
