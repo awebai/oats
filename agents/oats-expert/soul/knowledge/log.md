@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-20
+* **Creation**: [Proposed Git workspace composition separate from development capability packaging](/decisions/git-workspace-versus-development-package.md) distinguishes the shipped workspace declaration/admission contracts from the legacy development package's template and review behavior. Reusing the official development repository is recommended without breaking old restores or silently moving source identities; implementation/adoption remains proposed.
 * **Creation**: [Proposed bounded knowledge alignment before expert cutover](/decisions/knowledge-alignment-before-expert-cutover.md) recommends an evidence-based boundary/provider alignment phase, then the curated five-role Git knowledge cutover, without making unimplemented alternatives or automatic restructuring prerequisites. Human priority/scope review and concrete deployment/source/publication choices remain outstanding.
 * **Fix**: The redesign lead assignment and commit `78dcc16b` occurred on September20, not the carried September19 heading below. [Repo state](/stewardship/repo-state.md) now uses the verified date; [delivery history](/stewardship/delivery-log.md) preserves the original entry and records this correction. No change to the approved coordination scope.
 
