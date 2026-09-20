@@ -12,22 +12,36 @@ test('binding phases reuse owned executable commands and introduce no implicit p
   assert.equal(validateBindingInterface(manifest),manifest.binding);
   assert.equal(hasExecutableSurface(manifest),true);
 });
-test('binding reason declarations agree with the published schema and explicit empty overrides compatibility reasons', () => {
+test('binding reason declarations enforce the pinned count, length and literal bounds in schema and runtime', () => {
   const base={capability:'oats.aweb',version:'1.11.0',description:'Inert manifest',layer:'messaging',commands:{binding:'binding.mjs'},binding:{version:1,normalize:'binding',bind:'binding',check:'binding'}};
   const validate=new Ajv2020({strict:false,allowUnionTypes:true}).compile(JSON.parse(readFileSync(new URL('../docs/capability-manifest.schema.json',import.meta.url),'utf8')));
-  for(const reasons of [[],['fixed safe reason'],['fixed café reason','another fixed reason']]) {
+  for(const reasons of [['fixed safe reason'],['fixed reason','another fixed reason'],['x'.repeat(200)],Array.from({length:64},(_,i)=>`fixed reason ${i}`)]) {
     const manifest={...base,binding:{...base.binding,reasons}};
     assert.equal(validate(manifest),true,JSON.stringify(validate.errors));
     assert.equal(validateBindingInterface(manifest),manifest.binding);
     assert.deepEqual(providerReasons(manifest),reasons);
   }
-  for(const reasons of [null,'not an array',[1],[''],['duplicate','duplicate'],['line\nbreak'],['control\u001bescape']]) {
+  for(const reasons of [null,'not an array',[],[1],[''],['duplicate','duplicate'],['line\nbreak'],['trailing\n'],['control\u001bescape'],['non-ASCII café'],['x'.repeat(201)],['{fixed}'],['${operator}'],Array.from({length:65},(_,i)=>`fixed reason ${i}`)]) {
     const manifest={...base,binding:{...base.binding,reasons}};
     assert.equal(validate(manifest),false,JSON.stringify(reasons));
     assert.throws(()=>validateBindingInterface(manifest),{code:'invalid-declaration'});
   }
   assert.deepEqual(providerReasons({capability:'unknown.provider'}),[]);
   assert.deepEqual(providerReasons({capability:'__proto__'}),[]);
+});
+
+test('binding.keys accepts unique exact or trailing-dot declarations but does not enable routing enforcement',()=>{
+  const base={capability:'example.provider',version:'1.0.0',description:'Inert provider',layer:'knowledge',commands:{binding:'binding.mjs'},binding:{version:1,normalize:'binding',bind:'binding',check:'binding'}};
+  const validate=new Ajv2020({strict:false,allowUnionTypes:true}).compile(JSON.parse(readFileSync(new URL('../docs/capability-manifest.schema.json',import.meta.url),'utf8')));
+  for(const keys of [[],['wider'],['stores.','write.','responsibleHuman']]) {
+    const manifest={...base,binding:{...base.binding,keys}};
+    assert.equal(validate(manifest),true,JSON.stringify(validate.errors)); assert.equal(validateBindingInterface(manifest),manifest.binding);
+    assert.deepEqual(providerReasons(manifest),[], 'key declarations never authorize diagnostic text');
+  }
+  for(const keys of [null,'wider',[1],[''],['wider','wider'],['stores.*'],['stores..'],['stores.oats'],['.'],['wide r'],['wider\n']]) {
+    const manifest={...base,binding:{...base.binding,keys}};
+    assert.equal(validate(manifest),false,JSON.stringify(keys)); assert.throws(()=>validateBindingInterface(manifest),{code:'invalid-declaration'});
+  }
 });
 
 test('binding declarations refuse missing commands, wrong owner slot, unknown fields and versions', () => {

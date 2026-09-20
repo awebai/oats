@@ -154,11 +154,12 @@ function refusingMessaging(f, reasons) {
   index.exports.packages.push({ path: "packages/messaging" }); write(indexFile, index);
   write(join(f.repo, "packages/messaging/oats-package.json"), { package: "fixture.messaging", version: "1.0.0", description: "Inert messaging reason fixture, not released aweb", compatibility: { oats: ">=0.24.0" }, capabilities: ["cap"] });
   write(join(f.repo, "packages/messaging/cap/oats.json"), { capability: "oats.aweb", version: "1.11.0", description: "Inert codec only", layer: "messaging",
-    commands: { phase: "phase.mjs" }, binding: { version: 1, normalize: "phase", bind: "phase", check: "phase", ...(reasons === undefined ? {} : { reasons }) } });
+    commands: { phase: "phase.mjs" }, binding: { version: 1, normalize: "phase", bind: "phase", check: "phase", keys: ["diagnostic"], ...(reasons === undefined ? {} : { reasons }) } });
   write(join(f.repo, "packages/messaging/cap/phase.mjs"), `import {readFileSync,appendFileSync} from 'node:fs';
 const r=JSON.parse(readFileSync(0,'utf8'));appendFileSync(${JSON.stringify(f.phaseLog)},'messaging '+r.phase+'\\n');
 if(r.input.declarations.find(d=>d.kind==='workspace')?.value.teams?.private==='per-human')throw Error('fixture must reproduce a missing private policy');
 const op=r.input.declarations.find(d=>d.kind==='operator'),message=op?.value.bindings?.diagnostic;
+if(!Object.hasOwn(op.value.bindings,'stores.oats'))throw Error('0.24.4 validates keys shape only; foreign values remain forwarded and ignored');
 console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:false,error:{code:'needs-configuration',...(message===null?{}:{message:message??'messaging workspace must declare private: per-human'})}}));\n`);
   f.git("add", "."); f.git("commit", "--quiet", "-m", "inert provider reason transport");
 }
