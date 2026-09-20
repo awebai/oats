@@ -12,6 +12,8 @@ import {
 } from "../scripts/check-knowledge-theory-package.mjs";
 
 const PACKAGE_ROOT = join(REPO_ROOT, "oats-package");
+const PACKAGE_META = JSON.parse(readFileSync(join(PACKAGE_ROOT, "oats-package.json"), "utf8"));
+const PACKAGE_CAPABILITIES = ["oats.knowledge-theory", "oats.core", "oats.setup"];
 const CAP_ROOT = join(PACKAGE_ROOT, CAPABILITY_PATH);
 const THIS_FILE = fileURLToPath(import.meta.url);
 function write(file, body) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, body); }
@@ -71,9 +73,11 @@ async function installedFixture() {
   const core = await import("@awebai/oats");
   const source = copyPackage(base);
   const sourceManifest = core.loadPackageManifestAt(source);
-  assert.equal(sourceManifest.package, "oats.knowledge-theory");
-  assert.deepEqual(sourceManifest._capabilities.map((c) => c.id), ["oats.knowledge-theory"]);
-  core.assertCapabilitySelfContained(join(source, CAPABILITY_PATH), JSON.parse(readFileSync(join(source, CAPABILITY_PATH, "oats.json"))));
+  assert.equal(sourceManifest.package, PACKAGE_META.package);
+  assert.deepEqual(sourceManifest._capabilities.map((c) => c.id), PACKAGE_CAPABILITIES);
+  for (const path of PACKAGE_META.capabilities) {
+    core.assertCapabilitySelfContained(join(source, path), JSON.parse(readFileSync(join(source, path, "oats.json"))));
+  }
   const scope = join(base, "scope");
   const root = join(scope, "agents");
   mkdirSync(root, { recursive: true });
@@ -90,22 +94,24 @@ async function installedFixture() {
   assert.equal(core.findCapabilityAgent(scope, root, "knowledge-theory-expert"), undefined);
   const lock = JSON.parse(readFileSync(join(scope, "oats-lock.json"), "utf8"));
   assert.equal(lock.lockfileVersion, 2);
-  assert.deepEqual(Object.keys(lock.packages), ["oats.knowledge-theory"]);
-  assert.deepEqual(Object.keys(lock.capabilities), ["oats.knowledge-theory"]);
-  assert.equal(lock.packages["oats.knowledge-theory"].version, "1.0.1");
+  assert.deepEqual(Object.keys(lock.packages), [PACKAGE_META.package]);
+  assert.deepEqual(Object.keys(lock.capabilities).sort(), [...PACKAGE_CAPABILITIES].sort());
+  assert.equal(lock.packages[PACKAGE_META.package].version, PACKAGE_META.version);
   const trust = core.capabilityTrust(scope, "oats.knowledge-theory");
   assert.equal(trust.trusted, true, JSON.stringify(trust));
   assert.deepEqual(trust.executableSurface, { commands: [], hooks: [], environment: [] });
   const installed = core.installedCapabilityDir(scope, "oats.knowledge-theory");
   const sourceSkill = join(source, CAPABILITY_PATH, SKILL_PATH);
   const skillFingerprint = fingerprint(sourceSkill);
+  const coreSkillFingerprints = Object.fromEntries(["oats-operate", "oats-souls"].map(name =>
+    [name, fingerprint(join(source, "capabilities/oats-core/skills", name))]));
   const installedFingerprint = fingerprint(installed);
   rmSync(source, { recursive: true });
   assert.ok(!existsSync(source));
 
   // Activate through fixture config and the real resolver (not a mocked
   // composition). Target an unrelated author; experts still carry their skill.
-  write(configFile, config + "  additive:\n    oats.knowledge-theory:\n      from: installed\n      souls:\n        author: true\n");
+  write(configFile, config + "  additive:\n    oats.knowledge-theory:\n      from: installed\n      souls:\n        author: true\n    oats.core:\n      from: installed\n      souls:\n        knowledge-theory-expert: true\n");
   assert.deepEqual(core.resolveOatsConfig(scope, "author").capabilities.map((c) => c.id), ["oats.knowledge-theory"]);
   assert.equal(core.resolveOatsConfig(scope, "knowledge-theory-expert").layers.knowledge, undefined);
   const listed = core.listCapabilityAgents(scope);
@@ -128,7 +134,10 @@ async function installedFixture() {
       assert.equal(meta.work, "checkout");
       assert.equal(readlinkSync(join(instance.home, "CLAUDE.md")), "AGENTS.md");
       assert.equal(realpathSync(join(instance.home, "soul")), realpathSync(agent._soulDir));
-      assert.deepEqual(meta.skills.map((s) => s.name).sort(), ["knowledge-capability-authoring", "oats", "oats-config", "oats-packages"]);
+      assert.deepEqual(meta.skills.map((s) => s.name).sort(), ["knowledge-capability-authoring", "oats", "oats-config", "oats-operate", "oats-packages", "oats-souls"]);
+      for (const [name, expected] of Object.entries(coreSkillFingerprints)) {
+        assert.deepEqual(fingerprint(join(instance.home, ".agents/skills", name)), expected, `source-independent core skill: ${name}`);
+      }
       const materializedSkill = join(instance.home, ".agents/skills/knowledge-capability-authoring");
       assert.deepEqual(fingerprint(materializedSkill), skillFingerprint, "complete source-independent skill copy");
       assert.equal(checkReferenceClosure(materializedSkill).length, 9);
@@ -139,6 +148,8 @@ async function installedFixture() {
       assert.ok(!meta.capabilities.some((c) => c.id === "oats.okf"));
       const instructions = readFileSync(join(instance.home, "AGENTS.md"), "utf8");
       assert.match(instructions, /knowledge-capability-authoring\/SKILL\.md/);
+      assert.match(instructions, /oats:capability:oats\.core/);
+      assert.match(instructions, /Load the oats-operate skill/);
       const expertInstructions = readFileSync(join(installed, EXPERT_PATH, "AGENTS.md"), "utf8");
       assert.ok(instructions.includes(expertInstructions.trim()), "canonical expert instructions were composed");
       assert.doesNotMatch(expertInstructions, /\.\/work\/docs|https?:\/\//, "expert curriculum does not reach into a checkout or mutable web docs");
@@ -190,8 +201,8 @@ async function installedFixture() {
 if (process.argv.includes("--isolated-fixture")) {
   await installedFixture();
 } else {
-  test("theory distribution has valid manifests, additive-only resources and canonical relative soul alias", () => {
-    assert.deepEqual(checkKnowledgeTheoryPackage(), { ok: true, package: "oats.knowledge-theory", version: "1.0.1", references: 8 });
+  test("framework distribution validates theory plus core/setup resource-only manifests and skill inventory", () => {
+    assert.deepEqual(checkKnowledgeTheoryPackage(), { ok: true, package: PACKAGE_META.package, version: PACKAGE_META.version, references: 8 });
     // The isolated acquisition test also runs the kernel's real manifest and
     // self-containment validators. No schema-only or string-only acceptance.
     const frontmatter = readFileSync(join(CAP_ROOT, SKILL_PATH, "SKILL.md"), "utf8");

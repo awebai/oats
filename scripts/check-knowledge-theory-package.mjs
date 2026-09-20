@@ -2,12 +2,19 @@
 // Canonical docs -> optional Git package curriculum. No deployment/config effects.
 // This is a complete source-payload gate, not an npm regular-file subset gate.
 import assert from "node:assert/strict";
+import Ajv2020 from "ajv/dist/2020.js";
+import { parse as parseYaml } from "yaml";
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const CAPABILITY_PATH = "capabilities/oats-knowledge-theory";
+export const DISTRIBUTION_PACKAGE_ID = "oats.knowledge-theory";
+export const DISTRIBUTION_CAPABILITIES = [CAPABILITY_PATH, "capabilities/oats-core", "capabilities/oats-setup"];
+const validateCapability = new Ajv2020({ allErrors: true, strict: false }).compile(
+  JSON.parse(readFileSync(join(REPO_ROOT, "docs/capability-manifest.schema.json"), "utf8")),
+);
 export const SKILL_PATH = "skills/knowledge-capability-authoring";
 export const EXPERT_PATH = "agents/knowledge-theory-expert";
 
@@ -111,6 +118,41 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
   }
 }
 
+// Keep the moved capabilities narrowly resource-only. Use the kernel's actual
+// schema, not a copied validator; files must survive acquiring each own root.
+export function checkOperationalCapabilities(packageRoot) {
+  for (const [slug, names, injection] of [
+    ["oats-core", ["oats-operate", "oats-souls"], "injects/oats.md"],
+    ["oats-setup", ["oats-config", "oats-packages", "oats-workspace-setup"], null],
+  ]) {
+    const root = join(packageRoot, "capabilities", slug);
+    const cap = JSON.parse(readFileSync(join(root, "oats.json"), "utf8"));
+    assert.ok(validateCapability(cap), `${slug}: ${JSON.stringify(validateCapability.errors)}`);
+    assert.deepEqual(Object.keys(cap).sort(), ["capability", "version", "description", "compatibility", "requires", "skills", ...(injection ? ["inject"] : [])].sort());
+    assert.equal(cap.capability, slug.replace("oats-", "oats."));
+    assert.match(cap.version, /^\d+\.\d+\.\d+$/);
+    assert.deepEqual(cap.compatibility, { oats: ">=0.24.0" });
+    assert.deepEqual(cap.requires, []);
+    assert.deepEqual(cap.skills, names.map(name => `skills/${name}`));
+    assert.deepEqual(treeFiles(root), ["oats.json", ...names.map(name => `skills/${name}/SKILL.md`), ...(injection ? [injection] : [])].sort());
+    for (const name of names) {
+      const file = join(root, "skills", name, "SKILL.md"), text = readFileSync(file, "utf8");
+      assert.ok(lstatSync(file).isFile(), `skill must be a contained regular file: ${name}`);
+      const match = text.match(/^---\n([\s\S]*?)\n---\n/);
+      assert.ok(match, `missing frontmatter: ${name}`);
+      const fields = parseYaml(match[1]);
+      assert.equal(fields.name, name);
+      assert.ok(typeof fields.description === "string" && fields.description.trim() && fields.description.length <= 1024, `invalid description: ${name}`);
+      assert.ok(text.split("\n").length <= 500, `oversized skill: ${name}`);
+    }
+    if (injection) {
+      assert.equal(cap.inject, injection);
+      const text = readFileSync(join(root, injection), "utf8");
+      assert.match(text, /oats-operate/); assert.match(text, /oats-souls/);
+    }
+  }
+}
+
 export function checkKnowledgeTheoryPackage({ repoRoot = REPO_ROOT, packageRoot = join(repoRoot, "oats-package"), parity = true } = {}) {
   const capRoot = join(packageRoot, CAPABILITY_PATH);
   const pkg = JSON.parse(readFileSync(join(packageRoot, "oats-package.json"), "utf8"));
@@ -119,12 +161,15 @@ export function checkKnowledgeTheoryPackage({ repoRoot = REPO_ROOT, packageRoot 
   // executable surface is a boundary change, not unnoticed manifest growth.
   assert.deepEqual(Object.keys(pkg).sort(), ["package", "version", "description", "compatibility", "capabilities"].sort());
   assert.deepEqual(Object.keys(cap).sort(), ["capability", "version", "description", "compatibility", "requires", "skills", "agents"].sort());
-  assert.equal(pkg.package, "oats.knowledge-theory");
-  assert.equal(cap.capability, pkg.package);
+  assert.equal(pkg.package, DISTRIBUTION_PACKAGE_ID);
+  assert.equal(cap.capability, "oats.knowledge-theory");
   assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
-  assert.equal(cap.version, pkg.version);
-  assert.deepEqual(cap.compatibility, pkg.compatibility);
-  assert.deepEqual(pkg.capabilities, [CAPABILITY_PATH]);
+  assert.equal(cap.version, "1.0.1");
+  assert.deepEqual(cap.compatibility, { oats: ">=0.22.19" });
+  assert.deepEqual(pkg.compatibility, { oats: ">=0.24.0" });
+  assert.deepEqual(pkg.capabilities, DISTRIBUTION_CAPABILITIES);
+  assert.ok(validateCapability(cap), JSON.stringify(validateCapability.errors));
+  checkOperationalCapabilities(packageRoot);
   assert.deepEqual(cap.requires, []);
   assert.deepEqual(cap.skills, [SKILL_PATH]);
   assert.deepEqual(cap.agents, [EXPERT_PATH]);

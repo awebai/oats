@@ -1,0 +1,14 @@
+{
+  "capability": "oats.core",
+  "version": "1.0.0",
+  "description": "Explicit OATS operation, soul discovery and lifecycle guidance; no fundamental-layer or executable authority.",
+  "compatibility": {
+    "oats": ">=0.24.0"
+  },
+  "requires": [],
+  "skills": [
+    "skills/oats-operate",
+    "skills/oats-souls"
+  ],
+  "inject": "injects/oats.md"
+}

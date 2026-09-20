@@ -1,52 +1,71 @@
-# Optional OATS knowledge theory — 1.0.1
+# Framework capability payload
 
-This source patch updates authoring references alongside framework 0.23.1.
-The initial catalog entry remains pinned to the already-published 1.0.0 payload
-at framework v0.23.0; installing the v0.23.1 Git source selects this 1.0.1 payload.
+This Git-distributed OATS package exports three independently selected resource
+capabilities. Package identity/version and capability identities/versions are
+separate; see `oats-package.json` and each `oats.json` for the exact metadata.
 
-`oats.knowledge-theory` is an optional distribution exporting one additive
-capability, `oats.knowledge-theory`. It provides `knowledge-theory-expert` and
-`knowledge-capability-authoring`, including their complete local reference set.
-It declares no knowledge layer, injection, hook, command, dependency or template.
-It is not a runtime harvester or mandatory doctrine package. OKF is not required.
+| Capability | Resources | Authority |
+| --- | --- | --- |
+| `oats.core` | `oats-operate`, `oats-souls`, and the capability-owned “You run on OATS” injection | Operation/discovery guidance only; no hooks, commands or fundamental layer |
+| `oats.setup` | `oats-config`, `oats-packages`, `oats-workspace-setup` | Setup/approval guidance only; no automatic provisioning or fundamental layer |
+| `oats.knowledge-theory` | `knowledge-capability-authoring` and `knowledge-theory-expert` with their complete local references | Optional authoring theory; no mandatory runtime doctrine, harvester or OKF dependency |
 
-This is a **Git-distributed OATS package**, not part of the kernel npm tarball.
-The npm kernel ships public documentation and the CLI; this optional payload
-is acquired separately through normal Git sources (or a catalog entry once
-pinned). Git preserves the canonical source `CLAUDE.md -> AGENTS.md` alias.
-Because npm omits symlinks, shipping a partial copy there is not supported;
-neither acquisition nor integrity verification synthesizes a missing alias.
+The knowledge-theory capability keeps its existing 1.0.1 identity/content and
+>=0.22.19 capability floor. The expanded distribution and the two new capabilities
+require OATS>=0.24.0. This source change needs coordinated publication/catalog
+updates; an older published package does not acquire these exports retroactively.
+Do not invent a release tag or claim install-by-ID before its catalog entry exists.
 
-After the immutable framework `v0.23.0` tag is published, select a scope and
-opt in explicitly:
+## Acquire and select deliberately
+
+The selected Git source must be an actual reviewed/published revision containing
+these exports. Its package root is `oats-package/`, not the npm root. For a bounded
+local development fixture use the complete directory:
 
 ```bash
-oats install git:github.com/awebai/oats@v0.23.0 --dir /path/to/scope
-oats use oats.knowledge-theory --soul <author-soul> --dir /path/to/scope
+oats install /absolute/reviewed-source/oats-package --dir /absolute/test-scope
 ```
 
-The default Git package path is `oats-package/`. A catalog shortcut can follow
-only after the immutable tag exists; there is no prerequisite catalog pin.
-For local development, acquire the complete source directory with
-`oats install /path/to/source/oats-package --dir /path/to/test-scope`.
-Acquisition alone activates nothing. Integrity is locked, but there are no
-executable surfaces to approve. The expert becomes discoverable on capability
-declaration and carries its own skill even with soul-targeted use. No memory
-files are assumed when the deployment selects `knowledge: none`.
+Acquisition activates nothing. Resource-only capabilities have no executable
+surface to approve, but still require exact integrity and explicit selection.
+For a portable soul, declare the selected capability and actual package source in
+`requires.capabilities`; the dependency is visible and removable. The kernel does
+not gain permission to add it secretly. Classic activation/configuration remains
+version-scoped compatibility behavior, described in the setup skills.
 
-The curriculum begins at
+The 0.24 classic kernel still supplies `oats-config` and `oats-packages`; D1 does
+not remove those copies. Explicit duplicate-skill resolution or the separately
+reviewed kernel transition is needed before claiming coexistence in that path.
+No stored composition/live instance is edited by packaging this content. Creation
+of an `oats-setup-expert`, soul defaults and catalog entries are separate work;
+this package does not implement new workspace init/adopt commands.
+
+This is a **Git payload**, not part of the kernel npm tarball. Git preserves the
+canonical theory expert's `CLAUDE.md -> AGENTS.md` alias. Acquisition/integrity
+verification must not synthesize an alias missing from a partial npm copy.
+
+## Content movement and qualification
+
+The core skills move the existing `skills/oats` lifecycle/relations material and
+relevant `oats-getting-started` creation/discovery procedure, with the existing
+portable operation procedure so the new skill names do not imply a legacy
+fallback. The injection moves from `injects/oats.md`. Setup moves `oats-config`
+and `oats-packages`, corrects stale ambient-skill/bundled-provider claims, and
+distills `docs/workspace-adoption.md` into a capability-owned workspace skill.
+Kernel originals stay in place for the separate transition; no deleted kernel
+setup skill is recreated here.
+
+The skills state release-scoped limitations. In particular, released oats-aweb
+capability 1.10.3 lacks portable binding support; required messaging cannot be
+disabled to make an adoption pass. Metadata, preparation, native readiness,
+message delivery, worker completion and accepted Git knowledge publication are
+not interchangeable evidence. No runtime/identity/team/credential behavior is
+implemented by these resource-only capabilities.
+
+The optional theory curriculum begins at
 [the local authoring guide](capabilities/oats-knowledge-theory/skills/knowledge-capability-authoring/references/knowledge-capability-authoring.md).
-Installed experts use the copy materialized in their skill, never assume an
-OATS checkout under their work tree, and never fetch mutable doctrine at runtime.
-
-Compatibility is conservatively set to OATS >=0.22.19, the existing package,
-capability-agent and exact-skill materialization baseline. No unreleased generic
-knowledge runtime API is required. The package version is independent of the
-framework's release version; a Git source selects this repository's
-`oats-package/` subtree at the maintainer's actual release tag/commit.
-
-Canonical reference sources are `docs/knowledge-capability-authoring.md` and
-`docs/knowledge-reference/` in the framework repository. Maintainers synchronize
-with `node scripts/check-knowledge-theory-package.mjs --write`, then run the
-checker without `--write` and `node --test test/knowledge-theory-package.test.mjs`.
-These maintainer commands are not needed in an installed expert's work tree.
+Its generated reference bytes and canonical source alias are unchanged. Maintainers
+use `node scripts/check-knowledge-theory-package.mjs` for the full three-capability
+manifest/inventory gate; `--write` still only synchronizes the theory references
+from canonical docs. Installed skills do not need the source checkout or that
+maintainer script to perform their documented procedures.
