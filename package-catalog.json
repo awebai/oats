@@ -31,9 +31,9 @@
       "ref": "v1.0.0",
       "path": "oats-package"
     },
-    "oats.knowledge-theory": {
+    "oats.framework": {
       "url": "https://github.com/awebai/oats.git",
-      "ref": "v0.23.0",
+      "ref": "oats-framework/v1.1.0",
       "path": "oats-package"
     }
   },
@@ -66,6 +66,9 @@
     "oas.review": {
       "package": "oats.dev",
       "capability": "oats.review"
-    }
+    },
+    "oats.knowledge-theory": "oats.framework",
+    "oats.core": "oats.framework",
+    "oats.setup": "oats.framework"
   }
 }

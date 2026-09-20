@@ -46,9 +46,12 @@ test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", ()
   assert.equal(json("capabilities/oats-okf/oats.json").version, "2.1.1");
   assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.24.0");
   assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.1.1");
-  const theory = json("package-catalog.json").packages["oats.knowledge-theory"];
-  assert.equal(theory.ref, "v0.23.0", "catalog uses the already published theory source, not this pending release tag");
-  assert.equal(theory.path, "oats-package");
+  const catalog = json("package-catalog.json");
+  assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
+  const framework = catalog.packages["oats.framework"];
+  assert.equal(framework.ref, "oats-framework/v1.1.0", "catalog uses the published distribution tag, not a pending kernel release tag");
+  assert.equal(framework.path, "oats-package");
+  for (const id of ["oats.knowledge-theory", "oats.core", "oats.setup"]) assert.equal(catalog.capabilities[id], "oats.framework");
 });
 
 test("syntax inventory recurses through new capability libs, record and package scripts without Git", (t) => {
