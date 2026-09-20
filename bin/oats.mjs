@@ -13,7 +13,7 @@
  * The kernel resolves per-key closest-wins from wherever agents actually run,
  * so binding at a level scopes the capability to everything under it.
  */
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -49,6 +49,10 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 import { capturedSelector } from "../lib/captured-selector.mjs";
 import { inspectCapturedPiOutcome } from "../lib/captured-pi-host.mjs";
 import { readCapturedResolution } from "../lib/captured-resolutions.mjs";
+import { readLock3 } from "../lib/portable-lock.mjs";
+import { oatsError } from "../lib/errors.mjs";
+import { readPortableBytes } from "../lib/portable-files.mjs";
+import { canonicalJson, parseStrictJson } from "../lib/portable-values.mjs";
 import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
 import { portableScope } from "../lib/portable-state.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
@@ -97,15 +101,40 @@ const jsonOk = (result) => { console.log(JSON.stringify({ schemaVersion: 1, ok: 
 
 function inspectOnboardingCmd() {
   const fail = (code, message) => JSON_MODE ? jsonFail(code, message) : die(message);
-  let file;
+  const values = new Map();
   for (let index = 1; index < args.length; index++) {
     if (args[index] === "--json") continue;
-    if (args[index] !== "--request" || file !== undefined || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "source inspection accepts one --request <absolute-json> and --json only");
-    file = args[++index];
+    const key = args[index];
+    if (!["--request", "--emit-prepare-request"].includes(key) || values.has(key) || !args[index + 1] || args[index + 1].startsWith("--")) fail("E_BAD_ARGS", "source inspection accepts one --request <absolute-json>, optional --emit-prepare-request <new-absolute-json>, and --json");
+    values.set(key, args[++index]);
   }
   try {
-    const input = readPortablePreparationRequest({ file });
-    const result = inspectPortableOnboarding(input);
+    const output = values.get("--emit-prepare-request");
+    let parent;
+    const checkOutput = () => {
+      if (!isAbsolute(output) || resolve(output) !== output || output.includes("\0")) throw oatsError("E_BAD_ARGS", "prepare-request output needs a normalized absolute path");
+      let stat;
+      try {
+        stat = lstatSync(dirname(output));
+        if (!stat.isDirectory() || realpathSync(dirname(output)) !== dirname(output)) throw new Error();
+      } catch { throw oatsError("E_BAD_ARGS", "prepare-request output parent must be an existing real directory"); }
+      if (parent && (parent.dev !== stat.dev || parent.ino !== stat.ino)) throw oatsError("selection-changed", "prepare-request output parent changed during inspection");
+      try { lstatSync(output); }
+      catch (error) { if (error.code === "ENOENT") return stat; throw oatsError("E_BAD_ARGS", "prepare-request output could not be checked"); }
+      throw oatsError("E_BAD_ARGS", "prepare-request output already exists; choose a new file (nothing overwritten)");
+    };
+    if (output !== undefined) parent = checkOutput();
+    const input = readPortablePreparationRequest({ file: values.get("--request") });
+    const { prepareRequest, ...view } = inspectPortableOnboarding(input, { includePrepareRequest: output !== undefined });
+    let result = view;
+    if (output !== undefined) {
+      checkOutput();
+      try { writeFileSync(output, canonicalJson(prepareRequest) + "\n", { flag: "wx", mode: 0o600 }); }
+      catch { throw oatsError("E_BAD_ARGS", "prepare-request output could not be created exclusively; no existing file was overwritten"); }
+      const deployment = view.deployment.deployment.path;
+      result = { ...view, prepareRequestFile: output, effects: { ...view.effects, requestFileWrite: true,
+        deploymentWrites: output === deployment || output.startsWith(deployment + sep) } };
+    }
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (error) { fail(error.code || "E_INSPECT_FAILED", error.message); }
 }
@@ -2444,6 +2473,28 @@ function trust() {
   if (!id || id.startsWith("--")) { cmdFail("E_USAGE", "usage: oats trust <capability> [--dir <dir>] | oats trust <package> --all-capabilities [--dir <dir>]"); return; }
   const dir = dirFlag();
   const all = args.includes("--all-capabilities");
+  // A v3 deployment needs an EXPLICIT immutable artifact-set selection. Never
+  // guess one or reinterpret its lock through the classic approval engine.
+  try {
+    for (const scope of lockLevelsUp(dir).reverse()) {
+      // Discriminate with the shared bounded decoder only. Classic readers
+      // retain all v1/v2 validation, including implicit (versionless) v1 locks.
+      let version;
+      try { version = parseStrictJson(readPortableBytes(join(scope, OATS_LOCK_FILE)))?.lockfileVersion; }
+      catch { continue; } // Let the existing classic reader diagnose its input.
+      if (version !== 3) continue;
+      const portable = readLock3(scope).lock;
+      if (!portable) throw oatsError("selection-changed", "selection lock disappeared; repeat explicit trust selection");
+      const sets = [...new Set(Object.values(portable.selections).map(row => row.available).filter(key => key && Object.hasOwn(portable.artifactSets[key].capabilities, id)))].sort();
+      const commands = sets.map(artifactSet => ({ artifactSet,
+        command: `oats trust ${shellQuote(id)} --deployment ${shellQuote(scope)} --artifact-set ${shellQuote(artifactSet)}` }));
+      const message = commands.length && !all
+        ? `lock v3 requires exact artifact-set approval; run ${commands.map(item => item.command).join(" or ")}`
+        : `lock v3 approvals are per capability; use prepare's selections[].artifactSet for each capability in approvalRequired[]: oats trust <capability> --deployment ${shellQuote(scope)} --artifact-set <sha256-artifact-set>`;
+      if (JSON_MODE) jsonFail("needs-configuration", message, { deployment: scope, commands });
+      die(message);
+    }
+  } catch (error) { cmdFail(error.code || "invalid-lock", error.message); return; }
   // Package-backed approval path (per-capability, or explicit bulk on a package id).
   let pkgs, locks;
   try { pkgs = listInstalledPackages(dir); locks = readPackageLocks(dir); } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
@@ -5224,8 +5275,10 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             packages/experimental/README.md
 
   oats inspect --request <absolute-json-file> [--json]
-                                            read-only fresh source/workspace/member metadata;
-                                            no current config, provider execution or preparation authority
+      [--emit-prepare-request <new-absolute-json-file>]
+                                            fresh source/workspace/member metadata; optional private
+                                            request export uses the existing fresh-request builder;
+                                            no provider execution or preparation authority
   oats prepare --request <absolute-json-file> [--json]
                                             complete public preparation input; no mixed flags,
                                             inherited binding, implicit setup or launch authority
@@ -5237,6 +5290,10 @@ The turn record (core — every conversation captured, searchable, replicated):
                                             same preparation through workspace imports
   oats inspect --deployment <abs> --resolution <id> [--composition] [--json]
       [--helper <exact-map-key>]             inspect retained source/helper inputs, not today's configuration
+  oats trust <capability> --deployment <abs> --artifact-set <sha256-…> [--json]
+                                            approve one exact prepared artifact; use each
+                                            selections[].artifactSet for capability ids
+                                            in prepare's approvalRequired[] at that selection
   oats trust <capability> --deployment <abs> --resolution <id> [--json]
                                             explicitly approve that exact captured artifact
   oats <namespace> <command> --deployment <abs> --resolution <id> -- [args…]

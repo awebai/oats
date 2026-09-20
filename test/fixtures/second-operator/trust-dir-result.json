@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "invalid-lock",
+    "message": "/fixture/second-operator/deployment/oats-lock.json: unsupported lockfileVersion 3"
+  }
+}
