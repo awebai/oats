@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 08:00Z · main `3ce40aaa` · OATS v0.24.3 · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
+**Last update:** 2026-09-21 10:30Z · main `f3ee31e0` · OATS v0.24.3 · OKF v2.1.1 · oats-framework/v1.1.1 · aweb v1.11.0 · oats-knowledge 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + seven indexes + six imports · ✅ **0.24.3 published — all five second-operator seams fixed (PR36)**, seam 2 verified from the tarball · 🔄 Antares re-run on 0.24.3 requested | lead, Antares | re-run report → S2 exit gate verdict |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ 0.24.3 gate run: knowledge slot resolves via the workspace route; seams 1–4 fixed, 5 attributed · ✅ **messaging source defect found and fixed (906b1558: per-human policy + soul teams)**, imports repinned f3ee31e0 · 🔄 final re-run for a published resolution + OKF check probe | lead, Antares | re-run; then S2 closed |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ aweb 1.11.0 released · ✅ **catalog + six editions pin v1.11.0 (0.24.2)** · ⬜ second-operator re-run | P, lead | Antares re-run |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |
@@ -49,6 +49,12 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 ## S2 — settings-aware run (Antares, direct source route on main, aweb 1.11.0, 2026-09-21)
 - With `bindings-file`/`state-dir`/`harvest-runtime: pi` and the public `oats-knowledge` bound as base `oats`: **the knowledge slot binds** (OKF problem gone). `harvest-model` is optional per manifest; aweb 1.11.0 declares exactly one setting (`delivery`).
 - **aweb 1.11.0 is the only remaining hold** (`needs-configuration`, identical for `delivery: session` and `channel` on 0.24.2's unattributed output). No resolution publishes → OKF `check` probe not reachable yet. 0.24.3 run will show the attributed aweb message (expected: private-team binding / Pi session-input).
+
+## S2 — 0.24.3 gate run (Antares, Juan's machine, 2026-09-21) — verdict
+- Seams 1, 3, 4 **fixed**; seam 2 fixed as typed (message does not echo the path — deliberate, consistent with no host diagnostics; expectation corrected); seam 5 **half**: attribution (slot/capability/full origins) fixed; naming the missing item only where the kernel knows it. The specificity half is provider-side: OKF 2.1.2 (assigned) and an aweb follow-up.
+- Six imports resolve at the repinned revision; workspace route selects aweb 1.11.0; **the knowledge slot fully resolves through the workspace route** with `bindings-file`/`state-dir`/`harvest-runtime` (`harvest-model` confirmed optional).
+- **Messaging was a SOURCE defect, not an operator gap**: aweb 1.11.0 normalize requires the workspace to declare `teams: {private: per-human}` and the soul a messaging declaration; neither was published, so the slot was unreachable by any input. Fixed on main **906b1558** (workspace policy + `teams: []` on the five messaging editions; verified against aweb v1.11.0 normalize) and imports repinned **f3ee31e0**. Remaining operator inputs after the fix: `responsibleHuman` (required) and `wider` (required, may be empty) — the private team is a later `check` outcome.
+- **S2 exit-gate verdict:** an outside operator on 0.24.3 discovers, resolves, approves and binds knowledge from public sources; messaging reaches its true configuration boundary (operator's human + wider consent) once the source declares the policy. Re-run requested on the repinned imports; a published resolution would then unlock the OKF `check` probe.
 
 ## S3 — Messaging (aweb) on the new infrastructure
 - ✅ **aweb PR3 merged → v1.11.0 (93f8ab96)**: `binding {normalize,bind,check}` on the existing wire; `check` = HOME-route operational custody only (explicit private team, `delivery: session`, kernel ≥0.24.2 via caller-owned `OATS_CLI_BIN`, retained `launchSelection` must be input-capable Claude/Codex; strict-Pi print → `needs-configuration`, never downgraded). Native adapter over existing `aw` commands with physical identity-dir custody and redacted tokens. Standalone 30/0; coupling 14/0 vs kernel b92f0d07. PR33 (launchSelection projection, OATS_CLI_BIN in codec env) merged b92f0d07.
