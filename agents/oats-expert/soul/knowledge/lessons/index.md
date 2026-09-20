@@ -1,5 +1,6 @@
 # Lessons
 
+* [A dependency version bump must sweep test pins before the push, and the gate must be read before pushing](version-bump-grep-tests-before-push.md) - Grep the repo for the old version string when bumping a mirrored package ref, and never chain a push behind a filtered, unread test result.
 * [Strict resource preflight exposes capability layout debt at the first targeted spawn](strict-preflight-exposes-capability-layout-debt.md) - A capability that declares resources outside its acquired artifact may appear installed until strict targeted composition resolves the paths and fails the spawn.
 * [Active capability resources must materialize completely before launch](active-capability-resources-must-materialize-fail-closed.md) - Spawn must compare every resource declared by active capabilities with the materialized instance curriculum and fail closed with rollback rather than silently omit missing skills, injections, or selected plugins.
 * [Review the whole PR merge range for scope, not only the intended feature files](pr-branch-merge-range-scope.md) - A feature PR can accidentally carry unrelated local or stewardship commits that are not on GitHub main, so maintainers must inspect the actual merge range before running expensive gates.

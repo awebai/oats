@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-20 17:10Z · main `786490ae`
+**Last update:** 2026-09-20 17:40Z · main `87292f40` · OKF `v2.1.1`
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -10,7 +10,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
-| S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ shipped 0.24/OKF 2.1.0 · 🔄 oats-okf PR4 under lead test gate | P | merge PR4, tag OKF 2.1.1, bump catalog ref |
+| S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ shipped 0.24 / **OKF 2.1.1 released** (PR4 merged; mirror, catalog ref, soul source bumped) | P | done for this phase; OATS 0.24.1 cut after L's custody fix |
 | S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ PR23 + PR24 merged · ✅ member `oats.yaml` on main in oats-okf/aweb/authoring/jira · ⛔ oats-dev, oats-linear (no push access, human) | M, L, lead | human grants access → push 0434f4ef/8c183c37; then pin imports; then fresh deployment gate |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 codec PR2 + custody WIP · needs profile pin | P | lead pins pilot profile + answers authority question |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | 🔄 D1 in progress (P, `feat/d1-oats-core-setup`, package → `oats.framework` 1.1.0) · 🔄 D2 in progress (L) · ⬜ D3 | P (D1), L (D2, D3) | review D1/D2 PRs; assign D3 after D2 |
@@ -21,7 +21,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 
 ## S1 — Knowledge capability contract rework
 - ✅ Provider-neutral contract, binding wire v1, helper/input contract, retained execution: OATS 0.24.0 + OKF 2.1.0 (f20f8e57) published.
-- 🔄 **oats-okf PR4** (7cff887c): consumer guard accepted Claude/Codex helpers with extra approved capabilities; strict-Pi keeps explicit-model+sole-OKF. 9/9 focused. → review, merge, tag **OKF 2.1.1**, bump `package-catalog.json` ref.
+- ✅ **oats-okf PR4 merged (9f90ee9) → OKF v2.1.1 (01b48dfc)**: Claude/Codex helpers with complete approved closure accepted; strict-Pi unchanged. Framework mirror/inventory finalized, catalog ref and `souls/oats-expert` source → v2.1.1 (16c5c939, 87292f40).
 - Open: strict-Pi "enriched profile" remains unqualified (documented, not hidden).
 
 ## S2 — Workspace adoption of the OATS repos
@@ -35,7 +35,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 ## S3 — Messaging (aweb) on the new infrastructure
 - Facts: released aweb 1.10.3 has no binding interface; broker refuses. aw 1.36.1 broker calls `oats session inspect/input --home H`; never restarts stopped runtime; strict-Pi print mode can't take session input.
 - 🔄 oats-aweb **PR2** codec (165b20e) + uncommitted `lib/captured-execution.mjs` (6/6).
-- ⛔ Needs from lead: (a) pilot primary/helper runtime+model pin; (b) H→native-actor authority answer (ADAPTER-DEPENDENCY.md). 
+- ✅ Lead answered (d9d912a4): pilot primary = Pi strict print host explicit model; helper = Pi sole-OKF (Claude/Codex allowed by 2.1.1); authority = existing HOME route + L's custody fix, gated on `oats >=0.24.1`; no new grant mechanism. P delivers aweb 1.11.0 PR. 
 - 🔄 L finding c21e36ff accepted; fix assigned (L, `fix/home-route-captured-custody`): reuse `readCapturedInstanceAuthority` on the HOME-only route, refuse before transport.
 
 ## S4 — `oats.core` / `oats.setup` / onboarding
