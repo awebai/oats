@@ -1,4 +1,5 @@
 {
+  "policy": "docs/official-marketplace.md",
   "packages": {
     "oats.okf": {
       "url": "https://github.com/awebai/oats-okf.git",

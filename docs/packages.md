@@ -5,6 +5,10 @@ capabilities. It is *transport*, not the installed entity. A package is one
 `oats-package.json` at a package root that declares one or more **capabilities**
 and, optionally, one or more reference **config templates**.
 
+The [official marketplace policy](official-marketplace.md) explains how packages
+join the reviewed catalog and how entries are updated or removed. Discoverable,
+installed and approved are separate states; a listing never grants executable trust.
+
 Acquisition stages the package in a temporary transaction directory, validates
 the whole selected payload, **materializes each declared capability** into
 `.agents/capabilities/installed/<id>/`, writes the exact lock, and discards the
