@@ -1,0 +1,14 @@
+{
+  "capability": "oats.setup",
+  "version": "1.0.0",
+  "description": "OATS Soul Setup: workspace adoption, deployment configuration and package/approval guidance.",
+  "compatibility": {
+    "oats": ">=0.24.0"
+  },
+  "requires": [],
+  "skills": [
+    "skills/oats-config",
+    "skills/oats-packages",
+    "skills/oats-workspace-setup"
+  ]
+}

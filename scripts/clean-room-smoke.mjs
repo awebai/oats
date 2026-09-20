@@ -339,7 +339,10 @@ try {
   const theoryUrl = pathToFileURL(theoryRepo).href;
   const directTheorySource = `${theoryUrl}@${theoryCommit}`; // normal default oats-package/ selection
   const fixtureCatalog = JSON.parse(readFileSync(catalog, "utf8"));
-  fixtureCatalog.packages["oats.knowledge-theory"] = { url: theoryUrl, ref: theoryCommit, path: "oats-package" };
+  const distribution = JSON.parse(readFileSync(join(theorySource, "oats-package.json"), "utf8"));
+  const distributionCapabilities = ["oats.knowledge-theory", "oats.core", "oats.setup"];
+  delete fixtureCatalog.packages["oats.knowledge-theory"]; // replace the old fixture package identity, not capability IDs
+  fixtureCatalog.packages[distribution.package] = { url: theoryUrl, ref: theoryCommit, path: "oats-package" };
   write(catalog, JSON.stringify(fixtureCatalog));
   const theoryCap = join(theorySource, CAPABILITY_PATH);
   const theorySkill = join(theoryCap, SKILL_PATH);
@@ -356,8 +359,8 @@ try {
   const expertInstructions = readFileSync(join(theoryCap, EXPERT_PATH, "AGENTS.md"), "utf8");
   assert.equal(readlinkSync(join(theoryCap, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
   const theoryManifest = core.loadPackageManifestAt(theorySource);
-  assert.equal(theoryManifest.package, "oats.knowledge-theory");
-  assert.deepEqual(theoryManifest._capabilities.map((c) => c.id), ["oats.knowledge-theory"]);
+  assert.equal(theoryManifest.package, distribution.package);
+  assert.deepEqual(theoryManifest._capabilities.map((c) => c.id), distributionCapabilities);
   core.assertCapabilitySelfContained(theoryCap, JSON.parse(readFileSync(join(theoryCap, "oats.json"), "utf8")));
   const disabled = "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n";
   const theoryScopes = [];
@@ -367,19 +370,19 @@ try {
     else mkdirSync(scope);
     const roots = join(scope, "agents"); mkdirSync(roots);
     const config = join(scope, "oats-config.yaml"); write(config, disabled);
-    const source = work === "checkout" ? directTheorySource : "oats.knowledge-theory";
+    const source = work === "checkout" ? directTheorySource : distribution.package;
     run(oats, ["install", source, "--dir", scope], { env });
     assert.equal(readFileSync(config, "utf8"), disabled, "acquisition must not activate the package");
     assert.deepEqual(core.resolveOatsConfig(scope, "author").capabilities, []);
     assert.equal(core.findCapabilityAgent(scope, roots, "knowledge-theory-expert"), undefined);
     const lock = JSON.parse(readFileSync(join(scope, "oats-lock.json"), "utf8"));
     assert.equal(lock.lockfileVersion, 2);
-    assert.deepEqual(Object.keys(lock.packages), ["oats.knowledge-theory"]);
-    assert.deepEqual(Object.keys(lock.capabilities), ["oats.knowledge-theory"]);
-    const packageRow = lock.packages["oats.knowledge-theory"];
+    assert.deepEqual(Object.keys(lock.packages), [distribution.package]);
+    assert.deepEqual(Object.keys(lock.capabilities).sort(), [...distributionCapabilities].sort());
+    const packageRow = lock.packages[distribution.package];
     assert.equal(packageRow.commit, theoryCommit, "normal Git acquisition exact-locks the fixture commit");
     assert.equal(packageRow.path, "oats-package");
-    assert.equal(packageRow.source, work === "checkout" ? `git:${directTheorySource}` : "catalog:oats.knowledge-theory");
+    assert.equal(packageRow.source, work === "checkout" ? `git:${directTheorySource}` : `catalog:${distribution.package}`);
     assert.equal(packageRow.version, theoryManifest.version);
     assert.match(packageRow.integrity, /^sha256-/);
     const installed = core.installedCapabilityDir(scope, "oats.knowledge-theory");
