@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 00:10Z · main `0e3bf643`+ · OATS v0.24.1 · OKF v2.1.1 · oats-framework/v1.1.0 · oats-knowledge main 8d67eab4
+**Last update:** 2026-09-21 01:40Z · main `b92f0d07` · OATS v0.24.1 · OKF v2.1.1 · oats-framework/v1.1.0 · **aweb v1.11.0** · oats-knowledge 8d67eab4
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -12,7 +12,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
 | S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ workspace + all seven member indexes + five imports · ✅ **second-operator gate run (Juan's side, 2026-09-20)**: discover/fetch/resolve/materialize/approve the whole graph from the public definition WORKS; preparation stops at the declared aweb 1.10.3 hold; **5 kernel seams found** → fix in flight | lead, L, Antares/Juan | L `fix/second-operator-prepare-seams` → 0.24.2 → identical re-run |
-| S3 | Messaging capability readiness on the new infrastructure (aweb) | 🔄 P implementing aweb 1.11.0 adapter (codec + captured-execution + check) against kernel floor 0.24.1 | P | review aweb PR; release 1.11.0; bump catalog |
+| S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ **aweb 1.11.0 released** (PR3 merged 862f156): binding interface + HOME-route session readiness; floor `>=0.24.2` · ⬜ catalog/soul pin bump with the 0.24.2 cut · ⬜ second-operator re-run | P, lead | cut 0.24.2 → bump → Antares re-run |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1 merged (PR28) + tag `oats-framework/v1.1.0` · ✅ D2 merged (PR29): creation writes explicit removable `oats.core`; declared ⇒ no legacy kernel skills · ⬜ D3 onboarding | P, L | assign D3 to L now |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged (PR26) · ✅ `oats.framework` listed with `oats.core`/`oats.setup`/`oats.knowledge-theory` aliases (42ad7e55); `oats install oats.framework` verified from the tag | M | Desktop view → S8 |
 | S6 | Five expert souls created in the oats repo (`souls/<name>/`) | ✅ all five on main (PR30 + caa341f3): explicit `oats.core` (repo:oats-package), oats.okf@v2.1.1, exported + imported | M, lead | legacy `agents/` roster cutover after S7 |
@@ -41,6 +41,7 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 5. Problems carry `origins: []` and no slot/capability; aweb's missing interface masks OKF diagnostics — a valid and a bogus `stores.oats` binding produce byte-identical output. **Fix first.**
 
 ## S3 — Messaging (aweb) on the new infrastructure
+- ✅ **aweb PR3 merged → v1.11.0 (93f8ab96)**: `binding {normalize,bind,check}` on the existing wire; `check` = HOME-route operational custody only (explicit private team, `delivery: session`, kernel ≥0.24.2 via caller-owned `OATS_CLI_BIN`, retained `launchSelection` must be input-capable Claude/Codex; strict-Pi print → `needs-configuration`, never downgraded). Native adapter over existing `aw` commands with physical identity-dir custody and redacted tokens. Standalone 30/0; coupling 14/0 vs kernel b92f0d07. PR33 (launchSelection projection, OATS_CLI_BIN in codec env) merged b92f0d07.
 - Facts: released aweb 1.10.3 has no binding interface; broker refuses. aw 1.36.1 broker calls `oats session inspect/input --home H`; never restarts stopped runtime; strict-Pi print mode can't take session input.
 - 🔄 oats-aweb **PR2** codec (165b20e) + uncommitted `lib/captured-execution.mjs` (6/6).
 - ✅ Lead answered (d9d912a4): pilot primary = Pi strict print host explicit model; helper = Pi sole-OKF (Claude/Codex allowed by 2.1.1); authority = existing HOME route + L's custody fix, gated on `oats >=0.24.1`; no new grant mechanism. P delivers aweb 1.11.0 PR. 
