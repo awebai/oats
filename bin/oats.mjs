@@ -13,7 +13,7 @@
  * The kernel resolves per-key closest-wins from wherever agents actually run,
  * so binding at a level scopes the capability to everything under it.
  */
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -26,10 +26,10 @@ import {
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
-  officialCapabilityPackage, officialPackageCatalog,
+  officialCapabilityPackage, officialPackageCatalog, DEFAULT_PACKAGE_PATH,
   approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
-  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
+  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
@@ -53,11 +53,13 @@ import { readPortablePreparationRequest } from "../lib/portable-onboarding-reque
 import { portableScope } from "../lib/portable-state.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
+import { loadSetupExpertEdition, SETUP_EXPERT, SETUP_CAPABILITIES } from "../lib/setup-expert-source.mjs";
+import { parsePortableSource } from "../lib/source-spec.mjs";
 
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -4233,6 +4235,130 @@ async function paneCmd() {
   die("`oats pane` has been retired — the OATS Desktop app (packages/desktop) is the control panel now.");
 }
 
+function onboardCmd() {
+  const fail = (code, message, details) => JSON_MODE ? jsonFail(code, message, details) : die(message);
+  const values = new Map();
+  for (let i = 1; i < args.length; i++) {
+    const arg = args[i];
+    if (["--json", "--force-existing"].includes(arg)) { values.set(arg.slice(2), true); continue; }
+    if (!["--dir", "--workspace"].includes(arg) || values.has(arg.slice(2)) || !args[i + 1] || args[i + 1].startsWith("--")) {
+      fail("E_BAD_ARGS", "usage: oats onboard [--dir <deployment>] [--workspace <git:source[@revision]>] [--force-existing] [--json]");
+    }
+    values.set(arg.slice(2), args[++i]);
+  }
+  dropAmbientRoot();
+  let deployment, root, acquired, created, configFile, configBefore, configWritten;
+  try {
+    // Like create: an existing enclosing roster wins, otherwise bootstrap at
+    // the enclosing Git root or explicit directory. Canonicalize existing parents.
+    const requested = resolve(values.get("dir") || process.cwd()), missing = [];
+    let parent = requested;
+    while (!existsSync(parent)) { missing.unshift(basename(parent)); parent = dirname(parent); }
+    const start = join(realpathSync(parent), ...missing);
+    root = findRoot(start) || join(defaultRepo(start) || start, "agents");
+    deployment = dirname(root);
+    assertNoSymlinkedParents(deployment, root, "onboard agents root");
+    assertNoSymlinkedParents(deployment, join(deployment, "local-agents", SETUP_EXPERT), "local setup soul");
+    const assertSetupAbsent = () => {
+      for (const candidate of [join(deployment, "local-agents", SETUP_EXPERT), join(root, SETUP_EXPERT), join(root, "local-agents", SETUP_EXPERT), join(root, "tmp-agents", SETUP_EXPERT)]) {
+        let present = false;
+        try { lstatSync(candidate); present = true; } catch (error) { if (error.code !== "ENOENT") throw error; }
+        if (present) throw Object.assign(new Error(`existing or incomplete setup expert is preserved at ${candidate}; it will not be overwritten`), { code: "E_AGENT_EXISTS" });
+      }
+    };
+    assertSetupAbsent();
+    const agents = listAgents(root);
+    if (agents.length && !values.get("force-existing")) throw Object.assign(new Error("deployment already has agents; use --force-existing to add the setup expert without replacing them"), { code: "E_DEPLOYMENT_NOT_EMPTY" });
+    if (findAgent(root, SETUP_EXPERT)) throw Object.assign(new Error("oats-setup-expert already exists; it will not be overwritten"), { code: "E_AGENT_EXISTS" });
+    const edition = loadSetupExpertEdition(values.get("workspace"));
+    for (const key of ["description", "runtime", "model"]) if (edition.declaration[key] !== undefined) assertSafeConfigValue(edition.declaration[key], `setup edition ${key}`);
+    const catalog = officialPackageCatalog(), entry = catalog["oats.framework"];
+    if (!Object.hasOwn(catalog, "oats.framework") || !entry?.url || !entry.ref
+        || SETUP_CAPABILITIES.some(id => { const m = officialCapabilityPackage(id); return !m.available || m.package !== "oats.framework" || m.migratedCapability !== id; })) {
+      throw Object.assign(new Error("official oats.framework with core/setup aliases and a published revision is required"), { code: "needs-configuration" });
+    }
+    const catalogSource = parsePortableSource(`git:${entry.url}@${entry.ref}#${entry.path ?? DEFAULT_PACKAGE_PATH}`);
+    const file = join(deployment, "oats-config.yaml");
+    if (existsSync(file) && !lstatSync(file).isFile()) throw Object.assign(new Error("onboard will not replace a non-regular deployment configuration"), { code: "E_CONFIG_BROKEN" });
+    const before = existsSync(file) ? readFileSync(file, "utf8") : null;
+    configFile = file; configBefore = before;
+    const caps = readCapabilitiesModel(file), previous = resolveOatsConfig(deployment, SETUP_EXPERT);
+    // Exclusions are for the NEW soul only. Never turn off an existing root's
+    // global provider/layer just to make bootstrap work under --force-existing.
+    for (const cap of previous.capabilities) {
+      if (SETUP_CAPABILITIES.includes(cap.id)) continue;
+      let target;
+      if (cap.layer) {
+        const existing = caps.layers[cap.layer];
+        if (existing && (existing === "none" || existing.capability !== cap.id)) throw Object.assign(new Error(`cannot safely exclude ${cap.id} for the setup soul at this level; choose a fresh deployment`), { code: "needs-configuration" });
+        target = caps.layers[cap.layer] ||= { capability: cap.id };
+      } else target = caps.additive[cap.id] ||= {};
+      target.souls = { ...target.souls, [SETUP_EXPERT]: false };
+    }
+    if (before === null && !agents.length) for (const layer of LAYERS) caps.layers[layer] ??= "none";
+    for (const id of SETUP_CAPABILITIES) {
+      const target = caps.additive[id] ||= {};
+      if (target.from && target.from !== "installed") throw Object.assign(new Error(`${id} already selects another provenance; choose a fresh deployment`), { code: "needs-configuration" });
+      target.from = "installed"; target.souls = { ...target.souls, [SETUP_EXPERT]: true };
+    }
+    const text = replaceCapabilitiesBlock(before ?? `name: ${scaffoldConfigName(deployment)}\n`, caps);
+    mkdirSync(deployment, { recursive: true });
+    acquired = acquirePackage(deployment, "oats.framework", { expectPackage: "oats.framework",
+      catalog(id, selector) { const selected = Object.hasOwn(catalog, id) ? catalog[id] : null; return selected?.url ? { url: selected.url, ref: selector || selected.ref, path: selected.path } : undefined; },
+      assertCommittable(plan) {
+      const pkg = plan.packages.find(p => p.package === "oats.framework");
+      if (edition.packageIntegrity && pkg?.integrity !== edition.packageIntegrity) throw Object.assign(new Error("selected edition's same-repository package differs from the official acquisition; align the reviewed source and catalog explicitly"), { code: "integrity-drift" });
+      for (const id of SETUP_CAPABILITIES) {
+        const cap = plan.capabilities.find(c => c.capability === id);
+        if (!cap || cap.package !== "oats.framework" || cap.layer || Object.values(cap.executableSurface || {}).some(value => Array.isArray(value) && value.length)) {
+          throw Object.assign(new Error(`setup bootstrap needs resources-only ${id}; executable surfaces require a separate explicit approval path`), { code: "approval-required" });
+        }
+      }
+    } });
+    if ((existsSync(file) ? readFileSync(file, "utf8") : null) !== before) throw Object.assign(new Error("deployment configuration changed during acquisition; nothing was activated"), { code: "E_CONFIG_CHANGED" });
+    writeFileAtomic(file, text); configWritten = text;
+    const selected = resolveOatsConfig(deployment, SETUP_EXPERT);
+    if (selected.capabilities.length !== 2 || SETUP_CAPABILITIES.some(id => !selected.capabilities.some(c => c.id === id))) {
+      throw Object.assign(new Error("setup expert's effective configuration contains other capabilities; no soul or hook was created"), { code: "needs-configuration" });
+    }
+    // Required capabilities were checked resources-only before acquisition: no
+    // unrelated or executable soul-scaffold hooks can run during local creation.
+    assertNoSymlinkedParents(deployment, root, "onboard agents root");
+    assertNoSymlinkedParents(deployment, join(deployment, "local-agents", SETUP_EXPERT), "local setup soul");
+    assertSetupAbsent();
+    mkdirSync(root, { recursive: true });
+    created = coreCreateAgent(root, { name: SETUP_EXPERT, local: true, oatsCore: false, repo: deployment, work: "directory",
+      runtime: edition.declaration.runtime, model: edition.declaration.model, yolo: false,
+      description: edition.declaration.description, instructions: edition.instructions });
+    const pkg = acquired.installed.find(p => p.package === "oats.framework");
+    const source = parsePortableSource(`git:${catalogSource.url}@${pkg.commit}#${pkg.path}`);
+    const requires = { capabilities: Object.fromEntries(SETUP_CAPABILITIES.map(id => [id, { source: `${source.source}#${source.path}` }])) };
+    const soulFile = join(created.soul, "soul.yaml");
+    writeFileAtomic(soulFile, readFileSync(soulFile, "utf8") + `requires: ${JSON.stringify(requires)}\ndefaults: ${JSON.stringify(edition.declaration.defaults)}\n`);
+    const agent = findAgent(root, SETUP_EXPERT), composition = composeInstanceAgentsMd(created.soul, deployment, SETUP_EXPERT, "directory", "local");
+    planInstanceResources({ resolved: composition.resolved, soulDir: created.soul, agent, contextDir: deployment, composition });
+    const argv = [process.execPath, CLI_BIN, "spawn", SETUP_EXPERT, "--dir", deployment, "--no-yolo", "--task", "Help me configure this deployment and adopt my workspace with explicit approvals."];
+    const result = { mode: "classic", captured: false, deployment, agentsRoot: root, ...created, source: edition.source,
+      package: { id: pkg.package, version: pkg.version, commit: pkg.commit, path: pkg.path }, lockFile: acquired.lockFile,
+      capabilities: [...SETUP_CAPABILITIES], launched: false, next: { argv, command: argv.map(shellQuote).join(" ") } };
+    if (JSON_MODE) jsonOk(result);
+    else { console.log(`Created local ${SETUP_EXPERT} in ${deployment} (classic bootstrap, not captured preparation).`); console.log(`No model was launched. Next:\n${result.next.command}`); }
+  } catch (error) {
+    // Roll back only configuration bytes still exactly owned by this attempt.
+    // Acquired artifacts/locks and any incomplete new soul remain visible evidence.
+    let configRestored = false;
+    if (configWritten !== undefined) {
+      try {
+        if (lstatSync(configFile).isFile() && readFileSync(configFile, "utf8") === configWritten) {
+          if (configBefore === null) rmSync(configFile); else writeFileAtomic(configFile, configBefore);
+          configRestored = true;
+        }
+      } catch { /* never erase another writer's change or hide a failed rollback */ }
+    }
+    fail(error.code || "E_ONBOARD_FAILED", error.message, { deployment, agentsRoot: root, packageAcquired: !!acquired, soul: created?.soul, configRestored, launched: false });
+  }
+}
+
 function createCmd() {
   const yolo = yoloFlag();
   const name = args[1];
@@ -4913,6 +5039,14 @@ if (cmd === "prepare" || captured?.args[0] === "prepare") {
   if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
   prepareCmd(); process.exit(0);
 }
+if (cmd === "onboard" || captured?.args[0] === "onboard") {
+  if (captured) {
+    if (JSON_MODE) jsonFail("E_BAD_ARGS", "onboard is explicit classic bootstrap and cannot use captured selectors");
+    die("onboard is explicit classic bootstrap and cannot use captured selectors");
+  }
+  if (args.includes("--help") || args.includes("-h")) { if (JSON_MODE) jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); else usageFor(cmd); process.exit(0); }
+  onboardCmd(); process.exit(0);
+}
 // Other commands retain their existing explicit/inherited selection rules.
 try { captured ??= capturedSelector(args); }
 catch (error) {
@@ -5041,6 +5175,9 @@ Usage:
       --instance <name> | --home <abs>       attachments over its saved route (bytes stream on
       --file <path> [--json]                 ssh stdin; sha256 verified); the server must
                                             advertise session-upload (oats 0.22.13 or later)
+  oats onboard [--dir <deployment>]          bootstrap a LOCAL setup expert from official
+      [--workspace <git:source[@revision]>]   capabilities; classic path, not captured prepare;
+      [--force-existing] [--json]            prints the next spawn command, never launches
   oats create <name> [--local] [--no-oats-core] create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
