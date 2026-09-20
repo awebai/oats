@@ -171,7 +171,12 @@ function prepareCmd() {
     // Pass the whole request to the one public validator/resolver. Unknown
     // fields are refused there, never filtered or filled from ambient state.
     const result = prepareCapturedComposition(input);
-    if (!result.resolution) fail("needs-configuration", "preparation is incomplete; no executable resolution was published", result);
+    if (!result.resolution) {
+      const summary = "preparation is incomplete; no executable resolution was published";
+      const reasons = (result.problems ?? []).filter(p => p.key !== undefined || (p.slot && p.capability))
+        .map(p => `[${p.slot && p.capability ? `${p.capability}/${p.slot}` : p.code}] ${p.key === undefined ? "" : `${JSON.stringify(p.key)}: `}${p.message}`);
+      fail("needs-configuration", JSON_MODE ? summary : [summary, ...reasons].join("\n"), result);
+    }
     if (JSON_MODE) jsonOk(result); else console.log(JSON.stringify(result, null, 2));
   } catch (error) { fail(error.code || "E_PREPARE_FAILED", error.message); }
 }

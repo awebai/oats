@@ -36,7 +36,23 @@ result. All structured responses exit 0: transport completed, while `ok` is the
 semantic outcome. Nonzero exit/signal/timeout is transport failure. Allowed error/problem codes are needs-configuration, requirement-conflict,
 invalid-binding, authorization-required, host-requirement-missing,
 provider-unavailable and provider-not-qualified. Optional provider error/problem
-`message` is permitted but never forwarded by the kernel.
+`message` is permitted. The 0.24.4 follow-up retains it ONLY when it exactly
+matches a fixed nonsecret reason in the VERIFIED selected capability manifest's
+optional `binding.reasons` array. If that field is absent, the kernel's reviewed
+per-capability compatibility list applies; an explicit empty array permits none.
+No trimming, Unicode normalization, interpolation, prefix matching, operator
+values, paths, or unlisted provider output cross this boundary. Invalid reason
+declarations (including duplicates/control characters) refuse. Code-only replies
+and unknown/unlisted messages keep the existing kernel template fallback.
+
+The allowlist is out-of-band kernel input, never declared by a provider response.
+Exact artifact approval is still required BEFORE invoking the codec. The broker
+preserves the vetted message and preparation rechecks it against the same selected
+manifest, retaining slot/capability/origins. JSON and human CLI diagnostics surface
+the reason; human output also shows an existing choice `key` when provided. This
+changes no readiness status, launch authority, credential contract or wire version.
+Older kernels reject the new optional manifest field; publishers must declare a
+compatible kernel floor or keep using the bundled-list compatibility route.
 
 Knowledge providers and harvesters follow the same separation: the
 [knowledge capability boundary](2026-09-16-knowledge-capability-contract.md) keeps

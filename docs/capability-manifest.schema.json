@@ -178,7 +178,13 @@
         "version": { "const": 1 },
         "normalize": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "bind": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-        "check": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" }
+        "check": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "reasons": {
+          "description": "Fixed nonsecret diagnostic strings allowed across the binding wire by exact match only. No interpolation, operator values, paths or control characters. An explicit empty list permits none; omission uses the kernel's per-capability compatibility list when available.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$" }
+        }
       }
     },
     "operations": {
