@@ -10,6 +10,7 @@ import { inspectPortableOnboarding } from "../lib/core.mjs";
 import { buildFreshPreparationRequest } from "../lib/portable-onboarding.mjs";
 import { readCapturedInstanceIndex } from "../lib/captured-instance-index.mjs";
 import { verifyPortableArtifact } from "../lib/portable-artifacts.mjs";
+import { readApprovalLedger } from "../lib/artifact-approvals.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 const SOURCE = "git:ssh://workspace.invalid/framework.git";
@@ -17,7 +18,7 @@ const origin = { kind: "operator", document: { kind: "operator", id: "workspace-
 const opaque = "OPAQUE-PROVIDER-VALUE-MUST-NOT-BE-PRINTED";
 const quote = value => `'${String(value).replaceAll("'", "'\\''")}'`;
 function write(file, data) { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, typeof data === "string" ? data : JSON.stringify(data)); }
-function fixture(t) {
+function fixture(t, { independentBindings = false } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-workspace-public-")));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const repo = join(root, "framework"), user = join(root, "operator"), workTarget = join(root, "project"), bin = join(root, "bin");
@@ -61,14 +62,32 @@ else if(r.phase==='bind')result={payloadContract:'fixture.learning',payloadVersi
 else result=existsSync(${JSON.stringify(ready)})?{status:'ready',problems:[]}:{status:'unavailable',problems:[{code:'provider-unavailable',message:'required fixture is not ready'}]};
 console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));\n`);
   write(join(repo, "packages/learning/cap/spawn.mjs"), `import {readFileSync,appendFileSync} from 'node:fs';const c=JSON.parse(readFileSync(process.env.OATS_INVOCATION_CONTEXT_FILE,'utf8'));if(c.action.kind!=='hook'||c.intent?.incarnationId!==c.instance?.incarnationId)throw Error('missing original admitted hook');appendFileSync(${JSON.stringify(phaseLog)},'spawn\\n');console.log(JSON.stringify({meta:{incarnationId:c.instance.incarnationId,executionId:c.intent.executionId}}));\n`);
+  if (independentBindings) {
+    // Deliberately inert provider contract: the SOURCE requires a particular
+    // root. This is not OKF remote-existence/readiness validation. The recorded
+    // locators exercise the shared resolver without any network or native check.
+    const soulFile = join(repo, "souls/pilot/soul.yaml"), soul = JSON.parse(readFileSync(soulFile, "utf8"));
+    soul.requires.messaging = { capability: "fixture.messaging", source: "repo:packages/messaging" };
+    soul.knowledge.payload.root = "knowledge"; write(soulFile, soul);
+    const exportsFile = join(repo, "oats.yaml"), exports = JSON.parse(readFileSync(exportsFile, "utf8"));
+    exports.exports.packages.push({ path: "packages/messaging" }); write(exportsFile, exports);
+    write(join(repo, "packages/messaging/oats-package.json"), { package: "fixture.messaging", version: "1.0.0", description: "No-interface negative fixture", compatibility: { oats: ">=0.24.0" }, capabilities: ["cap"] });
+    write(join(repo, "packages/messaging/cap/oats.json"), { capability: "fixture.messaging", version: "1.0.0", description: "No binding interface", layer: "messaging" });
+    write(join(repo, "packages/learning/cap/phase.mjs"), `import {readFileSync,appendFileSync} from 'node:fs';
+const r=JSON.parse(readFileSync(0,'utf8')),key='/bindings/knowledge/stores/oats/root';appendFileSync(${JSON.stringify(phaseLog)},r.phase+'\\n');let result;
+if(r.phase==='normalize'){const soul=r.input.declarations.find(d=>d.kind==='soul'),op=r.input.declarations.find(d=>d.kind==='operator'),root=op?.value.bindings?.['stores.oats']?.root;result={requirements:[{key,kind:'equals',value:soul.value.knowledge.payload.root,origin:soul.origins['/knowledge/payload/root']}],candidates:root===undefined?[]:[{key,kind:'operator',value:root,origin:op.origins['/bindings/stores.oats/root']}],model:{}};}
+else if(r.phase==='bind')result={payloadContract:'fixture.learning',payloadVersion:1,payload:{root:r.input.choices[key].value},credentialRefs:{},provenance:[r.input.choices[key].selectedBy]};
+else throw Error('No native/provider readiness check is admitted by this fixture');
+console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability:r.capability,ok:true,result}));\n`);
+  }
   git("add", "."); git("commit", "--quiet", "-m", "same repository workspace, reciprocal member and portable export");
   const commit = git("rev-parse", "HEAD");
   // These legacy settings are neither portable policy nor an implicit adopter workspace.
   write(join(workTarget, "oats-config.yaml"), "capabilities: [intentionally-invalid-ambient-config]\n");
   const inspection = (name, workspace) => ({ deployment: join(root, name), workTarget, source: workspace ? "workspace-pilot" : { source: SOURCE, revision: commit, soul: "souls/pilot", alias: "independent-pilot" }, origin,
     ...(workspace ? { workspace: { source: SOURCE, origin }, member: { source: SOURCE, origin } } : { standaloneContextKey: "independent-context" }) });
-  const run = args => {
-    const result = spawnSync(process.execPath, [CLI, ...args, "--json"], { cwd: workTarget, env, encoding: "utf8", timeout: 30000 });
+  const run = (args, { cwd = workTarget } = {}) => {
+    const result = spawnSync(process.execPath, [CLI, ...args, "--json"], { cwd, env, encoding: "utf8", timeout: 30000 });
     assert.equal(result.error, undefined, result.stderr); let envelope;
     try { envelope = JSON.parse(result.stdout); } catch { assert.fail(result.stdout + result.stderr); }
     return { ...result, envelope };
@@ -76,6 +95,154 @@ console.log(JSON.stringify({schemaVersion:1,phase:r.phase,slot:r.slot,capability
   const request = (name, input) => { const file = join(root, name + ".json"); write(file, input); return file; };
   return { root, repo, user, workTarget, env, bin, git, commit, inspection, run, request, phaseLog, ready, transportLog };
 }
+
+const capturedFixture = name => readFileSync(new URL(`./fixtures/second-operator/${name}`, import.meta.url), "utf8");
+function secondOperatorRequest(f, name) {
+  const input = JSON.parse(capturedFixture(name).replaceAll("/fixture/second-operator", f.root));
+  input.source = "workspace-pilot"; input.workspace.source = SOURCE; input.member.source = SOURCE;
+  return input;
+}
+
+test("second-operator before pair stays byte-identical; independent binding diagnostics are attributed without masking other slots", t => {
+  assert.equal(capturedFixture("prepare-valid-result.json"), capturedFixture("prepare-bogus-result.json"));
+  assert.equal(capturedFixture("wire/prepare-valid-result.json"), capturedFixture("wire/prepare-bogus-result.json"));
+  const f = fixture(t, { independentBindings: true });
+  const valid = secondOperatorRequest(f, "prepare-valid-request.json"), bogus = secondOperatorRequest(f, "prepare-bogus-request.json");
+  mkdirSync(valid.deployment);
+  const validFile = f.request("valid-binding", valid), bogusFile = f.request("bogus-binding", bogus);
+  const pending = f.run(["prepare", "--request", validFile]);
+  assert.equal(pending.status, 1, pending.stdout);
+  const incomplete = pending.envelope.error.details;
+  assert.ok(incomplete, pending.stdout + pending.stderr);
+  assert.ok(incomplete.problems.some(p => p.code === "approval-required" && p.slot === "knowledge" && p.capability === "fixture.learning"));
+  assert.equal(existsSync(f.phaseLog), false, "no codec before exact approval even when another slot is unqualified");
+  for (const selection of incomplete.selections) for (const capability of selection.approvalRequired) {
+    const approved = f.run(["trust", capability, "--deployment", valid.deployment, "--artifact-set", selection.artifactSet]);
+    assert.equal(approved.status, 0, approved.stdout + approved.stderr);
+  }
+  const a = f.run(["prepare", "--request", validFile]), b = f.run(["prepare", "--request", bogusFile]);
+  assert.equal(a.status, 1); assert.equal(b.status, 1);
+  const good = a.envelope.error.details, bad = b.envelope.error.details;
+  assert.equal(good.status, "needs-configuration"); assert.equal(bad.status, "conflict");
+  for (const result of [good, bad]) {
+    assert.equal(result.resolution, null); assert.equal(result.executionBinding, null);
+    assert.ok(result.problems.every(p => ["knowledge", "messaging", "tasks"].includes(p.slot) && p.capability.startsWith("fixture.")));
+    const message = result.problems.find(p => p.slot === "messaging");
+    assert.equal(message.capability, "fixture.messaging");
+    assert.equal(message.code, "provider-not-qualified");
+    assert.equal(message.message, "fixture.messaging@1.0.0 declares no binding interface; messaging cannot be prepared");
+  }
+  assert.equal(good.problems.some(p => p.slot === "knowledge"), false);
+  const problem = bad.problems.find(p => p.slot === "knowledge");
+  assert.equal(problem.capability, "fixture.learning"); assert.equal(problem.code, "requirement-conflict");
+  assert.equal(problem.key, "/bindings/knowledge/stores/oats/root");
+  assert.deepEqual(problem.origins.map(o => o.pointer).sort(), ["/bindings/stores.oats/root", "/knowledge/payload/root"]);
+  assert.notDeepEqual(good.problems, bad.problems, "source hard-root constraint differs; NOT a real remote-existence claim");
+  assert.equal(readFileSync(f.phaseLog, "utf8"), "normalize\nbind\nnormalize\n", "valid knowledge binds despite unsupported messaging; only conflicted slot skips bind");
+});
+
+test("second-operator trust --dir on a v3 deployment gives exact approval guidance without approving or changing locks", t => {
+  const f = fixture(t), input = secondOperatorRequest(f, "prepare-valid-request.json");
+  input.deployment = join(f.root, "deployment with 'quotes'");
+  mkdirSync(input.deployment);
+  const pending = f.run(["prepare", "--request", f.request("trust-input", input)]);
+  assert.equal(pending.status, 1, pending.stdout);
+  const selection = pending.envelope.error.details.selections.find(s => s.approvalRequired.includes("fixture.learning"));
+  assert.ok(selection, pending.stdout);
+  const lockFile = join(input.deployment, "oats-lock.json"), before = readFileSync(lockFile);
+  const approvals = JSON.stringify(readApprovalLedger(input.deployment));
+  const held = f.run(["trust", "fixture.learning", "--dir", input.deployment]);
+  assert.equal(held.status, 1); assert.equal(held.envelope.error.code, "needs-configuration");
+  assert.ok(!held.stdout.includes("unsupported lockfileVersion"));
+  assert.deepEqual(held.envelope.error.details, { deployment: input.deployment, commands: [{ artifactSet: selection.artifactSet,
+    command: `oats trust fixture.learning --deployment ${quote(input.deployment)} --artifact-set ${selection.artifactSet}` }] });
+  const prose = spawnSync(process.execPath, [CLI, "trust", "fixture.learning", "--dir", input.deployment], { cwd: f.workTarget, env: f.env, encoding: "utf8", timeout: 30000 });
+  assert.equal(prose.status, 1); assert.equal(prose.stdout, ""); assert.match(prose.stderr, /--deployment .*--artifact-set /);
+  assert.ok(readFileSync(lockFile).equals(before)); assert.equal(JSON.stringify(readApprovalLedger(input.deployment)), approvals);
+  assert.equal(existsSync(f.phaseLog), false, "suggesting approval is not executing provider code");
+  const approved = f.run(["trust", "fixture.learning", "--deployment", input.deployment, "--artifact-set", selection.artifactSet]);
+  assert.equal(approved.status, 0, approved.stdout + approved.stderr);
+  assert.notEqual(JSON.stringify(readApprovalLedger(input.deployment)), approvals, "only exact explicit approval mutates the ledger");
+  assert.ok(readFileSync(lockFile).equals(before));
+  // The new discriminator must not reinterpret historical versionless v1 as v3.
+  for (const lock of [{ capabilities: {} }, { lockfileVersion: 1, capabilities: {} }, { lockfileVersion: 2, packages: {}, capabilities: {} }]) {
+    const classic = join(f.root, `classic-${lock.lockfileVersion ?? "implicit"}`); mkdirSync(classic);
+    write(join(classic, "oats-lock.json"), lock);
+    const result = f.run(["trust", "fixture.missing", "--dir", classic]);
+    assert.equal(result.status, 1); assert.ok(!["invalid-lock", "needs-configuration", "migration-required"].includes(result.envelope.error.code), result.stdout);
+    assert.deepEqual(JSON.parse(readFileSync(join(classic, "oats-lock.json"), "utf8")), lock);
+  }
+});
+
+test("second-operator trust help explains exact artifact-set approval and preparation request pairing", t => {
+  const f = fixture(t), help = f.run(["trust", "--help"]);
+  assert.equal(help.status, 0, help.stdout);
+  const usage = help.envelope.result.usage.join("\n");
+  assert.match(usage, /--deployment <abs> --artifact-set <sha256-/);
+  assert.match(usage, /selections\[\]\.artifactSet/); assert.match(usage, /approvalRequired\[\]/);
+  assert.equal(existsSync(f.transportLog), false); assert.equal(existsSync(f.phaseLog), false);
+});
+
+test("second-operator absent deployment after ready inspection is a typed provisioning hold, not raw ENOENT", t => {
+  const f = fixture(t), input = secondOperatorRequest(f, "inspect-request.json"), file = f.request("absent-deployment", input);
+  const inspected = f.run(["inspect", "--request", file]);
+  assert.equal(inspected.status, 0, inspected.stdout);
+  assert.equal(inspected.envelope.result.deployment.status, "ready");
+  assert.equal(inspected.envelope.result.deployment.deployment.state, "absent");
+  const transport = readFileSync(f.transportLog, "utf8");
+  const prepared = f.run(["prepare", "--request", file]);
+  assert.equal(prepared.status, 1); assert.equal(prepared.envelope.error.code, "needs-configuration");
+  assert.match(prepared.envelope.error.message, /directory is absent; provision.*inspect again/);
+  assert.ok(!prepared.stdout.includes("ENOENT") && !prepared.stdout.includes(input.deployment));
+  assert.equal(existsSync(input.deployment), false); assert.equal(existsSync(f.phaseLog), false);
+  assert.equal(readFileSync(f.transportLog, "utf8"), transport, "provisioning hold precedes new source observation or state writes");
+});
+
+test("second-operator inspection request is accepted by prepare and explicit conversion preserves workTarget without choosing execution placement", t => {
+  const f = fixture(t), input = secondOperatorRequest(f, "inspect-request.json"), file = f.request("compatible-input", input);
+  const unrelated = join(f.root, "unrelated-cwd"); mkdirSync(unrelated);
+  mkdirSync(input.deployment); // Explicit operator provisioning, never inferred from inspect.
+  const output = join(f.root, "converted-prepare.json");
+  const inspected = f.run(["inspect", "--request", file, "--emit-prepare-request", output], { cwd: unrelated });
+  assert.equal(inspected.status, 0, inspected.stdout + inspected.stderr);
+  const view = inspected.envelope.result;
+  assert.equal(view.prepareRequestFile, output); assert.equal(view.effects.requestFileWrite, true);
+  assert.equal(view.effects.deploymentWrites, false); assert.equal(Object.hasOwn(view, "prepareRequest"), false);
+  assert.ok(!inspected.stdout.includes(opaque));
+  const convertedBytes = readFileSync(output, "utf8"), converted = JSON.parse(convertedBytes);
+  assert.ok(convertedBytes.includes(opaque), "only explicit private export carries unclassified adoption inputs");
+  assert.equal(lstatSync(output).mode & 0o777, 0o600);
+  assert.equal(converted.workTarget, input.workTarget); assert.equal(converted.deployment, input.deployment);
+  assert.equal(converted.source.source, SOURCE); assert.equal(converted.source.soul, "souls/pilot");
+  assert.equal(Object.hasOwn(converted, "directory"), false); assert.equal(existsSync(f.phaseLog), false);
+  const priorTransport = readFileSync(f.transportLog, "utf8");
+  const alias = join(f.root, "output-link.json"); symlinkSync(output, alias);
+  for (const existing of [file, output, alias, "relative.json"]) {
+    const bad = f.run(["inspect", "--request", file, "--emit-prepare-request", existing]);
+    assert.equal(bad.status, 1); assert.equal(bad.envelope.error.code, "E_BAD_ARGS");
+  }
+  assert.equal(readFileSync(output, "utf8"), convertedBytes);
+  assert.equal(readFileSync(f.transportLog, "utf8"), priorTransport, "existing output refuses before further observations");
+  for (const request of [file, output]) {
+    const result = f.run(["prepare", "--request", request], { cwd: unrelated });
+    assert.equal(result.status, 1); assert.equal(result.envelope.error.code, "needs-configuration", result.stdout);
+    const details = result.envelope.error.details;
+    assert.ok(details, result.stdout);
+    assert.equal(details.workTarget.path, input.workTarget); assert.notEqual(details.workTarget.path, unrelated);
+    assert.equal(details.source.soul, "souls/pilot"); assert.equal(details.resolution, null);
+    assert.ok(details.problems.some(p => p.code === "approval-required"));
+  }
+  const transport = readFileSync(f.transportLog, "utf8");
+  for (const workTarget of [null, false, "relative", join(f.root, "missing-work")]) {
+    const bad = f.run(["prepare", "--request", f.request("bad-target", { ...input, workTarget })]);
+    assert.equal(bad.status, 1); assert.ok(["invalid-declaration", "source-unavailable"].includes(bad.envelope.error.code), bad.stdout);
+  }
+  assert.equal(readFileSync(f.transportLog, "utf8"), transport); assert.equal(existsSync(f.phaseLog), false);
+  const heldOutput = join(f.root, "held-output.json");
+  const held = f.run(["inspect", "--request", file, "--emit-prepare-request", heldOutput]);
+  assert.equal(held.status, 1); assert.equal(held.envelope.error.code, "fresh-deployment-required");
+  assert.equal(existsSync(heldOutput), false, "managed-state inspection cannot issue a fresh request export");
+});
 
 test("public same-repository source/workspace inspection qualifies reciprocal observations without adopting publisher policy", t => {
   const f = fixture(t);

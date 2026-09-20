@@ -1,0 +1,13 @@
+{
+  "lockfileVersion": 3,
+  "topLevelKeys": [
+    "artifactSets",
+    "lockfileVersion",
+    "selections"
+  ],
+  "artifactSetIds": [
+    "sha256-32994916e1cdd8dd5f7d24ea3b91db872f74b5d6958c50c37dba82d606f507d4",
+    "sha256-394980afebd72fec5c840ed01a4fde134185a4b79e17b23ba044b03deb388cc9",
+    "sha256-5fbf5303cd21ce34a754090fbcaa2411b3b48181d80b13ab78e174e05a709da4"
+  ]
+}
