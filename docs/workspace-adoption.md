@@ -44,51 +44,75 @@ owner registry belongs in the public workspace. Knowledge publication and accept
 (S7) remain separate; no ready knowledge export is advertised. Preserve the parked
 roster/curation and every old home, lock, source, pending job, history and worktree.
 
-## Planned onboarding: OATS Soul Setup (D3)
+## Onboard with OATS Soul Setup (0.24.2+)
 
-**The D3 onboarding flow remains pending.** It will create and instantiate
-`oats-setup-expert`, declaring both `oats.core` and `oats.setup` from the
-[official marketplace](official-marketplace.md). Those capabilities are now
-published in `oats.framework` 1.1.0 and listed; the separate setup-expert edition
-and onboarding entry point do not become available merely by listing the package.
-This flow was not shipped in the 0.24.0 or 0.24.1 kernel releases.
+With operator approval, [OATS 0.24.2](release-notes/v0.24.2.md) and later provide:
 
-- The setup expert will help the operator adopt repositories, select capabilities
-  and carry out the normal prepare/approve/scaffold/start steps. It bypasses no
-  executable approval, provider readiness, identity or permission boundary.
-- Every soul created by that flow will declare `requires.capabilities.oats.core`
-  and its source explicitly. The operator can remove or replace that dependency
-  by editing the authored definition, not a captured record; the kernel will not
-  silently reinsert an absent one.
-- The CLI/Desktop entry point still requires separate implementation and review.
-  Do not invent a workspace init/adopt command, create a setup soul from this
-  sketch, or treat a listed package as installed. Existing instances and retained
-  resources are not rewritten by the plan.
+```sh
+oats onboard --dir /absolute/context --json
+```
+
+This is **classic local bootstrap**, not captured preparation or workspace
+enrollment; the command is absent from 0.24.0/0.24.1. Classic root resolution
+selects an enclosing roster, otherwise the enclosing Git root/context. Supplying
+`--dir` does **not** promise that a literal nested subdirectory becomes a new
+physical deployment; choose an independent context when that is intended.
+
+Onboarding acquires the catalog's official `oats.framework` package through the
+ordinary acquisition/lock engine and creates a local `oats-setup-expert`, selecting
+only `oats.core` and `oats.setup` for it. Both local capability requirements name
+the **actually acquired immutable commit**, not orphan `repo:` paths in the new
+deployment. Knowledge, messaging and tasks default to none, with no knowledge
+owner or payload. Unexpected executable surfaces refuse rather than gaining trust
+from catalog membership. Review the resolved deployment and returned
+`result.next.command`: it uses the same kernel for the next spawn, and onboarding
+**never executes it or launches a model**.
+
+Optional `--workspace git:host/org/repository[@revision]` selects the workspace's
+pinned setup-expert import, or that explicit repository's advertised setup edition
+at its observed revision. Its source-package bytes must match the official
+acquisition. Failed explicit inputs never fall back to the packaged default, and
+workspace policy, teams and provider adoption values are not silently adopted.
+
+An **existing roster** requires `--force-existing` (the guard is the agent list,
+not merely any existing configuration). The flag cannot replace an existing or
+incomplete setup soul or disable providers/additives for other souls; exclusions
+apply only to the new setup expert. Failures report partial acquisition/creation,
+not atomic captured preparation. Preserve that evidence before retrying.
+**`oats setup` remains record capture setup**, unchanged. Native authentication
+and permission boundaries remain.
+
+The expert can then guide deliberate configuration and the normal retained
+prepare/approve/scaffold/start stages. A created soul or printed spawn command is
+not a running session, provider qualification or accepted learning. Desktop
+onboarding and legacy roster/knowledge cutover remain separate.
 
 ## Stage two: published experts and pinned imports
 
 - `oats-workspace.yaml` explicitly admits `oats` and the six intended capability
   repositories: `oats-dev`, `oats-okf`, `oats-aweb`, `oats-authoring`, `oats-jira`
   and `oats-linear`. It activates no additional capability; tasks default to none.
-- `oats.yaml` exports all five `souls/<name>` editions above and the actual package
-  roots `oats-package` (`oats.framework`) and `capabilities/oats-authoring`, not
+- `oats.yaml` exports the five knowledge-owning editions above plus the separate
+  `souls/oats-setup-expert` bootstrap edition, and the actual package roots
+  `oats-package` (`oats.framework`) and `capabilities/oats-authoring`, not
   the npm root as a fictitious OATS distribution. Its workspace backlink names
   the same framework repository.
 - The editions are parallel to, not replacements for, the live `agents/` roster.
   Each contains canonical instructions, `CLAUDE.md -> AGENTS.md`, and its reviewed
   private procedures where applicable. No durable KB is copied into them; legacy
-  roster cutover remains deferred until S7 knowledge publication.
-- Each edition preserves its knowledge owner, owned node and four cross-reads.
+  roster/knowledge cutover remains deferred until the fresh-reader proof against
+  the accepted public knowledge base.
+- Each of the five expertise editions preserves its owner, node and four cross-reads.
   Store `oats` requires the explicit `stores.oats` binding; no publisher writer,
   production store or grants are supplied. An acceptance fixture is parent-owned
   and cannot be counted as production knowledge adoption.
-- Knowledge **oats.okf@2.1.1** and messaging **oats.aweb@1.11.0** are explicit hard
-  requirements, not optional defaults. They are published starting revisions,
-  **not proof that their combined bindings/runtime profile is ready**. The provider
+- Current authored expert editions require knowledge **oats.okf@2.1.1** and
+  messaging **oats.aweb@1.11.0**, not optional defaults. These published revisions
+  are **not proof that their combined bindings/runtime profile is ready**. The provider
   owner supplies that evidence and any subsequently reviewed compatible revision.
   Do not replace either requirement with none or erase a read edge to launch.
 
-At these starting pins, the provider boundary is concrete:
+At those authored revisions, the provider boundary is concrete:
 
 - Published OKF2.1.1 supports `inherit: stores.oats`, normalized to
   `/bindings/knowledge/stores/oats`. The explicit `destination: oats` preserves
@@ -112,19 +136,24 @@ select reviewed compatible provider revisions and update the source pin delibera
 before claiming an operational pilot; metadata-only repository indexes change none
 of these runtime facts.
 
-Stage one used an empty imports list until source publication. Stage two is now
-committed: all five imports pin **`caa341f34009e37006567419a983d5a743037a79`**, the
-published edition revision containing explicit core requirements and the package.
-The later workspace commit `375b9f42` added those imports. Live source inspection
-against published main resolved all five as `ready-for-preparation`; this is
-metadata readiness, not provider binding, approval, enrollment or a running pilot.
+Stage one used an empty imports list until source publication. All six imports
+now pin **`3156e4de23a02b0de86a45b2471cb893cd8f75db`**, the released
+[OATS v0.24.3](release-notes/v0.24.3.md) source revision, through the later reviewed
+workspace update `638206b9`. The five knowledge-owning experts therefore select
+OKF2.1.1 and aweb1.11.0 with explicit core; setup remains provider-independent,
+requiring core/setup and defaulting all three fundamental layers to none. It is
+not a sixth knowledge owner. This deliberate repin, not a catalog/kernel upgrade
+alone, advances the selected source requirements. Successful source inspection,
+including `ready-for-preparation`, is still metadata readiness—not binding,
+approval, enrollment or a running pilot.
 
 ## Preserve source-before-import publication order
 
-1. Publish complete, reviewed source editions before pinning them. The current
-   source is `caa341f34009e37006567419a983d5a743037a79`; future revisions must likewise
-   exist before their workspace import update. Never use an invented SHA, a mutable
-   branch or an unreviewed local candidate as the accepted source.
+1. Publish complete, reviewed source editions before pinning them. All six imports
+   use `3156e4de23a02b0de86a45b2471cb893cd8f75db` (v0.24.3). Future revisions must
+   likewise exist before their import update.
+   Never use an invented SHA, a mutable branch or an unreviewed local candidate
+   as the accepted source.
 2. In each of the six repositories, review a root `oats.yaml` against its actual
    source head and actual `oats-package/oats-package.json`. The declaration is:
 
@@ -149,13 +178,13 @@ metadata readiness, not provider binding, approval, enrollment or a running pilo
    imports:
      - source: git:github.com/awebai/oats
        soul: souls/oats-expert
-       revision: caa341f34009e37006567419a983d5a743037a79
+       revision: 3156e4de23a02b0de86a45b2471cb893cd8f75db
        alias: oats-expert
    ```
 
-   The [actual workspace](../oats-workspace.yaml) contains all five imports at that
-   same revision; this excerpt is not a replacement for the full list. The layout
-   test now checks stage-two imports and source-document declarations. Do not
+   The [actual workspace](../oats-workspace.yaml) contains all six imports at that
+   same revision; this excerpt is not the full list.
+   The layout test checks all six imports and source-document declarations. Do not
    change stable export paths or owners merely because the workspace advances.
 4. Qualify reciprocal admission at the now-published observations. A missing
    backlink, a fork's copied file or a stale workspace observation is not membership.

@@ -22,8 +22,8 @@ const EDITIONS = [
   ["market-research-expert", "2a073e37-2114-474d-917d-29cf3333932f", ["sourced-market-research"]],
   ["oats-assistant", "2dab92c7-701d-4101-bc7f-09acf4fc374e", ["oats-onboarding"]],
 ];
-// The bootstrap edition is exported separately; the workspace still imports
-// only the five published expertise editions until the maintainer pins it.
+// Six sources are exported/imported, but only the five expertise editions
+// participate in the knowledge-owner/read graph; bootstrap stays separate.
 const EXPORTED_NAMES = [...EDITIONS.map(([name]) => name), "oats-setup-expert"];
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const SOURCE = "git:github.com/awebai/oats", EXPORT = "souls/oats-expert";
@@ -78,8 +78,8 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   const ws = workspace(), member = index();
   assert.deepEqual(ws.members.map(m => m.source), ["oats", "oats-dev", "oats-okf", "oats-aweb", "oats-authoring", "oats-jira", "oats-linear"].map(name => `git:https://github.com/awebai/${name}.git`));
   assert.ok(ws.members.every(m => !Object.hasOwn(m, "revision")), "observe host defaults, never guess main or future commits");
-  // Stage two: the five editions are published, so the workspace pins each import to the exact
-  // reviewed commit that exported them with explicit oats.core. Full SHA, same repository, one alias each.
+  // Each of the six imports pins its reviewed source revision with explicit oats.core.
+  // Full SHA, same repository, one alias each; not necessarily the same revision.
   assert.deepEqual(ws.imports.map(i => [i.soul, i.alias]), EXPORTED_NAMES.map(name => [`souls/${name}`, name]));
   for (const item of ws.imports) {
     assert.equal(item.source, parseRepositorySource(SOURCE).normalized);
@@ -108,6 +108,20 @@ test("workspace metadata has explicit reciprocal candidates and only existing pa
   for (const [uri, value] of [...EXPORTED_NAMES.map(name => ["soul", soul(name).declaration]), ["workspace", ws.declaration], ["member", member.declaration]]) {
     const validate = ajv.getSchema(`https://oats.dev/schemas/${uri}-v1.json`);
     assert.equal(validate(value), true, JSON.stringify(validate.errors));
+  }
+});
+
+test("setup source requires only core/setup and defaults all fundamental layers to none", () => {
+  const declaration = soul("oats-setup-expert").declaration;
+  assert.deepEqual({ ...declaration.defaults }, { knowledge: "none", messaging: "none", tasks: "none" });
+  assert.deepEqual(JSON.parse(JSON.stringify(declaration.requires)), {
+    capabilities: {
+      "oats.core": { source: "repo:oats-package" },
+      "oats.setup": { source: "repo:oats-package" },
+    },
+  });
+  for (const absent of ["knowledge", "owner", "teams", "resources"]) {
+    assert.equal(Object.hasOwn(declaration, absent), false, `bootstrap source declares no ${absent}`);
   }
 });
 
