@@ -485,6 +485,8 @@ test('explicit primary and helper launch inputs retain separate entrypoints and 
   assert.equal(record.dispatch.launch.executableResource,`executable:${f.id}:command:show`);
   f.write('packages/action/cap/show.mjs','#!/usr/bin/env node\nconsole.log("runtime B");\n');f.git('add','.');f.git('commit','--quiet','-m','runtime B');
   const b=prepareCapturedComposition({...f.input,launch:{...launch,model:'explicit-model-B'}},f.options);
+  const noLaunch=prepareCapturedComposition(f.input,f.options);
+  assert.equal(readCapturedResolution(f.deployment,noLaunch.resolution).dispatch.launch,null);
   assert.notEqual(a.resolution.id,b.resolution.id);
   const bRecord=readCapturedResolution(f.deployment,b.resolution);assert.equal(readCapturedResolution(f.deployment,bRecord.helpers[key]).dispatch.launch,null,'helper never inherits the primary runtime request');
   rmSync(f.repo,{recursive:true});writeFileSync(join(f.deployment,'oats-config.yaml'),'poison runtime/model config');
@@ -494,8 +496,13 @@ test('explicit primary and helper launch inputs retain separate entrypoints and 
   const helperSelection=resolveCapturedHelper({executionBinding:a.executionBinding,helper:key});
   assert.deepEqual(helperSelection.launchSelection,{runtime:'claude',model:'helper-model-A'},'summary comes from verified helper A, not primary/current B');
   assert.equal(resolveCapturedHelper({executionBinding:b.executionBinding,helper:key}).launchSelection,null,'an unselected helper launch stays null');
-  const inspect=execFileSync(process.execPath,[fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),'inspect','--deployment',f.deployment,'--resolution',a.resolution.id,'--helper',key,'--json'],{encoding:'utf8'});
-  assert.deepEqual(JSON.parse(inspect).result.helperSelection.launchSelection,{runtime:'claude',model:'helper-model-A'},'public read-only summary exposes only runtime/model, no env/argv/credentials');
+  const inspect=(resolution,extra=[])=>JSON.parse(execFileSync(process.execPath,[fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)),'inspect','--deployment',f.deployment,'--resolution',resolution.id,...extra,'--json'],
+    {encoding:'utf8',env:{...process.env,OATS_RUNTIME:'codex',OATS_MODEL:'ambient-wrong-model'}})).result;
+  assert.deepEqual(inspect(a.resolution).launchSelection,{runtime:'claude',model:'explicit-model-A'},'primary summary uses the retained launch, never source B/current config/ambient runtime');
+  assert.equal(inspect(noLaunch.resolution).launchSelection,null,'no retained launch stays null');
+  const helperInspect=inspect(a.resolution,['--helper',key]);
+  assert.deepEqual(helperInspect.helperSelection.launchSelection,{runtime:'claude',model:'helper-model-A'},'existing SOURCE-helper summary remains compatible');
+  assert.deepEqual(helperInspect.launchSelection,helperInspect.helperSelection.launchSelection,'top-level summary describes the selected retained record, with only runtime/model');
   const tampered=structuredClone(record);tampered.dispatch.launch.executableResource='missing-runtime';
   assert.throws(()=>commitCapturedResolution(f.deployment,tampered));
   const g=fixture(t),manifest=JSON.parse(readFileSync(join(g.repo,'packages/action/cap/oats.json'),'utf8'));
@@ -950,10 +957,21 @@ test('provider broker requires exact approval then runs retained phases without 
   const manifest=JSON.parse(readFileSync(manifestPath,'utf8'));
   manifest.commands.binding='binding.mjs';manifest.binding={version:1,normalize:'binding',bind:'binding',check:'binding'};
   writeFileSync(manifestPath,JSON.stringify(manifest));
+  const cli=realpathSync(fileURLToPath(new URL('../bin/oats.mjs',import.meta.url)));
   f.write('packages/action/cap/binding.mjs',`import {readFileSync,writeFileSync} from 'node:fs';
+    import assert from 'node:assert/strict'; import {execFileSync} from 'node:child_process';
     const request=JSON.parse(readFileSync(0,'utf8'));
     if(request.settings.timeoutProbe) { process.on('SIGTERM',()=>{}); setInterval(()=>{},1000); }
-    if(process.env.OATS_INSTANCE || process.env.OATS_RESOLUTION || process.env.PI_AGENT_HOME) throw Error('ambient identity');
+    assert.deepEqual(Object.keys(process.env).filter(key=>/^(OATS_|OAS_|PI_)/.test(key)).sort(),['OATS_CAPABILITY','OATS_CAPABILITY_ROOT','OATS_CLI_BIN','OATS_SETTINGS']);
+    assert.equal(process.env.OATS_CLI_BIN,${JSON.stringify(cli)});
+    assert.equal(process.env.OATS_CAPABILITY,request.capability);
+    assert.equal(process.env.OATS_CAPABILITY_ROOT,process.cwd());
+    assert.deepEqual(JSON.parse(process.env.OATS_SETTINGS),request.settings);
+    assert.equal(process.env.FIXTURE_PROFILE_CONTEXT,'ordinary-context-kept');
+    if(!request.settings.timeoutProbe){
+      const version=JSON.parse(execFileSync(process.execPath,[process.env.OATS_CLI_BIN,'--version','--json'],{encoding:'utf8'}));
+      assert.equal(version.name,'@awebai/oats');assert.equal(version.version,${JSON.stringify(JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8')).version)});
+    }
     writeFileSync(${JSON.stringify(marker)},'ran');
     const result=request.phase==='normalize'?{requirements:[],candidates:[],model:{source:'retained-A'}}:
       request.phase==='bind'?{payloadContract:'example.locations',payloadVersion:1,payload:request.input.model,credentialRefs:{},provenance:[]}:
@@ -969,8 +987,11 @@ test('provider broker requires exact approval then runs retained phases without 
   rmSync(f.repo,{recursive:true});
   approveAvailableCapability(f.deployment,set,f.id,{kind:'operator',document:{kind:'operator',id:'fixture'},pointer:'/approve'});
   writeFileSync(join(f.deployment,'oats-config.yaml'),'poison: current config must not be read\n');
-  const prior=process.env.OATS_INSTANCE;process.env.OATS_INSTANCE='poison-instance';
-  t.after(()=>{if(prior===undefined) delete process.env.OATS_INSTANCE;else process.env.OATS_INSTANCE=prior;});
+  const poison={OATS_INSTANCE:'poison-instance',OATS_RESOLUTION:'poison-resolution',OATS_DEPLOYMENT:'/poison/deployment',OATS_CLI_BIN:'/poison/oats.mjs',
+    OATS_CAPABILITY:'foreign.capability',OATS_CAPABILITY_ROOT:'/poison/capability',OATS_SETTINGS:'poison-settings',OATS_OTHER:'poison',
+    OAS_OTHER:'poison',PI_AGENT_HOME:'/poison/home',PI_CODING_AGENT_DIR:'/poison/profile',PI_OTHER:'poison',FIXTURE_PROFILE_CONTEXT:'ordinary-context-kept'};
+  const prior=Object.fromEntries(Object.keys(poison).map(key=>[key,process.env[key]]));Object.assign(process.env,poison);
+  t.after(()=>{for(const [key,value] of Object.entries(prior)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
   const normalized=runCapturedProviderBinding(options);assert.equal(normalized.model.source,'retained-A');
   const bound=runCapturedProviderBinding({...options,phase:'bind',input:{model:normalized.model,choices:{},context}});
   assert.equal(bound.binding.payload.source,'retained-A');
