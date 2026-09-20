@@ -63,6 +63,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 - ⬜ Then: push bootstrap + curation as PR to awebai; bind `stores.oats` in the pilot deployment; prove fresh-reader + Git-PR learning with the new souls; retire old in-soul knowledge (`agents/*/soul/knowledge`) as a final cutover.
 
 ## S8 — Desktop parity
+- Finding (L, D2 audit): the Desktop server has **no soul-creation endpoint** today (roster reads, existing-soul edits/capability operations, instance spawn only). Soul creation with explicit `oats.core`, the marketplace view and the onboarding flow are new Desktop features, not wiring.
 - ⬜ After S4/S5: official marketplace view/search; soul creation showing `oats.core`; onboarding flow; redesign parity vs `Oats UX Redesign and Desktop Discovery (1)`.
 - ⛔ Fresh `oats-desktop-engineer` not spawned: `claude` not on PATH → choose Pi/Codex or install (human).
 
