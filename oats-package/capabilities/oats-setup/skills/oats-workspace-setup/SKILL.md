@@ -204,8 +204,10 @@ from ambient config, old captured selectors or metadata-only output.
 
 ## 6. Report limits, not a false ready state
 
-Released **oats-aweb capability 1.10.3** lacks the portable binding interface;
-correct metadata alone cannot make a messaging-required pilot operational.
+oats-aweb 1.10.3 lacks the portable binding interface; **oats-aweb 1.11.0**
+(OATS >=0.24.2) adds it, qualifying only an input-capable Claude/Codex profile with
+`delivery: session`. Correct metadata alone cannot make a messaging-required pilot
+operational.
 A codec-only candidate with an unconditional readiness refusal is not a completed
 native adapter. Published **OKF 2.1.1** additionally accepts retained ordinary
 Claude/Codex helper choices, including native-default model intent, with the

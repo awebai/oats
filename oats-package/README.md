@@ -59,9 +59,12 @@ distills `docs/workspace-adoption.md` into a capability-owned workspace skill.
 Kernel originals stay in place for the separate transition; no deleted kernel
 setup skill is recreated here.
 
-The skills state release-scoped limitations. In particular, released oats-aweb
-capability 1.10.3 lacks portable binding support; required messaging cannot be
-disabled to make an adoption pass. Metadata, preparation, native readiness,
+The skills state release-scoped limitations. In particular, oats-aweb 1.10.3
+lacks portable binding support; **oats-aweb 1.11.0** (requires OATS >=0.24.2)
+adds it and qualifies only an input-capable Claude/Codex profile with explicit
+`delivery: session` — a strict-Pi print primary still reports
+`needs-configuration`. Required messaging cannot be disabled to make an
+adoption pass. Metadata, preparation, native readiness,
 message delivery, worker completion and accepted Git knowledge publication are
 not interchangeable evidence. No runtime/identity/team/credential behavior is
 implemented by these resource-only capabilities.

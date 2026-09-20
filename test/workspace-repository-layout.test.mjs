@@ -108,7 +108,7 @@ test("transitional role preserves external owner/read routing and hard knowledge
   assert.deepEqual(JSON.parse(JSON.stringify(declaration.requires)), {
     capabilities: { "oats.core": { source: "repo:oats-package" } },
     knowledge: { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.1#oats-package" },
-    messaging: { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.10.3#oats-package" },
+    messaging: { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.11.0#oats-package" },
   });
   const model = normalizeKnowledgeDeclaration(declaration.knowledge, { origins: parsed.origins, origin });
   assert.equal(model.owner, "c448f593-9b2d-4c48-a679-1c468bda5beb");
@@ -134,7 +134,7 @@ test("five expert editions preserve owners, own-node/four-read routing and conta
     const root = join(ROOT, "souls", name), parsed = soul(name), d = parsed.declaration;
     assert.equal(d.name, name); assert.equal(d.work, "directory");
     assert.deepEqual(JSON.parse(JSON.stringify(d.requires.knowledge)), { capability: "oats.okf", source: "git:github.com/awebai/oats-okf@v2.1.1#oats-package" });
-    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.messaging)), { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.10.3#oats-package" });
+    assert.deepEqual(JSON.parse(JSON.stringify(d.requires.messaging)), { capability: "oats.aweb", source: "git:github.com/awebai/oats-aweb@v1.11.0#oats-package" });
     assert.equal(d.defaults.tasks, "none");
     assert.deepEqual(JSON.parse(JSON.stringify(d.requires.capabilities)), { "oats.core": { source: "repo:oats-package" } }, "explicit, removable day-to-day capability from this repository's payload");
     const model = normalizeKnowledgeDeclaration(d.knowledge, { origins: parsed.origins, origin });

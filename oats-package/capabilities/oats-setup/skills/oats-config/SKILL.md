@@ -181,7 +181,9 @@ If classic composition reports a duplicate skill, use its explicit supported
 reviewed kernel transition. Do not invent precedence or edit installed snapshots.
 This package does not auto-create a setup expert or silently add oats.core.
 
-Released oats-aweb1.10.3 lacks the portable binding interface: neither selecting
-its team nor setting delivery:session makes that adapter ready. Required source
+oats-aweb 1.10.3 lacks the portable binding interface; oats-aweb **1.11.0**
+(OATS >=0.24.2) adds it and reports `ready` only for an input-capable Claude/Codex
+profile with an explicit private team and `delivery: session` — a strict-Pi print
+primary truthfully reports `needs-configuration`. Required source
 capabilities cannot be disabled to make a pilot pass. Actual native human/team,
 permission and profile readiness are operator/provider responsibilities.

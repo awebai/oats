@@ -82,7 +82,7 @@ This flow was not shipped in the 0.24.0 or 0.24.1 kernel releases.
   Store `oats` requires the explicit `stores.oats` binding; no publisher writer,
   production store or grants are supplied. An acceptance fixture is parent-owned
   and cannot be counted as production knowledge adoption.
-- Knowledge **oats.okf@2.1.1** and messaging **oats.aweb@1.10.3** are explicit hard
+- Knowledge **oats.okf@2.1.1** and messaging **oats.aweb@1.11.0** are explicit hard
   requirements, not optional defaults. They are published starting revisions,
   **not proof that their combined bindings/runtime profile is ready**. The provider
   owner supplies that evidence and any subsequently reviewed compatible revision.
@@ -94,12 +94,13 @@ At these starting pins, the provider boundary is concrete:
   `/bindings/knowledge/stores/oats`. The explicit `destination: oats` preserves
   routing; omitting it would instead require `write.default`. No new schema,
   owner or production locator is needed for this declaration.
-- Released aweb1.10.3 (`24efa6f9`) has **no mandatory portable binding interface**,
-  so it still blocks this pilot's portable preparation. Adapter work is tracked
-  in the [program board](design/2026-09-20-redesign-program-board.md); a candidate
-  is not a published compatible successor or native lifecycle qualification.
-  Human/native-principal, private-context, admin/grant and admitted-lifecycle
-  requirements remain provider/integration-owner work.
+- aweb 1.10.3 (`24efa6f9`) has no portable binding interface; **aweb 1.11.0**
+  (`v1.11.0`, OATS >=0.24.2) adds it and the five editions now pin it. Its `check`
+  qualifies only an input-capable Claude/Codex primary with an explicit private team
+  and `delivery: session`; strict-Pi print reports `needs-configuration`. Status is on
+  the [program board](design/2026-09-20-redesign-program-board.md). Qualification
+  is HOME-route operational custody only: not human/native-principal delegation,
+  private grants, broker delivery or model consumption.
 - Published OKF2.1.1 accepts retained Claude/Codex helpers with the complete approved
   capability closure and native-default model intent. Strict Pi still requires an
   explicit model and the sole-OKF profile; Pi plus messaging remains unqualified.
@@ -262,7 +263,7 @@ Before preparing, the integration lead must supply:
   `operator.policy.messaging` selection: capability, matching selected source and
   `settings: {delivery: session}`. Retain host requirements, session `ifInstalled`
   minimums and any selected authoring requirements. Selecting session delivery neither
-  adds the missing1.10.3 binding adapter nor supplies captured wake/input authority.
+  makes a strict-Pi print primary input-capable nor supplies captured wake authority.
 - A qualified primary/helper runtime/model/resource profile. Capture the intended
   helper selection in `helperLaunches["oats.okf:memory-harvest"]`, not the legacy
   `souls.memory-harvest` configuration. Do not replace retained intent to fit an easier
