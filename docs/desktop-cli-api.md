@@ -80,7 +80,9 @@ provenance sources its souls record.
 ```
 
 `kind: "none-recorded"` (empty `items`, explanatory `note`) means no soul in the
-scope records a portable provenance — show the authored souls and say so.
+scope records a portable **source address** — a soul may still carry a
+`provenance` of kind `packaged-definition` with `source: null`. Say "no portable
+source recorded"; do not infer "local" or "authored" from this state.
 Workspace imports adopted onto a deployment will appear here at their pinned
 revisions when that adoption is recorded on the deployment; nothing is
 enumerated from a source repository that the deployment does not record.

@@ -1041,7 +1041,7 @@ function inspectCmd() {
   const sourceItems = [...new Map(souls.filter((s) => s.provenance?.source).map((s) => [sourceKey(s.provenance), { ...s.provenance, souls: [] }])).values()];
   for (const s of souls) if (s.provenance?.source) sourceItems.find((i) => sourceKey(i) === sourceKey(s.provenance)).souls.push(s.name);
   const sources = { soulsApi: 1, kind: sourceItems.length ? "recorded-provenance" : "none-recorded", items: sourceItems,
-    note: sourceItems.length ? null : "no soul in this scope records a portable provenance; authored local souls only" };
+    note: sourceItems.length ? null : "no soul in this scope records a portable source address" };
   const result = {
     operationsApi: 1, kernel: OATS_VERSION,
     scope: { context: ctx, requestedContext: requestedContext === ctx ? null : requestedContext, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },

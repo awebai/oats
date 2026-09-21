@@ -89,7 +89,7 @@ test("inspect answers souls with editability, capabilities with health separate 
   const byCap = Object.fromEntries(needy.readiness.requirements.map((q) => [q.capability, q]));
   assert.equal(byCap["test.tools"].installed, true); assert.equal(byCap["test.tools"].active, false, "declared-only activation is reported as not active, separately from installed");
   assert.deepEqual(byCap["test.absent"], { capability: "test.absent", source: "git:x@y#z", installed: false, approved: null, active: null, version: null });
-  assert.deepEqual(res.sources, { soulsApi: 1, kind: "none-recorded", items: [], note: "no soul in this scope records a portable provenance; authored local souls only" });
+  assert.deepEqual(res.sources, { soulsApi: 1, kind: "none-recorded", items: [], note: "no soul in this scope records a portable source address" });
   assert.deepEqual(res.problems, []);
 });
 
