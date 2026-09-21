@@ -45,6 +45,12 @@ Runtime marks show the reported runtime, not installation/authentication status.
 
 ## Keybindings (shell-level)
 
+- **Mod+F** reveals the sidebar and focuses the instance filter; **Mod+N** opens
+  Workspace's soul chooser, never automatically spawning an instance. Visible
+  hints and tooltips follow the effective bindings (including explicit unbinds).
+  Existing user overrides are retained. On Linux/Windows, Ctrl+F/Ctrl+N inside
+  the terminal still belong to the attached program; macOS uses Cmd+F/Cmd+N.
+
 - **keybindings.mjs** — the keymap engine: action registry
   (`registerAction`/`setActiveContexts`; a registration may carry a
   `defaultChord` that folds into the effective keymap like a
@@ -79,6 +85,11 @@ Runtime marks show the reported runtime, not installation/authentication status.
   unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
 
 ## Editor groups (splits) and the hideable sidebar (shell-level)
+
+Sidebar relationship guides use an 8px nesting step and 4px elbows, sharing the
+same CSS pitch as the rows. Compact outer gutters reserve more width for instance
+names without changing relationship grouping, disclosure controls, 56px row
+height or the selected row's 8px content inset.
 
 Splits follow VS Code editor-group semantics (`split-layout.mjs` is the
 pure model; `split-dom.mjs` the DOM projection). A split creates PERSISTENT

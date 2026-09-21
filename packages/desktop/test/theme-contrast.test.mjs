@@ -277,3 +277,28 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
     container.append(invalid); check(invalid, "chip");
   }
 });
+
+for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints meet AA on their actual painted controls`, t => {
+  const dom = new JSDOM(readFileSync(new URL("index.html", renderer), "utf8"));
+  t.after(() => dom.window.close());
+  const doc = dom.window.document; doc.documentElement.dataset.theme = name;
+  for (const source of [css, readFileSync(new URL("shell.css", renderer), "utf8")]) {
+    const style = doc.createElement("style"); style.textContent = source; doc.head.append(style);
+  }
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, foreground, background] of [
+    [".ctx-filter-field", "muted", "bg"], ["#sidebar-spawn", "primary-fg", "primary-bg"],
+  ]) {
+    const control = doc.querySelector(selector), hint = control.querySelector(".shortcut-hint");
+    hint.hidden = false; hint.textContent = "Ctrl+Shift+J";
+    const hintStyle = dom.window.getComputedStyle(hint), controlStyle = dom.window.getComputedStyle(control);
+    assert.equal(hintStyle.color, `var(--${foreground})`);
+    assert.equal(controlStyle.background, `var(--${background})`);
+    for (let node = hint; node; node = node.parentElement) {
+      assert.equal(dom.window.getComputedStyle(node).opacity, "1");
+    }
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${foreground}`).trim()),
+      opaqueChannels(root.getPropertyValue(`--${background}`).trim())) >= 4.5);
+    hint.hidden = true; assert.equal(dom.window.getComputedStyle(hint).display, "none");
+  }
+});

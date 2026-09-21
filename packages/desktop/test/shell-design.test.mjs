@@ -11,7 +11,7 @@ import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { rosterResponseOwns } from "../renderer/instance-tree.mjs";
-import { registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent } from "../renderer/keybindings.mjs";
+import { registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
@@ -52,7 +52,7 @@ function shell(t, shellSource = source) {
     toggleTheme: () => events.push(["theme"]),
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
     fileOpener: { choose() {}, dispose() {} },
-    getBinding, formatChord, isMac: false,
+    getBinding, formatChord, isMac: false, contextRosterEl: document.getElementById("instance-roster"),
   };
   c.tabOpenIntents = createSelectionOwnership(c);
   const start = shellSource.indexOf('const navEl = document.getElementById("nav");');
@@ -62,8 +62,9 @@ function shell(t, shellSource = source) {
   const actionsEnd = shellSource.indexOf('// THE one window keydown listener', actionsStart);
   const registry = shellSource.slice(actionsStart, actionsEnd);
   const titleCode = shellSource.slice(shellSource.indexOf("const baseTitles ="), shellSource.indexOf("onKeymapChange(() => applyChordTitles"));
-  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "toggleSidebar", "openShortcutsEditor"].map(name => fn(name, shellSource));
-  const s = runInNewContext(`${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden });`, c);
+  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "toggleSidebar", "focusRoster", "openShortcutsEditor"].map(name => fn(name, shellSource));
+  const s = runInNewContext(`${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles });`, c);
+  offs.push(onKeymapChange(s.applyChordTitles));
   // Execute the production restore-button binding too.
   runInNewContext(shellSource.match(/document\.getElementById\("sidebar-restore"\)\.addEventListener[^\n]+/)[0], c);
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); });
@@ -144,7 +145,7 @@ test("footer has one honest chooser and four permanently named tools, all dispat
   q("sidebar-theme").click(); q("sidebar-shortcuts").click(); q("sidebar-palette").click();
   assert.deepEqual(s.events, [["theme"], ["shortcuts"], ["palette"]]);
   assert.match(q("sidebar-spawn").title, /Choose a soul/);
-  assert.equal(getBinding("app.chooseSoul"), null, "do not invent Mod+N or claim Ctrl bytes");
+  assert.equal(getBinding("app.chooseSoul"), "Mod+N", "redesign shortcut chooses a soul, never launches one");
   const before = s.c.tabOpenIntents.begin(); q("sidebar-spawn").click();
   assert.equal(before(), false); assert.equal(s.loads.length, 1);
   await s.settle(s.loads[0], "resolve");
@@ -180,9 +181,52 @@ test("SVG split controls retain their names and context-gated registry wiring", 
   assert.deepEqual(s.events, [["split", "row"], ["split", "col"], ["split", "close"]]);
 });
 
-test("footer adds no terminal interception: Ctrl+B/N/P stay with the pty", t => {
+test("sidebar shortcuts keep Ctrl+B/F/N/P with the pty and dispatch Cmd+F/N on macOS", t => {
   shell(t);
-  for (const key of ["b", "n", "p"]) assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true, editableTarget: false }), null);
+  for (const key of ["b", "f", "n", "p"]) for (const isMac of [false, true]) {
+    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac, insideTerminal: true, editableTarget: false }), null);
+  }
+  for (const [key, action] of [["f", "sidebar.focusFilter"], ["n", "app.chooseSoul"]]) {
+    assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), action);
+    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), action);
+  }
+});
+
+test("visible shortcut hints and tooltips follow rebind, unbind and platform without changing labels", t => {
+  const s = shell(t); s.c.isMac = true; s.applyChordTitles();
+  t.after(() => { resetBinding("sidebar.focusFilter"); resetBinding("app.chooseSoul"); });
+  for (const [action, initial, selector] of [
+    ["sidebar.focusFilter", "⌘F", ".ctx-filter"], ["app.chooseSoul", "⌘N", "#sidebar-spawn"],
+  ]) {
+    const hint = [...s.document.querySelectorAll('[data-shortcut]')].find(el => el.dataset.shortcut === action);
+    const control = s.document.querySelector(selector), label = control.getAttribute("aria-label");
+    assert.equal(hint.textContent, initial); assert.equal(hint.hidden, false);
+    assert.equal(hint.getAttribute("aria-hidden"), "true");
+    setBinding(action, "Mod+Shift+J");
+    assert.equal(hint.textContent, "⇧⌘J"); assert.match(control.title, /⇧⌘J/);
+    s.c.isMac = false; s.applyChordTitles();
+    assert.equal(hint.textContent, "Ctrl+Shift+J");
+    setBinding(action, null);
+    assert.equal(hint.hidden, true); assert.equal(hint.textContent, "");
+    assert.doesNotMatch(control.title, /Ctrl|⌘/); assert.equal(control.getAttribute("aria-label"), label);
+    resetBinding(action); s.c.isMac = true; s.applyChordTitles();
+    assert.equal(hint.textContent, initial); assert.equal(hint.hidden, false);
+  }
+});
+
+for (const outcome of ["resolve", "reject"]) test(`filter command reveals hidden sidebar and supersedes pending chooser ${outcome}`, async t => {
+  const s = shell(t); s.document.getElementById("sidebar-spawn").click();
+  s.setSidebarHidden(true);
+  assert.equal(s.document.getElementById("app").classList.contains("sidebar-hidden"), true);
+  const intent = s.c.tabOpenIntents.begin();
+  runAction("sidebar.focusFilter");
+  assert.equal(intent(), false);
+  assert.equal(s.document.getElementById("app").classList.contains("sidebar-hidden"), false);
+  assert.equal(s.document.activeElement, s.document.querySelector(".ctx-filter"));
+  assert.equal(s.document.getElementById("sidebar-toggle").getAttribute("aria-expanded"), "true");
+  await s.settle(s.loads[0], outcome);
+  assert.deepEqual(s.events, []); assert.deepEqual(s.notices, []);
+  assert.equal(s.document.activeElement, s.document.querySelector(".ctx-filter"));
 });
 
 async function staleChooser(t, outcome, superseder, shellSource = source) {

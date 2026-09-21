@@ -326,7 +326,7 @@ function renderContextRoster(instances) {
           if (segment === "none") return;
           const guide = document.createElement("span");
           guide.className = `ctx-guide ${segment}`;
-          guide.style.left = `${10 + d * 14}px`;
+          guide.style.setProperty("--guide-level", String(d));
           guides.append(guide);
         });
         const disclosure = document.createElement("button");
@@ -1170,7 +1170,8 @@ function openShortcutsEditor() { tabOpenIntents.invalidate(); shortcutsEditor.op
 
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the filter already has DOM focus
-  contextRosterEl?.querySelector(".ctx-filter")?.focus();
+  setSidebarHidden(false); // a filter shortcut must not focus display:none content
+  contextRosterEl?.querySelector(".ctx-filter")?.focus({ preventScroll: true });
 }
 
 // ── hideable sidebar: full-width terminals on demand ───────────────────
@@ -1290,6 +1291,11 @@ function applyChordTitles() {
     const chord = getBinding(el.dataset.action);
     const base = baseTitles.get(el);
     el.title = chord ? `${base} (${formatChord(chord, isMac)})` : base;
+  }
+  for (const el of document.querySelectorAll("[data-shortcut]")) {
+    const chord = getBinding(el.dataset.shortcut);
+    el.textContent = chord ? formatChord(chord, isMac) : "";
+    el.hidden = !chord;
   }
 }
 onKeymapChange(() => applyChordTitles());

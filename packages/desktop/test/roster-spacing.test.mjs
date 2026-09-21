@@ -57,7 +57,7 @@ function assertRoom(u) {
   assert.equal(u.rule(".ctx-inst").minHeight, "48px", "instance button has a roomy minimum");
   assert.equal(u.rule(".ctx-inst").height, "auto", "never squeeze two labels into a fixed 40px box");
   assert.equal(u.rule(".ctx-copy").gap, "4px", "name and repository have a full spacing unit");
-  assert.equal(u.computed(u.doc.querySelector(".ctx-filter")).marginBottom, "8px", "filter/list separation");
+  assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).marginBottom, "8px", "filter/list separation");
   for (const row of u.rows) {
     const button = row.querySelector(".ctx-inst");
     for (const el of [row, button]) {
@@ -90,9 +90,9 @@ test("roster spacing (non-layout): auto-height rows, padded controls and filter/
   const u = fixture(t);
   assertRoom(u);
   const filter = u.doc.querySelector(".ctx-filter");
-  assert.equal(filter.nextElementSibling.className, "ctx-list");
+  assert.equal(filter.parentElement.nextElementSibling.className, "ctx-list");
   assert.equal(filter.getAttribute("aria-label"), "Filter instances");
-  assert.equal(u.computed(filter.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
+  assert.equal(u.computed(filter.parentElement.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
 });
 
 test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
@@ -134,7 +134,7 @@ function assertGuideAnchors(u) {
   assert.equal(elbows.top, "50%", "continuing branch elbow tracks full-row midpoint, not 23px");
   assert.equal(u.rule(".ctx-guide.end::after").top, "100%",
     "end elbow uses the endpoint of its HALF-height guide, not the quarter-row midpoint");
-  assert.equal(elbows.width, "7px");
+  assert.equal(elbows.width, "4px", "compact elbow does not consume a full text column");
   assert.equal(elbows.height, "1px");
   assert.equal(elbows.background, "var(--border)");
 }
@@ -142,14 +142,26 @@ function assertGuideAnchors(u) {
 test("tree guides (non-layout): full-span continuations and half-span end elbows remain row-centered", t => {
   const u = fixture(t);
   assertGuideAnchors(u);
-  assert.equal(u.rule(".ctx-tree-row").paddingLeft, "calc(3px + var(--depth) * 14px)", "hierarchy indent is unchanged");
+  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("--tree-step"), "8px");
+  assert.equal(u.rule(".ctx-tree-row").paddingLeft, "calc(var(--depth) * var(--tree-step))");
+  assert.equal(u.rule(".ctx-guide").left, "calc(8px + var(--guide-level) * var(--tree-step))", "guides use the same compact pitch as rows");
+  assert.equal(u.rule(".ctx-list").padding, "0px 6px 8px");
+  // Compared with the previous 8px list padding + 3px base + 14px depth:
+  // reclaim 7px at the root, 13px at depth1, 19px at depth2, without shrinking
+  // the 18px disclosure slot, 56px rows or 8px selected-content inset.
+  assert.equal(u.rule(".ctx-disclosure").width, "18px");
+  for (const depth of [0, 1, 2, 4]) {
+    const oldGutter = 2 * 8 + 3 + depth * 14;
+    const compactGutter = 2 * 6 + depth * Number.parseFloat(u.rule(".ctx-tree-row").getPropertyValue("--tree-step"));
+    assert.equal(oldGutter - compactGutter, 7 + depth * 6);
+  }
   assert.deepEqual(u.rows.map(row => row.style.getPropertyValue("--depth")), ["0", "1", "2", "1", "2", "0"]);
   assert.deepEqual(u.rows.map(row => [...row.querySelectorAll(".ctx-guide")].map(g => g.className)), [
     [], ["ctx-guide branch"], ["ctx-guide continue", "ctx-guide end"],
     ["ctx-guide end"], ["ctx-guide end"], [],
   ]);
-  assert.deepEqual([...u.rows[2].querySelectorAll(".ctx-guide")].map(g => g.style.left), ["10px", "24px"]);
-  assert.equal(u.rows[4].querySelector(".ctx-guide").style.left, "24px", "exhausted ancestor draws no continuation");
+  assert.deepEqual([...u.rows[2].querySelectorAll(".ctx-guide")].map(g => g.style.getPropertyValue("--guide-level")), ["0", "1"]);
+  assert.equal(u.rows[4].querySelector(".ctx-guide").style.getPropertyValue("--guide-level"), "1", "exhausted ancestor draws no continuation");
 });
 
 test("roster DOM contract: identity, active/focus state and closed action menus survive roomier rows", t => {
@@ -182,7 +194,7 @@ test("roster DOM contract: identity, active/focus state and closed action menus 
 for (const [label, before, after, check, message] of [
   ["fixed button height", "min-height: 48px; height: auto", "min-height: 48px; height: 40px", assertRoom, /fixed 40px box/],
   ["cramped label gap", "align-items: flex-start; gap: 4px", "align-items: flex-start; gap: 3px", assertRoom, /full spacing unit/],
-  ["old elbow offset", "left: 0; top: 50%; width: 7px", "left: 0; top: 23px; width: 7px", assertGuideAnchors, /not 23px/],
+  ["old elbow offset", "left: 0; top: 50%; width: 4px", "left: 0; top: 23px; width: 4px", assertGuideAnchors, /not 23px/],
   ["quarter-row end elbow", ".ctx-guide.end::after { top: 100%; }", ".ctx-guide.end::after { top: 50%; }", assertGuideAnchors, /HALF-height guide/],
 ]) test(`roster CSS contract rejects ${label} (in-memory, non-layout)`, t => {
   assert.ok(css.includes(before), "mutate the shipped declaration");
