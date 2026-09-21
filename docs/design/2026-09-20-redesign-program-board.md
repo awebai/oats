@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 17:00Z · S8: 1a/1b/4/6a/7a MERGED · **K4 MERGED (PR52, inspect soulsApi 1)** → slice 3 unblocked · K1 in flight (engineer) · lead → P1 Decision, K3, K5
+**Last update:** 2026-09-22 17:10Z · K4 MERGED (PR52) · engineer → slice 3 · lead → K1 (engineer's composed instructions forbid kernel edits; reassignment reverted), then P1/K3/K5
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
