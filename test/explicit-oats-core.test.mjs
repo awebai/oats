@@ -28,7 +28,7 @@ test('creation writes the actual official alias/source and local updates preserv
   assert.equal(cli.status, 0, cli.stdout + cli.stderr);
   const created = JSON.parse(cli.stdout), soul = created.soul;
   assert.equal(f.definition(soul).requires.capabilities['oats.core'].source, SOURCE);
-  assert.equal(created.notes, undefined); assert.equal(existsSync(join(f.context, '.agents/capabilities/installed')), false, 'declaration is not acquisition');
+  assert.deepEqual(created.notes.map(n => n.code), ["next-step"], "a declared, inactive oats.core names its activation step"); assert.equal(existsSync(join(f.context, '.agents/capabilities/installed')), false, 'declaration is not acquisition');
   const local = upsertLocalAgent(f.root, { name: 'scratch', instructions: '# scratch', work: 'directory', runtime: 'claude' });
   const file = join(local._dir, 'soul/soul.yaml');
   assert.equal(f.definition(dirname(file)).requires.capabilities['oats.core'].source, SOURCE);
@@ -116,4 +116,30 @@ test('doctor reports absent oats.core informationally and preserves legacy compo
   const resources = planInstanceResources({ resolved: composition.resolved, soulDir: created.soul, agent: findAgent(f.root, 'legacy'), contextDir: f.context, composition });
   assert.deepEqual(resources.filter(r => r.source === 'kernel' && r.type === 'skill-tree').map(r => r.declared), ['oats', 'oats-config', 'oats-packages']);
   assert.equal(readFileSync(join(created.soul, 'soul.yaml'), 'utf8'), before);
+});
+
+test('declared oats.core that is NOT active refuses spawn with the remedy (no hollow agent), create says the next step, and removing the declaration opts out', t => {
+  // Second-operator finding (0.24.6): create declares oats.core, composition
+  // suppresses the kernel skills, nothing activates the replacement, spawn
+  // succeeded with an EMPTY skill set and no warning.
+  const f = fixture(t), cli = f.run(['create', 'plain', '--work', 'directory', '--runtime', 'claude', '--json']);
+  assert.equal(cli.status, 0, cli.stdout + cli.stderr); const created = JSON.parse(cli.stdout);
+  assert.deepEqual(created.declaredCapabilities, ['oats.core']);
+  assert.ok(created.notes.some(n => n.code === 'next-step' && /oats use oats.core --soul plain/.test(n.message)), 'create names the activation step before spawn');
+  const agent = findAgent(f.root, 'plain');
+  assert.throws(() => planInstanceResources({ resolved: composeInstanceAgentsMd(created.soul, f.context, 'plain', 'directory', 'persistent').resolved, soulDir: created.soul, agent, contextDir: f.context }),
+    e => e.code === 'E_REQUIREMENT_INACTIVE' && e.capabilities.join() === 'oats.core' && /oats use oats.core --soul plain/.test(e.remedy));
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const refused = f.run(['spawn', 'plain', '--no-launch', '--json']);
+  assert.equal(refused.status, 1); const envelope = JSON.parse(refused.stdout.trim().split('\n').pop());
+  assert.equal(envelope.error.code, 'E_REQUIREMENT_INACTIVE', 'kept its own code, not E_SPAWN_FAILED');
+  assert.deepEqual(envelope.error.details.capabilities, ['oats.core']); assert.match(envelope.error.details.remedy, /^oats use oats.core --soul plain/);
+  assert.equal(existsSync(join(f.root, 'plain', 'instances')) && readdirSync(join(f.root, 'plain', 'instances')).length, 0, 'refusal happens before any home is created');
+  // Opting out is removing the declaration: legacy kernel skills return.
+  const file = join(created.soul, 'soul.yaml');
+  writeFileSync(file, readFileSync(file, 'utf8').split('\n').filter(l => !l.startsWith('requires:')).join('\n'));
+  const spawned = spawnInstance(f.root, findAgent(f.root, 'plain'), { purpose: 'legacy', launch: false });
+  assert.deepEqual(readdirSync(join(spawned.home, '.agents/skills')).sort(), ['oats', 'oats-config', 'oats-packages']);
+  assert.match(readFileSync(join(spawned.home, 'AGENTS.md'), 'utf8'), /<!-- oats:kernel:oats /);
+  retireInstance(f.root, spawned.instance);
 });

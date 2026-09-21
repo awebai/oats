@@ -4054,7 +4054,7 @@ function statusTeam() {
 
 function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
   const yolo = yoloFlag();
   const backend = valueFlag("backend"), herdrSocket = valueFlag("herdr-socket");
@@ -4204,6 +4204,9 @@ function spawnCmd() {
     // model, runtime) is a fact about the selection, not a spawn-mechanism
     // failure: it keeps its own code so a GUI can act on it.
     if (typeof e?.code === "string" && /^E_LAUNCH_|^E_MODEL_UNKNOWN$|^E_UNSUPPORTED_RUNTIME$/.test(e.code)) { bail(e.code, e.message); throw e; }
+    // An unmet declared requirement is a fact about the soul's configuration
+    // (with a remedy), not a spawn-mechanism failure: keep its code and details.
+    if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
     bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
@@ -4564,11 +4567,17 @@ function createCmd() {
     work: flag("work"), runtime: flag("runtime"), model: flag("model"), yolo,
     instructions: instrFile ? readFileSync(instrFile, "utf8") : undefined,
   });
-  if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
-  for (const information of r.notes || []) console.error(`[${information.code}] ${information.message}`);
+  // A declared oats.core is a requirement spawn will enforce: say the next
+  // step here, not only at the refusal.
+  const declared = r.declaredCapabilities || [];
+  const inactive = declared.filter((id) => !(resolveOatsConfig(workspaceOf(root), name).capabilities || []).some((c) => c.id === id));
+  const next = inactive.length ? [{ code: "next-step", message: `${name} declares ${inactive.join(", ")}; before spawning, acquire if needed (oats install oats.framework) and activate: ${inactive.map((id) => `oats use ${id} --soul ${name}`).join(" && ")}` }] : [];
+  const notes = [...(r.notes || []), ...next];
+  if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(notes.length ? { notes } : {}), ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
+  for (const information of notes) console.error(`[${information.code}] ${information.message}`);
   if (bootstrapped) console.log(`Created deployment root ${shortPath(root)} (this scope had no agents/ yet)`);
   console.log(`Created ${r.kind === "local" ? "LOCAL agent (uncommitted — soul lives in local-agents/, gitignored)" : "agent"} "${r.agent}" — soul at ${shortPath(r.soul)}`);
-  console.log(`Edit ${shortPath(join(r.soul, "AGENTS.md"))} to define its role, then: oats spawn ${r.agent} --task "..."`);
+  console.log(`Edit ${shortPath(join(r.soul, "AGENTS.md"))} to define its role, then${inactive.length ? ` activate ${inactive.join(", ")} (above) and` : ":"} oats spawn ${r.agent} --task "..."`);
 }
 
 // ---------- capability command dispatch ----------
