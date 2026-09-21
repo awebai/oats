@@ -3,8 +3,10 @@ import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
 import { capabilityFacts, reportedText } from './workspace-discovery.mjs';
+import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs';
 
 export const inspectorCSS = `
+${declarationsCSS}
 .souls { container-type:inline-size; }
 .souls-body { display:grid; grid-template-columns:minmax(0,1fr); flex:1; min-height:0; min-width:0; }
 .souls-body.inspecting { grid-template-columns:minmax(0,1fr) 340px; }
@@ -155,7 +157,8 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     const snapshot = data.selected?.source === 'snapshot';
     content.append(node('p', snapshot ? 'Instance snapshot: the instructions and capabilities this home was created with.' : 'Saved configuration for future instances. Changes here do not rewrite existing agent homes.', 'muted'));
     facts([['Scope', data.scope?.context], ['Source', snapshot ? 'Instance snapshot' : selection.agent ? `Soul: ${selection.agent.name}` : 'Workspace defaults']]);
-    const soul = data.souls?.find(s => s.name === selection.agent?.name && s.agentsRoot === selection.agent?.agentsRoot);
+    const matches = selection.agent ? (Array.isArray(data.souls) ? data.souls : []).filter(s => s?.name === selection.agent.name && s?.agentsRoot === selection.agent.agentsRoot) : [];
+    const soul = matches.length === 1 ? matches[0] : null;
     if (snapshot) summary.replaceChildren();
     if (soul && !snapshot) renderSoul(soul);
     else if (selection.agent && !snapshot) content.append(node('p', 'The selected soul was not reported at this scope. Refresh to retry.', 'muted'));
@@ -201,6 +204,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     summary.append(roster);
   }
   function renderSoul(soul) {
+    renderSoulDeclarations(content, soul);
     content.append(node('h3', 'Future-instance defaults'));
     facts([['Runtime', soul.runtime], ['Launch configuration', soul.launchConfig || 'None'], ['Model', soul.model || 'Runtime default'], ['Permissions', soul.yolo === null || soul.yolo === undefined ? 'Scope default' : soul.yolo ? 'YOLO enabled' : 'Ask for permission'], ['Session backend', soul.backend], ['Description', soul.description]]);
     const editable = soul.editable || {};

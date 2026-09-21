@@ -5,11 +5,13 @@ import { cliStatus, cliKnownUnavailable, refreshCli } from './views/cli-status.m
 import { createCapabilityMark } from './identity-marks.mjs';
 import { createOfficialCatalog, officialCatalogCSS } from './official-catalog.mjs';
 import { createDeploymentInventory, inventoryCSS } from './deployment-inventory.mjs';
+import { portableSources, renderPortableSources, sourcesCSS } from './soul-declarations.mjs';
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
 export const discoveryCSS = `
 ${officialCatalogCSS}
 ${inventoryCSS}
+${sourcesCSS}
 .workspace-header { min-height:48px; flex:none; display:flex; align-items:center; flex-wrap:nowrap; gap:2px 14px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 .workspace-header h1 { margin:0; flex:none; font-size:14px; font-weight:700; }
@@ -98,7 +100,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const button = (text, run) => { const el = node('button', text, 'act'); el.type = 'button'; el.addEventListener('click', run); return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, tab = 'souls', selector = {}, result = null, loading = false, failure = '', query = '';
-  let contexts = [];
+  let contexts = [], renderedBody = null;
   const inspectionCliIdentity = () => {
     const cli = cliStatus();
     return JSON.stringify([cli?.ok, cli?.bin, cli?.version, cli?.operationsApi, cli?.features, cli?.remote]);
@@ -181,7 +183,10 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     // No claim to know unique repositories: only count entries whose origin
     // or source was actually reported, and label that unit explicitly.
     const origins = Array.isArray(result?.capabilities) ? result.capabilities.filter(cap => hasReportedValue(cap?.source) || hasReportedValue(cap?.origin)).length : undefined;
-    counts.get('sources').textContent = origins === undefined ? '' : `${origins} reported`;
+    const sources = portableSources(result);
+    counts.get('sources').textContent = sources
+      ? sources.kind === 'unavailable' ? '' : `${sources.items.length} recorded`
+      : origins === undefined ? '' : `${origins} reported`;
     // A settled count can enlarge the focused/current tab after activation.
     revealTab(tabs.contains(doc.activeElement) ? doc.activeElement : controls.get(tab));
   }
@@ -221,14 +226,23 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     syncReadSurfaces();
     const unavailable = gate(workspace);
     details.disabled = !!unavailable || !result;
+    const sources = portableSources(result);
     note.textContent = tab === 'sources'
-      ? 'Read-only origins and provenance reported at this scope. Rows describe capabilities, not installation, unique repositories, team memberships or remote discovery results.'
+      ? !result ? 'Source provenance requires a current scope inspection. An unavailable inspection does not establish that sources are absent.'
+        : sources ? `Portable source context reported by the installed CLI (soulsApi 1). Scope: ${reportedText(result.scope?.context)}. This is not a source repository catalog or an adoption action.`
+          : 'Read-only origins and provenance reported at this scope. Rows describe capabilities, not installation, unique repositories, team memberships or remote discovery results. Portable soul sources are not reported by this inspection API.'
       : 'Capabilities reported at this scope. Runtimes are not capabilities; only reported installation, health, trust and activation are shown.';
     status.textContent = unavailable || (loading ? 'Loading inspection…' : failure);
     status.classList.toggle('error', !!failure);
+    // Roster/CLI polls must not rebuild a settled read-only projection under
+    // focus or a text selection. A new inspection, filter or tab owns a repaint.
+    const nextBody = [result, unavailable, loading, failure, query, tab];
+    if (renderedBody?.every((value, index) => value === nextBody[index])) return;
+    renderedBody = nextBody;
     body.replaceChildren();
     if (!result || unavailable) return;
     for (const problem of result.problems || []) body.append(node('p', `${reportedText(problem.code)}: ${reportedText(problem.message)}`, 'discovery-note'));
+    if (tab === 'sources' && sources) { renderPortableSources(body, sources, query); return; }
     const caps = Array.isArray(result.capabilities) ? result.capabilities.map(record) : null;
     if (!caps) { body.append(node('p', 'Capabilities were not reported by this CLI.', 'discovery-empty')); return; }
     const rows = tab === 'sources' ? installedSources(result) : caps;

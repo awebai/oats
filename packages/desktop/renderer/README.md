@@ -141,6 +141,42 @@ remain visible but disabled with their seam notes. No fake paths, `main` base,
 node counts, child-policy defaults or K6 request fields are sent. These become
 functional only in slice 6b after reviewed kernel/provider contracts land.
 
+## Souls and Sources: negotiated declarations, not launch readiness
+
+The existing on-demand `POST /api/capabilities` inspect action carries K4 from
+OATS 0.24.7+. `soul-declarations.mjs` consumes **`soulsApi === 1`**, never a
+version guess, YAML parser or source-repository scanner. The selected soul must
+match exactly one reported name + agents root inside the workspace-owned request;
+instance snapshots do not become current soul declarations.
+
+The inspector renders the soul's own `requires`, `defaults`, `knowledge`, `teams`
+and `resources`, plus recorded provenance, exact revisions and declaration
+problems. Null provenance is **Unrecorded**, not Local. Explicit null declarations
+are **Not declared** only with clean declaration diagnostics; unreadable/missing
+facts remain **Not reported**. Requirements retain independent installation,
+executable approval, activation and version observations from the same CLI
+payload. **Sources installed is not Ready**, launchability, adoption, enrolment
+or a verified signature. Existing launch and editable-field gates are unchanged;
+this does not add a declarations editor or widen file access.
+
+Sources renders `result.sources` only when its own `soulsApi` marker is1:
+`recorded-provenance` lists the recorded source addresses, revisions, payload
+paths, workspace revisions and reported soul names; `none-recorded` explicitly
+reports that no portable source address is recorded. It does not imply that all
+souls are authored locally: a packaged definition can record its origin kind
+without recording a source address. Malformed v1 is unavailable, not an empty
+inventory or silent legacy fallback. Older/unnegotiated CLIs keep the separately
+labeled capability-origin rows and their “reported” count, not a portable-source
+count. Source paths/URLs/names are inert text, never links, file-open authority,
+import/install actions, inferred memberships or name-only action targets.
+
+These additions reuse existing inspection lifetimes and latest-intent guards;
+there is no per-card request fan-out or polling inspection command. Routine
+roster/CLI polls preserve the settled Sources DOM and text selection. Explicit
+refresh/filter/scope changes own new projections; stale successes and rejections
+cannot overwrite current observations. Native visual acceptance is not inferred
+from the DOM/CSSOM and computed-token AA tests.
+
 ## Capabilities: three independent observations
 
 Workspace's Capabilities tab keeps these separately qualified surfaces:
@@ -167,8 +203,9 @@ Workspace's Capabilities tab keeps these separately qualified surfaces:
 - **Capability inspection**: the existing `inspect` action reports activation
   and scope/soul/home observations. It is not substituted for a failed inventory
   read. A compatible CLI change invalidates pending scope inspection as well as
-  the newer inventory/catalog surfaces. Sources retains its existing read-only
-  provenance projection; portable soul enumeration waits for the kernel K4 DTO.
+  the newer inventory/catalog surfaces. Sources uses the negotiated K4 portable
+  source context, or retains the older capability-origin projection when that
+  contract is not negotiated (see below).
 
 Catalog and list reads use bounded child execution (15 seconds, 4 MiB stdout),
 fixed argv without a shell, and in-flight coalescing, never a persistent response
