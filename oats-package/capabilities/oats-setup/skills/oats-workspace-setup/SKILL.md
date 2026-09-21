@@ -244,7 +244,7 @@ from ambient config, old captured selectors or metadata-only output.
 
 ## 6. Report limits, not a false ready state
 
-oats-aweb 1.10.3 lacks the portable binding interface; **oats-aweb 1.11.0** (1.11.1 on OATS >=0.24.4 names its reasons)
+oats-aweb 1.10.3 lacks the portable binding interface; **oats-aweb 1.11.0** (1.11.2 on OATS >=0.24.4 names its reasons; earlier 1.11.x refuse helper composition for lack of a `helperInjection` policy)
 (OATS >=0.24.2) adds it, qualifying only an input-capable Claude/Codex profile with
 `delivery: session`. Correct metadata alone cannot make a messaging-required pilot
 operational.

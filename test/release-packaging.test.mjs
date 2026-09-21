@@ -126,3 +126,30 @@ test("actual npm OKF regular bytes match inventory; symlink omission is explicit
   rmSync(alias);
   assert.deepEqual(checkNpmOkfPayload(cap, inventory), result);
 });
+
+test("every framework-shipped capability with an inject declares a helperInjection policy", () => {
+  // Second-operator finding (2026-09-21): oats.okf adopted the helper-injection contract while its
+  // siblings oats.core and oats.aweb shipped an inject without a policy, so no edition's harvest
+  // helper could compose and no resolution could publish. The framework's own packages must pass
+  // the contract the kernel imposes; this guards every bundled and exported capability.
+  const manifests = execFileSync("git", ["ls-files", "capabilities/*/oats.json", "oats-package/capabilities/*/oats.json"], { cwd: ROOT, encoding: "utf8" })
+    .split("\n").filter(Boolean);
+  assert.ok(manifests.length >= 5, `expected framework capability manifests, found ${manifests.length}`);
+  // Bundled mirrors of separately-released tasks providers (jira, linear, review) are fixed in their
+  // own repositories; no framework soul edition requires them today, so they cannot block an edition.
+  // Remove an entry here the moment its upstream declares the policy — never add one.
+  const PENDING_UPSTREAM = new Set(["oats.jira", "oats.linear", "oats.review"]);
+  let checked = 0;
+  for (const rel of manifests) {
+    const m = json(rel);
+    if (m.inject === undefined) continue;
+    if (PENDING_UPSTREAM.has(m.capability)) {
+      assert.equal(m.helperInjection, undefined, `${m.capability} now declares helperInjection upstream: drop it from PENDING_UPSTREAM`);
+      continue;
+    }
+    checked += 1;
+    assert.ok(m.helperInjection && m.helperInjection.version === 1 && ["inherit", "omit", "file"].includes(m.helperInjection.mode),
+      `${rel} (${m.capability}) ships inject ${m.inject} without a helperInjection policy`);
+  }
+  assert.ok(checked >= 3, "oats.core, oats.okf and oats.aweb must be checked");
+});

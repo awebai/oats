@@ -136,7 +136,10 @@ export function checkOperationalCapabilities(packageRoot) {
     const root = join(packageRoot, "capabilities", slug);
     const cap = JSON.parse(readFileSync(join(root, "oats.json"), "utf8"));
     assert.ok(validateCapability(cap), `${slug}: ${JSON.stringify(validateCapability.errors)}`);
-    assert.deepEqual(Object.keys(cap).sort(), ["capability", "version", "description", "compatibility", "requires", "skills", ...(injection ? ["inject"] : [])].sort());
+    // An inject without a helperInjection policy refuses helper composition (second-operator
+    // finding, 2026-09-21): every injecting framework capability declares its policy explicitly.
+    assert.deepEqual(Object.keys(cap).sort(), ["capability", "version", "description", "compatibility", "requires", "skills", ...(injection ? ["inject", "helperInjection"] : [])].sort());
+    if (injection) assert.deepEqual(cap.helperInjection, { version: 1, mode: "inherit" }, `${slug}: helper instances are OATS instances too; the briefing is inherited`);
     assert.equal(cap.capability, slug.replace("oats-", "oats."));
     assert.match(cap.version, /^\d+\.\d+\.\d+$/);
     assert.deepEqual(cap.compatibility, { oats: ">=0.24.0" });
