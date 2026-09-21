@@ -7,6 +7,7 @@ import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace 
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
 import { capabilityFacts, reportedText } from '../renderer/workspace-discovery.mjs';
+import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => {
@@ -177,7 +178,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText, createSoulMark });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText, createSoulMark, renderSoulDeclarations });
 }
 test('mutation: committing post-save data before validation is detected by Cancel', async () => {
   const factory = mutant("const refreshed = await request({ action: 'inspect', selector: target.selector }, query);", "const refreshed = data = await request({ action: 'inspect', selector: target.selector }, query);");
