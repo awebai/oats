@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR43 four small fixes → OATS v0.24.5 (2026-09-22)
+- verdict: MERGED (`38b6c028`) + tagged. Lead-implemented on explicit human authorisation because the development deployment could not spawn a developer (pi-profile bridge pin lagging the installed bridge — correct refusal).
+- owner: lead (self-reviewed against the four gates; full gate 1665/1661/0/4; two pre-existing tests moved from "bare throw" to "attributed problem, nothing published").
+- taught us: (1) recovery must derive truth from the object (worktree branch), never spawn-time metadata; (2) an `ifInstalled` row is a floor, not a requirement — satisfied by absence; (3) every post-selection refusal from `prepare` is a problem with slot/capability or it is a kernel defect; (4) a snapshot of a reviewed list will lag — read the list at the revision the consumer already names; (5) three "pin lags release" refusals in one day → lesson `pinned-release-lags-installed-release.md`.
+
 ## PR41 provider reasons + inspect superset → OATS v0.24.4 (2026-09-21)
 - verdict: MERGED (`ef211d3e`) + PUBLISHED (tag `816afb0f`, bump #42). Provider fixed reasons cross the binding wire by exact match against manifest `binding.reasons` or reviewed bundled lists; `binding.keys` accepted shape-only; `inspect --request` accepts prepare's fields as `ignored`; CLI renders problem `key`. Full gate 1657/1653/0/4 by author and maintainer.
 - owner: L; findings and verdict wording from the independent second operator (Antares, Juan's machine); compatibility-floor trap and literal lists from P.

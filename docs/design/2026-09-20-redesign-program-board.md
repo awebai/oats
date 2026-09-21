@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 23:40Z · main `cd3d4913`+ · **oats-knowledge main `7148a36` = centralised base (58 concepts)** · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.2 · framework v1.1.3 · imports @ `7416d84e`
+**Last update:** 2026-09-22 01:30Z · main `38b6c028` · **OATS v0.24.5 cutting (PR43 merged)** · OKF v2.1.2 · aweb v1.11.2 · framework v1.1.3 · oats-knowledge `7148a36` (58 concepts) · imports @ `7416d84e`
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -49,6 +49,10 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 ## S2 — settings-aware run (Antares, direct source route on main, aweb 1.11.0, 2026-09-21)
 - With `bindings-file`/`state-dir`/`harvest-runtime: pi` and the public `oats-knowledge` bound as base `oats`: **the knowledge slot binds** (OKF problem gone). `harvest-model` is optional per manifest; aweb 1.11.0 declares exactly one setting (`delivery`).
 - **aweb 1.11.0 is the only remaining hold** (`needs-configuration`, identical for `delivery: session` and `channel` on 0.24.2's unattributed output). No resolution publishes → OKF `check` probe not reachable yet. 0.24.3 run will show the attributed aweb message (expected: private-team binding / Pi session-input).
+
+## 0.24.5 — four small fixes, lead-implemented (2026-09-22, PR43 → `38b6c028`)
+
+Human authorised lead implementation after new spawns in the development deployment were blocked by a correct `pi-profile` drift refusal (profile pins bridge 0.23.2; global Pi has 0.24.0 — deployment policy, the human's re-pin). Merged: (1) retire recovery derives the branch from the worktree (drift recorded in `recovery.json`; detached HEAD recovers at its OID) — unblocks the three peers; (2) captured launch: `ifInstalled` rows satisfied by absence, hard rows refuse attributed (slot/capability/runtime/package/manifest `install`); (3) helper-injection refusal attributed; (4) `onboard --workspace` reads `package-catalog.json` from the workspace revision (bundled = fallback; `OATS_PACKAGE_CATALOG` = override; result `catalog.origin`; drift refusal names the lag). Full gate 1665/1661/0/4. Rule: `prepare` never ends in a bare `needs-configuration` after selection. Lesson: `lessons/pinned-release-lags-installed-release.md` (three lag refusals in one day). Tag v0.24.5 @ 38b6c028 in CI. Next: re-onboard `~/OATS` cleanly on 0.24.5 (no override), retire the three stuck peers, spawn the setup expert.
 
 ## Cutover started: `~/OATS` onboarded from the public workspace (lead, 2026-09-21 23:55Z)
 
