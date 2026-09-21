@@ -27,25 +27,25 @@ teams:
 imports:
   - source: git:github.com/awebai/oats
     soul: souls/oats-expert
-    revision: 08c68ece7c4f63067c173f7596c11e65599547cf
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
     alias: oats-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-kernel-expert
-    revision: 08c68ece7c4f63067c173f7596c11e65599547cf
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
     alias: oats-kernel-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-desktop-expert
-    revision: 08c68ece7c4f63067c173f7596c11e65599547cf
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
     alias: oats-desktop-expert
   - source: git:github.com/awebai/oats
     soul: souls/market-research-expert
-    revision: 08c68ece7c4f63067c173f7596c11e65599547cf
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
     alias: market-research-expert
   - source: git:github.com/awebai/oats
     soul: souls/oats-assistant
-    revision: 08c68ece7c4f63067c173f7596c11e65599547cf
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
     alias: oats-assistant
   - source: git:github.com/awebai/oats
     soul: souls/oats-setup-expert
-    revision: 08c68ece7c4f63067c173f7596c11e65599547cf
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
     alias: oats-setup-expert
