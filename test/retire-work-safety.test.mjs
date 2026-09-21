@@ -168,6 +168,60 @@ test("production retire preserves untracked worktree and unknown home bytes in a
   assert.equal(readFileSync(join(result.workRecovery.path, "repo", "human-untracked.txt"), "utf8"), "worktree-human-bytes\n");
 });
 
+test("retire recovers a worktree that switched branches after spawn, on its actual branch", () => {
+  // Second-operator wave (2026-09-21): three developer instances branched from main inside their
+  // worktrees, as instructed, and became unretirable — recovery cloned the branch recorded at spawn
+  // and the status comparison could never agree. Recovery derives the branch from the worktree.
+  const f = fixture();
+  const spawned = spawn(f, "drift");
+  const work = join(spawned.home, "work");
+  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  git("switch", "--quiet", "-c", "fix/switched-after-spawn");
+  write(join(work, "switched.txt"), "committed on the switched branch\n");
+  git("add", "switched.txt");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "switched-branch work");
+  const tip = git("rev-parse", "HEAD").trim();
+  const recorded = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8")).branch;
+  assert.notEqual(recorded, "fix/switched-after-spawn", "fixture premise: instance.json still records the spawn branch");
+  // Untracked bytes force the repository recovery path — the one that cloned the recorded branch.
+  write(join(work, "human-untracked.txt"), "worktree-human-bytes\n");
+
+  const retired = cli(f, ["retire", "dev-drift", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.ok(recovery?.path, "drifted worktree must still be recoverable by the normal path");
+  const recoveredBranch = execFileSync("git", ["-C", join(recovery.path, "repo"), "symbolic-ref", "--short", "HEAD"], { encoding: "utf8" }).trim();
+  assert.equal(recoveredBranch, "fix/switched-after-spawn", "recovery clone is on the branch the worktree actually had");
+  assert.equal(execFileSync("git", ["-C", join(recovery.path, "repo"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), tip);
+  assert.equal(readFileSync(join(recovery.path, "repo", "switched.txt"), "utf8"), "committed on the switched branch\n");
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.deepEqual(manifest.branchDrift, { recordedBranch: recorded, worktreeBranch: "fix/switched-after-spawn", detachedAt: null });
+  assert.equal(readFileSync(join(recovery.path, "repo", "human-untracked.txt"), "utf8"), "worktree-human-bytes\n");
+  // Without --delete-branch the switched branch survives in the repository, as any branch would.
+  assert.equal(execFileSync("git", ["-C", f.repo, "rev-parse", "refs/heads/fix/switched-after-spawn"], { encoding: "utf8" }).trim(), tip);
+});
+
+test("retire recovers a detached worktree at its exact commit", () => {
+  const f = fixture();
+  const spawned = spawn(f, "detached");
+  const work = join(spawned.home, "work");
+  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  git("switch", "--quiet", "--detach");
+  write(join(work, "detached.txt"), "committed while detached\n");
+  git("add", "detached.txt");
+  git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "detached work");
+  const tip = git("rev-parse", "HEAD").trim();
+  write(join(work, "human-untracked.txt"), "worktree-human-bytes\n");
+  const retired = cli(f, ["retire", "dev-detached", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const recovery = JSON.parse(retired.stdout).workRecovery;
+  assert.equal(execFileSync("git", ["-C", join(recovery.path, "repo"), "rev-parse", "HEAD"], { encoding: "utf8" }).trim(), tip);
+  assert.equal(readFileSync(join(recovery.path, "repo", "detached.txt"), "utf8"), "committed while detached\n");
+  const manifest = JSON.parse(readFileSync(join(recovery.path, "recovery.json"), "utf8"));
+  assert.equal(manifest.branchDrift.worktreeBranch, null);
+  assert.equal(manifest.branchDrift.detachedAt, tip);
+});
+
 test("human retire output reports preserved classes and recovery location", () => {
   const f = fixture();
   const spawned = spawn(f, "reported");
