@@ -35,7 +35,11 @@ Envelope `{schemaVersion:1, ok, result|error}` unchanged. Requests address a ser
 - **K7 activity feed**: bounded typed events per instance with provenance; "waiting on you" only from a producer that reports it.
 - **K8 schedule run history** + captured-policy-preserving edit contract; transcript access via the owning CLI/provider.
 
-## Decisions routed to the human (block their slices, not the others)
+## Decisions — DECIDED 2026-09-22 (lead, delegated by the human)
+
+Recorded in `agents/oats-expert/soul/knowledge/decisions/desktop-parity-lifecycle-and-policy-decisions.md`: (1) Remove retains worktree/branch/PR by default and re-homes the worktree to the deployment `worktrees/` root before the home is removed; (2) `stop` is a first-class recursive lifecycle route retaining everything for restart; (3) Enrol = workspace member admission with a two-document receipt; "signed by" renders only on a verified Git signature with a named signer; policy rows render enforced policy only; (4) child-spawn permission is enforced by the spawn route (attributed refusal); (5) auto-PR is provider-owned, default off, first pushed commit, draft, human undrafts. Gemini illustrative. The original questions follow for the record.
+
+### Original questions
 
 1. **Remove semantics** (K3, slice 2c): the design's default Remove deletes the instance but *retains* worktree, branch and remote PR; today retirement removes owned worktrees and there is no standalone Stop. Decide: adopt the design's retention default (needs a kernel placement/custody rule for a worktree that outlives its home) or keep current semantics and label the UI accordingly.
 2. **Recursive Stop** (K3): Stop as a first-class lifecycle action (retain home/worktree for restart) including children — new kernel route.
