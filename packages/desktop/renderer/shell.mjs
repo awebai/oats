@@ -34,6 +34,8 @@ import { createWorkspaceSwitcher } from "./workspace-switcher.mjs";
 import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
+import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
+import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
   captureTreeRenderState, configureDisclosure, rosterResponseOwns, clusterSeparator,
@@ -54,7 +56,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS; document.head.append(identityStyle);
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
@@ -110,13 +112,19 @@ async function showStage(name) {
   const myOp = ++stageOp;
   const prev = stage;
   stage = null;
-  if (prev) { try { await prev.life.close(); } catch (e) { console.error(e); } prev.el.remove(); }
+  syncContextPanel(); // hide the old owner before awaiting its unmount
+  if (prev) {
+    try { await prev.life.close(); } catch (e) { console.error(e); }
+    prev.panelOwner?.dispose(); prev.el.remove();
+  }
   if (myOp !== stageOp) return;               // superseded by a faster switch
   let mod;
   try { mod = await loadStageView(name); }
   catch (e) {
     if (myOp !== stageOp) return;
-    stageHost.innerHTML = `<div class="placeholder"><h2>${name}</h2><div>view module failed to load: ${e.message}</div></div>`;
+    const notice = document.createElement("div"); notice.className = "placeholder";
+    notice.textContent = `${name}: view module failed to load: ${e.message}`;
+    stageHost.replaceChildren(notice);
     return;
   }
   if (myOp !== stageOp) return;
@@ -125,13 +133,21 @@ async function showStage(name) {
   el.style.height = "100%";
   stageHost.innerHTML = "";
   stageHost.append(el);
-  stage = { name, life, el };
+  const mounted = stage = { name, life, el };
+  mounted.panelOwner = createPanelOwner(contextPanel, mounted, workspaceGeneration);
+  syncContextPanel();
   // Re-derive contexts from the CURRENT layer state: the user may have
   // activated a tab while this stage was loading — a late mount completion
   // must not replace the live "tabs" context with a hidden stage context.
   updateActiveContexts();
-  try { await life.mounted(el, ctx); }
-  catch (e) { el.innerHTML = `<div class="placeholder"><h2>${v?.title || name}</h2><div>mount failed: ${e.message}</div></div>`; }
+  try { await life.mounted(el, { ...ctx, rightPanel: mounted.panelOwner }); }
+  catch (e) {
+    if (myOp !== stageOp || stage !== mounted) return;
+    mounted.panelOwner.dispose();
+    const notice = document.createElement("div"); notice.className = "placeholder";
+    notice.textContent = `${v?.title || name}: mount failed: ${e.message}`;
+    el.replaceChildren(notice);
+  }
 }
 
 function setNavActive(name) {
@@ -162,6 +178,7 @@ function showTabLayer(on) {
     stageHost.style.display = "none";
     updateContextTabs();
   }
+  syncContextPanel();
 }
 
 function updateContextTabs() {
@@ -244,7 +261,11 @@ async function refreshContextRoster() {
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
   } catch (e) {
-    if (owns()) listEl.innerHTML = `<div class="ctx-empty">Roster unavailable: ${e.message}</div>`;
+    if (owns()) {
+      const notice = document.createElement("div"); notice.className = "ctx-empty";
+      notice.textContent = `Roster unavailable: ${e.message}`; listEl.replaceChildren(notice);
+      refreshPanelInstance([], ws);
+    }
     return;
   }
   const resolvedWs = panel.workspace?.id || ws;
@@ -256,6 +277,7 @@ async function refreshContextRoster() {
   if (commitWorkspaceLabel(panel.workspace, panel.workspaces)) renderWorkspaceContext(panel.workspace);
   contextWorkspace = resolvedWs;
   contextInstances = panel.instances || [];
+  refreshPanelInstance(contextInstances, resolvedWs);
   renderContextRoster(contextInstances);
   if (panel.error) {
     const error = document.createElement("div"); error.className = "ctx-empty"; error.textContent = panel.error;
@@ -395,9 +417,12 @@ function renderContextRoster(instances) {
             if (currentWorkspace() !== ws) throw new Error("Workspace changed; select the instance again");
             if (action === "start" || action === "restart") { openInstanceStart(instance, { restart: action === "restart" }); return; }
             if (action === "inspect") {
-              const { preselectHome } = await import("./views/spawn.mjs");
-              if (currentWorkspace() !== ws) return;
-              preselectHome(instance); await showStage("spawn"); return;
+              const owns = tabOpenIntents.begin();
+              let mod;
+              try { mod = await import("./views/spawn.mjs"); }
+              catch (error) { if (!owns()) return; throw error; }
+              if (!owns()) return;
+              mod.preselectHome(instance); await showStage("spawn"); return;
             }
             return api(instanceApiPath(action, instance), { method: "POST" });
           },
@@ -512,6 +537,31 @@ const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab 
 const brainIntents = createIntentGate();
 // Terminal and artifact opens compete for the same foreground selection.
 const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
+const contextPanel = createContextPanel({
+  document,
+  onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
+  applyFocus: callback => tabOpenIntents.applyFocus(callback),
+  onFocusModeChange: () => updateSidebarControls(),
+});
+window.addEventListener("pagehide", () => contextPanel.dispose(), { once: true });
+
+/** Projection only: foreground comes from the committed active tab/stage. */
+function syncContextPanel() {
+  const tab = tabLayerVisible ? tabs.get(activeTab) : null;
+  const terminal = tab?.kind === "terminal" && canActivateTab(tab, currentWorkspace());
+  contextPanel.setContext({ workspace: currentWorkspace(), owner: tabLayerVisible ? null : stage,
+    instance: terminal ? tab.instanceRef : null, key: terminal && tab.instanceRef ? tab.key : null });
+}
+function refreshPanelInstance(instances, workspace) {
+  const tab = tabs.get(activeTab);
+  if (!tabLayerVisible || tab?.kind !== "terminal" || tab.workspace !== workspace) return;
+  const matches = instances.filter(instance => terminalKey(workspace, instance) === tab.key);
+  // Preserve identity, but do not present a retained Running observation as
+  // current when the latest roster cannot identify the selected home uniquely.
+  if (matches.length === 1) tab.instanceRef = matches[0];
+  else if (tab.instanceRef) tab.instanceRef = { ...tab.instanceRef, running: null };
+  syncContextPanel();
+}
 const workspaceTabMemory = createWorkspaceTabMemory();
 let tabWorkspace = currentWorkspace();
 let nextPickedFileId = 0;
@@ -657,9 +707,10 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), onClose, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
+function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) {
+      if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
       if (intent) selectTab(tid, { intent, focusContent: focusOnActivate });
       else activateTab(tid);
       return null;
@@ -681,7 +732,7 @@ function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(),
     isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
     select: () => selectTab(id),
   });
-  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, onClose, onShow, focusContent });
+  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, onShow, focusContent });
   if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
   else activateTab(id);
   return { id, paneEl };
@@ -952,6 +1003,7 @@ async function openTerminalTabFlow(ref, notify) {
   // quick-open, post-spawn open) — activating an existing tab focuses its
   // terminal input so the user can type into tmux immediately.
   for (const [tid, t] of tabs) if (t.key === key) {
+    t.instanceRef = inst;
     split = fillEmptyGroup(split, tid);
     selectTab(tid, { intent: owns, focusContent: true }); return;
   }
@@ -1027,6 +1079,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     key,
     kind: "terminal",
     workspace: ws,
+    instanceRef: inst,
     intent: owns,
     // close() resolves when cleanup (incl. a late-materializing pty detach)
     // actually ran — closeTab reserves the key on this promise.
@@ -1113,6 +1166,8 @@ const palette = createPalette({
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
+    { label: "Context panel: toggle", detail: chordDetail("panel.toggle"), run: () => runAction("panel.toggle") },
+    { label: "Focus mode: toggle", detail: chordDetail("app.focusMode"), run: () => runAction("app.focusMode") },
     { label: "Split: terminal right (side by side)", detail: chordDetail("split.vertical"), run: () => splitPane("row") },
     { label: "Split: terminal down (stacked)", detail: chordDetail("split.horizontal"), run: () => splitPane("col") },
     { label: "Split: return to terminal groups", detail: chordDetail("split.restore"), run: () => restoreTerminalGroups() },
@@ -1170,6 +1225,7 @@ function openShortcutsEditor() { tabOpenIntents.invalidate(); shortcutsEditor.op
 
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the filter already has DOM focus
+  contextPanel.setFocusMode(false);
   setSidebarHidden(false); // a filter shortcut must not focus display:none content
   contextRosterEl?.querySelector(".ctx-filter")?.focus({ preventScroll: true });
 }
@@ -1182,11 +1238,15 @@ const SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";
 function sidebarHidden() {
   return document.getElementById("app").classList.contains("sidebar-hidden");
 }
+function updateSidebarControls() {
+  const visible = !sidebarHidden() && !contextPanel.isFocusMode();
+  for (const id of ["sidebar-toggle", "sidebar-restore"]) {
+    document.getElementById(id).setAttribute("aria-expanded", String(visible));
+  }
+}
 function setSidebarHidden(on) {
   document.getElementById("app").classList.toggle("sidebar-hidden", on);
-  for (const id of ["sidebar-toggle", "sidebar-restore"]) {
-    document.getElementById(id).setAttribute("aria-expanded", String(!on));
-  }
+  updateSidebarControls();
   // Hiding by mouse or keyboard must not strand focus in display:none.
   if (on && document.getElementById("sidebar").contains(document.activeElement)) {
     document.getElementById("sidebar-restore").focus();
@@ -1198,7 +1258,10 @@ function setSidebarHidden(on) {
     else localStorage.removeItem(SIDEBAR_HIDDEN_KEY);
   } catch { /* storage-less */ }
 }
-function toggleSidebar() { setSidebarHidden(!sidebarHidden()); }
+function toggleSidebar() {
+  if (contextPanel.isFocusMode()) { contextPanel.setFocusMode(false); setSidebarHidden(false); }
+  else setSidebarHidden(!sidebarHidden());
+}
 // Restore-by-mouse must exist while the sidebar is hidden: a thin edge
 // button (CSS shows it only under #app.sidebar-hidden) runs the SAME
 // sidebar.toggle action as the chord/palette/rail-footer button.
@@ -1250,6 +1313,11 @@ THEMES.forEach(({ id, label }) => registerAction({
 registerAction({ id: "app.workspaces", label: "Open the workspace switcher", context: "global", run: () => workspaceLabel.openMenu() });
 registerAction({ id: "sidebar.focusFilter", label: "Focus the instance roster filter", context: "global", run: () => focusRoster() });
 registerAction({ id: "sidebar.toggle", label: "Toggle the sidebar", context: "global", run: () => toggleSidebar() });
+registerAction({ id: "panel.toggle", label: "Toggle the context panel", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggle(); } });
+registerAction({ id: "app.focusMode", label: "Toggle focus mode (sidebar and context panel)", context: "global", run: () => { tabOpenIntents.invalidate(); contextPanel.toggleFocusMode(); } });
+for (const [id, action] of [["panel-toggle", "panel.toggle"], ["focus-mode-toggle", "app.focusMode"]]) {
+  document.getElementById(id).addEventListener("click", () => runAction(action));
+}
 // splits live on the tab layer (they arrange terminal tabs); the actions
 // are terminal-allowlisted so the chords work inside xterm too.
 registerAction({ id: "split.vertical", label: "Split terminal right (side by side)", context: "tabs", run: () => splitPane("row") });

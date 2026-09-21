@@ -53,6 +53,9 @@ function shell(t, shellSource = source) {
     createSelectionOwnership, wirePaneSelection, createViewLifecycle, createTabChrome, tabKeyAction, focusAfterLastTab,
     reserveKey, whenKeyFree, prepareOwnedOpen, projectSplitDom, ...layout, ...workspaceTabs,
     loadStageView(name) { const gate = { ...deferred(), name }; loads.push(gate); return gate.promise; },
+    // These fixtures mount inert views; panel ownership is tested separately.
+    syncContextPanel() {}, contextPanel: {},
+    createPanelOwner: () => ({ dispose() {} }),
     ctx: {},
   };
   const names = ["showStage", "setNavActive", "showTabLayer", "updateActiveContexts", "setSidebarMode", "updateContextTabs",

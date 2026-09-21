@@ -8,6 +8,26 @@ body {
   font: 13px/1.45 -apple-system, "Segoe UI", system-ui, sans-serif;
 }
 #app { display: flex; }
+#workbench { flex: 1; min-width: 0; min-height: 0; display: flex; container-type: inline-size; }
+#context-tools { height: 28px; flex: none; display: flex; align-items: center; justify-content: flex-end;
+                 gap: 6px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface); }
+#context-tools button { border: 0; border-radius: 4px; padding: 3px 8px; font: inherit; font-size: 11px;
+                       background: var(--surface); color: var(--muted); cursor: pointer; }
+#context-tools button:hover { background: var(--surface-2); color: var(--fg); }
+#context-tools button[aria-pressed="true"] { background: var(--sel); color: var(--accent); }
+#context-tools button:disabled { cursor: default; color: var(--faint); }
+/* Narrow workbenches stack details below the main surface, never over a live
+   terminal or inside an editor group. The original groups/proportions survive. */
+@media (max-width: 1000px) {
+  #workbench { flex-direction: column; }
+  #workbench > #context-panel.context-panel { flex: 0 1 45%; width: 100%; min-height: 120px;
+    border-left: 0; border-top: 1px solid var(--border); }
+  #workbench > #context-panel.context-panel.is-collapsed { flex: 0 0 34px; min-height: 34px; }
+  #workbench > #context-panel .context-panel-rail { flex-direction: row; }
+  #workbench > #context-panel .context-panel-expand { min-height: 32px; }
+}
+#context-panel .soul-inspector { width: 100%; max-width: none; flex: 1; border: 0; overflow: auto; }
+#app.focus-mode #sidebar, #app.focus-mode.sidebar-hidden #sidebar-restore { display: none; }
 /* Hideable sidebar: terminals get the full window width. Class-driven so the
    toggle is one line of JS; every terminal tab's ResizeObserver refits xterm
    when the panes change size. */
@@ -248,7 +268,7 @@ body {
 .ws-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── main / tabs ── */
-#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 #tabstrip { display: flex; flex-direction: column; flex: none; background: var(--bg); border-bottom: 1px solid var(--border); }
 #tabstrip:has(> #tabbar-row > #tabbar:empty) { display: none; }
 #tabstrip.split-hidden { display: none; }

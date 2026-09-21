@@ -5,13 +5,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
+import { createContextPanel, contextPanelCSS } from "../renderer/context-panel.mjs";
 import { THEMES } from "../renderer/theme.mjs";
 import { NAV } from "../renderer/shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "../renderer/shell-icons.mjs";
 import { createSelectionOwnership } from "../renderer/selection-ownership.mjs";
 import { createWorkspaceSwitcher } from "../renderer/workspace-switcher.mjs";
 import { rosterResponseOwns } from "../renderer/instance-tree.mjs";
-import { registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
+import { DEFAULT_KEYMAP, TERMINAL_ALLOWLIST, registerAction, runAction, getBinding, formatChord, setActiveContexts, matchEvent, setBinding, resetBinding, onKeymapChange } from "../renderer/keybindings.mjs";
 
 const source = readFileSync(new URL("../renderer/shell.mjs", import.meta.url), "utf8");
 const html = readFileSync(new URL("../renderer/index.html", import.meta.url), "utf8");
@@ -32,6 +33,9 @@ function domFixture(t) {
   const dom = new JSDOM(html, { url: "https://fixture.invalid" });
   t.after(() => dom.window.close());
   mountShellIcons(dom.window.document);
+  const style = dom.window.document.createElement("style");
+  style.textContent = readFileSync(new URL("../renderer/shell.css", import.meta.url), "utf8") + contextPanelCSS;
+  dom.window.document.head.append(style);
   return dom;
 }
 function shell(t, shellSource = source) {
@@ -39,7 +43,7 @@ function shell(t, shellSource = source) {
   const loads = [], events = [], notices = [], offs = [];
   const c = {
     document, window: dom.window, localStorage: dom.window.localStorage,
-    NAV, shellIcon, workspace: "A", generation: 0, events, notices,
+    NAV, shellIcon, createContextPanel, workspace: "A", generation: 0, events, notices,
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     loadSpawn() { const gate = deferred(); loads.push(gate); return gate.promise; },
     ctx: { notify: text => notices.push(text) },
@@ -62,9 +66,11 @@ function shell(t, shellSource = source) {
   const actionsEnd = shellSource.indexOf('// THE one window keydown listener', actionsStart);
   const registry = shellSource.slice(actionsStart, actionsEnd);
   const titleCode = shellSource.slice(shellSource.indexOf("const baseTitles ="), shellSource.indexOf("onKeymapChange(() => applyChordTitles"));
-  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "toggleSidebar", "focusRoster", "openShortcutsEditor"].map(name => fn(name, shellSource));
-  const s = runInNewContext(`${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles });`, c);
+  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "updateSidebarControls", "toggleSidebar", "focusRoster", "openShortcutsEditor"].map(name => fn(name, shellSource));
+  const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
+  const s = runInNewContext(`${panelSetup}\n${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles, contextPanel });`, c);
   offs.push(onKeymapChange(s.applyChordTitles));
+  t.after(() => s.contextPanel.dispose());
   // Execute the production restore-button binding too.
   runInNewContext(shellSource.match(/document\.getElementById\("sidebar-restore"\)\.addEventListener[^\n]+/)[0], c);
   t.after(() => { offs.forEach(off => off()); setActiveContexts(new Set()); });
@@ -272,7 +278,7 @@ for (const outcome of ["resolve", "reject"]) test(`reported workspace/root/host 
     currentWorkspace: () => c.workspace, rosterResponseOwns,
     contextRosterEl: document.getElementById("instance-roster"),
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
-    renderContextRoster() {},
+    renderContextRoster() {}, refreshPanelInstance() {}, // label-only polling fixture
     workspaceLabel: createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) }),
   };
   const s = runInNewContext(`${fn("refreshContextRoster")}\n${fn("renderWorkspaceContext")}\n({ refreshContextRoster, renderWorkspaceContext });`, c);
@@ -327,4 +333,81 @@ test('split SVG weights change only to 1.1, while geometry, leaf accent and nav 
     }
   }
   assert.equal(document.querySelector('.ws-brand-leaf').getAttribute('fill'), 'var(--accent)');
+});
+
+test('shipped panel/footer buttons dispatch registry actions and preserve a visible exit from focus mode', t => {
+  const s = shell(t), q = id => s.document.getElementById(id), panel = s.contextPanel;
+  assert.equal(q('context-panel').parentElement.id, 'workbench');
+  assert.equal(q('context-tools').parentElement.id, 'main');
+  assert.equal(q('context-tools').closest('#tabhost, #stagehost, #sidebar, #context-panel'), null);
+  assert.deepEqual([...q('context-tools').querySelectorAll('button')].map(b => b.dataset.action), ['panel.toggle', 'app.focusMode']);
+  assert.equal(q('panel-toggle').disabled, true);
+  panel.setContext({ workspace: 'A', instance: { instance: 'selected', home: '/A/selected' }, key: 'exact:A:selected' });
+  const before = s.c.tabOpenIntents.begin(); q('panel-toggle').click();
+  assert.equal(before(), false, 'footer panel action supersedes pending opens');
+  assert.equal(q('context-panel').classList.contains('is-collapsed'), true);
+  assert.equal(q('panel-toggle').getAttribute('aria-expanded'), 'false');
+  q('panel-toggle').click();
+  assert.equal(q('context-panel').classList.contains('is-collapsed'), false);
+  q('sidebar-toggle').focus();
+  const pending = s.c.tabOpenIntents.begin(); q('focus-mode-toggle').click();
+  assert.equal(pending(), false); assert.equal(panel.isFocusMode(), true);
+  assert.equal(q('context-panel').hidden, true); assert.equal(q('panel-toggle').disabled, true);
+  assert.equal(q('focus-mode-toggle').textContent, 'Exit focus mode');
+  assert.equal(q('focus-mode-toggle').getAttribute('aria-pressed'), 'true');
+  assert.equal(q('focus-mode-toggle').getAttribute('aria-label'), 'Exit focus mode');
+  assert.equal(s.document.activeElement, q('focus-mode-toggle'), 'hidden sidebar focus is restored to the visible exit');
+  for (let node = q('focus-mode-toggle'); node; node = node.parentElement) {
+    assert.equal(node.hidden, false); assert.equal(!!node.inert, false);
+    assert.notEqual(s.document.defaultView.getComputedStyle(node).display, 'none', 'exit and its ancestors remain visible by shipped CSS');
+  }
+  assert.equal(s.document.defaultView.getComputedStyle(q('sidebar')).display, 'none');
+  assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), 'false');
+  q('focus-mode-toggle').click();
+  assert.equal(panel.isFocusMode(), false); assert.equal(q('context-panel').hidden, false);
+  assert.equal(q('focus-mode-toggle').textContent, 'Focus mode');
+  assert.equal(q('panel-toggle').getAttribute('aria-expanded'), 'true');
+});
+
+for (const hidden of [false, true]) test(`focus mode overrides but restores raw sidebar preference hidden=${hidden}`, t => {
+  const s = shell(t), q = id => s.document.getElementById(id), key = 'oats-desktop-sidebar-hidden';
+  s.setSidebarHidden(hidden); s.contextPanel.setContext({ workspace: 'A', key: 'terminal' });
+  s.contextPanel.setCollapsed(true);
+  const stored = s.c.localStorage.getItem(key);
+  q('focus-mode-toggle').click();
+  assert.equal(q('app').classList.contains('sidebar-hidden'), hidden, 'temporary override never rewrites raw CSS preference');
+  assert.equal(s.c.localStorage.getItem(key), stored);
+  assert.equal(q('sidebar-restore').getAttribute('aria-expanded'), 'false');
+  assert.equal(s.document.defaultView.getComputedStyle(q('sidebar-restore')).display, 'none');
+  q('focus-mode-toggle').click();
+  assert.equal(q('app').classList.contains('sidebar-hidden'), hidden);
+  assert.equal(s.c.localStorage.getItem(key), hidden ? '1' : null);
+  assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), String(!hidden));
+  assert.equal(s.document.defaultView.getComputedStyle(q('sidebar')).display, hidden ? 'none' : 'flex');
+  assert.equal(s.document.defaultView.getComputedStyle(q('sidebar-restore')).display, hidden ? 'flex' : 'none');
+  assert.equal(q('context-panel').classList.contains('is-collapsed'), true, 'focus override also preserves panel collapse preference');
+});
+
+test('focusRoster exits focus mode, reveals the sidebar and focuses its filter through the registered command', t => {
+  const s = shell(t), q = id => s.document.getElementById(id);
+  s.setSidebarHidden(true); q('focus-mode-toggle').click();
+  assert.equal(s.contextPanel.isFocusMode(), true);
+  const pending = s.c.tabOpenIntents.begin(); runAction('sidebar.focusFilter');
+  assert.equal(pending(), false); assert.equal(s.contextPanel.isFocusMode(), false);
+  assert.equal(q('app').classList.contains('sidebar-hidden'), false);
+  assert.equal(s.c.localStorage.getItem('oats-desktop-sidebar-hidden'), null);
+  assert.equal(q('sidebar-toggle').getAttribute('aria-expanded'), 'true');
+  assert.equal(s.document.activeElement, s.document.querySelector('.ctx-filter'));
+});
+
+test('panel/focus actions have no defaults and cannot capture Linux terminal bytes after rebinding', t => {
+  shell(t);
+  for (const [id, key] of [['panel.toggle', 'j'], ['app.focusMode', 'u']]) {
+    assert.equal(DEFAULT_KEYMAP[id], undefined); assert.equal(getBinding(id), null);
+    assert.equal(TERMINAL_ALLOWLIST.includes(id), false);
+    t.after(() => resetBinding(id)); setBinding(id, `Mod+${key.toUpperCase()}`);
+    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: true }), null);
+    assert.equal(matchEvent({ key, ctrlKey: true }, { isMac: false, insideTerminal: false }), id);
+    assert.equal(matchEvent({ key, metaKey: true }, { isMac: true, insideTerminal: true }), id);
+  }
 });

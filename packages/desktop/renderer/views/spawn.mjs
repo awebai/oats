@@ -191,7 +191,7 @@ function applyPreselect(s) {
     card = [...(s.q("souls-grid").querySelectorAll?.("[data-agent]") || [])]
       .find((c) => cardMatches(c, a));
   }
-  if (card) { card.tabIndex = 0; card.focus?.({ preventScroll: true }); }
+  if (canFocusCard(s, card)) { card.tabIndex = 0; card.focus?.({ preventScroll: true }); }
 }
 
 export function mount(el, ctx) {
@@ -221,8 +221,14 @@ ${identityCSS}</style>
       </div>
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
-  s.inspector = createSoulInspector(s.q("soul-inspector"), {
-    ctx, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
+  // Move the actual node, never a copied projection: Workspace still owns all
+  // requests, callbacks and unsaved form state. The optional shell host owns
+  // presentation only and supplies an .oats-view wrapper for shared styles.
+  const inspectorElement = s.q("soul-inspector");
+  s.presentation = ctx.rightPanel?.attach(inspectorElement);
+  s.presentation?.setPresent(false); // no selected content at mount
+  s.inspector = createSoulInspector(inspectorElement, {
+    ctx, presentation: s.presentation, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
     canLaunch: agent => canLaunchSoul(s, agent),
     launchReason: () => cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
     available: () => cliAvailable() && cliStatus()?.operationsApi === 1 && cliStatus()?.features?.includes('operations'),
@@ -230,14 +236,14 @@ ${identityCSS}</style>
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent),
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); ctx.openView?.("schedules"); } },
-    changed: () => refresh(s), closed: () => {
+    changed: () => refresh(s), closed: ({ restoreFocus } = {}) => {
       const ref = s.inspectRef; s.inspectRef = null;
       if (!s.alive) return;
-      renderGrid(s);
-      // The grid is rebuilt by polling; return to composite identity, never
-      // the first same-named soul from a different root or host.
-      const card = ref && gridCards(s).find(card => cardMatches(card, ref));
-      if (card && s.discovery?.tab === "souls") { card.tabIndex = 0; card.focus(); }
+      renderGrid(s, { restoreFocus: false });
+      // The grid is rebuilt by polling; return to composite identity only on
+      // explicit standalone close, never during reset or a hidden-stage close.
+      const card = restoreFocus && ref && gridCards(s).find(card => cardMatches(card, ref));
+      if (canFocusCard(s, card)) { card.tabIndex = 0; card.focus(); }
     },
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
@@ -346,6 +352,7 @@ export function unmount() {
   selectionIntent++;
   state.alive = false;
   state.inspector.dispose();
+  state.presentation?.dispose();
   state.discovery.dispose();
   state.timers.forEach(clearInterval);
   (state.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -409,7 +416,7 @@ function matches(s, a) {
   return [a.name, a.description, a.repoName].some((v) => String(v || "").toLowerCase().includes(t));
 }
 
-function renderGrid(s) {
+function renderGrid(s, { restoreFocus = true } = {}) {
   const grid = s.q("souls-grid");
   // The spawn form lives in a MODAL outside the grid (human change request on
   // the integrated feature branch), so periodic polls may rebuild the roster
@@ -428,7 +435,7 @@ function renderGrid(s) {
   // lives in the modal on this branch, so grid repaints never touch it)
   // capture the focused card's identity before the rebuild wipes the DOM
   const active = s.el?.ownerDocument?.activeElement;
-  const focused = active?.closest?.(".soul-card");
+  const focused = grid.contains?.(active) ? active?.closest?.(".soul-card") : null;
   const focusedRef = focused ? { name: focused.dataset.agent, agentsRoot: focused.dataset.root, server: focused.dataset.server } : null;
   // Recovery is shared by every Workspace section, not hidden inside the
   // Souls tab. Its action/focus owner survives routine roster repaints.
@@ -472,7 +479,7 @@ function renderGrid(s) {
   if (rebuilt.length) {
     const restored = focusedRef && rebuilt.find((c) => cardMatches(c, focusedRef));
     (restored || rebuilt[0]).tabIndex = 0;
-    if (restored) restored.focus({ preventScroll: true });
+    if (restoreFocus && canFocusCard(s, restored)) restored.focus({ preventScroll: true });
   }
 }
 
@@ -481,6 +488,17 @@ function cardMatches(card, ref) {
   return card.dataset.agent === ref.name && (card.dataset.root || "") === (ref.agentsRoot || "") && (card.dataset.server || "") === (ref.server || "");
 }
 function gridCards(s) { return [...s.q("souls-grid").querySelectorAll(".soul-card")]; }
+
+function canFocusCard(s, card) {
+  if (!s.alive || s.rosterGen !== workspaceGeneration() || s.discovery?.tab !== "souls"
+    || !card?.isConnected || !s.el.contains(card)) return false;
+  // Retained stages can be hidden while their requests/polls settle. Don't
+  // restore focus through a hidden/inert stage or a just-hidden Souls subtab.
+  for (let el = card; el; el = el.parentElement) {
+    if (el.hidden || el.inert || el.style.display === "none" || el.style.visibility === "hidden") return false;
+  }
+  return true;
+}
 
 function focusedCard(s) {
   const active = s.el.ownerDocument.activeElement;
@@ -560,6 +578,9 @@ function soulCard(s, a) {
   card.tabIndex = -1; // roving tabindex — renderGrid elects the tabbable card
   card.setAttribute("aria-label", `Inspect ${a.name}`);
   card.setAttribute("aria-controls", "workspace-inspector");
+  // A hosted selection survives panel collapse/cover. It is not an expanded
+  // disclosure: aria-pressed describes selection without claiming visibility.
+  if (s.presentation) card.setAttribute("aria-pressed", String(cardMatches(card, s.inspectRef || {})));
   card.title = attached ? "Attached only — select for details and files" : `Inspect ${a.name} — Launch, Files, Schedule and reported defaults`;
   card.addEventListener("click", () => inspectSoul(s, a));
   const doc = s.el.ownerDocument;
@@ -602,7 +623,7 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   if (!restoreFocus || !agentRef) return;
   if (s.inspector?.focusLaunch(agentRef)) return;
   const card = gridCards(s).find(card => cardMatches(card, agentRef));
-  card?.focus();
+  if (canFocusCard(s, card)) card.focus();
 }
 
 /** Spawn modal (human change request on the integrated feature branch):

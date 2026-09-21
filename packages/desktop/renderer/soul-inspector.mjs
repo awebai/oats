@@ -49,7 +49,9 @@ export const inspectorCSS = `
 }
 `;
 
-export function createSoulInspector(container, { ctx, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], changed, closed }) {
+/** presentation is an optional host lease. Presence belongs to this controller;
+ * effective visibility/collapse belongs to the host, not request completions. */
+export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], changed, closed }) {
   const doc = container.ownerDocument;
   let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, busy = false;
   const pendingOperations = new WeakMap();
@@ -67,9 +69,18 @@ export function createSoulInspector(container, { ctx, launch, schedule, files, c
     if (!status) return; status.textContent = text; status.classList.toggle('error', error);
   }
   function frame(title) {
-    container.hidden = false; container.parentElement.classList.add('inspecting'); container.replaceChildren();
+    container.hidden = false;
+    if (presentation) presentation.setPresent(true);
+    else container.parentElement?.classList.add('inspecting');
+    container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
-    const closeControl = button('×', close); closeControl.setAttribute('aria-label', 'Close inspector');
+    // Hosted X hides the slot without deselecting or rebuilding an editor.
+    const closeControl = button('×', () => {
+      if (!alive) return;
+      if (presentation) presentation.collapse();
+      else close({ restoreFocus: true });
+    });
+    closeControl.setAttribute('aria-label', 'Close inspector');
     const heading = node('h2', title); heading.title = title;
     if (selection.agent) head.append(createSoulMark(doc, selection.agent));
     head.append(heading, button('Refresh', () => show(selection)), closeControl);
@@ -84,9 +95,17 @@ export function createSoulInspector(container, { ctx, launch, schedule, files, c
     content = node('div', undefined, 'inspector-content'); container.append(head, summary, status, content);
     if (selection.agent) renderSelectedSoul();
   }
-  function close() {
-    serial++; selection = null; data = null; busy = false; container.hidden = true;
-    container.replaceChildren(); container.parentElement.classList.remove('inspecting'); closed?.();
+  // Resets are silent by default: workspace/subtab/disposal must not focus an
+  // obsolete or hidden card. Only an explicit standalone X restores focus.
+  function close({ restoreFocus = false } = {}) {
+    if (alive) reset(restoreFocus);
+  }
+  function reset(restoreFocus = false) {
+    serial++; selection = null; selectionGen = null; data = null; busy = false; container.hidden = true;
+    container.replaceChildren();
+    if (presentation) presentation.setPresent(false);
+    else container.parentElement?.classList.remove('inspecting');
+    closed?.({ restoreFocus: !presentation && restoreFocus });
   }
   async function show(next) {
     if (!next || !alive) return;
@@ -322,11 +341,12 @@ export function createSoulInspector(container, { ctx, launch, schedule, files, c
   return { show, close, syncAvailability,
     focusLaunch(agent) {
       const selected = selection?.agent;
-      if (!alive || selectionGen !== workspaceGeneration() || !selected || selected.name !== agent.name
+      if (!alive || container.hidden || (presentation && !presentation.isVisible())
+        || selectionGen !== workspaceGeneration() || !selected || selected.name !== agent.name
         || (selected.agentsRoot || '') !== (agent.agentsRoot || '') || (selected.server || '') !== (agent.server || '')) return false;
       const control = summary?.querySelector('.spawn-act:not([disabled])');
-      if (!control?.isConnected) return false;
+      if (!control?.isConnected || control.closest('[hidden], [inert]')) return false;
       control.focus(); return true;
     },
-    dispose() { alive = false; close(); } };
+    dispose() { if (!alive) return; alive = false; reset(); } };
 }
