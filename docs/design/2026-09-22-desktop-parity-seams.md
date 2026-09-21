@@ -14,7 +14,8 @@ Status: **proposal accepted for direction** by the lead on 2026-09-22; contracts
 | 3 | 03 Souls + Sources: imported editions + local souls, requirements, provenance, editability | **K4** |
 | 4 | 04 Capabilities: official catalog (`oats catalog --json`, 0.24.6+) + deployment inventory/readiness/used-by; Add capability = exact command | landed catalog + list/inspect + **K5** |
 | 5 | 09 First-run readiness quartet; View policy; Skip/Enrol | **K5** + enrollment decision |
-| 6 | 02 Spawn (two-column): soul chooser, provider/model, launch config (restored), work-area naming/worktree/base+branch, opening instruction, attach knowledge, child spawns, auto-PR, readiness, ⌘↵ | **K6** (+ knowledge-node JSON from the knowledge provider; 05 excluded but attach stays) |
+| 6a | 02 Spawn modal **design parity on existing seams** (human pulled forward 2026-09-22): two-column layout, soul chooser, provider/model dropdowns, launch config restored, opening instruction, readiness from known facts (`unknown` where not), ⌘↵ guards; not-yet-backed fields rendered disabled with "available after <seam>" | existing spawn/launch-config seams |
+| 6b | 02 Spawn fields live: soul chooser, provider/model, launch config (restored), work-area naming/worktree/base+branch, opening instruction, attach knowledge, child spawns, auto-PR, readiness, ⌘↵ | **K6** (+ knowledge-node JSON from the knowledge provider; 05 excluded but attach stays) |
 | 7a | 07 Active overview: counts, relations, activity/waiting-on-you, actions, pan/zoom | **K7** |
 | 7b | 08 Schedules: table/toggles/new/edit, next/last, recent runs, transcript handoff, captured-policy preservation | **K8** |
 | 8 | 10 Components: dropdowns, workspace join/manage, Open in split, Detach to window, Open worktree in editor, actions, toasts, collapsed rail | existing seams + Desktop IPC review for detach/editor |
