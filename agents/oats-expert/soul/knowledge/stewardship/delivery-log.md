@@ -1033,3 +1033,5 @@ decisions/ and referenced from here.
 - owner: dev-coordinator-1 (multi-dev: tui-dev-1, webpanel-dev-1)
 - taught us: first full multi-dev run; failure modes recorded in
   lessons/multi-dev-run-failure-modes.md and fixed in v0.17.0.
+
+- **2026-09-21** — Second-operator `launch` re-run on 0.24.6 (Antares): first captured resolution WITH an executable launch selection published; hard runtime row refused through the attributed problem shape (capability, slot, runtime, package, install hint, operator origin). Closes the S2/S3 launch half of the second-operator gate; `check` half parked with OKF 2.1.3 (harvest OFF by direction). Lesson reaffirmed: "every post-selection prepare refusal is attributed or it is a kernel defect" held under an independent operator's provocation.
