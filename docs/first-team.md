@@ -79,7 +79,14 @@ the observed revision. Missing or incompatible explicit sources refuse; they do
 not fall back to the packaged default. The copied edition's package must match
 the official acquisition; workspace policy, teams and provider adoption values
 are not silently adopted. Without this option, only the packaged definition and
-instruction text are used—no knowledge corpus is bundled.
+instruction text are used—no knowledge corpus is bundled. From 0.24.5, a
+`--workspace` onboarding also reads `package-catalog.json` **from the workspace
+repository at its observed revision** and acquires the `oats.framework` that
+catalog names; the kernel's bundled catalog is only the fallback (it is a
+snapshot at the kernel's own release and lags every framework release cut
+afterwards). `OATS_PACKAGE_CATALOG` still overrides both. The result reports
+`catalog.origin` (`workspace` | `bundled` | `override`), and an integrity
+refusal names the lag when the bundled entry caused it.
 
 The manual path below retains its stated older integration/version scope.
 

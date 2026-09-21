@@ -116,6 +116,36 @@ test('onboard copies the explicitly pinned workspace edition without adopting it
   assert.equal(captured.status, 1);
 });
 
+test('onboard from a workspace acquires the framework the WORKSPACE catalog names, not a stale bundled snapshot', t => {
+  // Second-operator finding (2026-09-21): the kernel tarball's catalog lags every oats.framework
+  // release cut after the kernel tag; onboarding the current editions against it refused as
+  // integrity-drift with no way for a fresh machine to point an override at "main".
+  const f = fixture(t);
+  const stale = f.commit; // the "bundled snapshot" revision
+  // Publish a NEWER framework revision in the same repository, with its own reviewed catalog entry.
+  const pkg = JSON.parse(readFileSync(join(f.repo, 'oats-package', 'oats-package.json'), 'utf8'));
+  pkg.description = `${pkg.description} (next)`;
+  f.write(join(f.repo, 'oats-package', 'oats-package.json'), pkg);
+  f.git('add', '.'); f.git('commit', '--quiet', '-m', 'framework next'); const next = f.git('rev-parse', 'HEAD');
+  f.write(join(f.repo, 'package-catalog.json'), { packages: { 'oats.framework': { url: SOURCE.slice(4), ref: next, path: 'oats-package' } }, capabilities: { 'oats.core': 'oats.framework', 'oats.setup': 'oats.framework' } });
+  f.write(join(f.repo, 'oats-workspace.yaml'), { schemaVersion: 1, name: 'Explicit fixture', imports: [{ source: SOURCE, revision: next, soul: `souls/${NAME}`, alias: NAME }] });
+  f.git('add', '.'); f.git('commit', '--quiet', '-m', 'workspace pins next and publishes its catalog');
+  // The env override stays on the STALE snapshot: override wins by contract, so this must refuse
+  // with the lag named — proving the bundled path is the wrong one and says so.
+  const refused = f.run(['onboard', '--dir', join(f.root, 'stale'), '--workspace', SOURCE, '--json']);
+  assert.equal(refused.status, 1); assert.equal(refused.envelope.error.code, 'integrity-drift');
+  assert.equal(refused.envelope.error.details.catalogOrigin, 'override');
+  assert.equal(existsSync(join(f.root, 'stale', 'oats-lock.json')), false);
+  // Without an override, the workspace's own catalog entry is used and onboarding succeeds on `next`.
+  const env = { ...f.env }; delete env.OATS_PACKAGE_CATALOG;
+  const child = spawnSync(process.execPath, [CLI, 'onboard', '--dir', f.deployment, '--workspace', SOURCE, '--json'], { cwd: f.root, env, encoding: 'utf8', timeout: 30000 });
+  const envelope = JSON.parse(child.stdout);
+  assert.equal(child.status, 0, child.stdout + child.stderr);
+  assert.equal(envelope.result.catalog.origin, 'workspace'); assert.equal(envelope.result.catalog.ref, next);
+  assert.equal(envelope.result.package.commit, next); assert.equal(envelope.result.source.revision, next);
+  assert.notEqual(next, stale);
+});
+
 test('onboard does not turn a catalog entry into executable approval', t => {
   const f = fixture(t), cap = join(f.repo, 'oats-package/capabilities/oats-core'), manifest = JSON.parse(readFileSync(join(cap, 'oats.json')));
   manifest.hooks = { spawn: { command: 'danger.mjs', required: true } };

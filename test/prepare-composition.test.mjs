@@ -507,7 +507,12 @@ test('explicit primary and helper launch inputs retain separate entrypoints and 
   assert.throws(()=>commitCapturedResolution(f.deployment,tampered));
   const g=fixture(t),manifest=JSON.parse(readFileSync(join(g.repo,'packages/action/cap/oats.json'),'utf8'));
   manifest.requires=[{runtime:'claude',package:'fixture@marketplace'}];g.write('packages/action/cap/oats.json',JSON.stringify(manifest));g.git('add','.');g.git('commit','--quiet','-m','unqualified runtime root');
-  assert.throws(()=>prepareCapturedComposition({...g.input,launch},g.options),{code:'needs-configuration'});
+  // A hard runtime requirement is an ATTRIBUTED preparation problem (0.24.5), never a bare throw:
+  // the operator learns which capability wants which package, and nothing publishes.
+  const unqualified=prepareCapturedComposition({...g.input,launch},g.options);
+  assert.equal(unqualified.status,'needs-configuration');assert.equal(unqualified.resolution,null);
+  assert.deepEqual(unqualified.problems.map(p=>({code:p.code,capability:p.capability,runtime:p.runtime,pkg:p.package})),[{code:'needs-configuration',capability:g.id,runtime:'claude',pkg:'fixture@marketplace'}]);
+  assert.ok(Array.isArray(unqualified.problems[0].origins),'completion refusals carry origins like binding problems');
   assert.equal(existsSync(join(g.deployment,'.agents/resolutions')),false,'required runtime packages are not replaced with ambient discovery or partially published helpers');
 });
 
@@ -764,7 +769,12 @@ test('missing helper policy or declared file refuses before publishing any helpe
     const f=fixture(t),manifest=JSON.parse(readFileSync(join(f.repo,'packages/action/cap/oats.json')));
     if(policy===undefined)delete manifest.helperInjection;else manifest.helperInjection=policy;
     f.write('packages/action/cap/oats.json',JSON.stringify(manifest));f.git('add','.');f.git('commit','--quiet','-m','unresolved helper policy');
-    assert.throws(()=>prepareCapturedComposition(f.input,f.options),{code:policy===undefined?'needs-configuration':'resource-not-found'});
+    if(policy===undefined){
+      // Missing policy is an attributed needs-configuration problem naming the capability (0.24.5).
+      const refused=prepareCapturedComposition(f.input,f.options);
+      assert.equal(refused.status,'needs-configuration');assert.equal(refused.resolution,null);
+      assert.deepEqual(refused.problems.map(p=>({code:p.code,capability:p.capability})),[{code:'needs-configuration',capability:f.id}]);
+    } else assert.throws(()=>prepareCapturedComposition(f.input,f.options),{code:'resource-not-found'});
     assert.equal(existsSync(join(f.deployment,'.agents/resolutions')),false,'no published helper/parent graph on missing explicit policy/resource');
   }
 });

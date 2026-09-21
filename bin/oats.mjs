@@ -4328,7 +4328,14 @@ function onboardCmd() {
     if (findAgent(root, SETUP_EXPERT)) throw Object.assign(new Error("oats-setup-expert already exists; it will not be overwritten"), { code: "E_AGENT_EXISTS" });
     const edition = loadSetupExpertEdition(values.get("workspace"));
     for (const key of ["description", "runtime", "model"]) if (edition.declaration[key] !== undefined) assertSafeConfigValue(edition.declaration[key], `setup edition ${key}`);
-    const catalog = officialPackageCatalog(), entry = catalog["oats.framework"];
+    const catalog = officialPackageCatalog();
+    // Catalog precedence: an explicit OATS_PACKAGE_CATALOG override, else the entry the WORKSPACE
+    // publishes at the edition's revision, else the kernel's bundled snapshot. The bundled copy lags
+    // every oats.framework release cut after this kernel's tag, and a second operator has no main
+    // checkout to point an override at (0.24.5; second-operator finding).
+    const bundledEntry = catalog["oats.framework"];
+    const entry = process.env.OATS_PACKAGE_CATALOG ? bundledEntry : (edition.catalogEntry ?? bundledEntry);
+    const catalogOrigin = process.env.OATS_PACKAGE_CATALOG ? "override" : edition.catalogEntry ? "workspace" : "bundled";
     if (!Object.hasOwn(catalog, "oats.framework") || !entry?.url || !entry.ref
         || SETUP_CAPABILITIES.some(id => { const m = officialCapabilityPackage(id); return !m.available || m.package !== "oats.framework" || m.migratedCapability !== id; })) {
       throw Object.assign(new Error("official oats.framework with core/setup aliases and a published revision is required"), { code: "needs-configuration" });
@@ -4360,10 +4367,17 @@ function onboardCmd() {
     const text = replaceCapabilitiesBlock(before ?? `name: ${scaffoldConfigName(deployment)}\n`, caps);
     mkdirSync(deployment, { recursive: true });
     acquired = acquirePackage(deployment, "oats.framework", { expectPackage: "oats.framework",
-      catalog(id, selector) { const selected = Object.hasOwn(catalog, id) ? catalog[id] : null; return selected?.url ? { url: selected.url, ref: selector || selected.ref, path: selected.path } : undefined; },
+      catalog(id, selector) {
+        const selected = id === "oats.framework" ? entry : (Object.hasOwn(catalog, id) ? catalog[id] : null);
+        return selected?.url ? { url: selected.url, ref: selector || selected.ref, path: selected.path } : undefined;
+      },
       assertCommittable(plan) {
       const pkg = plan.packages.find(p => p.package === "oats.framework");
-      if (edition.packageIntegrity && pkg?.integrity !== edition.packageIntegrity) throw Object.assign(new Error("selected edition's same-repository package differs from the official acquisition; align the reviewed source and catalog explicitly"), { code: "integrity-drift" });
+      if (edition.packageIntegrity && pkg?.integrity !== edition.packageIntegrity) {
+        const lag = catalogOrigin === "bundled" ? " (the kernel's bundled catalog entry lags the edition's package; onboard from the workspace or point OATS_PACKAGE_CATALOG at the reviewed list)" : "";
+        throw Object.assign(new Error(`selected edition's same-repository package differs from the official acquisition; align the reviewed source and catalog explicitly${lag}`),
+          { code: "integrity-drift", details: { catalogOrigin, catalogRef: entry.ref, acquiredIntegrity: pkg?.integrity ?? null, editionPackageIntegrity: edition.packageIntegrity } });
+      }
       for (const id of SETUP_CAPABILITIES) {
         const cap = plan.capabilities.find(c => c.capability === id);
         if (!cap || cap.package !== "oats.framework" || cap.layer || Object.values(cap.executableSurface || {}).some(value => Array.isArray(value) && value.length)) {
@@ -4394,7 +4408,7 @@ function onboardCmd() {
     const agent = findAgent(root, SETUP_EXPERT), composition = composeInstanceAgentsMd(created.soul, deployment, SETUP_EXPERT, "directory", "local");
     planInstanceResources({ resolved: composition.resolved, soulDir: created.soul, agent, contextDir: deployment, composition });
     const argv = [process.execPath, CLI_BIN, "spawn", SETUP_EXPERT, "--dir", deployment, "--no-yolo", "--task", "Help me configure this deployment and adopt my workspace with explicit approvals."];
-    const result = { mode: "classic", captured: false, deployment, agentsRoot: root, ...created, source: edition.source,
+    const result = { mode: "classic", captured: false, deployment, agentsRoot: root, ...created, source: edition.source, catalog: { origin: catalogOrigin, ref: entry.ref },
       package: { id: pkg.package, version: pkg.version, commit: pkg.commit, path: pkg.path }, lockFile: acquired.lockFile,
       capabilities: [...SETUP_CAPABILITIES], launched: false, next: { argv, command: argv.map(shellQuote).join(" ") } };
     if (JSON_MODE) jsonOk(result);
@@ -4411,7 +4425,7 @@ function onboardCmd() {
         }
       } catch { /* never erase another writer's change or hide a failed rollback */ }
     }
-    fail(error.code || "E_ONBOARD_FAILED", error.message, { deployment, agentsRoot: root, packageAcquired: !!acquired, soul: created?.soul, configRestored, launched: false });
+    fail(error.code || "E_ONBOARD_FAILED", error.message, { deployment, agentsRoot: root, packageAcquired: !!acquired, soul: created?.soul, configRestored, launched: false, ...(error.details && typeof error.details === "object" ? error.details : {}) });
   }
 }
 

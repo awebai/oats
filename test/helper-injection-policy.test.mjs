@@ -55,3 +55,13 @@ test('existing resolver rejects explicit incompatible disable/override without c
   verifyHelperInjectionPolicies(old.record,[old.definition]);
   assert.throws(()=>verifyHelperInjectionPolicies(old.record,[old.definition],{publishing:true}),{code:'needs-configuration'});
 });
+
+test('an inject without a helperInjection policy refuses WITH the offending capability attributed',()=>{
+  // Second-operator finding (2026-09-21): the bare refusal made every edition unpublishable with
+  // no way to tell which sibling had not adopted the contract.
+  const f=fixture(null);
+  let error;
+  try{captureHelperInjectionChoices(f.plan,[f.definition]);}catch(e){error=e;}
+  assert.equal(error?.code,'needs-configuration');
+  assert.deepEqual(error.problems,[{code:'needs-configuration',message:'capability ships an inject without a helperInjection policy',capability:'example.instructions'}]);
+});
