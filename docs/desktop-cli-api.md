@@ -87,6 +87,58 @@ Workspace imports adopted onto a deployment will appear here at their pinned
 revisions when that adoption is recorded on the deployment; nothing is
 enumerated from a source repository that the deployment does not record.
 
+## Instance Git state (`oats instance git|diff`, `instanceGitApi: 1`, OATS 0.24.7+)
+
+Read-only observation of one instance's **work tree**. Truth comes from the
+tree — the branch the tree is on, not the branch recorded at spawn (that is
+reported under `recorded` with a `drift` flag). Fixed-argv `git`, no shell.
+
+Address the instance qualified: `oats instance git <instance> --dir <scope>`
+resolves the name under the scope's agents roots (team roots included) and
+**refuses when several homes match** (`E_AMBIGUOUS_INSTANCE`, `details.candidates`);
+pass `--home <abs>` to pick one. Unknown → `E_SESSION_UNKNOWN`; retired or
+un-materialized tree → `E_NO_WORKTREE`.
+
+```json
+{"instanceGitApi":1,"instance":"dev-1","agent":"dev","home":"/abs/home","workMode":"worktree",
+ "observation":{"revision":"<HEAD oid|unborn>","indexRevision":"<index tree oid>","at":"<iso>","worktree":"/abs/work","branch":"feat/y","detached":false,"unborn":false},
+ "recorded":{"branch":"feat/x","repo":"/abs/repo","drift":true},
+ "upstream":{"ref":"origin/feat/y","ahead":1,"behind":0},
+ "base":{"ref":"origin/main","source":"origin/HEAD","mergeBase":"<oid>","ahead":2,"behind":0},
+ "summary":{"changed":1,"renamed":1,"copied":0,"unmerged":0,"untracked":1},
+ "files":[{"id":"<24 hex>","kind":"renamed","xy":"R.","submodule":false,"score":"R100","path":"src/new.txt","origPath":"src/old.txt"}],
+ "notes":[]}
+```
+
+- `upstream` and `base` are **two separate comparisons**. No upstream →
+  `upstream: {ref:null, ahead:null, behind:null}` — unknown, **not 0/0**. `base`
+  is against the merge-base with the default branch (`origin/HEAD`, else a
+  well-known name; `source` says which); none found → all `null` plus a note.
+- Status is porcelain v2, NUL-delimited: renames/copies carry `origPath`;
+  paths with spaces/newlines are intact. `kind` ∈ changed | renamed | copied |
+  unmerged | untracked. Ignored files are not listed.
+- `files[].id` is **opaque**, minted under (`revision`, `indexRevision`). It is
+  the only way to ask for a diff.
+
+`oats instance diff <instance> --file <id> --revision <rev> [--index-revision <idx>] --json`
+returns a bounded unified diff:
+
+```json
+{"instanceGitApi":1,"observation":{…},"file":{"id":"…","kind":"changed","xy":".M","path":"README.md","origPath":null},
+ "against":"HEAD","binary":false,"bytes":2683,"truncated":false,"limit":262144,"patch":"diff --git …"}
+```
+
+- `against` is `HEAD` for tracked changes (working tree vs HEAD, index
+  included) and `empty` for untracked files. Binary → `binary: true`, empty
+  patch. Over 256 KiB → `truncated: true` at the byte limit.
+- If HEAD or the index moved since the id was minted, or the id is not in the
+  current observation, the CLI **refuses** with `E_STALE_OBSERVATION` and
+  attaches the current `observation` in `error.details` — re-observe, never
+  render a diff against a tree that is not the one on screen. A path in
+  `--file` is `E_BAD_ARGS`.
+
+No GitHub/PR data here: that is a capability seam (see the `oats.git` decision).
+
 ## Mutations exposed to Desktop v1
 
 The commands below use the same envelope. Additional capability operations

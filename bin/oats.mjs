@@ -30,7 +30,7 @@ import {
   approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
-  findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, listCapabilityAgents, workspaceOf,
+  findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
@@ -58,12 +58,13 @@ import { portableScope } from "../lib/portable-state.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { loadSetupExpertEdition, SETUP_EXPERT, SETUP_CAPABILITIES } from "../lib/setup-expert-source.mjs";
+import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { parsePortableSource } from "../lib/source-spec.mjs";
 
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "catalog", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "instance", "operation", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "catalog", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -3108,6 +3109,53 @@ function renderMergeRegion(r) {
 /** `oats catalog [--json]` — the effective official package catalog, read-only.
  *  Identity/discovery for consumers that cannot import the kernel (Desktop):
  *  never acquires, never trusts, never fetches. */
+/** `oats instance <git|diff> <instance>` — K1: read-only Git observation of one
+ *  instance's work tree. The instance is addressed qualified: an explicit
+ *  --home, or a name under the --dir scope (team roots included) that resolves
+ *  to exactly one home; several homes refuse with every candidate named. */
+function instanceCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const sub = args[1], name = args[2];
+  const usage = "usage: oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json]";
+  if (!["git", "diff"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
+  dropAmbientRoot();
+  let home = flag("home");
+  if (home === true) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+  if (home !== undefined && !isAbsolute(home)) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+  if (home === undefined) {
+    let root;
+    try { root = ensureRoot(dirFlag()); } catch (e) { return bail(e.code || "E_NO_ROOT", e.message); }
+    let r; try { r = resolveOatsConfig(dirFlag()); } catch (e) { return bail(e.code || "E_CONFIG_BROKEN", e.message); }
+    const roots = [...new Set([root, ...(r.team ? teamAgentRoots(r.team.scope) : [])].map((p) => realOrResolved(p)))];
+    const candidates = [];
+    for (const rt of roots) for (const hit of findInstanceHomes(rt, name)) candidates.push({ root: rt, agent: hit.agent?.name ?? null, home: hit.home });
+    if (!candidates.length) return bail("E_SESSION_UNKNOWN", `no instance ${JSON.stringify(name)} under ${roots.join(", ")}`);
+    if (candidates.length > 1) return bail("E_AMBIGUOUS_INSTANCE", `instance ${JSON.stringify(name)} has ${candidates.length} homes; pass --home <abs>`, { candidates });
+    home = candidates[0].home;
+  } else if (basename(home) !== name) return bail("E_HOME_MISMATCH", `--home ${home} is not the home of instance ${JSON.stringify(name)}`);
+  try {
+    if (sub === "git") {
+      const observed = observeInstanceGit(home);
+      if (JSON_MODE) { jsonOk(observed); return; }
+      const o = observed.observation;
+      console.log(`${observed.instance} — ${shortPath(o.worktree)} @ ${o.branch ?? (o.detached ? `detached ${o.revision.slice(0, 12)}` : "unborn")}`);
+      console.log(`  upstream: ${observed.upstream.ref ? `${observed.upstream.ref} +${observed.upstream.ahead} -${observed.upstream.behind}` : "none (ahead/behind unknown)"}`);
+      console.log(`  base: ${observed.base.ref ? `${observed.base.ref} +${observed.base.ahead} -${observed.base.behind} (merge-base ${observed.base.mergeBase?.slice(0, 12)})` : "unknown"}`);
+      console.log(`  files: ${observed.files.length} (${Object.entries(observed.summary).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ") || "clean"})`);
+      for (const f of observed.files) console.log(`    ${f.xy} ${f.origPath ? `${f.origPath} -> ` : ""}${f.path}  [${f.id}]`);
+      for (const n of observed.notes) console.log(`  note: ${n}`);
+      return;
+    }
+    const fileId = flag("file"), revision = flag("revision"), indexRevision = flag("index-revision");
+    if (fileId === true || revision === true || indexRevision === true) return bail("E_BAD_ARGS", usage);
+    const d = diffInstanceFile(home, { fileId, revision, indexRevision });
+    if (JSON_MODE) { jsonOk(d); return; }
+    console.log(`${d.file.origPath ? `${d.file.origPath} -> ` : ""}${d.file.path} (${d.file.kind}, against ${d.against})${d.binary ? " [binary]" : ""}${d.truncated ? ` [truncated at ${d.limit} bytes]` : ""}`);
+    if (!d.binary) process.stdout.write(d.patch);
+  } catch (e) {
+    bail(e.code || "E_GIT_FAILED", e.message, e.observation ? { observation: e.observation } : undefined);
+  }
+}
 function catalogCmd() {
   const described = describeOfficialCatalog();
   if (JSON_MODE) { jsonOk(described); return; }
@@ -5221,6 +5269,7 @@ else if (cmd === "config") configCmd();
 else if (cmd === "trust") trust();
 else if (cmd === "list") listCmd();
 else if (cmd === "catalog") catalogCmd();
+else if (cmd === "instance") instanceCmd();
 else if (cmd === "remove") removeCmd();
 else if (cmd === "migrate") migrateCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
@@ -5415,6 +5464,13 @@ Usage:
                                             scopes, trust state
   oats catalog [--json]                      the effective official package catalog (read-only:
                                                identity/discovery, no acquisition or trust)
+  oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
+                                             read-only Git observation of the instance's work
+                                             tree: branch, status (renames kept), ahead/behind
+                                             vs upstream AND vs default-branch merge-base
+  oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json]
+                                             bounded diff of one observed file; refuses when
+                                             the tree moved since the observation
   oats update <package> [<package>@<ref>]    transactional package update: temp fetch,
       [--to <ref>] [--dir <d>]              closure validation, diff, lock replace,
                                             all capability approvals invalidated; a
