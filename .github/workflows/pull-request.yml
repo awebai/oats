@@ -20,6 +20,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The workspace-layout guard reads the six import pins with `git cat-file`/`git show`;
+          # those are ancestor commits a shallow checkout does not have (main red since f34207e9).
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
