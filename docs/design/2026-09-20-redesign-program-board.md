@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 21:15Z · main `cd3d4913`+ · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.2 · oats-framework/v1.1.3 · imports @ `7416d84e` · **FIRST SECOND-OPERATOR PUBLICATION**; OKF `check` bare refusal → OKF 2.1.3
+**Last update:** 2026-09-21 23:40Z · main `cd3d4913`+ · **oats-knowledge main `7148a36` = centralised base (58 concepts)** · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.2 · framework v1.1.3 · imports @ `7416d84e`
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -16,7 +16,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |
 | S6 | Five expert souls created in the oats repo (`souls/<name>/`) | ✅ five + `oats-setup-expert` on main, all declaring `oats.core`, exported + imported | M, L, lead | legacy `agents/` cutover after S7 proof |
-| S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | ✅ **repo PUBLIC; PR #1 merged → main 8d67eab4, 25 accepted concepts**, owners = published souls, validator pinned OKF 2.1.1 · 🔄 fresh-reader proof assigned to Juan's side · ⬜ legacy in-soul knowledge decommission | lead, Antares/Juan | fresh-reader + PR-learning proof; then retire `agents/*/soul/knowledge` |
+| S7 | Centralised per-soul knowledge in `oats-knowledge` (migration + PR-only learning) | ✅ **MIGRATED — PR #2 merged → main `7148a36`, 58 concepts / 35k words from 399 legacy** (kernel 26, expert 18, desktop 13, assistant 1, market-research chartered empty); option A roster; theory + no-code-teaching rule; two workflow passes (24 agents) + lead review; validator 58/0/0; ownership 14/14 · ⏸ harvest OFF until new souls run from the base (human) | lead | next: legacy `agents/` decommission with the `~/OATS` cutover |
 | S8 | Desktop parity (marketplace view, soul creation with `oats.core`, onboarding flow) | ⬜ after D3 · **host offered: Juan's machine (has `claude`)** — accepted | fresh Desktop engineer on Juan's host | brief + spawn params after D3 |
 
 ## S1 — Knowledge capability contract rework

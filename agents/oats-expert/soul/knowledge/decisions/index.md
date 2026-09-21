@@ -1,5 +1,6 @@
 # Decisions
 
+* [Five expert souls are the roster; their knowledge lives centrally in oats-knowledge and never teaches the code](five-souls-are-the-roster-knowledge-centralised.md) - Option A (2026-09-21): five experts + non-owning setup expert; 399 legacy concepts judged into 58 under the theory with an explicit no-code-teaching rule; harvest off until the souls run from the base.
 * [Every capability that ships an `inject` declares a `helperInjection` policy; the framework's own do so first](helper-injection-policy-on-every-injecting-capability.md) - `oats.core` inherit, `oats.aweb` omit; release check on the framework's own packages; early helper-policy refusals carry attribution.
 * [Operator bindings are a flat map with declared ownership; providers ignore keys they do not own](operator-bindings-ownership.md) - Flat `operator.bindings` stays; providers consume only owned keys and declare them (`binding.keys`) so the kernel attributes or refuses stray keys by name.
 * [Provider problem reasons cross the binding wire as whitelisted fixed text](provider-problem-reasons-cross-the-wire.md) - The kernel keeps a provider's declared fixed safe reason on the binding wire and surfaces it beside slot/capability/origins; free text is still refused.
