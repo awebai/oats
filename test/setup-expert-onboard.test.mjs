@@ -43,6 +43,18 @@ test('onboard acquires and declares both capabilities, prints exact next command
   assert.deepEqual(Object.keys(soul.requires.capabilities).sort(), ['oats.core', 'oats.setup']);
   for (const cap of Object.values(soul.requires.capabilities)) assert.equal(cap.source, `${SOURCE}@${f.commit}#oats-package`);
   assert.deepEqual(soul.defaults, { knowledge: 'none', messaging: 'none', tasks: 'none' });
+  // K4: onboard records where the soul came from; inspect projects declarations,
+  // provenance and source readiness from the soul's own file, never guessing.
+  assert.deepEqual(soul.provenance, { kind: 'packaged-definition' }, 'the file records only known facts');
+  const inspected = f.run(['inspect', '--dir', f.deployment, '--json']); assert.equal(inspected.status, 0, inspected.stdout + inspected.stderr);
+  const entry = inspected.envelope.result.souls.find(s => s.name === NAME);
+  assert.equal(entry.soulsApi, 1); assert.deepEqual(Object.keys(entry.declarations.requires.capabilities).sort(), ['oats.core', 'oats.setup']);
+  assert.deepEqual(entry.declarations.defaults, { knowledge: 'none', messaging: 'none', tasks: 'none' }); assert.equal(entry.declarations.knowledge, null);
+  assert.deepEqual(entry.provenance, { kind: 'packaged-definition', source: null, revision: null, path: null, workspaceRevision: null }, 'inspect normalizes absent facts to null');
+  assert.equal(entry.readiness.source, 'recorded');
+  assert.equal(entry.readiness.status, 'sources-installed');
+  for (const q of entry.readiness.requirements) { assert.equal(q.installed, true); assert.equal(q.approved, false, 'readiness reports approval separately and truthfully'); }
+  assert.equal(inspected.envelope.result.sources.kind, 'none-recorded', 'a packaged definition names no portable source repository');
   assert.equal(readlinkSync(join(r.soul, 'CLAUDE.md')), 'AGENTS.md');
   const lock = JSON.parse(readFileSync(r.lockFile)); assert.equal(lock.packages['oats.framework'].commit, f.commit);
   assert.deepEqual(Object.keys(lock.capabilities).sort(), ['oats.core', 'oats.knowledge-theory', 'oats.setup']);
@@ -104,6 +116,11 @@ test('onboard copies the explicitly pinned workspace edition without adopting it
   assert.equal(r.source.kind, 'exported-edition-copy'); assert.equal(r.source.revision, f.commit);
   assert.notEqual(r.source.workspaceRevision, f.commit); assert.equal(r.captured, false);
   assert.doesNotMatch(readFileSync(join(r.soul, 'AGENTS.md'), 'utf8'), /CURRENT SOURCE MUST NOT/);
+  const recorded = parseYamlNested(readFileSync(join(r.soul, 'soul.yaml'), 'utf8')).provenance;
+  assert.deepEqual(recorded, { kind: 'exported-edition-copy', source: SOURCE, revision: f.commit, path: `souls/${NAME}`, workspaceRevision: r.source.workspaceRevision });
+  const inspected = f.run(['inspect', '--dir', f.deployment, '--json']).envelope.result;
+  assert.deepEqual(inspected.sources, { soulsApi: 1, kind: 'recorded-provenance', note: null,
+    items: [{ ...recorded, souls: [NAME] }] }, 'the deployment\'s portable source context is exactly the recorded editions');
   const invalid = f.run(['onboard', '--dir', join(f.root, 'invalid'), '--workspace', 'repo:not-a-repository', '--json']);
   assert.equal(invalid.status, 1); assert.equal(existsSync(join(f.root, 'invalid')), false);
   f.write(join(f.repo, 'oats-workspace.yaml'), { schemaVersion: 1, name: 'Explicit fixture', imports: [] });

@@ -46,6 +46,45 @@ no progress prose (progress goes to stderr):
 - success (exit 0): `{"schemaVersion":1,"ok":true,"result":{...}}`
 - failure (nonzero exit): `{"schemaVersion":1,"ok":false,"error":{"code":"...","message":"..."}}`
 
+## Souls and sources (`oats inspect --json`, `soulsApi: 1`, OATS 0.24.7+)
+
+Every entry in `result.souls[]` carries what the soul's **own `soul.yaml`
+declares**, parsed by the kernel — a consumer never parses YAML and never
+infers a field that is not there:
+
+- `soulsApi: 1`
+- `declarations: { requires, defaults, knowledge, teams, resources }` — each
+  the declared object, or `null` when the section is absent.
+- `provenance: { kind, source, revision, path, workspaceRevision } | null` —
+  where this soul copy came from, as recorded by the kernel when it created
+  it (`oats onboard` records `packaged-definition` or
+  `exported-edition-copy`). Souls created before 0.24.7 or authored by hand
+  read `null`; render that as *unrecorded*, not as local or as anything else.
+- `readiness` — the soul's **declared sources**, joined against
+  `result.capabilities[]` from the same payload. Distinct from launchability
+  (`oats spawn`) and adoption (`oats prepare`); never a green "Ready".
+  - `source: "recorded" | "unrecorded"`
+  - `requirements: [{ capability, source, installed, approved, active, version }] | null`
+    (`null` = nothing declared). `installed: false` = not in the inventory;
+    `approved`/`active`/`version` are `null` when there is no inventory row.
+  - `status: "undeclared" | "sources-installed" | "sources-missing" | "unknown"`
+- `declarationProblems: [{ code, message }]` — an unreadable file reports why;
+  the soul is still listed.
+
+`result.sources` is the scope's **portable source context**: the distinct
+provenance sources its souls record.
+
+```json
+{"soulsApi":1,"kind":"recorded-provenance","note":null,
+ "items":[{"kind":"exported-edition-copy","source":"git:https://…/oats.git","revision":"<sha>","path":"souls/oats-setup-expert","workspaceRevision":"<sha>","souls":["oats-setup-expert"]}]}
+```
+
+`kind: "none-recorded"` (empty `items`, explanatory `note`) means no soul in the
+scope records a portable provenance — show the authored souls and say so.
+Workspace imports adopted onto a deployment will appear here at their pinned
+revisions when that adoption is recorded on the deployment; nothing is
+enumerated from a source repository that the deployment does not record.
+
 ## Mutations exposed to Desktop v1
 
 The commands below use the same envelope. Additional capability operations

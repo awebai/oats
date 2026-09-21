@@ -42,6 +42,9 @@ function scope(name) {
   write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nkind: persistent\ndescription: developer\nrepo: .\nwork: worktree\nruntime: claude\nmodel: opus\nyolo: true\n");
   write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n\nYou are dev.\n");
   write(join(repo, "local-agents", "scratch", "soul", "soul.yaml"), "name: scratch\nkind: local\nrepo: .\nwork: checkout\nruntime: pi\n");
+  // K4 fixture: a soul declaring a requirement the inventory does not hold.
+  write(join(repo, "agents", "needy", "soul", "soul.yaml"), "name: needy\nkind: persistent\nrepo: .\nwork: checkout\nruntime: pi\nrequires: {\"capabilities\":{\"test.tools\":{\"source\":\"owned\"},\"test.absent\":{\"source\":\"git:x@y#z\"}}}\n");
+  write(join(repo, "agents", "needy", "soul", "AGENTS.md"), "# needy\n");
   write(join(repo, "local-agents", "scratch", "soul", "AGENTS.md"), "# scratch\n");
   // A running-home snapshot for dev with an older setting and a capability no longer active.
   const home = join(repo, "agents", "dev", "instances", "dev-one");
@@ -59,7 +62,7 @@ test("inspect answers souls with editability, capabilities with health separate 
   const res = r.json().result;
   assert.equal(res.operationsApi, 1); assert.equal(res.selected.source, "config"); assert.equal(res.selected.soul, null);
   const names = res.souls.map((s) => `${s.name}:${s.kind}`).sort();
-  assert.deepEqual(names, ["dev:persistent", "helper:capability", "scratch:local"]);
+  assert.deepEqual(names, ["dev:persistent", "helper:capability", "needy:persistent", "scratch:local"]);
   const dev = res.souls.find((s) => s.name === "dev");
   assert.equal(dev.runtime, "claude"); assert.equal(dev.model, "opus"); assert.equal(dev.yolo, true); assert.equal(dev.work, "worktree");
   assert.deepEqual(dev.editable.fields, ["runtime", "model", "yolo", "backend", "description", "launch-config"]); assert.equal(dev.editable.instructions, true);
@@ -77,6 +80,16 @@ test("inspect answers souls with editability, capabilities with health separate 
   const tools = res.capabilities.find((c) => c.id === "test.tools");
   assert.equal(tools.activation.enabled, false, "soul-only activation is not active for the scope"); assert.equal(tools.activation.target, "declared");
   assert.equal(res.knowledge.provider, "test.notes"); assert.deepEqual(res.knowledge.operations.map((o) => o.name).sort(), ["harvest", "inspect"]);
+  // K4: declarations/provenance/readiness come from each soul's own file; the
+  // scope's portable source context is exactly what souls record.
+  assert.equal(dev.soulsApi, 1); assert.deepEqual(dev.declarations, { requires: null, defaults: null, knowledge: null, teams: null, resources: null });
+  assert.equal(dev.provenance, null); assert.deepEqual(dev.readiness, { source: "unrecorded", requirements: null, status: "undeclared" });
+  const needy = res.souls.find((s) => s.name === "needy");
+  assert.equal(needy.readiness.status, "sources-missing");
+  const byCap = Object.fromEntries(needy.readiness.requirements.map((q) => [q.capability, q]));
+  assert.equal(byCap["test.tools"].installed, true); assert.equal(byCap["test.tools"].active, false, "declared-only activation is reported as not active, separately from installed");
+  assert.deepEqual(byCap["test.absent"], { capability: "test.absent", source: "git:x@y#z", installed: false, approved: null, active: null, version: null });
+  assert.deepEqual(res.sources, { soulsApi: 1, kind: "none-recorded", items: [], note: "no soul in this scope records a portable provenance; authored local souls only" });
   assert.deepEqual(res.problems, []);
 });
 
