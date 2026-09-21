@@ -1,6 +1,7 @@
 # Knowledge Log
 
 ## 2026-09-21
+* **Milestone**: first second-operator publication of an executable resolution from the public definition alone (Antares, Juan's machine) after the helperInjection packaging fix. OKF `check` then refuses code-only → [reasons decision amended](/decisions/provider-problem-reasons-cross-the-wire.md): a fixed reason per cause in `check`.
 * **Decision**: [helperInjection on every injecting capability](/decisions/helper-injection-policy-on-every-injecting-capability.md) — the operator's own correction: behind `responsibleHuman`, `oats.core`/`oats.aweb` never adopted the helper-injection contract; no edition could publish. Supersedes the milestone line below.
 * **Milestone (superseded same day)**: S2 exit gate met by the independent second operator on the 0.24.4 wave — every remaining item named and operator-owned. Recorded on the [program board](https://github.com/awebai/oats/blob/main/docs/design/2026-09-20-redesign-program-board.md) with the operator's verbatim verdict.
 * **Decision**: [Operator bindings ownership](/decisions/operator-bindings-ownership.md) — second operator deadlocked between messaging's `wider` and OKF validating it as a store locator; rule: flat map, providers ignore foreign keys, declare owned keys, kernel names truly unowned keys.

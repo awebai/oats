@@ -66,6 +66,25 @@ field, at manifest load (`core.mjs`), not only in preparation. Therefore:
   releases (floor 0.24.4) → mirror/catalog/edition pins → second-operator
   re-run on all three.
 
+# Amendment 2026-09-21 — `check` needs a reason per cause, not one code
+
+The first second-operator publication was followed by OKF 2.1.2's `check`
+refusing `needs-configuration / provider-not-qualified` with no message. The
+kernel side is done (check `result.problems[].message` passes the same
+filter), but OKF's `check` phase is code-only and folds at least four
+distinct causes into `provider-not-qualified`: an unadmitted or unsupported
+action, more than 64 Git bases, and any of `E_OWNER` / `E_BASE` /
+`E_VALIDATION` / `E_DIRECTORY_GIT` / `E_CONFIRM` while staging or validating
+a base. The operator published two resolutions and still could not tell which.
+
+Rule: **every `problems[]` entry a provider returns from `check` carries a
+fixed reason distinct per cause**, declared in `binding.reasons`, chosen so
+the operator knows which document or setting to change (e.g. "knowledge base
+staging failed for a declared git base", "declared base is not a validated
+knowledge tree", "check action is not an admitted knowledge operation").
+Codes remain the contract; reasons make them actionable. Applies to aweb
+too (its check path already names its reasons).
+
 # Consequences
 
 - The security boundary is unchanged in kind — only provider-declared
