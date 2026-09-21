@@ -1,14 +1,15 @@
-/* oats desktop — "Active" overview (the home surface): cluster-first live
-   view of everything currently happening. Agent clusters — connected
+/* oats desktop — "Active" overview: reported runtime and relationship
+   observations, not an inferred activity feed. Agent clusters — connected
    components of parent/child/sibling links (see clusters.mjs) — are the
    primary visual unit: each multi-member cluster renders as a card with its
-   internal tidy tree (parent/child solid curved edges; sibling links as
-   dashed horizontal edges between peers — never color alone). Unrelated
+   internal tidy tree (parent/child solid elbows; sibling links as
+   dotted horizontal edges between peers — never color alone). Unrelated
    single instances collect in a visually quieter "Independent" strip below.
    Layout inside a cluster is a layered tidy tree, deliberately NOT
    force-directed: deterministic, no jitter.
-   Node cards show the app-wide status vocabulary (running = filled green
-   dot; idle = hollow dot + dimmed card — never color alone, WCAG). Click
+   Node cards show reported runtime state (running = filled orange dot;
+   stopped = hollow dot + dashed card; unknown distinct). Activity is NOT
+   inferred from task/transcript prose: K7 observations remain unknown. Click
    selects and shows the action popover; double-click / Enter opens the
    terminal; hovering highlights the lineage.
    Canvas: pan by drag, zoom by pinch/⌘-wheel or the −/+/fit controls; the
@@ -22,34 +23,43 @@
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts } from "../instance-presentation.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
+import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
-  escapeHtml, apiJson, ensureTheme,
+  apiJson, ensureTheme,
   currentWorkspace, setWorkspace, adoptWorkspace, onWorkspaceChange,
   renderWorkspaceSelect, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 
-const CSS = `
+export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
         font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 .hier * { box-sizing: border-box; }
-.hier-bar { display: flex; align-items: center; gap: 10px; height: var(--bar-h); flex: none; padding: 0 14px;
+.hier-bar { display: flex; align-items: center; gap: 10px; height:48px; flex: none; padding:0 12px 0 16px;
             border-bottom: 1px solid var(--border); background: var(--surface); }
 .hier-sum { color: var(--muted); font-size: 12.5px; }
 .hier-sum b { color: var(--fg); font-weight: 600; }
+.hier .spawnbtn { min-height:28px; padding:4px 12px; font-size:12px; }
+.hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
+.hier-notice-message { flex:1; }
+.hier-retry { flex:none; }
+.hier-notice[hidden] { display:none; }
+.hier-canvas:focus-visible { outline:2px solid var(--accent); outline-offset:-3px; }
+.hier :is(button,select):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .hier-canvas { flex: 1; position: relative; overflow: hidden; min-height: 0; cursor: grab; outline: none; }
 .hier-canvas.panning { cursor: grabbing; }
 .hier-stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
 .hier-group { position: absolute; }
-.hier-group.hier-cluster { background: color-mix(in srgb, var(--surface) 55%, var(--bg));
+.hier-group.hier-cluster { background:var(--surface-2);
                            border: 1px solid var(--border); border-radius: 14px; }
 .hier-group.hier-solo .hnode { box-shadow: none; }
-.hier-chead { position: absolute; left: 12px; top: 7px; display: flex; align-items: baseline; gap: 8px;
+.hier-chead { position: absolute; left: 14px; top: 9px; display: flex; align-items: baseline; gap: 8px;
               max-width: calc(100% - 24px); white-space: nowrap; pointer-events: none; }
 .hier-chead .cnm { color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase;
                    letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; }
-.hier-chead .cct { color: var(--faint); font-size: 11px; }
+.hier-chead .cct { color: var(--muted); font-size: 11px; }
+.hier-context { position:absolute; left:14px; top:26px; max-width:calc(100% - 28px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:11px; }
 .hier-zoom { position: absolute; right: 14px; bottom: 14px; z-index: 5; display: flex; gap: 4px;
              background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 3px; box-shadow: var(--shadow); }
 .hier-zoom button { background: none; border: none; color: var(--muted); font: 14px/1 inherit; width: 26px; height: 24px;
@@ -57,36 +67,41 @@ const CSS = `
 .hier-zoom button:hover { background: var(--surface-2); color: var(--fg); }
 .hier-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .hier-edges path { stroke: var(--graph-edge); stroke-width: 1.5; fill: none; }
-.hier-edges path.sib { stroke-dasharray: 5 4; }
+.hier-edges path.sib { stroke-dasharray:2 4; }
 .hier-edges path.lit { stroke: var(--accent); stroke-width: 2; }
 .hier-ws { position: absolute; color: var(--faint); font-size: 11px; font-weight: 650;
            text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
-.hnode { position: absolute; width: 208px; background: var(--surface); border: 1px solid var(--border);
-         border-radius: 10px; padding: 8px 11px; box-shadow: var(--shadow); cursor: pointer; user-select: none; }
+.hnode { position: absolute; width:220px; min-height:60px; background: var(--surface); border: 1px solid var(--border);
+         border-radius: 10px; padding:9px 12px; box-shadow: var(--shadow); cursor: pointer; user-select: none; }
 .hnode.dragging { cursor: grabbing; }
 .hnode:hover { background: var(--surface-2); }
 .hnode.idle { border-style: dashed; background: var(--surface-2); }
 .hnode.sel { border-color: var(--accent); background: var(--sel); }
 .hnode.lit { border-color: var(--accent); }
-.hnode .hname { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 7px; min-width: 0; }
+.hnode .hname { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap:8px; min-width: 0; }
 .hnode .hname .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hnode .hmeta { color: var(--muted); font-size: 11.5px; margin-top: 3px; overflow: hidden;
+.hnode .hmeta { color: var(--muted); font-size: 11.5px; margin-top:3px; padding-left:16px; overflow: hidden;
                 text-overflow: ellipsis; white-space: nowrap; }
 .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
 .hdot.off { background: transparent; border: 1.5px solid var(--faint); }
-.hier-pop { position: absolute; z-index: 4; width: 232px; background: var(--surface); border: 1px solid var(--border);
-            border-radius: 10px; box-shadow: var(--shadow); padding: 10px 12px; }
-.hier-pop .ptask { color: var(--muted); font-size: 12px; margin: 2px 0 8px; max-height: 54px; overflow: hidden; }
+.hier-pop { position: absolute; z-index:4; width:224px; max-width:calc(100% - 16px); background:var(--surface); border:1px solid var(--border);
+            border-radius:10px; box-shadow:var(--shadow); padding:11px 12px; font-size:12px; overflow-wrap:anywhere; }
+.hier-pop .pname { margin:0 0 8px; font-size:12.5px; font-weight:650; }
+.hier-pop .pstate, .hier-pop .pavailability, .hier-pop .pstatus { margin:0 0 8px; color:var(--muted); line-height:1.5; }
+.hier-pop .pstatus:empty { display:none; }
+.hier-pop .pactions-note { color:var(--muted); font-size:11px; line-height:1.5; margin:8px 0 0; }
+.hier-pop .pidentity { color:var(--muted); font:11px/1.5 var(--mono,monospace); margin:0 0 8px; }
+.hier-pop .pidentity[hidden] { display:none; }
 .hier-pop .pchips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 9px; }
-.hier-pop .pacts { display: flex; gap: 6px; }
+.hier-pop .pacts { display:flex; gap:6px; flex-wrap:wrap; }
 .hier-pop .pacts button { flex: 1; }
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 `;
 
-const NODE_W = 208, NODE_H = 58, GAP_X = 26, GAP_Y = 46, PAD = 40;
-const CL_PAD = 18, CL_HEAD = 30, CL_GAP = 44, ROW_MAX = 1500, SOLO_GAP_Y = 20;
+const NODE_W = 220, NODE_H = 60, GAP_X = 50, GAP_Y = 40, PAD = 40;
+const CL_PAD = 18, CL_LEFT = 60, CL_HEAD = 26, CL_GAP = 44, ROW_MAX = 1000, SOLO_GAP_Y = 20;
 
 /* Name index over a roster: name -> instance[] (resolveLinkId's shape). */
 function nameIndex(instances) {
@@ -117,9 +132,9 @@ export function layoutForest(instances, rosterByName) {
     if (p && p !== n) { p.children.push(n); parentOf.set(n, p); }
     else roots.push(n);
   }
-  const rank = (a, b) => (a.inst.running === b.inst.running
-    ? (a.inst.instance.localeCompare(b.inst.instance) || a.id.localeCompare(b.id))
-    : a.inst.running ? -1 : 1);
+  const stateRank = instance => instance.running === true ? 0 : instance.running === false ? 1 : 2;
+  const rank = (a, b) => stateRank(a.inst) - stateRank(b.inst)
+    || String(a.inst.instance).localeCompare(String(b.inst.instance)) || a.id.localeCompare(b.id);
 
   // A malformed parentInstance cycle has no natural root and used to vanish
   // entirely. Mark normal root-reachable nodes, then promote one deterministic
@@ -161,6 +176,7 @@ export function layoutForest(instances, rosterByName) {
   let cursor = 0; // next free leaf x slot
   const place = (n, depth) => {
     n.children.sort(rank);
+    n.depth = depth;
     n.y = depth * (NODE_H + GAP_Y);
     if (!n.children.length) {
       n.x = cursor;
@@ -180,7 +196,7 @@ export function layoutForest(instances, rosterByName) {
   return { nodes: all, width: Math.max(cursor - GAP_X, NODE_W), height: (Math.max(...all.map((n) => n.y), 0)) + NODE_H };
 }
 
-let state = null;
+let state = null, viewSequence = 0;
 
 /* Cluster-level placement: multi-member clusters flow left-to-right in
    wrapping rows (deterministic — cluster order comes from computeClusters);
@@ -200,8 +216,8 @@ export function layoutClusters(instances) {
   let cx = 0, cy = 0, rowH = 0;
   for (const c of multi) {
     const lay = layoutForest(c.instances, rosterByName);
-    for (const n of lay.nodes) { n.x += CL_PAD; n.y += CL_HEAD + CL_PAD; }
-    const w = lay.width + CL_PAD * 2;
+    for (const n of lay.nodes) { n.x += CL_LEFT + n.depth * 40; n.y += CL_HEAD + CL_PAD; }
+    const w = Math.max(...lay.nodes.map(n => n.x + NODE_W)) + CL_PAD;
     const h = lay.height + CL_HEAD + CL_PAD * 2;
     if (cx > 0 && cx + w > ROW_MAX) { cx = 0; cy += rowH + CL_GAP; rowH = 0; }
     placed.push({ cluster: c, nodes: lay.nodes, x: cx, y: cy, w, h,
@@ -238,7 +254,9 @@ const DRAG_THRESHOLD = 5; // px before a node-drag moves its tree (else it's a c
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
   const s = state = {
-    el, ctx, panel: { instances: [] }, sel: null,
+    el, ctx, win: el.ownerDocument.defaultView, windowFocused:true, panel: { instances: [] }, sel: null,
+    request:0, loading:false, dataGen:null, dataWorkspace:null, stale:true, signature:null, pending:null,
+    renderEpoch:0, actionTicket:0, domId:`active-${++viewSequence}`, nodeIds:new Map(), nextNodeId:0,
     tx: PAD, ty: PAD, z: 1, fitted: false,
     nodeOffsets: new Map(),        // instance -> {x,y} user-dragged box offsets
     timers: [], unsubWs: null, alive: true,
@@ -246,51 +264,60 @@ export function mount(el, ctx) {
   };
   el.innerHTML = `
     <div class="hier oats-view" style="display:flex">
-      <style>${CSS}</style>
+      <style>${hierarchyCSS}</style>
       <div class="hier-bar">
-        <select class="field wssel" style="display:none"></select>
+        <select class="field wssel" aria-label="Workspace" style="display:none"></select>
         <span class="hier-sum"><span class="spinner"></span></span>
         <span style="flex:1"></span>
-        <button class="act spawnbtn" title="Spawn a new agent instance">✚ Spawn</button>
+        <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">＋ Spawn</button>
       </div>
+      <div class="hier-notice" role="status" aria-live="polite" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
         <div class="hier-zoom">
-          <button class="zout" title="Zoom out (⌘−)" aria-label="Zoom out">−</button>
-          <button class="zfit" title="Fit to screen (f)" aria-label="Fit to screen">◲</button>
-          <button class="zin" title="Zoom in (⌘+)" aria-label="Zoom in">+</button>
+          <button class="zout" title="Zoom out" aria-label="Zoom out">−</button>
+          <button class="zin" title="Zoom in" aria-label="Zoom in">+</button>
+          <button class="zfit" title="Fit to screen" aria-label="Fit to screen">⤢</button>
         </div>
       </div>
     </div>`;
   s.q = (cls) => el.querySelector("." + cls);
   s.canvas = s.q("hier-canvas");
+  s.q('hier-retry').addEventListener('click', () => { if (s.alive) void refresh(s); });
   s.q("wssel").addEventListener("change", (e) => setWorkspace(e.target.value));
-  s.q("spawnbtn").addEventListener("click", () => ctx.openView ? ctx.openView("spawn") : null);
-  if (!ctx.openView) s.q("spawnbtn").style.display = "none";
+  s.q("spawnbtn").addEventListener("click", () => openWorkspace(s));
+  if (!ctx.openView) { s.q("spawnbtn").disabled = true; s.q("spawnbtn").title = 'Workspace navigation is unavailable in this host'; }
   s.q("zin").addEventListener("click", () => zoomBy(s, 1.2));
   s.q("zout").addEventListener("click", () => zoomBy(s, 1 / 1.2));
-  s.q("zfit").addEventListener("click", () => fit(s));
+  s.q("zfit").addEventListener("click", () => { if (visibleOwner(s)) fit(s); });
 
   // canvas pan by drag (ignore drags that start on a node/popover/controls)
-  let pan = null;
+  s.pan = null;
   s.canvas.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".hnode") || e.target.closest(".hier-pop") || e.target.closest(".hier-zoom")) return;
-    pan = { x: e.clientX - s.tx, y: e.clientY - s.ty };
+    if (!visibleOwner(s) || e.button !== 0 || e.target.closest(".hnode") || e.target.closest(".hier-pop") || e.target.closest(".hier-zoom")) return;
+    s.fitted = true; // an explicit camera gesture wins over a later first observation
+    s.pan = { x: e.clientX - s.tx, y: e.clientY - s.ty };
     s.canvas.classList.add("panning");
     closePop(s);
   });
-  window.addEventListener("mousemove", s.onMove = (e) => {
+  s.win.addEventListener("mousemove", s.onMove = (e) => {
+    if (!visibleOwner(s)) { cancelGesture(s); return; }
     if (s.drag) { onNodeDragMove(s, e); return; }
-    if (!pan) return;
-    s.tx = e.clientX - pan.x; s.ty = e.clientY - pan.y;
+    if (!s.pan) return;
+    s.tx = e.clientX - s.pan.x; s.ty = e.clientY - s.pan.y;
     applyTransform(s);
   });
-  window.addEventListener("mouseup", s.onUp = (e) => {
+  s.win.addEventListener('blur', s.onBlur = () => { s.windowFocused = false; cancelGesture(s); });
+  s.win.addEventListener('focus', s.onFocus = () => { s.windowFocused = true; });
+  s.win.addEventListener('resize', s.onResize = () => { if (visibleOwner(s)) { if (!s.fitted) fit(s); positionPop(s); } });
+  s.win.addEventListener("mouseup", s.onUp = (e) => {
+    if (!visibleOwner(s)) { cancelGesture(s); return; }
     if (s.drag) { onNodeDragEnd(s, e); return; }
-    pan = null; s.canvas.classList.remove("panning");
+    s.pan = null; s.canvas.classList.remove("panning"); applyPending(s);
   });
 
   // zoom: pinch / ⌘-wheel zooms about the cursor; plain wheel pans
   s.canvas.addEventListener("wheel", (e) => {
+    if (!visibleOwner(s) || e.defaultPrevented) return;
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       const factor = Math.exp(-e.deltaY * 0.01);
@@ -317,8 +344,8 @@ export function mount(el, ctx) {
     { id: "hier.fit", defaultChord: "F", label: "Hierarchy: fit to screen", run: () => fit(s) },
     { id: "hier.terminal", defaultChord: "T", label: "Hierarchy: open terminal of selection", run: () => { if (s.sel) openTerm(s, s.sel); } },
     { id: "hier.brain", defaultChord: "B", label: "Hierarchy: open Brain of selection", run: () => openSelBrain(s) },
-    { id: "hier.spawn", defaultChord: "S", label: "Hierarchy: open the Spawn view", run: () => s.ctx.openView?.("spawn") },
-    { id: "hier.popover", defaultChord: "O", label: "Hierarchy: open the action popover", run: () => { if (s.sel) openPop(s, s.sel); } },
+    { id: "hier.spawn", defaultChord: "S", label: "Hierarchy: open the Spawn view", run: () => openWorkspace(s) },
+    { id: "hier.popover", defaultChord: "O", label: "Hierarchy: open the action popover", run: () => { if (s.sel) { openPop(s, s.sel); s.pop?.querySelector('button:not(:disabled)')?.focus(); } } },
     { id: "hier.zoomIn", defaultChord: "=", label: "Hierarchy: zoom in", run: () => zoomBy(s, 1.2) },
     { id: "hier.zoomOut", defaultChord: "-", label: "Hierarchy: zoom out", run: () => zoomBy(s, 1 / 1.2) },
   ];
@@ -326,9 +353,9 @@ export function mount(el, ctx) {
     id: a.id, label: a.label, context: "view:hierarchy", run: a.run, defaultChord: a.defaultChord,
   }));
 
-  s.unsubWs = onWorkspaceChange(() => { s.sel = null; s.fitted = false; s.nodeOffsets.clear(); refresh(s); });
+  s.unsubWs = onWorkspaceChange(() => { resetObservation(s); void refresh(s); });
   refresh(s);
-  s.timers.push(setInterval(() => refresh(s), 4000));
+  s.timers.push(setInterval(() => { if (!s.loading) void refresh(s); }, 4000));
 
   return () => teardown(s);
 }
@@ -337,49 +364,127 @@ export function unmount() { if (state) teardown(state); }
 
 function teardown(s) {
   if (!s.alive) return;
-  s.alive = false;
+  s.alive = false; s.request++; s.actionTicket++; s.pending = null; s.pan = null; s.drag = null;
+  s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
   if (s.unsubWs) s.unsubWs();
-  window.removeEventListener("mousemove", s.onMove);
-  window.removeEventListener("mouseup", s.onUp);
+  s.win.removeEventListener("mousemove", s.onMove);
+  s.win.removeEventListener("mouseup", s.onUp);
+  s.win.removeEventListener('resize', s.onResize);
+  s.win.removeEventListener('blur', s.onBlur); s.win.removeEventListener('focus', s.onFocus);
   s.el.innerHTML = "";
   if (state === s) state = null;
 }
 
-/* Exported for the deferred cross-workspace regression. */
+const docOf = s => s.el?.ownerDocument || document;
+function node(s, tag, text, cls) {
+  const el = docOf(s).createElement(tag);
+  if (text !== undefined) el.textContent = text;
+  if (cls) el.className = cls;
+  return el;
+}
+function visibleOwner(s, element = s.canvas) {
+  if (!s.alive || s.windowFocused === false || !element?.isConnected) return false;
+  for (let parent = element; parent; parent = parent.parentElement) {
+    if (parent.hidden || parent.inert || parent.style?.display === 'none' || parent.style?.visibility === 'hidden') return false;
+  }
+  return true;
+}
+function dataCurrent(s) {
+  return s.alive && s.dataGen === workspaceGeneration() && s.dataWorkspace === currentWorkspace();
+}
+function actionsCurrent(s) { return dataCurrent(s) && !s.stale && !s.pending; }
+function notice(s, message) {
+  const el = s.q('hier-notice'); if (!el) return;
+  const text = el.querySelector?.('.hier-notice-message');
+  if (text) text.textContent = message; else el.textContent = message;
+  el.hidden = !message;
+}
+function clearCanvas(s) {
+  const controls = s.canvas.querySelector('.hier-zoom');
+  s.canvas.innerHTML = ''; if (controls) s.canvas.append(controls);
+  s.nodeEls.clear(); s.dragConsumedClick = null; s.canvas.removeAttribute?.('aria-activedescendant');
+}
+function cancelGesture(s) {
+  if (!s.alive) return;
+  s.drag?.node.classList.remove('dragging'); s.drag = null; s.pan = null; s.dragConsumedClick = null;
+  s.canvas.classList.remove('panning'); if (s.alive) applyPending(s);
+}
+function resetObservation(s) {
+  s.request = (s.request || 0) + 1; s.actionTicket = (s.actionTicket || 0) + 1;
+  closePop(s); s.sel = null; s.fitted = false; s.nodeOffsets.clear(); s.nodeIds?.clear();
+  s.drag?.node.classList.remove('dragging'); s.drag = null; s.dragConsumedClick = null; s.pan = null;
+  s.canvas.classList.remove('panning'); s.pending = null; s.signature = null; s.bounds = null;
+  s.panel = { instances: [] }; s.loading = false; s.dataGen = null; s.dataWorkspace = null; s.stale = true;
+  clearCanvas(s); s.q('hier-sum').textContent = 'Loading reported roster…'; notice(s, '');
+}
+function acceptObservation(s, panel, gen) {
+  const signature = activeSignature(panel);
+  const ids = new Set(panel.instances.map(instanceId));
+  for (const key of s.nodeOffsets.keys()) if (!ids.has(key)) s.nodeOffsets.delete(key);
+  for (const key of s.nodeIds?.keys() || []) if (!ids.has(key)) s.nodeIds.delete(key);
+  s.panel = panel; s.dataGen = gen; s.dataWorkspace = currentWorkspace(); s.stale = !!panel.error; s.pending = null;
+  if (s.ctx.hasWorkspaceSwitcher) s.q('wssel').style.display = 'none';
+  else renderWorkspaceSelect(s.q('wssel'), panel.workspaces, panel.workspace?.id || '');
+  notice(s, panel.error ? `Roster unavailable: ${panel.error.slice(0, 300)}. Showing a reported observation, not current state; actions disabled.` : '');
+  if (signature !== s.signature) { s.signature = signature; render(s); }
+  else { if (!s.fitted) fit(s); updatePop(s); }
+}
+function applyPending(s) {
+  const pending = s.pending; s.pending = null;
+  if (!pending || !s.alive || pending.gen !== workspaceGeneration() || pending.request !== s.request) return;
+  acceptObservation(s, pending.panel, pending.gen);
+}
+
+/* Every request owns BOTH outcomes, even within the same workspace. */
 export async function refresh(s) {
-  const myGen = workspaceGeneration();       // capture at dispatch (house standard)
-  let panel;
-  try { panel = await apiJson(s.ctx, `/api/panel${wsQuery()}`); }
-  catch { return; } // keep the last good graph on transient errors
-  // BOTH success and failure paths are gated: a deferred roster from
-  // workspace A must never paint after switching to B, or after unmount.
-  if (!s.alive || myGen !== workspaceGeneration()) return;
-  s.panel = panel;
-  if (panel.workspace && panel.workspace.id !== currentWorkspace()) adoptWorkspace(panel.workspace.id);
-  renderWorkspaceSelect(s.q("wssel"), panel.workspaces, panel.workspace?.id || "");
-  render(s);
+  if (!s.alive) return;
+  const myGen = workspaceGeneration(), requestedWorkspace = currentWorkspace();
+  const request = s.request = (s.request || 0) + 1;
+  const owns = () => s.alive && request === s.request && myGen === workspaceGeneration();
+  s.loading = true;
+  try {
+    const data = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
+    if (!owns()) return;
+    const panel = projectActivePanel(data);
+    if (panel.error && !panel.instances.length) throw Error(panel.error); // failed absence is not an observed empty roster
+    if (requestedWorkspace && panel.workspace?.id && panel.workspace.id !== requestedWorkspace) throw Error('The roster reply belongs to a different workspace. Choose the workspace again.');
+    if (!requestedWorkspace && panel.workspace?.id) adoptWorkspace(panel.workspace.id);
+    if ((s.drag || s.pan) && activeSignature(panel) !== s.signature) {
+      s.pending = { panel, gen: myGen, request }; updatePop(s);
+      notice(s, 'Roster changed during this gesture; the latest observation will apply on release.');
+      return;
+    }
+    acceptObservation(s, panel, myGen);
+  } catch (error) {
+    if (!owns()) return;
+    s.pending = null; s.stale = true; s.actionTicket = (s.actionTicket || 0) + 1;
+    if (s.dataGen == null) s.q('hier-sum').textContent = 'Roster unknown';
+    notice(s, `Roster unavailable: ${String(error?.message || 'read failed').slice(0, 300)}. ${s.dataGen == null ? 'No current observation.' : 'Showing the last observation, not current state; actions disabled.'}`);
+    updatePop(s);
+  } finally { if (owns()) s.loading = false; }
 }
 
 function render(s) {
   const canvas = s.canvas;
-  const prevPop = s.popFor;
-  const zoomCtl = canvas.querySelector(".hier-zoom");
-  canvas.innerHTML = "";
-  if (zoomCtl) canvas.append(zoomCtl);
-  s.nodeEls.clear();
+  const prevPop = s.popFor, preservedPop = s.pop, focused = docOf(s).activeElement;
+  const preserveFocus = preservedPop?.contains(focused);
+  s.renderEpoch = (s.renderEpoch || 0) + 1;
+  clearCanvas(s);
   const list = s.panel.instances || [];
   const { running, stopped, unknown } = runtimeCounts(list);
   const status = `<b>${running}</b> running · <b>${stopped}</b> stopped${unknown ? ` · <b>${unknown}</b> unknown` : ""}`;
   s.q("hier-sum").innerHTML =
     status;
   if (!list.length) {
+    s.q('hier-sum').innerHTML = `${status} · <b>0</b> groups`;
+    s.sel = null; closePop(s);
     const w = document.createElement("div");
     w.className = "hier-empty-wrap";
     w.style.height = "100%";
     w.innerHTML = `<div class="empty"><span class="big">◎</span>` +
-      `No instances yet.<br>Spawn one from the Spawn view or with <code>oats spawn &lt;agent&gt;</code>.</div>`;
+      `No instances reported in this observation.<br>Choose a soul in Workspace or use <code>oats spawn &lt;agent&gt;</code>.</div>`;
     canvas.append(w);
     return;
   }
@@ -389,9 +494,8 @@ function render(s) {
   // relation crossing agent/workspace roots never turns a child into an
   // orphan. Node metadata still identifies its repo/root.
   const { placed, soloBlock, width, height } = layoutClusters(list);
-  const nCl = placed.length + (soloBlock ? soloBlock.nodes.length : 0);
-  s.q("hier-sum").innerHTML =
-    `${status} · <b>${nCl}</b> cluster${nCl === 1 ? "" : "s"}`;
+  const nGroups = placed.length, nIndependent = soloBlock?.nodes.length || 0;
+  s.q("hier-sum").innerHTML = `${status} · <b>${nGroups}</b> group${nGroups === 1 ? '' : 's'}${nIndependent ? ` · <b>${nIndependent}</b> independent` : ''}`;
   const stage = document.createElement("div");
   stage.className = "hier-stage";
 
@@ -462,8 +566,10 @@ function render(s) {
     const group = groupFor(pc, c.name, aria, "hier-cluster");
     const head = document.createElement("div");
     head.className = "hier-chead";
-    head.innerHTML = `<span class="cct">${c.running}/${c.size} running${c.unknown ? ` · ${c.unknown} unknown` : ""}</span>`;
+    head.append(node(s, 'span', `${c.running}/${c.size} running${c.unknown ? ` · ${c.unknown} unknown` : ''}`, 'cct'));
     group.prepend(head);
+    const contexts = [...new Set(c.instances.map(i => i.repoName).filter(Boolean))];
+    if (contexts.length) { const metadata = node(s, 'div', `Reported context: ${contexts.join(' · ')}`, 'hier-context'); metadata.title = metadata.textContent; group.append(metadata); }
     stage.append(group);
   }
   if (soloBlock) {
@@ -478,73 +584,112 @@ function render(s) {
   }
   canvas.append(stage);
   // first paint (or workspace switch): fit the forest to the visible screen
-  if (!s.fitted) { s.fitted = true; fit(s); } else applyTransform(s);
+  if (!s.fitted) fit(s); else applyTransform(s);
   if (s.sel && !list.some((i) => instanceId(i) === s.sel)) s.sel = null;
   paintSelection(s);
   // keep the popover across the 4s refresh if its instance still exists
-  if (prevPop && list.some((i) => instanceId(i) === prevPop)) openPop(s, prevPop);
+  if (prevPop && list.some((i) => instanceId(i) === prevPop)) {
+    openPop(s, prevPop, preservedPop);
+    // Retain the actual focused control, but never reclaim focus moved by a
+    // synchronous blur handler elsewhere. No request completion selects a node.
+    if (preserveFocus && visibleOwner(s, focused) && docOf(s).activeElement === docOf(s).body) focused.focus({ preventScroll: true });
+  } else { s.pop = null; s.popFor = null; }
 }
 
 function nodeEl(s, n, wsName) {
-  const i = n.inst;
-  const id = n.id ?? instanceId(i);
-  const state = runtimeState(i);
-  const d = document.createElement("div");
-  d.className = "hnode" + (state === "stopped" ? " idle" : state === "unknown" ? " unknown" : "");
+  const i = n.inst, id = n.id ?? instanceId(i), status = runtimeState(i);
+  const d = node(s, 'div', undefined, 'hnode' + (status === 'stopped' ? ' idle' : status === 'unknown' ? ' unknown' : ''));
+  s.nodeIds ||= new Map();
+  if (!s.nodeIds.has(id)) s.nodeIds.set(id, `${s.domId || 'active'}-node-${s.nextNodeId = (s.nextNodeId || 0) + 1}`);
+  d.id = s.nodeIds.get(id);
   d.style.left = `${n.fx}px`; d.style.top = `${n.fy}px`;
-  d.setAttribute("role", "treeitem");
-  d.setAttribute("aria-label", `${i.instance}, ${state}`);
-  d.dataset.name = i.instance;
-  d.dataset.id = id;
-  d.innerHTML = `
-    <div class="hname"><span class="hdot ${state === "running" ? "on" : state === "stopped" ? "off" : "unknown"}" aria-hidden="true"></span><span class="nm">${escapeHtml(i.instance)}</span></div>
-    <div class="hmeta">${escapeHtml(i.agent || "")}${i.repoName ? " · " + escapeHtml(i.repoName) : ""}${state === "unknown" ? " · state unknown" : ""}</div>`;
-  d.title = i.task ? String(i.task).slice(0, 200) : i.instance;
-  // drag-to-move: grabbing a box past the threshold moves THAT BOX (edges
-  // follow live); under the threshold it stays a click/dblclick.
-  d.addEventListener("mousedown", (e) => {
+  d.setAttribute('role', 'treeitem'); d.setAttribute('aria-level', String((n.depth || 0) + 1));
+  const target = activeTargetLabel(i, s.panel.instances);
+  d.setAttribute('aria-label', `${i.instance}, ${status}${target ? `, ${target}` : ''}`);
+  d.dataset.name = i.instance; d.dataset.id = id;
+  const name = node(s, 'div', undefined, 'hname');
+  const dot = node(s, 'span', undefined, `hdot ${status === 'running' ? 'on' : status === 'stopped' ? 'off' : 'unknown'}`); dot.setAttribute('aria-hidden', 'true');
+  name.append(dot, node(s, 'span', i.instance, 'nm'));
+  const metadata = [target, i.repoName || 'Context not reported', i.runtime || 'Runtime not reported', i.branch ? `Branch: ${i.branch}` : '', status === 'unknown' ? 'state unknown' : ''].filter(Boolean).join(' · ');
+  d.append(name, node(s, 'div', metadata, 'hmeta'));
+  d.title = `${i.instance}\n${metadata}\nHome: ${i.home || 'not reported'}\nRoot: ${i.agentsRoot || 'not reported'}`;
+  const current = () => dataCurrent(s) && visibleOwner(s, d) && !s.pending && s.nodeEls.get(id)?.el === d;
+  d.addEventListener('mousedown', e => {
+    if (!current() || e.button !== 0) return;
+    s.fitted = true;
     e.stopPropagation();
     const off = s.nodeOffsets.get(id) || { x: 0, y: 0 };
     s.drag = { name: id, node: d, n, startX: e.clientX, startY: e.clientY, off: { ...off }, moved: false };
   });
-  d.addEventListener("click", (e) => {
+  d.addEventListener('click', e => {
     e.stopPropagation();
-    if (s.dragConsumedClick) { s.dragConsumedClick = false; return; }
-    select(s, id);
+    if (!current()) return;
+    if (s.dragConsumedClick?.node === d) { s.dragConsumedClick = null; return; }
+    select(s, id); s.canvas.focus?.({ preventScroll: true });
   });
-  d.addEventListener("dblclick", (e) => { e.stopPropagation(); openTerm(s, id); });
-  d.addEventListener("mouseenter", () => litLineage(s, id, true));
-  d.addEventListener("mouseleave", () => litLineage(s, id, false));
+  d.addEventListener('dblclick', e => { e.stopPropagation(); if (current()) openTerm(s, id); });
+  d.addEventListener('mouseenter', () => { if (current()) litLineage(s, id, true); });
+  d.addEventListener('mouseleave', () => { if (current()) litLineage(s, id, false); });
   s.nodeEls.set(id, { el: d, node: n, ws: wsName });
   return d;
 }
 
-/* Open the selected node's terminal with FULL identity (home/agentsRoot),
-   so a duplicate name in another agents root can never hijack the open
-   (identity-aware resolution in the shell; review 46f3fdc). */
+function openWorkspace(s, owner = () => true) {
+  if (!visibleOwner(s) || !owner() || !s.ctx.openView) return;
+  const gen = workspaceGeneration(), ticket = s.actionTicket = (s.actionTicket || 0) + 1, pop = s.pop;
+  const failed = error => {
+    if (!visibleOwner(s) || !owner() || gen !== workspaceGeneration() || ticket !== s.actionTicket || s.pop !== pop) return;
+    const message = `Workspace unavailable: ${String(error?.message || 'navigation failed').slice(0, 300)}`;
+    const status = pop?.querySelector('.pstatus');
+    if (status) setText(status, message); else { try { s.ctx.notify?.(message); } catch { /* optional host feedback */ } }
+  };
+  try { Promise.resolve(s.ctx.openView('spawn')).catch(failed); } catch (error) { failed(error); }
+}
+
+function selectedInstance(s, id) {
+  if (!dataCurrent(s)) return null;
+  const matches = (s.panel.instances || []).filter(i => instanceId(i) === id);
+  return matches.length === 1 ? matches[0] : null;
+}
+function invokeInstance(s, id, action) {
+  const i = selectedInstance(s, id);
+  if (!actionsCurrent(s) || !visibleOwner(s) || !canAddressInstance(i)) return;
+  const call = action === 'terminal' && i.running === true && s.ctx.openTerminal ? () => s.ctx.openTerminal({
+    instance: i.instance, home: i.home || undefined, agentsRoot: i.agentsRoot || undefined, ...(i.server ? { server: i.server } : {}),
+  }) : action === 'start' && i.running === false && s.ctx.startInstance ? () => s.ctx.startInstance(i)
+    : action === 'restart' && i.running === true && s.ctx.restartInstance ? () => s.ctx.restartInstance(i) : null;
+  if (!call) return;
+  const ticket = s.actionTicket = (s.actionTicket || 0) + 1, gen = workspaceGeneration(), epoch = s.renderEpoch, pop = s.pop;
+  const failed = error => {
+    if (!actionsCurrent(s) || !visibleOwner(s) || gen !== workspaceGeneration() || ticket !== s.actionTicket || epoch !== s.renderEpoch || s.pop !== pop || s.popFor !== id) return;
+    const status = pop?.querySelector('.pstatus'); if (status) status.textContent = `Action unavailable: ${String(error?.message || 'request failed').slice(0, 300)}`;
+  };
+  try { Promise.resolve(call()).catch(failed); } catch (error) { failed(error); }
+}
+/* Terminal and Start handoffs use the exact current home/root/server, never a
+ * captured instance object or a bare name. Unknown state does not mean stopped. */
 function openTerm(s, id) {
-  const i = (s.panel.instances || []).find((x) => instanceId(x) === id);
-  if (!i) return;
-  s.ctx.openTerminal({ instance: i.instance, home: i.home, agentsRoot: i.agentsRoot, ...(i.server ? { server: i.server } : {}) });
+  const i = selectedInstance(s, id);
+  if (i) invokeInstance(s, id, i.running === false ? 'start' : 'terminal');
 }
 
 /* Edge between a parent and child node, from their FINAL (fx/fy) positions. */
 function drawEdge(p, parent, child) {
-  const x1 = parent.fx + NODE_W / 2, y1 = parent.fy + NODE_H;
-  const x2 = child.fx + NODE_W / 2, y2 = child.fy;
-  const my = (y1 + y2) / 2;
-  p.setAttribute("d", `M ${x1} ${y1} C ${x1} ${my}, ${x2} ${my}, ${x2} ${y2}`);
+  const x1 = parent.fx + 20, y1 = parent.fy + NODE_H;
+  const x2 = child.fx, y2 = child.fy + NODE_H / 2;
+  const middle = (y1 + child.fy) / 2, trunk = Math.min(x1, x2 - 20);
+  p.setAttribute('d', `M ${x1} ${y1} V ${middle} H ${trunk} V ${y2} H ${x2}`);
 }
 
-/* Sibling peer edge: a shallow dashed arc between two boxes' vertical
-   midpoints — distinguishable from parent edges by STYLE (dash + flat arc),
+/* Sibling peer edge: a dotted connection between two boxes' vertical
+   midpoints — distinguishable from parent edges by STYLE (dotted peer line),
    not color alone. */
 function drawSiblingEdge(p, a, b) {
   const [l, r] = a.fx <= b.fx ? [a, b] : [b, a];
   const x1 = l.fx + NODE_W, y1 = l.fy + NODE_H / 2;
   const x2 = r.fx, y2 = r.fy + NODE_H / 2;
   const mx = (x1 + x2) / 2;
-  p.setAttribute("d", `M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`);
+  p.setAttribute('d', `M ${x1} ${y1} H ${mx} V ${y2} H ${x2}`);
 }
 
 /* Redraw one edge path from its endpoints' final positions. */
@@ -574,16 +719,28 @@ function onNodeDragEnd(s) {
   const dr = s.drag;
   s.drag = null;
   dr.node.classList.remove("dragging");
-  if (dr.moved) s.dragConsumedClick = true; // the click after a drag is not a select
+  if (dr.moved) {
+    // Suppress only this gesture's native click. If mouseup happened elsewhere,
+    // do not swallow a future intentional click on the same node.
+    const suppression = s.dragConsumedClick = { node: dr.node };
+    s.win.clearTimeout(s.clickResetTimer);
+    s.clickResetTimer = s.win.setTimeout(() => {
+      if (s.alive && s.dragConsumedClick === suppression) s.dragConsumedClick = null;
+    }, 0);
+  }
+  applyPending(s);
 }
 
 function applyTransform(s) {
   const stage = s.canvas.querySelector(".hier-stage");
   if (stage) stage.style.transform = `translate(${s.tx}px, ${s.ty}px) scale(${s.z})`;
+  positionPop(s);
 }
 
 const Z_MIN = 0.25, Z_MAX = 2;
 function zoomBy(s, factor, cx, cy) {
+  if (!visibleOwner(s)) return;
+  s.fitted = true;
   const rect = s.canvas.getBoundingClientRect();
   const px = cx != null ? cx - rect.left : rect.width / 2;   // zoom about cursor (or center)
   const py = cy != null ? cy - rect.top : rect.height / 2;
@@ -597,9 +754,11 @@ function zoomBy(s, factor, cx, cy) {
 
 /* Fit the whole forest (incl. dragged offsets) inside the visible canvas. */
 function fit(s) {
+  if (!s.alive) return;
   if (typeof s.canvas.getBoundingClientRect !== "function") return; // non-DOM host (tests)
   const rect = s.canvas.getBoundingClientRect();
-  if (!rect.width || !s.bounds || !s.bounds.w) { s.tx = PAD; s.ty = PAD; s.z = 1; applyTransform(s); return; }
+  if (!rect.width || !rect.height || !s.bounds || !s.bounds.w) { s.tx = PAD; s.ty = PAD; s.z = 1; applyTransform(s); return; }
+  s.fitted = true;
   // actual extent: every node's FINAL (layout + drag) position
   let minX = 0, minY = 0, maxX = s.bounds.w, maxY = s.bounds.h + NODE_H;
   for (const { el, node } of s.nodeEls.values()) {
@@ -652,66 +811,113 @@ function litLineage(s, id, on) {
 }
 
 function select(s, name) {
-  s.sel = name;
-  paintSelection(s);
-  openPop(s, name);
+  if (!dataCurrent(s) || !visibleOwner(s) || s.pending || !s.nodeEls.has(name)) return;
+  s.actionTicket = (s.actionTicket || 0) + 1;
+  s.sel = name; paintSelection(s); openPop(s, name);
 }
 
 function paintSelection(s) {
-  for (const [nm, { el }] of s.nodeEls) el.classList.toggle("sel", nm === s.sel);
+  for (const [id, { el }] of s.nodeEls) {
+    el.classList.toggle('sel', id === s.sel); el.setAttribute('aria-selected', String(id === s.sel));
+  }
+  const selected = s.sel && s.nodeEls.get(s.sel)?.el;
+  if (selected) s.canvas.setAttribute?.('aria-activedescendant', selected.id);
+  else s.canvas.removeAttribute?.('aria-activedescendant');
 }
 
 function closePop(s) {
-  s.canvas.querySelector(".hier-pop")?.remove();
-  s.popFor = null;
+  s.pop?.remove(); s.pop = null; s.popFor = null;
+  s.actionTicket = (s.actionTicket || 0) + 1;
 }
+const setText = (el, text) => { if (el && el.textContent !== text) el.textContent = text; };
 
-function openPop(s, id) {
-  closePop(s);
-  const entry = s.nodeEls.get(id);
-  const i = (s.panel.instances || []).find((x) => instanceId(x) === id);
+function openPop(s, id, retained = null) {
+  const entry = s.nodeEls.get(id), i = selectedInstance(s, id);
   if (!entry || !i) return;
-  s.popFor = id;
-  const pop = document.createElement("div");
-  pop.className = "hier-pop";
-  pop.style.left = `${entry.node.fx ?? entry.node.x}px`;
-  pop.style.top = `${(entry.node.fy ?? entry.node.y) + NODE_H + 8}px`;
-  pop.innerHTML = `
-    ${i.task ? `<div class="ptask">${escapeHtml(String(i.task).slice(0, 160))}</div>` : ""}
-    <div class="pchips">
-      <span class="chip rt">${escapeHtml(i.runtime || "")}</span>
-      ${i.branch ? `<span class="chip">${escapeHtml(i.branch)}</span>` : ""}
-      ${i.git && i.git.dirty ? `<span class="chip dirty">±${Number(i.git.dirty)}</span>` : ""}
-    </div>
-    <div class="pacts">
-      <button class="act pterm"${(i.running === true || (i.running === false && s.ctx.startInstance)) && (!i.server || i.savedRoute) ? "" : " disabled"}>${i.running === false ? "Start…" : "Terminal"}</button>
-      ${i.running === true && s.ctx.restartInstance ? `<button class="act prestart"${i.server && !i.savedRoute ? " disabled" : ""}>Restart with…</button>` : ""}
-      <button class="act pbrain"${i.server ? ' disabled title="Use the remote terminal to read brain files"' : ""}>Brain</button>
-    </div>`;
-  pop.querySelector(".pterm").addEventListener("click", () => i.running === false ? s.ctx.startInstance?.(i) : openTerm(s, id));
-  pop.querySelector(".prestart")?.addEventListener("click", () => s.ctx.restartInstance(i));
-  pop.querySelector(".pbrain").addEventListener("click", () => { if (!i.server) s.ctx.openBrain?.(i.agent); });
-  if (!s.ctx.openBrain) pop.querySelector(".pbrain").style.display = "none";
-  // append inside the node's group so the popover sits by its (dragged) box
-  (entry.el.parentElement || s.canvas.querySelector(".hier-stage"))?.append(pop);
+  let pop = retained;
+  if (!pop) {
+    closePop(s);
+    pop = node(s, 'section', undefined, 'hier-pop'); pop.setAttribute('aria-label', 'Selected instance actions');
+    pop.append(node(s, 'h2', '', 'pname'), node(s, 'p', '', 'pidentity'), node(s, 'p', '', 'pstate'),
+      node(s, 'p', 'Activity: unknown · Waiting on you: unknown', 'pavailability'));
+    const chips = node(s, 'div', undefined, 'pchips'); chips.append(node(s, 'span', '', 'chip rt'), node(s, 'span', '', 'chip pbranch')); pop.append(chips);
+    const actions = node(s, 'div', undefined, 'pacts');
+    const button = (label, cls) => { const el = node(s, 'button', label, `act ${cls}`); el.type = 'button'; actions.append(el); return el; };
+    const terminal = button('Terminal', 'pterm'), git = button('Git', 'pgit');
+    git.disabled = true; git.title = 'Available after K1/P1';
+    const restart = s.ctx.restartInstance ? button('Restart with…', 'prestart') : null;
+    const brain = button('Brain', 'pbrain'); brain.disabled = true; brain.title = BRAIN_UNAVAILABLE;
+    const workspace = s.ctx.openView ? button('Workspace', 'pworkspace') : null;
+    const owns = () => dataCurrent(s) && visibleOwner(s, pop) && s.pop === pop && s.popFor === id;
+    terminal.addEventListener('click', () => { if (owns()) openTerm(s, id); });
+    restart?.addEventListener('click', () => { if (owns()) invokeInstance(s, id, 'restart'); });
+    workspace?.addEventListener('click', () => openWorkspace(s, owns));
+    const status = node(s, 'p', '', 'pstatus'); status.setAttribute('role', 'status');
+    pop.append(actions, node(s, 'p', 'Activity/waiting: available after K7. Git: available after K1/P1.', 'pactions-note'),
+      node(s, 'p', 'Brain: choose the exact soul in Workspace.', 'pactions-note'), status);
+  }
+  s.pop = pop; s.popFor = id;
+  // Keep action text screen-sized: camera zoom transforms nodes, not the popup.
+  s.canvas.append(pop);
+  updatePop(s);
 }
 
-/* Brain of the current selection (popover parity for the keyboard).
-   s.sel is a composite instanceId — matching bare x.instance made the
-   Brain key consume-and-do-nothing for every identity-bearing node
-   (review 96b037b). */
+function updatePop(s) {
+  const pop = s.pop, i = selectedInstance(s, s.popFor);
+  if (!pop || !i) return;
+  setText(pop.querySelector('.pname'), i.instance);
+  const identity = pop.querySelector('.pidentity'); identity.hidden = !activeTargetLabel(i, s.panel.instances);
+  setText(identity, `Host: ${i.server || (i.remote ? 'not reported' : 'local')} · Root: ${i.agentsRoot || 'not reported'} · Home: ${i.home || 'not reported'}`);
+  setText(pop.querySelector('.pstate'), `Reported runtime: ${runtimeState(i)}${s.stale ? ' (last observation)' : ''}`);
+  setText(pop.querySelector('.rt'), i.runtime || 'Runtime not reported');
+  setText(pop.querySelector('.pbranch'), i.branch ? `Reported branch: ${i.branch}` : 'Branch not reported');
+  const allowed = actionsCurrent(s) && canAddressInstance(i);
+  const terminal = pop.querySelector('.pterm');
+  setText(terminal, i.running === false ? 'Start…' : 'Terminal');
+  terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
+  terminal.title = terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal';
+  const restart = pop.querySelector('.prestart'); if (restart) restart.disabled = !allowed || i.running !== true;
+  positionPop(s);
+}
+
+function positionPop(s) {
+  const pop = s.pop, entry = s.nodeEls.get(s.popFor);
+  if (!pop || !entry) return;
+  const rect = s.canvas.getBoundingClientRect?.(), group = entry.el.parentElement;
+  const gx = parseFloat(group?.style.left) || 0, gy = parseFloat(group?.style.top) || 0;
+  const nx = s.tx + (gx + (entry.node.fx ?? entry.node.x)) * s.z;
+  let x = nx + NODE_W * s.z + 10, y = s.ty + (gy + (entry.node.fy ?? entry.node.y)) * s.z;
+  if (rect?.width && rect.height) {
+    const width = Math.min(224, Math.max(40, rect.width - 16));
+    pop.style.maxHeight = `${Math.max(40, rect.height - 16)}px`; pop.style.overflow = 'auto';
+    if (x + width > rect.width - 8) x = nx - width - 10;
+    x = Math.max(8, Math.min(x, rect.width - width - 8));
+    y = Math.max(8, Math.min(y, rect.height - 8 - (pop.offsetHeight || Math.min(280, rect.height - 16))));
+  }
+  pop.style.left = `${x}px`; pop.style.top = `${y}px`;
+}
+
+/* /api/panel enumerates INSTANCES, not every soul definition. Even one local
+ * instance cannot prove that a bare agent name identifies a unique Brain.
+ * Keep the shortcut visible but fail closed; Workspace has the soul roster. */
 function openSelBrain(s) {
-  const i = (s.panel.instances || []).find((x) => instanceId(x) === s.sel);
-  if (i && !i.server) s.ctx.openBrain?.(i.agent);
+  if (!visibleOwner(s) || !selectedInstance(s, s.sel)) return;
+  if (!s.pop) openPop(s, s.sel);
+  setText(s.pop?.querySelector('.pstatus'), BRAIN_UNAVAILABLE);
 }
 
 /* keyboard tree-walk over the laid-out nodes. Escape/Enter/arrows are the
    tree's structural keys (not rebindable); everything else resolves through
    the engine keymap so shortcut-editor rebinds take effect here. */
 function onKey(s, e) {
+  if (!dataCurrent(s) || !visibleOwner(s) || s.pending || e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
   const list = s.panel.instances || [];
   if (!list.length) return;
-  if (e.key === "Escape") { s.sel = null; paintSelection(s); closePop(s); return; }
+  if (e.key === 'Escape') { e.preventDefault(); s.sel = null; paintSelection(s); closePop(s); s.canvas.focus?.({ preventScroll: true }); return; }
+  // Native popup buttons own Enter/Space; tree commands must not also open a
+  // terminal when the focused button's intent is Start, Restart or Workspace.
+  if (e.target.closest?.('button,input,select,textarea,[contenteditable=true]')) return;
+  if (e.repeat && !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
   // [ / ] hop between clusters (selects the hopped-to cluster's first node)
   // — structural like the arrows; fit moved to the rebindable hier.fit action
   if (e.key === "[" || e.key === "]") {
