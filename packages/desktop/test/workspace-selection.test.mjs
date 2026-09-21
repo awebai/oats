@@ -41,6 +41,10 @@ async function setup(t, { hold = false, beforeMount } = {}) {
       }
       if (path.startsWith('/api/panel')) return { workspace: { id: currentWorkspace(), scope: currentWorkspace() }, workspaces: [], instances: [home] };
       if (path.startsWith('/api/capabilities') && body.action === 'inspect') return inspection(body.selector);
+      if (path.startsWith('/api/capabilities') && body.action === 'list') return { inventoryApi: 1,
+        scope: { kind: 'classic', context: body.selector.context || currentWorkspace() }, packages: [], capabilities: [], legacy: [] };
+      if (path === '/api/catalog') return { catalogApi: 1, scope: 'local-cli', status: 'unavailable', minimumVersion: '0.24.6', description: null,
+        reason: { code: 'cli-no-catalog', message: 'This fixture has no catalog.' } };
       if (path === '/api/servers') return { servers: [] };
       throw new Error(`Unexpected fixture API: ${path}`);
     },
@@ -62,7 +66,7 @@ async function setup(t, { hold = false, beforeMount } = {}) {
     resolve: (index, next = agents) => rosters[index].resolve({ agents: next }),
     tab: name => { const control = doc.getElementById(`workspace-tab-${name}`); control.focus(); control.click(); },
     key: key => { const control = selectedTab(); control.focus(); control.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })); },
-    inspections: () => calls.filter(call => call.path.startsWith('/api/capabilities')),
+    inspections: () => calls.filter(call => call.path.startsWith('/api/capabilities') && call.body.action === 'inspect'),
   };
 }
 for (const outcome of ['success', 'rejection']) for (const choice of ['sources', 'current souls']) {
@@ -167,7 +171,14 @@ for (const kind of ['soul', 'home']) for (const [label, choose, tab] of choices)
     u.poll(); u.resolve(1); await tick();
     assertNoHandoff(u, tab);
     assert.equal(u.doc.querySelector('#workspace-tab-souls .workspace-count').textContent, '2');
-    assert.ok(u.calls.filter(call => call.body).every(call => call.body.action === 'inspect'), 'no implicit launch/mutation');
+    for (const { path, body } of u.calls.filter(call => call.body)) {
+      if (path === '/api/catalog') assert.deepEqual(body, {}, 'catalog has no client arguments');
+      else {
+        assert.equal(path.split('?')[0], '/api/capabilities');
+        if (body.action === 'list') assert.deepEqual(body, { action: 'list', selector: {} });
+        else assert.equal(body.action, 'inspect', 'no implicit launch/mutation');
+      }
+    }
   });
 }
 

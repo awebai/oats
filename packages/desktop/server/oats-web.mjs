@@ -14,6 +14,8 @@
  *   POST /api/keys/<instance>       { data } → raw key bytes into the session (no Enter)
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
+ *   POST /api/catalog               {} → effective catalog from the accepted local CLI (>=0.24.6)
+ *   POST /api/capabilities?ws=<id>   { action: list, selector: { context? } } → classic inventory
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
@@ -34,6 +36,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
+import { catalogRequest } from "./catalog.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 
@@ -975,6 +978,29 @@ const readBody = (req) => new Promise((ok) => {
   req.on("end", () => { try { ok(JSON.parse(b || "{}")); } catch { ok({}); } });
 });
 
+// New read commands cannot turn malformed JSON into an empty valid request.
+// Keep the legacy parser for the other existing request families.
+const readStrictBody = (req) => new Promise((ok, reject) => {
+  const bad = () => reject(Object.assign(new Error("Expected a JSON object body up to 64 KiB"), { code: "E_BAD_ARGS" }));
+  const chunks = []; let size = 0;
+  req.on("data", c => {
+    size += Buffer.byteLength(c);
+    if (size > 65536) { chunks.length = 0; bad(); }
+    else chunks.push(Buffer.from(c));
+  });
+  req.on("end", () => {
+    if (size > 65536) return;
+    try {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      const body = JSON.parse(raw.trim() ? raw : "{}");
+      if (!body || typeof body !== "object" || Array.isArray(body)) return bad();
+      ok(body);
+    } catch { bad(); }
+  });
+  req.on("error", bad);
+  req.on("aborted", bad);
+});
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const path = url.pathname;
@@ -1014,13 +1040,24 @@ const server = createServer(async (req, res) => {
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
+    if (path === "/api/catalog" && req.method === "POST") {
+      try {
+        if (url.search) throw Object.assign(new Error("Catalog reads accept no query arguments"), { code: "E_BAD_ARGS" });
+        const result = await catalogRequest(await readStrictBody(req), { cli: cliState, localCwd: ctxs[0] });
+        return send(res, 200, result);
+      } catch (e) { return send(res, 400, { error: "Catalog reads accept only an empty JSON object or body and no query arguments", code: "E_BAD_ARGS" }); }
+    }
     if (path === "/api/capabilities" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
-        const result = await capabilityRequest(await readBody(req), {
+        const request = await readStrictBody(req);
+        if (request.action === "list" && ([...url.searchParams.keys()].some(k => k !== "ws") || url.searchParams.getAll("ws").length !== 1)) {
+          throw Object.assign(new Error("List accepts only one workspace query selector"), { code: "E_BAD_ARGS" });
+        }
+        const result = await capabilityRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
-          instances: workspace ? panelData(workspace.id).instances : [],
+          instances: workspace && request.action !== "list" ? panelData(workspace.id).instances : [],
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }

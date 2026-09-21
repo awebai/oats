@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
+import { createOfficialCatalog, officialCatalogCSS } from "../renderer/official-catalog.mjs";
+import { createDeploymentInventory, inventoryCSS } from "../renderer/deployment-inventory.mjs";
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -275,6 +277,43 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
     assert.equal(hostile.getAttribute("style"), null);
     const invalid = document.createElement("span"); invalid.dataset.avatarColor = "red; background:url(x)";
     container.append(invalid); check(invalid, "chip");
+  }
+});
+
+for (const [name] of palettes) test(`${name}: catalog and inventory text use AA tokens on their computed surfaces`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`);
+  const doc = dom.window.document, host = doc.querySelector('main');
+  for (const source of [css, identityCSS, officialCatalogCSS, inventoryCSS]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const ctx = { api: async path => path === '/api/catalog' ? {
+    catalogApi: 1, scope: 'local-cli', status: 'available', minimumVersion: '0.24.6', reason: null,
+    description: { schemaVersion: 1, catalog: { origin: 'override', file: '/fixture/catalog.json', kernelVersion: '0.24.6' },
+      packages: [{ package: 'fixture.pkg', url: null, ref: null, path: 'oats', acquire: { argv: ['oats', 'install', 'fixture.pkg'] } }], capabilityAliases: [], notes: [] },
+  } : { inventoryApi: 1, scope: { kind: 'classic', context: '/fixture' }, packages: [], capabilities: [{ capability: 'fixture.cap', level: '/fixture' }], legacy: [] } };
+  const catalog = createOfficialCatalog(host, { ctx }), inventory = createDeploymentInventory(host, { ctx });
+  t.after(() => { catalog.dispose(); inventory.dispose(); dom.window.close(); });
+  await catalog.update({ active: true, identity: name });
+  await inventory.update({ active: true, identity: name, workspace: { scope: '/fixture' }, context: '/fixture', selector: {}, cli: { ok: true } });
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.official-catalog-note', '.oats-view', 'muted', 'bg'],
+    ['.official-catalog-warning', '.official-catalog-warning', 'danger', 'surface'],
+    ['.official-catalog-command', '.official-catalog-command', 'fg', 'surface'],
+    ['.official-catalog-table th', '.official-catalog-table th', 'muted', 'surface-2'],
+    ['.inventory-note', '.oats-view', 'muted', 'bg'],
+    ['.inventory-table th', '.inventory-table th', 'muted', 'surface-2'],
+    ['.inventory-table small', '.inventory-table', 'muted', 'surface'],
+    ['.inventory-table summary', '.inventory-table', 'fg', 'surface'],
+    ['.inventory-table dt', '.inventory-table', 'muted', 'surface'],
+    ['.inventory-refresh', '.inventory-refresh', 'fg', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted);
+    assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });
 

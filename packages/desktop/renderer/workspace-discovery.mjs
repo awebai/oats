@@ -3,9 +3,13 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable, refreshCli } from './views/cli-status.mjs';
 import { createCapabilityMark } from './identity-marks.mjs';
+import { createOfficialCatalog, officialCatalogCSS } from './official-catalog.mjs';
+import { createDeploymentInventory, inventoryCSS } from './deployment-inventory.mjs';
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
 export const discoveryCSS = `
+${officialCatalogCSS}
+${inventoryCSS}
 .workspace-header { min-height:48px; flex:none; display:flex; align-items:center; flex-wrap:nowrap; gap:2px 14px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 .workspace-header h1 { margin:0; flex:none; font-size:14px; font-weight:700; }
@@ -95,6 +99,11 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const button = (text, run) => { const el = node('button', text, 'act'); el.type = 'button'; el.addEventListener('click', run); return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, tab = 'souls', selector = {}, result = null, loading = false, failure = '', query = '';
   let contexts = [];
+  const inspectionCliIdentity = () => {
+    const cli = cliStatus();
+    return JSON.stringify([cli?.ok, cli?.bin, cli?.version, cli?.operationsApi, cli?.features, cli?.remote]);
+  };
+  let inspectedCli = inspectionCliIdentity();
   header.className = 'workspace-header';
   header.append(node('h1', 'Workspace'));
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
@@ -135,7 +144,25 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const details = button('Scope details…', () => inspect?.({ selector: { ...selector }, contexts }));
   toolbar.append(scopeLabel, searchLabel, retry, details);
   const note = node('p', '', 'discovery-note'), status = node('p', '', 'discovery-status'); status.setAttribute('role', 'status');
-  const body = node('div'); panel.append(status, body, note);
+  const catalogHost = node('div', undefined, 'workspace-catalog');
+  const catalog = createOfficialCatalog(catalogHost, { ctx });
+  const inventoryHost = node('div', undefined, 'workspace-inventory');
+  const inventory = createDeploymentInventory(inventoryHost, { ctx });
+  const body = node('div'); panel.append(catalogHost, inventoryHost, status, body, note);
+  function syncReadSurfaces() {
+    const cli = cliStatus();
+    // Catalog belongs to the installed local CLI, never the selected scope.
+    // Generations invalidate A→B→A completions; identical roster/CLI polls do
+    // not rebuild controls or re-run the command. No wsQuery on this endpoint.
+    catalog.update({ active: tab === 'capabilities', identity: JSON.stringify([
+      workspaceGeneration(), cli?.ok ?? null, cliKnownUnavailable(), cli?.bin ?? null, cli?.version ?? null,
+    ]) });
+    const context = selector.context || workspace?.scope;
+    inventory.update({ active: tab === 'capabilities', workspace, context, selector, cli,
+      identity: JSON.stringify([workspaceGeneration(), workspace?.id, workspace?.scope, workspace?.remote, workspace?.server,
+        context, cli?.ok ?? null, cli?.bin ?? null, cli?.version ?? null]) });
+    inventory.setQuery(query);
+  }
   // Reveal only in the horizontal strip. scrollIntoView would also move the
   // outer workspace/page (and focus() without preventScroll does likewise).
   // Rects are relative to the visible client area, not the overflowing content.
@@ -191,6 +218,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     loading = false; updateCounts(); render();
   }
   function render() {
+    syncReadSurfaces();
     const unavailable = gate(workspace);
     details.disabled = !!unavailable || !result;
     note.textContent = tab === 'sources'
@@ -254,6 +282,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     if (tab !== 'souls' && !result && !loading && !failure) void load();
   }
   function syncCli() {
+    const next = inspectionCliIdentity();
+    if (next !== inspectedCli) { inspectedCli = next; invalidate(); }
     if (gate(workspace)) { invalidate(); return; }
     render(); if (tab !== 'souls' && !result && !loading) void load();
   }
@@ -261,6 +291,6 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
     reset() { rosterGen = null; workspace = null; selector = {}; contexts = []; query = ''; search.value = ''; scope.replaceChildren(); invalidate(); updateCounts(null); },
-    dispose() { alive = false; serial++; },
+    dispose() { alive = false; serial++; catalog.dispose(); inventory.dispose(); },
   };
 }
