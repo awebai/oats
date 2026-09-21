@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 19:10Z · main `8729ed8f`+ · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.1 · oats-framework/v1.1.2 · imports @ `08c68ece` · **S2 verdict AMENDED by the operator: packaging gap behind `responsibleHuman`**
+**Last update:** 2026-09-21 20:30Z · main `6108bfbb`+ · OATS v0.24.4 · OKF v2.1.2 · **aweb v1.11.2 · oats-framework/v1.1.3** · imports @ `7416d84e` · helper gap fixed; launch-side kernel defect found by lead probe
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -49,6 +49,11 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 ## S2 — settings-aware run (Antares, direct source route on main, aweb 1.11.0, 2026-09-21)
 - With `bindings-file`/`state-dir`/`harvest-runtime: pi` and the public `oats-knowledge` bound as base `oats`: **the knowledge slot binds** (OKF problem gone). `harvest-model` is optional per manifest; aweb 1.11.0 declares exactly one setting (`delivery`).
 - **aweb 1.11.0 is the only remaining hold** (`needs-configuration`, identical for `delivery: session` and `channel` on 0.24.2's unattributed output). No resolution publishes → OKF `check` probe not reachable yet. 0.24.3 run will show the attributed aweb message (expected: private-team binding / Pi session-input).
+
+## Helper-injection gap FIXED + next blocker found (lead, 2026-09-21 20:30Z)
+
+- ✅ **oats.framework 1.1.3** (`oats-framework/v1.1.3` @ `6108bfbb`): `oats.core` 1.0.1 declares `helperInjection: inherit`. ✅ **aweb 1.11.2** (`v1.11.2` @ `a671884`): `helperInjection: omit`, manifest-only. Bundled copy byte-synced; catalog `oats.aweb` → v1.11.2, `oats.framework` → v1.1.3; six editions → aweb v1.11.2; six imports → `7416d84e`. Release check added: every injecting framework capability declares its helper policy (jira/linear/review pending upstream, not required by any edition). Notes: `docs/release-notes/oats-framework-v1.1.3.md`.
+- **Lead probe from the published 0.24.4 tarball, operator's request shape + synthetic `responsibleHuman` + `wider: []`:** helper composition now passes. **Without a `launch` block the resolution PUBLISHES** (`status: prepared`, resolution + execution binding) — first end-to-end publication from public definitions. **With the Pi `launch` block it refuses** on a bare `needs-configuration: runtime package requirements need retained runtime roots and a qualified loader`: kernel defect — the captured path treats aweb's `ifInstalled: true` Pi floor (`npm:@awebai/pi ≥0.3.10`, only if present) as a hard block, and refuses with no `details`. `delivery: channel` gives the byte-identical message. Lesson: `lessons/captured-launch-ignores-ifinstalled-and-refuses-bare.md`. **Assigned to L with the retirement defect → 0.24.5 (kernel), plus attribution for both bare refusals.** Operator's re-run: after 0.24.5, or now without `launch` to witness publication.
 
 ## S2 — operator's self-correction (9816b8ec, 2026-09-21): packaging gap behind `responsibleHuman`
 

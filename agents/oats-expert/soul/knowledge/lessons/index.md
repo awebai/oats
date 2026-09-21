@@ -1,5 +1,6 @@
 # Lessons
 
+* [Captured launch compilation treats `ifInstalled` runtime requirements as hard blocks and refuses without attribution](captured-launch-ignores-ifinstalled-and-refuses-bare.md) - A Pi launch with aweb `delivery: session` can never publish a resolution; the same request without `launch` publishes. Fix in the captured path; no bare refusals from `prepare`.
 * [Retirement recovery clones the branch recorded in instance.json, not the branch the worktree actually has checked out](retire-recovery-uses-recorded-branch-not-checked-out-branch.md) - Branch drift between `instance.json` and the worktree makes `oats retire` fail closed on recovery verification; leave the home, fix the kernel to read the worktree's branch.
 * [A dependency version bump must sweep test pins before the push, and the gate must be read before pushing](version-bump-grep-tests-before-push.md) - Grep the repo for the old version string when bumping a mirrored package ref, and never chain a push behind a filtered, unread test result.
 * [A clean merge, a matching diff and a green suite do not establish that content is permitted to land](green-tests-do-not-lift-a-scope-hold.md) - Mergeability checks answer whether a change applies and works; none of them answers whether a human or process has forbidden integrating it, so a held patch can pass every gate and still be wrong to push.
