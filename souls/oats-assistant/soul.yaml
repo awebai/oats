@@ -1,0 +1,41 @@
+schemaVersion: 1
+name: oats-assistant
+description: "Persistent deployment-owned onboarding expertise, practical adoption/configuration and expert handoff."
+work: directory
+requires:
+  capabilities:
+    oats.core:
+      # Day-to-day OATS operation (oats-operate, oats-souls). Explicit and removable;
+      # retained from this repository's oats-package at the same reviewed revision.
+      source: repo:oats-package
+  knowledge:
+    capability: oats.okf
+    source: git:github.com/awebai/oats-okf@v2.1.2#oats-package
+  messaging:
+    capability: oats.aweb
+    source: git:github.com/awebai/oats-aweb@v1.11.2#oats-package
+defaults:
+  tasks: none
+# Messaging declaration consumed by the selected provider: no wider team memberships
+# requested; the operator's private per-human team (workspace policy) is the only one.
+teams: []
+knowledge:
+  contract: oats.okf.locations
+  version: 1
+  payload:
+    owner: 2dab92c7-701d-4101-bc7f-09acf4fc374e
+    stores:
+      oats:
+        inherit: stores.oats
+    owns:
+      - node: oats-assistant
+        destination: oats
+    reads:
+      - store: oats
+        node: oats-expert
+      - store: oats
+        node: oats-kernel-expert
+      - store: oats
+        node: oats-desktop-expert
+      - store: oats
+        node: market-research-expert

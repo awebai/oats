@@ -9,9 +9,18 @@ owned; production capability/profile readiness is not established by the fixture
 
 ```sh
 oats inspect --request /absolute/inspection.json --json
+# Optional explicit request export (new private file; never overwrite):
+oats inspect --request /absolute/inspection.json --emit-prepare-request /absolute/preparation.json --json
 ```
 
-This mode accepts only one request file and `--json`. Explicit captured selectors
+This mode accepts one request file, optional `--emit-prepare-request`, and `--json`.
+The 0.24.4 follow-up also accepts the complete preparation request's `operator`,
+`launch`, `helperLaunches`, `mode`, and `allowLocalPaths` fields. Inspection ignores
+their semantics: it does not validate provider payloads, select a runtime/model,
+execute a codec, or authorize local acquisition. `ignored: [...]` lists only the
+present field NAMES in a stable order; values stay out of the metadata view and
+`omitted.*` remains true. Preparation still validates those fields normally.
+Unknown fields remain errors. Explicit captured selectors
 or current-context flags conflict before file reads; inherited captured environment
 is not new-work input. Other existing inspect modes are unchanged. The shared
 bounded strict JSON request reader feeds the existing inspection validator intact:
@@ -66,21 +75,53 @@ have not been classified by their owner and are omitted. Import summaries expose
 `payloadOmitted`. Top-level `omitted:{providerPayloads:true,adoptionValues:true}`
 states that this is a metadata view, not a lossless request or a safe-payload claim.
 It is not an issued `buildFreshPreparationRequest` witness, even in the same
-process. Keep the original authored input for an explicit preparation request.
+process. The opt-in `--emit-prepare-request` route calls that existing builder
+on the real in-process inspection before dropping the private witness. It writes
+only `.preparation` to a new mode-0600 file at an explicit normalized absolute
+path with an existing real parent; existing files/symlinks are refused, never
+overwritten. JSON output names `prepareRequestFile` and records the explicit
+request-file write in `effects`; it does not echo the request contents. The
+export can carry unclassified adoption declarations and must remain private;
+requests must contain nonsecret values or credential references, never secrets.
+A held inspection cannot emit a fresh preparation request. Core callers can
+explicitly request this data via `{includePrepareRequest:true}`; the default
+metadata projection and its omissions are unchanged.
+
+The explicit export preserves authored prepare-only fields privately through the
+existing builder, without interpreting them; it must not silently drop operator
+bindings or launch/helper choices. They remain unvalidated until preparation.
+This does not expose their values in normal metadata or turn ignored values into
+inspection authority.
+
+The file is reusable new-work input, NOT a stored resolution, approval, admission,
+or serialized ready-inspection permission. Preparation performs fresh validation
+and observations, including re-resolving any mutable source selectors. Provider
+configuration still requires explicit operator choices; conversion invents none.
 
 Existing managed deployment state is preserved and reported, not repaired or
 migrated. An absent selected path requires explicit operator provisioning and
-reinspection. The serialized inspection does not lock the filesystem or authorize
+reinspection. Prepare refuses it with typed `needs-configuration` and provisioning
+guidance before fetching or writing managed state, not a raw ENOENT. Inspection's
+`ready` means the path is eligible for fresh setup, not already provisioned.
+The serialized inspection does not lock the filesystem or authorize
 later mutation; preparation retains its own existing validation/custody rules.
 The inspected work target does not become source identity or an implied placement
 choice. Supported captured directory scaffolds own their separate H/work.
 
 ## Existing preparation and retained execution
 
-`oats prepare --request` already accepts deployment/source/origin, workspace/member
-OR standalone context, operator policy/bindings, mode/local-input authorization,
-launch and helperLaunches. Do not pass the inspection result or workTarget/catalog
-wrapper. Exact executable approval is separate. A required provider whose binding
+`oats prepare --request` accepts deployment/source/origin, optional `workTarget`,
+workspace/member OR standalone context, operator policy/bindings,
+mode/local-input authorization, launch and helperLaunches. The original minimal
+inspection request (without inspection-only `catalogIndexes`) is also accepted;
+use the converter rather than stripping fields from a metadata/result wrapper.
+Explicit `workTarget` is validated with the same physical existing-directory
+validator as inspection and returned as work-context metadata. It takes precedence
+over any caller assumption about cwd: no cwd/config fallback selects its value.
+Omitting it preserves prior preparation behavior without inventing a placement.
+It does not change source identity, `operator.localBase`, work mode, or captured
+H/work placement. Do not pass an inspection result/catalog wrapper or private
+scratch `directory` to preparation. Exact executable approval is separate. A required provider whose binding
 code is unapproved may return `needs-configuration` with an `approval-required`
 problem and exact artifact-set/capability requests, before any record exists:
 
@@ -91,6 +132,48 @@ oats inspect --deployment <D> --resolution <R> --composition --json
 oats spawn <subject> --deployment <D> --resolution <R> --home <new-H> --no-launch --json
 oats session start --deployment <D> --resolution <R> --home <H> --request /absolute/native.json --json
 ```
+
+Each `selections[]` row carries an `artifactSet` id and an `approvalRequired[]`
+array of **capability ids**. Pair them: pass the capability to `trust` and that
+row's artifact-set id to `--artifact-set`. These are not interchangeable ids.
+`trust <capability> --dir <D>` against a v3 deployment now refuses with typed
+`needs-configuration` and exact available-set commands; it never picks or approves
+a set automatically. Classic v1/v2 trust remains the classic route.
+
+Provider preparation problems carry `slot` and `capability`, plus original
+provenance where available. A no-interface provider is identified with kernel-known
+manifest/version facts. Other supported slots still normalize, resolve through
+the same choice engine, and bind if their own choices are resolved; any required
+slot problem still prevents publication. Provider free text is not passed through.
+The 0.24.4 follow-up preserves only exact fixed reasons declared by the selected
+manifest (or its reviewed kernel compatibility list when absent); see the
+[binding wire](2026-09-16-provider-binding-wire.md). Human CLI output also shows a
+problem's existing choice key, without inventing new key/provider semantics.
+Different opaque inputs need not produce different public errors if both fail the
+same provider prerequisite. In particular, missing OKF host runtime settings can
+hold both syntactically valid Git locators; preparation does not test whether a
+remote repository exists. Required readiness checks remain later, with the provider.
+
+### Operator input
+
+When present, `operator` requires both `policy` (object; `{}` is valid) and
+`document` (`{ "kind": "operator", "id": "setup-attempt" }`). Its ONLY optional
+fields are `localBase`, `allowLocalPaths`, `sourceContext`, and `bindings`:
+
+- `policy`: explicit provider/additive selections with their selected sources and
+  settings, using the existing policy grammar. It cannot erase soul requirements.
+- `localBase`: explicit absolute base for relative local policy sources. Work
+  context/cwd is not a substitute.
+- `allowLocalPaths`: explicit boolean authorization for those local policy sources.
+  Top-level local acquisition authorization remains a separate input.
+- `sourceContext`: existing qualified repository anchor for `repo:` policy sources;
+  not a new repository inferred from workTarget.
+- `bindings`: provider-owned map. Kernel preserves it and its document pointers;
+  it does not interpret store names, Git destinations, credentials or private teams.
+
+Selecting an inherited store does not replace required provider runtime settings.
+Use the selected provider's instructions for those settings; kernel must not guess
+host-owned durable paths or copy native authentication.
 
 Repreparation after explicit approval is ordinary continuation in the selected,
 now-managed deployment; do not delete its state to make fresh preflight pass.

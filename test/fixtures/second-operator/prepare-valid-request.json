@@ -1,0 +1,53 @@
+{
+  "deployment": "/fixture/second-operator/deployment",
+  "source": "oats-kernel-expert",
+  "origin": {
+    "kind": "operator",
+    "document": {
+      "kind": "operator",
+      "id": "juan-p15-acceptance"
+    },
+    "pointer": "/source"
+  },
+  "workspace": {
+    "source": "git:github.com/awebai/oats",
+    "origin": {
+      "kind": "operator",
+      "document": {
+        "kind": "operator",
+        "id": "juan-p15-acceptance"
+      },
+      "pointer": "/workspace"
+    }
+  },
+  "member": {
+    "source": "git:github.com/awebai/oats",
+    "origin": {
+      "kind": "operator",
+      "document": {
+        "kind": "operator",
+        "id": "juan-p15-acceptance"
+      },
+      "pointer": "/member"
+    }
+  },
+  "operator": {
+    "policy": {},
+    "document": {
+      "kind": "operator",
+      "id": "juan-p15-acceptance"
+    },
+    "bindings": {
+      "stores.oats": {
+        "id": "oats",
+        "kind": "git",
+        "repository": "https://github.com/awebai/oats-knowledge.git",
+        "root": "knowledge",
+        "acceptedBranch": "main",
+        "pr": {
+          "repository": "awebai/oats-knowledge"
+        }
+      }
+    }
+  }
+}

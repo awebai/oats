@@ -16,7 +16,36 @@ members:
 defaults:
   tasks: none
 
-# Publication stage 1: export the source before pinning its import. The next
-# reviewed workspace revision may import the actual published source commit.
-# An empty import list is deliberately NOT a usable/adopted pilot graph.
-imports: []
+# Messaging: every human operator gets their own private team (the accepted default
+# policy). Declaring it here is what lets a messaging-enabled edition normalize in
+# workspace context; it does not enroll anyone or name a team id.
+teams:
+  private: per-human
+
+# Imports pin the six framework soul editions exported by this same repository at the
+# reviewed revision that declares messaging teams and the per-human private policy. Importing is selection, not activation, enrollment or approval.
+imports:
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-expert
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
+    alias: oats-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-kernel-expert
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
+    alias: oats-kernel-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-desktop-expert
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
+    alias: oats-desktop-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/market-research-expert
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
+    alias: market-research-expert
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-assistant
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
+    alias: oats-assistant
+  - source: git:github.com/awebai/oats
+    soul: souls/oats-setup-expert
+    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
+    alias: oats-setup-expert

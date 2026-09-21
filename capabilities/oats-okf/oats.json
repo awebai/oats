@@ -1,9 +1,9 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "compatibility": {
-    "oats": ">=0.24.0"
+    "oats": ">=0.24.4"
   },
   "layer": "knowledge",
   "description": "External OKF bases with owned nodes, immutable reader views, durable per-source evidence, independent workers, verified Git PR and recoverable non-Git directory delivery.",
@@ -54,7 +54,16 @@
     "version": 1,
     "normalize": "binding-normalize",
     "bind": "binding-bind",
-    "check": "binding-check"
+    "check": "binding-check",
+    "reasons": [
+      "setting bindings-file is required (absolute host path)",
+      "setting bindings-file must be a normalized absolute host path",
+      "setting state-dir is required (absolute host path)",
+      "setting state-dir must be a normalized absolute host path",
+      "setting harvest-runtime is required (pi, claude or codex)",
+      "setting harvest-runtime must be pi, claude or codex",
+      "setting harvest-model must be null or a non-empty string"
+    ]
   },
   "inject": "injects/okf.md",
   "helperInjection": {

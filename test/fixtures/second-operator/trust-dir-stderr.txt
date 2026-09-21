@@ -1,0 +1,2 @@
+$ oats trust oats.okf --dir /fixture/second-operator/deployment
+oats: /fixture/second-operator/deployment/oats-lock.json: unsupported lockfileVersion 3

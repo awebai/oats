@@ -22,6 +22,31 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR41 provider reasons + inspect superset → OATS v0.24.4 (2026-09-21)
+- verdict: MERGED (`ef211d3e`) + PUBLISHED (tag `816afb0f`, bump #42). Provider fixed reasons cross the binding wire by exact match against manifest `binding.reasons` or reviewed bundled lists; `binding.keys` accepted shape-only; `inspect --request` accepts prepare's fields as `ignored`; CLI renders problem `key`. Full gate 1657/1653/0/4 by author and maintainer.
+- owner: L; findings and verdict wording from the independent second operator (Antares, Juan's machine); compatibility-floor trap and literal lists from P.
+- taught us: (1) a "specificity" gap can be a kernel *mechanism* discarding data the provider already made safe — trace the wire before assigning text work to providers; (2) a closed manifest validator makes any new manifest field a hard floor bump for every provider that declares it — decide "kernel first, providers floor on it" before the provider release, not at publish; (3) a flat shared operator namespace with no ownership rule deadlocks the first two providers whose key sets overlap and blames the innocent slot; (4) a fix to the source that produced a diagnostic makes that diagnostic irreproducible from main — regression fixtures must pin synthetic input.
+
+## PR36 five second-operator seams → OATS v0.24.3 (2026-09-21)
+- verdict: MERGED + PUBLISHED. Attribution by slot/capability/origins with kernel-fixed messages; no short-circuit across slots; typed v3 trust/absent-deployment holds; help; workTarget/emit-prepare-request. Focused 53/0 (lead), full 1640/0 (owner). Release run needed one flake rerun (maintenance.lock); snapshot walks now skip `.git`.
+- owner: L; fixtures from Juan's side (Antares); root-cause trace by L confirmed by P.
+- taught us: an independent operator's byte-identical failure pair can be CORRECT output for the input — trace the provider phase before demanding the outputs differ; the fix is specificity and attribution, never manufactured inequality. Byte-snapshot tests must skip `.git` internals (git background maintenance is not deterministic on CI).
+
+## OATS v0.24.2 + oats.framework 1.1.1 + aweb 1.11.0 pins (2026-09-21)
+- verdict: PUBLISHED (npm 0.24.2 both packages; GitHub release; bump PR #37). Includes PR33 (launchSelection/OATS_CLI_BIN), PR34 (operator shape), PR35 (D3 `oats onboard`, full gate 1639/0), P's prestaged aweb pin patches, six workspace imports, baseline hygiene (goldens empty catalog; lazy ajv).
+- owner: L (D3, PR33), P (aweb 1.11.0, PR34, pin patches), M (S6 editions, docs), lead (wave integration, releases, live probes).
+- taught us: verify a release by exercising the published tarball (`oats onboard` from empty dir), not by reading the diff; a catalog pin bump for a bundled capability requires byte-syncing the bundled copy (recut once); keep release notes honest about what is NOT in the cut (the five seams) so the independent re-run has a correct expectation.
+
+## oats-knowledge PR #1 — curated base accepted (2026-09-20)
+- verdict: MERGED (8d67eab4) after the repo went public. 25 concepts, owners = published soul UUIDs, roadmap snapshot re-verified before merge (it still described 0.23.1/OKF 2.0.0 — a stale roadmap must not ship as accepted knowledge), validator pinned to OKF v2.1.1.
+- owner: lead (curation preserved from the earlier audit), Juan (visibility).
+- taught us: validate the knowledge tree from its root — per-node strict runs report cross-node links as broken; and re-read Roadmap-type concepts against the current baseline before accepting a harvest, since strict OKF cannot see staleness.
+
+## Evening wave: PR27, PR28, PR29, PR30 + releases (2026-09-20)
+- verdict: MERGED all; released OATS v0.24.1 (tag recut once before publish for a scripts/ version pin; second CI run hit a flaky cli-lifecycle test → rerun green; bump PR #31 manual), OKF v2.1.1, `oats-framework/v1.1.0`. Maintainer follow-ups: catalog `oats.framework` + aliases; five souls declare `oats.core`; workspace imports pinned at caa341f3; layout test moved to stage two.
+- owner: L (PR27 custody, PR29 D2), P (PR28 D1), M (PR30 S6).
+- taught us: a distribution package tag (`oats-framework/vX`) decoupled from the kernel `vX.Y.Z` tag lets capability releases ship without a kernel cut; verify a release by actually acquiring from the tag (`oats install oats.framework`) and creating a soul, not by reading the diff. Same-repo `repo:<path>` sources require parsing the soul as a source document with a snapshot — tests that parse editions as operator input will refuse them.
+
 ## Redesign wave: PR23, PR24, PR26 + four member indexes (2026-09-20)
 - verdict: MERGED all. PR23 (M) metadata/source edition, layout 5/5. PR24 (L) full gate 1621/0; `inspect --request` accepted as public inspection route, not parked. PR26 (M) marketplace policy, validate 396 links, catalog reader unaffected. Member-index PRs oats-okf#3/aweb#1/authoring#1/jira#1: one 6-line root `oats.yaml` each, pushed by M, merged by lead.
 - owner: M (migration-peer), L (lifecycle-peer); lead pushed nothing on M's behalf — the two remaining repos need account access, not a workaround.

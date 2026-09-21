@@ -36,7 +36,34 @@ result. All structured responses exit 0: transport completed, while `ok` is the
 semantic outcome. Nonzero exit/signal/timeout is transport failure. Allowed error/problem codes are needs-configuration, requirement-conflict,
 invalid-binding, authorization-required, host-requirement-missing,
 provider-unavailable and provider-not-qualified. Optional provider error/problem
-`message` is permitted but never forwarded by the kernel.
+`message` is permitted. The 0.24.4 follow-up retains it ONLY when it exactly
+matches a fixed nonsecret reason in the VERIFIED selected capability manifest's
+optional `binding.reasons` array: **1–64 unique strings**, each **1–200 printable
+ASCII characters**, with no braces/interpolation markers. If the field is absent,
+the kernel's reviewed per-capability compatibility list applies; a present invalid
+or empty declaration refuses, never falls back. No trimming, Unicode normalization,
+interpolation, prefix matching, operator values, paths, or unlisted provider output
+cross this boundary. Code-only replies
+and unknown/unlisted messages keep the existing kernel template fallback.
+
+The allowlist is out-of-band kernel input, never declared by a provider response.
+Exact artifact approval is still required BEFORE invoking the codec. The broker
+preserves the vetted message and preparation rechecks it against the same selected
+manifest, retaining slot/capability/origins. JSON and human CLI diagnostics surface
+the reason; human output also shows an existing choice `key` when provided. This
+changes no readiness status, launch authority, credential contract or wire version.
+Older kernels reject the new optional manifest fields; providers declaring them
+must floor on the reasons-capable **0.24.4** kernel. The compatibility list serves
+older manifests, not a way around declaration validation. It includes the complete
+30-message aweb1.11.0 codec vocabulary (including non-ready check reasons) and the
+seven OKF2.1.2 setting messages; it invents none for code-only OKF2.1.1.
+
+`binding.keys` is also accepted with **shape validation only** in0.24.4: a unique
+array of exact names or trailing-dot namespaces (`wider`, `stores.`), each matching
+`^[A-Za-z][A-Za-z0-9_-]*\\.?$` over the WHOLE string (no trailing newline). There
+is no filtering, overlapping-ownership check or owned/unowned-key attribution yet;
+those are deferred to0.25. Providers still receive the complete map and MUST ignore
+foreign keys themselves. Declaring keys does not authorize diagnostic text.
 
 Knowledge providers and harvesters follow the same separation: the
 [knowledge capability boundary](2026-09-16-knowledge-capability-contract.md) keeps

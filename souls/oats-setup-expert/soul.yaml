@@ -1,0 +1,14 @@
+schemaVersion: 1
+name: oats-setup-expert
+description: Guide an operator through OATS workspace adoption and explicit capability setup.
+work: directory
+requires:
+  capabilities:
+    oats.core:
+      source: repo:oats-package
+    oats.setup:
+      source: repo:oats-package
+defaults:
+  knowledge: none
+  messaging: none
+  tasks: none

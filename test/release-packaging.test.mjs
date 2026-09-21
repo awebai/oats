@@ -43,12 +43,15 @@ test("release alignment rejects stale lock metadata even when all three manifest
 });
 
 test("v2 preparation aligns standalone OKF and Git-only theory catalog pins", () => {
-  assert.equal(json("capabilities/oats-okf/oats.json").version, "2.1.1");
-  assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.24.0");
-  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.1.1");
-  const theory = json("package-catalog.json").packages["oats.knowledge-theory"];
-  assert.equal(theory.ref, "v0.23.0", "catalog uses the already published theory source, not this pending release tag");
-  assert.equal(theory.path, "oats-package");
+  assert.equal(json("capabilities/oats-okf/oats.json").version, "2.1.2");
+  assert.equal(json("capabilities/oats-okf/oats.json").compatibility.oats, ">=0.24.4", "OKF 2.1.2 declares binding.reasons, which only the 0.24.4 validator accepts");
+  assert.equal(json("package-catalog.json").packages["oats.okf"].ref, "v2.1.2");
+  const catalog = json("package-catalog.json");
+  assert.equal(catalog.packages["oats.knowledge-theory"], undefined, "the theory package identity was renamed to oats.framework");
+  const framework = catalog.packages["oats.framework"];
+  assert.equal(framework.ref, "oats-framework/v1.1.3", "catalog uses the published distribution tag, not a pending kernel release tag");
+  assert.equal(framework.path, "oats-package");
+  for (const id of ["oats.knowledge-theory", "oats.core", "oats.setup"]) assert.equal(catalog.capabilities[id], "oats.framework");
 });
 
 test("syntax inventory recurses through new capability libs, record and package scripts without Git", (t) => {
@@ -122,4 +125,31 @@ test("actual npm OKF regular bytes match inventory; symlink omission is explicit
   assert.throws(() => checkNpmOkfPayload(cap, inventory), /file-set drift/);
   rmSync(alias);
   assert.deepEqual(checkNpmOkfPayload(cap, inventory), result);
+});
+
+test("every framework-shipped capability with an inject declares a helperInjection policy", () => {
+  // Second-operator finding (2026-09-21): oats.okf adopted the helper-injection contract while its
+  // siblings oats.core and oats.aweb shipped an inject without a policy, so no edition's harvest
+  // helper could compose and no resolution could publish. The framework's own packages must pass
+  // the contract the kernel imposes; this guards every bundled and exported capability.
+  const manifests = execFileSync("git", ["ls-files", "capabilities/*/oats.json", "oats-package/capabilities/*/oats.json"], { cwd: ROOT, encoding: "utf8" })
+    .split("\n").filter(Boolean);
+  assert.ok(manifests.length >= 5, `expected framework capability manifests, found ${manifests.length}`);
+  // Bundled mirrors of separately-released tasks providers (jira, linear, review) are fixed in their
+  // own repositories; no framework soul edition requires them today, so they cannot block an edition.
+  // Remove an entry here the moment its upstream declares the policy — never add one.
+  const PENDING_UPSTREAM = new Set(["oats.jira", "oats.linear", "oats.review"]);
+  let checked = 0;
+  for (const rel of manifests) {
+    const m = json(rel);
+    if (m.inject === undefined) continue;
+    if (PENDING_UPSTREAM.has(m.capability)) {
+      assert.equal(m.helperInjection, undefined, `${m.capability} now declares helperInjection upstream: drop it from PENDING_UPSTREAM`);
+      continue;
+    }
+    checked += 1;
+    assert.ok(m.helperInjection && m.helperInjection.version === 1 && ["inherit", "omit", "file"].includes(m.helperInjection.mode),
+      `${rel} (${m.capability}) ships inject ${m.inject} without a helperInjection policy`);
+  }
+  assert.ok(checked >= 3, "oats.core, oats.okf and oats.aweb must be checked");
 });

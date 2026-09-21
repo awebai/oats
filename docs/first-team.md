@@ -42,6 +42,47 @@ For several repositories initialize their common workspace, then select the
 repository owning the soul with `--dir /path/to/workspace/project` for
 create/spawn/retire. A team roster does not select a work repository for spawn.
 
+## Onboarding with the setup expert
+
+On **OATS 0.24.2 or later**, start in an explicit empty deployment:
+
+```bash
+oats onboard --dir /absolute/new-deployment --json
+```
+
+`oats onboard` ships from 0.24.2 (earlier kernels refuse it). It is a
+classic local bootstrap, not captured preparation or workspace enrollment. It
+acquires `oats.framework` from the official catalog, exact-locks its artifacts,
+selects only `oats.core` and `oats.setup` for the new local `oats-setup-expert`,
+and prints the exact next spawn command. Review and run the returned
+`result.next.command` when ready; it addresses this same kernel and deployment.
+Onboarding itself never launches a model, changes native authentication or
+installs capture hooks/services. **`oats setup` remains the separate record
+capture-setup command**, not an alias for onboarding.
+
+The expert receives `oats-operate`, `oats-souls`, `oats-config`, `oats-packages`
+and `oats-workspace-setup`, without duplicate legacy kernel skill copies. It has
+no hard knowledge/messaging dependency, so it can help select and configure those
+providers afterward. Catalog identity grants no executable trust: the bootstrap
+uses resource-only core/setup capabilities and refuses unexpected executable
+surfaces instead of auto-approving them.
+
+An existing roster is refused unless `--force-existing` is explicit. That flag
+permits adding the new soul, not overwriting an existing setup expert or disabling
+providers for other souls. Failures report partial acquisition/creation rather
+than claiming atomic captured preparation. Preserve that evidence before retrying.
+
+Optional `--workspace git:host/org/repository[@revision]` reads the selected
+repository through ordinary discovery: use its pinned `oats-setup-expert` import
+when present, otherwise its own advertised `souls/oats-setup-expert` edition at
+the observed revision. Missing or incompatible explicit sources refuse; they do
+not fall back to the packaged default. The copied edition's package must match
+the official acquisition; workspace policy, teams and provider adoption values
+are not silently adopted. Without this option, only the packaged definition and
+instruction text are used—no knowledge corpus is bundled.
+
+The manual path below retains its stated older integration/version scope.
+
 ## Configure explicit knowledge and optional messaging
 
 Edit the existing entries in `oats-config.yaml`; do not append a second
