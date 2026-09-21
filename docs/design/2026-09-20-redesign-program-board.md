@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-21 18:10Z · main `86b5f924`+ · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.1 · oats-framework/v1.1.2 · imports @ `08c68ece` · **S2 EXIT GATE MET (independent operator)**
+**Last update:** 2026-09-21 19:10Z · main `8729ed8f`+ · OATS v0.24.4 · OKF v2.1.2 · aweb v1.11.1 · oats-framework/v1.1.2 · imports @ `08c68ece` · **S2 verdict AMENDED by the operator: packaging gap behind `responsibleHuman`**
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
@@ -11,7 +11,7 @@ Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, n
 | # | Stream | State | Owner | Next action |
 |---|---|---|---|---|
 | S1 | Knowledge capability contract rework (kernel↔provider boundary, OKF 2.x) | ✅ OATS 0.24.1 / OKF 2.1.1 published | P | done for this phase |
-| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ **EXIT GATE MET on the 0.24.4 wave (independent operator, Juan's machine, 2026-09-21)**: from published definitions alone — discovery, membership, resolution, exact approval, knowledge bound to public `oats-knowledge` via OKF 2.1.2, messaging normalized — a fresh outside operator reaches a **single, fully-named, operator-owned requirement** (`/bindings/messaging/responsibleHuman`). Named reasons in one run. · 🔄 optional coda: Juan's `responsibleHuman` → first published second-operator resolution → OKF `check` probe (a declined identity is also a legitimate end state) | lead, Antares | coda only; S2 closed on the gate's own terms |
+| S2 | Workspace/Portable Souls adoption of the OATS repos | ✅ knowledge: bound to public `oats-knowledge` via OKF 2.1.2 from a fresh machine, four kernel versions · ✅ messaging normalizes; `wider` deadlock gone; named reasons in one run · ❌ **operator's amended verdict (9816b8ec): no resolution can publish — behind `responsibleHuman`, helper composition refuses because `oats.core` and `oats.aweb` ship `inject` without `helperInjection`** (OKF adopted the contract; its siblings did not). Both remaining blockers are packaging, not operator input. Fix: [decision](https://github.com/awebai/oats/blob/main/agents/oats-expert/soul/knowledge/decisions/helper-injection-policy-on-every-injecting-capability.md) — core `inherit`, aweb `omit`, framework release check, attributed early refusal · then unchanged re-run | lead, Antares | oats.framework 1.1.3 + aweb 1.11.2 + pins; re-run |
 | S3 | Messaging capability readiness on the new infrastructure (aweb) | ✅ aweb 1.11.0 released · ✅ **catalog + six editions pin v1.11.0 (0.24.2)** · ⬜ second-operator re-run | P, lead | Antares re-run |
 | S4 | Official capabilities `oats.core` / `oats.setup` + explicit default + onboarding `oats-setup-expert` | ✅ D1, D2, **D3 merged (PR35)**: `oats onboard` verified live (acquire 1.1.1 → setup expert with both caps → scaffold composes the five capability skills, no legacy) · `oats.framework` 1.1.1 tagged | P, L | done; Desktop surfaces → S8 |
 | S5 | Official marketplace = reviewed list in oats repo | ✅ D4 merged · ✅ `oats.framework` 1.1.1 listed (`oats.core`, `oats.setup`, `oats.knowledge-theory` aliases) | M | Desktop view → S8 |
@@ -50,11 +50,15 @@ Fresh dir, local `@awebai/oats@0.24.1`, no prior state. `inspect --request` → 
 - With `bindings-file`/`state-dir`/`harvest-runtime: pi` and the public `oats-knowledge` bound as base `oats`: **the knowledge slot binds** (OKF problem gone). `harvest-model` is optional per manifest; aweb 1.11.0 declares exactly one setting (`delivery`).
 - **aweb 1.11.0 is the only remaining hold** (`needs-configuration`, identical for `delivery: session` and `channel` on 0.24.2's unattributed output). No resolution publishes → OKF `check` probe not reachable yet. 0.24.3 run will show the attributed aweb message (expected: private-team binding / Pi session-input).
 
+## S2 — operator's self-correction (9816b8ec, 2026-09-21): packaging gap behind `responsibleHuman`
+
+The operator supplied a deliberately synthetic `responsibleHuman` (`gate-probe-not-a-real-human`; accepted — `humanRef` checks only provider + non-empty id, i.e. an accountability claim the code records but does not verify) and preparation refused: `needs-configuration: new helper injection requires an explicit capability policy` (`lib/helper-injection-policy.mjs:38`), a bare top-level error with no `details`/attribution. Cause verified from the published manifests: `oats.okf` declares `helperInjection {omit}`; **`oats.core` (`injects/oats.md`) and `oats.aweb` (`injects/aweb.md`) declare none**. Every edition declares `oats.core`, so no edition could publish once its OKF harvest helper composed. Fourth finding of the same family (contract adopted by one provider, not its siblings). Operator's restated verdict adopted verbatim: *"A second operator reaches, resolves and approves the entire graph from the public definition, binds knowledge to the public `oats-knowledge` base, and normalizes messaging. Preparation cannot publish a resolution … Both remaining blockers are packaging, not operator input."* The earlier "EXIT GATE MET" entry below is superseded by this one.
+
 ## Kernel defect found at peer retirement (2026-09-21) — 0.25 lifecycle item
 
 `oats retire oats-expert-scheduler-peer` (self and spawner retry) fails closed: *recovered Git index/status disagreed with the source*. Cause: `preserveRetirementWork` clones the branch recorded in `instance.json` (`feat/portable-scheduler-captures`, tip e0c3232c) while the worktree is checked out on `docs/okf-host-runtime-settings` (5919a547); the status comparison cannot agree. Verified by hand: worktree clean, both branches pushed, every deliverable merged (oats PR39, oats-okf PR5, oats-aweb PR4); the only dirt is two untracked files in a nested scratch clone that are already on aweb main since 1.11.0. **Nothing unpreserved.** Instance left `RETIRING`; no branch/metadata/force surgery. Fix scoped to **0.25 (L)**: derive the recovery branch from the worktree, record drift as a typed observation. Lesson: `lessons/retire-recovery-uses-recorded-branch-not-checked-out-branch.md`.
 
-## S2 — acceptance run on the 0.24.4 wave (Antares, Juan's machine, 2026-09-21) — EXIT GATE MET
+## S2 — acceptance run on the 0.24.4 wave (Antares, Juan's machine, 2026-09-21) — superseded by the self-correction above (knowledge result stands)
 
 Fresh directory and deployment, `@awebai/oats@0.24.4`, policy sources v2.1.2 / v1.11.1, `wider: []`, request otherwise unchanged from the 0.24.3 run; wave verified independently first (npm, both provider tags, main `86b5f924`, six imports @ `08c68ece`).
 

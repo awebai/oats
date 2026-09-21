@@ -1,5 +1,6 @@
 # Decisions
 
+* [Every capability that ships an `inject` declares a `helperInjection` policy; the framework's own do so first](helper-injection-policy-on-every-injecting-capability.md) - `oats.core` inherit, `oats.aweb` omit; release check on the framework's own packages; early helper-policy refusals carry attribution.
 * [Operator bindings are a flat map with declared ownership; providers ignore keys they do not own](operator-bindings-ownership.md) - Flat `operator.bindings` stays; providers consume only owned keys and declare them (`binding.keys`) so the kernel attributes or refuses stray keys by name.
 * [Provider problem reasons cross the binding wire as whitelisted fixed text](provider-problem-reasons-cross-the-wire.md) - The kernel keeps a provider's declared fixed safe reason on the binding wire and surfaces it beside slot/capability/origins; free text is still refused.
 * [Kernel skills become official capabilities — oats.core, oats.setup and the reviewed official marketplace](official-capabilities-oats-core-setup-and-marketplace.md) - Operational skills ship as oats.core (explicit default on every soul, removable) and oats.setup (held by an onboarding-created oats-setup-expert); the oats repository's reviewed package list is the official marketplace, seeded with the fundamentals.
