@@ -1074,3 +1074,26 @@ test("nested scopes locking the same package id at different versions keep their
   assert.equal(lockOf(outer).capabilities["x.b"].trusted, false, "an outer capability was silently trusted");
   rmSync(base, { recursive: true, force: true });
 });
+
+test("oats catalog --json describes the effective official catalog read-only, with origin and acquire argv", () => {
+  // Desktop seam (S8, 2026-09-22): the zero-dependency Desktop cannot import lib/core.mjs; it reads
+  // the reviewed catalog through the installed CLI. Identity/discovery only — nothing acquired or trusted.
+  const base = mkdtempSync(join(tmpdir(), "oats-catalog-"));
+  try {
+    const file = join(base, "catalog.json");
+    writeFileSync(file, JSON.stringify({ packages: { "x.pkg": { url: "https://example.invalid/x.git", ref: "v9.9.9", path: "oats-package" } },
+      capabilities: { "x.cap": "x.pkg", "legacy.cap": { package: "x.pkg", capability: "x.renamed" }, "orphan.cap": "missing.pkg" } }));
+    const before = readdirSync(base);
+    const described = okEnvelope(cli(["catalog", "--json"], { cwd: base, catalog: file }));
+    assert.equal(described.schemaVersion, 1);
+    assert.deepEqual(described.catalog, { origin: "override", file, kernelVersion: described.catalog.kernelVersion });
+    assert.deepEqual(described.packages, [{ package: "x.pkg", url: "https://example.invalid/x.git", ref: "v9.9.9", path: "oats-package", acquire: { argv: ["oats", "install", "x.pkg"] } }]);
+    assert.deepEqual(described.capabilityAliases.map((a) => [a.capability, a.package, a.capabilityInPackage, a.available]),
+      [["x.cap", "x.pkg", "x.cap", true], ["legacy.cap", "x.pkg", "x.renamed", true], ["orphan.cap", "missing.pkg", "orphan.cap", false]]);
+    assert.ok(described.notes.some((n) => /no executable trust/.test(n)));
+    assert.deepEqual(readdirSync(base), before, "catalog is read-only: nothing acquired, no lock or store written");
+    const bundled = okEnvelope(cli(["catalog", "--json"], { cwd: base }));
+    assert.equal(bundled.catalog.origin, "bundled");
+    assert.ok(bundled.packages.some((p) => p.package === "oats.framework"));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});

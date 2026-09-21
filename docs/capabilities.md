@@ -285,6 +285,7 @@ oats install ../my-package                                          # local path
 oats install oats.okf                                                # official catalog id
 oats install                     # bare: exact restore of this chain's locks
 oats list                        # installed packages, exported capabilities, scopes
+oats catalog [--json]            # the effective official catalog: packages, refs, aliases, acquire argv (0.24.6+; read-only)
 oats update <package>            # transactional re-resolve + diff + trust reset
 oats remove <package>            # refuses while config/dependents reference it
 oats migrate [--dry-run]         # map v1 capability locks to package locks
