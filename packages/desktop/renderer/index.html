@@ -63,6 +63,7 @@
     </aside>
     <button id="sidebar-restore" type="button" data-action="sidebar.toggle"
             title="Show the sidebar" aria-label="Show the sidebar" aria-controls="sidebar" aria-expanded="true"><span data-shell-icon="sidebar" aria-hidden="true"></span></button>
+    <div id="workbench">
     <main id="main">
       <div id="tabstrip">
         <div id="tabbar-row">
@@ -79,7 +80,15 @@
       </div>
       <div id="stagehost"></div>
       <div id="tabhost" style="display:none"></div>
+      <footer id="context-tools" aria-label="Workspace layout">
+        <button id="panel-toggle" type="button" data-action="panel.toggle" title="Toggle the context panel"
+                aria-controls="context-panel" aria-expanded="false" disabled>Details</button>
+        <button id="focus-mode-toggle" type="button" data-action="app.focusMode" title="Toggle focus mode"
+                aria-pressed="false">Focus mode</button>
+      </footer>
     </main>
+    <aside id="context-panel" aria-label="Selection details" hidden></aside>
+    </div>
   </div>
   <div id="ws-modal" class="ws-modal" hidden>
     <section class="ws-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-dialog-title" aria-describedby="ws-dialog-status">

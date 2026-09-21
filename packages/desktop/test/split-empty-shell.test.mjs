@@ -10,7 +10,8 @@ import { createIntentGate } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions } from "../renderer/terminal-tab.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
-import { resolveTerminalOpen } from "../renderer/instance-tree.mjs";
+import { createContextPanel } from "../renderer/context-panel.mjs";
+import { resolveTerminalOpen, terminalKey } from "../renderer/instance-tree.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
@@ -28,15 +29,15 @@ function deferred() {
 const instance = name => ({ instance: name, running: true, home: `/synthetic/${name}`, agentsRoot: "/synthetic/agents",
   tmux: { session: "synthetic-only", window: name } });
 
-function shell(t) {
-  const dom = new JSDOM(`<span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
+function shell(t, shellSource = source) {
+  const dom = new JSDOM(`<div id="app"><aside id="context-panel"></aside><button id="panel-toggle"></button><button id="focus-mode-toggle"></button><span id="ws-context"></span><div id="stagehost"></div><div id="tabstrip"><div id="tabbar-row"><div id="tabbar"></div>
     <div id="tab-actions"><button id="split-right"></button><button id="split-down"></button><button id="split-close"></button></div>
     </div></div><div id="tabhost"></div><aside id="roster"><input class="ctx-filter"></aside>
-    <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button>`);
+    <nav id="nav"><button class="nav-item active">Overview</button></nav><button id="workspace">Workspace</button></div>`);
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
   const c = {
-    document, console, navigator: { platform: "MacIntel" },
+    document, window: dom.window, createContextPanel, console, navigator: { platform: "MacIntel" },
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], wsActiveTerminal: new Map(), pendingTerms: new Set(),
@@ -50,7 +51,8 @@ function shell(t) {
     refreshContextRoster() {}, renderContextRoster() {}, setNavActive() {},
     focusRoster() { c.tabOpenIntents.invalidate(); c.contextRosterEl.querySelector("input").focus(); },
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
-    resolveTerminalOpen, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab,
+    updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
+    resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab,
     splitControlsState, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
@@ -74,13 +76,18 @@ function shell(t) {
   c.tabOpenIntents = createSelectionOwnership(c);
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "showTerminalContext",
-    "openTerminalTabFlow", "openTerminalTabInner", "renderWorkspaceContext", "restoreWorkspaceTabs", "focusActiveTerminal"];
+    "openTerminalTabFlow", "openTerminalTabInner", "renderWorkspaceContext", "restoreWorkspaceTabs", "focusActiveTerminal",
+    "syncContextPanel", "refreshPanelInstance"];
   const functions = names.map(name => {
-    const match = source.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
+    const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `execute shipped ${name}`); return match[0];
   });
   const registry = source.split("\n").filter(line => /^registerAction\(/.test(line) && /id: "(?:split\.|tabs\.close|terminal\.focusActive)/.test(line));
-  const s = runInNewContext(`${functions.join("\n")}\n${registry.join("\n")}\n({ ${names.join(", ")} });`, c);
+  // Execute the shipped panel construction as well as its projection functions:
+  // pointer/focus intent must compete with opens exactly as in the real shell.
+  const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
+  const s = runInNewContext(`${functions.join("\n")}\n${panelSetup}\n${registry.join("\n")}\n({ ${names.join(", ")}, contextPanel });`, c);
+  t.after(() => s.contextPanel.dispose());
   const event = (el, type, options = {}) => el.dispatchEvent(type === "keydown"
     ? new dom.window.KeyboardEvent(type, { bubbles: true, cancelable: true, ...options })
     : new dom.window.Event(type, { bubbles: true }));
@@ -88,10 +95,12 @@ function shell(t) {
     ...s, c, document, requests, attachments, terms, detached, projections, actions, event,
     cells: () => [...c.tabhost.querySelectorAll(":scope > .group-cell")],
     empty: id => [...c.tabhost.querySelectorAll(".group-cell")].find(cell => cell.dataset.group === String(id))?.querySelector(".split-empty"),
-    async open(name, ready = true) {
+    field: name => document.querySelector(`[data-context-field="${name}"]`).textContent,
+    panelRoot: document.getElementById("context-panel"),
+    async open(ref, ready = true, roster = [typeof ref === "string" ? instance(ref) : ref]) {
       const count = attachments.length;
-      const done = s.openTerminalTabFlow(name, message => assert.fail(message));
-      requests.at(-1).resolve({ instances: [instance(name)] }); await tick();
+      const done = s.openTerminalTabFlow(ref, message => assert.fail(message));
+      requests.at(-1).resolve({ instances: roster }); await tick();
       if (ready && attachments.length > count) attachments.at(-1).resolve({ id: attachments.length });
       if (ready) await done;
       return { done, id: c.activeTab, term: terms.at(-1), gate: attachments.at(-1) };
@@ -279,6 +288,7 @@ for (const outcome of ["resolve", "reject"]) test(`empty selection revokes retai
   if (outcome === "resolve") pending.gate.resolve({ id: 88 }); else pending.gate.reject(new Error("late attachment error"));
   await pending.done;
   assert.equal(s.c.activeTab, null); assert.equal(s.c.split.focusedGroup, 2);
+  assertPanel(s, null);
   assert.equal(s.document.activeElement, empty); assert.equal(pending.term.focuses, 0);
   assert.equal(pending.term.disposed, 0); assert.equal(s.c.tabs.size, 1);
   assert.equal(s.attachments.length, 1); assert.deepEqual(s.detached, []);
@@ -297,5 +307,124 @@ test("files/brains only cover empty terminal destinations; split controls/action
     assert.deepEqual(structuredClone(s.c.split), snapshot);
   }
   assert.equal(layout.groupOfTab(s.c.split, terminal.id).id, 1);
+  assert.equal(s.attachments.length, 1); assert.deepEqual(s.detached, []);
+});
+
+function assertPanel(s, ref) {
+  assert.equal(s.panelRoot.hidden, ref == null, 'panel visibility follows the committed terminal, not a retained neighbor');
+  assert.equal(s.field('instance'), ref?.instance ?? 'Not reported');
+  assert.equal(s.field('home'), ref?.home ?? 'Not reported');
+}
+
+test('resolved instance context is committed before pending PTY readiness; panel entry revokes input focus only', async t => {
+  const s = shell(t), resolved = { ...instance('pending'), runtime: 'pi', model: 'reported-model' };
+  const pending = await s.open({ instance: 'pending' }, false, [resolved]);
+  assertPanel(s, resolved);
+  assert.equal(s.field('runtime'), 'pi'); assert.equal(s.field('model'), 'reported-model');
+  assert.equal(s.c.tabs.get(pending.id).instanceRef, resolved, 'store the resolver result, not the caller reference');
+  assert.equal(pending.term.focuses, 0); assert.equal(s.attachments.length, 1);
+  const soul = s.document.querySelector('[data-context-tab="soul"]');
+  soul.focus(); soul.click();
+  assert.equal(s.c.tabOpenIntents.ownsFocus(pending.id), false);
+  pending.gate.resolve({ id: 301 }); await pending.done;
+  assertPanel(s, resolved);
+  assert.equal(pending.term.focuses, 0); assert.equal(s.document.activeElement, soul);
+  assert.equal(s.c.tabs.size, 1); assert.deepEqual(s.detached, []);
+});
+
+test('two existing groups project only the focused instance; empty, file and brain clear it without attachments', async t => {
+  const s = shell(t), left = await s.open('left-panel'); s.splitPane('row');
+  assertPanel(s, null);
+  const right = await s.open('right-panel');
+  for (const tab of [left, right, left]) {
+    s.event(s.c.tabs.get(tab.id).paneEl, 'pointerdown'); tab.term.input.focus();
+    assert.equal(s.c.activeTab, tab.id);
+    assertPanel(s, s.c.tabs.get(tab.id).instanceRef);
+  }
+  const split = structuredClone(s.c.split);
+  for (const kind of ['file', 'brain']) {
+    s.addTab({ title: kind, kind }); assertPanel(s, null);
+    s.selectTab(left.id); assertPanel(s, instance('left-panel'));
+    assert.deepEqual(structuredClone(s.c.split), split);
+  }
+  s.selectTab(right.id); s.closeTab(right.id); assertPanel(s, null);
+  // Reopening an existing terminal moves its original pane into the empty
+  // destination, rather than creating a third attachment or copying context.
+  const again = await s.open('left-panel');
+  assert.equal(again.id, left.id); assertPanel(s, instance('left-panel'));
+  assert.equal(layout.groupOfTab(s.c.split, left.id).id, 2);
+  assert.equal(s.attachments.length, 2); assert.deepEqual(s.detached, [2]);
+});
+
+test('panel context and per-workspace tab/collapse preferences survive A→B→A without reacquiring retained terminals', async t => {
+  const s = shell(t); await s.open('a-panel');
+  s.document.querySelector('[data-context-tab="soul"]').click(); s.contextPanel.setCollapsed(true);
+  s.document.getElementById('workspace').focus(); s.switchTo('B'); assertPanel(s, null);
+  await s.open('b-panel'); assertPanel(s, instance('b-panel'));
+  assert.equal(s.panelRoot.classList.contains('is-collapsed'), false);
+  s.document.querySelector('[data-context-tab="git"]').click();
+  s.document.getElementById('workspace').focus(); s.switchTo('A');
+  assertPanel(s, instance('a-panel'));
+  assert.equal(s.panelRoot.classList.contains('is-collapsed'), true);
+  assert.equal(s.document.querySelector('[aria-selected="true"][data-context-tab]').dataset.contextTab, 'soul');
+  assert.equal(s.document.activeElement.id, 'workspace');
+  s.contextPanel.setCollapsed(false); s.switchTo('B');
+  assertPanel(s, instance('b-panel'));
+  assert.equal(s.document.querySelector('[aria-selected="true"][data-context-tab]').dataset.contextTab, 'git');
+  assert.equal(s.attachments.length, 2); assert.deepEqual(s.detached, []);
+});
+
+async function panelChoiceRace(t, outcome, shellSource = source) {
+  const s = shell(t, shellSource); await s.open('older-panel'); await s.open('chosen-panel');
+  const pending = s.openTerminalTabFlow('older-panel', () => assert.fail('stale notification'));
+  const gate = s.requests.at(-1), soul = s.document.querySelector('[data-context-tab="soul"]');
+  s.event(soul, 'pointerdown'); soul.focus(); soul.click();
+  if (outcome === 'resolve') gate.resolve({ instances: [instance('older-panel')] });
+  else gate.reject(new Error('obsolete panel lookup'));
+  await pending;
+  assertPanel(s, instance('chosen-panel'));
+  assert.equal(soul.getAttribute('aria-selected'), 'true'); assert.equal(s.document.activeElement, soul);
+  assert.equal(s.c.tabs.size, 2); assert.equal(s.attachments.length, 2); assert.deepEqual(s.detached, []);
+}
+for (const outcome of ['resolve', 'reject']) {
+  test(`late terminal lookup ${outcome} cannot overwrite a newer real panel choice`, t => panelChoiceRace(t, outcome));
+  test(`mutation: real panel entry must supersede a terminal lookup ${outcome}`, async t => {
+    const guard = 'onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); }';
+    assert.ok(source.includes(guard));
+    const mutant = source.replace(guard, 'onIntent: () => {}');
+    await assert.rejects(panelChoiceRace(t, outcome, mutant), outcome === 'resolve' ? /chosen-panel/ : /obsolete panel lookup/);
+  });
+}
+
+test('same-name roots/hosts stay distinct and exact-key metadata refresh is focus-neutral', async t => {
+  const s = shell(t);
+  const local = { ...instance('same'), agentsRoot: '/one/agents', home: '/one/same', model: 'one' };
+  const otherRoot = { ...local, agentsRoot: '/two/agents', home: '/two/same', model: 'two' };
+  const remote = { ...local, server: 'saved-host', savedRoute: true, model: 'remote' };
+  const roster = [local, otherRoot, remote], opened = [];
+  for (const ref of roster) {
+    opened.push(await s.open(ref, true, roster)); assertPanel(s, ref); assert.equal(s.field('model'), ref.model);
+  }
+  assert.equal(new Set([...s.c.tabs.values()].map(tab => tab.key)).size, 3);
+  assert.deepEqual(structuredClone(s.attachments[2].spec.remote), { serverId: 'saved-host', instance: 'same', home: '/one/same' });
+  const selected = opened[0]; s.selectTab(selected.id);
+  const soul = s.document.querySelector('[data-context-tab="soul"]'); soul.focus(); soul.click();
+  const ticket = s.c.tabOpenIntents.begin(), exact = { ...local, running: false, model: 'new observation' };
+  s.refreshPanelInstance([remote, otherRoot, exact], 'A');
+  assert.equal(s.c.tabs.get(selected.id).instanceRef, exact);
+  assert.equal(s.field('running'), 'Stopped'); assert.equal(s.field('model'), 'new observation');
+  assert.equal(s.document.activeElement, soul); assert.equal(ticket(), true, 'polling is not user intent');
+  s.refreshPanelInstance([{ ...local, model: 'foreign workspace' }], 'B');
+  assert.equal(s.field('model'), 'new observation'); assert.equal(s.document.activeElement, soul);
+  assert.equal(s.attachments.length, 3); assert.deepEqual(s.detached, []);
+});
+
+for (const ambiguity of ['missing', 'duplicate']) test(`${ambiguity} exact-key polling never presents a retained Running observation as current`, async t => {
+  const s = shell(t), ref = instance('missing-state'); await s.open(ref);
+  const input = s.terms[0].input; input.focus();
+  const ticket = s.c.tabOpenIntents.begin();
+  s.refreshPanelInstance(ambiguity === 'missing' ? [] : [ref, { ...ref, running: false }], 'A');
+  assert.ok(s.panelRoot.hidden || s.field('running') === 'Not reported', 'missing/ambiguous observation must hide or explicitly mark session unknown');
+  assert.equal(s.document.activeElement, input); assert.equal(ticket(), true);
   assert.equal(s.attachments.length, 1); assert.deepEqual(s.detached, []);
 });

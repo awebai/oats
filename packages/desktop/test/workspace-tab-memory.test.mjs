@@ -43,7 +43,8 @@ function shell(t) {
     brainIntents: createIntentGate(),
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview",
     setNavActive() {}, refreshContextRoster() {}, renderContextRoster(list) { assert.equal(list.length, 0); },
-    updateSplitControls() {},
+    // Inert presenter; real shell/panel workspace projection is in split-empty-shell.
+    syncContextPanel() {}, updateSplitControls() {},
     currentWorkspace: () => context.workspace, workspaceGeneration: () => context.generation,
     updateActiveContexts: on => { context.tabLayerVisible = on; },
     canActivateTab, tabVisibleInContext, projectSplitDom, resizeSplitGroups,

@@ -58,6 +58,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }],
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
+    // Panel behavior is covered with the real presenter in split-empty-shell.
+    syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
     ...instanceTree, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge, rosterKeyAction, moveTarget,
     api: () => { const gate = deferred(); requests.push(gate); return gate.promise; },

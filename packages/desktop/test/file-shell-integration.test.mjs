@@ -84,6 +84,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     stageHost: document.getElementById("stagehost"), stage: { name: "spawn" }, navEl: document.getElementById("nav"),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     updateActiveContexts: on => { c.tabLayerVisible = on; },
+    // Inert presenter: this fixture owns file/chooser focus, not panel layout.
+    syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
     workspaceLabel: { reset() {} }, NAV: [], ctx: {},
     alert: message => notices.push(message), onWorkspaceChange: listener => listeners.push(listener),

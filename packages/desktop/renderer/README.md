@@ -84,6 +84,31 @@ Runtime marks show the reported runtime, not installation/authentication status.
   actions grouped by context, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
 
+## Context panel and focus mode
+
+The shell owns one right-side **Details** region outside all editor groups.
+A selected terminal shows reported Instance / Soul metadata; Git & GitHub is a
+clearly unavailable integration in this slice, awaiting its qualified CLI/provider
+contracts (no inferred zero changes, PRs or checks). Empty groups and file/brain
+tabs do not inherit another terminal's context. Roster refresh matches the exact
+workspace/terminal identity and never selects or focuses a panel; a missing or
+ambiguous observation makes session state unknown.
+
+Workspace projects its actual selected-soul inspector into that same region.
+Workspace still owns its requests, editor and lifetime. Collapse or covering the
+stage with a terminal preserves the inspector's DOM, unsaved values and in-flight
+content; a late response cannot reclaim foreground visibility. True stage unmount
+or workspace reset ends that selection. Standalone view hosts keep the inline
+inspector fallback.
+
+**Details** collapses/restores the region. **Focus mode** hides the sidebar and
+right panel without closing tabs or changing split weights. Its footer control
+stays visible as an exit; exit restores the existing sidebar/panel preferences.
+Mod+F leaves focus mode to reveal the filter. Panel collapse and selected tab are
+session-local per workspace; focus mode is a temporary presentation override.
+Both actions are palette/editor-visible with no new default shortcuts. Native
+terminal input and per-window lifecycle policies are unchanged.
+
 ## Editor groups (splits) and the hideable sidebar (shell-level)
 
 Sidebar relationship guides use an 8px nesting step and 4px elbows, sharing the
