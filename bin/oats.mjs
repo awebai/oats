@@ -815,11 +815,36 @@ function homeContexts(home, meta) {
   out.push(dirname(agentsRootOfHome(realOrResolved(home))));
   return out;
 }
+/** A soul's own declared requirements/defaults/provenance, read from its
+ *  soul.yaml through the kernel's parser (never guessed, never re-parsed by a
+ *  consumer). Absent sections are null: an unrecorded provenance is a fact
+ *  about the soul, not a prompt to infer one. */
+function soulDeclarations(soulDir) {
+  const file = join(soulDir, "soul.yaml");
+  const empty = { declarations: { requires: null, defaults: null, knowledge: null, teams: null, resources: null }, provenance: null, problems: [] };
+  if (!existsSync(file)) return empty;
+  let parsed;
+  try { parsed = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8"))); }
+  catch (e) { return { ...empty, problems: [{ code: "soul-declarations-unreadable", message: e.message }] }; }
+  const section = (key) => (parsed[key] !== undefined && parsed[key] !== null && typeof parsed[key] === "object") ? parsed[key] : (parsed[key] === undefined ? null : parsed[key]);
+  const provenance = section("provenance");
+  return {
+    declarations: { requires: section("requires"), defaults: section("defaults"), knowledge: section("knowledge"), teams: section("teams"), resources: section("resources") },
+    provenance: provenance && typeof provenance === "object" ? {
+      kind: provenance.kind ?? null, source: provenance.source ?? null, revision: provenance.revision ?? null,
+      path: provenance.path ?? null, workspaceRevision: provenance.workspaceRevision ?? null,
+    } : null,
+    problems: [],
+  };
+}
 function soulEntry(soul, root, { capability } = {}) {
   const dir = soul._dir || soul.soulDir;
   const soulDir = capability ? soul.soulDir : join(dir, "soul");
   const packaged = !!capability;
+  const declared = soulDeclarations(soulDir);
   return {
+    soulsApi: 1, declarations: declared.declarations, provenance: declared.provenance,
+    declarationProblems: declared.problems,
     name: soul.name, kind: packaged ? "capability" : (soul.kind || "persistent"), capability: capability || null,
     type: soul.type ?? null, description: soul.description ?? null, repo: soul.repo ?? null, work: soul.work || "checkout",
     runtime: soul.runtime || "pi", model: soul.model ?? null, yolo: soul.yolo === true || soul.yolo === "true" ? true : soul.yolo === false || soul.yolo === "false" ? false : null, launchConfig: soul["launch-config"] ?? null, backend: soul.backend ?? null,
@@ -996,11 +1021,32 @@ function inspectCmd() {
       instructions: { ...readTextCapped(join(home, "AGENTS.md")), sources: meta.instructions || [] }, drift,
     };
   }
+  // K4: the deployment's portable source context and each soul's declared
+  // requirements joined against the capability inventory in this same payload.
+  // Readiness is about the soul's declared sources, kept apart from
+  // launchability (spawn) and adoption (prepare); unobservable = null.
+  const capabilityById = new Map(capabilities.map((c) => [c.id, c]));
+  for (const s of souls) {
+    const required = s.declarations?.requires?.capabilities;
+    const requirements = required && typeof required === "object" ? Object.entries(required).map(([id, spec]) => {
+      const cap = capabilityById.get(id) || null;
+      return { capability: id, source: spec && typeof spec === "object" ? spec.source ?? null : null,
+        installed: cap ? cap.health?.installed ?? null : false, approved: cap ? cap.health?.trusted ?? null : null,
+        active: cap ? !!cap.activation?.enabled : null, version: cap?.version ?? null };
+    }) : null;
+    s.readiness = { source: s.provenance ? "recorded" : "unrecorded", requirements,
+      status: requirements === null ? "undeclared" : requirements.every((q) => q.installed === true) ? "sources-installed" : requirements.some((q) => q.installed === false) ? "sources-missing" : "unknown" };
+  }
+  const sourceKey = (p) => JSON.stringify([p.source, p.revision, p.path]);
+  const sourceItems = [...new Map(souls.filter((s) => s.provenance?.source).map((s) => [sourceKey(s.provenance), { ...s.provenance, souls: [] }])).values()];
+  for (const s of souls) if (s.provenance?.source) sourceItems.find((i) => sourceKey(i) === sourceKey(s.provenance)).souls.push(s.name);
+  const sources = { soulsApi: 1, kind: sourceItems.length ? "recorded-provenance" : "none-recorded", items: sourceItems,
+    note: sourceItems.length ? null : "no soul in this scope records a portable provenance; authored local souls only" };
   const result = {
     operationsApi: 1, kernel: OATS_VERSION,
     scope: { context: ctx, requestedContext: requestedContext === ctx ? null : requestedContext, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
     selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config" },
-    souls, layers, capabilities, knowledge, snapshot, currentConfig,
+    souls, sources, layers, capabilities, knowledge, snapshot, currentConfig,
     problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability })),
       ...(meta ? snapshotCaps.filter((c) => !mans[c.id]).map((c) => ({ code: "captured-capability-missing", message: `${c.id} was active when this home was composed but no manifest for it is acquired now`, capability: c.id })) : [])],
   };
@@ -4418,7 +4464,8 @@ function onboardCmd() {
     const source = parsePortableSource(`git:${catalogSource.url}@${pkg.commit}#${pkg.path}`);
     const requires = { capabilities: Object.fromEntries(SETUP_CAPABILITIES.map(id => [id, { source: `${source.source}#${source.path}` }])) };
     const soulFile = join(created.soul, "soul.yaml");
-    writeFileAtomic(soulFile, readFileSync(soulFile, "utf8") + `requires: ${JSON.stringify(requires)}\ndefaults: ${JSON.stringify(edition.declaration.defaults)}\n`);
+    writeFileAtomic(soulFile, readFileSync(soulFile, "utf8") + `requires: ${JSON.stringify(requires)}\ndefaults: ${JSON.stringify(edition.declaration.defaults)}\n`
+      + `provenance: ${JSON.stringify({ kind: edition.source.kind, source: edition.source.source, revision: edition.source.revision, path: edition.source.path, ...(edition.source.workspaceRevision ? { workspaceRevision: edition.source.workspaceRevision } : {}) })}\n`);
     const agent = findAgent(root, SETUP_EXPERT), composition = composeInstanceAgentsMd(created.soul, deployment, SETUP_EXPERT, "directory", "local");
     planInstanceResources({ resolved: composition.resolved, soulDir: created.soul, agent, contextDir: deployment, composition });
     const argv = [process.execPath, CLI_BIN, "spawn", SETUP_EXPERT, "--dir", deployment, "--no-yolo", "--task", "Help me configure this deployment and adopt my workspace with explicit approvals."];
