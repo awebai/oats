@@ -142,6 +142,7 @@ function isEditableTarget(target) {
 export const DEFAULT_KEYMAP = Object.freeze({
   "app.palette": "Mod+K",
   "app.quickOpenSouls": "Mod+P",
+  "app.chooseSoul": "Mod+N",
   "app.shortcuts": "Mod+,",
   "app.themeToggle": "Mod+Shift+T",
   "stage.hierarchy": "Mod+1",
@@ -149,7 +150,7 @@ export const DEFAULT_KEYMAP = Object.freeze({
   "tabs.next": "Ctrl+Tab",
   "tabs.prev": "Ctrl+Shift+Tab",
   "tabs.close": "Mod+W",
-  "sidebar.focusFilter": "Mod+Shift+E",
+  "sidebar.focusFilter": "Mod+F",
   "sidebar.toggle": "Mod+B",
   "split.vertical": "Mod+\\",
   "split.horizontal": "Mod+Shift+\\",

@@ -36,13 +36,18 @@
       <nav id="nav" aria-label="Main views"></nav>
       <section id="instance-roster" aria-label="Instances">
         <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
-        <input class="ctx-filter" placeholder="Filter instances…" autocomplete="off" aria-label="Filter instances">
+        <label class="ctx-filter-field">
+          <input class="ctx-filter" placeholder="Filter instances…" autocomplete="off" aria-label="Filter instances"
+                 data-action="sidebar.focusFilter" title="Focus the instance roster filter">
+          <kbd class="shortcut-hint" data-shortcut="sidebar.focusFilter" aria-hidden="true" hidden></kbd>
+        </label>
         <div class="ctx-list"></div>
       </section>
       <div id="nav-foot">
         <button id="sidebar-spawn" class="primary" type="button" data-action="app.chooseSoul"
                 title="Choose a soul in Workspace to spawn an instance" aria-label="Spawn instance: choose a soul in Workspace">
           <span data-shell-icon="plus" aria-hidden="true"></span><span>Spawn instance</span>
+          <kbd class="shortcut-hint" data-shortcut="app.chooseSoul" aria-hidden="true" hidden></kbd>
         </button>
         <div id="sidebar-tools" role="group" aria-label="Desktop tools">
           <button id="sidebar-toggle" class="nav-item icon-button" type="button" data-action="sidebar.toggle"
