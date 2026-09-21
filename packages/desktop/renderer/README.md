@@ -45,6 +45,52 @@ package-owned declarations in reviewed package source, not locked installed
 payloads. Colors can collide and never determine selection, status or identity.
 Runtime marks show the reported runtime, not installation/authentication status.
 
+## Active overview — slice 7a, reported roster only
+
+The existing `hierarchy` stage consumes **GET `/api/panel` only**. Relation groups
+are connected components of the shared parent/sibling resolver across roots and
+repositories, never repository buckets. Groups remain anonymous/count-labeled;
+reported context is metadata, not a derived group name. Header counts distinguish
+multi-member groups from independent instances and keep unknown runtime state
+separate from stopped. Parent/child elbows and dotted sibling lines do not rely
+on color alone. The 220px cards show reported context/runtime/branch—not guessed
+PRs, worktree health or task activity. Same-named nodes carry visible root/home
+suffixes and host qualifiers; their popup exposes the full reported address.
+Those are per-instance identity cues, never invented group names.
+
+Activity and waiting-on-you are explicitly **unknown / available after K7**.
+`TASK`, `STATE`, transcript prose, unnegotiated activity/group labels and the old
+aggregate `instance.git` are not consumed by this projection. Git stays disabled
+with a K1/P1 note; no Tasks destination or new Stop/Remove surface is introduced.
+
+`active-observation.mjs` validates the roster/address shape and rejects duplicate
+identities rather than silently losing nodes. Local request tickets and global
+workspace generations guard both outcomes. Workspace switches synchronously
+revoke old graph/actions/gestures; a foreign workspace reply is not silently
+adopted over an explicit selection. Failures retain an explicitly stale last
+observation with actions disabled, not a false healthy empty graph. A manual
+retry can supersede a read; periodic polling skips its own pending request so
+slow responses are not starved.
+
+No-op polls ignore timestamps/unconsumed metadata and preserve actual popup
+controls, focus, camera, offsets and selection. Changed observations wait for
+an active gesture to finish; a newer failure revokes a queued success. Window
+blur/hidden ownership cancels gestures, and drag-click suppression expires after
+its own native click window rather than swallowing a future intentional click. Popup
+controls survive meaningful updates for the same identity and resolve the current
+record, not a captured stale object. Hidden/disposed/replaced controls cannot
+act or reclaim focus. Action text remains screen-sized outside the scaled stage,
+bounded to the viewport during zoom/pan/resize. Terminal/Start/Restart use the
+current full home/root/server and require known runtime state and an available
+route; terminal key handling itself is unchanged.
+
+**Brain is fail-closed here.** The existing Brain reader takes only a soul name,
+and `/api/panel` enumerates instances, not every configured soul. Even one local
+instance cannot prove there is no uninstantiated same-named soul elsewhere. The
+button/keyboard explanation directs users to Workspace's exact soul selection;
+the overview never guesses or adds a filesystem/IPC seam. This is a bounded7a
+surface, not final K7 or native/rendered acceptance.
+
 ## Spawn modal — slice 6a, existing seams only
 
 Frame 02 uses an 860px responsive dialog, 320px soul chooser, 52px header and

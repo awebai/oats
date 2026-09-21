@@ -210,7 +210,7 @@ test("layoutClusters: all-singleton roster yields only the Independent block", (
   assert.equal(soloBlock.y, 0, "no cluster cards above — block starts at the top");
 });
 
-test("cluster cards are anonymous: header carries counts only, never the derived cluster name", async () => {
+test("cluster cards are anonymous: header carries counts only, never the derived cluster name", async t => {
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM(`<div id="root"></div>`, { pretendToBeVisual: true });
   const g = globalThis;
@@ -225,7 +225,7 @@ test("cluster cards are anonymous: header carries counts only, never the derived
     ], workspaces: [], workspace: null };
     const ctx = { api: async () => ({ ok: true, status: 200, json: async () => panel }), openTerminal() {} };
     const el = dom.window.document.getElementById("root");
-    const un = hier.mount(el, ctx);
+    const un = hier.mount(el, ctx); t.after(() => { un(); dom.window.close(); });
     await new Promise((r) => setTimeout(r, 30));
     const head = el.querySelector(".hier-cluster .hier-chead");
     assert.ok(head, "cluster card has a header");
@@ -246,7 +246,7 @@ test("cluster cards are anonymous: header carries counts only, never the derived
   }
 });
 
-test("duplicate names across agents roots render as DISTINCT nodes; terminal opens carry identity", async () => {
+test("duplicate names across agents roots render as DISTINCT nodes; terminal opens carry identity", async t => {
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM(`<div id="root"></div>`, { pretendToBeVisual: true });
   const g = globalThis;
@@ -263,7 +263,7 @@ test("duplicate names across agents roots render as DISTINCT nodes; terminal ope
     const ctx = { api: async () => ({ ok: true, status: 200, json: async () => panel }),
                   openTerminal: (ref) => opened.push(ref) };
     const el = dom.window.document.getElementById("root");
-    const un = hier.mount(el, ctx);
+    const un = hier.mount(el, ctx); t.after(() => { un(); dom.window.close(); });
     await new Promise((r) => setTimeout(r, 30));
     const nodes = [...el.querySelectorAll(".hnode")];
     assert.equal(nodes.length, 3, "duplicate-named instances are distinct nodes — none dropped");
@@ -343,7 +343,7 @@ test("full-roster scope covers SIBLING edges too: globally-ambiguous sibling nam
     "ambiguous sibling name stays dropped — no false arc from cluster-local uniqueness");
 });
 
-test("keyboard Brain key matches the composite selection id — selecting a node and pressing B opens its Brain (review 96b037b)", async () => {
+test("keyboard Brain fails closed: a qualified instance is not proof of a unique soul-name reader", async t => {
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM(`<div id="root"></div>`, { pretendToBeVisual: true });
   const g = globalThis;
@@ -358,18 +358,20 @@ test("keyboard Brain key matches the composite selection id — selecting a node
     const ctx = { api: async () => ({ ok: true, status: 200, json: async () => panel }),
                   openTerminal: () => {}, openBrain: (agent) => brains.push(agent) };
     const el = dom.window.document.getElementById("root");
-    const un = hier.mount(el, ctx);
+    const un = hier.mount(el, ctx); t.after(() => { un(); dom.window.close(); });
     await new Promise((r) => setTimeout(r, 30));
     const node = el.querySelector(".hnode");
     assert.ok(node, "node rendered");
     // select the node (its dataset.id is the COMPOSITE instanceId — home)
     node.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
     // dispatch the Brain default chord on the canvas (the keydown host):
-    // pre-fix, the bare-name lookup (x.instance === s.sel) missed the
-    // composite id and the key was consumed doing nothing
+    // Composite instance selection still works, but the Brain reader only
+    // accepts a soul name. An instance roster cannot prove that name unique.
     const canvas = el.querySelector(".hier-canvas");
     canvas.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "B", bubbles: true, cancelable: true }));
-    assert.deepEqual(brains, ["dev-soul"], "Brain opens for the selected composite-id node");
+    assert.deepEqual(brains, [], 'instance roster cannot prove that no uninstantiated same-named soul exists elsewhere');
+    assert.equal(el.querySelector('.pbrain').disabled, true);
+    assert.match(el.querySelector('.pstatus').textContent, /exact soul in Workspace/);
     un();
   } finally {
     g.window = prev.window; g.document = prev.document; g.localStorage = prev.localStorage;
