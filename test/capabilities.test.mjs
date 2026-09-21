@@ -2378,7 +2378,7 @@ test("local souls: --local creates a full gitignored soul beside agents/, with m
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   const env = { ...process.env, PATH: fakeRuntimes(base), PI_AGENTS_TMUX_SESSION: "oats-test-nosuch" }; delete env.PI_AGENTS_ROOT;
   // Bootstrap: NO agents/ dir exists — --local must still work (all-local scopes).
-  let r = spawnSync(process.execPath, [CLI, "create", "helper", "--local", "--description", "Local helper.", "--dir", repo], { cwd: repo, encoding: "utf8", env });
+  let r = spawnSync(process.execPath, [CLI, "create", "helper", "--local", "--no-oats-core", "--description", "Local helper.", "--dir", repo], { cwd: repo, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /LOCAL agent/);
   // Soul lives at <scope>/local-agents/<name>/soul — sibling of agents/, not nested.
@@ -2390,7 +2390,7 @@ test("local souls: --local creates a full gitignored soul beside agents/, with m
   assert.match(readFileSync(join(repo, ".gitignore"), "utf8"), /local-agents\//);
   const ignored = spawnSync("git", ["-C", repo, "check-ignore", "local-agents"], { encoding: "utf8" });
   assert.equal(ignored.status, 0, "git ignores local-agents/");
-  r = spawnSync(process.execPath, [CLI, "create", "helper2", "--local", "--dir", repo], { cwd: repo, encoding: "utf8", env });
+  r = spawnSync(process.execPath, [CLI, "create", "helper2", "--local", "--no-oats-core", "--dir", repo], { cwd: repo, encoding: "utf8", env });
   assert.equal(r.status, 0, r.stderr);
   const gi = readFileSync(join(repo, ".gitignore"), "utf8");
   assert.equal(gi.match(/local-agents\//g).length, 1, "gitignore entry not duplicated");
@@ -2422,7 +2422,7 @@ test("local souls explicitly bind external OKF; service agents stay memory-less"
   for (const k of Object.keys(process.env)) delete process.env[k];
   Object.assign(process.env, f.env);
   try {
-    const local = core.upsertLocalAgent(root, { name: "scratch", instructions: "# scratch\n", repo: f.context, work: "directory", runtime: "pi" });
+    const local = core.upsertLocalAgent(root, { name: "scratch", instructions: "# scratch\n", repo: f.context, work: "directory", runtime: "pi", oatsCore: false });
     const declaration = join(local._dir, "soul/okf.json");
     // No v1 implicit soul knowledge scaffold and no missing-binding fallback.
     assert.equal(existsSync(join(local._dir, "soul/knowledge")), false);
