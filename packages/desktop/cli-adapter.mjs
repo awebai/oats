@@ -1,4 +1,5 @@
 // OATS desktop — CLI JSON v1 adapter (the ONLY mutation path).
+// Catalog/classic inventory also use this adapter, with strict read exits.
 //
 // Runs the two Desktop v1 mutations through a discovered absolute `oats`
 // binary via execFile/argv — never a shell, never kernel imports:
@@ -24,7 +25,7 @@
 import { execFile } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
@@ -120,21 +121,75 @@ export function writeTaskFile(taskText, io = {}) {
   return { file, cleanup: () => { try { rm(dir, { recursive: true, force: true }); } catch { /* best-effort */ } } };
 }
 
-function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope } = {}) {
-  return new Promise((resolveP) => {
-    exec(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false },
-      (err, stdout) => {
-        const doc = parse(stdout);
-        if (doc) return resolveP(doc); // envelope wins — nonzero exit carries ok:false
-        if (err && err.killed) {
-          return resolveP({ schemaVersion: 1, ok: false, error: { code: "E_CLI_TIMEOUT", message: `oats did not answer within ${timeout / 1000}s` } });
-        }
-        return resolveP({
-          schemaVersion: 1, ok: false,
-          error: { code: "E_CLI_PROTOCOL", message: "oats did not print a valid JSON envelope on stdout" },
+function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false } = {}) {
+  return new Promise((resolveP, rejectP) => {
+    try {
+      exec(bin, argv, { cwd, encoding: "utf8", timeout, maxBuffer: 4 * 1024 * 1024, shell: false },
+        (err, stdout) => {
+          // New reads require a clean exit for success. Keep the historical
+          // envelope-wins policy for existing mutations unless opted in.
+          if (strictExit && err?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolveP(readError("E_CLI_OUTPUT_LIMIT"));
+          if (strictExit && err?.killed) return resolveP(readError("E_CLI_TIMEOUT"));
+          const doc = parse(stdout);
+          if (strictExit && err && doc?.ok !== false) return resolveP(readError("E_CLI_FAILED"));
+          if (doc) return resolveP(doc); // a nonzero exit may still carry ok:false
+          if (err && err.killed) {
+            return resolveP({ schemaVersion: 1, ok: false, error: { code: "E_CLI_TIMEOUT", message: `oats did not answer within ${timeout / 1000}s` } });
+          }
+          return resolveP({
+            schemaVersion: 1, ok: false,
+            error: { code: "E_CLI_PROTOCOL", message: "oats did not print a valid JSON envelope on stdout" },
+          });
         });
-      });
+    } catch (e) {
+      if (strictExit) resolveP(readError("E_CLI_FAILED"));
+      else rejectP(e);
+    }
   });
+}
+
+// Only these diagnostics cross the new read boundary. Neither stderr, thrown
+// exception text nor free-form CLI error messages are suitable UI diagnostics.
+const READ_ERRORS = {
+  E_BAD_ARGS: "Invalid CLI read arguments",
+  E_CLI_FAILED: "The installed OATS CLI could not complete this read",
+  E_CLI_PROTOCOL: "The installed OATS CLI returned an invalid read response",
+  E_CLI_TIMEOUT: "The installed OATS CLI read timed out",
+  E_CLI_OUTPUT_LIMIT: "The installed OATS CLI read exceeded the output limit",
+  E_USAGE: "The installed OATS CLI does not support this read command",
+  "invalid-source": "The installed OATS CLI could not read its catalog source",
+  "invalid-lock": "The installed OATS CLI refused an invalid or unsupported lock; inventory is unavailable",
+  "migration-required": "This scope requires migration; classic inventory is unavailable",
+  "unsupported-wire-version": "This scope uses an unsupported lock version; inventory is unavailable",
+};
+function readError(code) {
+  if (!Object.hasOwn(READ_ERRORS, code)) code = "E_CLI_FAILED";
+  return { schemaVersion: 1, ok: false, error: { code, message: READ_ERRORS[code] } };
+}
+const readObject = value => !!value && typeof value === "object" && !Array.isArray(value);
+const absoluteReadPath = value => typeof value === "string" && isAbsolute(value) && !value.includes("\0");
+
+async function cliRead(bin, options, io, list) {
+  try {
+    const keys = list ? ["context", "localCwd"] : ["localCwd"];
+    if (!absoluteReadPath(bin) || !readObject(options) || Object.keys(options).some(key => !keys.includes(key))
+      || !absoluteReadPath(options.localCwd) || (list && !absoluteReadPath(options.context))) return readError("E_BAD_ARGS");
+    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, 15_000) : 15_000;
+    const result = await runJson(bin, list ? ["list", "--dir", options.context, "--json"] : ["catalog", "--json"], {
+      cwd: options.localCwd, exec: io.exec, timeout, strictExit: true,
+    });
+    return result.ok ? result : readError(result.error?.code);
+  } catch { return readError("E_CLI_FAILED"); }
+}
+
+/** Effective catalog of the accepted LOCAL CLI; no client source/path overrides. */
+export function cliCatalog(bin, options = {}, io = {}) {
+  return cliRead(bin, options, io, false);
+}
+
+/** Classic inventory at a server-admitted context, never a captured/remote read. */
+export function cliList(bin, options = {}, io = {}) {
+  return cliRead(bin, options, io, true);
 }
 
 /**
