@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR45 Desktop slice 1a + PR46 `oats catalog` → OATS v0.24.6 (2026-09-22)
+- verdict: both MERGED (`508c4b5f`, `524180b7`) + PUBLISHED. PR45 by the Desktop engineer (retrofitted aweb identity; first PR of the S8 program); PR46 lead-implemented as the kernel seam the engineer specified.
+- owner: oats-desktop-engineer-1 (PR45); lead (PR46).
+- taught us: (1) a stale checkout is the first thing to fix when re-engaging a long-idle instance — its handoff mail was two releases old and arrived as if current; (2) a developer that pushes back on the brief with the spec in hand (palette precedence, agent-group vs repo) is doing the review's job early — accept and record; (3) "design to the letter" for a control panel is mostly *authority* work in the kernel (retention, stop, admission, signatures, enforced permission) — the renderer renders receipts; (4) main can be red for days on a guard that only fails under CI's shallow clone — check main's own CI, not just the PR's.
+
 ## PR43 four small fixes → OATS v0.24.5 (2026-09-22)
 - verdict: MERGED (`38b6c028`) + tagged. Lead-implemented on explicit human authorisation because the development deployment could not spawn a developer (pi-profile bridge pin lagging the installed bridge — correct refusal).
 - owner: lead (self-reviewed against the four gates; full gate 1665/1661/0/4; two pre-existing tests moved from "bare throw" to "attributed problem, nothing published").

@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 07:00Z · main `508c4b5f`+ · **OATS v0.24.6 cutting** (PR45 slice 1a + `oats catalog`) · S8 slice 1b next
+**Last update:** 2026-09-22 07:40Z · **OATS v0.24.6 PUBLISHED** (bump #47) · OKF v2.1.2 · aweb v1.11.2 · framework v1.1.3 · KB `7148a36` · `~/OATS` kernel 0.24.6 · S8 slice 1b in flight; K1 (lead) in flight
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
