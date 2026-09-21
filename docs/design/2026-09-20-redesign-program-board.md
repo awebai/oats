@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 20:10Z · S8: 1a/1b/**3**/4/6a/7a MERGED · K1+K4 MERGED · engineer → 2a · lead → P1 Decision, K3, K5; tag 0.24.7 once 2a lands
+**Last update:** 2026-09-21 19:25Z (earlier stamps reading 2026-09-22 were a lead clock error — the work happened 2026-09-21; corrected on Antares's observation) · S8: 1a/1b/3/4/6a/7a MERGED · K1+K4 MERGED · engineer → 2a · lead → P1 Decision, K3, K5; tag 0.24.7 once 2a lands
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
