@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 14:45Z · S8: slices 1a, 1b, 4, 6a, **7a (Active overview)** MERGED; all remaining slices wait on lead kernel seams K1/K4/K3/K5/K6/K7/K8
+**Last update:** 2026-09-22 15:00Z · S8: 1a/1b/4/6a/7a MERGED · human: implement contracts in parallel → **K1 assigned to engineer**; lead on K4 + P1 Decision, then K3/K5
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
