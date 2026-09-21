@@ -13,6 +13,7 @@ const deferred = () => {
   return { promise, resolve, reject };
 };
 const CLI = { ok: true, bin: '/synthetic/oats', version: '0.22.19', relations: true,
+  runtimes: ['pi', 'claude', 'codex'], runtimesSource: 'reported',
   features: ['launch-config', 'session-start', 'session-restart'], remote: ['launch-config', 'roster'] };
 const agent = { name: 'dev', agentsRoot: '/team/agents', work: 'worktree',
   // These roster fields are NOT an invocation resolved by the installed CLI.
@@ -37,9 +38,10 @@ async function setup(t, { soul = agent, cli = CLI, models = () => ({ models: [] 
     if (path === '/api/servers') return servers ? servers() : { servers: [{ id: 'host', label: 'Remote', sshHost: 'synthetic.invalid' }] };
     if (path === '/api/models') return models(body);
     if (path === '/api/spawn') return result ? result(body) : { instance: 'dev-new', launched: true };
-    // Deliberately answer config requests: thrown errors could be swallowed by
-    // advisory loaders. The request ledger below proves ALL actions absent.
-    if (path.startsWith('/api/launch-configs')) return { context: '/team', configurations: [{ name: 'inherited-wrapper', runtime: 'codex' }] };
+    // Restoration uses existing read-only list/preview, never edits definitions.
+    if (path.startsWith('/api/launch-configs')) return body.action === 'list'
+      ? { context: '/team', selected: body.selector, configurations: [{ name: 'inherited-wrapper', runtime: 'codex' }] }
+      : { selected: body.selector, model: 'resolved-fixture-model', modelSource: 'soul default', ok: true, preflight: [], command: 'redacted fixture preview' };
     throw new Error(`Unexpected synthetic request: ${path}`);
   }, openTerminal: (...args) => opens.push(args), openView: view => views.push(view), notify: text => notices.push(text) };
   t.after(() => {
@@ -63,38 +65,43 @@ async function setup(t, { soul = agent, cli = CLI, models = () => ({ models: [] 
   return { dom, doc, calls, opens, views, notices, ctx, polls, open, change, posts };
 }
 
-function noConfigurationUI(modal) {
-  assert.equal(modal.querySelector('.spawn-launch-configurations, .launch-config-fields, .launch-config-select, .launch-config-editor, .launch-preview, .launch-preview-output, .lc-save, .lc-remove'), null);
-  assert.doesNotMatch(modal.textContent, /Manage launch configurations|Save configuration|Remove from this scope|Preview invocation|Configuration harness/);
+function noConfigurationEditor(modal) {
+  assert.ok(modal.querySelector('.launch-config-select')); assert.ok(modal.querySelector('.launch-preview'));
+  assert.equal(modal.querySelector('.launch-config-editor, .lc-save, .lc-remove'), null);
+  assert.doesNotMatch(modal.textContent, /Manage launch configurations|Save configuration|Remove from this scope|Configuration harness/);
 }
-function noConfigurationCalls(u) {
-  assert.deepEqual(u.calls.filter(c => c.path.startsWith('/api/launch-configs')), [], 'Spawn never lists, sets, removes or previews launch configurations');
+function noConfigurationWrites(u) {
+  for (const call of u.calls.filter(c => c.path.startsWith('/api/launch-configs'))) {
+    assert.ok(['list', 'preview'].includes(call.body.action), 'Spawn only lists/previews configurations');
+    assert.deepEqual(Object.keys(call.body.selector).sort(), ['agentsRoot', 'soul']);
+    assert.ok(Object.keys(call.body).every(key => ['action', 'selector', 'choices'].includes(key)));
+  }
 }
 function noOverrides(body) {
   for (const key of ['launchConfig', 'runtime', 'model', 'yolo']) assert.equal(Object.hasOwn(body, key), false, `${key} is absent on the wire, not a synthesized default`);
 }
 
-for (const configured of [true, false]) test(`Spawn removes configuration UI and requests, preserving empty task and inherited defaults (configured=${configured})`, async t => {
+for (const configured of [true, false]) test(`Spawn restores read-only configuration selection, preserving empty task and inherited defaults (configured=${configured})`, async t => {
   const u = await setup(t, { soul: configured ? agent : { ...agent, launchConfig: undefined, runtime: undefined, model: undefined } });
   let modal = u.open(); await tick();
-  noConfigurationUI(modal);
-  assert.match(modal.querySelector('.fruntime').labels[0].textContent, /soul defaults/);
-  assert.equal(modal.querySelector('.fruntime').selectedOptions[0].textContent, 'Use soul defaults');
-  assert.equal(modal.querySelector('.fmodel').placeholder, 'Use soul defaults');
-  assert.match(modal.querySelector('.fmodel').labels[0].textContent, /soul defaults/);
-  assert.doesNotMatch(modal.textContent, /raw-roster-model|inherited-wrapper|agent default \(pi\)/);
+  noConfigurationEditor(modal);
+  assert.match(modal.querySelector('.fruntime').labels[0].textContent, /Provider/);
+  assert.equal(modal.querySelector('.fruntime').selectedOptions[0].textContent, 'Use resolved defaults');
+  assert.equal(modal.querySelector('.fmodel').placeholder, 'Use resolved defaults');
+  assert.match(modal.querySelector('.fmodel').labels[0].textContent, /Model/);
+  assert.doesNotMatch(modal.textContent, /raw-roster-model|agent default \(pi\)/);
   assert.equal(u.calls.some(c => c.path === '/api/models'), false, 'raw roster defaults never imply a resolved model catalog');
   await u.polls[0](); await tick();
   assert.equal(u.doc.querySelector('.spawn-dialog'), modal, 'poll leaves the form intact');
   modal.querySelector('.fcancel').click(); modal = u.open(); await tick();
-  noConfigurationUI(modal);
+  noConfigurationEditor(modal);
   modal.querySelector('.fspawn').click(); await tick();
   assert.deepEqual(u.posts(), [{ agent: 'dev', agentsRoot: '/team/agents', task: '' }]);
   noOverrides(u.posts()[0]);
   assert.equal(u.doc.querySelector('.spawn-dialog'), null);
   assert.deepEqual(u.opens, [[{ instance: 'dev-new', agentsRoot: '/team/agents' }, { quiet: true }]]);
   spawn.unmount(); await tick();
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 for (const yolo of [false, true]) test(`Spawn existing explicit fields, relation identity and wake schedule still pass through (yolo=${yolo})`, async t => {
@@ -114,14 +121,14 @@ for (const yolo of [false, true]) test(`Spawn existing explicit fields, relation
   u.change(modal, '.fwake-message', 'Check pending work\nReport blockers.');
   await refreshCli({ api: async () => ({ ...CLI, features: [] }) });
   assert.equal(modal.querySelector('.fruntime').disabled, false, 'configuration capability changes cannot disable runtime choices');
-  noConfigurationUI(modal);
+  noConfigurationEditor(modal);
   modal.querySelector('.fspawn').click(); await tick();
   assert.deepEqual(u.posts(), [{ agent: 'dev', agentsRoot: '/team/agents', purpose: 'review',
     task: 'Review this change\nKeep the existing defaults.', runtime: 'claude', model: 'custom-model,another-model', yolo, backend: 'herdr',
     relation: 'sibling', relativeTo: 'anchor', relativeRoot: '/team/agents',
     wake: { cron: '0 * * * *', tz: 'UTC', message: 'Check pending work\nReport blockers.', enabled: true },
   }]);
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 test('Spawn model-only override does not synthesize a runtime, permission choice or launchConfig:none', async t => {
@@ -130,7 +137,7 @@ test('Spawn model-only override does not synthesize a runtime, permission choice
   u.change(modal, '.fmodel', 'provider/custom,unlisted/fallback');
   modal.querySelector('.fspawn').click(); await tick();
   assert.deepEqual(u.posts(), [{ agent: 'dev', agentsRoot: '/team/agents', task: '', model: 'provider/custom,unlisted/fallback' }]);
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 test('Spawn clearing explicit fields restores omitted overrides without clearing inherited configuration', async t => {
@@ -144,7 +151,7 @@ test('Spawn clearing explicit fields restores omitted overrides without clearing
   modal.querySelector('.fspawn').click(); await tick();
   noOverrides(u.posts()[0]);
   assert.equal(u.posts()[0].task, '');
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 for (const outcome of ['success', 'rejection']) test(`Spawn runtime catalog remains advisory and latest-intent safe on stale ${outcome}`, async t => {
@@ -165,7 +172,7 @@ for (const outcome of ['success', 'rejection']) test(`Spawn runtime catalog rema
   u.change(modal, '.fmodel', 'still-valid-free-text');
   modal.querySelector('.fspawn').click(); await tick();
   assert.deepEqual(u.posts(), [{ agent: 'dev', agentsRoot: '/team/agents', task: '', runtime: 'codex', model: 'still-valid-free-text' }]);
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 for (const boundary of ['defaults', 'server', 'reopen', 'workspace']) {
@@ -185,7 +192,7 @@ for (const boundary of ['defaults', 'server', 'reopen', 'workspace']) {
     assert.equal(active.querySelector('datalist').children.length, 0);
     assert.equal(modal.querySelector('datalist').children.length, 0, 'even detached forms stay untouched');
     assert.equal(active.querySelector('.fstatus').textContent, '');
-    noConfigurationCalls(u);
+    noConfigurationWrites(u);
   });
 }
 
@@ -206,7 +213,7 @@ test('Spawn server selection retains cross-scope relation guard and clears the l
   assert.deepEqual(u.posts(), [{ agent: 'dev', agentsRoot: '/team/agents', task: '', serverId: 'host' }]);
   assert.match(modal.querySelector('.fstatus').textContent, /Attach with:/, 'older remote CLI fallback remains');
   assert.deepEqual(u.opens, []);
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 test('Spawn remote soul stays pinned to its host with exact remote relation root and no local probes', async t => {
@@ -221,7 +228,7 @@ test('Spawn remote soul stays pinned to its host with exact remote relation root
   assert.deepEqual(u.posts(), [{ agent: 'dev', agentsRoot: '/remote/team/agents', task: '', serverId: 'host',
     relation: 'parent', relativeTo: 'anchor', relativeRoot: '/remote/team/agents' }]);
   assert.equal(u.calls.some(c => c.path === '/api/models' || c.path === '/api/servers'), false);
-  noConfigurationUI(modal); noConfigurationCalls(u);
+  noConfigurationEditor(modal); noConfigurationWrites(u);
 });
 
 test('Spawn capability downgrade closes the dialog and a retained submit cannot mutate; souls remain observable', async t => {
@@ -234,7 +241,7 @@ test('Spawn capability downgrade closes the dialog and a retained submit cannot 
   assert.equal(u.doc.querySelector('.spawn-act').disabled, true);
   assert.ok(u.doc.querySelector('.soul-card'));
   assert.deepEqual(u.posts(), []);
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 for (const outcome of ['success', 'rejection']) test(`Spawn late server-list ${outcome} cannot mutate a closed/replaced dialog`, async t => {
@@ -249,7 +256,7 @@ for (const outcome of ['success', 'rejection']) test(`Spawn late server-list ${o
   assert.deepEqual([...modal.querySelector('.fserver').options].map(o => o.value), ['', 'current']);
   assert.deepEqual([...old.querySelector('.fserver').options].map(o => o.value), ['']);
   assert.equal(modal.querySelector('.fstatus').textContent, '');
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
 
 test('Spawn partial wake failure restores defaults and cancels a pending explicit-runtime catalog without permitting a duplicate spawn', async t => {
@@ -271,5 +278,5 @@ test('Spawn partial wake failure restores defaults and cancels a pending explici
   const manage = [...modal.querySelectorAll('button')].find(b => b.textContent === 'View schedules');
   manage.click();
   assert.deepEqual(u.views, ['schedules']);
-  noConfigurationCalls(u);
+  noConfigurationWrites(u);
 });
