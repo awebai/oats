@@ -26,7 +26,7 @@ import {
   capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
   readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
   parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
-  officialCapabilityPackage, officialPackageCatalog, DEFAULT_PACKAGE_PATH,
+  officialCapabilityPackage, officialPackageCatalog, describeOfficialCatalog, DEFAULT_PACKAGE_PATH,
   approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
@@ -63,7 +63,7 @@ import { parsePortableSource } from "../lib/source-spec.mjs";
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "operation", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "catalog", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -3059,6 +3059,20 @@ function renderMergeRegion(r) {
 }
 
 /** oats list — installed packages, exported capabilities, scopes. */
+/** `oats catalog [--json]` — the effective official package catalog, read-only.
+ *  Identity/discovery for consumers that cannot import the kernel (Desktop):
+ *  never acquires, never trusts, never fetches. */
+function catalogCmd() {
+  const described = describeOfficialCatalog();
+  if (JSON_MODE) { jsonOk(described); return; }
+  console.log(`Official package catalog (${described.catalog.origin}: ${shortPath(described.catalog.file)})`);
+  for (const p of described.packages) console.log(`  ${p.package}  ${p.url ?? "?"}@${p.ref ?? "?"}  path: ${p.path}`);
+  if (described.capabilityAliases.length) {
+    console.log("Capability aliases:");
+    for (const a of described.capabilityAliases) console.log(`  ${a.capability} -> ${a.package}${a.capabilityInPackage !== a.capability ? ` (exports ${a.capabilityInPackage})` : ""}${a.available ? "" : "  [package not in catalog]"}`);
+  }
+  console.log("Catalog identity grants no executable trust; acquire with `oats install <package>` and approve separately.");
+}
 function listCmd() {
   const dir = dirFlag();
   // FAIL-CLOSED (maintainer finding 3): list RAISES on invalid locks — an
@@ -5159,6 +5173,7 @@ else if (cmd === "install") install();
 else if (cmd === "config") configCmd();
 else if (cmd === "trust") trust();
 else if (cmd === "list") listCmd();
+else if (cmd === "catalog") catalogCmd();
 else if (cmd === "remove") removeCmd();
 else if (cmd === "migrate") migrateCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
@@ -5351,6 +5366,8 @@ Usage:
                                             report under error.details)
   oats list [--dir <d>] [--json]             installed packages, exported capabilities,
                                             scopes, trust state
+  oats catalog [--json]                      the effective official package catalog (read-only:
+                                               identity/discovery, no acquisition or trust)
   oats update <package> [<package>@<ref>]    transactional package update: temp fetch,
       [--to <ref>] [--dir <d>]              closure validation, diff, lock replace,
                                             all capability approvals invalidated; a
