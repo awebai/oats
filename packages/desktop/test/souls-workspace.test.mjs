@@ -496,9 +496,10 @@ test("Spawn modal: model dropdown offers the runtime's catalog, swaps on runtime
     // launch configuration). Only an explicit runtime requests its catalog.
     assert.deepEqual(modelRequests, [], "soul defaults do not imply a catalog");
     const dl = doc.querySelector("#spawn-model-options");
-    assert.ok(dl, "datalist present");
+    assert.ok(dl, "advisory model option store present");
     const input = doc.querySelector(".fmodel");
-    assert.equal(input.getAttribute("list"), "spawn-model-options", "model input wired to the datalist");
+    assert.equal(input.getAttribute("list"), null, "controlled popup, not an unobservable native datalist");
+    assert.equal(doc.querySelector('.spawn-model-controls button').getAttribute('aria-controls'), 'spawn-model-choices');
     const fruntime = doc.querySelector(".fruntime");
     fruntime.value = "pi";
     fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
@@ -1010,7 +1011,7 @@ test("Spawn modal picker: hostile paths stay inert; colliding root tags render d
     const ref = doc.querySelector(".frelto");
     // A raw roster model is neither an effective-default promise nor markup.
     const fmodel = doc.querySelector(".fmodel");
-    assert.equal(fmodel.placeholder, "Use soul defaults");
+    assert.equal(fmodel.placeholder, "Use resolved defaults");
     assert.equal(fmodel.value, "");
     assert.ok(!doc.querySelector(".spawn-dialog").textContent.includes(agent.model));
     assert.equal(fmodel.getAttribute("onpointerenter"), null, "no event-handler attribute minted from a hostile model");

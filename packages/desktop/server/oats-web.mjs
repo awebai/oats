@@ -443,6 +443,7 @@ function cliStatus() {
     // (never hidden) with the required version when the accepted CLI
     // predates spawn-time relations.
     runtimes: cliState.runtimes || ["pi", "claude"],
+    runtimesSource: Array.isArray(cliState.runtimes) ? "reported" : "assumed",
     sessionBackends: cliState.sessionBackends || ["tmux"],
     launchOptions: cliState.launchOptions || [],
     features: cliState.features || [],

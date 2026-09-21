@@ -1,17 +1,19 @@
 /* OATS Desktop — Workspace discovery (legacy stage id: spawn).
    Souls remain durable definitions; Launch explicitly opens the Spawn modal.
    Capabilities/Sources project only the current CLI inspection contract.
-   No launch-configuration UI, proposed knowledge/tasks views or resolver.
+   Launch configuration list/preview is read-only; no proposed K6 fields or resolver.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
+import { composeSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
+import { createSpawnLaunch } from "../spawn-launch.mjs";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
   currentWorkspace, setWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
 } from "./common.mjs";
-import { registerAction } from "../keybindings.mjs";
+import { registerAction, getBinding, formatChord, onKeymapChange } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard, cliRelationsAvailable } from "./cli-status.mjs";
 import { distinguishingRootTags } from "../instance-tree.mjs";
@@ -202,7 +204,8 @@ export function mount(el, ctx) {
       <style>${CSS}
 ${inspectorCSS}
 ${discoveryCSS}
-${identityCSS}</style>
+${identityCSS}
+${spawnDialogCSS}</style>
       <div class="souls">
         <div class="souls-body">
           <section class="workspace-main" aria-label="Workspace discovery">
@@ -282,6 +285,7 @@ ${identityCSS}</style>
   ];
   const viewRoot = el.querySelector(".souls");
   viewRoot.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return;
     // Esc cancels the open spawn form from anywhere inside it (incl. the
     // task textarea — cancel is safe; submit stays click/button-only there).
     if (e.key === "Escape" && s.sel) { e.preventDefault(); s.sel = null; s.selAgent = null; renderGrid(s); return; }
@@ -389,6 +393,8 @@ export async function refresh(s) {
   s.souls = souls;
   s.rosterGen = myGen; // this roster belongs to the current workspace generation
   s.panelInstances = panel.instances || []; // reference-instance picker source
+  s.workspace = panel.workspace || null; // reported context, never derived from a display label
+  s.syncModalFacts?.();
   const select = s.q("wssel");
   if (select && typeof select.replaceChildren === "function") {
     // The real shell owns workspace selection. Standalone harnesses keep
@@ -565,8 +571,10 @@ function focusCard(s, cards, index) {
 
 function canLaunchSoul(s, agent) {
   return s.alive && s.rosterGen === workspaceGeneration() && cliAvailable() && !!agent?.agentsRoot
-    && s.souls.agents.some(current => current.name === agent.name
-      && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "") && current.work !== "attached");
+    && s.souls.agents.filter(current => current.name === agent.name
+      && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "")).length === 1
+    && s.souls.agents.find(current => current.name === agent.name
+      && current.agentsRoot === agent.agentsRoot && (current.server || "") === (agent.server || "")).work !== "attached";
 }
 
 function soulCard(s, a) {
@@ -616,8 +624,9 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   const agentRef = s.selAgent;
   if (hadModal) s.spawnOp++; // closing ends the form operation ownership
   s.sel = null; s.selAgent = null;
+  s.modalCleanup?.(); s.modalCleanup = null;
   s.modalEl?.remove(); s.modalEl = null;
-  s.syncModalRelations = null;
+  s.syncModalRelations = null; s.syncModalFacts = null;
   if (!hadModal || !repaint || s.alive === false) return;
   renderGrid(s); // clear the .open card highlight NOW
   if (!restoreFocus || !agentRef) return;
@@ -631,7 +640,7 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
  * options (relation + reference instance) directly visible, following the
  * app's ws-dialog pattern: role=dialog + aria-modal, labelled controls,
  * Tab focus trap, Esc/backdrop/× close, focus restored to the opener. */
-function openSpawnModal(s, a) {
+function openSpawnModal(s, a, draft = {}) {
   if (!canLaunchSoul(s, a)) return;
   nextSelectionIntent();
   closeSpawnModal(s); // one modal at a time; a new open supersedes the old
@@ -722,7 +731,7 @@ function openSpawnModal(s, a) {
           </select></label>
         <label>Session backend
           <select class="field fbackend">
-            <option value="" selected>agent default (${escapeHtml(a.backend || "tmux")})</option>
+            <option value="" selected>Use resolved defaults</option>
             <option value="tmux">tmux</option>
             <option value="herdr">Herdr</option>
           </select></label>
@@ -748,8 +757,18 @@ function openSpawnModal(s, a) {
       </div>
     </section>`;
   const dialog = modal.querySelector(".spawn-dialog");
+  let submitting = false, composing = false;
+  const ownsModal = () => s.alive && modalGen === workspaceGeneration() && s.modalEl === modal;
+  const layout = composeSpawnDialog(modal, { soul: a, agents: s.souls.agents, workspace: s.workspace, query: draft.query || '',
+    canChoose: candidate => canLaunchSoul(s, candidate),
+    choose: (candidate, query) => {
+      if (!ownsModal() || submitting || !canLaunchSoul(s, candidate)) return;
+      const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || '') === (candidate.server || ''));
+      openSpawnModal(s, fresh, { query, task: modal.querySelector('.ftask').value, purpose: modal.querySelector('.fpurpose').value });
+    },
+  });
   const wakeFields = wakeScheduleFields(doc);
-  modal.querySelector(".soul-form").insertBefore(wakeFields.el, modal.querySelector(".frow"));
+  layout.moreBody.append(wakeFields.el);
   buildRefOptions(modal.querySelector(".frelto")); // safe DOM construction (never innerHTML)
   // A remote soul belongs to its host even when server listing is unavailable.
   const serverSelect = modal.querySelector(".fserver");
@@ -797,7 +816,7 @@ function openSpawnModal(s, a) {
     if (!dl) return;
     dl.textContent = "";
     const runtime = f.querySelector(".fruntime").value;
-    if (serverSelect.value || !runtime) return; // No local catalog for remote or unresolved defaults.
+    if (!canLaunchSoul(s, a) || serverSelect.value || !runtime || f.querySelector('.fruntime').selectedOptions[0]?.disabled) return; // No catalog for stale souls, remote, unsupported or unresolved defaults.
     try {
       const d = await postJson(s.ctx, "/api/models", { runtime });
       if (!s.alive || modalGen !== workspaceGeneration() || myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
@@ -864,20 +883,42 @@ function openSpawnModal(s, a) {
   f.querySelector(".fcancel").addEventListener("click", close);
   f.querySelector(".fcancel-x").addEventListener("click", close);
   modal.addEventListener("mousedown", (e) => { if (e.target === modal) close(); }); // backdrop
+  dialog.addEventListener('compositionstart', () => { composing = true; });
+  dialog.addEventListener('compositionend', () => { composing = false; });
   dialog.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") { e.preventDefault(); close(); return; }
-    if (e.key !== "Tab") return; // focus trap (ws-dialog pattern)
-    const focusable = [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])")]
-      .filter((el) => !el.hidden && !el.closest("[hidden]") && el.tabIndex >= 0);
+    if (!ownsModal()) return;
+    if (e.defaultPrevented || composing || e.isComposing || e.keyCode === 229 || e.repeat) {
+      // A button's native Enter click must not bypass the launch-key guard.
+      // Do not prevent the textarea's IME commit/newline.
+      if (e.key === 'Enter' && e.target.closest?.('.fspawn')) e.preventDefault();
+      if (composing || e.isComposing || e.keyCode === 229) e.stopPropagation();
+      return;
+    }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
+    const plain = !e.metaKey && !e.ctrlKey && !e.altKey; // Shift alone is still text input
+    const editable = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
+    const hit = (plain && (editable || e.key === 'Enter')) ? null
+      : resolveViewKey(e, [{ id: 'spawn.submit' }], { isMac: /mac/i.test(doc.defaultView?.navigator?.platform || '') });
+    if (hit) { e.preventDefault(); e.stopPropagation(); if (!submitting) f.querySelector('.fspawn').click(); return; }
+    if (e.key === 'Enter' && e.target.closest?.('.fspawn')) { e.preventDefault(); return; }
+    if (e.key !== "Tab") return; // focus trap includes disclosure controls
+    const focusable = [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary")]
+      .filter((el) => !el.hidden && !el.closest("[hidden]") && el.tabIndex >= 0
+        && ![...dialog.querySelectorAll('details:not([open])')].some(details => details.contains(el) && el !== details.querySelector('summary')));
     if (!focusable.length) return;
     const first = focusable[0], last = focusable.at(-1);
     if (e.shiftKey && doc.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && doc.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
-  f.querySelector(".fspawn").addEventListener("click", () => {
-    if (!s.alive || s.modalEl !== modal || modalGen !== workspaceGeneration()) return;
-    return doSpawn(s, {
+  const launch = createSpawnLaunch(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
+    owns: () => ownsModal() && canLaunchSoul(s, a), layout });
+  f.querySelector(".fspawn").addEventListener("click", async () => {
+    if (!ownsModal() || submitting || f.querySelector('.fspawn').disabled) return;
+    const reason = !canLaunchSoul(s, a) ? 'This exact soul is no longer available in the current roster.' : launch.canSubmit();
+    if (reason) { f.querySelector('.fstatus').textContent = reason; return; }
+    submitting = true;
+    try { await doSpawn(s, {
     btn: f.querySelector(".fspawn"),
     status: f.querySelector(".fstatus"),
     purpose: () => f.querySelector(".fpurpose").value,
@@ -889,6 +930,7 @@ function openSpawnModal(s, a) {
     backend: () => f.querySelector(".fbackend").value,
     runtime: () => f.querySelector(".fruntime").value,
     model: () => f.querySelector(".fmodel").value,
+    launchConfig: () => launch.value(),
     server: () => f.querySelector(".fserver")?.value || "",
     wake: () => wakeFields.read(),
     partial: (result) => {
@@ -909,14 +951,28 @@ function openSpawnModal(s, a) {
       f.querySelector(".fruntime").value = "";
       f.querySelector(".fbackend").value = "";
       f.querySelector(".fmodel").value = "";
+      launch.clear(); layout.syncRuntime();
       void fillModelOptions(); // restoring defaults also cancels any explicit-runtime catalog
     },
-    });
+    }); } finally { submitting = false; }
   });
 
   s.modalEl = modal;
   s.el.querySelector(".souls").append(modal);
-  f.querySelector(".fpurpose").focus?.();
+  f.querySelector('.ftask').value = draft.task || '';
+  f.querySelector('.fpurpose').value = draft.purpose || '';
+  const releaseSubmit = registerAction({ id: 'spawn.submit', label: 'Spawn selected soul', context: 'spawn-dialog-local', defaultChord: 'Mod+Enter', run: () => {} });
+  const updateHint = () => {
+    const mac = /mac/i.test(doc.defaultView?.navigator?.platform || '');
+    const label = formatChord(getBinding('spawn.submit'), mac) || '';
+    f.querySelector('.fspawn').dataset.shortcut = mac ? label.replace(/Enter$/, '↵') : label;
+  };
+  const releaseHint = onKeymapChange(updateHint); updateHint();
+  s.modalCleanup = () => { launch.dispose(); layout.dispose(); releaseHint(); releaseSubmit(); modelReq++; };
+  s.syncModalFacts = () => { if (ownsModal() && launch.sync()) void fillModelOptions(); };
+  s.syncModalRelations = () => { if (!ownsModal()) return; syncRelationControls(); s.syncModalFacts(); };
+  s.syncModalRelations();
+  if (ownsModal()) layout.search.focus({ preventScroll: true });
   return modal;
 }
 
@@ -1040,6 +1096,7 @@ export async function doSpawn(s, ui) {
       backend: (ui.backend ? ui.backend() : "") || undefined,
       runtime: (ui.runtime ? ui.runtime() : "") || undefined,
       model: (ui.model ? ui.model() : "") || undefined,
+      launchConfig: ui.launchConfig?.() || undefined,
       wake: ui.wake?.(),
     });
     if (myGen !== workspaceGeneration()) {
