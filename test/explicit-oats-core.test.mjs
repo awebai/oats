@@ -426,3 +426,33 @@ test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry o
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-idempotency'));
   assert.equal(last(f.run(['spawn', 'wt', '--purpose', 'b', '--idempotency-key', 'bad key!', '--no-launch', '--json'])).error.code, 'E_BAD_ARGS');
 });
+
+test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed inherited model drifts it); a stale apply with a Herdr backend starts no daemon; two concurrent applies of one decision create exactly one home (E_PLACEMENT_TAKEN for the loser)', async t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  const created = createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  writeFileSync(join(f.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${f.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
+  const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
+  // A. effective facts are hashed: same placement, different inherited model → stale.
+  const pv = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result;
+  assert.equal(pv.decision.effective.model, 'opus'); assert.equal(pv.decision.effective.work, 'worktree'); assert.equal(pv.decision.effective.repo, f.context);
+  const soulFile = join(created.soul, 'soul.yaml'); writeFileSync(soulFile, readFileSync(soulFile, 'utf8').replace('model: opus', 'model: haiku'));
+  const drift = last(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', pv.decision.revision, '--no-launch', '--json']));
+  assert.equal(drift.error.code, 'E_DECISION_STALE'); assert.equal(drift.error.details.decision.effective.model, 'haiku'); assert.equal(drift.error.details.decision.instance, 'wt-a', 'placement unchanged — only the effective model moved');
+  assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), []);
+  // B. a stale LAUNCHING apply with backend herdr starts no daemon.
+  const stale = last(f.run(['spawn', 'wt', '--purpose', 'a', '--backend', 'herdr', '--expect-decision', pv.decision.revision, '--json']));
+  assert.equal(stale.error.code, 'E_DECISION_STALE'); assert.equal(existsSync(join(f.base, 'herdr-started')), false, 'stale apply started no backend');
+  // C. two concurrent applies of ONE fresh decision → exactly one home; the loser refuses E_PLACEMENT_TAKEN having touched nothing.
+  const fresh = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision.revision;
+  const { spawn } = await import('node:child_process');
+  const run = () => new Promise(res => { const p = spawn(process.execPath, [CLI, 'spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json'], { cwd: f.context, env: process.env }); let out = ''; p.stdout.on('data', d => out += d); p.on('close', code => res({ code, doc: JSON.parse(out.trim().split('\n').pop()) })); });
+  const results = await Promise.all([run(), run(), run()]);
+  const wins = results.filter(r => r.doc.ok), losses = results.filter(r => !r.doc.ok);
+  assert.equal(wins.length, 1, JSON.stringify(results.map(r => r.doc.ok ? 'ok' : r.doc.error.code)));
+  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error.code)));
+  assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'exactly one home');
+  assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-apply-2'));
+});

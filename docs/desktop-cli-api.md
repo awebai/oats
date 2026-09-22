@@ -269,6 +269,27 @@ the pre-fix marker and is never accepted for dispatch.
   own process group and is group-killed on timeout; `preflight {status:
   complete|timeout, budgetMs, elapsedMs}` says which. A hanging runtime cannot
   hang a preview.
+- **Confirmed apply contract** (0.24.10+, feature `spawn-apply-2`,
+  `spawnApplyApi: 1`) — what a GUI may promise at "Confirm spawn":
+  - `decision` gains **`effective {repo, work, runtime, model, launchConfig,
+    yolo, backend, childSpawns, relation{kind, anchor{instance, agentsRoot}}}`**
+    and `revision` hashes placement + effective. An inherited default that would
+    change what launches (the soul's model edited between preview and apply,
+    say) → `E_DECISION_STALE`. A GUI does not re-resolve anything itself.
+  - **No effect before the fence**: backend presence and `ensureHerdr` run only
+    AFTER a successful `--expect-decision` binding and after the placement
+    reservation. A stale apply with `--backend herdr` starts nothing. (The
+    parent-policy refusal still appends `child-spawn-refused` to the PARENT's
+    log on a non-preview apply — that is an audit of a real refusal, not an
+    effect on the target.)
+  - **Exclusive placement**: the home is reserved with a non-recursive `mkdir`
+    immediately after the decision check; a concurrent spawn that lost refuses
+    **`E_PLACEMENT_TAKEN`** having touched nothing. Two concurrent applies of
+    one decision yield exactly one home. There is no wider lock; this
+    reservation is the guarantee.
+  - Gate confirmation AND the exec owner on `spawn-preview-2` +
+    `spawn-apply-2` + `spawn-idempotency`; a legacy local request on such a CLI
+    is refused by the Desktop (`E_PLAN_REQUIRED`), not routed around the fence.
 - **Idempotent apply** (0.24.10+, feature `spawn-idempotency`): `spawn …
   --expect-decision <rev> --idempotency-key <key>` records the key and the
   decision in the new home's `instance.json`; a **retry with the same key**
