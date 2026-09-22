@@ -10,6 +10,8 @@ import { createForgePrPanel } from '../renderer/forge-pr.mjs';
 import { instanceGitCSS } from '../renderer/instance-git.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mjs';
+import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
+import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture } from './helpers/lifecycle-fixture.mjs';
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -344,6 +346,32 @@ for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints mee
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${foreground}`).trim()),
       opaqueChannels(root.getPropertyValue(`--${background}`).trim())) >= 4.5);
     hint.hidden = true; assert.equal(dom.window.getComputedStyle(hint).display, "none");
+  }
+});
+
+for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations meet computed AA without text opacity`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body></body></html>`), doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), lifecycleCSS]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const dialog = createLifecycleDialog({ doc, request: async (_ws, body) => ({ lifecycleApi: 1, status: 'plan', target: lifeTarget,
+    planRef: 'e'.repeat(64), plan: body.operation === 'stop' ? stopFixture() : retireFixture(), options: body.options }) });
+  t.after(() => { dialog.dispose(); dom.window.close(); });
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const operation of ['stop', 'retire']) {
+    dialog.open({ operation, instance: lifeInstance, workspace: lifeTarget.workspace }); await new Promise(resolve => setImmediate(resolve));
+    for (const [selector, surfaceSelector, fg, bg] of [
+      ['.lifecycle-dialog h2', '.lifecycle-dialog', 'fg', 'surface'], ['.lifecycle-dialog .lifecycle-note', '.lifecycle-dialog', 'muted', 'surface'],
+      ['.lifecycle-dialog dt', '.lifecycle-facts', 'muted', 'surface-2'], ['.lifecycle-dialog dd', '.lifecycle-facts', 'fg', 'surface-2'],
+      ['.lifecycle-dialog label', '.lifecycle-options', 'fg', 'surface-2'], ['.lifecycle-close', '.lifecycle-close', 'fg', 'surface'],
+      ['.lifecycle-confirm', '.lifecycle-confirm', 'primary-fg', operation === 'stop' ? 'primary-bg' : 'danger'],
+    ]) {
+      const el = doc.querySelector(selector), surface = doc.querySelector(surfaceSelector); assert.ok(el && surface, selector);
+      assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+      assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, surfaceSelector);
+      assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
+      for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+    }
   }
 });
 

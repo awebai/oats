@@ -30,18 +30,20 @@ const choose = async (control, action) => {
   await new Promise((r) => setImmediate(r));
 };
 
-test("instance actions keep the full host reference and confirm retirement before dispatch", async () => {
+test("instance actions keep full identity and open plan dialogs, never dispatch unguarded stop/retire", async () => {
   const dom = menuDom();
   const instance = { instance: "dev-one", home: "/remote/home", server: "host", savedRoute: true };
-  const calls = []; let confirmed = false;
+  const calls = [], dialogs = [];
   const select = instanceActions(dom.window.document, instance, {
     invoke: async (...args) => { calls.push(args); return {}; },
-    confirmRetire: () => confirmed, done: () => {}, report: (m) => assert.fail(m),
+    openLifecycle: (...args) => dialogs.push(args), done: () => {}, report: (m) => assert.fail(m),
   });
   dom.window.document.body.append(select);
   await choose(select, "retire"); assert.equal(calls.length, 0);
   await choose(select, "inspect"); assert.deepEqual(calls[0], ["inspect", instance]);
-  confirmed = true; await choose(select, "retire"); assert.deepEqual(calls[1], ["retire", instance]);
+  await choose(select, 'stop'); assert.deepEqual(dialogs, [['retire', instance], ['stop', instance]]);
+  assert.equal(calls.length, 1);
+  select.remove(); await choose(select, 'retire'); assert.equal(dialogs.length, 2, 'detached old controls are revoked');
   assert.equal(triggerOf(select).disabled, false);
   assert.equal(triggerOf(instanceActions(dom.window.document, { ...instance, savedRoute: false }, {})).disabled, true);
   dom.window.close();
@@ -66,7 +68,7 @@ test("roster rebuilds cannot submit a second lifecycle action while one is pendi
   let finish; let calls = 0;
   const instance = { instance: "dev-pending", home: "/home/dev-pending" };
   const options = { invoke: () => { calls++; return new Promise((r) => { finish = r; }); },
-    confirmRetire: () => true, done() {}, report: assert.fail };
+    openLifecycle: assert.fail, done() {}, report: assert.fail };
   const first = instanceActions(dom.window.document, instance, options);
   dom.window.document.body.append(first);
   first.querySelector('[data-action="inspect"]').click();
@@ -84,7 +86,7 @@ test("roster rebuilds cannot submit a second lifecycle action while one is pendi
 test("actions are app buttons with keyboard navigation, dismissal and refresh restoration", () => {
   const dom = menuDom(), doc = dom.window.document;
   const instance = { instance: "menu-worker", home: "/menu/worker" };
-  const options = { invoke: assert.fail, confirmRetire: assert.fail, done() {}, report: assert.fail };
+  const options = { invoke: assert.fail, openLifecycle: assert.fail, done() {}, report: assert.fail };
   let control = instanceActions(doc, instance, options); doc.body.append(control);
   assert.equal(control.querySelector("select"), null, "no OS-formatted select or native dropdown arrow");
   let trigger = triggerOf(control), menu = control.querySelector('[role="menu"]');
@@ -94,6 +96,8 @@ test("actions are app buttons with keyboard navigation, dismissal and refresh re
   assert.equal(trigger.getAttribute("aria-expanded"), "true");
   assert.equal(doc.activeElement.dataset.action, "inspect");
   key(doc.activeElement, "ArrowDown");
+  assert.equal(doc.activeElement.dataset.action, 'stop');
+  key(doc.activeElement, 'ArrowDown');
   assert.equal(doc.activeElement.dataset.action, "retire");
   const restore = captureInstanceActionMenu(doc.body);
   control.remove(); control = instanceActions(doc, instance, options); doc.body.append(control); restore();

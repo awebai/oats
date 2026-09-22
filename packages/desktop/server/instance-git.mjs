@@ -1,15 +1,12 @@
 /** K1 admission boundary for the hardened, installed CLI.
  * All authority comes from an exact server-owned workspace/roster record. */
-import { isAbsolute, basename } from 'node:path';
+import { admitInstance, instanceSelector, absolute } from './instance-admission.mjs';
 import { cliInstanceGit, gitReadFailure } from '../cli-adapter.mjs';
 import { parseSemver } from '../cli-locator.mjs';
 import { forgeObservation } from './forge-observation.mjs';
-import { INSTANCE_GIT_MINIMUM_VERSION, gitFileId, gitRevision, gitIndexRevision, gitState, gitDiff, gitTarget } from '../renderer/instance-git-contract.mjs';
+import { INSTANCE_GIT_MINIMUM_VERSION, gitFileId, gitRevision, gitIndexRevision, gitState, gitDiff } from '../renderer/instance-git-contract.mjs';
 
 const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
-const absolute = v => typeof v === 'string' && isAbsolute(v) && !v.includes('\0');
-const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v);
-const host = v => v === null || v === undefined || typeof v === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(v);
 const localMessages = {
   E_BAD_ARGS: 'Git inspection accepts only a qualified instance selector and opaque diff selection',
   E_WORKSPACE_UNKNOWN: 'Select a workspace advertised by this server',
@@ -32,8 +29,7 @@ function validRequest(v) {
   if (!object(v) || !['git', 'diff'].includes(v.action) || !object(v.selector)) return false;
   const allowed = v.action === 'diff' ? ['action', 'selector', 'fileId', 'revision', 'indexRevision'] : ['action', 'selector'];
   if (Object.keys(v).some(k => !allowed.includes(k)) || Object.keys(v.selector).some(k => !['instance', 'agent', 'agentsRoot', 'server'].includes(k))) return false;
-  const s = v.selector;
-  return name(s.instance) && name(s.agent) && absolute(s.agentsRoot) && host(s.server)
+  return instanceSelector(v.selector)
     && (v.action !== 'diff' || gitFileId(v.fileId) && gitRevision(v.revision) && gitIndexRevision(v.indexRevision));
 }
 function supported(cli) {
@@ -45,19 +41,11 @@ function supported(cli) {
 export function admitInstanceGit(request, { workspace, instances = [], cli } = {}) {
     const denied = (target, code) => ({ failure: unavailable(target, code) });
     if (!validRequest(request)) return denied(null, 'E_BAD_ARGS');
-    if (!workspace || typeof workspace.id !== 'string' || !workspace.id || !absolute(workspace.scope)) return denied(null, 'E_WORKSPACE_UNKNOWN');
-    const selector = request.selector, wantedHost = selector.server ?? null;
-    const matches = (Array.isArray(instances) ? instances : []).filter(i => object(i) && host(i.server)
-      && i.instance === selector.instance && i.agent === selector.agent && i.agentsRoot === selector.agentsRoot && (i.server ?? null) === wantedHost);
-    if (matches.length !== 1) return denied(null, matches.length ? 'E_AMBIGUOUS_INSTANCE' : 'E_SESSION_UNKNOWN');
-    const instance = matches[0];
-    if (!absolute(instance.home) || basename(instance.home) !== instance.instance) return denied(null, 'E_HOME_MISMATCH');
-    const target = gitTarget({ workspace: workspace.id, instance: instance.instance, agent: instance.agent, agentsRoot: instance.agentsRoot, home: instance.home, server: instance.server ?? null });
-    if (!target) return denied(null, 'E_HOME_MISMATCH');
-    if (workspace.remote || workspace.server || instance.remote || target.server) return denied(target, 'unsupported-remote-operation');
-    if (cli?.ok !== true || !absolute(cli.bin)) return denied(target, 'cli-unavailable');
+    const admitted = admitInstance(request.selector, { workspace, instances, cli });
+    if (admitted.code) return denied(admitted.target, admitted.code);
+    const { target, context, bin } = admitted;
     if (!supported(cli)) return denied(target, 'cli-no-instance-git');
-    const action = request.action, context = workspace.scope, bin = cli.bin;
+    const action = request.action;
     const selection = action === 'diff' ? { fileId: request.fileId, revision: request.revision, indexRevision: request.indexRevision } : {};
     return { target, action, context, bin, selection, options: { action, instance: target.instance, home: target.home, context, ...selection } };
 }

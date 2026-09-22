@@ -24,6 +24,7 @@ import {
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
 import { createConnections, connectionsCSS } from "./connections.mjs";
+import { createLifecycleDialog, lifecycleCSS } from './lifecycle-dialog.mjs';
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
@@ -59,7 +60,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS + notificationCSS + connectionsCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS + notificationCSS + connectionsCSS + lifecycleCSS; document.head.append(identityStyle);
 let connectionGeneration = 0;
 const connectionListeners = new Set();
 const subscribeConnections = fn => { connectionListeners.add(fn); return () => connectionListeners.delete(fn); };
@@ -314,6 +315,7 @@ function renderContextRoster(instances) {
   listEl.innerHTML = "";
   const matching = filterInstanceTree(instances, contextFilter);
   const ws = contextWorkspace || currentWorkspace();
+  const rosterGeneration = workspaceGeneration();
   const filtering = !!contextFilter.trim();
   const visible = matching.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, filtering,
@@ -426,7 +428,7 @@ function renderContextRoster(instances) {
         }
         rowWrap.append(instanceActions(document, i, {
           invoke: async (action, instance) => {
-            if (currentWorkspace() !== ws) throw new Error("Workspace changed; select the instance again");
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) throw new Error("Workspace changed; select the instance again");
             if (action === "start" || action === "restart") { openInstanceStart(instance, { restart: action === "restart" }); return; }
             if (action === "inspect") {
               const owns = tabOpenIntents.begin();
@@ -438,13 +440,15 @@ function renderContextRoster(instances) {
             }
             return api(instanceApiPath(action, instance), { method: "POST" });
           },
-          confirmRetire: (instance) => confirm(`Retire ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}? This stops its session and preserves outstanding work through OATS retirement.`),
-          done: (result, action) => {
-            if (action !== "retire") return;
-            { const summary = retirementSummary(result); if (summary) alert(summary); }
-            refreshContextRoster();
+          openLifecycle: (operation, instance) => {
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
+            openLifecycleDialog(operation, instance, ws);
           },
-          report: (message, result) => alert([message, retirementSummary(result)].filter(Boolean).join("\n")),
+          done: () => {},
+          report: (message, result) => {
+            if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) return;
+            alert([message, retirementSummary(result)].filter(Boolean).join("\n"));
+          },
         }));
         listEl.append(rowWrap);
       }
@@ -1245,7 +1249,7 @@ onWorkspaceChange(() => {
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
 const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
-function openShortcutsEditor() { tabOpenIntents.invalidate(); connections.close(); shortcutsEditor.open(); }
+function openShortcutsEditor() { tabOpenIntents.invalidate(); lifecycleDialog.close(); connections.close(); shortcutsEditor.open(); }
 const connections = createConnections({ doc: document, desk,
   request: body => api('/api/forge-connections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   subscribe: subscribeConnections, generation: () => connectionGeneration, openShortcuts: openShortcutsEditor,
@@ -1266,8 +1270,31 @@ const connections = createConnections({ doc: document, desk,
     };
   },
 });
-function openConnections(choice = {}) { tabOpenIntents.invalidate(); shortcutsEditor.close(); connections.open(choice); }
+function openConnections(choice = {}) { tabOpenIntents.invalidate(); lifecycleDialog.close(); shortcutsEditor.close(); connections.open(choice); }
 window.addEventListener('pagehide', () => connections.dispose(), { once: true });
+const lifecycleDialog = createLifecycleDialog({ doc: document,
+  request: async (workspace, body) => {
+    const response = await desk.api(`/api/instance-lifecycle?ws=${encodeURIComponent(workspace)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    return response.body; // retain typed unknown outcomes even on proxy transport failures
+  },
+  gitRequest: (workspace, body) => api(`/api/instance-git?ws=${encodeURIComponent(workspace)}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }),
+  forgeRequest: (workspace, body) => api(`/api/instance-forge?ws=${encodeURIComponent(workspace)}`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }),
+  generation: workspaceGeneration, subscribeWorkspace: onWorkspaceChange,
+  subscribeConnections, connectionGeneration: () => connectionGeneration,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn),
+  onSettled: () => { void refreshContextRoster(); }, openExternal: ctx.openExternal,
+});
+function openLifecycleDialog(operation, instance, workspace) {
+  connections.close(); shortcutsEditor.close();
+  lifecycleDialog.open({ operation, instance, workspace });
+}
+window.addEventListener('pagehide', () => lifecycleDialog.dispose(), { once: true });
 
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the filter already has DOM focus

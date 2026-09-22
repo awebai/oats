@@ -21,6 +21,7 @@ import { isForgePath, forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHan
 import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
 import { forgeFailure } from "./renderer/forge-contract.mjs";
+import { lifecycleFailure } from './renderer/lifecycle-contract.mjs';
 import { openTerm, sweepViewers } from "./tmux-target.mjs";
 import { localTmuxIo, tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate, remoteTerminalEnvironment } from "./remote-target.mjs";
@@ -312,8 +313,11 @@ ipcMain.handle("cli:pick", async (e) => {
 // ---- IPC: API proxy -----------------------------------------------------
 // The renderer never talks to the network directly; ctx.api() lands here.
 ipcMain.handle("api", async (e, pathname, opts) => {
-  const forgeRequest = typeof pathname === 'string' && /^\/api\/(?:forge-connections|instance-forge)(?:[?#]|$)/.test(pathname);
-  if (forgeRequest && !trustedForgeFrame(e, RENDERER_URL)) return { ok: false, status: 403, body: forgeFailure('E_FORBIDDEN_FRAME') };
+  const lifecycle = typeof pathname === 'string' && /^\/api\/instance-lifecycle(?:[?#]|$)/.test(pathname);
+  const forgeRequest = lifecycle || typeof pathname === 'string' && /^\/api\/(?:forge-connections|instance-forge)(?:[?#]|$)/.test(pathname);
+  const failure = lifecycle ? lifecycleFailure : forgeFailure;
+  const mutation = lifecycle && (() => { try { return (typeof opts?.body === 'string' ? JSON.parse(opts.body) : opts?.body)?.action === 'apply'; } catch { return false; } })();
+  if (forgeRequest && !trustedForgeFrame(e, RENDERER_URL)) return { ok: false, status: 403, body: failure('E_FORBIDDEN_FRAME') };
   const forgeFrame = forgeRequest ? e.senderFrame : null;
   const ownsForgeFrame = () => trustedForgeFrame(e, RENDERER_URL) && e.sender.mainFrame === forgeFrame;
   try {
@@ -329,14 +333,16 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // Provider actions may perform bounded work before returning their receipt.
   // Let the CLI's five-minute limit report the outcome before the proxy times out.
   const forge = isForgePath(url.pathname) ? forgeProxyOptions(url.pathname, opts, currentForgeEpoch()) : null;
-  const timeout = forge?.timeout ?? (url.pathname === "/api/capabilities" ? 310_000 : 20_000);
+  const timeout = lifecycle ? mutation ? 610_000 : 35_000 : forge?.timeout ?? (url.pathname === "/api/capabilities" ? 310_000 : 20_000);
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();
-  if (forge && !ownsForgeFrame()) return { ok: false, status: 403, body: forgeFailure('E_FORBIDDEN_FRAME') };
-  let json; try { json = JSON.parse(text); } catch { json = forge ? forgeFailure('E_GH_PROTOCOL') : { raw: text }; }
-  if (forge && (epoch !== serverEpoch || serverHost.inTransition()
-    || forge.init.headers[FORGE_EPOCH_HEADER] !== currentForgeEpoch())) json = forgeFailure('E_CONNECTION_CHANGED');
+  if ((forge || lifecycle) && !ownsForgeFrame()) return { ok: false, status: 403, body: failure('E_FORBIDDEN_FRAME') };
+  let json; try { json = JSON.parse(text); } catch { json = lifecycle ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_CLI_PROTOCOL', { status: mutation ? 'unknown' : 'unavailable' })
+    : forge ? forgeFailure('E_GH_PROTOCOL') : { raw: text }; }
+  if ((forge || lifecycle) && (epoch !== serverEpoch || serverHost.inTransition()
+    || forge && forge.init.headers[FORGE_EPOCH_HEADER] !== currentForgeEpoch())) json = lifecycle
+      ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_PLAN_CHANGED', { status: mutation ? 'unknown' : 'unavailable' }) : forgeFailure('E_CONNECTION_CHANGED');
   // Remote discovery can finish after startup. Accept the same server-owned
   // choices the menu receives, without adding requests to workspace polling.
   if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && url.pathname === "/api/panel" && Array.isArray(json?.workspaces)) {
@@ -344,8 +350,9 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   }
   return { ok: r.ok, status: r.status, body: json };
   } catch (error) {
-    if (forgeRequest) return ownsForgeFrame() ? { ok: false, status: 503, body: forgeFailure('E_GH_FAILED') }
-      : { ok: false, status: 403, body: forgeFailure('E_FORBIDDEN_FRAME') };
+    if (forgeRequest) return ownsForgeFrame() ? { ok: false, status: 503, body: lifecycle
+      ? failure(mutation ? 'E_OUTCOME_UNKNOWN' : 'E_CLI_FAILED', { status: mutation ? 'unknown' : 'unavailable' }) : forgeFailure('E_GH_FAILED') }
+      : { ok: false, status: 403, body: failure('E_FORBIDDEN_FRAME') };
     throw error;
   }
 });

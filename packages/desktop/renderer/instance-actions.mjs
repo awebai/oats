@@ -15,7 +15,7 @@ export function captureInstanceActionMenu(root) {
   };
 }
 
-export function instanceActions(doc, instance, { invoke, confirmRetire, done, report }) {
+export function instanceActions(doc, instance, { invoke, openLifecycle, done, report }) {
   const key = instanceId(instance);
   const wrapper = doc.createElement("span"); wrapper.className = "ctx-actions";
   const trigger = doc.createElement("button");
@@ -79,14 +79,18 @@ export function instanceActions(doc, instance, { invoke, confirmRetire, done, re
     items[index].focus();
   });
   const launchAction = instance.running === true ? [["restart", "Restart with…"]] : instance.running === false ? [["start", "Start…"]] : [];
-  for (const [action, label] of [["inspect", "Knowledge & capabilities…"], ...launchAction, ["retire", "Retire instance"]]) {
+  for (const [action, label] of [["inspect", "Knowledge & capabilities…"], ...launchAction, ['stop', 'Stop…'], ["retire", "Remove instance…"]]) {
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
     if (action === "inspect") item.autofocus = true;
     item.setAttribute("role", "menuitem"); item.dataset.action = action; item.textContent = label;
     item.addEventListener("click", async () => {
-      if (trigger.disabled || pending.has(key)) return;
+      if (!trigger.isConnected || !item.isConnected || trigger.disabled || pending.has(key)) return;
       close(true);
-      if (action === "retire" && !confirmRetire(instance)) return;
+      if (action === 'stop' || action === 'retire') {
+        if (typeof openLifecycle === 'function') openLifecycle(action, instance);
+        else report('A plan-backed confirmation is required for Stop or Remove.');
+        return; // never fall back to an unguarded invoke('retire')
+      }
       pending.set(key, [{ trigger, unrouted }]); trigger.disabled = true;
       try { const result = await invoke(action, instance); done(result, action); }
       catch (error) { report(error.message, error.result); }
