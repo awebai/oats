@@ -374,3 +374,25 @@ test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a pr
   const leftover = spawnSync('pgrep', ['-f', 'list-models'], { encoding: 'utf8' }).stdout.trim();
   assert.equal(leftover, '', 'probe process group reaped');
 });
+
+import { killGroup } from '../lib/process-group.mjs';
+test('process-group: killGroup never signals pid 0 / negative / non-integer — a FAILED spawn (ENOENT → pid 0) must not SIGKILL the caller\'s own process group', () => {
+  const calls = []; const real = process.kill; process.kill = (pid, sig) => { calls.push([pid, sig]); return true; };
+  try {
+    for (const bad of [{ pid: 0, error: { code: 'ENOENT' } }, { pid: -5 }, { pid: undefined }, { pid: NaN }, { pid: 1.5 }, {}, null, undefined, { pid: '123' }]) assert.equal(killGroup(bad), false, JSON.stringify(bad));
+    assert.deepEqual(calls, [], 'no signal was sent for any failed-spawn shape');
+    assert.equal(killGroup({ pid: 424242 }), true); assert.deepEqual(calls, [[-424242, 'SIGKILL'], [424242, 'SIGKILL']]);
+  } finally { process.kill = real; }
+  // The real path: a probe whose binary does not exist reports pid 0 and must not kill us.
+  const r = spawnSync('/nonexistent/binary-' + process.pid, ['x'], { detached: true, timeout: 1000 });
+  assert.equal(r.error?.code, 'ENOENT'); assert.equal(r.pid, 0); assert.equal(killGroup(r), false, 'and we are still alive to assert this');
+});
+
+test('process-group, end to end: signature verification with NO git on PATH reports fetch-failed and the calling process survives (was: process.kill(-0) on the caller\'s group)', () => {
+  const emptyBin = mkdtempSync(join(tmpdir(), 'nobin-')); writeFileSync(join(emptyBin, 'node'), `#!/bin/sh\nexec "${process.execPath}" "$@"\n`, { mode: 0o700 });
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', `import { signatureOf } from ${JSON.stringify(new URL('../lib/readiness.mjs', import.meta.url).href)}; console.log(JSON.stringify(signatureOf({ url: 'https://example.invalid/x.git', commit: 'a'.repeat(40) }, { verify: true, budgetMs: 5000 })));`],
+    { encoding: 'utf8', env: { PATH: emptyBin, HOME: emptyBin }, timeout: 30000 });
+  assert.equal(child.signal, null, `the verifying process was signalled: ${child.signal} ${child.stderr}`); assert.equal(child.status, 0, child.stderr);
+  const sig = JSON.parse(child.stdout.trim()); assert.equal(sig.status, 'unknown'); assert.equal(sig.failure.code, 'verifier-failed', JSON.stringify(sig));
+  rmSync(emptyBin, { recursive: true, force: true });
+});
