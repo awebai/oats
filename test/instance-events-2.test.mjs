@@ -118,3 +118,16 @@ test("A′ — the lstat→open swap is closed: the open itself refuses to follo
   assert.equal(f.ino, realLstat(logPath).ino); assert.notEqual(f.ino, st.ino, "a recreated file at the same path has a new inode — the identity check would refuse a swap");
   const ok = readEvents(w.home); assert.equal(ok.integrity.sources[0].status, "ok"); assert.equal(ok.events.length, 1);
 });
+
+test("C′ — an UNKNOWN current incarnation (unreadable instance.json) admits no claim: an earlier-tagged positive is history, never a current waiting claim; rows and integrity still report", (t) => {
+  const w = ws(t); w.incarnate("2026-01-01T00:00:00.000Z");
+  appendEvent(w.home, { kind: "launched", producer: "provider.a", data: { waitingOnYou: true, reason: "old" } });
+  assert.equal(readEvents(w.home).waitingOnYou.producer, "provider.a", "known incarnation: claim counts");
+  writeFileSync(join(w.home, "instance.json"), "{ not json");
+  const r = readEvents(w.home);
+  assert.equal(r.incarnation, null); assert.equal(r.waitingOnYou, null); assert.deepEqual(r.waitingClaims, []);
+  assert.equal(r.events.length, 1, "the row is still visible as history"); assert.equal(r.events[0].incarnation, "2026-01-01T00:00:00.000Z");
+  // a row with a null tag under a null current incarnation is ALSO not a claim (null never equals null here)
+  appendFileSync(join(w.home, ".oats-events.jsonl"), JSON.stringify({ eventsApi: 2, at: "2026-01-01T00:00:09.000Z", instance: "dev-1", home: w.home, incarnation: null, producer: "provider.b", kind: "launched", data: { waitingOnYou: true } }) + "\n");
+  const r2 = readEvents(w.home); assert.equal(r2.waitingOnYou, null); assert.deepEqual(r2.waitingClaims, []);
+});
