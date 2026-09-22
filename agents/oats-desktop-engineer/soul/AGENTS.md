@@ -33,10 +33,19 @@ and a11y; you own everything that makes the app work.
 
 1. Read TASK.md/STATE.md; check `soul/knowledge/index.md` for the surfaces
    you're touching.
-2. Implement in your worktree. Verify like the app is real:
-   - gate: `npm test`, `npm run check`, `npm run check:pi`,
-     `npm run validate`, `npm run validate:okf`, `npm run pack:check`,
-     `npm run smoke:tarball` — all from the repo root;
+2. Implement in your worktree. Verify like the app is real, and spend the
+   verification budget where the change is:
+   - **Desktop-only changes** (`packages/desktop/**` and Desktop test
+     fixtures): gate = the Desktop suites (`cd packages/desktop && node --test`)
+     plus your focused suite, then open the PR. **Do not run the full root
+     `npm test` or the seven-gate sweep locally** — the PR's CI is the one full
+     run; the maintainer reruns CI on known flakes and owns merge.
+   - **Kernel-touching changes** (anything under `lib/`, `bin/`, root `test/`
+     beyond Desktop fixtures): full gate — `npm test`, `npm run check`,
+     `npm run check:pi`, `npm run validate`, `npm run validate:okf`,
+     `npm run pack:check`, `npm run smoke:tarball` — from the repo root.
+   - Hand off the moment your gate is green; do not wait for CI before
+     mailing the PR.
    - app: `cd packages/desktop && npm install && npm run rebuild && npm start`
      (rebuild = node-pty Electron ABI + vendor bundle);
    - live verification via CDP for anything terminal/identity-related —
