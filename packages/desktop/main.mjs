@@ -11,11 +11,16 @@
 //     the pty ONLY — the tmux session is the durable host and must survive.
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { spawn, execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, realpathSync, writeFileSync, lstatSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { apiUrl, apiInit } from "./api-url.mjs";
+import { isForgePath, forgeProxyOptions, FORGE_EPOCH_HEADER, installForgeAuthHandlers, trustedForgeFrame } from "./forge-proxy.mjs";
+import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
+import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
+import { forgeFailure } from "./renderer/forge-contract.mjs";
 import { openTerm, sweepViewers } from "./tmux-target.mjs";
 import { localTmuxIo, tmuxSocketArgs } from "./local-tmux-io.mjs";
 import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate, remoteTerminalEnvironment } from "./remote-target.mjs";
@@ -51,6 +56,7 @@ const workspaceDirs = [WORKSPACE];
 // ---- backend server management ----------------------------------------
 // Server host (server-host.mjs): owns the child lifecycle, the ownership-
 // through-transition invariant, and trust-state invalidation on replace.
+let invalidateForgeReads = () => {};
 const serverHost = createServerHost({
   spawnChild: (dirs, onPort) => {
     const bin = join(HERE, "server", "oats-web.mjs");
@@ -72,7 +78,7 @@ const serverHost = createServerHost({
   },
   // trust state belongs to the outgoing server — stale entries must never
   // validate ?ws= or decideAdd; repopulated only from the current server.
-  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; },
+  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); },
 });
 let wsId = null;        // verified workspace id on the server we use
 let allowedWs = new Set(); // workspace ids the connected server advertises
@@ -306,6 +312,11 @@ ipcMain.handle("cli:pick", async (e) => {
 // ---- IPC: API proxy -----------------------------------------------------
 // The renderer never talks to the network directly; ctx.api() lands here.
 ipcMain.handle("api", async (e, pathname, opts) => {
+  const forgeRequest = typeof pathname === 'string' && /^\/api\/(?:forge-connections|instance-forge)(?:[?#]|$)/.test(pathname);
+  if (forgeRequest && !trustedForgeFrame(e, RENDERER_URL)) return { ok: false, status: 403, body: forgeFailure('E_FORBIDDEN_FRAME') };
+  const forgeFrame = forgeRequest ? e.senderFrame : null;
+  const ownsForgeFrame = () => trustedForgeFrame(e, RENDERER_URL) && e.sender.mainFrame === forgeFrame;
+  try {
   guard(e);
   // apiUrl rejects off-origin resolution (e.g. "//attacker/x"), and pins
   // the verified workspace on scoped endpoints unless the caller selects a
@@ -317,18 +328,76 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // bodies itself.
   // Provider actions may perform bounded work before returning their receipt.
   // Let the CLI's five-minute limit report the outcome before the proxy times out.
-  const timeout = url.pathname === "/api/capabilities" ? 310_000 : 20_000;
-  const init = { ...apiInit(opts), signal: AbortSignal.timeout(timeout) };
+  const forge = isForgePath(url.pathname) ? forgeProxyOptions(url.pathname, opts, currentForgeEpoch()) : null;
+  const timeout = forge?.timeout ?? (url.pathname === "/api/capabilities" ? 310_000 : 20_000);
+  const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();
-  let json; try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  if (forge && !ownsForgeFrame()) return { ok: false, status: 403, body: forgeFailure('E_FORBIDDEN_FRAME') };
+  let json; try { json = JSON.parse(text); } catch { json = forge ? forgeFailure('E_GH_PROTOCOL') : { raw: text }; }
+  if (forge && (epoch !== serverEpoch || serverHost.inTransition()
+    || forge.init.headers[FORGE_EPOCH_HEADER] !== currentForgeEpoch())) json = forgeFailure('E_CONNECTION_CHANGED');
   // Remote discovery can finish after startup. Accept the same server-owned
   // choices the menu receives, without adding requests to workspace polling.
   if (epoch === serverEpoch && !serverHost.inTransition() && r.ok && url.pathname === "/api/panel" && Array.isArray(json?.workspaces)) {
     allowedWs = new Set(json.workspaces.map((w) => w?.id).filter((id) => typeof id === "string"));
   }
   return { ok: r.ok, status: r.status, body: json };
+  } catch (error) {
+    if (forgeRequest) return ownsForgeFrame() ? { ok: false, status: 503, body: forgeFailure('E_GH_FAILED') }
+      : { ok: false, status: 403, body: forgeFailure('E_FORBIDDEN_FRAME') };
+    throw error;
+  }
 });
+
+// ---- IPC: workstation forge auth (separate from ALL agent terminals) ----
+const forgeClient = randomBytes(16).toString('hex');
+const forgeEnv = forgeEnvironment();
+const runGh = createGhRunner({ env: forgeEnv });
+const currentForgeEpoch = () => `${forgeClient}:${forgeAuth.generation()}`;
+const forgeAuth = createForgeAuthBroker({
+  env: forgeEnv,
+  readConnection: async connectionRef => {
+    const serverLease = serverEpoch, readEpoch = currentForgeEpoch();
+    if (serverHost.inTransition()) return forgeFailure('E_CONNECTION_CHANGED');
+    try {
+      const response = await fetch(`${base()}/api/forge-connections`, {
+        method: 'POST', headers: { 'content-type': 'application/json', [FORGE_EPOCH_HEADER]: readEpoch },
+        body: JSON.stringify({ hostRef: connectionRef }), signal: AbortSignal.timeout(25_000),
+      });
+      const result = await response.json();
+      if (!response.ok || serverLease !== serverEpoch || serverHost.inTransition() || readEpoch !== currentForgeEpoch()
+        || result?.readEpoch !== readEpoch) return forgeFailure('E_CONNECTION_CHANGED');
+      return result;
+    } catch { return forgeFailure('E_GH_FAILED'); }
+  },
+  verify: cli => verifyAuthCli(cli, runGh, forgeEnv),
+  launchPty: (bin, args, options) => pty.spawn(bin, args, options),
+  run: runGh,
+  confirm: async ({ owner, host, login, signal }) => {
+    const result = await dialog.showMessageBox(BrowserWindow.fromWebContents(owner), {
+      type: 'warning', title: 'Disconnect GitHub', message: `Sign out ${login} on ${host}?`,
+      detail: 'This removes this account from GitHub CLI on this machine, affecting all workspaces and other uses of gh. It does not revoke the token on GitHub. Another stored account may become active.',
+      buttons: ['Cancel', 'Sign out'], defaultId: 0, cancelId: 0, noLink: true, signal,
+    });
+    return result.response === 1;
+  },
+  alive: owner => trustedForgeFrame({ sender: owner, senderFrame: owner.mainFrame }, RENDERER_URL),
+  emit: (owner, lease, kind, data) => owner.send(`forge:auth-${kind}:${lease}`, data),
+  changed: generation => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      try { if (!win.webContents.isDestroyed()) win.webContents.send('forge:changed', generation); } catch { /* closing window */ }
+    }
+  },
+});
+invalidateForgeReads = () => forgeAuth.invalidate();
+const forgeOwners = new WeakSet();
+installForgeAuthHandlers({ ipc: ipcMain, broker: forgeAuth, rendererUrl: RENDERER_URL, wireOwner: owner => {
+  if (forgeOwners.has(owner)) return; forgeOwners.add(owner);
+  const drop = () => forgeAuth.dropOwner(owner);
+  owner.on('did-start-navigation', (_event, _url, inPlace, isMainFrame) => { if (isMainFrame && !inPlace) drop(); });
+  owner.on('render-process-gone', drop); owner.once('destroyed', drop);
+} });
 
 // ---- IPC: integrated terminal (node-pty ↔ grouped tmux viewer session) ---
 const ptys = new Map(); // id -> { pty, killViewer, wc }
@@ -563,6 +632,7 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
 if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 
 function shutdown() {
+  forgeAuth.dispose(); // only the ephemeral gh child; never a durable session
   // Detach every pty and kill its viewer session (never the durable
   // sessions); stop the server only if we started it; sweep any orphans.
   for (const id of [...ptys.keys()]) {

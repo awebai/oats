@@ -45,6 +45,8 @@ function shell(t, shellSource = source) {
   const c = {
     document, window: dom.window, localStorage: dom.window.localStorage,
     NAV, shellIcon, createContextPanel, createInstanceGitPanel, workspace: "A", generation: 0, events, notices,
+    connectionGeneration: 0, subscribeConnections: () => () => {},
+    connections: { close() {}, open: () => events.push(['connections']) },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     loadSpawn() { const gate = deferred(); loads.push(gate); return gate.promise; },
     ctx: { notify: text => notices.push(text) },
@@ -52,7 +54,7 @@ function shell(t, shellSource = source) {
     registerAction(action) { const off = registerAction(action); offs.push(off); return off; }, runAction,
     palette: { toggle: () => events.push(["palette"]) },
     quickOpen: { toggle: () => events.push(["quickOpen"]) },
-    shortcutsEditor: { open: () => events.push(["shortcuts"]) },
+    shortcutsEditor: { close() {}, open: () => events.push(["shortcuts"]) },
     THEMES, setTheme: id => events.push(["theme", id]),
     toggleTheme: () => events.push(["theme"]),
     splitPane: orientation => events.push(["split", orientation]), closeSplit: () => events.push(["split", "close"]),
@@ -67,7 +69,7 @@ function shell(t, shellSource = source) {
   const actionsEnd = shellSource.indexOf('// THE one window keydown listener', actionsStart);
   const registry = shellSource.slice(actionsStart, actionsEnd);
   const titleCode = shellSource.slice(shellSource.indexOf("const baseTitles ="), shellSource.indexOf("onKeymapChange(() => applyChordTitles"));
-  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "updateSidebarControls", "toggleSidebar", "focusRoster", "openShortcutsEditor"].map(name => fn(name, shellSource));
+  const functions = ["setNavActive", "sidebarHidden", "setSidebarHidden", "updateSidebarControls", "toggleSidebar", "focusRoster", "openShortcutsEditor", "openConnections"].map(name => fn(name, shellSource));
   const panelSetup = shellSource.slice(shellSource.indexOf("const contextPanel = createContextPanel"), shellSource.indexOf("/** Projection only:"));
   const s = runInNewContext(`${panelSetup}\n${navigation}\nconst SIDEBAR_HIDDEN_KEY = "oats-desktop-sidebar-hidden";\n${functions.join("\n")}\n${registry}\n${titleCode}\napplyChordTitles();\n({ openWorkspaceSouls, setNavActive, setSidebarHidden, applyChordTitles, contextPanel });`, c);
   offs.push(onKeymapChange(s.applyChordTitles));
@@ -139,24 +141,25 @@ test("static SVG inventory stays 16px, hidden to AT and rejects arbitrary markup
   }
 });
 
-test("footer has one honest chooser and four permanently named tools, all dispatching the real registry", async t => {
+test("footer has one honest chooser and five permanently named tools, all dispatching the real registry", async t => {
   const s = shell(t), q = id => s.document.getElementById(id);
   const foot = q("nav-foot"), tools = [...q("sidebar-tools").children];
   assert.deepEqual([...foot.children].map(el => el.id), ["sidebar-spawn", "sidebar-tools"]);
-  assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themeToggle", "app.shortcuts", "app.palette"]);
+  assert.deepEqual(tools.map(b => b.dataset.action), ["sidebar.toggle", "app.themeToggle", "app.shortcuts", "app.connections", "app.palette"]);
   for (const button of foot.querySelectorAll("button")) {
     assert.equal(button.type, "button"); assert.equal(button.hidden, false); assert.equal(button.disabled, false);
     assert.ok(button.tabIndex >= 0); assert.ok(button.getAttribute("aria-label")); assert.ok(button.title);
     assert.ok(button.querySelector('svg[aria-hidden="true"]'));
   }
-  q("sidebar-theme").click(); q("sidebar-shortcuts").click(); q("sidebar-palette").click();
-  assert.deepEqual(s.events, [["theme"], ["shortcuts"], ["palette"]]);
+  q("sidebar-theme").click(); q("sidebar-shortcuts").click(); q("sidebar-settings").click(); q("sidebar-palette").click();
+  assert.deepEqual(s.events, [["theme"], ["shortcuts"], ["connections"], ["palette"]]);
+  assert.equal(getBinding('app.connections'), null, 'Connections does not invent a new global chord');
   assert.match(q("sidebar-spawn").title, /Choose a soul/);
   assert.equal(getBinding("app.chooseSoul"), "Mod+N", "redesign shortcut chooses a soul, never launches one");
   const before = s.c.tabOpenIntents.begin(); q("sidebar-spawn").click();
   assert.equal(before(), false); assert.equal(s.loads.length, 1);
   await s.settle(s.loads[0], "resolve");
-  assert.deepEqual(s.events.slice(3), [["tab", "souls"], ["stage", "spawn"]]);
+  assert.deepEqual(s.events.slice(4), [["tab", "souls"], ["stage", "spawn"]]);
   assert.match(source, /label: "Spawn instance: choose a soul in Workspace…", detail: chordDetail\("app.chooseSoul"\), run: \(\) => runAction\("app.chooseSoul"\)/);
 });
 

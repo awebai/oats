@@ -24,6 +24,25 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
     return ipcRenderer.invoke("term:attachments", id, items);
   },
 
+  /** Closed-purpose gh sign-in. No generic executable, cwd, byte/paste or file API. */
+  forgeConnect: (connectionRef) => ipcRenderer.invoke('forge:connect', connectionRef),
+  forgeDisconnect: (connectionRef) => ipcRenderer.invoke('forge:disconnect', connectionRef),
+  forgeAuthKey: (lease, key) => ipcRenderer.invoke('forge:auth-key', lease, key),
+  forgeAuthResize: (lease, cols, rows) => ipcRenderer.invoke('forge:auth-resize', lease, cols, rows),
+  forgeAuthClose: (lease) => ipcRenderer.invoke('forge:auth-close', lease),
+  onForgeChanged: (cb) => {
+    const fn = (_e, generation) => cb(generation); ipcRenderer.on('forge:changed', fn);
+    return () => ipcRenderer.removeListener('forge:changed', fn);
+  },
+  onForgeAuthData: (lease, cb) => {
+    const channel = `forge:auth-data:${lease}`, fn = (_e, data) => cb(data);
+    ipcRenderer.on(channel, fn); return () => ipcRenderer.removeListener(channel, fn);
+  },
+  onForgeAuthExit: (lease, cb) => {
+    const channel = `forge:auth-exit:${lease}`, fn = (_e, data) => cb(data);
+    ipcRenderer.on(channel, fn); return () => ipcRenderer.removeListener(channel, fn);
+  },
+
   /** Runtime workspace switcher (privileged; renderer modal is the UX layer). */
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),

@@ -47,7 +47,7 @@ test('inert mount; first-visible read once; routine updates preserve controls/fo
   assert.match(u.text(), /actual-branch/); assert.match(u.text(), /Recorded branchrecorded-branch/);
   assert.match(u.text(), /Upstream refNot reportedAheadNot reportedBehindNot reported/);
   assert.match(u.text(), /Base reforigin\/mainBase sourceorigin\/HEAD/); assert.match(u.text(), /Changes · 2/);
-  assert.match(u.one('.git-github').textContent, /Unavailable pending P1/); assert.equal(u.one('a'), null);
+  assert.match(u.one('.git-github').textContent, /installed OATS CLI does not report a remote/); assert.equal(u.one('a'), null);
 });
 
 test('typed unavailable and malformed data are not a healthy empty observation; explicit refresh is required after failure', async t => {

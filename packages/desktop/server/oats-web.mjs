@@ -39,6 +39,7 @@ import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { catalogRequest } from "./catalog.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
+import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 
@@ -1040,6 +1041,26 @@ const server = createServer(async (req, res) => {
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+    }
+    if (["/api/forge-connections", "/api/instance-forge"].includes(path) && req.method === "POST") {
+      try {
+        const epoch = req.headers[FORGE_EPOCH_HEADER] ?? "standalone:0";
+        if (!validForgeEpoch(epoch)) throw new Error("bad epoch");
+        const request = await readStrictBody(req);
+        if (path === "/api/forge-connections") {
+          if (url.search) throw new Error("unexpected query");
+          return send(res, 200, await forgeBoundary.connections(request, epoch));
+        }
+        if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(k => k !== "ws")) throw new Error("bad workspace query");
+        const getContext = () => {
+          const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+          return { workspace, cli: cliState, instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        return send(res, 200, await forgeBoundary.pull(request, getContext, epoch));
+      } catch {
+        return send(res, 400, { forgeApi: 1, status: "unavailable", data: null,
+          reason: { code: "E_BAD_ARGS", message: "Invalid forge request." } });
+      }
     }
     if (path === "/api/instance-git" && req.method === "POST") {
       try {

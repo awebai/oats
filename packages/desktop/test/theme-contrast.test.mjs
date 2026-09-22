@@ -5,6 +5,11 @@ import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
 import { createOfficialCatalog, officialCatalogCSS } from "../renderer/official-catalog.mjs";
 import { createDeploymentInventory, inventoryCSS } from "../renderer/deployment-inventory.mjs";
+import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
+import { createForgePrPanel } from '../renderer/forge-pr.mjs';
+import { instanceGitCSS } from '../renderer/instance-git.mjs';
+import { pullRequest } from '../renderer/forge-contract.mjs';
+import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mjs';
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -339,5 +344,42 @@ for (const [name] of palettes) test(`${name}: shipped sidebar shortcut hints mee
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${foreground}`).trim()),
       opaqueChannels(root.getPropertyValue(`--${background}`).trim())) >= 4.5);
     hint.hidden = true; assert.equal(dom.window.getComputedStyle(hint).display, "none");
+  }
+});
+
+for (const [name] of palettes) test(`${name}: actual Connections and reported PR checks use computed AA surfaces`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="instance-git"><section id="pr"></section></main></body></html>`);
+  const doc = dom.window.document;
+  for (const source of [css, readFileSync(new URL('shell.css', renderer), 'utf8'), connectionsCSS, instanceGitCSS]) {
+    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
+  }
+  const key = 'e'.repeat(64), ref = 'f'.repeat(64);
+  const connections = createConnections({ doc, desk: {}, terminalFactory: assert.fail, request: async () => ({
+    forgeApi: 1, status: 'connected', host: 'github.com', login: 'operator', hostRef: ref, connectionRef: ref, hosts: [{ host: 'github.com', hostRef: ref }],
+  }) });
+  connections.open(); await new Promise(resolve => setImmediate(resolve));
+  const raw = forgePr(); raw.statusCheckRollup = [
+    { __typename: 'CheckRun', name: 'pass', status: 'COMPLETED', conclusion: 'SUCCESS' },
+    { __typename: 'CheckRun', name: 'fail', status: 'COMPLETED', conclusion: 'FAILURE' },
+    { __typename: 'CheckRun', name: 'neutral', status: 'COMPLETED', conclusion: 'NEUTRAL' },
+    { __typename: 'StatusContext', context: 'pending', state: 'PENDING' },
+  ];
+  const panel = createForgePrPanel(doc.querySelector('#pr'), { request: async () => ({ forgeApi: 1, status: 'available', target: forgeTarget,
+    observation: { key, branch: 'feat/a', revision: 'a'.repeat(40) }, host: 'github.com', repository: 'owner/repo',
+    data: pullRequest(raw, { host: 'github.com', path: 'owner/repo', branch: 'feat/a' }), reason: null }) });
+  t.after(() => { connections.dispose(); panel.dispose(); dom.window.close(); });
+  await panel.update({ target: forgeTarget, key, branch: 'feat/a', revision: 'a'.repeat(40) });
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.forge-settings h2', '.forge-settings', 'fg', 'surface'], ['.forge-card .forge-hint', '.forge-card', 'muted', 'surface-2'],
+    ['.forge-settings button', '.forge-settings button', 'fg', 'surface'], ['.forge-settings select', '.forge-settings select', 'fg', 'surface'],
+    ['.forge-pass', '.git-card', 'ok', 'surface-2'], ['.forge-fail', '.git-card', 'danger', 'surface-2'],
+    ['.forge-pending', '.git-card', 'muted', 'surface-2'], ['.forge-neutral', '.git-card', 'muted', 'surface-2'], ['.git-card a', '.git-card', 'accent', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });
