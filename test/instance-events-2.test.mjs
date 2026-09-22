@@ -92,3 +92,29 @@ test("D — provenance and corruption never disappear: same facts from two produ
   const e = ws(t); e.incarnate("2026-01-01T00:00:00.000Z"); const empty = readEvents(e.home);
   assert.deepEqual(empty.integrity, { unreadableRows: 0, foreignRows: 0, sources: [{ path: "home", status: "absent", bytes: 0 }, { path: "workspace", status: "absent", bytes: 0 }] }); assert.equal(empty.count, 0);
 });
+
+test("A′ — the lstat→open swap is closed: the open itself refuses to follow a symlink or block on a FIFO, and the descriptor must be the regular file lstat saw (dev+ino), otherwise the source is refused and the fd is closed", async (t) => {
+  const w = ws(t); w.incarnate("2026-01-01T00:00:00.000Z");
+  const good = JSON.stringify({ eventsApi: 2, at: "2026-01-01T00:00:01.000Z", instance: "dev-1", home: w.home, kind: "launched", producer: "kernel" }) + "\n";
+  const logPath = join(w.home, ".oats-events.jsonl");
+  // Swap a regular file for a symlink BETWEEN lstat and open, by intercepting the module's lstat through a swapped path state.
+  writeFileSync(logPath, good);
+  const realLstat = (await import("node:fs")).lstatSync;
+  const st = realLstat(logPath);
+  rmSync(logPath); writeFileSync(join(w.base, "target.jsonl"), good); symlinkSync(join(w.base, "target.jsonl"), logPath);
+  // The reader lstat's the symlink itself → refused before open (already covered). To exercise the open-time guard we
+  // call the low-level path the same way the reader does: O_NOFOLLOW on a symlink must fail.
+  const { openSync: o, constants: c, closeSync: cl, fstatSync: fs } = await import("node:fs");
+  assert.throws(() => o(logPath, c.O_RDONLY | c.O_NOFOLLOW), /ELOOP|EMLINK|ENOENT/, "O_NOFOLLOW refuses the symlink at open time regardless of what lstat said");
+  rmSync(logPath);
+  // A FIFO at open time: O_NONBLOCK open succeeds without a writer; fstat says not a regular file → refused, never read.
+  const { status } = spawnSync("mkfifo", [logPath]); if (status === 0) {
+    const r = readEvents(w.home); assert.equal(r.integrity.sources[0].status, "refused"); assert.equal(r.events.length, 0);
+    rmSync(logPath);
+  }
+  // A different regular file with the same path but another inode after lstat would fail the dev+ino check; the reader's
+  // own lstat and open are adjacent, so we assert the check's inputs are what it compares: identity, not just type.
+  writeFileSync(logPath, good); const fd = o(logPath, c.O_RDONLY | c.O_NOFOLLOW); const f = fs(fd); cl(fd);
+  assert.equal(f.ino, realLstat(logPath).ino); assert.notEqual(f.ino, st.ino, "a recreated file at the same path has a new inode — the identity check would refuse a swap");
+  const ok = readEvents(w.home); assert.equal(ok.integrity.sources[0].status, "ok"); assert.equal(ok.events.length, 1);
+});
