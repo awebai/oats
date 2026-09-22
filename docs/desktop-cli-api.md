@@ -156,7 +156,7 @@ returns a bounded unified diff:
 
 No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
 
-## Instance events (`oats instance events`, `eventsApi: 1`, OATS 0.24.8+) — K7
+## Instance events (`oats instance events`, `eventsApi: 1` → **2**, OATS 0.24.8+) — K7
 
 Typed lifecycle events per instance, **written by the kernel action that made
 them true**, with the receipt it produced. Nothing is inferred from
@@ -184,6 +184,50 @@ home's removal, so a retired instance's `retired` event is still readable).
   producer (a messaging or review capability) does.
 - Window is bounded (`--limit`, default 200; `truncated` says so). A torn line
   appears as `kind: "unreadable"` rather than vanishing.
+
+### Events API 2 (`eventsApi: 2`, feature `instance-events-2`, OATS 0.24.12+) — K7b
+
+Gate a Desktop read on **both** `eventsApi === 2` and `"instance-events-2"` in
+`features[]`. API 1 is not a sufficient fence for a bounded read: its reader
+opened and read a source whole, followed symlinks, kept foreign rows and lost
+torn lines and cleared claims silently. API 2:
+
+- **Bounded, descriptor-safe read.** Each source (`home` =
+  `<home>/.oats-events.jsonl`, `workspace` = `<ws>/.agents/events/<agent>--<instance>.jsonl`)
+  is `lstat`ed first; anything but a regular file is **refused unopened**
+  (`integrity.sources[].status: "refused"`). At most the last 4 MiB is read by
+  descriptor (`status: "tail"`, the partial first line dropped); otherwise `"ok"`
+  or `"absent"`.
+- **Address history.** `--home <abs>` must be a home of exactly `<instance>` under
+  the scope (`E_HOME_MISMATCH` otherwise, like K1). Rows whose `instance`/`home`
+  are not the admitted address are dropped and counted (`integrity.foreignRows`).
+  Every row carries `incarnation` (the writing home's `instance.json.createdAt`);
+  the result echoes the current home's `incarnation`. Rows tagged with an earlier
+  incarnation ARE returned — they are this address's history — so a consumer can
+  label them "earlier instance at this address". No current home → no read
+  (archived access is a separate contract).
+- **`waitingOnYou` is a producer STATE for the current incarnation**, decided per
+  producer by that producer's latest row that carries the field: an explicit
+  `false` clears, a row without the field does not; earlier incarnations never
+  contribute; computed over the FULL admitted read (a `--limit` window cannot
+  hide a clear). `waitingClaims[]` lists every producer's current claim
+  (`{producer, waiting, since, reason}`); `waitingOnYou` is the newest positive.
+  Still `null` today — no producer emits it.
+- **Provenance and corruption never disappear.** Dedup is by
+  `producer|at|kind|incarnation|data` (the same facts from two producers are two
+  rows). `integrity.unreadableRows` counts torn/invalid lines regardless of
+  `--since` or the window. `count` = admitted rows after `--since`, `returned` =
+  the window, `truncated` = window cut OR any source read as a tail.
+
+```
+{"eventsApi":2,"instance":"dev-1","home":"/abs/home","incarnation":"<iso>","count":7,"returned":7,"truncated":false,
+ "integrity":{"unreadableRows":0,"foreignRows":0,"sources":[{"path":"home","status":"ok","bytes":1234},{"path":"workspace","status":"ok","bytes":1234}]},
+ "events":[{"eventsApi":2,"at":"<iso>","instance":"dev-1","home":"/abs/home","incarnation":"<iso>","producer":"kernel","kind":"spawned","data":{...}}, ...],
+ "lastEvent":{"kind":"launched","at":"<iso>","producer":"kernel","incarnation":"<iso>"},
+ "waitingOnYou":null,"waitingClaims":[],"notes":[...]}
+```
+
+Desktop passes `--limit` (50|100|200) only; `--since` remains a human flag.
 
 ## Schedule run history (`scheduleApi: 2`, OATS 0.24.8+) — K8
 
