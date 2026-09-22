@@ -143,3 +143,65 @@ test('declared oats.core that is NOT active refuses spawn with the remedy (no ho
   assert.match(readFileSync(join(spawned.home, 'AGENTS.md'), 'utf8'), /<!-- oats:kernel:oats /);
   retireInstance(f.root, spawned.instance);
 });
+
+// ---- K5: readiness quartet + enforced child-spawn policy ----
+import { spawnInstance as spawnCore } from '../lib/core.mjs';
+
+test('K5 readiness: quartet derived from inspect facts — installed/trusted/configured/enrolled with items and remedies; ready never inferred from an empty set; signature unknown without --verify-signatures', t => {
+  const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
+  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert composition fixture', inject: 'inject.md', skills: ['skills'] });
+  f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
+  const created = f.run(['create', 'ready', '--work', 'directory', '--runtime', 'claude', '--json']); assert.equal(created.status, 0, created.stdout + created.stderr);
+  const r = f.run(['readiness', '--soul', 'ready', '--json']); assert.equal(r.status, 0, r.stdout + r.stderr);
+  const rd = JSON.parse(r.stdout).result;
+  assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready' });
+  assert.equal(rd.checks.installed.status, 'pass'); assert.equal(rd.checks.installed.items[0].subject, 'oats.core'); assert.equal(rd.checks.installed.items[0].producer, 'oats list');
+  const trusted = rd.checks.trusted.items.find(i => i.subject === 'oats.core');
+  assert.equal(trusted.status, 'pass', 'owned capabilities are config-owned trust (same as inspect health.trusted)');
+  assert.equal(trusted.signature.status, 'not-applicable', 'owned/path capability has no source commit to sign');
+  assert.equal(rd.checks.configured.status, 'pass'); assert.equal(rd.checks.configured.items[0].subject, 'oats.core activation');
+  assert.equal(rd.checks.enrolled.status, 'not-applicable'); assert.equal(rd.checks.enrolled.items[0].required, false); assert.match(rd.checks.enrolled.items[0].reason, /standalone/);
+  assert.equal(rd.summary.ready, true); assert.ok(rd.summary.required > 0);
+  assert.ok(rd.notes.some(n => /never inferred from an empty set/.test(n)));
+  // Deactivate: configured fails with the exact remedy; ready is false.
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  const r2 = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result;
+  assert.equal(r2.checks.configured.status, 'fail'); assert.equal(r2.checks.configured.items[0].remedy, 'oats use oats.core --soul ready'); assert.equal(r2.summary.ready, false);
+  // Scope-level (no soul): required = active capabilities; nothing active → installed rows optional, ready false (not vacuously true).
+  const r3 = JSON.parse(f.run(['readiness', '--json']).stdout).result;
+  assert.equal(r3.subject.kind, 'scope'); assert.equal(r3.summary.ready, false);
+  // Policy view for the soul: default allowed, not yet enforced (no instance).
+  const p = JSON.parse(f.run(['readiness', '--soul', 'ready', '--policy', '--json']).stdout).result.policy;
+  assert.deepEqual(p.childSpawns, { allowed: true, enforced: false, origin: { kind: 'default', detail: 'no declaration: children allowed' } });
+});
+
+test('K5 policy: children.spawn declared false is recorded at spawn and ENFORCED by the spawn route for --parent / --relation child; --allow-child-spawns overrides with its origin; readiness --policy --home reports the enforced policy', t => {
+  const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
+  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert', inject: 'inject.md', skills: ['skills'] });
+  f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
+  const created = createAgent(f.root, { name: 'boss', work: 'directory', runtime: 'claude' });
+  const file = join(created.soul, 'soul.yaml'); writeFileSync(file, readFileSync(file, 'utf8') + 'children: {"spawn":false}\n');
+  createAgent(f.root, { name: 'minion', work: 'directory', runtime: 'claude' });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const boss = spawnCore(f.root, findAgent(f.root, 'boss'), { purpose: 'p', launch: false });
+  const bossMeta = JSON.parse(readFileSync(join(boss.home, 'instance.json'), 'utf8'));
+  assert.deepEqual(bossMeta.policy.childSpawns, { allowed: false, origin: { kind: 'soul', detail: 'children.spawn: false in soul.yaml' } });
+  // Route enforcement: a child of boss is refused, attributed to boss's policy; nothing spawned.
+  assert.throws(() => spawnCore(f.root, findAgent(f.root, 'minion'), { purpose: 'kid', launch: false, parent: boss.instance }),
+    e => e.code === 'E_CHILD_SPAWNS_DISABLED' && e.parent === boss.instance && e.policy.allowed === false && e.policy.origin.kind === 'soul');
+  assert.throws(() => spawnCore(f.root, findAgent(f.root, 'minion'), { purpose: 'kid2', launch: false, relation: 'child', relativeTo: boss.instance }), e => e.code === 'E_CHILD_SPAWNS_DISABLED');
+  assert.equal(readdirSync(join(f.root, 'minion', 'instances')).length, 0, 'refusal created no home');
+  const cli = f.run(['spawn', 'minion', '--parent', boss.instance, '--no-launch', '--json']);
+  assert.equal(cli.status, 1); const env = JSON.parse(cli.stdout.trim().split('\n').pop()); assert.equal(env.error.code, 'E_CHILD_SPAWNS_DISABLED'); assert.equal(env.error.details.parent, boss.instance);
+  // Unrelated spawn of minion is fine; an operator override at spawn records its origin and the route honours it.
+  const free = spawnCore(f.root, findAgent(f.root, 'minion'), { purpose: 'free', launch: false }); assert.ok(free.home);
+  const boss2 = spawnCore(f.root, findAgent(f.root, 'boss'), { purpose: 'open', launch: false, allowChildSpawns: true });
+  assert.deepEqual(JSON.parse(readFileSync(join(boss2.home, 'instance.json'), 'utf8')).policy.childSpawns, { allowed: true, origin: { kind: 'spawn-option', detail: '--allow-child-spawns' } });
+  const kid = spawnCore(f.root, findAgent(f.root, 'minion'), { purpose: 'kid3', launch: false, parent: boss2.instance }); assert.equal(JSON.parse(readFileSync(join(kid.home, 'instance.json'), 'utf8')).parentInstance, boss2.instance);
+  // readiness --policy --home reports the ENFORCED policy with origin.
+  const pol = JSON.parse(f.run(['readiness', '--soul', 'boss', '--policy', '--home', boss.home, '--json']).stdout).result.policy;
+  assert.deepEqual(pol.childSpawns, { allowed: false, enforced: true, origin: { kind: 'soul', detail: 'children.spawn: false in soul.yaml' } });
+  for (const h of [boss.home, boss2.home, free.home, kid.home]) retireInstance(f.root, JSON.parse(readFileSync(join(h, 'instance.json'), 'utf8')).instance);
+});

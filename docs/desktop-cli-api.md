@@ -53,8 +53,9 @@ declares**, parsed by the kernel — a consumer never parses YAML and never
 infers a field that is not there:
 
 - `soulsApi: 1`
-- `declarations: { requires, defaults, knowledge, teams, resources }` — each
-  the declared object, or `null` when the section is absent.
+- `declarations: { requires, defaults, knowledge, teams, resources, children }` — each
+  the declared object, or `null` when the section is absent (`children`
+  since 0.24.8: `{spawn: boolean}`, see readiness policy).
 - `provenance: { kind, source, revision, path, workspaceRevision } | null` —
   where this soul copy came from, as recorded by the kernel when it created
   it (`oats onboard` records `packaged-definition` or
@@ -154,6 +155,65 @@ returns a bounded unified diff:
   `--file` is `E_BAD_ARGS`.
 
 No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
+
+## Readiness quartet, signatures, enforced policy (`oats readiness`, `readinessApi: 1`, OATS 0.24.8+)
+
+`oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json`
+is the first-run readiness view (frame 09) and the Capabilities readiness rows
+(frame 04). Every fact is derived from the **same** data `oats inspect` reports
+— never a second opinion — and rolled into four checks:
+
+```json
+{"readinessApi":1,"subject":{"kind":"soul","name":"dev"},"at":"<iso>",
+ "checks":{
+  "installed": {"status":"pass","items":[{"subject":"oats.core","status":"pass","required":true,"reason":null,"producer":"oats list","evidence":{"version":"1.1.3","integrity":"sha256-…","origin":"installed"},"remedy":null}]},
+  "trusted":   {"status":"fail","items":[{"subject":"oats.core","status":"fail","required":true,"reason":"executable surface not approved","producer":"artifact approval","evidence":{"integrity":"sha256-…"},"remedy":"oats trust oats.core",
+                                          "signature":{"status":"unknown","signer":null,"reason":"signature verification needs a network fetch; pass --verify-signatures"}}]},
+  "configured":{"status":"pass","items":[{"subject":"oats.core activation","status":"pass","required":true,"producer":"oats-config.yaml","evidence":{"target":"declared","level":"/abs"},"remedy":null}]},
+  "enrolled":  {"status":"not-applicable","items":[{"subject":"workspace membership","status":"not-applicable","required":false,"producer":"oats.yaml","reason":"standalone deployment: no workspace declared in oats.yaml"}]}},
+ "summary":{"ready":false,"required":3,"pass":2,"fail":1,"unknown":0},
+ "notes":["…"]}
+```
+
+- Each check is `pass | fail | unknown | not-applicable`; items carry
+  `subject, status, required, reason, producer, evidence, remedy`. **"Ready" is
+  `summary.ready`**: every *required* item passes (or is not-applicable) and
+  there is at least one required item — never inferred from an empty set.
+- **`installed`**: artifact present, locked, integrity matches. **`trusted`**:
+  executable approval of the exact artifact (`oats trust`). Separately,
+  `signature {status: verified | unsigned | unknown | invalid | not-applicable,
+  signer: {id, label} | null, reason}` — the source commit's **verified Git
+  signature**, named signer or nothing. It is `unknown` unless
+  `--verify-signatures` (a network fetch of that one commit; `git log %G?`);
+  a catalog URL, repository owner or byte hash is never a signer. Render
+  "Trusted · signed by <label>" only for `verified`.
+- **`configured`**: activation for the subject, runtime-package requirements
+  (`missingRequires`), runtime-settings problems. **`enrolled`**: workspace
+  **member admission** (decision §3) — `not-applicable` for a standalone
+  deployment (no `workspace:` in `oats.yaml`), `unknown` until admission is
+  verified against the workspace observation, `pass`/`fail` when it is. Never
+  login, never team registration; "Skip" leaves it not-applicable, never pass.
+- Subject: `--soul <name>` scopes required items to the soul's declared
+  requirements; without it, to the scope's active capabilities.
+
+`--policy` adds the **enforced** policy view with origins:
+
+```json
+"policy":{"childSpawns":{"allowed":false,"enforced":true,"origin":{"kind":"soul","detail":"children.spawn: false in soul.yaml"}},
+          "worktrees":{"allowed":true,"mode":"worktree","enforced":true,"origin":{"kind":"work-mode","detail":"work: worktree"}}}
+```
+
+`childSpawns` is **enforced by the spawn route**: `soul.yaml` may declare
+`children: {spawn: false}`; `oats spawn --allow-child-spawns | --no-child-spawns`
+overrides per spawn; the result is recorded in `instance.json`
+`policy.childSpawns {allowed, origin}`. A spawn with `--parent <p>` (or
+`--relation child --relative-to <p>`) under a parent whose recorded policy is
+off refuses **`E_CHILD_SPAWNS_DISABLED`** (`details.parent`, `details.policy`)
+before anything is created. Absent policy (pre-0.24.8 instances) = allowed,
+reported as `origin.kind: "default"`. With `--home <abs>` the policy is the
+instance's recorded (enforced) one; with only `--soul` it is the declaration
+(`enforced: false`). It is a lifecycle-authority claim, not an OS sandbox —
+the UI says so.
 
 ## Lifecycle plans — Stop and Remove (`lifecycleApi: 1`, OATS 0.24.8+)
 
