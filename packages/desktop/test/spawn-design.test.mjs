@@ -8,6 +8,7 @@ import { refreshCli } from '../renderer/views/cli-status.mjs';
 import { setBinding, resetBinding } from '../renderer/keybindings.mjs';
 import { runtimeOptions } from '../renderer/spawn-launch.mjs';
 import { launchSoul } from './helpers/workspace-actions.mjs';
+import { view as spawnPreviewView } from './helpers/spawn-preview-fixture.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -38,6 +39,7 @@ async function setup(t, opts = {}) {
     if (path === '/api/models') return opts.models ? opts.models(body) : { models: [{ id: 'advisory-model' }] };
     if (path.startsWith('/api/launch-configs')) return opts.launch ? opts.launch(body) : body.action === 'list' ? list(body.selector) : preview(body.selector);
     if (path.startsWith('/api/capabilities')) return opts.inspect ? opts.inspect(body) : observation(body.selector);
+    if (path.startsWith('/api/workspace-spawn-preview')) return opts.spawnPreview ? opts.spawnPreview(body) : spawnPreviewView({ workspace: currentWorkspace(), context: '/team/a', selector: body.selector });
     if (path === '/api/spawn') return opts.spawn ? opts.spawn(body) : { instance: 'created', launched: true };
     throw Error(`Unexpected fixture API ${path}`);
   }, openTerminal: (...args) => opens.push(args) };
@@ -69,6 +71,31 @@ test('frame02 composition preserves actual controls, explicit unknown future fie
   assert.equal(dialog.querySelector('.launch-config-editor'), null);
   assert.equal(dialog.querySelector('.fspawn').dataset.shortcut, '⌘↵');
   assert.equal(u.spawns().length, 0);
+});
+
+test('API2 shipped modal reads only on explicit preview, guards Mod+Enter, and never submits new choices', async t => {
+  const u = await setup(t, { cli: { ...CLI, spawnPreviewApi: 2, features: [...CLI.features, 'spawn-preview-2'] } }), dialog = await u.open();
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/workspace-spawn-preview')).length, 0);
+  assert.equal(u.calls.filter(c => c.path.startsWith('/api/launch-configs') && c.body.action === 'preview').length, 0, 'no overlapping automatic legacy preview');
+  assert.ok(dialog.querySelector('.spawn-k6-panel .fpurpose'), 'same real purpose control in work-area row');
+  u.change('.ftask', 'PRIVATE instruction'); u.change('.preview-branch', 'feat/preview'); u.change('.preview-base', 'release');
+  dialog.querySelector('.spawn-native').click(); dialog.querySelector('.spawn-k6-preview').click(); await tick();
+  const reads = u.calls.filter(c => c.path.startsWith('/api/workspace-spawn-preview')); assert.equal(reads.length, 1);
+  assert.equal(reads[0].body.choices.branch, 'feat/preview'); assert.deepEqual(reads[0].body.choices.model, { kind: 'native-default' }); assert.doesNotMatch(JSON.stringify(reads), /PRIVATE|task/);
+  u.key(dialog.querySelector('.ftask'), { key: 'Enter', metaKey: true }); await tick(); assert.equal(u.spawns().length, 0); assert.equal(dialog.querySelector('.fspawn').disabled, true);
+  dialog.querySelector('.spawn-k6-reset').click(); assert.equal(dialog.querySelector('.ftask').value, 'PRIVATE instruction');
+  dialog.querySelector('.fspawn').click(); await tick(); assert.equal(u.spawns().length, 1);
+  assert.equal(u.spawns()[0].body.task, 'PRIVATE instruction');
+  for (const key of ['branch', 'base', 'allowChildSpawns', 'expectDecision', 'choices']) assert.equal(Object.hasOwn(u.spawns()[0].body, key), false);
+  assert.notEqual(u.spawns()[0].body.model, '@native-default');
+});
+
+for (const reject of [false, true]) test(`API2 modal replaced while preview is pending ignores old ${reject ? 'rejection' : 'success'}`, async t => {
+  const gate = deferred(); const u = await setup(t, { cli: { ...CLI, spawnPreviewApi: 2, features: [...CLI.features, 'spawn-preview-2'] }, spawnPreview: () => gate.promise });
+  const old = await u.open(); old.querySelector('.spawn-k6-preview').click(); old.querySelector('.fcancel').click();
+  const current = await u.open(), before = current.outerHTML, focus = u.doc.activeElement;
+  if (reject) gate.reject(Error('PRIVATE')); else gate.resolve(spawnPreviewView({ workspace: '/team', context: '/team/a', selector: { soul: 'dev', agentsRoot: '/team/a/agents' } }));
+  await tick(); assert.equal(current.outerHTML, before); assert.equal(u.doc.activeElement, focus); assert.equal(u.spawns().length, 0);
 });
 
 test('restored configuration forwards only existing launchConfig; default model display is not an override', async t => {
@@ -289,6 +316,24 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Spawn
     const f = luminance(root.getPropertyValue(`--${fg}`).trim()), b = luminance(root.getPropertyValue(`--${bg}`).trim());
     assert.ok((Math.max(f, b) + .05) / (Math.min(f, b) + .05) >= 4.5, selector);
     for (let parent = element; parent; parent = parent.parentElement) assert.equal(u.dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
+for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual API2 read-only preview controls and decision meet computed AA`, async t => {
+  const u = await setup(t, { cli: { ...CLI, spawnPreviewApi: 2, features: [...CLI.features, 'spawn-preview-2'] } });
+  const style = u.doc.createElement('style'); style.textContent = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8'); u.doc.head.append(style); u.doc.documentElement.dataset.theme = theme;
+  const dialog = await u.open(); dialog.querySelector('.spawn-k6-preview').click(); await tick();
+  const root = u.dom.window.getComputedStyle(u.doc.documentElement);
+  for (const [selector, background, fg, bg] of [
+    ['.preview-branch', '.preview-branch', 'fg', 'surface'], ['.preview-base', '.preview-base', 'fg', 'surface'],
+    ['.preview-children', '.preview-children', 'fg', 'surface'], ['.spawn-k6-status', '.spawn-dialog', 'muted', 'surface'],
+    ['.spawn-k6-details pre', '.spawn-k6-details pre', 'fg', 'surface-2'], ['.spawn-k6-preview', '.spawn-k6-preview', 'accent', 'surface'], // clicked/hover state
+    ['.spawn-native', '.spawn-native', 'fg', 'surface'],
+  ]) {
+    const el = dialog.querySelector(selector), surface = dialog.querySelector(background) || u.doc.querySelector(background); assert.ok(el && surface, selector);
+    assert.equal(u.dom.window.getComputedStyle(el).color, `var(--${fg})`, selector); assert.equal(u.dom.window.getComputedStyle(surface).background, `var(--${bg})`, background);
+    const f = luminance(root.getPropertyValue(`--${fg}`).trim()), b = luminance(root.getPropertyValue(`--${bg}`).trim()); assert.ok((Math.max(f, b) + .05) / (Math.min(f, b) + .05) >= 4.5, selector);
+    for (let p = el; p; p = p.parentElement) assert.equal(u.dom.window.getComputedStyle(p).opacity, '1');
   }
 });
 

@@ -42,6 +42,8 @@ import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
+import { spawnPreviewRequest } from './spawn-preview.mjs';
+import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
@@ -456,6 +458,7 @@ function cliStatus() {
     scheduleApi: cliState.scheduleApi || null,
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
     readinessApi: cliState.readinessApi === 1 ? 1 : null,
+    spawnPreviewApi: cliState.spawnPreviewApi === 2 ? 2 : null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -987,16 +990,16 @@ const readBody = (req) => new Promise((ok) => {
 
 // New read commands cannot turn malformed JSON into an empty valid request.
 // Keep the legacy parser for the other existing request families.
-const readStrictBody = (req) => new Promise((ok, reject) => {
-  const bad = () => reject(Object.assign(new Error("Expected a JSON object body up to 64 KiB"), { code: "E_BAD_ARGS" }));
+const readStrictBody = (req, limit = 65536) => new Promise((ok, reject) => {
+  const bad = () => reject(Object.assign(new Error(`Expected a JSON object body up to ${limit} bytes`), { code: "E_BAD_ARGS" }));
   const chunks = []; let size = 0;
   req.on("data", c => {
     size += Buffer.byteLength(c);
-    if (size > 65536) { chunks.length = 0; bad(); }
+    if (size > limit) { chunks.length = 0; bad(); }
     else chunks.push(Buffer.from(c));
   });
   req.on("end", () => {
-    if (size > 65536) return;
+    if (size > limit) return;
     try {
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = JSON.parse(raw.trim() ? raw : "{}");
@@ -1066,6 +1069,18 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { forgeApi: 1, status: "unavailable", data: null,
           reason: { code: "E_BAD_ARGS", message: "Invalid forge request." } });
       }
+    }
+    if (path === '/api/workspace-spawn-preview' && req.method === 'POST') {
+      try {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
+        const request = await readStrictBody(req, 16384);
+        const getContext = () => {
+          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
+            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        return send(res, 200, await spawnPreviewRequest(request, getContext));
+      } catch { return send(res, 400, previewFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/workspace-readiness' && req.method === 'POST') {
       try {
@@ -1188,6 +1203,12 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && path === "/api/spawn") {
       const body = await readBody(req);
+      // K6 reads do not authorize new mutation options. Refuse rather than
+      // silently discard preview-only fields at the legacy spawn boundary.
+      if (body && (['base', 'branch', 'allowChildSpawns', 'modelMode', 'expectDecision', 'choices'].some(k => Object.hasOwn(body, k))
+        || typeof body.model === 'object' && body.model !== null || body.model === '@native-default')) {
+        return send(res, 409, { code: 'E_PREVIEW_ONLY', error: PREVIEW_ONLY });
+      }
       if (typeof body.agent !== "string" || !body.agent || typeof body.agentsRoot !== "string" || !body.agentsRoot)
         return send(res, 400, { error: "body needs { agent, agentsRoot }" });
       try { return send(res, 200, { spawned: true, ...(await spawnAgent(body)) }); }

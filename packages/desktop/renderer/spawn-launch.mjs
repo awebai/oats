@@ -12,7 +12,7 @@ export function runtimeOptions(cli) {
     disabled: !Object.hasOwn(runtimeNames, value) }));
 }
 
-export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layout }) {
+export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layout, previewRead }) {
   const doc = modal.ownerDocument, selector = { soul: soul.name, agentsRoot: soul.agentsRoot };
   const config = layout.config, runtime = modal.querySelector('.fruntime'), model = modal.querySelector('.fmodel');
   const permissions = modal.querySelector('.fyolo'), server = modal.querySelector('.fserver');
@@ -44,6 +44,7 @@ export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layo
     config.value = prefer;
   }
   async function preview() {
+    if (previewRead?.active()) { previewRead.invalidate(); return; }
     invalidatePreview();
     const reason = launchReason();
     if (reason) { layout.launchStatus.textContent = reason; return; }
@@ -81,7 +82,7 @@ export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layo
       selectedConfigs = data.configurations; renderConfigs(); layout.configStatus.textContent = '';
       // A newer explicit model/provider/preview intent must not be retried or
       // overwritten just because an earlier configuration list finally arrived.
-      if (priorPreview === previewTicket) void preview();
+      if (priorPreview === previewTicket && !previewRead?.active()) void preview();
     } catch (error) {
       if (!current(owner, gen) || ticket !== listTicket) return;
       layout.configStatus.textContent = `Launch configurations unavailable: ${error.message || 'read failed'}`;
@@ -89,6 +90,7 @@ export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layo
     if (current(owner, gen) && ticket === listTicket) layout.refreshConfigs.disabled = !!launchReason();
   }
   async function inspect() {
+    if (previewRead?.active()) return;
     unknown();
     const status = cli();
     if (routeReason || !status?.ok || status.operationsApi !== 1 || !status.features?.includes('operations')) return;
@@ -109,7 +111,7 @@ export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layo
   function sync() {
     if (!alive) return;
     const status = cli(), ws = workspace(), admitted = owns();
-    const next = JSON.stringify([status?.ok, status?.bin, status?.version, status?.runtimes, status?.runtimesSource, status?.features, status?.operationsApi, status?.remote,
+    const next = JSON.stringify([status?.ok, status?.bin, status?.version, status?.runtimes, status?.runtimesSource, status?.features, status?.operationsApi, status?.spawnPreviewApi, status?.remote,
       ws?.id, ws?.scope, ws?.server, ws?.registrationPresent, server.value, admitted]);
     if (next === fingerprint) return;
     const targetChanged = fingerprint && routeServer !== server.value;
@@ -136,8 +138,9 @@ export function createSpawnLaunch(modal, { ctx, soul, workspace, cli, owns, layo
   for (const field of [runtime, permissions, model]) field.addEventListener('change', () => { if (alive && owns()) void preview(); });
   model.addEventListener('input', invalidatePreview); // typing never fans out CLI preview processes
   server.addEventListener('change', sync);
-  return { sync, value: () => config.value || undefined, clear() { config.value = ''; invalidatePreview(); },
+  return { sync, value: () => config.value || undefined, clear() { config.value = ''; invalidatePreview(); previewRead?.invalidate(); },
     canSubmit() {
+      const blocked = previewRead?.canSubmit(); if (blocked) return blocked;
       if (runtime.value && runtime.selectedOptions[0]?.disabled) return 'Choose an available runtime or use resolved defaults.';
       if (config.value && (launchReason() || !selectedConfigs.some(row => row.name === config.value))) return 'Choose a configuration reported for this execution context, or use resolved defaults.';
       return '';

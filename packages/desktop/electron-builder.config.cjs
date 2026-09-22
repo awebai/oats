@@ -33,6 +33,7 @@ module.exports = {
     "forge-cli.mjs", "forge-auth.mjs", "forge-auth-output.mjs", "forge-proxy.mjs",
     "lifecycle-cli.mjs",
     "readiness-cli.mjs", "readiness-proxy.mjs",
+    "spawn-preview-cli.mjs", "spawn-preview-proxy.mjs",
     "server-compat.mjs",
     "server-host.mjs",
     "tmux-target.mjs",

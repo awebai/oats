@@ -1,0 +1,307 @@
+{
+  "producerMerge": "6402b0f1fd541c8120dec6f12697973c228c1b19",
+  "note": "Maintainer-provided real receipts, temp root/executable anonymized; opaque revisions unchanged. Stored data only, never execute apply or receipt paths.",
+  "fixtures": {
+    "apply-bound-success.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-fix-login",
+        "agent": "probe",
+        "home": "/fixture/k6/agents/probe/instances/probe-fix-login",
+        "work": "worktree",
+        "branch": "agents/probe-fix-login",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-fix-login"
+        },
+        "repo": "/fixture/k6/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "attach": "tmux attach -t pi-agents",
+        "launchConfig": null,
+        "launch": {
+          "version": 1,
+          "runtime": "pi",
+          "launchConfig": null,
+          "launchConfigSource": null,
+          "executable": "/fixture/bin/pi",
+          "executableDeclared": null,
+          "executableResolvedFrom": "PATH",
+          "args": [],
+          "env": {},
+          "model": null,
+          "hooks": {
+            "launch": {},
+            "env": {},
+            "contributions": []
+          },
+          "prompt": {
+            "kind": "task-file",
+            "file": "TASK.md"
+          }
+        }
+      }
+    },
+    "apply-refused-decision-stale.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_DECISION_STALE",
+        "message": "the previewed decision changed (4c1d884a9abbd4a30c30bc7b → f6e92beb74c24b369fc18ddd): probe-fix-login from HEAD@c2de779fc4a6; preview again",
+        "details": {
+          "decision": {
+            "instance": "probe-fix-login",
+            "home": "/fixture/k6/agents/probe/instances/probe-fix-login",
+            "branch": "agents/probe-fix-login",
+            "base": {
+              "ref": "HEAD",
+              "oid": "c2de779fc4a623c741fb4684f3a79a5b0f1babc5"
+            },
+            "revision": "f6e92beb74c24b369fc18ddd"
+          }
+        }
+      }
+    },
+    "preview-native-default.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "spawnPreviewApi": 2,
+        "preview": true,
+        "agent": "probe",
+        "kind": "persistent",
+        "instance": "probe-1",
+        "home": "/fixture/k6/agents/probe/instances/probe-1",
+        "repo": "/fixture/k6/repo",
+        "work": "worktree",
+        "subject": {
+          "soul": "probe",
+          "agentsRoot": "/fixture/k6/agents",
+          "dir": "/fixture/k6"
+        },
+        "decision": {
+          "instance": "probe-1",
+          "home": "/fixture/k6/agents/probe/instances/probe-1",
+          "branch": "agents/probe-1",
+          "base": {
+            "ref": "HEAD",
+            "oid": "9744af5c6872330e5ffe2a3d00a7f9a7053ef991"
+          },
+          "revision": "b5369b1454c06a67010839cb"
+        },
+        "preflight": {
+          "status": "complete",
+          "budgetMs": 20000,
+          "elapsedMs": 56
+        },
+        "backendStatus": {
+          "name": "tmux",
+          "installed": true,
+          "started": false
+        },
+        "runtime": "pi",
+        "model": null,
+        "modelSource": "native default (explicit)",
+        "launchConfig": null,
+        "backend": "tmux",
+        "branch": "agents/probe-1",
+        "base": {
+          "ref": "HEAD",
+          "oid": "9744af5c6872330e5ffe2a3d00a7f9a7053ef991"
+        },
+        "worktree": "/fixture/k6/agents/probe/instances/probe-1/work",
+        "relation": null,
+        "parentInstance": null,
+        "policy": {
+          "childSpawns": {
+            "allowed": true,
+            "origin": {
+              "kind": "default",
+              "detail": "no declaration: children allowed"
+            }
+          }
+        },
+        "executable": "/fixture/bin/pi",
+        "capabilities": [
+          "oats.core"
+        ],
+        "skills": [
+          "oats-operate",
+          "oats-souls"
+        ],
+        "task": null
+      }
+    },
+    "preview-refused-base-unknown.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_BASE_UNKNOWN",
+        "message": "base \"nope\" does not resolve to a commit in /fixture/k6/repo"
+      }
+    },
+    "preview-refused-root-mismatch.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_SOUL_UNKNOWN",
+        "message": "soul \"probe\" is not at agents root /fixture/k6/nowhere (this scope's root is /fixture/k6/agents)"
+      }
+    },
+    "preview-refused-soul-unknown.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_SOUL_UNKNOWN",
+        "message": "soul \"ghost\" is not in /fixture/k6/agents; a preview never creates or imports a soul (known: probe)"
+      }
+    },
+    "preview-success-worktree.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "spawnPreviewApi": 2,
+        "preview": true,
+        "agent": "probe",
+        "kind": "persistent",
+        "instance": "probe-fix-login",
+        "home": "/fixture/k6/agents/probe/instances/probe-fix-login",
+        "repo": "/fixture/k6/repo",
+        "work": "worktree",
+        "subject": {
+          "soul": "probe",
+          "agentsRoot": "/fixture/k6/agents",
+          "dir": "/fixture/k6"
+        },
+        "decision": {
+          "instance": "probe-fix-login",
+          "home": "/fixture/k6/agents/probe/instances/probe-fix-login",
+          "branch": "agents/probe-fix-login",
+          "base": {
+            "ref": "HEAD",
+            "oid": "9744af5c6872330e5ffe2a3d00a7f9a7053ef991"
+          },
+          "revision": "4c1d884a9abbd4a30c30bc7b"
+        },
+        "preflight": {
+          "status": "complete",
+          "budgetMs": 20000,
+          "elapsedMs": 55
+        },
+        "backendStatus": {
+          "name": "tmux",
+          "installed": true,
+          "started": false
+        },
+        "runtime": "pi",
+        "model": null,
+        "modelSource": "native default",
+        "launchConfig": null,
+        "backend": "tmux",
+        "branch": "agents/probe-fix-login",
+        "base": {
+          "ref": "HEAD",
+          "oid": "9744af5c6872330e5ffe2a3d00a7f9a7053ef991"
+        },
+        "worktree": "/fixture/k6/agents/probe/instances/probe-fix-login/work",
+        "relation": null,
+        "parentInstance": null,
+        "policy": {
+          "childSpawns": {
+            "allowed": true,
+            "origin": {
+              "kind": "default",
+              "detail": "no declaration: children allowed"
+            }
+          }
+        },
+        "executable": "/fixture/bin/pi",
+        "capabilities": [
+          "oats.core"
+        ],
+        "skills": [
+          "oats-operate",
+          "oats-souls"
+        ],
+        "task": null
+      }
+    },
+    "preview-suggest-default-name.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "spawnPreviewApi": 2,
+        "preview": true,
+        "agent": "probe",
+        "kind": "persistent",
+        "instance": "probe-1",
+        "home": "/fixture/k6/agents/probe/instances/probe-1",
+        "repo": "/fixture/k6/repo",
+        "work": "worktree",
+        "subject": {
+          "soul": "probe",
+          "agentsRoot": "/fixture/k6/agents",
+          "dir": "/fixture/k6"
+        },
+        "decision": {
+          "instance": "probe-1",
+          "home": "/fixture/k6/agents/probe/instances/probe-1",
+          "branch": "agents/probe-1",
+          "base": {
+            "ref": "HEAD",
+            "oid": "9744af5c6872330e5ffe2a3d00a7f9a7053ef991"
+          },
+          "revision": "b5369b1454c06a67010839cb"
+        },
+        "preflight": {
+          "status": "complete",
+          "budgetMs": 20000,
+          "elapsedMs": 53
+        },
+        "backendStatus": {
+          "name": "tmux",
+          "installed": true,
+          "started": false
+        },
+        "runtime": "pi",
+        "model": null,
+        "modelSource": "native default",
+        "launchConfig": null,
+        "backend": "tmux",
+        "branch": "agents/probe-1",
+        "base": {
+          "ref": "HEAD",
+          "oid": "9744af5c6872330e5ffe2a3d00a7f9a7053ef991"
+        },
+        "worktree": "/fixture/k6/agents/probe/instances/probe-1/work",
+        "relation": null,
+        "parentInstance": null,
+        "policy": {
+          "childSpawns": {
+            "allowed": true,
+            "origin": {
+              "kind": "default",
+              "detail": "no declaration: children allowed"
+            }
+          }
+        },
+        "executable": "/fixture/bin/pi",
+        "capabilities": [
+          "oats.core"
+        ],
+        "skills": [
+          "oats-operate",
+          "oats-souls"
+        ],
+        "task": null
+      }
+    }
+  }
+}

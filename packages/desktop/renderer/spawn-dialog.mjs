@@ -199,13 +199,13 @@ export function composeSpawnDialog(modal, { soul, agents, workspace, choose, can
     const suggestions = [...form.querySelectorAll('datalist option')];
     return [
       { value: '', label: 'Use resolved defaults', selected: !model.value, group: 'Defaults', search: false },
-      { label: 'Force native default — available after K6', disabled: true, group: 'Defaults', search: false },
+      { native: true, label: native.textContent, disabled: native.disabled, selected: native.getAttribute('aria-pressed') === 'true', group: 'Defaults', search: false },
       ...suggestions.map(option => ({ value: option.value, label: option.label || option.value,
         detail: option.label && option.label !== option.value ? option.value : undefined, selected: model.value === option.value, group: 'Reported suggestions' })),
       { custom: true, label: 'Custom entry…', detail: model.value || 'Type a model ID or preference list', group: 'Custom', search: false,
         selected: !!model.value && !suggestions.some(option => option.value === model.value) },
     ];
-  }, item => { if (!item.custom) { model.value = item.value; model.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); } model.focus(); }, {
+  }, item => { if (item.native) { native.click(); return; } if (!item.custom) { model.value = item.value; model.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); } model.focus(); }, {
     searchable: true, scope: () => JSON.stringify([runtime.value, form.querySelector('.fserver')?.value || '']),
     nothingReported: 'No model suggestions reported. Custom model text is still accepted.', noMatch: 'No reported model suggestions match this filter.',
   });

@@ -33,6 +33,7 @@ import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, deci
 import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
+import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { startSingleInstance } from "./single-instance.mjs";
 import { prepareTerminalAttachments } from "./terminal-attachments.mjs";
 
@@ -317,6 +318,10 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // One normalized classifier owns every specialized routing decision;
   // aliases cannot bypass frame/epoch guards, deadlines or typed failures.
   const route = classifyApiRoute(pathname, base());
+  if (route === 'spawn-preview') {
+    return proxySpawnPreview(e, pathname, opts, { rendererURL: RENDERER_URL,
+      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
+  }
   if (route === 'readiness') {
     return proxyReadiness(e, pathname, opts, { rendererURL: RENDERER_URL,
       connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });

@@ -11,6 +11,7 @@ export function classifyApiRoute(pathname, base) {
   try {
     switch (new URL(pathname, base).pathname) {
       case '/api/workspace-readiness': return 'readiness';
+      case '/api/workspace-spawn-preview': return 'spawn-preview';
       case '/api/instance-lifecycle': return 'lifecycle';
       case '/api/forge-connections':
       case '/api/instance-forge': return 'forge';
