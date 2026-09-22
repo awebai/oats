@@ -30,7 +30,7 @@ import {
   approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
-  findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf,
+  findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
@@ -4378,7 +4378,7 @@ function retireCmd() {
   const planRev = flag("plan-revision"), idemKey = flag("idempotency-key");
   if (planRev === true || idemKey === true) die("--plan-revision and --idempotency-key need values");
   if ((planRev !== undefined) !== (idemKey !== undefined)) die("--plan-revision and --idempotency-key go together");
-  let replayPath = null;
+  let replayPath = null, childrenStopped = null, expectedBranch;
   if (planRev !== undefined) {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
     // Replay first: after a successful retire the home is gone, so the receipt
@@ -4389,8 +4389,20 @@ function retireCmd() {
     try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message) : die(e.message); }
     replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
     if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
+    // The plan promised: recorded children are STOPPED first (bounded, never
+    // escalated) and retained. A child still running after the grace refuses
+    // the retirement — nothing is retired, the receipt names the pid.
+    childrenStopped = [];
+    for (const kid of fresh.facts.children) {
+      try { const s = stopInstanceSession(kid.home, {}); childrenStopped.push({ instance: kid.instance, home: kid.home, ok: true, stopped: s.stopped, alreadyIdle: s.alreadyIdle }); }
+      catch (e) { childrenStopped.push({ instance: kid.instance, home: kid.home, ok: false, code: e.code || "E_SESSION_STOP_FAILED", message: e.message, stillRunning: e.receipt?.stillRunning ?? null }); }
+    }
+    const running = childrenStopped.filter((k) => !k.ok);
+    if (running.length) return args.includes("--json") ? jsonFail("E_CHILDREN_RUNNING", `${running.map((k) => k.instance).join(", ")} ${running.length === 1 ? "is" : "are"} still running after a bounded stop; nothing was retired and nothing was escalated`, { childrenStopped, plan: fresh }) : die(`children still running: ${running.map((k) => k.instance).join(", ")}; nothing retired`);
+    expectedBranch = fresh.facts.work.observed ? fresh.facts.work.branch : undefined;
   }
-  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force"), ...(expectedBranch !== undefined ? { expectedBranch } : {}) });
+  if (childrenStopped) r.childrenStopped = childrenStopped;
   if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
   // stopped by this); a deferred self-retire keeps them until the home is gone.

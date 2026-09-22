@@ -400,6 +400,23 @@ location. The receipt says so:
   (pre-existing shape) with `planRevision`/`idempotencyKey`/`replayed:false`
   added. Mint the key server-side per confirmation intent and keep it for that
   intent's retries.
+  - **Children first, kernel-owned.** The plan's `facts.children` are stopped
+    by the kernel before retirement (bounded SIGTERM, never escalated) and
+    retained; the receipt lists `childrenStopped[]`. A child still running
+    after the grace **refuses the whole retirement** — `E_CHILDREN_RUNNING`
+    with `details.childrenStopped` (pids) and `details.plan`; nothing retired.
+  - **Branch deletion is bound to the confirmed branch.** The kernel re-verifies
+    the worktree's branch at the moment of deletion, after hooks (which may
+    mutate the tree); a mismatch deletes nothing and reports
+    `retention.branchDeletionSkipped {expected, actual, reason}`.
+  - **Ambiguous parentage is reported, never acted on.** Recorded parentage is
+    a bare name; if a child's parent name resolves to several homes under the
+    root, that child appears under `ambiguous[]` (stop and retire plans) with
+    the reason and is excluded from `targets`/`children`.
+- **Stop replay horizon**: stop receipts are stored **per idempotency key**
+  (`<home>/.oats-stop-receipt.<key>.json`); any earlier key replays its own
+  receipt for as long as the home exists. Retire receipts live beside the
+  instances directory and replay after the home is gone.
 
 ### Feature advertisement — gate every new command on the probe
 

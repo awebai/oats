@@ -452,3 +452,42 @@ test("K7 events: stop/restart/retire write producer-attributed events to the hom
   assert.ok(after.events.some((e) => e.kind === "retired"), JSON.stringify(after.events.map((e) => e.kind)));
   assert.ok(after.events.some((e) => e.kind === "stopped"), "earlier events survive in the workspace log");
 });
+
+test("K3 pins: guarded retire STOPS recorded children first and refuses (E_CHILDREN_RUNNING, nothing retired) if one ignores SIGTERM; stop receipts replay per key; ambiguous parent edges are reported, never acted on", async () => {
+  const root = join(repo, "agents");
+  const mk = (name, exe = "polite") => makeHome(name, { command: renderFor(join(root, "dev", "instances", name), name, join(binDir, exe)), launch: recipeFor(join(root, "dev", "instances", name), name, { executable: join(binDir, exe) }) });
+  const parent = mk("pin-parent"), politeKid = mk("pin-kid-polite"), stubbornKid = mk("pin-kid-stubborn", "stubborn");
+  for (const h of [politeKid.home, stubbornKid.home]) { const m = readJson(join(h, "instance.json")); m.parentInstance = "pin-parent"; write(join(h, "instance.json"), JSON.stringify(m, null, 2)); }
+  for (const h of [parent.home, politeKid.home, stubbornKid.home]) { startInstanceSession(h, { env: env() }); assert.ok(await waitFor(() => runningPid(h) !== null)); }
+  const stubbornPid = runningPid(stubbornKid.home);
+  const plan = oats(["retire", "pin-parent", "--plan", "--dir", repo]).json.result;
+  assert.deepEqual(plan.facts.children.map((c) => c.instance).sort(), ["pin-kid-polite", "pin-kid-stubborn"]);
+  // Pin 1: children are stopped FIRST; the stubborn one refuses the whole retirement.
+  const refused = oats(["retire", "pin-parent", "--plan-revision", plan.planRevision, "--idempotency-key", "r-1", "--dir", repo]);
+  assert.equal(refused.status, 1); assert.equal(refused.json.error.code, "E_CHILDREN_RUNNING");
+  const stopped = refused.json.error.details.childrenStopped;
+  assert.equal(stopped.find((k) => k.instance === "pin-kid-polite").ok, true, "the polite child was stopped");
+  assert.deepEqual(stopped.find((k) => k.instance === "pin-kid-stubborn").stillRunning, [stubbornPid]);
+  assert.ok(existsSync(parent.home) && runningPid(parent.home) !== null, "nothing retired: the parent still runs");
+  assert.equal(runningPid(stubbornKid.home), stubbornPid, "nothing escalated");
+  process.kill(stubbornPid, "SIGKILL"); await waitFor(() => runningPid(stubbornKid.home) === null, "test cleanup");
+  // Pin 3: stop receipts replay per key, not only the last one.
+  await waitFor(() => runningPid(politeKid.home) === null); startInstanceSession(politeKid.home, { env: env() }); assert.ok(await waitFor(() => runningPid(politeKid.home) !== null));
+  const p1 = planStop(repo, root, "pin-kid-polite"); const a = applyStop(repo, root, "pin-kid-polite", { planRevision: p1.planRevision, idempotencyKey: "s-A" });
+  assert.equal(a.ok, true); await waitFor(() => runningPid(politeKid.home) === null);
+  startInstanceSession(politeKid.home, { env: env() }); assert.ok(await waitFor(() => runningPid(politeKid.home) !== null));
+  const p2 = planStop(repo, root, "pin-kid-polite"); const b = applyStop(repo, root, "pin-kid-polite", { planRevision: p2.planRevision, idempotencyKey: "s-B" });
+  assert.equal(b.ok, true);
+  const replayA = applyStop(repo, root, "pin-kid-polite", { planRevision: "irrelevant", idempotencyKey: "s-A" });
+  assert.equal(replayA.replayed, true); assert.equal(replayA.at, a.at, "an EARLIER key replays its own receipt after a later key was used");
+  // Pin 4: a child whose parent NAME is not unique under the root is reported as ambiguous and excluded.
+  const twinDir = join(root, "ops"); mkdirSync(join(twinDir, "soul"), { recursive: true });
+  write(join(twinDir, "soul", "soul.yaml"), "name: ops\nrepo: .\nwork: checkout\nruntime: claude\n"); write(join(twinDir, "soul", "AGENTS.md"), "# ops\n");
+  const twinHome = join(twinDir, "instances", "pin-parent"); write(join(twinHome, "instance.json"), JSON.stringify({ agent: "ops", instance: "pin-parent", home: twinHome, repo, work: "checkout", branch: null, launched: false }));
+  const kids = descendantsOf(root, "pin-parent");
+  assert.deepEqual(kids.map((k) => k.instance), [], "no edge is followed to a non-unique parent name");
+  assert.deepEqual(kids.ambiguous.map((k) => k.instance).sort(), ["pin-kid-polite", "pin-kid-stubborn"]);
+  const amb = planStop(repo, root, "pin-parent", { home: parent.home });
+  assert.deepEqual(amb.targets.map((t) => t.instance), ["pin-parent"]); assert.equal(amb.ambiguous.length, 2); assert.ok(amb.notes.some((n) => /not unique/.test(n)));
+  rmSync(twinDir, { recursive: true, force: true });
+});

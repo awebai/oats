@@ -494,3 +494,25 @@ test("K3 guarded Remove: retire --plan-revision/--idempotency-key revalidates th
   const again = againEnv.result ?? againEnv; // replay answers in the JSON-v1 envelope; a first retire prints its raw receipt (pre-existing shape)
   assert.equal(again.replayed, true); assert.equal(again.retired, "dev-guard"); assert.equal(again.retention.worktree, done.retention.worktree, "the recorded receipt, not a second retirement");
 });
+
+test("K3 pin 2: --delete-branch through a plan is bound to the CONFIRMED branch — a branch switch during retirement (hook window) deletes nothing and is reported", () => {
+  const f = fixture();
+  // The retire hook set is the one CAPTURED at spawn (capabilityRuntime), so the
+  // switching capability must be active BEFORE the instance is spawned.
+  const cap = join(f.repo, ".agents", "capabilities", "owned", "switcher");
+  write(join(cap, "oats.json"), JSON.stringify({ capability: "acme.switcher", version: "1.0.0", description: "switches the branch during retire", hooks: { retire: "hook.mjs" } }));
+  write(join(cap, "hook.mjs"), "import {execFileSync} from 'node:child_process'; import {join} from 'node:path'; execFileSync('git', ['-C', join(process.env.OATS_HOME, 'work'), 'switch', '--quiet', '-c', 'feat/sneaky']); console.log(JSON.stringify({ meta: { retired: true } }));");
+  write(join(f.repo, "oats-config.yaml"), "capabilities:\n  additive:\n    acme.switcher:\n      global: true\n");
+  const s = spawn(f, "bind"); const work = join(s.home, "work");
+  execFileSync("git", ["-C", work, "switch", "--quiet", "-c", "feat/confirmed"]);
+  const plan = JSON.parse(cli(f, ["retire", "dev-bind", "--plan", "--json"]).stdout).result;
+  assert.equal(plan.facts.work.branch, "feat/confirmed");
+  // The hook switches the branch after the plan comparison, before deletion.
+  const fresh = plan;
+  const r = JSON.parse(cli(f, ["retire", "dev-bind", "--plan-revision", fresh.planRevision, "--idempotency-key", "b-1", "--delete-branch", "--json"]).stdout);
+  assert.equal(r.retired, "dev-bind");
+  assert.equal(r.branchDeleted, false, `no branch deleted: ${JSON.stringify(r.retention)} hooks=${JSON.stringify(r.hooks ?? r.capabilityMeta)}`);
+  assert.deepEqual(r.retention.branchDeletionSkipped, { expected: "feat/confirmed", actual: "feat/sneaky", reason: "the worktree's branch changed between confirmation and deletion; nothing was deleted" });
+  const branches = execFileSync("git", ["-C", f.repo, "branch", "--list", "feat/*"], { encoding: "utf8" });
+  assert.match(branches, /feat\/confirmed/); assert.match(branches, /feat\/sneaky/, "neither the confirmed nor the switched branch was deleted");
+});
