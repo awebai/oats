@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 21:05Z · v0.24.11 published (K6g retention fix) · **7b approved** (selected-target instance-events read; PR89 **K7b `instance-events-2` / `eventsApi 2` → main `e808fbfc`**: bounded fd tail read, refused non-regular sources, address history w/ incarnation tags, producer-state waiting w/ clears, integrity counts) · 10 receipts to engineer · engineer wiring 7b → 8 · open: K11, attach-knowledge, auto-PR, branch enumeration
+**Last update:** 2026-09-22 21:40Z · K7b on main (PR89 `e808fbfc`; PR90 `17182cdb` open-time O_NOFOLLOW+fstat guard + DTO pins) · **K6h PR91 → main `dcd2bc89`**: kernel-field neutrality + receipt exclusions now opt-in for instance homes only (work/recovery trees fully significant) · **7b wiring head = `dcd2bc89`** · engineer wiring 7b → 8 · 0.24.12 after 7b Desktop PR · open: K11, attach-knowledge, auto-PR, branch enumeration
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
