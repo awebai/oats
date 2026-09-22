@@ -1,13 +1,15 @@
 /* OATS Desktop — Workspace discovery (legacy stage id: spawn).
    Souls remain durable definitions; Launch explicitly opens the Spawn modal.
    Capabilities/Sources project only the current CLI inspection contract.
-   Launch configuration list/preview is read-only; no proposed K6 fields or resolver.
+   Launch observations and API2 K6 preview are read-only; new preview choices
+   cannot enter legacy submission. Placement and launch resolution stay CLI-owned.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { composeSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { createSpawnLaunch } from "../spawn-launch.mjs";
+import { createSpawnPreview } from '../spawn-preview-view.mjs';
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
@@ -914,8 +916,10 @@ function openSpawnModal(s, a, draft = {}) {
     else if (!e.shiftKey && doc.activeElement === last) { e.preventDefault(); first.focus(); }
   });
 
+  const previewRead = createSpawnPreview(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
+    instances: () => s.panelInstances, owns: () => ownsModal() && canLaunchSoul(s, a), submitting: () => submitting, layout });
   const launch = createSpawnLaunch(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
-    owns: () => ownsModal() && canLaunchSoul(s, a), layout });
+    owns: () => ownsModal() && canLaunchSoul(s, a), layout, previewRead });
   f.querySelector(".fspawn").addEventListener("click", async () => {
     if (!ownsModal() || submitting || f.querySelector('.fspawn').disabled) return;
     const reason = !canLaunchSoul(s, a) ? 'This exact soul is no longer available in the current roster.' : launch.canSubmit();
@@ -957,7 +961,7 @@ function openSpawnModal(s, a, draft = {}) {
       launch.clear(); layout.syncRuntime();
       void fillModelOptions(); // restoring defaults also cancels any explicit-runtime catalog
     },
-    }); } finally { submitting = false; }
+    }); } finally { submitting = false; previewRead.sync(); }
   });
 
   s.modalEl = modal;
@@ -971,8 +975,8 @@ function openSpawnModal(s, a, draft = {}) {
     f.querySelector('.fspawn').dataset.shortcut = mac ? label.replace(/Enter$/, '↵') : label;
   };
   const releaseHint = onKeymapChange(updateHint); updateHint();
-  s.modalCleanup = () => { launch.dispose(); layout.dispose(); releaseHint(); releaseSubmit(); modelReq++; };
-  s.syncModalFacts = () => { if (ownsModal() && launch.sync()) void fillModelOptions(); };
+  s.modalCleanup = () => { launch.dispose(); previewRead.dispose(); layout.dispose(); releaseHint(); releaseSubmit(); modelReq++; };
+  s.syncModalFacts = () => { if (!ownsModal()) return; if (launch.sync()) void fillModelOptions(); previewRead.sync(); };
   s.syncModalRelations = () => { if (!ownsModal()) return; syncRelationControls(); s.syncModalFacts(); };
   s.syncModalRelations();
   if (ownsModal()) layout.search.focus({ preventScroll: true });
