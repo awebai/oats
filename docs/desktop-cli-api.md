@@ -269,6 +269,17 @@ the pre-fix marker and is never accepted for dispatch.
   own process group and is group-killed on timeout; `preflight {status:
   complete|timeout, budgetMs, elapsedMs}` says which. A hanging runtime cannot
   hang a preview.
+- **Idempotent apply** (0.24.10+, feature `spawn-idempotency`): `spawn …
+  --expect-decision <rev> --idempotency-key <key>` records the key and the
+  decision in the new home's `instance.json`; a **retry with the same key**
+  replays the recorded receipt (`replayed: true`, same instance/home, no second
+  spawn, no wake re-saved) — found by key across the soul's instances, never by
+  name (the planned name may have been auto-suffixed past it, which is exactly
+  the retry case). The same key with a *different* decision refuses
+  **`E_IDEMPOTENCY_CONFLICT`** (`details.instance/home` of the prior spawn); a
+  different key with a fresh decision is a genuinely new confirmation. Mint the
+  key server-side on the first confirmation and keep it for that intent's
+  retries (as 2c does); a lost response is a replay, never a guess by name.
 - Still absent (named follow-ups, not parity-done): attach-knowledge node refs
   (provider contract), auto-PR (P1/ADE write approval), branch enumeration
   (producer seam).

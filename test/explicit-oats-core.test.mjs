@@ -396,3 +396,33 @@ test('process-group, end to end: signature verification with NO git on PATH repo
   const sig = JSON.parse(child.stdout.trim()); assert.equal(sig.status, 'unknown'); assert.equal(sig.failure.code, 'verifier-failed', JSON.stringify(sig));
   rmSync(emptyBin, { recursive: true, force: true });
 });
+
+test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry of the SAME confirmed decision replays the recorded home (found by key, never by name) instead of spawning twice; the same key for a different decision refuses E_IDEMPOTENCY_CONFLICT; a different key spawns anew', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
+  const rev = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision.revision;
+  const first = last(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', rev, '--idempotency-key', 'k-1', '--no-launch', '--json']));
+  assert.equal(first.ok, true, JSON.stringify(first).slice(0, 300)); assert.equal(first.result.instance, 'wt-a'); assert.equal(first.result.replayed, false);
+  const meta = JSON.parse(readFileSync(join(f.root, 'wt', 'instances', 'wt-a', 'instance.json'), 'utf8'));
+  assert.equal(meta.spawnIdempotencyKey, 'k-1'); assert.equal(meta.decision.revision, rev);
+  // Lost response → retry with the same key: replay, nothing new.
+  const again = last(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', rev, '--idempotency-key', 'k-1', '--no-launch', '--json']));
+  assert.equal(again.ok, true, JSON.stringify(again).slice(0, 300)); assert.equal(again.result.replayed, true); assert.equal(again.result.instance, 'wt-a'); assert.equal(again.result.home, first.result.home);
+  assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'replay spawned nothing');
+  assert.ok(JSON.parse(f.run(['instance', 'events', 'wt-a', '--json']).stdout).result.events.filter(e => e.kind === 'spawned').length === 1, 'one spawned event');
+  // Same key, different decision (name now taken → fresh decision is wt-a-2): conflict, not a second spawn.
+  const fresh = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision.revision; assert.notEqual(fresh, rev);
+  const conflict = last(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--idempotency-key', 'k-1', '--no-launch', '--json']));
+  assert.equal(conflict.error.code, 'E_IDEMPOTENCY_CONFLICT'); assert.equal(conflict.error.details.instance, 'wt-a');
+  assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a']);
+  // A different key with the fresh decision is a genuinely new confirmation: spawns wt-a-2.
+  const second = last(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--idempotency-key', 'k-2', '--no-launch', '--json']));
+  assert.equal(second.ok, true, JSON.stringify(second).slice(0, 300)); assert.equal(second.result.instance, 'wt-a-2');
+  // Without --expect-decision the key is recorded but replay is not offered (no decision to bind to): documented legacy path.
+  assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-idempotency'));
+  assert.equal(last(f.run(['spawn', 'wt', '--purpose', 'b', '--idempotency-key', 'bad key!', '--no-launch', '--json'])).error.code, 'E_BAD_ARGS');
+});
