@@ -205,7 +205,10 @@ torn lines and cleared claims silently. API 2:
   (ISO) or `null` for rows written before the tag; the result's top-level
   `incarnation` is the current home's `createdAt` or `null` if unreadable. A
   row with `incarnation: null` never matches the current incarnation, so it
-  cannot contribute a current waiting claim. Dedup identity is
+  cannot contribute a current waiting claim. **An unknown current incarnation
+  (top-level `incarnation: null`) admits NO claim**: `waitingOnYou: null`,
+  `waitingClaims: []`, rows still returned as history. A consumer must refuse
+  a null-incarnation response that nevertheless carries claims. Dedup identity is
   `producer|at|kind|incarnation|data`.
 - **`waitingClaims[]` row shape**: `{producer: string, waiting: boolean, since: ISO, reason: string|null}`
   — one row per producer with a claim in the current incarnation, INCLUDING
