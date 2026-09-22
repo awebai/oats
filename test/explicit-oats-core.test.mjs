@@ -548,3 +548,17 @@ exit 0
   const r2 = JSON.parse(f.run(['retire', 'wt-h', '--plan-revision', plan2.planRevision, '--idempotency-key', 'rh', '--json']).stdout);
   assert.equal(r2.workRecovery ?? null, null, `kernel fields alone: clean — ${JSON.stringify(r2.workRecovery ?? null)}`);
 });
+
+test('K6h fingerprint scope: kernel-field neutrality and receipt exclusions are OPT-IN for an instance home — in any other tree (work, recovery) an instance.json is the agent\'s bytes: changing only its spawnCompleted/wake keys CHANGES the fingerprint, and a .oats-events.jsonl is significant', async t => {
+  const { fingerprintTree } = await import('../lib/core.mjs');
+  const f = fixture(t);
+  const tree = join(f.base, 'tree'); mkdirSync(tree);
+  writeFileSync(join(tree, 'instance.json'), JSON.stringify({ spawnCompleted: false, wake: null, payload: 'v1' }));
+  const a = fingerprintTree(tree);
+  writeFileSync(join(tree, 'instance.json'), JSON.stringify({ spawnCompleted: true, wake: { saved: true }, payload: 'v1' }));
+  const b = fingerprintTree(tree);
+  assert.notEqual(a, b, 'work-tree instance.json: kernel-named keys are fully significant');
+  assert.equal(fingerprintTree(tree, { instanceHome: true }), (() => { writeFileSync(join(tree, 'instance.json'), JSON.stringify({ spawnCompleted: false, wake: null, payload: 'v1' })); return fingerprintTree(tree, { instanceHome: true }); })(), 'instance home: the same two files fingerprint equal — only there');
+  writeFileSync(join(tree, '.oats-events.jsonl'), 'x\n');
+  assert.notEqual(fingerprintTree(tree), a, 'a receipt-named file in a work tree is agent bytes');
+});
