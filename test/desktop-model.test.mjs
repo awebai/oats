@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import {
-  initModel, collectControlPane, buildConstellation, parseGitDiffStat, parseGitStatus, parseTmuxWindows, readMarkdownSection, relativeAge,
+  initModel, collectControlPane, buildConstellation, parseTmuxWindows, readMarkdownSection, relativeAge,
 } from "../packages/desktop/server/model.mjs";
 
 test("readMarkdownSection extracts a top-level section and ignores placeholders", () => {
@@ -18,14 +22,34 @@ test("parseTmuxWindows retains an exact switch target", () => {
   }]);
 });
 
-test("parseGitStatus reports branch, divergence, and dirty file count", () => {
-  assert.deepEqual(parseGitStatus("## feat/pane...origin/feat/pane [ahead 2, behind 1]\n M a.mjs\n?? b.mjs"), {
-    branch: "feat/pane", dirty: 2, ahead: 2, behind: 1,
-  });
-});
-
-test("parseGitDiffStat sums textual additions and deletions", () => {
-  assert.deepEqual(parseGitDiffStat("12\t3\ta.mjs\n4\t0\tb.mjs\n-\t-\timage.png"), { additions: 16, deletions: 3 });
+test("collection never executes Git, even with real work directories; recorded aggregates remain unobserved", () => {
+  // The actual production collector runs with real directories and an inert
+  // sentinel executable as its ONLY Git. No installed Git, tmux, CLI or GUI.
+  const root = mkdtempSync(join(tmpdir(), "oats-desktop-no-git-"));
+  const previousPath = process.env.PATH;
+  try {
+    const tools = join(root, "tools"), marker = join(root, "git-called");
+    mkdirSync(tools); writeFileSync(join(root, "package.json"), '{"type":"commonjs"}');
+    writeFileSync(join(tools, "git"), `#!${process.execPath}\nrequire('node:fs').appendFileSync(${JSON.stringify(marker)}, 'unexpected Git execution\\n'); process.stdout.write('## main...origin/main\\n');\n`, { mode: 0o700 });
+    process.env.PATH = tools;
+    execFileSync(join(tools, "git"), ["--fixture-sentinel-check"], { stdio: "ignore", timeout: 5000 });
+    assert.equal(existsSync(marker), true, "the inert execution detector is live"); rmSync(marker);
+    const metadata = [
+      { instance: "one", home: join(root, "one"), running: false, branch: "recorded-one", git: { branch: "forged", dirty: 0, ahead: 0, behind: 0 } },
+      { instance: "two", home: join(root, "two"), running: null, git: { dirty: 99, ahead: 99, behind: 99 } },
+    ];
+    for (const row of metadata) mkdirSync(join(row.home, "work"), { recursive: true });
+    initModel({ listInstances: () => [{ name: "dev", dir: root, instances: metadata }] });
+    for (let poll = 0; poll < 3; poll++) {
+      const panel = collectControlPane(root);
+      assert.equal(existsSync(marker), false, "roster collection cannot execute any Git command");
+      assert.deepEqual(panel.instances.map(i => i.git), [null, null], "neither stale recorded metrics nor healthy zero fallbacks survive");
+      assert.equal(panel.instances[0].branch, "recorded-one", "recorded metadata is still labeled separately by its consumers");
+    }
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("buildConstellation nests known parents and keeps legacy/orphan instances as roots", () => {

@@ -35,6 +35,7 @@ import { NAV, stageSidebarMode, loadStageView } from "./shell-nav.mjs";
 import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
+import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
@@ -56,7 +57,7 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS; document.head.append(identityStyle);
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
@@ -539,6 +540,12 @@ const brainIntents = createIntentGate();
 const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
 const contextPanel = createContextPanel({
   document,
+  createGitPanel: (parent, focus) => createInstanceGitPanel(parent, { ...focus,
+    generation: workspaceGeneration,
+    request: (workspace, body) => api(`/api/instance-git?ws=${encodeURIComponent(workspace)}`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    }),
+  }),
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
   onFocusModeChange: () => updateSidebarControls(),

@@ -11,6 +11,7 @@ import { createTerminalTab, terminalOptions } from "../renderer/terminal-tab.mjs
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createContextPanel } from "../renderer/context-panel.mjs";
+import { createInstanceGitPanel } from "../renderer/instance-git.mjs";
 import { resolveTerminalOpen, terminalKey } from "../renderer/instance-tree.mjs";
 import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
@@ -37,7 +38,7 @@ function shell(t, shellSource = source) {
   t.after(() => dom.window.close());
   const document = dom.window.document, requests = [], attachments = [], terms = [], detached = [], projections = [], actions = new Map();
   const c = {
-    document, window: dom.window, createContextPanel, console, navigator: { platform: "MacIntel" },
+    document, window: dom.window, createContextPanel, createInstanceGitPanel, console, navigator: { platform: "MacIntel" },
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], wsActiveTerminal: new Map(), pendingTerms: new Set(),

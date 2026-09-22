@@ -50,35 +50,6 @@ export function parseTmuxWindows(text) {
   });
 }
 
-export function parseGitStatus(text, fallbackBranch = "") {
-  const lines = text.split("\n").filter(Boolean);
-  const head = lines[0]?.startsWith("## ") ? lines.shift().slice(3) : "";
-  const branch = head.split("...")[0].replace(/^No commits yet on /, "") || fallbackBranch || "?";
-  const ahead = Number(head.match(/\[ahead (\d+)/)?.[1] || 0);
-  const behind = Number(head.match(/behind (\d+)/)?.[1] || 0);
-  return { branch, dirty: lines.length, ahead, behind };
-}
-
-export function parseGitDiffStat(text) {
-  let additions = 0;
-  let deletions = 0;
-  for (const row of text.split("\n")) {
-    const [added, deleted] = row.split("\t");
-    if (/^\d+$/.test(added)) additions += Number(added);
-    if (/^\d+$/.test(deleted)) deletions += Number(deleted);
-  }
-  return { additions, deletions };
-}
-
-function gitState(work, fallbackBranch) {
-  const empty = { branch: fallbackBranch || "?", dirty: 0, ahead: 0, behind: 0, additions: 0, deletions: 0 };
-  if (!work || !existsSync(work)) return { ...empty, missing: true };
-  const output = exec("git", ["-C", work, "status", "--short", "--branch", "--untracked-files=normal"]);
-  if (!output) return { ...empty, missing: true };
-  const diff = exec("git", ["-C", work, "diff", "--numstat", "HEAD", "--"]);
-  return { ...parseGitStatus(output, fallbackBranch), ...parseGitDiffStat(diff) };
-}
-
 export function buildConstellation(instances) {
   const byName = new Map(instances.map((instance) => [instance.instance, instance]));
   const children = new Map(instances.map((instance) => [instance.instance, []]));
@@ -120,7 +91,6 @@ export function collectControlPane(root) {
     if (!knowledgeCounts.has(knowledgeDir)) knowledgeCounts.set(knowledgeDir, countMarkdown(knowledgeDir));
     for (const metadata of agent.instances) {
       const home = metadata.home || join(agent.dir, "instances", metadata.instance);
-      const workPath = join(home, "work");
       const taskText = readMarkdown(join(home, "TASK.md"));
       const stateText = readMarkdown(join(home, "STATE.md"));
       const session = metadata.tmux?.session || "pi-agents";
@@ -133,7 +103,10 @@ export function collectControlPane(root) {
         running: metadata.running,
         tmux: metadata.sessionTarget ? null : { ...metadata.tmux, session, window: windowName },
         command: metadata.paneCommand || "",
-        git: gitState(workPath, metadata.branch),
+        // Git is observed only on demand through the hardened CLI boundary.
+        // Never execute helpers from every tree during roster polling, invent
+        // zero aggregates, or promote an instance.json aggregate to a live read.
+        git: null,
         task: readMarkdownSection(taskText, "Task") || "No task provided",
         next: readMarkdownSection(stateText, "Next") || "No next action recorded",
         progress: readMarkdownSection(stateText, "Progress"),
