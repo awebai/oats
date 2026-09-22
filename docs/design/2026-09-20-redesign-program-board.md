@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 20:55Z · **v0.24.11 PUBLISHED** (tag `cc1920e3`; bump PR88 → main `b616479b`; **HIGH fix K6g, PR87**: 0.24.10's whole-home re-stamp (PR84) could bless an agent's launch-interval `STATE.md` into the retirement baseline → lost at retire; now the baseline ignores ONLY kernel-owned `instance.json` fields (`spawnCompleted`, `wake`); artifact probe: authored-at-launch STATE.md recovered) · found by the Desktop engineer's exact-source inert analysis · 6b COMPLETE (PR78 + PR85) · engineer → **7b proposal** → 8 · open: K11, attach-knowledge, auto-PR, branch enumeration
+**Last update:** 2026-09-22 21:05Z · v0.24.11 published (K6g retention fix) · **7b approved** (selected-target instance-events read; PR89 **K7b `instance-events-2` / `eventsApi 2` → main `e808fbfc`**: bounded fd tail read, refused non-regular sources, address history w/ incarnation tags, producer-state waiting w/ clears, integrity counts) · 10 receipts to engineer · engineer wiring 7b → 8 · open: K11, attach-knowledge, auto-PR, branch enumeration
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
