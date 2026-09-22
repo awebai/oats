@@ -306,6 +306,20 @@ unchecked, echoed a stored `definition.id` without checking it, and named a
  "scheduler":{…}}
 ```
 
+**Exact shapes (API 3):**
+- `schedule list --json` → `result = {scope, scheduleApi: 2, scheduleHistoryApi: 3, integrity, schedules: Entry[], scheduler}`.
+- `schedule show <id> --json` → `result = {schedule: Entry}` (one level of nesting; `integrity` is NOT on `show` — it is a scope fact reported by `list`).
+- `Entry` (readable) = definition fields (`id, kind, home, message|operation, cron, enabled, …`) + `{scope, scheduleApi: 2, scheduleHistoryApi: 3, executionStatus, nextRun: ISO|null, lastRun: Run|null, history, recentRuns: Run[], running: boolean, attempt?, pendingWake?}`.
+- `Entry` (unreadable, `list` only) = `{id, scope, scheduleApi: 2, scheduleHistoryApi: 3, unreadable: {code, message}, history: {status: "corrupt", stored: null, truncated: false}, recentRuns: []}` — no definition fields.
+- `history` = `{status: "ok", stored: integer, truncated: boolean}` | `{status: "corrupt", stored: null, truncated: false}`.
+- `Run` (API 3 row) = producer-written fields (`scheduledFor, startedAt, kind, outcome, …`) + `{runId: string, legacy: false, settled: boolean, recordedAt: ISO, transitions: string[], session}`; `transitions[]` elements are outcome strings in write order, first element = the first recorded outcome.
+- `Run` (legacy row) = producer-written fields + `{runId: null, legacy: true, settled: null, transitions: null, session}` — no `recordedAt`, no `key`.
+- `Run` (corrupt element) = `{runId: null, legacy: true, corrupt: true}` only.
+- `session` = `{instance: string|null, home: string|null, incarnation: ISO|null, server: string|null, delivery: "launched"|"delivered-active"|"none"}`; always present on rows and on `lastRun`.
+- `runId` is opaque to consumers: never recompute, never dedup client-side.
+- **Refusals** (`ok:false`): `E_SCHEDULE_STATE_OVERSIZE` / `E_SCHEDULE_INVALID` carry `error.details.source = {path, status, bytes}` (+ `field`); `E_SCHEDULE_IDENTITY` carries `error.details.key` and `error.details.declared`; `E_BAD_ARGS` (id shape) carries no details. A refusal has no `integrity` block — `list` refuses as a whole only when a scope file itself is unreadable.
+- **Open path** (both files): `lstat` → regular file → `open(O_RDONLY|O_NOFOLLOW|O_NONBLOCK)` → `fstat` regular + same dev/ino + `size ≤ 1 MiB` → read exactly `fstat.size` bytes by descriptor (a file that grows past the budget between lstat and fstat is refused, never partially read).
+
 ## Spawn preview (`oats spawn … --preview`, `spawnPreviewApi: 1`, OATS 0.24.8+)
 
 The Spawn modal's fields are backed by the kernel's own decision, taken **before
