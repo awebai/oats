@@ -391,8 +391,10 @@ for (const outcome of ['resolve', 'reject']) {
   test(`late terminal lookup ${outcome} cannot overwrite a newer real panel choice`, t => panelChoiceRace(t, outcome));
   test(`mutation: real panel entry must supersede a terminal lookup ${outcome}`, async t => {
     const guard = 'onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); }';
-    assert.ok(source.includes(guard));
-    const mutant = source.replace(guard, 'onIntent: () => {}');
+    const start = source.indexOf('const contextPanel = createContextPanel'), end = source.indexOf('/** Projection only:', start);
+    const block = source.slice(start, end);
+    assert.equal(block.split(guard).length, 2, 'target the panel, not another component with the same guard');
+    const mutant = source.replace(block, block.replace(guard, 'onIntent: () => {}'));
     await assert.rejects(panelChoiceRace(t, outcome, mutant), outcome === 'resolve' ? /chosen-panel/ : /obsolete panel lookup/);
   });
 }

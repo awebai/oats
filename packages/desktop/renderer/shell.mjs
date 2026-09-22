@@ -36,6 +36,7 @@ import { shellIcon, mountShellIcons } from "./shell-icons.mjs";
 import { createRuntimeBadge, identityCSS } from "./identity-marks.mjs";
 import { createContextPanel, contextPanelCSS } from "./context-panel.mjs";
 import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
+import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
@@ -57,7 +58,13 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS + notificationCSS; document.head.append(identityStyle);
+const notifications = createNotificationCenter({ document, generation: workspaceGeneration, subscribe: onWorkspaceChange,
+  onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
+  applyFocus: callback => tabOpenIntents.applyFocus(callback),
+  fallbackFocus: () => document.getElementById('focus-mode-toggle'),
+});
+window.addEventListener('pagehide', () => notifications.dispose(), { once: true });
 
 // ── ctx (shared by all views) ─────────────────────────────────────────────
 async function api(pathname, opts) {
@@ -71,12 +78,7 @@ const ctx = {
   hasWorkspaceSwitcher: true,
   // Workspace selections compete with pending shell chooser/tab opens too.
   onSelectionIntent: () => tabOpenIntents.invalidate(),
-  notify: (message) => {
-    const area = contextRosterEl?.querySelector(".ctx-list");
-    if (!area) return;
-    const notice = document.createElement("div"); notice.className = "ctx-empty"; notice.setAttribute("role", "status"); notice.textContent = message;
-    area.prepend(notice);
-  },
+  notify: notifications.notify,
   openFile: (path) => openViewTab("markdown", `≡ ${String(path).split("/").pop()}`, { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
   startInstance: (instance) => openInstanceStart(instance),

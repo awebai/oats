@@ -109,10 +109,49 @@ test('controlled model popup consumes its selection before the launch chord and 
   const u = await setup(t), dialog = await u.open(); u.change('.fruntime', 'codex'); await tick();
   assert.equal(dialog.querySelector('.fmodel').hasAttribute('list'), false, 'no uncontrolled native datalist competes for Enter');
   dialog.querySelector('.spawn-model-controls button').click();
+  const search = dialog.querySelector('.spawn-popup-search input'); assert.equal(u.doc.activeElement, search);
+  search.value = 'advisory'; search.dispatchEvent(new u.dom.window.Event('input', { bubbles: true }));
   u.key(u.doc.activeElement, { key: 'ArrowDown' });
   u.key(u.doc.activeElement, { key: 'Enter', metaKey: true }); await tick();
   assert.equal(dialog.querySelector('.fmodel').value, 'advisory-model'); assert.equal(u.spawns().length, 0);
   u.change('.fmodel', 'custom,unlisted/fallback'); assert.equal(dialog.querySelector('.fmodel').value, 'custom,unlisted/fallback');
+});
+
+test('late advisory suggestions refresh an open filter without losing query, input node, custom value or focus', async t => {
+  const pending = deferred(), u = await setup(t, { models: () => pending.promise }), dialog = await u.open();
+  u.change('.fruntime', 'pi'); u.change('.fmodel', 'unlisted/model,fallback');
+  dialog.querySelector('.spawn-model-controls button').click();
+  const input = dialog.querySelector('.spawn-popup-search input'); input.value = 'new-model'; input.dispatchEvent(new u.dom.window.Event('input'));
+  assert.match(dialog.querySelector('#spawn-model-choices .spawn-popup-status').textContent, /No model suggestions reported/);
+  pending.resolve({ models: [{ id: 'provider/new-model', label: 'New model' }] }); await tick();
+  assert.equal(dialog.querySelector('.spawn-popup-search input'), input); assert.equal(u.doc.activeElement, input); assert.equal(input.value, 'new-model');
+  assert.match(dialog.querySelector('#spawn-model-choices').textContent, /New modelprovider\/new-model/);
+  assert.equal(dialog.querySelector('.fmodel').value, 'unlisted/model,fallback'); assert.equal(u.spawns().length, 0);
+  assert.equal(u.calls.filter(call => call.path === '/api/models').length, 1, 'filtering does not probe the catalog');
+});
+
+for (const outcome of ['success', 'rejection']) test(`old model catalog ${outcome} cannot repaint a newer runtime popup`, async t => {
+  const requests = [], u = await setup(t, { models: () => { const d = deferred(); requests.push(d); return d.promise; } }), dialog = await u.open();
+  u.change('.fruntime', 'pi'); dialog.querySelector('.spawn-model-controls button').click();
+  u.change('.fruntime', 'codex'); assert.equal(dialog.querySelector('#spawn-model-choices').hidden, true);
+  dialog.querySelector('.spawn-model-controls button').click();
+  const input = dialog.querySelector('.spawn-popup-search input'); input.value = 'current'; input.dispatchEvent(new u.dom.window.Event('input'));
+  requests[1].resolve({ models: [{ id: 'current-model' }] }); await tick();
+  if (outcome === 'success') requests[0].resolve({ models: [{ id: 'old-model' }] }); else requests[0].reject(new Error('old rejection'));
+  await tick();
+  assert.equal(u.doc.activeElement, input); assert.equal(input.value, 'current');
+  assert.match(dialog.querySelector('#spawn-model-choices').textContent, /current-model/);
+  assert.doesNotMatch(dialog.querySelector('#spawn-model-choices').textContent, /old-model|old rejection/);
+});
+
+test('soul chooser no-match is explicit and preserves grouping/selection without a launch', async t => {
+  const u = await setup(t), dialog = await u.open(), search = dialog.querySelector('.spawn-soul-search');
+  search.focus(); search.value = 'missing'; search.dispatchEvent(new u.dom.window.Event('input'));
+  const message = dialog.querySelector('.spawn-chooser-empty');
+  assert.equal(message.hidden, false); assert.equal(message.textContent, 'No souls match this filter.');
+  assert.equal(u.doc.activeElement, search); assert.equal(dialog.querySelector('.spawn-search-count').textContent, '0 of 1');
+  search.value = ''; search.dispatchEvent(new u.dom.window.Event('input'));
+  assert.equal(message.hidden, true); assert.equal(dialog.querySelector('.spawn-choice[aria-pressed=true]').dataset.agent, 'dev'); assert.equal(u.spawns().length, 0);
 });
 
 test('plain/Shift-only rebound launch keys never intercept editable text or ordinary Enter', async t => {

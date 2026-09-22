@@ -23,6 +23,8 @@ export function createWorkspaceSwitcher({
   const q = (id) => document.getElementById(id);
   const trigger = q("ws-trigger"), currentName = q("ws-name"), menu = q("ws-menu");
   const menuSearch = q("ws-menu-search"), options = q("ws-options"), addOpen = q("ws-add-open");
+  const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
+  options.after(empty);
   const modal = q("ws-modal"), dialog = modal.querySelector(".ws-dialog");
   const modalSearch = q("ws-suggestion-search"), suggestionsEl = q("ws-suggestions");
   const status = q("ws-dialog-status"), confirm = q("ws-confirm"), browse = q("ws-browse");
@@ -72,13 +74,16 @@ export function createWorkspaceSwitcher({
       copy.append(name, path);
       button.append(check, copy);
       button.addEventListener("click", () => {
+        if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);
         if (workspace.id !== activeId) selectWorkspace(workspace.id);
       });
       options.append(button);
     });
+    empty.hidden = options.childElementCount > 0;
+    empty.textContent = empty.hidden ? '' : workspaces.length ? 'No workspaces match this filter.' : 'No workspace choices reported.';
     if (focusedId && !menu.hidden) {
-      [...options.querySelectorAll(".ws-option")].find((button) => button.dataset.workspaceId === focusedId)?.focus();
+      ([...options.querySelectorAll(".ws-option")].find((button) => button.dataset.workspaceId === focusedId) || menuSearch).focus();
     }
   };
   const openMenu = () => {

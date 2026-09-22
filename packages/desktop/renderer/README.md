@@ -272,6 +272,44 @@ filesystem access or Electron dependency is introduced.
   actions grouped by context, click-to-record (Esc cancels, Backspace
   unbinds), conflict warnings via `findConflict`, per-row reset + reset-all.
 
+## Shared Components — existing-data frame 10 parity
+
+`notifications.mjs` replaces the roster-prepended `ctx.notify` notices with one
+renderer-only, viewport-bounded scroll stack. Messages are literal text, not inferred severity/activity,
+links or action callbacks. There are at most three cards; capacity eviction skips
+the focused card. **No expiry timer**: dismissal is explicit, while a workspace
+visit or disposal revokes the old scope. Background arrival never focuses or
+mints navigation intent. Actual notification entry does; dismissal recovery uses
+the shell's projection guard, a surviving next control or a visible same-scope
+return target. The polite live region is independent of roster repaints and
+continues to work without a roster. Primary foreground/background pairs and
+existing popover shadows adapt to White/Solarized/Dark without raw colors.
+Lifecycle alerts and confirmation paths are not replaced.
+
+`choice-popup.mjs` owns the existing provider/model popup behavior. Model search
+is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**
+and **Custom** are control/data groups, not model-quality claims. Arbitrary
+model IDs and comma-separated preferences remain free text. Filtering does not
+probe the catalog, change the model or launch. Late owned catalog fills refresh
+choices without rebuilding the filter, losing its query or taking foreign focus.
+Keyboard/retained-option focus reveals only within the popup below its sticky
+search header, never by scrolling the outer dialog/page. Notification arrival
+can reveal existing focused content within its stack, but never changes focus.
+Provider/host changes revoke the old scope; render epochs and DOM membership
+prevent removed/reopened options from acting. Popup Enter is consumed before the
+outer launch handler; spaces, caret keys and IME remain text in the filter.
+Resolved defaults and the disabled force-native K6 control retain their meaning.
+
+Workspace/model/soul chooser notices distinguish **nothing reported** from
+**no matching rows**. Workspace empty notices are outside the selectable
+listbox, never fake workspaces; removed options cannot select through a new
+empty state. Registry transaction behavior and source/context soul grouping are
+unchanged. Already-conforming badges, workspace/context menus and native titles
+with live keymap chords are retained—not replaced by a new tooltip manager or
+keyboard interceptor. No Stop/Remove, K6, editor/detach/PR or OS notification
+surface is introduced. Tests are inert DOM/CSSOM/ownership/contrast checks, not
+native rendered acceptance.
+
 ## Context panel and focus mode
 
 The shell owns one right-side **Details** region outside all editor groups.
