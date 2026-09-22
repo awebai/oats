@@ -4340,7 +4340,7 @@ function spawnCmd() {
 
 function retireCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--home <path>] [--self] [--discard-worktree] [--delete-branch] [--keep-dir] [--force] [--json]");
+  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--plan-revision <rev> --idempotency-key <key>] [--home <path>] [--self] [--discard-worktree] [--delete-branch] [--keep-dir] [--force] [--json]");
   let homeFlag = flag("home");
   if (homeFlag === true) die("--home needs the instance home path");
   if (args.includes("--plan")) {
@@ -4371,7 +4371,27 @@ function retireCmd() {
     if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; (args.includes("--json") ? console.error : console.log)(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
   const retiringHome = homeFlag || findInstanceHome(root, name);
+  // K3: a GUI-driven Remove carries the plan revision it showed and an
+  // idempotency key. The revision is revalidated against a fresh plan
+  // (E_PLAN_STALE with that plan attached — re-confirm, never act on the old
+  // one); a retried key replays the recorded receipt instead of retiring twice.
+  const planRev = flag("plan-revision"), idemKey = flag("idempotency-key");
+  if (planRev === true || idemKey === true) die("--plan-revision and --idempotency-key need values");
+  if ((planRev !== undefined) !== (idemKey !== undefined)) die("--plan-revision and --idempotency-key go together");
+  let replayPath = null;
+  if (planRev !== undefined) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(idemKey)) die("--idempotency-key: 1-128 chars of [A-Za-z0-9._:-]");
+    // Replay first: after a successful retire the home is gone, so the receipt
+    // (beside the instances dir, keyed by the idempotency key) is the answer.
+    const replay = (dir) => { const p = join(dir, `.oats-retire-receipt.${idemKey}.json`); if (!existsSync(p)) return false; try { const prior = JSON.parse(readFileSync(p, "utf8")); if (prior.retired !== name) return false; if (args.includes("--json")) jsonOk({ ...prior, replayed: true }); else console.log(`retire ${name}: replayed receipt for key ${idemKey}`); return true; } catch { return false; } };
+    for (const a of listAgents(root)) if (replay(join(a._dir, "instances"))) return;
+    let fresh;
+    try { fresh = planRetire(dirFlag(), root, name, { home: homeFlag }); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message) : die(e.message); }
+    replayPath = join(dirname(fresh.home), `.oats-retire-receipt.${idemKey}.json`);
+    if (fresh.planRevision !== planRev) return args.includes("--json") ? jsonFail("E_PLAN_STALE", `the retire plan changed since it was shown (${planRev} → ${fresh.planRevision}); review the fresh plan`, { plan: fresh }) : die(`the retire plan changed since it was shown; re-run oats retire ${name} --plan`);
+  }
   const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  if (replayPath) { r.planRevision = planRev; r.idempotencyKey = idemKey; r.replayed = false; try { writeFileAtomic(replayPath, JSON.stringify(r, null, 2)); } catch { /* receipt is evidence, not authority */ } }
   // A retired home's wake jobs are forgotten (definitions only; nothing is
   // stopped by this); a deferred self-retire keeps them until the home is gone.
   if (retiringHome && r.removedDir !== false && !r.deferred) { try { const gone = removeWakeForHome(scheduleScopeOf(workspaceOf(root)), retiringHome); if (gone.length) r.wakeSchedulesRemoved = gone; } catch (e) { r.warnings = [...(r.warnings || []), `wake schedules not cleaned: ${e.message}`]; } }
@@ -4947,7 +4967,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations"], scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history"], instanceGitApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 1, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -5608,7 +5628,9 @@ Usage:
                                              remedies; signature status per artifact; enforced
                                              child-spawn / worktree policy with origins
   oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
-  oats retire <instance> [--discard-worktree] [--delete-branch]
+  oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch]
+                                             with a plan revision: refuses E_PLAN_STALE (fresh plan
+                                             attached) if facts moved; a repeated key replays
                                              retire; a worktree is RETAINED (re-homed under
                                              <workspace>/.agents/worktrees/<repo>/<branch>)
                                              unless discarded; --delete-branch deletes the

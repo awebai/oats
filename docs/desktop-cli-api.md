@@ -391,6 +391,26 @@ location. The receipt says so:
   their removal semantics.
 - The Remove dialog's "also delete worktree / branch" checkboxes map to these
   two flags; the kernel never touches a PR.
+- **Guarded apply** (what a GUI sends): `oats retire <i> --plan-revision <rev>
+  --idempotency-key <key> [--discard-worktree] [--delete-branch] --json`. The
+  revision is revalidated against a fresh plan first — facts moved →
+  `E_PLAN_STALE` with `details.plan` (re-render, re-confirm; nothing retired);
+  a repeated key **replays** the recorded receipt (`replayed: true`, JSON-v1
+  envelope) instead of retiring twice. A first retire prints its raw receipt
+  (pre-existing shape) with `planRevision`/`idempotencyKey`/`replayed:false`
+  added. Mint the key server-side per confirmation intent and keep it for that
+  intent's retries.
+
+### Feature advertisement — gate every new command on the probe
+
+`oats version --json` `features` now lists: `catalog`, `instance-git`,
+`instance-git-remote`, `souls-declarations`, `lifecycle-plans`,
+`retire-retention`, `readiness`, `spawn-preview`, `instance-events`,
+`schedule-history`, and carries the API integers (`instanceGitApi`, `soulsApi`,
+`lifecycleApi`, `readinessApi`, `spawnPreviewApi`, `eventsApi`,
+`scheduleHistoryApi`). **Gate on these, never on a version string and never by
+optimistic invocation**: an older CLI ignores an unknown `--plan` on `retire`
+and *retires*. Absent feature → the view is unavailable.
 
 ## Mutations exposed to Desktop v1
 

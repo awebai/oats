@@ -472,3 +472,25 @@ test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, bra
   assert.ok(repoGit("branch", "--list", rd.retention.recordedBranch), "the recorded spawn branch (never checked out after the switch) is untouched");
   assert.equal(existsSync(dw), false);
 });
+
+test("K3 guarded Remove: retire --plan-revision/--idempotency-key revalidates the plan (E_PLAN_STALE with the fresh plan, nothing retired), replays a repeated key, and the version probe advertises lifecycle-plans so a GUI never sends --plan to an older CLI", () => {
+  const f = fixture();
+  const s = spawn(f, "guard");
+  const probe = JSON.parse(cli(f, ["version", "--json"]).stdout);
+  for (const feat of ["lifecycle-plans", "retire-retention", "instance-git", "readiness", "spawn-preview", "instance-events", "schedule-history"]) assert.ok(probe.features.includes(feat), feat);
+  assert.equal(probe.lifecycleApi, 1);
+  const plan = JSON.parse(cli(f, ["retire", "dev-guard", "--plan", "--json"]).stdout).result;
+  assert.equal(plan.action, "retire"); assert.match(plan.planRevision, /^[a-f0-9]{24}$/);
+  // Facts move (dirty work appears) → the shown plan is stale → refused, nothing retired.
+  write(join(s.home, "work", "late.txt"), "changed after the plan was shown\n");
+  const stale = cli(f, ["retire", "dev-guard", "--plan-revision", plan.planRevision, "--idempotency-key", "k-1", "--json"]);
+  assert.equal(stale.status, 1); const env = JSON.parse(stale.stdout); assert.equal(env.error.code, "E_PLAN_STALE"); assert.notEqual(env.error.details.plan.planRevision, plan.planRevision);
+  assert.ok(existsSync(s.home), "stale plan retired nothing");
+  assert.equal(cli(f, ["retire", "dev-guard", "--plan-revision", plan.planRevision, "--json"]).status, 1, "revision without key refuses");
+  const fresh = JSON.parse(cli(f, ["retire", "dev-guard", "--plan", "--json"]).stdout).result;
+  const done = JSON.parse(cli(f, ["retire", "dev-guard", "--plan-revision", fresh.planRevision, "--idempotency-key", "k-2", "--json"]).stdout);
+  assert.equal(done.retired, "dev-guard"); assert.equal(done.replayed, false); assert.equal(done.idempotencyKey, "k-2"); assert.equal(existsSync(s.home), false);
+  const againEnv = JSON.parse(cli(f, ["retire", "dev-guard", "--plan-revision", fresh.planRevision, "--idempotency-key", "k-2", "--json"]).stdout);
+  const again = againEnv.result ?? againEnv; // replay answers in the JSON-v1 envelope; a first retire prints its raw receipt (pre-existing shape)
+  assert.equal(again.replayed, true); assert.equal(again.retired, "dev-guard"); assert.equal(again.retention.worktree, done.retention.worktree, "the recorded receipt, not a second retirement");
+});
