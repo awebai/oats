@@ -59,6 +59,7 @@ import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../l
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { loadSetupExpertEdition, SETUP_EXPERT, SETUP_CAPABILITIES } from "../lib/setup-expert-source.mjs";
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
+import { planStop, applyStop, planRetire } from "../lib/instance-lifecycle.mjs";
 import { parsePortableSource } from "../lib/source-spec.mjs";
 
 const args = process.argv.slice(2);
@@ -3116,9 +3117,38 @@ function renderMergeRegion(r) {
 function instanceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1], name = args[2];
-  const usage = "usage: oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json]";
-  if (!["git", "diff"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
+  const usage = "usage: oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json]";
+  if (!["git", "diff", "stop"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
   dropAmbientRoot();
+  if (sub === "stop") {
+    // K3: plan → apply. The plan is what a confirmation shows; apply carries
+    // its revision back and refuses if reality moved.
+    const homeOpt = flag("home");
+    if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return bail(e.code || "E_NO_ROOT", e.message); }
+    const recursive = !args.includes("--no-recursive");
+    const wantPlan = args.includes("--plan"), wantApply = args.includes("--apply");
+    if (wantPlan === wantApply) return bail("E_BAD_ARGS", "stop needs exactly one of --plan or --apply");
+    try {
+      if (wantPlan) {
+        const plan = planStop(dirFlag(), root, name, { home: homeOpt, recursive });
+        if (JSON_MODE) { jsonOk(plan); return; }
+        console.log(`stop ${name}${recursive ? " (and recorded children)" : ""} — plan ${plan.planRevision}`);
+        for (const t of plan.targets) console.log(`  ${"  ".repeat(t.depth)}${t.instance}: session ${t.session.state}${t.work.observed ? `, ${t.work.changed} changed / ${t.work.untracked} untracked on ${t.work.branch ?? "detached"}` : ", work not observed"}${t.midTask === true ? " — mid-task" : t.midTask === "unknown" ? " — activity unknown" : ""}`);
+        for (const n of plan.notes) console.log(`  note: ${n}`);
+        console.log(`apply with: oats instance stop ${name} --apply --plan-revision ${plan.planRevision} --idempotency-key <key>`);
+        return;
+      }
+      const rev = flag("plan-revision"), key = flag("idempotency-key"), grace = flag("grace-ms");
+      if (rev === true || key === true || grace === true) return bail("E_BAD_ARGS", usage);
+      const receipt = applyStop(dirFlag(), root, name, { home: homeOpt, recursive, planRevision: rev, idempotencyKey: key, ...(grace !== undefined ? { graceMs: Number(grace) } : {}) });
+      if (JSON_MODE) { jsonOk(receipt); return; }
+      for (const r of receipt.results) console.log(`  ${r.instance}: ${r.ok ? (r.stopped ? "stopped" : `already ${r.state}`) : `${r.code} — ${r.message}`}`);
+      console.log(receipt.ok ? `stopped${receipt.replayed ? " (replayed receipt)" : ""}; home, work, transcript and launch configuration retained — restart with \`oats session restart\`` : "some targets are still running; nothing was escalated");
+      if (!receipt.ok) process.exit(1);
+      return;
+    } catch (e) { return bail(e.code || "E_LIFECYCLE_FAILED", e.message, e.plan ? { plan: e.plan } : e.candidates ? { candidates: e.candidates } : undefined); }
+  }
   let home = flag("home");
   if (home === true) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
   if (home !== undefined && !isAbsolute(home)) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
@@ -4243,9 +4273,23 @@ function spawnCmd() {
 
 function retireCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--home <path>] [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
+  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--home <path>] [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
   let homeFlag = flag("home");
   if (homeFlag === true) die("--home needs the instance home path");
+  if (args.includes("--plan")) {
+    // K3: what retirement would touch, with the design's defaults — read-only.
+    dropAmbientRoot();
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_NO_ROOT", e.message) : die(e.message); }
+    try {
+      const plan = planRetire(dirFlag(), root, name, { home: homeFlag });
+      if (args.includes("--json")) { jsonOk(plan); return; }
+      console.log(`retire ${name} — plan ${plan.planRevision}`);
+      console.log(`  session ${plan.facts.session.state}; work ${plan.facts.work.observed ? `${plan.facts.work.changed} changed / ${plan.facts.work.untracked} untracked on ${plan.facts.work.branch ?? "detached"}` : `not observed (${plan.facts.work.reason})`}; children ${plan.facts.children.length}; pull request ${plan.facts.pullRequest}`);
+      console.log(`  defaults: retain worktree ${plan.defaults.retainWorktree}, delete branch ${plan.defaults.deleteBranch}, stop children ${plan.defaults.stopChildren}`);
+      for (const n of plan.notes) console.log(`  note: ${n}`);
+      return;
+    } catch (e) { return args.includes("--json") ? jsonFail(e.code || "E_LIFECYCLE_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined) : die(e.message); }
+  }
   // The calling instance knows its own home: self-retire never needs to
   // disambiguate a same-named twin by hand.
   if (homeFlag === undefined && process.env.OATS_INSTANCE_HOME && (process.env.PI_AGENT_INSTANCE === name || process.env.OATS_INSTANCE === name)) homeFlag = process.env.OATS_INSTANCE_HOME;
@@ -5480,6 +5524,13 @@ Usage:
   oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json]
                                              bounded diff of one observed file; refuses when
                                              the tree moved since the observation
+  oats instance stop <instance> --plan [--no-recursive] [--json]
+                                             what Stop would touch: session state, recorded
+                                             children, dirty work; a planRevision to apply
+  oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key>
+                                             quiesce (SIGTERM, bounded, never escalated),
+                                             children first; home/work/launch retained
+  oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
   oats update <package> [<package>@<ref>]    transactional package update: temp fetch,
       [--to <ref>] [--dir <d>]              closure validation, diff, lock replace,
                                             all capability approvals invalidated; a
