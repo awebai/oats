@@ -2,7 +2,6 @@ import { apiInit } from './api-url.mjs';
 import { forgeReason } from './renderer/forge-contract.mjs';
 export const FORGE_EPOCH_HEADER = 'x-oats-forge-epoch';
 export const validForgeEpoch = v => typeof v === 'string' && /^[a-zA-Z0-9:-]{1,96}$/.test(v);
-export const isForgePath = path => ['/api/forge-connections', '/api/instance-forge'].includes(path);
 export function forgeProxyOptions(path, opts, epoch) {
   const init = apiInit(opts);
   const headers = Object.fromEntries(Object.entries(init.headers || {}).filter(([key]) => key.toLowerCase() !== FORGE_EPOCH_HEADER));

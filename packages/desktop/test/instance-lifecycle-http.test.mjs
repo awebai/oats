@@ -4,8 +4,8 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { apiUrl, apiInit } from '../api-url.mjs';
-import { isForgePath, forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
+import { apiUrl, apiInit, classifyApiRoute } from '../api-url.mjs';
+import { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { lifecycleFailure } from '../renderer/lifecycle-contract.mjs';
 import { createLifecycleBoundary } from '../server/instance-lifecycle.mjs';
@@ -35,7 +35,7 @@ test('shipped IPC bounds plan/apply separately and classifies lost mutation tran
   for (const phase of ['plan', 'apply']) for (const fail of [false, true]) {
     let handler, seen;
     const renderer = 'file:///fixture/index.html', frame = { url: renderer }, owner = { mainFrame: frame, isDestroyed: () => false };
-    const c = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, isForgePath, forgeProxyOptions,
+    const c = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, forgeProxyOptions,
       trustedForgeFrame, FORGE_EPOCH_HEADER, forgeFailure, lifecycleFailure, RENDERER_URL: renderer, serverEpoch: 0,
       currentForgeEpoch: () => 'main:0', serverHost: { inTransition: () => false }, base: () => 'http://127.0.0.1:4820',
       wsId: 'team', allowedWs: new Set(['team']), guard: () => {}, AbortSignal: { timeout: ms => ({ ms }) },

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { apiUrl, apiInit } from "../packages/desktop/api-url.mjs";
+import { apiUrl, apiInit, classifyApiRoute } from "../packages/desktop/api-url.mjs";
 import * as forge from '../packages/desktop/forge-proxy.mjs';
 import { forgeFailure } from '../packages/desktop/renderer/forge-contract.mjs';
 
@@ -35,10 +35,10 @@ function bridge() {
     return { ok, status: ok ? 200 : 503, text: async () => JSON.stringify(body) };
   };
   const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let serverEpoch = 0;\n'
-    + 'const { isForgePath, forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
+    + 'const { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
-  const invalidate = new Function("fetch", "apiUrl", "apiInit", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", setup)(
-    fetch, apiUrl, apiInit, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
+  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", setup)(
+    fetch, apiUrl, apiInit, classifyApiRoute, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
     { inTransition: () => inTransition }, forge, forgeFailure, () => { forgeInvalidations++; },
   );
   return {
