@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 19:10Z · **v0.24.9 PUBLISHED** (tag `04a4f709`; both packages on npm, tarball shasum `6333c01c`; bump PR79 → main `a5cc390e`; artifact probe: readiness/preview API 2/bound apply/E_DECISION_STALE/retire retention/no-git verify all pass, caller alive, soul intact) · **6b READ MERGED** (PR78) · K6b ✅ · PR77 ✅ · engineer → **6b APPLY companion proposal** → 7b → 8 · open contracts: K11, attach-knowledge, auto-PR, branch enumeration
+**Last update:** 2026-09-22 21:30Z · **v0.24.10 PUBLISHED** (tag `d47dda94`; tarball shasum `030bcc3e`; bump PR86 → main `27f9f334`; artifact probe: preview API 2 → keyed apply → explicit-branch same-key replay → E_IDEMPOTENCY_CONFLICT → concurrent E_PLACEMENT_TAKEN/winner → keyed home retires clean) · **6b COMPLETE**: READ (PR78) + APPLY companion (PR85) · kernel K6b–K6f (PR76/80/81/82/83/84) · engineer → **7b (K7 instance events) proposal** → 8 · open contracts: K11, attach-knowledge, auto-PR, branch enumeration
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
