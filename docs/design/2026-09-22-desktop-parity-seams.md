@@ -55,4 +55,4 @@ Also to confirm: prototype "Gemini" runtime is illustrative (not an OATS runtime
 
 ## Ownership
 
-Lead: K1, K4, K5 (readiness/policy shape), K6 preview/apply plumbing, K7/K8 projections, dispatch contract for additive-capability views — proposed as Decisions where they change contracts, implemented in small PRs otherwise. P1: a new capability (`oats.git`/GitHub backend) — spec'd as a Decision with the human; implementation lane TBD. Desktop engineer: all slices, Desktop IPC review items (detach, open-in-editor).
+Lead: K1, K4, K5 (readiness/policy shape), K6 preview/apply plumbing, K7/K8 projections, dispatch contract for additive-capability views — proposed as Decisions where they change contracts, implemented in small PRs otherwise. P1: a new capability (`oats.git`/GitHub backend) — **Decision PROPOSED** (`agents/oats-expert/soul/knowledge/decisions/p1-oats-git-capability-and-additive-view-dispatch.md`, awaiting the human): option C — official additive capability + typed additive-view dispatch + native credential custody; implementation after approval. Desktop engineer: all slices, Desktop IPC review items (detach, open-in-editor).
