@@ -638,3 +638,22 @@ test("a routed spawn refuses a wake schedule when the host lacks the feature and
   assert.equal(out.envelope.ok, true);
   assert.match(calls.find((c) => c.includes(" spawn ")), /--wake-json/);
 });
+
+test("K8 recentRuns: every settled lastRun is recorded once (newest first, bounded 50), active/starting are not; describe exposes recentRuns + transcript pointer; scheduleApi 2", () => {
+  const ws = mkdtempSync(join(tmpdir(), "oats-sched-k8-")); mkdirSync(join(ws, "agents"), { recursive: true });
+  S.writeDefinitions(ws, { version: 1, jobs: { j: { kind: "command", enabled: true, cron: "*/5 * * * *", tz: "UTC", argv: ["oats", "status"], cwd: ws } } });
+  const st = S.readState(ws);
+  st.jobs.j = { lastRun: { scheduledFor: "2026-09-22T10:00:00.000Z", startedAt: "2026-09-22T10:00:01.000Z", outcome: "active", instance: "x-1", home: join(ws, "agents", "x", "instances", "x-1") } };
+  S.writeState(ws, st);
+  assert.equal(S.describe(ws, "j").recentRuns.length, 0, "an active run is not history yet");
+  st.jobs.j.lastRun = { ...st.jobs.j.lastRun, outcome: "ended", endedAt: "2026-09-22T10:03:00.000Z" }; S.writeState(ws, st);
+  st.jobs.j.lastRun = { ...st.jobs.j.lastRun, note: "late field" }; S.writeState(ws, st);
+  let d = S.describe(ws, "j"); assert.equal(d.scheduleApi, 2);
+  assert.equal(d.recentRuns.length, 1, "re-saving the same run updates, never duplicates"); assert.equal(d.recentRuns[0].note, "late field");
+  assert.deepEqual(d.recentRuns[0].transcript, { instance: "x-1", home: join(ws, "agents", "x", "instances", "x-1"), kind: "session" });
+  assert.equal(d.recentRuns[0].key, undefined, "the dedupe key stays internal");
+  for (let i = 1; i <= 60; i++) { st.jobs.j.lastRun = { scheduledFor: `2026-09-22T1${String(i).padStart(2, "0").slice(0, 1)}:${String(i % 60).padStart(2, "0")}:00.000Z`, startedAt: `s${i}`, outcome: i % 7 === 0 ? "blocked" : "ended" }; S.writeState(ws, st); }
+  d = S.describe(ws, "j"); assert.equal(d.recentRuns.length, 50, "bounded"); assert.equal(d.recentRuns[0].startedAt, "s60", "newest first");
+  assert.ok(d.recentRuns.some((r) => r.outcome === "blocked"), "outcomes are kept as the producer wrote them");
+  rmSync(ws, { recursive: true, force: true });
+});

@@ -59,8 +59,10 @@ import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../l
 import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { loadSetupExpertEdition, SETUP_EXPERT, SETUP_CAPABILITIES } from "../lib/setup-expert-source.mjs";
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
-import { planStop, applyStop, planRetire } from "../lib/instance-lifecycle.mjs";
+import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
+const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { readinessOf, policyOf } from "../lib/readiness.mjs";
+import { readEvents } from "../lib/instance-events.mjs";
 import { parsePortableSource } from "../lib/source-spec.mjs";
 
 const args = process.argv.slice(2);
@@ -3127,9 +3129,26 @@ function renderMergeRegion(r) {
 function instanceCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1], name = args[2];
-  const usage = "usage: oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json]";
-  if (!["git", "diff", "stop"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
+  const usage = "usage: oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] [--json] | oats instance git <instance> [--home <abs>] [--dir <d>] [--json] | oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json] | oats instance stop <instance> (--plan | --apply --plan-revision <rev> --idempotency-key <key>) [--no-recursive] [--grace-ms <n>] [--home <abs>] [--dir <d>] [--json]";
+  if (!["git", "diff", "stop", "events"].includes(sub) || !name || name.startsWith("--")) return bail("E_BAD_ARGS", usage);
   dropAmbientRoot();
+  if (sub === "events") {
+    // K7: typed producer events, bounded window; nothing inferred.
+    const homeOpt = flag("home"); if (homeOpt === true || (homeOpt !== undefined && !isAbsolute(homeOpt))) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    let root; try { root = ensureRoot(dirFlag()); } catch (e) { return bail(e.code || "E_NO_ROOT", e.message); }
+    const limit = flag("limit"); const since = flag("since");
+    if (limit === true || since === true) return bail("E_BAD_ARGS", usage);
+    try {
+      const { resolveInstance } = await_import_lifecycle();
+      let home = homeOpt;
+      if (!home) home = resolveInstance(dirFlag(), root, name).home;
+      const ev = readEvents(home, { ...(limit !== undefined ? { limit: Math.max(1, Math.min(2000, Number(limit) || 200)) } : {}), ...(since ? { since } : {}) });
+      if (JSON_MODE) { jsonOk(ev); return; }
+      console.log(`${ev.instance}: ${ev.returned} of ${ev.count} event(s)${ev.truncated ? " (window truncated)" : ""}${ev.waitingOnYou ? ` — waiting on you since ${ev.waitingOnYou.since} (${ev.waitingOnYou.producer})` : ""}`);
+      for (const e of ev.events) console.log(`  ${e.at ?? "?"}  ${e.kind.padEnd(20)} ${e.producer}${e.data ? `  ${JSON.stringify(e.data).slice(0, 120)}` : ""}`);
+      return;
+    } catch (e) { return bail(e.code || "E_EVENTS_FAILED", e.message, e.candidates ? { candidates: e.candidates } : undefined); }
+  }
   if (sub === "stop") {
     // K3: plan → apply. The plan is what a confirmation shows; apply carries
     // its revision back and refuses if reality moved.
@@ -5573,6 +5592,10 @@ Usage:
   oats instance diff <instance> --file <id> --revision <rev> [--index-revision <rev>] [--home <abs>] [--dir <d>] [--json]
                                              bounded diff of one observed file; refuses when
                                              the tree moved since the observation
+  oats instance events <instance> [--limit <n>] [--since <iso>] [--json]
+                                             typed lifecycle events (spawned, launched, stopped,
+                                             restarted, retired, worktree-retained…) written by
+                                             the action that made them true; nothing inferred
   oats instance stop <instance> --plan [--no-recursive] [--json]
                                              what Stop would touch: session state, recorded
                                              children, dirty work; a planRevision to apply

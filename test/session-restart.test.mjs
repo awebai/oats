@@ -427,3 +427,28 @@ test("K3 retire plan: facts with the design's defaults; pull request is UNKNOWN 
   assert.ok(plan.notes.some((n) => /pull request state is unknown/.test(n)));
   assert.throws(() => planRetire(repo, root, "nope-1"), (e) => e.code === "E_SESSION_UNKNOWN");
 });
+
+// ---- K7: typed lifecycle events ----
+import { readEvents, appendEvent } from "../lib/instance-events.mjs";
+test("K7 events: stop/restart/retire write producer-attributed events to the home AND the workspace log; the workspace log survives retirement; waitingOnYou is null unless a producer said so; window bounded", async () => {
+  const root = join(repo, "agents");
+  const name = "k7-ev";
+  const { home } = makeHome(name, { command: renderFor(join(root, "dev", "instances", name), name, join(binDir, "polite")), launch: recipeFor(join(root, "dev", "instances", name), name, { executable: join(binDir, "polite") }) });
+  startInstanceSession(home, { env: env() }); assert.ok(await waitFor(() => runningPid(home) !== null));
+  const one = stopInstanceSession(home, { graceMs: 5000 }); assert.equal(one.stopped, true);
+  const ev = readEvents(home);
+  assert.equal(ev.eventsApi, 1); assert.deepEqual(ev.events.map((e) => e.kind), ["stopped"]); assert.equal(ev.events[0].producer, "kernel"); assert.equal(ev.events[0].data.signal, "SIGTERM");
+  assert.equal(ev.waitingOnYou, null); assert.equal(ev.lastEvent.kind, "stopped");
+  assert.ok(existsSync(join(home, ".oats-events.jsonl")) && existsSync(join(repo, ".agents", "events", `dev--${name}.jsonl`)), "both logs");
+  // A producer claim is the only way waitingOnYou becomes non-null.
+  appendEvent(home, { kind: "launched", producer: "test.provider", data: { waitingOnYou: true, reason: "review requested" } });
+  const ev2 = readEvents(home); assert.deepEqual(ev2.waitingOnYou, { since: ev2.events.at(-1).at, producer: "test.provider", reason: "review requested" });
+  assert.equal(appendEvent(home, { kind: "made-up" }).ok, false, "unknown kinds are refused, never recorded");
+  assert.equal(readEvents(home, { limit: 1 }).returned, 1); assert.equal(readEvents(home, { limit: 1 }).truncated, true);
+  // Retire: 'retired' is written; the workspace log outlives the home.
+  const r = oats(["retire", name, "--dir", repo]); assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(existsSync(home), false);
+  const after = readEvents(home);
+  assert.ok(after.events.some((e) => e.kind === "retired"), JSON.stringify(after.events.map((e) => e.kind)));
+  assert.ok(after.events.some((e) => e.kind === "stopped"), "earlier events survive in the workspace log");
+});

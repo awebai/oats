@@ -156,6 +156,49 @@ returns a bounded unified diff:
 
 No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
 
+## Instance events (`oats instance events`, `eventsApi: 1`, OATS 0.24.8+) — K7
+
+Typed lifecycle events per instance, **written by the kernel action that made
+them true**, with the receipt it produced. Nothing is inferred from
+transcripts, TASK/STATE files or prose. Append-only, two logs: `<home>/.oats-events.jsonl`
+and `<workspace>/.agents/events/<agent>--<instance>.jsonl` (survives the
+home's removal, so a retired instance's `retired` event is still readable).
+
+`oats instance events <instance> [--limit <n>] [--since <iso>] [--home <abs>] [--dir <d>] --json`
+
+```json
+{"eventsApi":1,"instance":"dev-1","home":"/abs/home","count":7,"returned":7,"truncated":false,
+ "events":[{"eventsApi":1,"at":"<iso>","instance":"dev-1","home":"/abs/home","producer":"kernel","kind":"spawned","data":{"agent":"dev","work":"worktree","branch":"agents/dev-1","runtime":"claude","model":null,"parentInstance":null,"relation":null,"launched":true}},
+           {"…":"launched | restarted | stopped | stop-refused | retire-planned | worktree-retained | worktree-removed | branch-deleted | retired | child-spawn-refused"}],
+ "lastEvent":{"kind":"stopped","at":"<iso>","producer":"kernel"},
+ "waitingOnYou":null,
+ "notes":["…"]}
+```
+
+- `kind` is a closed set (unknown kinds are refused at write). `producer` is
+  `kernel` for lifecycle facts; a capability may append its own events with
+  its id as producer (the write API is `appendEvent`, not the renderer).
+- **`waitingOnYou` is `null` unless a producer reported it** (`data.waitingOnYou:
+  true` with a `reason`). `null` means *unknown*, not "not waiting". Today no
+  kernel path claims it; the Active overview keeps rendering unknown until a
+  producer (a messaging or review capability) does.
+- Window is bounded (`--limit`, default 200; `truncated` says so). A torn line
+  appears as `kind: "unreadable"` rather than vanishing.
+
+## Schedule run history (`scheduleApi: 2`, OATS 0.24.8+) — K8
+
+`oats schedule show|list --json` entries gain **`recentRuns`**: the last 50
+settled runs (newest first) — every `lastRun` the scheduler recorded once its
+outcome settled (`ended | stopped | blocked | invalid | delivered | skipped |
+unknown …`, never `active`/`starting`), exactly as the producer wrote it,
+deduplicated per run. Where the run launched or targeted an instance, a
+`transcript: {instance, home, kind: "session"}` pointer says which home's
+session to open (the existing `oats session` surface); the kernel does not
+copy transcripts. `nextRun`/`lastRun`/`executionStatus` are unchanged. The
+Schedules view (frame 08) renders `recentRuns` as the recent-runs list and the
+transcript pointer as the handoff; captured-policy definitions are preserved
+as they are (definition fields are untouched by this addition).
+
 ## Spawn preview (`oats spawn … --preview`, `spawnPreviewApi: 1`, OATS 0.24.8+)
 
 The Spawn modal's fields are backed by the kernel's own decision, taken **before
