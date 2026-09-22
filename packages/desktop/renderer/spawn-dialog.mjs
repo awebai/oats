@@ -1,6 +1,7 @@
 /** Frame 02 composition. Moves the real existing controls; owns no launch API. */
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
+import { createChoicePopup as popup } from './choice-popup.mjs';
 
 export const spawnDialogCSS = `
 .spawn-modal .spawn-dialog { width:860px; max-width:100%; box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; }
@@ -47,7 +48,12 @@ export const spawnDialogCSS = `
 .spawn-choice-trigger { width:100%; min-height:36px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--sans,system-ui); text-align:left; padding:0 10px; display:flex; align-items:center; gap:8px; cursor:pointer; }
 .spawn-choice-trigger::after { content:'⌄'; margin-left:auto; color:var(--muted); }
 .spawn-choice-trigger .identity-mark { width:20px; height:20px; border-radius:5px; flex:none; }
-.spawn-choice-menu { position:absolute; left:0; top:calc(100% + 4px); width:min(300px,calc(100vw - 60px)); max-height:260px; overflow:auto; z-index:2; border:1px solid var(--border); border-radius:9px; padding:6px; box-shadow:var(--shadow); background:var(--surface); }
+.spawn-choice-menu { position:absolute; left:0; top:calc(100% + 4px); width:min(300px,calc(100vw - 60px)); max-height:260px; overflow:auto; z-index:2; border:1px solid var(--border); border-radius:9px; padding:6px; box-shadow:var(--shadow-popover); background:var(--surface); }
+.spawn-dialog .spawn-popup-search input.field { min-height:30px; height:30px; padding:0 8px; font-size:12px; }
+.spawn-popup-search { position:sticky; top:0; z-index:1; background:var(--surface); padding:0 2px 6px; border-bottom:1px solid var(--border); margin-bottom:4px; }
+.spawn-popup-group { padding:6px 8px 3px; font-size:10px; font-weight:650; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+.spawn-popup-status { padding:6px 8px; margin:0; color:var(--muted); font-size:11.5px; }
+.spawn-popup-status:empty { display:none; }
 .spawn-choice-menu button { width:100%; min-height:36px; border:0; border-radius:6px; background:var(--surface); color:var(--fg); text-align:left; padding:8px 9px; font:12.5px var(--sans,system-ui); cursor:pointer; }
 .spawn-choice-menu button[aria-selected=true] { background:var(--sel); }
 .spawn-choice-menu button:disabled { color:var(--muted); cursor:default; }
@@ -76,48 +82,6 @@ export const spawnDialogCSS = `
 const identity = soul => JSON.stringify([soul?.agentsRoot || '', soul?.name || '', soul?.server || '']);
 const node = (doc, tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
 
-/** Keyboard-consumable popup; no window-level launch chord interception. */
-function popup(doc, host, label, id, options, pick) {
-  const root = node(doc, 'div', undefined, 'spawn-choice-popover');
-  const trigger = node(doc, 'button', label, 'spawn-choice-trigger'); trigger.type = 'button'; trigger.setAttribute('aria-haspopup', 'listbox'); trigger.setAttribute('aria-expanded', 'false');
-  const menu = node(doc, 'div', undefined, 'spawn-choice-menu'); menu.id = id; menu.hidden = true; menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', label);
-  trigger.setAttribute('aria-controls', id);
-  root.append(trigger, menu); host.append(root);
-  let alive = true;
-  const close = (focus = false) => { menu.hidden = true; trigger.setAttribute('aria-expanded', 'false'); if (focus && root.isConnected) trigger.focus(); };
-  function open() {
-    if (!alive || trigger.disabled) return;
-    menu.replaceChildren();
-    for (const item of options()) {
-      const option = node(doc, 'button', item.label); option.type = 'button'; option.disabled = !!item.disabled;
-      option.setAttribute('role', 'option'); option.setAttribute('aria-selected', String(!!item.selected));
-      if (item.detail) option.append(node(doc, 'small', item.detail));
-      option.addEventListener('click', () => { if (!alive || menu.hidden || option.disabled) return; close(true); pick(item); }); menu.append(option);
-    }
-    menu.hidden = false; trigger.setAttribute('aria-expanded', 'true');
-    (menu.querySelector('[aria-selected=true]:not(:disabled)') || menu.querySelector('button:not(:disabled)'))?.focus();
-  }
-  trigger.addEventListener('click', () => menu.hidden ? open() : close());
-  root.addEventListener('keydown', event => {
-    if (event.isComposing || event.keyCode === 229) return;
-    if (event.repeat && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); event.stopPropagation(); return; }
-    if (menu.hidden) {
-      if (['ArrowDown', 'ArrowUp'].includes(event.key) || (event.key === 'Enter' && !event.metaKey && !event.ctrlKey)) { event.preventDefault(); event.stopPropagation(); open(); }
-      return;
-    }
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
-    else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); if (menu.contains(doc.activeElement)) doc.activeElement.click(); }
-    else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-      event.preventDefault(); event.stopPropagation();
-      const choices = [...menu.querySelectorAll('button:not(:disabled)')], at = choices.indexOf(doc.activeElement);
-      const next = event.key === 'Home' ? 0 : event.key === 'End' ? choices.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length;
-      choices[next]?.focus();
-    } else if (event.key === 'Tab') close(true);
-  });
-  const outside = event => { if (!root.contains(event.target)) close(); }; doc.addEventListener('mousedown', outside);
-  return { trigger, close, dispose() { alive = false; doc.removeEventListener('mousedown', outside); close(); } };
-}
-
 export function composeSpawnDialog(modal, { soul, agents, workspace, choose, canChoose, query = '' }) {
   const doc = modal.ownerDocument, el = (tag, text, cls) => node(doc, tag, text, cls);
   const dialog = modal.querySelector('.spawn-dialog'), form = modal.querySelector('.soul-form'), header = modal.querySelector('.spawn-dialog-head');
@@ -134,7 +98,9 @@ export function composeSpawnDialog(modal, { soul, agents, workspace, choose, can
   const columns = el('div', undefined, 'spawn-columns'), chooser = el('section', undefined, 'spawn-chooser'); chooser.setAttribute('aria-label', 'Choose a soul');
   const searchLabel = el('label', undefined, 'spawn-search-label'), search = el('input', undefined, 'field spawn-soul-search'), count = el('span', '', 'spawn-search-count');
   search.type = 'search'; search.autocomplete = 'off'; search.placeholder = 'Search souls…'; search.setAttribute('aria-label', 'Search souls to spawn'); search.value = query;
-  searchLabel.append(search, count); const list = el('div', undefined, 'spawn-soul-choices'); chooser.append(searchLabel, list);
+  searchLabel.append(search, count); const list = el('div', undefined, 'spawn-soul-choices');
+  const empty = el('p', '', 'spawn-chooser-empty spawn-seam-note'); empty.setAttribute('role', 'status');
+  chooser.append(searchLabel, list, empty);
   const rows = [];
   const groups = new Map();
   for (const candidate of agents) {
@@ -164,6 +130,7 @@ export function composeSpawnDialog(modal, { soul, agents, workspace, choose, can
     for (const entry of rows) { entry.row.hidden = !entry.text.includes(search.value.toLowerCase()); if (!entry.row.hidden) shown++; }
     for (const group of list.children) group.hidden = !rows.some(entry => entry.group === group && !entry.row.hidden);
     count.textContent = `${shown} of ${rows.length}`;
+    empty.hidden = shown > 0; empty.textContent = shown ? '' : rows.length ? 'No souls match this filter.' : 'No souls reported for this chooser.';
     const visible = rows.filter(entry => !entry.row.hidden && !entry.row.disabled);
     const tabStop = visible.find(entry => entry.row === doc.activeElement) || visible.find(entry => entry.row.getAttribute('aria-pressed') === 'true') || visible[0];
     for (const entry of rows) entry.row.tabIndex = entry === tabStop ? 0 : -1;
@@ -228,12 +195,22 @@ export function composeSpawnDialog(modal, { soul, agents, workspace, choose, can
   const providers = popup(doc, runtimeLabel, 'Choose provider', 'spawn-provider-choices', () => [...runtime.options].map(option => ({ value: option.value, label: option.textContent, disabled: option.disabled, selected: option.selected })), item => {
     runtime.value = item.value; runtime.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true }));
   });
-  const models = popup(doc, modelControls, 'Model choices', 'spawn-model-choices', () => [
-    { value: '', label: 'Use resolved defaults', selected: !model.value },
-    ...[...form.querySelectorAll('datalist option')].map(option => ({ value: option.value, label: option.label || option.value, selected: model.value === option.value })),
-    { custom: true, label: 'Custom entry…' }, { label: 'Force native default — available after K6', disabled: true },
-  ], item => { if (!item.custom) { model.value = item.value; model.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); } model.focus(); });
+  const models = popup(doc, modelControls, 'Model choices', 'spawn-model-choices', () => {
+    const suggestions = [...form.querySelectorAll('datalist option')];
+    return [
+      { value: '', label: 'Use resolved defaults', selected: !model.value, group: 'Defaults', search: false },
+      { label: 'Force native default — available after K6', disabled: true, group: 'Defaults', search: false },
+      ...suggestions.map(option => ({ value: option.value, label: option.label || option.value,
+        detail: option.label && option.label !== option.value ? option.value : undefined, selected: model.value === option.value, group: 'Reported suggestions' })),
+      { custom: true, label: 'Custom entry…', detail: model.value || 'Type a model ID or preference list', group: 'Custom', search: false,
+        selected: !!model.value && !suggestions.some(option => option.value === model.value) },
+    ];
+  }, item => { if (!item.custom) { model.value = item.value; model.dispatchEvent(new doc.defaultView.Event('change', { bubbles: true })); } model.focus(); }, {
+    searchable: true, scope: () => JSON.stringify([runtime.value, form.querySelector('.fserver')?.value || '']),
+    nothingReported: 'No model suggestions reported. Custom model text is still accepted.', noMatch: 'No reported model suggestions match this filter.',
+  });
   models.trigger.textContent = ''; models.trigger.setAttribute('aria-label', 'Choose model');
+  model.addEventListener('change', models.refresh);
   const syncRuntime = () => {
     providers.trigger.replaceChildren();
     if (runtime.value) providers.trigger.append(createRuntimeBadge(doc, runtime.value));
@@ -241,7 +218,7 @@ export function composeSpawnDialog(modal, { soul, agents, workspace, choose, can
     providers.trigger.append(doc.createTextNode(label)); providers.trigger.setAttribute('aria-label', `Provider: ${label}`);
   }; runtime.addEventListener('change', syncRuntime); syncRuntime();
   return { config, refreshConfigs, configStatus, moreBody, search, defaultNote, launchStatus, preview, previewDetails, readiness,
-    syncRuntime, closePopups() { providers.close(); models.close(); },
-    dispose() { providers.dispose(); models.dispose(); },
+    syncRuntime, refreshChoices() { providers.refresh(); models.refresh(); }, closePopups() { providers.close(); models.close(); },
+    dispose() { providers.dispose(); models.dispose(); model.removeEventListener('change', models.refresh); runtime.removeEventListener('change', syncRuntime); },
   };
 }

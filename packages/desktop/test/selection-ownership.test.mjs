@@ -462,7 +462,10 @@ for (const [kind, from] of [
   ["keyboard-filter", 'if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate();'],
   ["command-filter", 'tabOpenIntents.invalidate(); // also when the filter already has DOM focus'],
 ]) test(`mutation: sidebar ${kind} must revoke pending content-focus authority`, async t => {
-  const mutant = source.replace(from, "/* mutation: sidebar did not cancel */");
+  const name = kind === "command-filter" ? "focusRoster" : "initContextRoster";
+  const block = source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))?.[0];
+  assert.ok(block); assert.equal(block.split(from).length, 2, 'weaken this sidebar owner, not another component with the same guard');
+  const mutant = source.replace(block, block.replace(from, "/* mutation: sidebar did not cancel */"));
   assert.notEqual(mutant, source);
   await assert.rejects(sidebarAttachment(t, kind, "resolve", mutant), /sidebar owns input/);
 });

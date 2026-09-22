@@ -499,7 +499,9 @@ test("Spawn modal: model dropdown offers the runtime's catalog, swaps on runtime
     assert.ok(dl, "advisory model option store present");
     const input = doc.querySelector(".fmodel");
     assert.equal(input.getAttribute("list"), null, "controlled popup, not an unobservable native datalist");
-    assert.equal(doc.querySelector('.spawn-model-controls button').getAttribute('aria-controls'), 'spawn-model-choices');
+    const controlled = doc.getElementById(doc.querySelector('.spawn-model-controls button').getAttribute('aria-controls'));
+    assert.equal(controlled.getAttribute('role'), 'listbox');
+    assert.equal(doc.getElementById('spawn-model-choices').contains(controlled), true, 'trigger addresses the listbox inside the searchable popup');
     const fruntime = doc.querySelector(".fruntime");
     fruntime.value = "pi";
     fruntime.dispatchEvent(new dom.window.Event("change", { bubbles: true }));

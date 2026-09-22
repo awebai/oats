@@ -81,6 +81,25 @@ test("workspace menu is searchable, disambiguated, keyboard closable, and switch
   dom.window.close();
 });
 
+test("workspace choice notice distinguishes nothing reported from no match without creating a selectable option", () => {
+  const { dom, document, controller, selected } = setup();
+  controller.openMenu();
+  const note = document.querySelector('.ws-menu-empty'), list = document.getElementById('ws-options');
+  assert.equal(note.getAttribute('role'), 'status'); assert.equal(note.hidden, false);
+  assert.equal(note.textContent, 'No workspace choices reported.'); assert.equal(list.contains(note), false);
+  assert.equal(document.querySelector('.ws-option'), null);
+  controller.begin()(A, [A, B]); assert.equal(note.hidden, true);
+  const old = document.querySelectorAll('.ws-option')[1];
+  const input = document.getElementById('ws-menu-search'); input.value = 'does-not-match';
+  input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(note.textContent, 'No workspaces match this filter.'); assert.equal(note.hidden, false);
+  assert.equal(document.activeElement, input); assert.equal(document.querySelector('.ws-option'), null);
+  old.dispatchEvent(new dom.window.Event('click')); assert.deepEqual(selected, [], 'removed option cannot select through the empty state');
+  input.value = ''; input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  assert.equal(note.hidden, true); assert.equal(document.querySelectorAll('.ws-option').length, 2);
+  dom.window.close();
+});
+
 test("add workspace modal discovers, filters, selects and confirms a suggestion", async () => {
   const calls = [];
   const C = { id: "/org-c/tools", path: "/org-c/tools", name: "tools", team: { name: "gamma" }, reason: "Team-scope sibling" };

@@ -811,10 +811,12 @@ function openSpawnModal(s, a, draft = {}) {
   // not touch a list it no longer owns.
   let modelReq = 0;
   const fillModelOptions = async () => {
+    if (!ownsModal()) return;
     const myReq = ++modelReq;
     const dl = f.querySelector("#spawn-model-options");
     if (!dl) return;
     dl.textContent = "";
+    layout.refreshChoices();
     const runtime = f.querySelector(".fruntime").value;
     if (!canLaunchSoul(s, a) || serverSelect.value || !runtime || f.querySelector('.fruntime').selectedOptions[0]?.disabled) return; // No catalog for stale souls, remote, unsupported or unresolved defaults.
     try {
@@ -826,7 +828,8 @@ function openSpawnModal(s, a, draft = {}) {
         if (m.label && m.label !== m.id) opt.label = m.label;
         dl.append(opt);
       }
-    } catch { /* advisory only — no catalog, no dropdown, field still works */ }
+      layout.refreshChoices();
+    } catch { /* advisory only — no suggestions reported; custom text still works */ }
   };
   fillModelOptions();
   f.querySelector(".fruntime").addEventListener("change", fillModelOptions);
