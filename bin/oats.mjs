@@ -600,6 +600,12 @@ function officialMigrationState(legacyLocks, { teamScope, ctx }) {
  * nearer scope's package of the same id — a provider that never exported it. */
 const levelRows = (locks, level) => locks.levels.find((l) => l.level === level) || { packages: Object.create(null), capabilities: Object.create(null) };
 
+/** A capability has an executable surface when its manifest declares commands,
+ *  hooks or launch environment — the things `oats trust` approves. A
+ *  data-only capability (skills/injects) has none, and trust is not-applicable. */
+function hasExecutableSurface(manifest) {
+  return !!(Object.keys(manifest?.commands || {}).length || Object.keys(manifest?.hooks || {}).length || (manifest?.environment?.length || 0));
+}
 function capabilityHealth(level, cap, capRow, pkgRow) {
   const dir = installedCapabilityDir(level, cap.id);
   if (!cap.installed) return { status: "missing", code: "missing-capability-artifact", dir, detail: `capability ${cap.id} is locked but not materialized — run \`oats install\` to re-materialize it` };
@@ -615,9 +621,7 @@ function capabilityHealth(level, cap, capRow, pkgRow) {
     try { verifyCapabilityInstallation(dir, cap.id, capRow, pkgRow); }
     catch (e) { return { status: "provenance-mismatch", code: e.code || "invalid-lock", dir, integrity, detail: `capability ${cap.id}: ${e.message}` }; }
   }
-  const executable = Object.keys(cap.manifest?.commands || {}).length
-    || Object.keys(cap.manifest?.hooks || {}).length
-    || (cap.manifest?.environment?.length || 0);
+  const executable = hasExecutableSurface(cap.manifest);
   if (executable && !cap.trusted) return { status: "untrusted", code: "untrusted-surface", dir, integrity, detail: `capability ${cap.id}: executable surface UNTRUSTED — \`oats trust ${cap.id}\`` };
   return { status: "ok", code: null, dir, integrity, detail: null };
 }
@@ -945,7 +949,7 @@ function computeInspect({ onFail } = {}) {
         byId.set(c.id, {
           id: c.id, package: p.package, version: c.version || null, layer: c.manifest?.layer || null, command: c.manifest?.command || null,
           origin: "installed", level: p.level, source: p.source || null, commit: p.commit ?? rows.packages[p.package]?.commit ?? null, dir: h.dir,
-          health: { status: h.status, code: h.code, detail: h.detail, installed: !!c.installed, locked: true, trusted: c.trusted === true, integrity: c.integrity || null, installedIntegrity: h.integrity ?? null },
+          health: { status: h.status, code: h.code, detail: h.detail, installed: !!c.installed, locked: true, trusted: c.trusted === true, executableSurface: hasExecutableSurface(c.manifest), integrity: c.integrity || null, installedIntegrity: h.integrity ?? null },
         });
       }
     }
@@ -953,13 +957,13 @@ function computeInspect({ onFail } = {}) {
   for (const [id, m] of Object.entries(mans)) {
     if (byId.has(id)) continue;
     const trust = capabilityTrust(m, ctx);
-    const executable = Object.keys(m.commands || {}).length || Object.keys(m.hooks || {}).length || (m.environment?.length || 0);
+    const executable = hasExecutableSurface(m);
     let integrity = trust.integrity || null;
     if (!integrity) { try { integrity = capabilityArtifactIntegrity(m._dir); } catch { integrity = null; } }
     byId.set(id, {
       id, package: m._package || null, version: m.version || null, layer: m.layer || null, command: m.command || null,
       origin: String(m._origin || "").split(":")[0] || "unknown", level: String(m._origin || "").split(":").slice(1).join(":") || null, source: null, dir: m._dir,
-      health: { status: executable && !trust.trusted ? "untrusted" : "ok", code: executable && !trust.trusted ? "untrusted-surface" : null, detail: executable && !trust.trusted ? (trust.reason || null) : null, installed: true, locked: !!trust.lock, trusted: !!trust.trusted, integrity, installedIntegrity: integrity },
+      health: { status: executable && !trust.trusted ? "untrusted" : "ok", code: executable && !trust.trusted ? "untrusted-surface" : null, detail: executable && !trust.trusted ? (trust.reason || null) : null, executableSurface: executable, installed: true, locked: !!trust.lock, trusted: !!trust.trusted, integrity, installedIntegrity: integrity },
     });
   }
   // What is EFFECTIVE for the answer: a home's captured bindings and settings
@@ -3215,17 +3219,30 @@ function instanceCmd() {
     bail(e.code || "E_GIT_FAILED", e.message, e.observation ? { observation: e.observation } : undefined);
   }
 }
-/** `oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json` — K5. */
+/** `oats readiness [--soul <name> [--agents-root <abs>]] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json` — K5. */
 function readinessCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
+  // A captured incarnation's readiness comes from its retained resolution, not
+  // from the current configuration this command reads; refuse before inspecting.
+  const homeArg = flag("home");
+  if (homeArg && homeArg !== true) {
+    let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* computeInspect reports the unreadable home */ }
+    if (capturedMeta?.executionBinding || capturedMeta?.captured) return bail("E_UNSUPPORTED_MODE", `${basename(String(homeArg))} is a captured incarnation: its readiness is the retained resolution's, not the current configuration's (inspect it with oats operation --deployment/--resolution)`, { home: String(homeArg), captured: true });
+  }
   const inspect = computeInspect({ onFail: bail });
   if (!inspect) return;
   const soul = flag("soul") === true ? null : flag("soul") || inspect.selected?.soul || null;
   const verify = args.includes("--verify-signatures");
   let catalog = null; try { catalog = describeOfficialCatalog(); catalog = { packages: Object.fromEntries(catalog.packages.map((p) => [p.package, p])) }; } catch { catalog = null; }
   const deploymentDir = inspect.scope?.context ?? null;
-  const readiness = readinessOf(inspect, { soul, verifySignatures: verify, catalog, deploymentDir });
+  // Echo the exact selector this read was made with, so a consumer can bind the
+  // result to its own admitted target without inventing a revision.
+  const agentsRootArg = flag("agents-root");
+  const selector = homeArg && homeArg !== true ? { kind: "home", home: String(homeArg), soul, agentsRoot: agentsRootArg && agentsRootArg !== true ? String(agentsRootArg) : null }
+    : soul ? { kind: "soul", soul, agentsRoot: agentsRootArg && agentsRootArg !== true ? String(agentsRootArg) : null, context: deploymentDir }
+    : { kind: "scope", context: deploymentDir };
+  const readiness = readinessOf(inspect, { soul, verifySignatures: verify, catalog, deploymentDir, selector });
   if (args.includes("--policy")) {
     const homeOpt = flag("home");
     let meta = null;
@@ -4980,7 +4997,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history", "session-recompose"], instanceGitApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 1, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history", "session-recompose", "readiness-verify"], instanceGitApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 1, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -5639,7 +5656,10 @@ Usage:
   oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key>
                                              quiesce (SIGTERM, bounded, never escalated),
                                              children first; home/work/launch retained
-  oats readiness [--soul <n>] [--home <abs>] [--verify-signatures] [--policy] [--json]
+  oats readiness [--soul <n> [--agents-root <abs>]] [--home <abs>] [--verify-signatures] [--policy] [--json]
+                                             quartet installed|trusted|configured|enrolled for a scope,
+                                             a soul, or an instance home (captured homes refuse:
+                                             their readiness is the retained resolution's)
                                              installed | trusted | configured | enrolled, each
                                              pass|fail|unknown|not-applicable with items and
                                              remedies; signature status per artifact; enforced

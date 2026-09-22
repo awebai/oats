@@ -146,6 +146,7 @@ test('declared oats.core that is NOT active refuses spawn with the remedy (no ho
 
 // ---- K5: readiness quartet + enforced child-spawn policy ----
 import { spawnInstance as spawnCore } from '../lib/core.mjs';
+import { signatureOf, SIGNATURE_FAILURES } from '../lib/readiness.mjs';
 
 test('K5 readiness: quartet derived from inspect facts — installed/trusted/configured/enrolled with items and remedies; ready never inferred from an empty set; signature unknown without --verify-signatures', t => {
   const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
@@ -155,10 +156,10 @@ test('K5 readiness: quartet derived from inspect facts — installed/trusted/con
   const created = f.run(['create', 'ready', '--work', 'directory', '--runtime', 'claude', '--json']); assert.equal(created.status, 0, created.stdout + created.stderr);
   const r = f.run(['readiness', '--soul', 'ready', '--json']); assert.equal(r.status, 0, r.stdout + r.stderr);
   const rd = JSON.parse(r.stdout).result;
-  assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready' });
+  assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready', selector: { kind: 'soul', soul: 'ready', agentsRoot: null, context: f.context } });
   assert.equal(rd.checks.installed.status, 'pass'); assert.equal(rd.checks.installed.items[0].subject, 'oats.core'); assert.equal(rd.checks.installed.items[0].producer, 'oats list');
   const trusted = rd.checks.trusted.items.find(i => i.subject === 'oats.core');
-  assert.equal(trusted.status, 'pass', 'owned capabilities are config-owned trust (same as inspect health.trusted)');
+  assert.equal(trusted.status, 'not-applicable', 'a data-only capability (skills/inject, no commands/hooks/env) has nothing trust approves — whatever the lock records');
   assert.equal(trusted.signature.status, 'not-applicable', 'owned/path capability has no source commit to sign');
   assert.equal(rd.checks.configured.status, 'pass'); assert.equal(rd.checks.configured.items[0].subject, 'oats.core activation');
   assert.equal(rd.checks.enrolled.status, 'not-applicable'); assert.equal(rd.checks.enrolled.items[0].required, false); assert.match(rd.checks.enrolled.items[0].reason, /standalone/);
@@ -253,4 +254,52 @@ test('K7 events: spawn writes spawned (+launched when launching); a refused chil
   assert.equal(ev.events[0].data.launched, false); assert.equal(ev.events[1].data.policy.allowed, false); assert.match(ev.events[1].data.child, /^evkid-k/);
   assert.equal(ev.waitingOnYou, null);
   retireInstance(f.root, boss.instance);
+});
+
+test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; data-only capability trust is not-applicable however the lock reads; typed capability/origin + byCapability; selector echo; unreadable member document is unknown; captured home refuses; signature failure is a closed code, never stderr', t => {
+  const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
+  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert composition fixture', inject: 'inject.md', skills: ['skills'] });
+  f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
+  // Declared FOR this soul but explicitly disabled: a declaration is not activation.
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      souls:\n        ready: {enabled: false}\n');
+  const created = f.run(['create', 'ready', '--work', 'directory', '--runtime', 'claude', '--json']); assert.equal(created.status, 0, created.stdout + created.stderr);
+  const r = JSON.parse(f.run(['readiness', '--soul', 'ready', '--agents-root', f.root, '--json']).stdout).result;
+  const act = r.checks.configured.items.find(i => i.subject === 'oats.core activation');
+  assert.equal(act.status, 'fail', 'declared-but-disabled is a FAIL, not pass'); assert.match(act.reason, /declared for soul ready but disabled/);
+  assert.equal(r.summary.ready, false);
+  // Typed linkage on every item + the same items grouped per capability.
+  for (const check of Object.values(r.checks)) for (const i of check.items) if (i.subject.startsWith('oats.core')) { assert.equal(i.capability.id, 'oats.core'); assert.ok(['requires', 'declares', 'default', 'inventory'].includes(i.origin.kind)); }
+  assert.equal(act.origin.kind, 'requires'); assert.equal(act.origin.target, 'soul:ready');
+  const grouped = r.summary.byCapability.find(g => g.capability.id === 'oats.core');
+  assert.deepEqual(Object.keys(grouped.checks), ['installed', 'trusted', 'configured', 'enrolled']); assert.equal(grouped.checks.configured, 'fail'); assert.equal(grouped.ready, false);
+  // Selector echo: exactly what this read was made with.
+  assert.deepEqual(r.subject.selector, { kind: 'soul', soul: 'ready', agentsRoot: f.root, context: f.context });
+  assert.deepEqual(JSON.parse(f.run(['readiness', '--json']).stdout).result.subject.selector, { kind: 'scope', context: f.context });
+  // Data-only capability: no commands/hooks/env → trust NOT-APPLICABLE, whatever the lock says; a hook makes it applicable.
+  const tr = r.checks.trusted.items.find(i => i.subject === 'oats.core');
+  assert.equal(tr.status, 'not-applicable'); assert.equal(tr.reason, 'no executable surface'); assert.equal(tr.remedy, null);
+  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'now executable', inject: 'inject.md', skills: ['skills'], hooks: { spawn: 'hook.sh' } }); f.write(join(cap, 'hook.sh'), '#!/bin/sh\necho {}\n');
+  const tr2 = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.trusted.items.find(i => i.subject === 'oats.core');
+  assert.notEqual(tr2.status, 'not-applicable', 'a hook is an executable surface');
+  // Unreadable member document → enrolled UNKNOWN with the file, never not-applicable.
+  for (const bad of ['workspace: [this: is: not: valid\n  yaml', 'workspace: nope\n']) {
+    f.write(join(f.context, 'oats.yaml'), bad);
+    const en = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.enrolled.items[0];
+    assert.equal(en.status, 'unknown', bad); assert.match(en.reason, /unreadable/); assert.equal(en.evidence.file, join(f.context, 'oats.yaml')); assert.equal(en.required, true);
+  }
+  rmSync(join(f.context, 'oats.yaml')); mkdirSync(join(f.context, 'oats.yaml')); // a directory: cannot be read at all
+  assert.equal(JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.enrolled.items[0].status, 'unknown');
+  rmSync(join(f.context, 'oats.yaml'), { recursive: true });
+  // Captured home refuses before any current-config interpretation.
+  const cHome = join(f.root, 'ready', 'instances', 'ready-cap'); f.write(join(cHome, 'instance.json'), { instance: 'ready-cap', agent: 'ready', home: cHome, executionBinding: { deployment: f.context, resolution: { id: 'sha256-' + 'a'.repeat(64) } } });
+  const cap1 = f.run(['readiness', '--home', cHome, '--json']); assert.equal(cap1.status, 1);
+  const err = JSON.parse(cap1.stdout.trim().split('\n').pop()).error; assert.equal(err.code, 'E_UNSUPPORTED_MODE'); assert.equal(err.details.captured, true);
+  // Signature verification: closed failure code, no stderr; transport allowlist; feature advertised.
+  const sig = signatureOf({ url: 'file:///nowhere', commit: 'a'.repeat(40) }, { verify: true });
+  assert.deepEqual(sig, { status: 'unknown', signer: null, reason: 'source transport is not https or ssh; not fetched', failure: { code: 'transport-not-allowed' } });
+  const dead = signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budgetMs: 4000 });
+  assert.equal(dead.status, 'unknown'); assert.ok(['fetch-failed', 'fetch-timeout', 'budget-exhausted'].includes(dead.failure.code), JSON.stringify(dead));
+  assert.doesNotMatch(dead.reason, /fatal:|127\.0\.0\.1|Could not read|unable to access/, 'no stderr in the reason'); assert.equal(dead.reason, 'the source could not be fetched'); assert.ok(SIGNATURE_FAILURES.includes(dead.failure.code));
+  assert.equal(readdirSync(tmpdir()).filter(n => n.startsWith('oats-sig-')).length, 0, 'scratch repository removed');
+  assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('readiness-verify'));
 });
