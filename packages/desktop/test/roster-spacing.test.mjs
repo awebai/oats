@@ -36,11 +36,11 @@ function fixture(t, stylesheet = css) {
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
-    contextInstances: roster, currentWorkspace: () => "A", collapsedInstances: new Set(),
+    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
     tabOpenIntents: { applyFocus: fn => fn() },
     // Display-only fixture: any attempted navigation/action is a test failure.
-    openTerminalTab: assert.fail, openInstanceStart: assert.fail, onRosterRowKey: assert.fail,
+    openTerminalTab: assert.fail, openInstanceStart: assert.fail, openLifecycleDialog: assert.fail, onRosterRowKey: assert.fail,
     api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail,
   };
   const render = runInNewContext(`${renderSource}\nrenderContextRoster`, context);
@@ -176,7 +176,7 @@ test("roster DOM contract: identity, active/focus state and closed action menus 
     assert.equal(menu.getAttribute("role"), "menu");
     assert.equal(menu.parentElement, trigger.parentElement);
     assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action),
-      button.disabled ? ["inspect", "retire"] : ["inspect", "restart", "retire"]);
+      button.disabled ? ["inspect", "stop", "retire"] : ["inspect", "restart", "stop", "retire"]);
   }
   const active = u.doc.querySelector(".ctx-inst.active");
   assert.equal(active.dataset.treeInstance, tree.instanceId(roster[1]));

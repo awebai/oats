@@ -46,7 +46,7 @@ function shell(t, shellSource = source) {
     document, window: dom.window, localStorage: dom.window.localStorage,
     NAV, shellIcon, createContextPanel, createInstanceGitPanel, workspace: "A", generation: 0, events, notices,
     connectionGeneration: 0, subscribeConnections: () => () => {},
-    connections: { close() {}, open: () => events.push(['connections']) },
+    connections: { close() {}, open: () => events.push(['connections']) }, lifecycleDialog: { close() {} },
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
     loadSpawn() { const gate = deferred(); loads.push(gate); return gate.promise; },
     ctx: { notify: text => notices.push(text) },

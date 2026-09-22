@@ -410,8 +410,9 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     assert.deepEqual(call.argv, ["operation", "run", "knowledge:harvest", "--server", "host", "--home", home, "--json"], "saved --server route and the exact remote --home");
     assert.notEqual(call.cwd, home, "remote home must never become a local process cwd");
     const retired = await fetch(`${base}/api/retire/dev-one${qualifier}`, { method: "POST" });
-    assert.equal(retired.status, 200);
-    assert.deepEqual(fake.calls().find((c) => c.argv[0] === "retire").argv, ["retire", "dev-one", "--home", home, "--server", "host", "--json"]);
+    assert.equal(retired.status, 409);
+    assert.equal((await retired.json()).code, 'E_PLAN_REQUIRED');
+    assert.equal(fake.calls().some(c => c.argv[0] === 'retire'), false, 'legacy remote retirement cannot bypass plan confirmation');
     const spawned = await fetch(`${base}/api/spawn`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ agent: "dev", agentsRoot: "/remote/project/agents", serverId: "host", runtime: "codex" }) });
     assert.equal(spawned.status, 200);
@@ -430,12 +431,12 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
     await fetch(`${base}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     const refused = await fetch(`${base}/api/retire/dev-one${qualifier}`, { method: "POST" });
     assert.equal(refused.status, 409);
-    assert.equal((await refused.json()).code, "unsupported-retire-option");
+    assert.equal((await refused.json()).code, 'E_PLAN_REQUIRED');
     assert.equal(fake.calls().filter((c) => c.argv[0] === "retire").length, retireCalls, "old CLI cannot silently ignore --home and retire a twin");
   } finally { proc.kill(); }
 });
 
-test("remote homes cannot grant local file access, and missing home refuses retirement", async () => {
+test("remote homes cannot grant local file access, and unguarded retirement refuses even with missing home", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-remote-file-guard-"));
   const secret = join(dir, "local-only.txt");
   writeFileSync(secret, "local fixture outside every workspace");
@@ -463,7 +464,7 @@ test("remote homes cannot grant local file access, and missing home refuses reti
     assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(join(ROOT, 'agents/cli-dev/soul/knowledge/index.md'))}`)).status, 200, "local knowledge remains readable");
     const retired = await fetch(`${base}/api/retire/missing-home?ws=remote%3Aguard&server=host`, { method: "POST" });
     assert.equal(retired.status, 409);
-    assert.equal((await retired.json()).code, "E_HOME_UNKNOWN");
+    assert.equal((await retired.json()).code, 'E_PLAN_REQUIRED');
     assert.equal(fake.calls().filter((c) => c.argv[0] === "retire").length, 0);
   } finally { proc.kill(); }
 });

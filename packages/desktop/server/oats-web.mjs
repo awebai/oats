@@ -39,6 +39,7 @@ import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { catalogRequest } from "./catalog.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
+import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
@@ -451,6 +452,7 @@ function cliStatus() {
     launchOptions: cliState.launchOptions || [],
     features: cliState.features || [],
     scheduleApi: cliState.scheduleApi || null,
+    lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -1062,6 +1064,24 @@ const server = createServer(async (req, res) => {
           reason: { code: "E_BAD_ARGS", message: "Invalid forge request." } });
       }
     }
+    if (path === '/api/instance-lifecycle' && req.method === 'POST') {
+      try {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
+        const request = await readStrictBody(req);
+        const getContext = () => {
+          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          return { workspace, cli: cliState, instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        const result = await lifecycleRequest(request, getContext);
+        if (request.action === 'apply' && ['complete', 'partial', 'refused', 'unknown'].includes(result.status)) {
+          try { refreshSnapshot(); } catch { /* a refresh must not erase a mutation receipt */ }
+        }
+        return send(res, 200, result);
+      } catch {
+        return send(res, 400, { lifecycleApi: 1, status: 'unavailable', target: null, planRef: null, plan: null, receipt: null,
+          reason: { code: 'E_BAD_ARGS', message: 'Lifecycle requests require one workspace and a bounded JSON object.' } });
+      }
+    }
     if (path === "/api/instance-git" && req.method === "POST") {
       try {
         if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(key => key !== "ws")) {
@@ -1160,6 +1180,7 @@ const server = createServer(async (req, res) => {
     }
     const hm = path.match(/^\/api\/(harvest|retire|start|restart)\/([A-Za-z0-9._-]+)$/);
     if (hm && req.method === "POST") {
+      if (hm[1] === 'retire') return send(res, 409, { code: 'E_PLAN_REQUIRED', error: 'Open a fresh Remove confirmation. Unguarded retirement is unavailable, including remote retirement.' });
       // Desktop v1 mutation 2: the active provider’s harvest operation, cwd FIXED by this
       // privileged backend to the RESOLVED instance home — the caller only
       // names an instance; it can never steer the cwd.
@@ -1189,18 +1210,6 @@ const server = createServer(async (req, res) => {
         return env.ok ? send(res, 200, env.result) : send(res, env.error.code === "E_BAD_ARGS" ? 400 : 409, { error: env.error.message, code: env.error.code });
       }
       /* OATSWEB_START_END */
-      if (hm[1] === "retire") {
-        if (typeof inst.home !== "string" || !inst.home.startsWith("/")) return send(res, 409, { error: "Instance has no absolute home for retirement", code: "E_HOME_UNKNOWN" });
-        if (!cliState.features?.includes("retire-home")) return send(res, 409, { error: "Retirement requires an updated OATS CLI with exact-home targeting", code: "unsupported-retire-option" });
-        if (inst.server) {
-          if (!inst.savedRoute) return send(res, 409, { error: "No saved route for this remote instance", code: "E_SNAPSHOT_UNKNOWN" });
-          locator.requireRemoteSupport(cliState, "retire");
-        } else if (!harvestHome(inst)) return send(res, 409, { error: "Instance home is outside the workspace instances layout" });
-        const env = await adapter.cliRetire(cliState.bin, { instance: inst.instance, home: inst.home,
-          workspaceDir: inst.server ? ctxs[0] : dirname(inst.agentsRoot), server: inst.server });
-        refreshSnapshot(); void refreshRemoteSnapshot();
-        return env.ok ? send(res, 200, env.result) : send(res, 502, { error: env.error.message, code: env.error.code, result: env.result });
-      }
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       const result = await capabilityRequest({ action: "run", selector: { home: inst.home }, operation: "knowledge:harvest" }, {
         workspace, cli: cliState, localCwd: ctxs[0],
