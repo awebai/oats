@@ -490,3 +490,20 @@ test('K6e replay custody: key recovery runs BEFORE placement/branch checks (an e
   assert.equal(unrec.result.replayed, true); assert.deepEqual(unrec.result.wake, { requested: null, saved: null, error: null });
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-idempotency-2'));
 });
+
+test('K6f retention: a fresh keyed (decision-bound, idempotent) spawn with a wake retires CLEAN — the completion marker and wake record are kernel writes, not "changed instance-home bytes"', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
+  const rev = last(f.run(['spawn', 'wt', '--purpose', 'r', '--preview', '--json'])).result.decision.revision;
+  const sp = last(f.run(['spawn', 'wt', '--purpose', 'r', '--expect-decision', rev, '--idempotency-key', 'kr', '--wake-every', '10', '--wake-message', 'hi', '--no-launch', '--json']));
+  assert.equal(sp.ok, true, JSON.stringify(sp).slice(0, 300)); assert.equal(sp.result.wake.saved, true);
+  const plan = JSON.parse(f.run(['retire', 'wt-r', '--plan', '--json']).stdout).result;
+  const r = JSON.parse(f.run(['retire', 'wt-r', '--plan-revision', plan.planRevision, '--idempotency-key', 'ret-1', '--json']).stdout);
+  assert.equal(r.retired, 'wt-r', JSON.stringify(r).slice(0, 400));
+  assert.ok(!(r.workRecovery?.classes || []).includes('changed instance-home bytes'), `kernel writes must not read as user changes: ${JSON.stringify(r.workRecovery ?? r).slice(0, 400)}`);
+  assert.equal(r.workRecovery ?? null, null, `a fresh, untouched home needs no work recovery: ${JSON.stringify(r.workRecovery ?? null)}`);
+});
