@@ -456,3 +456,33 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'exactly one home');
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-apply-2'));
 });
+
+test('K6e replay custody: key recovery runs BEFORE placement/branch checks (an explicit-branch spawn replays instead of E_BRANCH_EXISTS); a home whose spawn did not complete replays E_SPAWN_INCOMPLETE, never success; wake outcome is recorded and returned on replay (saved:null when not recorded)', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
+  // Explicit branch: after the first spawn the branch EXISTS; the same-key retry must replay, not E_BRANCH_EXISTS.
+  const rev = last(f.run(['spawn', 'wt', '--purpose', 'b', '--branch', 'feat/explicit', '--preview', '--json'])).result.decision.revision;
+  const first = last(f.run(['spawn', 'wt', '--purpose', 'b', '--branch', 'feat/explicit', '--expect-decision', rev, '--idempotency-key', 'kb', '--wake-every', '10', '--wake-message', 'hello', '--no-launch', '--json']));
+  assert.equal(first.ok, true, JSON.stringify(first).slice(0, 400)); assert.equal(first.result.branch, 'feat/explicit');
+  const retry = last(f.run(['spawn', 'wt', '--purpose', 'b', '--branch', 'feat/explicit', '--expect-decision', rev, '--idempotency-key', 'kb', '--wake-every', '10', '--wake-message', 'hello', '--no-launch', '--json']));
+  assert.equal(retry.ok, true, `explicit-branch retry must replay, got ${JSON.stringify(retry).slice(0, 300)}`); assert.equal(retry.result.replayed, true); assert.equal(retry.result.instance, 'wt-b');
+  // Wake outcome travels with the replay.
+  assert.equal(typeof retry.result.wake, 'object', JSON.stringify(retry.result).slice(0, 400)); assert.equal(retry.result.wake.requested, true, JSON.stringify({ first: first.result.wake, retry: retry.result.wake })); assert.ok([true, false].includes(retry.result.wake.saved), JSON.stringify(retry.result.wake));
+  assert.deepEqual(first.result.wake?.requested, true);
+  // Completion custody: a home written for a key but never completed → E_SPAWN_INCOMPLETE, not a replayed success, not a second spawn.
+  const home = join(f.root, 'wt', 'instances', 'wt-b'); const m = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8'));
+  assert.equal(m.spawnCompleted, true, 'a finished spawn is marked completed');
+  m.spawnCompleted = false; delete m.wake; writeFileSync(join(home, 'instance.json'), JSON.stringify(m, null, 2));
+  const inc = last(f.run(['spawn', 'wt', '--purpose', 'b', '--branch', 'feat/explicit', '--expect-decision', rev, '--idempotency-key', 'kb', '--no-launch', '--json']));
+  assert.equal(inc.error.code, 'E_SPAWN_INCOMPLETE'); assert.equal(inc.error.details.home, home); assert.match(inc.error.message, /do not spawn again/);
+  assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-b'], 'nothing else created');
+  // Wake not recorded (crash in the interval): replay says saved:null, never true/false.
+  m.spawnCompleted = true; writeFileSync(join(home, 'instance.json'), JSON.stringify(m, null, 2));
+  const unrec = last(f.run(['spawn', 'wt', '--purpose', 'b', '--branch', 'feat/explicit', '--expect-decision', rev, '--idempotency-key', 'kb', '--no-launch', '--json']));
+  assert.equal(unrec.result.replayed, true); assert.deepEqual(unrec.result.wake, { requested: null, saved: null, error: null });
+  assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-idempotency-2'));
+});

@@ -290,6 +290,21 @@ the pre-fix marker and is never accepted for dispatch.
   - Gate confirmation AND the exec owner on `spawn-preview-2` +
     `spawn-apply-2` + `spawn-idempotency`; a legacy local request on such a CLI
     is refused by the Desktop (`E_PLAN_REQUIRED`), not routed around the fence.
+- **Replay custody** (0.24.10+, feature **`spawn-idempotency-2`** — gate on
+  this, not on `spawn-idempotency`, whose replay could be blocked by
+  `E_BRANCH_EXISTS`): key recovery runs **first**, right after the name is
+  decided and before any placement/branch/base/preflight/backend work — so a
+  retry of a spawn that created its explicit branch still reaches its receipt.
+  The key-bearing home records `spawnCompleted:false` at its first write and
+  `true` only after launch + lineage + final events; a same-key retry of an
+  unfinished spawn refuses **`E_SPAWN_INCOMPLETE`** (`details.{instance, home,
+  launched}`; remedy is the session surface, never another spawn). The key
+  lives in the home by design: durable across the GUI's restart, gone with a
+  retired home — after a retire, "check result" is a roster question. The wake
+  outcome is recorded (`wake {requested, saved, error}`) and returned on
+  replay; `saved:null` means *not recorded* (crash in the interval) — render
+  "Agent created; wake outcome unavailable — check Schedules", never
+  saved/not-saved without the record.
 - **Idempotent apply** (0.24.10+, feature `spawn-idempotency`): `spawn …
   --expect-decision <rev> --idempotency-key <key>` records the key and the
   decision in the new home's `instance.json`; a **retry with the same key**

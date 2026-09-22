@@ -4346,6 +4346,7 @@ function spawnCmd() {
     if (e?.code === "E_DECISION_STALE") { bail(e.code, e.message, { decision: e.decision }); throw e; }
     if (e?.code === "E_IDEMPOTENCY_CONFLICT") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
     if (e?.code === "E_PLACEMENT_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
+    if (e?.code === "E_SPAWN_INCOMPLETE") { bail(e.code, e.message, { instance: e.instance, home: e.home, launched: e.launched }); throw e; }
     bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
@@ -4354,6 +4355,13 @@ function spawnCmd() {
   if (wake && r.replayed !== true) { // a replayed receipt re-saves nothing
     try { wakeSchedule = saveWakeForHome(scheduleScopeOf(workspaceOf(root)), { instance: r.instance, home: r.home, wake }); }
     catch (e) { wakeScheduleError = { code: e.code || "E_SCHEDULE_FAILED", message: e.message }; r.warnings = [...(r.warnings || []), `wake schedule NOT saved: ${e.message}`]; }
+    // K6e: record the wake outcome in the home so a same-key replay can report
+    // it instead of leaving "saved or not?" to inference.
+    if (r.spawnIdempotencyKey) {
+      try { const f = join(r.home, "instance.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.wake = { requested: true, saved: !wakeScheduleError, error: wakeScheduleError ?? null }; writeFileSync(f, JSON.stringify(m, null, 2) + "\n"); r.wake = m.wake; } catch { /* the receipt still says it */ }
+    }
+  } else if (r.spawnIdempotencyKey && r.replayed !== true) {
+    try { const f = join(r.home, "instance.json"); const m = JSON.parse(readFileSync(f, "utf8")); m.wake = { requested: false, saved: null, error: null }; writeFileSync(f, JSON.stringify(m, null, 2) + "\n"); r.wake = m.wake; } catch { /* nothing to record */ }
   }
   if (JSON_MODE) {
     // Desktop CLI API v1 spawn result — a FIXED shape (see docs/desktop-cli-api.md).
@@ -4369,6 +4377,7 @@ function spawnCmd() {
       ...(r.yolo !== undefined ? { yolo: r.yolo } : {}),
       // K6b/K6c: what bound this spawn, and whether this receipt is a replay of an earlier one.
       ...(r.decision ? { decision: r.decision } : {}), ...(r.replayed !== undefined ? { replayed: r.replayed } : {}),
+      ...(r.wake !== undefined ? { wake: r.wake } : {}), // {requested, saved|null, error}: saved:null = outcome not recorded
       launchConfig: r.launch?.launchConfig ?? null, launch: r.launch || null, // already redacted by the kernel
     });
     return;
@@ -5024,7 +5033,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-apply-2"], instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2"], instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
