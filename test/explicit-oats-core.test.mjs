@@ -205,3 +205,33 @@ test('K5 policy: children.spawn declared false is recorded at spawn and ENFORCED
   assert.deepEqual(pol.childSpawns, { allowed: false, enforced: true, origin: { kind: 'soul', detail: 'children.spawn: false in soul.yaml' } });
   for (const h of [boss.home, boss2.home, free.home, kid.home]) retireInstance(f.root, JSON.parse(readFileSync(join(h, 'instance.json'), 'utf8')).instance);
 });
+
+test('K6 preview: spawn --preview decides instance/home/branch/base/runtime/model/policy and creates NOTHING; --base selects the worktree start point; --model @native-default is explicit; E_BRANCH_EXISTS / E_BASE_UNKNOWN before any side effect; apply agrees with the preview', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  const git = (...a) => spawnSync('git', ['-C', f.context, ...a], { encoding: 'utf8' }).stdout.trim();
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  spawnSync('git', ['-C', f.context, 'branch', 'release']); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'second']);
+  const head = git('rev-parse', 'HEAD'), release = git('rev-parse', 'release');
+  const created = createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const p = f.run(['spawn', 'wt', '--purpose', 'fix-login', '--preview', '--json']); assert.equal(p.status, 0, p.stdout + p.stderr);
+  const pv = JSON.parse(p.stdout.trim().split('\n').pop()).result;
+  assert.equal(pv.spawnPreviewApi, 1); assert.equal(pv.preview, true); assert.equal(pv.instance, 'wt-fix-login'); assert.equal(pv.branch, 'agents/wt-fix-login');
+  assert.deepEqual(pv.base, { ref: 'HEAD', oid: head }); assert.equal(pv.worktree, join(f.root, 'wt', 'instances', 'wt-fix-login', 'work'));
+  assert.equal(pv.runtime, 'claude'); assert.equal(pv.model, 'opus'); assert.equal(pv.policy.childSpawns.allowed, true);
+  assert.equal(readdirSync(join(f.root, 'wt', 'instances')).length, 0, 'preview created no home');
+  assert.equal(git('branch', '--list', 'agents/wt-fix-login'), '', 'preview created no branch');
+  const nd = JSON.parse(f.run(['spawn', 'wt', '--preview', '--base', 'release', '--model', '@native-default', '--json']).stdout.trim().split('\n').pop()).result;
+  assert.deepEqual(nd.base, { ref: 'release', oid: release }); assert.equal(nd.model, null); assert.equal(nd.modelSource, 'native default (explicit)');
+  const inherit = JSON.parse(f.run(['spawn', 'wt', '--preview', '--json']).stdout.trim().split('\n').pop()).result;
+  assert.equal(inherit.model, 'opus', 'omitting --model still inherits the soul preference; only @native-default forces the runtime default');
+  assert.equal(JSON.parse(f.run(['spawn', 'wt', '--preview', '--base', 'nope', '--json']).stdout.trim().split('\n').pop()).error.code, 'E_BASE_UNKNOWN');
+  spawnSync('git', ['-C', f.context, 'branch', 'agents/wt-taken']);
+  assert.equal(JSON.parse(f.run(['spawn', 'wt', '--purpose', 'taken', '--preview', '--json']).stdout.trim().split('\n').pop()).error.code, 'E_BRANCH_EXISTS');
+  // Apply with the same inputs agrees with the preview: branch created FROM the chosen base.
+  const applied = spawnCore(f.root, findAgent(f.root, 'wt'), { purpose: 'fix-login', launch: false, baseRef: 'release', repo: f.context });
+  assert.equal(applied.instance, pv.instance); assert.equal(applied.branch, pv.branch);
+  assert.equal(spawnSync('git', ['-C', applied.home + '/work', 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), release, 'worktree starts at the selected base');
+  retireInstance(f.root, applied.instance, { discardWorktree: true });
+});

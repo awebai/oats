@@ -156,6 +156,46 @@ returns a bounded unified diff:
 
 No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
 
+## Spawn preview (`oats spawn … --preview`, `spawnPreviewApi: 1`, OATS 0.24.8+)
+
+The Spawn modal's fields are backed by the kernel's own decision, taken **before
+any side effect**: `oats spawn <agent> [same flags as a real spawn] --preview --json`
+runs every preflight a spawn runs (placement, composition, resources,
+executable, runtime packages, child-spawn policy) and returns what the spawn
+*would* do — then returns without creating a home, branch or worktree.
+
+```json
+{"spawnPreviewApi":1,"preview":true,"agent":"dev","kind":"persistent","instance":"dev-fix-login","home":"/abs/agents/dev/instances/dev-fix-login",
+ "repo":"/abs/repo","work":"worktree","runtime":"claude","model":"opus","modelSource":"soul","launchConfig":null,"yolo":false,"backend":"tmux",
+ "branch":"agents/dev-fix-login","base":{"ref":"HEAD","oid":"<oid>"},"worktree":"/abs/agents/dev/instances/dev-fix-login/work",
+ "relation":null,"parentInstance":null,"policy":{"childSpawns":{"allowed":true,"origin":{"kind":"default","detail":"…"}}},
+ "executable":"/abs/bin/claude","capabilities":["oats.core"],"skills":["oats-operate","oats-souls"],"task":"…"}
+```
+
+- **Name / work area**: `instance` is the canonical name (`<agent>-<purpose>`,
+  de-duplicated with `-2`, `-3`…); `home` and `worktree` are the canonical
+  paths. The renderer never derives paths.
+- **Branch / base** (worktree mode): `branch` defaults to `agents/<instance>`
+  (`--branch <name>` overrides; validated); `base` is `--base <ref>` resolved
+  to its commit oid (default `HEAD`). `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN`
+  are refused in preview and in apply, before anything exists. Apply creates
+  the worktree **from that exact oid**.
+- **Model**: `model`/`modelSource` are the resolved selection. Omitting
+  `--model` **inherits** the launch configuration's or soul's preference;
+  `--model @native-default` is the explicit "use the runtime's own default"
+  (`modelSource: "native default (explicit)"`). These are different requests
+  and the UI must not relabel one as the other.
+- **Policy**: `policy.childSpawns` is what this instance will record (soul
+  declaration / spawn option / default), enforced later by the spawn route for
+  its children (see readiness).
+- **Apply** = the same command without `--preview`; the same inputs yield the
+  same decisions (instance, branch, base oid). If the world moved between
+  preview and apply (name taken, branch created, base gone) the apply refuses
+  with the same typed codes — the preview is a statement, not a reservation.
+- Not in preview (later K6 follow-ups): attach-knowledge refs from the
+  knowledge provider (05 excluded, attach stays), auto-PR intent (ADE-owned,
+  P1).
+
 ## Readiness quartet, signatures, enforced policy (`oats readiness`, `readinessApi: 1`, OATS 0.24.8+)
 
 `oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json`

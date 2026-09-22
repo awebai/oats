@@ -25,6 +25,15 @@
             "scope": "<base>/scope"
           },
           "spawnOrigin": "operator",
+          "policy": {
+            "childSpawns": {
+              "allowed": true,
+              "origin": {
+                "kind": "default",
+                "detail": "no declaration: children allowed"
+              }
+            }
+          },
           "capabilityMeta": {
             "golden.messaging": {
               "alias": "dev-pi-checkout-knone-mstub",
