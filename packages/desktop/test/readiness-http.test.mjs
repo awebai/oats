@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { apiUrl } from '../api-url.mjs';
+import { apiUrl, classifyApiRoute } from '../api-url.mjs';
 import { proxyReadiness } from '../readiness-proxy.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { createReadinessBoundary } from '../server/readiness.mjs';
@@ -56,7 +56,7 @@ function proxyFixture(fetch) {
 test('shipped main binding actually delegates readiness to guarded proxy with current server ownership', async () => {
   const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8'), start = source.indexOf('ipcMain.handle("api",'), end = source.indexOf('// ---- IPC: workstation forge auth', start);
   let handler, seen; const f = proxyFixture(async () => assert.fail());
-  const deps = { URL, ipcMain: { handle: (_key, fn) => handler = fn }, RENDERER_URL: f.deps.rendererURL,
+  const deps = { classifyApiRoute, ipcMain: { handle: (_key, fn) => handler = fn }, RENDERER_URL: f.deps.rendererURL,
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('readiness must not fall through the generic proxy'),
     proxyReadiness: (e, path, opts, deps) => { seen = { e, path, opts, c: deps.connection() }; return 'guarded'; },
     base: () => 'http://localhost:4820', wsId: 'team', allowedWs: new Set(['team']), serverEpoch: 7, serverHost: { inTransition: () => false } };

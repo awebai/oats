@@ -2,6 +2,25 @@
 // Kept dependency-free and separate from main.mjs so the root `node --test`
 // suite can cover it without loading Electron.
 
+/** Classify specialized behavior from the pathname the backend will see.
+ * This is NOT authorization: apiUrl must still enforce input/origin/workspace
+ * constraints. In particular, even off-origin aliases need the same typed
+ * refusal path and must never fall through a weaker raw-prefix guard. */
+export function classifyApiRoute(pathname, base) {
+  if (typeof pathname !== 'string') return null;
+  try {
+    switch (new URL(pathname, base).pathname) {
+      case '/api/workspace-readiness': return 'readiness';
+      case '/api/instance-lifecycle': return 'lifecycle';
+      case '/api/forge-connections':
+      case '/api/instance-forge': return 'forge';
+      case '/api/capabilities': return 'capabilities';
+      case '/api/panel': return 'panel';
+      default: return null;
+    }
+  } catch { return null; }
+}
+
 /**
  * Build the URL the main process will fetch for a renderer api() call.
  *

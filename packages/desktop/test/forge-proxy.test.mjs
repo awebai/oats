@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { forgeProxyOptions, installForgeAuthHandlers, trustedForgeFrame, FORGE_EPOCH_HEADER, isForgePath } from '../forge-proxy.mjs';
-import { apiUrl, apiInit } from '../api-url.mjs';
+import { forgeProxyOptions, installForgeAuthHandlers, trustedForgeFrame, FORGE_EPOCH_HEADER } from '../forge-proxy.mjs';
+import { apiUrl, apiInit, classifyApiRoute } from '../api-url.mjs';
 import { forgeFailure } from '../renderer/forge-contract.mjs';
 import { deferred } from './helpers/forge-fixture.mjs';
 const url = 'file:///app/renderer/index.html';
@@ -37,7 +37,7 @@ test('every auth IPC requires exact trusted top-level frame and resolves stable 
 function realApi(fetch) {
   const source = readFileSync(new URL('../main.mjs', import.meta.url), 'utf8'); let handler;
   const start = source.indexOf('ipcMain.handle("api",'), end = source.indexOf('// ---- IPC: workstation forge auth', start);
-  const context = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, isForgePath, forgeProxyOptions, trustedForgeFrame,
+  const context = { ipcMain: { handle: (_name, fn) => { handler = fn; } }, apiUrl, apiInit, classifyApiRoute, forgeProxyOptions, trustedForgeFrame,
     FORGE_EPOCH_HEADER, forgeFailure, RENDERER_URL: url, serverEpoch: 0, forgeEpoch: 'main:0',
     currentForgeEpoch: () => context.forgeEpoch, serverHost: { inTransition: () => false }, base: () => 'http://127.0.0.1:4820',
     wsId: 'team', allowedWs: new Set(['team']), fetch, AbortSignal,
