@@ -146,7 +146,7 @@ test('declared oats.core that is NOT active refuses spawn with the remedy (no ho
 
 // ---- K5: readiness quartet + enforced child-spawn policy ----
 import { spawnInstance as spawnCore } from '../lib/core.mjs';
-import { signatureOf, SIGNATURE_FAILURES } from '../lib/readiness.mjs';
+import { signatureOf, SIGNATURE_FAILURES, verificationBudget } from '../lib/readiness.mjs';
 
 test('K5 readiness: quartet derived from inspect facts — installed/trusted/configured/enrolled with items and remedies; ready never inferred from an empty set; signature unknown without --verify-signatures', t => {
   const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
@@ -156,7 +156,7 @@ test('K5 readiness: quartet derived from inspect facts — installed/trusted/con
   const created = f.run(['create', 'ready', '--work', 'directory', '--runtime', 'claude', '--json']); assert.equal(created.status, 0, created.stdout + created.stderr);
   const r = f.run(['readiness', '--soul', 'ready', '--json']); assert.equal(r.status, 0, r.stdout + r.stderr);
   const rd = JSON.parse(r.stdout).result;
-  assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready', selector: { kind: 'soul', soul: 'ready', agentsRoot: null, context: f.context } });
+  assert.equal(rd.readinessApi, 1); assert.deepEqual(rd.subject, { kind: 'soul', name: 'ready', selector: { kind: 'soul', soul: 'ready', agentsRoot: null, dir: null } });
   assert.equal(rd.checks.installed.status, 'pass'); assert.equal(rd.checks.installed.items[0].subject, 'oats.core'); assert.equal(rd.checks.installed.items[0].producer, 'oats list');
   const trusted = rd.checks.trusted.items.find(i => i.subject === 'oats.core');
   assert.equal(trusted.status, 'not-applicable', 'a data-only capability (skills/inject, no commands/hooks/env) has nothing trust approves — whatever the lock records');
@@ -271,10 +271,12 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
   for (const check of Object.values(r.checks)) for (const i of check.items) if (i.subject.startsWith('oats.core')) { assert.equal(i.capability.id, 'oats.core'); assert.ok(['requires', 'declares', 'default', 'inventory'].includes(i.origin.kind)); }
   assert.equal(act.origin.kind, 'requires'); assert.equal(act.origin.target, 'soul:ready');
   const grouped = r.summary.byCapability.find(g => g.capability.id === 'oats.core');
-  assert.deepEqual(Object.keys(grouped.checks), ['installed', 'trusted', 'configured', 'enrolled']); assert.equal(grouped.checks.configured, 'fail'); assert.equal(grouped.ready, false);
+  assert.deepEqual(Object.keys(grouped.checks), ['installed', 'trusted', 'configured', 'enrolled']); assert.equal(grouped.checks.configured, 'fail'); assert.equal(grouped.ready, false); assert.equal(grouped.ownReady, false);
+  assert.deepEqual(r.summary.subjectBlockers, [], 'no subject-level blocker here');
   // Selector echo: exactly what this read was made with.
-  assert.deepEqual(r.subject.selector, { kind: 'soul', soul: 'ready', agentsRoot: f.root, context: f.context });
-  assert.deepEqual(JSON.parse(f.run(['readiness', '--json']).stdout).result.subject.selector, { kind: 'scope', context: f.context });
+  assert.deepEqual(r.subject.selector, { kind: 'soul', soul: 'ready', agentsRoot: f.root, dir: null }, 'arguments AS GIVEN, no realpath');
+  assert.deepEqual(JSON.parse(f.run(['readiness', '--json']).stdout).result.subject.selector, { kind: 'scope', dir: null });
+  assert.deepEqual(JSON.parse(f.run(['readiness', '--dir', f.context + '/.', '--json']).stdout).result.subject.selector, { kind: 'scope', dir: f.context + '/.' }, 'byte-exact echo of --dir');
   // Data-only capability: no commands/hooks/env → trust NOT-APPLICABLE, whatever the lock says; a hook makes it applicable.
   const tr = r.checks.trusted.items.find(i => i.subject === 'oats.core');
   assert.equal(tr.status, 'not-applicable'); assert.equal(tr.reason, 'no executable surface'); assert.equal(tr.remedy, null);
@@ -287,6 +289,10 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
     const en = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.enrolled.items[0];
     assert.equal(en.status, 'unknown', bad); assert.match(en.reason, /unreadable/); assert.equal(en.evidence.file, join(f.context, 'oats.yaml')); assert.equal(en.required, true);
   }
+  // Subject-level blocker: the capability's OWN quartet may pass while the subject is blocked by membership — a row never says ready then.
+  { const rr = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result; f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
+    const rb = JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result; const g = rb.summary.byCapability.find(x => x.capability.id === 'oats.core');
+    assert.equal(g.ownReady, true, JSON.stringify(g)); assert.equal(g.ready, false, 'blocked by the subject-level enrolled unknown'); assert.deepEqual(rb.summary.subjectBlockers.map(b => b.check), ['enrolled']); assert.equal(rb.summary.ready, false); void rr; }
   rmSync(join(f.context, 'oats.yaml')); mkdirSync(join(f.context, 'oats.yaml')); // a directory: cannot be read at all
   assert.equal(JSON.parse(f.run(['readiness', '--soul', 'ready', '--json']).stdout).result.checks.enrolled.items[0].status, 'unknown');
   rmSync(join(f.context, 'oats.yaml'), { recursive: true });
@@ -301,5 +307,8 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
   assert.equal(dead.status, 'unknown'); assert.ok(['fetch-failed', 'fetch-timeout', 'budget-exhausted'].includes(dead.failure.code), JSON.stringify(dead));
   assert.doesNotMatch(dead.reason, /fatal:|127\.0\.0\.1|Could not read|unable to access/, 'no stderr in the reason'); assert.equal(dead.reason, 'the source could not be fetched'); assert.ok(SIGNATURE_FAILURES.includes(dead.failure.code));
   assert.equal(readdirSync(tmpdir()).filter(n => n.startsWith('oats-sig-')).length, 0, 'scratch repository removed');
+  // One budget for the whole read: an exhausted shared budget refuses the next capability without a fetch.
+  const spent = verificationBudget(1); const t0 = Date.now(); while (Date.now() - t0 < 3) { /* spin */ }
+  assert.deepEqual(signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budget: spent }), { status: 'unknown', signer: null, reason: 'the verification budget was exhausted', failure: { code: 'budget-exhausted' } });
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('readiness-verify'));
 });

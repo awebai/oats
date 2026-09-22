@@ -3238,10 +3238,13 @@ function readinessCmd() {
   const deploymentDir = inspect.scope?.context ?? null;
   // Echo the exact selector this read was made with, so a consumer can bind the
   // result to its own admitted target without inventing a revision.
-  const agentsRootArg = flag("agents-root");
-  const selector = homeArg && homeArg !== true ? { kind: "home", home: String(homeArg), soul, agentsRoot: agentsRootArg && agentsRootArg !== true ? String(agentsRootArg) : null }
-    : soul ? { kind: "soul", soul, agentsRoot: agentsRootArg && agentsRootArg !== true ? String(agentsRootArg) : null, context: deploymentDir }
-    : { kind: "scope", context: deploymentDir };
+  // Every field is the argument AS GIVEN (no realpath): a consumer compares it
+  // byte-exact with what it sent. The canonical scope is subject.context.
+  const given = (name) => { const v = flag(name); return v && v !== true ? String(v) : null; };
+  const agentsRootArg = given("agents-root"), dirArg = given("dir");
+  const selector = homeArg && homeArg !== true ? { kind: "home", home: String(homeArg), soul, agentsRoot: agentsRootArg }
+    : soul ? { kind: "soul", soul, agentsRoot: agentsRootArg, dir: dirArg }
+    : { kind: "scope", dir: dirArg };
   const readiness = readinessOf(inspect, { soul, verifySignatures: verify, catalog, deploymentDir, selector });
   if (args.includes("--policy")) {
     const homeOpt = flag("home");
