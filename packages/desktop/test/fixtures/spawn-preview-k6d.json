@@ -1,0 +1,61 @@
+{
+  "producerMerge": "d51e1011167e9b8f6fc157fb415898055cb9345d",
+  "note": "Anonymized supplied K6d preview; opaque revision retained, no recomputation.",
+  "envelope": {
+    "schemaVersion": 1,
+    "ok": true,
+    "result": {
+      "spawnPreviewApi": 2,
+      "preview": true,
+      "agent": "probe",
+      "kind": "persistent",
+      "instance": "probe-fix-login",
+      "home": "/fixture/k6d/agents/probe/instances/probe-fix-login",
+      "repo": "/fixture/k6d/repo",
+      "work": "worktree",
+      "subject": {
+        "soul": "probe",
+        "agentsRoot": "/fixture/k6d/agents",
+        "dir": "/fixture/k6d"
+      },
+      "decision": {
+        "instance": "probe-fix-login",
+        "home": "/fixture/k6d/agents/probe/instances/probe-fix-login",
+        "branch": "agents/probe-fix-login",
+        "base": {
+          "ref": "HEAD",
+          "oid": "f00def5f878abd3c9df8b3361cc39b3481be63ca"
+        },
+        "effective": {
+          "repo": "/fixture/k6d/repo",
+          "work": "worktree",
+          "runtime": "pi",
+          "model": null,
+          "launchConfig": null,
+          "yolo": null,
+          "backend": "tmux",
+          "childSpawns": true,
+          "relation": null
+        },
+        "revision": "46a51c5c35f47be8b2d990a5"
+      },
+      "preflight": { "status": "complete", "budgetMs": 20000, "elapsedMs": 52 },
+      "backendStatus": { "name": "tmux", "installed": true, "started": false },
+      "runtime": "pi",
+      "model": null,
+      "modelSource": "native default",
+      "launchConfig": null,
+      "backend": "tmux",
+      "branch": "agents/probe-fix-login",
+      "base": { "ref": "HEAD", "oid": "f00def5f878abd3c9df8b3361cc39b3481be63ca" },
+      "worktree": "/fixture/k6d/agents/probe/instances/probe-fix-login/work",
+      "relation": null,
+      "parentInstance": null,
+      "policy": { "childSpawns": { "allowed": true, "origin": { "kind": "default", "detail": "no declaration: children allowed" } } },
+      "executable": "/fixture/bin/pi",
+      "capabilities": ["oats.core"],
+      "skills": ["oats-operate", "oats-souls"],
+      "task": null
+    }
+  }
+}

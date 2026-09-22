@@ -4,7 +4,7 @@ import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
 import { admitInstance } from './instance-admission.mjs';
 import { absolute, record, previewSelector, previewChoices, previewSupported, previewFailure, previewData } from '../renderer/spawn-preview-contract.mjs';
 const flights = new Set(), byInvoker = new WeakMap();
-function admit(selector, choices, { workspace: w, cli, agents = [], instances = [] } = {}) {
+export function admitSpawnSelection(selector, choices, { workspace: w, cli, agents = [], instances = [] } = {}) {
   const fail = error => ({ error });
   if (!w || typeof w.id !== 'string' || !w.id || !absolute(w.scope)) return fail('E_WORKSPACE_UNKNOWN');
   if (w.remote || w.server) return fail('unsupported-remote-operation');
@@ -30,8 +30,8 @@ function admit(selector, choices, { workspace: w, cli, agents = [], instances = 
   }
   const target = { workspace: w.id, context: dirname(soul.agentsRoot), selector };
   const identity = JSON.stringify([w.id, w.scope, target, soul.work, soul.repo, soul.capability, anchorIdentity, choices,
-    cli.bin, cli.version, cli.spawnPreviewApi, cli.features, cli.runtimes, cli.sessionBackends, cli.launchOptions]);
-  return { target, identity, cli: { ...cli } };
+    cli.bin, cli.version, cli.spawnPreviewApi, cli.spawnApplyApi, cli.features, cli.runtimes, cli.sessionBackends, cli.launchOptions]);
+  return { target, identity, cli: structuredClone(cli) };
 }
 export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {
   return async function read(request, getContext) {
@@ -39,7 +39,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {
       if (!record(request) || request.action !== 'preview' || Object.keys(request).some(k => !['action', 'selector', 'choices'].includes(k))) return previewFailure('E_BAD_ARGS');
       const selector = previewSelector(request.selector), choices = previewChoices(request.choices);
       if (!selector || !choices) return previewFailure('E_BAD_ARGS');
-      const selected = admit(selector, choices, getContext());
+      const selected = admitSpawnSelection(selector, choices, getContext());
       if (selected.error) return previewFailure(selected.error);
       const { target, identity, cli } = selected;
       let pending = byInvoker.get(invoke); if (!pending) { pending = new Map(); byInvoker.set(invoke, pending); }
@@ -53,7 +53,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {
         }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(identity); });
         pending.set(identity, flight);
       }
-      const result = await pending.get(identity), current = admit(selector, choices, getContext());
+      const result = await pending.get(identity), current = admitSpawnSelection(selector, choices, getContext());
       return current.identity === identity ? result : previewFailure('E_TARGET_CHANGED', target);
     } catch { return previewFailure('E_CLI_FAILED'); }
   };

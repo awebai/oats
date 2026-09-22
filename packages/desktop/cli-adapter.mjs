@@ -117,9 +117,15 @@ export function writeTaskFile(taskText, io = {}) {
   const rm = io.rmSync || rmSync;
   const dir = mkdtemp(join(io.tmpdir ? io.tmpdir() : tmpdir(), "oats-desktop-task-"));
   const file = join(dir, "TASK.md");
-  const fd = open(file, "wx", 0o600); // create-exclusive, owner-only from birth
-  try { write(fd, String(taskText ?? "")); } finally { close(fd); }
-  return { file, cleanup: () => { try { rm(dir, { recursive: true, force: true }); } catch { /* best-effort */ } } };
+  const cleanup = () => { try { rm(dir, { recursive: true, force: true }); } catch { /* best-effort */ } };
+  try {
+    const fd = open(file, "wx", 0o600); // create-exclusive, owner-only from birth
+    try {
+      const text = String(taskText ?? "");
+      if (write(fd, text) !== Buffer.byteLength(text)) throw Object.assign(new Error('Could not write the complete private instruction file'), { code: 'E_INPUT_PREPARATION' });
+    } finally { close(fd); }
+  } catch (error) { cleanup(); throw error; } // construction failure must not orphan private input
+  return { file, cleanup };
 }
 
 function runJson(bin, argv, { cwd, exec = execFile, timeout = ENVELOPE_TIMEOUT_MS, parse = parseEnvelope, strictExit = false } = {}) {

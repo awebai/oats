@@ -43,6 +43,8 @@ import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { spawnPreviewRequest } from './spawn-preview.mjs';
+import { spawnApplyRequest } from './spawn-apply.mjs';
+import { spawnApplySupported, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
@@ -459,6 +461,7 @@ function cliStatus() {
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
     readinessApi: cliState.readinessApi === 1 ? 1 : null,
     spawnPreviewApi: cliState.spawnPreviewApi === 2 ? 2 : null,
+    spawnApplyApi: cliState.spawnApplyApi === 1 ? 1 : null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -1202,10 +1205,28 @@ const server = createServer(async (req, res) => {
       return send(res, 200, cliStatus());
     }
     if (req.method === "POST" && path === "/api/spawn") {
-      const body = await readBody(req);
-      // K6 reads do not authorize new mutation options. Refuse rather than
-      // silently discard preview-only fields at the legacy spawn boundary.
-      if (body && (['base', 'branch', 'allowChildSpawns', 'modelMode', 'expectDecision', 'choices'].some(k => Object.hasOwn(body, k))
+      let body;
+      try { body = await readStrictBody(req, 65536); }
+      catch { const failure = spawnApplyFailure('E_BAD_ARGS'); return send(res, 400, { ...failure, code: failure.reason.code, error: failure.reason.message }); }
+      if (Object.hasOwn(body, 'action')) {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) {
+          const failure = spawnApplyFailure('E_BAD_ARGS'); return send(res, 400, { ...failure, code: failure.reason.code, error: failure.reason.message });
+        }
+        const getContext = () => {
+          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
+            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        return send(res, 200, await spawnApplyRequest(body, getContext));
+      }
+      // Only an actual remote argv route exempts a fully capable CLI from the
+      // local confirmation fence. Truthy arrays/objects must not bypass it.
+      const remoteRequest = typeof body.serverId === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(body.serverId);
+      if (spawnApplySupported(cliState) && !remoteRequest) {
+        const failure = spawnApplyFailure('E_PLAN_REQUIRED'); return send(res, 409, { ...failure, code: failure.reason.code, error: failure.reason.message });
+      }
+      // Ordinary older/remote spawn never gains the new options or a caller key.
+      if (body && (['base', 'branch', 'allowChildSpawns', 'modelMode', 'expectDecision', 'choices', 'spawnRef', 'idempotencyKey', 'decision'].some(k => Object.hasOwn(body, k))
         || typeof body.model === 'object' && body.model !== null || body.model === '@native-default')) {
         return send(res, 409, { code: 'E_PREVIEW_ONLY', error: PREVIEW_ONLY });
       }

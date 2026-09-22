@@ -9,6 +9,8 @@ import { setBinding, resetBinding } from '../renderer/keybindings.mjs';
 import { runtimeOptions } from '../renderer/spawn-launch.mjs';
 import { launchSoul } from './helpers/workspace-actions.mjs';
 import { view as spawnPreviewView } from './helpers/spawn-preview-fixture.mjs';
+import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
+import { applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -32,6 +34,7 @@ async function setup(t, opts = {}) {
     const body = options.body ? JSON.parse(options.body) : null; calls.push({ path, body });
     if (path === '/api/cli') return cli;
     if (path.startsWith('/api/agents')) return { agents };
+    if (path.startsWith('/api/panel') && opts.panel) return opts.panel();
     if (path.startsWith('/api/panel')) return { workspace: { id: currentWorkspace(), name: 'Actual workspace', scope: currentWorkspace(), ...opts.workspace }, instances: [
       { instance: 'created', agentsRoot: '/team/a/agents', running: true, tmux: { session: 'fixture' } },
     ], workspaces: [] };
@@ -40,6 +43,7 @@ async function setup(t, opts = {}) {
     if (path.startsWith('/api/launch-configs')) return opts.launch ? opts.launch(body) : body.action === 'list' ? list(body.selector) : preview(body.selector);
     if (path.startsWith('/api/capabilities')) return opts.inspect ? opts.inspect(body) : observation(body.selector);
     if (path.startsWith('/api/workspace-spawn-preview')) return opts.spawnPreview ? opts.spawnPreview(body) : spawnPreviewView({ workspace: currentWorkspace(), context: '/team/a', selector: body.selector });
+    if (path.startsWith('/api/spawn?')) return opts.apply ? opts.apply(body) : assert.fail('unexpected guarded spawn');
     if (path === '/api/spawn') return opts.spawn ? opts.spawn(body) : { instance: 'created', launched: true };
     throw Error(`Unexpected fixture API ${path}`);
   }, openTerminal: (...args) => opens.push(args) };
@@ -50,6 +54,7 @@ async function setup(t, opts = {}) {
     open: async () => { launchSoul(doc); await tick(); return doc.querySelector('.spawn-dialog'); },
     key: (target, fields) => { const event = new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...fields }); target.dispatchEvent(event); return event; },
     spawns: () => calls.filter(call => call.path === '/api/spawn'),
+    transactions: () => calls.filter(call => call.path.startsWith('/api/spawn?')),
     setAgents: value => { agents = value; }, setCli: async value => { cli = value; await refreshCli({ api: async () => cli }); },
   };
 }
@@ -358,4 +363,153 @@ test('roster refresh preserves form/disclosure/focus, but removed exact soul can
   assert.equal(u.calls.filter(c => c.path.startsWith('/api/launch-configs')).length, before);
   u.setAgents([soul('/team/b/agents')]); u.polls[0](); await tick(); dialog.querySelector('.fspawn').click(); await tick();
   assert.equal(u.spawns().length, 0); assert.match(dialog.querySelector('.fstatus').textContent, /no longer available/);
+});
+
+const guardedCli = () => ({ ...CLI, version: '0.24.10', spawnPreviewApi: 2, spawnApplyApi: 1,
+  sessionBackends: ['tmux', 'herdr'], launchOptions: ['yolo'], features: [...CLI.features, 'spawn-preview-2', 'spawn-apply-2', 'spawn-idempotency-2', 'schedule'] });
+function transactions({ read, invoke } = {}) {
+  const c = { workspace: { id: '/team', scope: '/team' }, cli: guardedCli(), agents: [soul()], instances: [] }, reads = [], commands = []; let count = 0;
+  const t = { workspace: '/team', context: '/team/a', selector: { soul: 'dev', agentsRoot: '/team/a/agents' } };
+  const broker = createSpawnApplyBoundary({ mint: () => (++count).toString(16).padStart(64, '0'),
+    read: request => { reads.push(request); return read ? read(request) : { status: 'available', data: applyPreview(t) }; },
+    invoke: (cli, args) => { commands.push(args); return invoke ? invoke(cli, args) : { started: true, envelope: envelope(creation(applyPreview(t), {
+      launched: false, wake: args.wake ? { requested: true, saved: true, error: null } : { requested: false, saved: null, error: null } })) }; } });
+  return { c, t, reads, commands, call: request => broker(request, () => c) };
+}
+test('guarded actual modal: Mod+Enter reviews then confirms immutable advanced choices, never raw spawn', async t => {
+  const tx = transactions(), u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open(), task = u.change('.ftask', 'PRIVATE initial task');
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Review spawn'); assert.equal(u.transactions().length, 0);
+  u.change('.preview-branch', 'feat/explicit'); u.change('.preview-base', 'main'); u.change('.preview-children', 'false'); dialog.querySelector('.spawn-native').click();
+  task.focus(); u.key(task, { key: 'Enter', metaKey: true }); await tick();
+  assert.deepEqual(u.transactions().map(c => c.body.action), ['prepare']); assert.equal(tx.commands.length, 0);
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Confirm spawn'); assert.equal(u.doc.activeElement, task);
+  assert.equal(dialog.querySelector('.spawn-confirm-details').hidden, false); assert.doesNotMatch(dialog.querySelector('.spawn-confirm-details').textContent, /PRIVATE/);
+  u.key(task, { key: 'Enter', metaKey: true }); await tick();
+  assert.deepEqual(u.transactions().map(c => c.body.action), ['prepare', 'apply']); assert.equal(tx.commands.length, 1);
+  assert.deepEqual(Object.keys(u.transactions()[1].body).sort(), ['action', 'spawnRef']);
+  assert.equal(tx.commands[0].choices.branch, 'feat/explicit'); assert.equal(tx.commands[0].choices.allowChildSpawns, false); assert.deepEqual(tx.commands[0].choices.model, { kind: 'native-default' });
+  assert.equal(tx.commands[0].task, 'PRIVATE initial task'); assert.equal(u.spawns().length, 0); assert.equal(u.opens.length, 0, 'not-launched creation never opens a guessed session');
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Agent created'); assert.equal(dialog.querySelector('.fspawn').disabled, true);
+});
+for (const selector of ['.ftask', '.fpurpose', '.preview-base']) test(`guarded ${selector} edit invalidates confirmation, requiring another review`, async t => {
+  const tx = transactions(), u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); assert.equal(dialog.querySelector('.fspawn').textContent, 'Confirm spawn');
+  u.change(selector, selector === '.preview-base' ? 'release' : 'changed');
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Review spawn');
+  dialog.querySelector('.fspawn').click(); await tick(); assert.deepEqual(u.transactions().map(c => c.body.action), ['prepare', 'prepare']); assert.equal(tx.commands.length, 0);
+});
+for (const rejection of [false, true]) for (const after of ['edit', 'reopen']) test(`guarded pending review ${rejection ? 'rejection' : 'success'} cannot own ${after}`, async t => {
+  const gate = deferred(), tx = transactions({ read: () => gate.promise }), u = await setup(t, { cli: guardedCli(), apply: tx.call }); let dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick();
+  if (after === 'reopen') { dialog.querySelector('.fcancel').click(); dialog = await u.open(); }
+  const task = u.change('.ftask', 'new draft'); task.focus();
+  if (rejection) gate.reject(Error('PRIVATE old error')); else gate.resolve({ status: 'available', data: applyPreview(tx.t) }); await tick();
+  assert.equal(task.value, 'new draft'); assert.equal(u.doc.activeElement, task); assert.equal(dialog.querySelector('.fspawn').textContent, 'Review spawn'); assert.equal(dialog.querySelector('.fspawn').disabled, false);
+  assert.doesNotMatch(dialog.querySelector('.fstatus').textContent, /PRIVATE/); assert.equal(tx.commands.length, 0);
+});
+test('guarded pending review rejects draft ABA even when values match again', async t => {
+  const gate = deferred(), tx = transactions({ read: () => gate.promise }), u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open();
+  u.change('.ftask', 'original'); dialog.querySelector('.fspawn').click(); await tick();
+  u.change('.ftask', 'other'); u.change('.ftask', 'original');
+  gate.resolve({ status: 'available', data: applyPreview(tx.t) }); await tick();
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Review spawn'); assert.equal(tx.commands.length, 0);
+});
+test('explicit Check result reads cache then retries only a settled unknown with identical key', async t => {
+  let attempt = 0; const tx = transactions({ invoke: (_cli, args) => ++attempt === 1 ? { started: true, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_CLI_TIMEOUT' } } }
+    : { started: true, envelope: envelope(creation(applyPreview(tx.t), { launched: false, replayed: true })) } });
+  const u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Check result'); assert.equal(tx.commands.length, 1);
+  dialog.querySelector('.fspawn').click(); await tick();
+  assert.deepEqual(u.transactions().map(c => c.body.action), ['prepare', 'apply', 'result', 'apply']); assert.equal(tx.commands.length, 2);
+  assert.equal(tx.commands[0].key, tx.commands[1].key); assert.deepEqual(tx.commands[0], tx.commands[1]); assert.equal(dialog.querySelector('.fspawn').disabled, true);
+});
+test('Check result while backend pending never retries; cached completion remains non-invoking', async t => {
+  const gate = deferred(), tx = transactions({ invoke: () => gate.promise }); let pending;
+  const u = await setup(t, { cli: guardedCli(), apply: request => {
+    if (request.action === 'apply') { pending = tx.call(request); throw Error('lost HTTP response'); }
+    return tx.call(request);
+  } }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  dialog.querySelector('.fspawn').click(); await tick(); assert.equal(tx.commands.length, 1); assert.match(dialog.querySelector('.fstatus').textContent, /still pending/);
+  gate.resolve({ started: true, envelope: envelope(creation(applyPreview(tx.t), { launched: false })) }); await pending;
+  dialog.querySelector('.fspawn').click(); await tick(); assert.equal(tx.commands.length, 1); assert.equal(dialog.querySelector('.fspawn').textContent, 'Agent created');
+  assert.deepEqual(u.transactions().map(c => c.body.action), ['prepare', 'apply', 'result', 'result']);
+});
+for (const rejection of [false, true]) test(`submitted ${rejection ? 'rejection' : 'success'} after draft edit cannot clear or hand off`, async t => {
+  const gate = deferred(), tx = transactions({ invoke: () => gate.promise }), u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  const task = u.change('.ftask', 'new unsent instruction'); task.focus();
+  if (rejection) gate.reject(Error('PRIVATE')); else gate.resolve({ started: true, envelope: envelope(creation(applyPreview(tx.t))) }); await tick();
+  assert.equal(task.value, 'new unsent instruction'); assert.equal(u.doc.activeElement, task); assert.equal(u.opens.length, 0);
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Check result'); assert.equal(dialog.querySelector('.fspawn').disabled, false);
+});
+test('CLI downgrade cannot turn a prepared confirmation into raw legacy; explicit unsubmitted reset can leave it', async t => {
+  const tx = transactions(), u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open(); u.change('.ftask', 'keep'); u.change('.preview-branch', 'feat/preview');
+  dialog.querySelector('.fspawn').click(); await tick();
+  await u.setCli({ ...CLI, spawnPreviewApi: 2, features: [...CLI.features, 'spawn-preview-2'] }); await tick();
+  assert.equal(dialog.querySelector('.fspawn').disabled, true); dialog.querySelector('.fspawn').click(); assert.equal(u.spawns().length, 0); assert.equal(tx.commands.length, 0);
+  dialog.querySelector('.spawn-k6-reset').click(); assert.equal(dialog.querySelector('.ftask').value, 'keep'); assert.equal(dialog.querySelector('.fspawn').textContent, 'Spawn');
+});
+test('downgraded plain confirmation has reachable explicit reset without discarding task', async t => {
+  const tx = transactions(), u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open(); u.change('.ftask', 'keep ordinary task');
+  dialog.querySelector('.fspawn').click(); await tick(); await u.setCli(CLI); await tick();
+  const reset = dialog.querySelector('.spawn-k6-reset'); assert.equal(reset.closest('.spawn-k6-panel').hidden, false); assert.equal(reset.disabled, false); assert.equal(reset.textContent, 'Discard unsubmitted confirmation');
+  reset.click(); assert.equal(dialog.querySelector('.ftask').value, 'keep ordinary task'); assert.equal(dialog.querySelector('.fspawn').textContent, 'Spawn');
+  assert.equal(reset.disabled, true); assert.equal(tx.commands.length, 0); assert.equal(u.spawns().length, 0);
+});
+test('qualified guarded handoff waits for exact home/root/agent and running roster, not a name-only twin', async t => {
+  const tx = transactions({ invoke: () => ({ started: true, envelope: envelope(creation(applyPreview(tx.t))) }) });
+  const wanted = applyPreview(tx.t); let present = false;
+  const u = await setup(t, { cli: guardedCli(), apply: tx.call, panel: () => ({ workspace: { id: '/team', scope: '/team' }, workspaces: [], instances: present
+    ? [{ instance: wanted.instance, agent: 'dev', home: wanted.home, agentsRoot: '/team/a/agents', running: true, tmux: { session: 'fixture' } }]
+    : [{ instance: wanted.instance, running: true, tmux: { session: 'fixture' } }] }) }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  assert.equal(u.opens.length, 0, 'actual handoff must not accept the name-only roster twin');
+  present = true; await new Promise(resolve => setTimeout(resolve, 750));
+  assert.equal(u.opens.length, 1); assert.deepEqual(u.opens[0], [{ instance: wanted.instance, home: wanted.home, agentsRoot: '/team/a/agents' }, { quiet: true }]); assert.equal(u.doc.querySelector('.spawn-dialog'), null);
+  const s = { ctx: { api: async () => ({ instances: [{ instance: wanted.instance, running: true, tmux: { session: 'fixture' } }] }) } };
+  assert.equal(await spawn.waitForInstanceInPanel(s, { instance: wanted.instance, home: wanted.home, agentsRoot: '/team/a/agents', agent: 'dev' }, () => true, { strict: true, tries: 1, sleep: async () => {} }), false);
+});
+for (const code of ['E_DECISION_STALE', 'E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN']) test(`guarded ${code} requires explicit review and a new confirmation/key`, async t => {
+  const tx = transactions({ invoke: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code } } }) });
+  const u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  assert.equal(tx.commands.length, 1); assert.equal(dialog.querySelector('.fspawn').textContent, 'Review spawn'); assert.equal(u.opens.length, 0);
+  dialog.querySelector('.fspawn').click(); await tick(); assert.equal(tx.commands.length, 1); assert.equal(dialog.querySelector('.fspawn').textContent, 'Confirm spawn');
+  dialog.querySelector('.fspawn').click(); await tick(); assert.equal(tx.commands.length, 2); assert.notEqual(tx.commands[0].key, tx.commands[1].key);
+});
+test('guarded incomplete outcome never invokes session start or hands off a diagnostic name', async t => {
+  const tx = transactions({ invoke: (_c, args) => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code: 'E_SPAWN_INCOMPLETE', details: {
+    instance: args.decision.instance, home: args.decision.home, launched: 'unknown' } } } }) });
+  const u = await setup(t, { cli: guardedCli(), apply: tx.call }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  assert.equal(dialog.querySelector('.fspawn').textContent, 'Spawn incomplete'); assert.equal(dialog.querySelector('.fspawn').disabled, true);
+  assert.match(dialog.querySelector('.fstatus').textContent, /inspect it from the roster/); assert.equal(u.opens.length, 0);
+  dialog.querySelector('.fspawn').click(); assert.equal(tx.commands.length, 1); assert.ok(u.calls.every(c => !c.path.includes('session-start')));
+});
+test('guarded wake-unrecorded creation stays created and offers Schedules, never another spawn', async t => {
+  const tx = transactions({ invoke: () => ({ started: true, envelope: envelope(creation(applyPreview(tx.t), { replayed: true, wake: { requested: null, saved: null, error: null } })) }) });
+  const u = await setup(t, { cli: { ...guardedCli(), features: [...guardedCli().features, 'schedule'] }, apply: tx.call }), dialog = await u.open();
+  const checkbox = dialog.querySelector('.fwake-enabled'); checkbox.checked = true; checkbox.dispatchEvent(new u.dom.window.Event('change', { bubbles: true })); u.change('.fwake-message', 'PRIVATE wake');
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  assert.equal(dialog.querySelector('.fstatus').textContent, 'Agent created; wake outcome unavailable — check Schedules');
+  assert.ok(dialog.querySelector('.guarded-schedules')); assert.equal(dialog.querySelector('.fspawn').disabled, true); assert.equal(u.opens.length, 0);
+  dialog.querySelector('.fspawn').click(); assert.equal(tx.commands.length, 1);
+});
+for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: guarded confirmation uses computed AA tokens without text opacity`, async t => {
+  const tx = transactions(), u = await setup(t, { cli: guardedCli(), apply: tx.call }), style = u.doc.createElement('style');
+  style.textContent = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8'); u.doc.head.append(style); u.doc.documentElement.dataset.theme = theme;
+  const dialog = await u.open(); dialog.querySelector('.fspawn').click(); await tick();
+  const root = u.dom.window.getComputedStyle(u.doc.documentElement);
+  for (const [selector, background, fg, bg] of [['.spawn-confirm-details pre', '.spawn-confirm-details pre', 'fg', 'surface-2'], ['.fspawn', '.fspawn', 'primary-fg', 'primary-bg'], ['.fstatus', '.spawn-dialog', 'muted', 'surface']]) {
+    const el = dialog.querySelector(selector), surface = dialog.querySelector(background) || u.doc.querySelector(background); assert.ok(el && surface, selector); assert.equal(u.dom.window.getComputedStyle(el).color, `var(--${fg})`); assert.equal(u.dom.window.getComputedStyle(surface).background, `var(--${bg})`);
+    const f = luminance(root.getPropertyValue(`--${fg}`).trim()), b = luminance(root.getPropertyValue(`--${bg}`).trim()); assert.ok((Math.max(f, b) + .05) / (Math.min(f, b) + .05) >= 4.5);
+    for (let p = el; p; p = p.parentElement) assert.equal(u.dom.window.getComputedStyle(p).opacity, '1');
+  }
+  tx.c.cli.features = tx.c.cli.features.filter(f => f !== 'spawn-idempotency-2');
+  dialog.querySelector('.fspawn').click(); await tick();
+  assert.equal(u.dom.window.getComputedStyle(dialog.querySelector('.fstatus')).color, 'var(--danger)');
+  const danger = luminance(root.getPropertyValue('--danger').trim()), surface = luminance(root.getPropertyValue('--surface').trim());
+  assert.ok((Math.max(danger, surface) + .05) / (Math.min(danger, surface) + .05) >= 4.5);
 });

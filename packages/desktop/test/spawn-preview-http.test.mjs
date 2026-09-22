@@ -7,12 +7,14 @@ import { classifyApiRoute } from '../api-url.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
 import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
+import { spawnApplySupported, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { context, request, target, data, envelope, view, deferred } from './helpers/spawn-preview-fixture.mjs';
 function http() {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = context(), calls = [];
   const deps = { createServer: fn => fn, previewFailure, PREVIEW_ONLY, spawnAgent: assert.fail,
+    spawnApplySupported, spawnApplyFailure, spawnApplyRequest: assert.fail,
     spawnPreviewRequest: createSpawnPreviewBoundary({ invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
     workspaces: () => [c.workspace], cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['team', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));

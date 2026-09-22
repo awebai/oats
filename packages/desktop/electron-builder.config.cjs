@@ -34,6 +34,7 @@ module.exports = {
     "lifecycle-cli.mjs",
     "readiness-cli.mjs", "readiness-proxy.mjs",
     "spawn-preview-cli.mjs", "spawn-preview-proxy.mjs",
+    "spawn-apply-cli.mjs", "spawn-apply-proxy.mjs",
     "server-compat.mjs",
     "server-host.mjs",
     "tmux-target.mjs",

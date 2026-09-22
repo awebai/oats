@@ -1,0 +1,438 @@
+{
+  "producerMerge": "c19b781689c2f3d1a6436c57557f1fa91d084926",
+  "delivery": "fd4fe34c-1a8b-45f9-9dc1-d162510d9b31",
+  "note": "Anonymized delivered envelopes. Opaque revisions unchanged. Expected confirmations in tests are synthetic from recorded decisions, not independent native previews. apply-refused-decision-stale is a retained historical incomplete-decision negative, not current producer shape.",
+  "fixtures": {
+    "apply-bound-first.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-fix-login",
+        "agent": "probe",
+        "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login",
+        "work": "worktree",
+        "branch": "agents/probe-fix-login",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-fix-login"
+        },
+        "repo": "/fixture/producer-2/ws/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "decision": {
+          "instance": "probe-fix-login",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login",
+          "branch": "agents/probe-fix-login",
+          "base": {
+            "ref": "HEAD",
+            "oid": "57b9cf9b5b9252869242293ffea342106ac0f507"
+          },
+          "effective": {
+            "repo": "/fixture/producer-2/ws/repo",
+            "work": "worktree",
+            "runtime": "pi",
+            "model": null,
+            "launchConfig": null,
+            "yolo": null,
+            "backend": "tmux",
+            "childSpawns": true,
+            "relation": null
+          },
+          "revision": "50bd2950619d1aea0ded8eab"
+        },
+        "replayed": false,
+        "wake": {
+          "requested": false,
+          "saved": null,
+          "error": null
+        },
+        "launchConfig": null
+      }
+    },
+    "apply-concurrent-1.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_PLACEMENT_TAKEN",
+        "message": "Recorded producer refusal; free-form diagnostic withheld.",
+        "details": {
+          "instance": "probe-fix-login-2",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login-2"
+        }
+      }
+    },
+    "apply-concurrent-2.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-fix-login-2",
+        "agent": "probe",
+        "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login-2",
+        "work": "worktree",
+        "branch": "agents/probe-fix-login-2",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-fix-login-2"
+        },
+        "repo": "/fixture/producer-2/ws/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "decision": {
+          "instance": "probe-fix-login-2",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login-2",
+          "branch": "agents/probe-fix-login-2",
+          "base": {
+            "ref": "HEAD",
+            "oid": "57b9cf9b5b9252869242293ffea342106ac0f507"
+          },
+          "effective": {
+            "repo": "/fixture/producer-2/ws/repo",
+            "work": "worktree",
+            "runtime": "pi",
+            "model": null,
+            "launchConfig": null,
+            "yolo": null,
+            "backend": "tmux",
+            "childSpawns": true,
+            "relation": null
+          },
+          "revision": "f51d97a69c42e5c507c36fd7"
+        },
+        "replayed": false,
+        "wake": {
+          "requested": false,
+          "saved": null,
+          "error": null
+        },
+        "launchConfig": null
+      }
+    },
+    "apply-explicit-branch-first-with-wake.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-b",
+        "agent": "probe",
+        "home": "/fixture/producer-2/ws/agents/probe/instances/probe-b",
+        "work": "worktree",
+        "branch": "feat/explicit",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-b"
+        },
+        "repo": "/fixture/producer-2/ws/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "decision": {
+          "instance": "probe-b",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-b",
+          "branch": "feat/explicit",
+          "base": {
+            "ref": "HEAD",
+            "oid": "57b9cf9b5b9252869242293ffea342106ac0f507"
+          },
+          "effective": {
+            "repo": "/fixture/producer-2/ws/repo",
+            "work": "worktree",
+            "runtime": "pi",
+            "model": null,
+            "launchConfig": null,
+            "yolo": null,
+            "backend": "tmux",
+            "childSpawns": true,
+            "relation": null
+          },
+          "revision": "e805bc7d612193773ff390af"
+        },
+        "replayed": false,
+        "wake": {
+          "requested": true,
+          "saved": true,
+          "error": null
+        },
+        "launchConfig": null
+      }
+    },
+    "apply-explicit-branch-replayed.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-b",
+        "agent": "probe",
+        "home": "/fixture/producer-2/ws/agents/probe/instances/probe-b",
+        "work": "worktree",
+        "branch": "feat/explicit",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-b"
+        },
+        "repo": "/fixture/producer-2/ws/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "decision": {
+          "instance": "probe-b",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-b",
+          "branch": "feat/explicit",
+          "base": {
+            "ref": "HEAD",
+            "oid": "57b9cf9b5b9252869242293ffea342106ac0f507"
+          },
+          "effective": {
+            "repo": "/fixture/producer-2/ws/repo",
+            "work": "worktree",
+            "runtime": "pi",
+            "model": null,
+            "launchConfig": null,
+            "yolo": null,
+            "backend": "tmux",
+            "childSpawns": true,
+            "relation": null
+          },
+          "revision": "e805bc7d612193773ff390af"
+        },
+        "replayed": true,
+        "wake": {
+          "requested": true,
+          "saved": true,
+          "error": null
+        },
+        "launchConfig": null
+      }
+    },
+    "apply-refused-decision-stale.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_DECISION_STALE",
+        "message": "Recorded producer refusal; free-form diagnostic withheld.",
+        "details": {
+          "decision": {
+            "instance": "probe-fix-login",
+            "home": "/fixture/producer-4/ws/agents/probe/instances/probe-fix-login",
+            "branch": "agents/probe-fix-login",
+            "base": {
+              "ref": "HEAD",
+              "oid": "c2de779fc4a623c741fb4684f3a79a5b0f1babc5"
+            },
+            "revision": "f6e92beb74c24b369fc18ddd"
+          }
+        }
+      }
+    },
+    "apply-refused-effective-drift.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_DECISION_STALE",
+        "message": "Recorded producer refusal; free-form diagnostic withheld.",
+        "details": {
+          "decision": {
+            "instance": "probe-fix-login",
+            "home": "/fixture/producer-5/ws/agents/probe/instances/probe-fix-login",
+            "branch": "agents/probe-fix-login",
+            "base": {
+              "ref": "HEAD",
+              "oid": "fc3c0d4982a07231bba25021aa621a49de14a67a"
+            },
+            "effective": {
+              "repo": "/fixture/producer-5/ws/repo",
+              "work": "worktree",
+              "runtime": "pi",
+              "model": "sonnet-x",
+              "launchConfig": null,
+              "yolo": null,
+              "backend": "tmux",
+              "childSpawns": true,
+              "relation": null
+            },
+            "revision": "4e080d722ff71e4a485a247a"
+          }
+        }
+      }
+    },
+    "apply-refused-idempotency-conflict.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_IDEMPOTENCY_CONFLICT",
+        "message": "Recorded producer refusal; free-form diagnostic withheld.",
+        "details": {
+          "instance": "probe-fix-login",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login"
+        }
+      }
+    },
+    "apply-refused-spawn-incomplete.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_SPAWN_INCOMPLETE",
+        "message": "Recorded producer refusal; free-form diagnostic withheld.",
+        "details": {
+          "instance": "probe-b",
+          "home": "/fixture/producer-3/ws/agents/probe/instances/probe-b",
+          "launched": false
+        }
+      }
+    },
+    "apply-refused-stale-herdr-not-started.json": {
+      "schemaVersion": 1,
+      "ok": false,
+      "error": {
+        "code": "E_DECISION_STALE",
+        "message": "Recorded producer refusal; free-form diagnostic withheld.",
+        "details": {
+          "decision": {
+            "instance": "probe-fix-login-2",
+            "home": "/fixture/producer-1/ws/agents/probe/instances/probe-fix-login-2",
+            "branch": "agents/probe-fix-login-2",
+            "base": {
+              "ref": "HEAD",
+              "oid": "f00def5f878abd3c9df8b3361cc39b3481be63ca"
+            },
+            "effective": {
+              "repo": "/fixture/producer-1/ws/repo",
+              "work": "worktree",
+              "runtime": "pi",
+              "model": null,
+              "launchConfig": null,
+              "yolo": null,
+              "backend": "herdr",
+              "childSpawns": true,
+              "relation": null
+            },
+            "revision": "57f0969fc01cb4d78386320c"
+          }
+        }
+      }
+    },
+    "apply-replayed-same-key.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-fix-login",
+        "agent": "probe",
+        "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login",
+        "work": "worktree",
+        "branch": "agents/probe-fix-login",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-fix-login"
+        },
+        "repo": "/fixture/producer-2/ws/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "decision": {
+          "instance": "probe-fix-login",
+          "home": "/fixture/producer-2/ws/agents/probe/instances/probe-fix-login",
+          "branch": "agents/probe-fix-login",
+          "base": {
+            "ref": "HEAD",
+            "oid": "57b9cf9b5b9252869242293ffea342106ac0f507"
+          },
+          "effective": {
+            "repo": "/fixture/producer-2/ws/repo",
+            "work": "worktree",
+            "runtime": "pi",
+            "model": null,
+            "launchConfig": null,
+            "yolo": null,
+            "backend": "tmux",
+            "childSpawns": true,
+            "relation": null
+          },
+          "revision": "50bd2950619d1aea0ded8eab"
+        },
+        "replayed": true,
+        "wake": {
+          "requested": false,
+          "saved": null,
+          "error": null
+        },
+        "launchConfig": null
+      }
+    },
+    "apply-replayed-wake-unrecorded.json": {
+      "schemaVersion": 1,
+      "ok": true,
+      "result": {
+        "instance": "probe-b",
+        "agent": "probe",
+        "home": "/fixture/producer-3/ws/agents/probe/instances/probe-b",
+        "work": "worktree",
+        "branch": "feat/explicit",
+        "launched": false,
+        "warnings": [],
+        "tmux": {
+          "session": "pi-agents",
+          "window": "probe-b"
+        },
+        "repo": "/fixture/producer-3/ws/repo",
+        "runtime": "pi",
+        "model": null,
+        "parent": null,
+        "sibling": null,
+        "relation": null,
+        "spawnOrigin": "operator",
+        "decision": {
+          "instance": "probe-b",
+          "home": "/fixture/producer-3/ws/agents/probe/instances/probe-b",
+          "branch": "feat/explicit",
+          "base": {
+            "ref": "HEAD",
+            "oid": "a53bc79bbdde73a9c1e4f8e6a1c1c91ad99db757"
+          },
+          "effective": {
+            "repo": "/fixture/producer-3/ws/repo",
+            "work": "worktree",
+            "runtime": "pi",
+            "model": null,
+            "launchConfig": null,
+            "yolo": null,
+            "backend": "tmux",
+            "childSpawns": true,
+            "relation": null
+          },
+          "revision": "e01f7fd9d17470ae9db48dca"
+        },
+        "replayed": true,
+        "wake": {
+          "requested": null,
+          "saved": null,
+          "error": null
+        },
+        "launchConfig": null
+      }
+    }
+  }
+}
