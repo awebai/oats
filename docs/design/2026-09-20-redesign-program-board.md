@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 12:30Z · **v0.24.8 PUBLISHED** (tag `b01f7c51`; both packages on npm; bump PR70 → main `b4bf7979`; from-the-tarball probe: spawn/readiness/preview/events/recompose/retire-plan/apply/replay all pass, soul intact) · **Slice 2c MERGED** (PR69 `508fda04`) · K3 pins closed (PR66/67) · `oats session recompose` (PR68) · engineer → **5** → 6b → 7b → 8 · Desktop controls light up as installed CLIs reach 0.24.8
+**Last update:** 2026-09-22 15:40Z · main `45889296` · **Slice 5 (Readiness) MERGED** (PR71) · **security follow-up MERGED** (PR73: one normalized route classifier, alias suite) · K5 producer pins MERGED (PR74, PR75: effective activation, executable-surface trust, typed linkage + byCapability ownReady/ready + subjectBlockers, byte-exact selector echo, unreadable member doc → unknown, captured-home refusal, bounded signature custody under `readiness-verify`) · **OKF 2.1.3 published + mirrored** (PR72) · v0.24.8 published (tag `b01f7c51`) · engineer → **6b proposal** → 7b → 8 · **K11** (workspace admission / two-document receipt) new seam, unscheduled · next release 0.24.9 after 6b
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
