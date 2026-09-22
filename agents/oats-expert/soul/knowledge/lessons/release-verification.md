@@ -29,3 +29,7 @@ plus running a different code path; both passed.
 4. **Escaping in generated text**: strings that themselves contain code-ish
    syntax (backticked commands in briefings) are a recurring hazard inside
    template literals — escape or build them from concatenation.
+
+## State the tagged SHA, not the last code SHA
+
+The tag is usually placed on the *release-notes* commit, one commit after the last code merge, and npm records that commit as `gitHead`. Announce and record the **tag's** commit (`git rev-parse vX.Y.Z^{commit}`) and say which code merge it sits on; a from-the-tag verifier compares `npm view <pkg> gitHead` to what you wrote, and "tag on <last merge>" is wrong by one commit (caught by the second operator on 0.24.7).
