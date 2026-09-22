@@ -125,12 +125,22 @@ returns a bounded unified diff:
 
 ```json
 {"instanceGitApi":1,"observation":{…},"file":{"id":"…","kind":"changed","xy":".M","path":"README.md","origPath":null},
- "against":"HEAD","binary":false,"bytes":2683,"truncated":false,"limit":262144,"patch":"diff --git …"}
+ "against":"<captured revision oid>","binary":false,"bytes":2683,"truncated":false,"limit":262144,"patch":"diff --git …",
+ "readOnly":{"helpers":"disabled","optionalLocks":"off","objectsWritten":0}}
 ```
 
-- `against` is `HEAD` for tracked changes (working tree vs HEAD, index
-  included) and `empty` for untracked files. Binary → `binary: true`, empty
-  patch. Over 256 KiB → `truncated: true` at the byte limit.
+- `against` is the **captured revision oid** for tracked changes (working tree
+  vs that exact commit, index included — never the moving `HEAD`) and `empty`
+  for untracked files. Binary → `binary: true`, empty patch. Over 256 KiB →
+  `truncated: true` at the byte limit.
+- **Read-only, helper-free, consistent across the read** (`readOnly` echoes
+  it): the observed tree may carry a hostile repo config, so external diff,
+  textconv, fsmonitor and hooks are disabled and the caller's Git environment
+  and global config are not inherited; `--no-optional-locks` means no index
+  refresh and no object is written (`ls-files --stage` hash, not `write-tree`).
+  After producing the patch the CLI re-checks HEAD, index and the file's own
+  content against the observation and refuses `E_STALE_OBSERVATION` if any
+  moved mid-read — the result is never internally inconsistent.
 - If HEAD or the index moved since the id was minted, or the id is not in the
   current observation, the CLI **refuses** with `E_STALE_OBSERVATION` and
   attaches the current `observation` in `error.details` — re-observe, never

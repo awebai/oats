@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parsePorcelainV2 } from "../lib/instance-git.mjs";
@@ -86,7 +86,7 @@ test("instance diff: bounded, against HEAD or empty, staged/renamed/untracked/bi
   const rev = g.observation.revision, idx = g.observation.indexRevision, id = (p) => g.files.find((f) => f.path === p).id;
   const d = (p, extra = []) => oats(["instance", "diff", "dev-1", "--dir", ws, "--file", id(p), "--revision", rev, "--index-revision", idx, ...extra]);
   const readme = d("README.md"); assert.equal(readme.status, 0, readme.stdout + readme.stderr);
-  assert.equal(readme.envelope.result.against, "HEAD"); assert.match(readme.envelope.result.patch, /\+changed/); assert.equal(readme.envelope.result.truncated, false);
+  assert.equal(readme.envelope.result.against, rev, "the diff names the captured revision it was taken against, not the moving HEAD"); assert.match(readme.envelope.result.patch, /\+changed/); assert.equal(readme.envelope.result.truncated, false);
   const moved = d("src/moved.txt").envelope.result; assert.equal(moved.file.origPath, "src/a.txt"); assert.match(moved.patch, /rename from src\/a\.txt/);
   const big = d("big.txt").envelope.result; assert.equal(big.against, "empty"); assert.equal(big.truncated, true); assert.equal(big.limit, 256 * 1024); assert.ok(Buffer.byteLength(big.patch) <= 256 * 1024);
   const bin = d("bin.dat").envelope.result; assert.equal(bin.binary, true); assert.equal(bin.patch, "");
@@ -124,4 +124,37 @@ test("instance addressing: unknown, ambiguous (twins refuse with candidates; --h
   const nobase = oats(["instance", "git", "dev-1", "--dir", ws, "--home", home]).envelope.result;
   assert.deepEqual(nobase.base, { ref: null, source: null, mergeBase: null, ahead: null, behind: null }); assert.ok(nobase.notes.some((n) => /no default branch/.test(n)));
   assert.equal(oats(["instance", "git"]).envelope.error.code, "E_BAD_ARGS"); assert.equal(oats(["instance", "nope", "dev-1", "--dir", ws]).envelope.error.code, "E_BAD_ARGS");
+});
+
+test("hardening: configured external diff/textconv/fsmonitor helpers NEVER execute, the observation writes no object and no index byte, and a HEAD/index/content move during the read refuses", () => {
+  const work = repo(join(base, "r4"));
+  const sentinel = join(base, "r4-helper-ran");
+  const helper = join(base, "r4-helper.sh"); writeFileSync(helper, `#!/bin/sh\necho ran > '${sentinel}'\necho HOSTILE-PATCH\n`, { mode: 0o700 });
+  // Hostile repo-local config: an agent working in the tree can write these.
+  git(work, "config", "diff.external", helper); git(work, "config", "core.fsmonitor", helper);
+  git(work, "config", "diff.evil.textconv", helper); write(join(work, ".gitattributes"), "*.txt diff=evil\n");
+  write(join(work, "src", "a.txt"), "a\nchanged\n"); write(join(work, "README.md"), "hello\nedit\n"); git(work, "add", "README.md");
+  const { ws } = scope("s4", { work });
+  // The fixture's OWN git calls would trigger the helper too (that is the point of the finding);
+  // run them helper-free and reset the sentinel so only the kernel's reads are measured.
+  const safe = (...a) => execFileSync("git", ["-c", "core.fsmonitor=false", "-C", work, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const objectsBefore = safe("count-objects", "-v"), indexBefore = readFileSync(join(work, ".git", "index"));
+  rmSync(sentinel, { force: true });
+  const g = oats(["instance", "git", "dev-1", "--dir", ws]); assert.equal(g.status, 0, g.stdout + g.stderr);
+  const rev = g.envelope.result.observation.revision, idx = g.envelope.result.observation.indexRevision, id = (p) => g.envelope.result.files.find((f) => f.path === p).id;
+  const d = oats(["instance", "diff", "dev-1", "--dir", ws, "--file", id("src/a.txt"), "--revision", rev, "--index-revision", idx]);
+  assert.equal(d.status, 0, d.stdout + d.stderr);
+  assert.match(d.envelope.result.patch, /\+changed/); assert.doesNotMatch(d.envelope.result.patch, /HOSTILE/);
+  assert.equal(existsSync(sentinel), false, "no configured helper executed during observation or diff");
+  assert.equal(safe("count-objects", "-v"), objectsBefore, "observing and diffing wrote no git object");
+  assert.deepEqual(readFileSync(join(work, ".git", "index")), indexBefore, "observing and diffing changed no index byte");
+  assert.deepEqual(d.envelope.result.readOnly, { helpers: "disabled", optionalLocks: "off", objectsWritten: 0 });
+  // Index moved between observation and diff (README was staged before, now unstaged) → refused.
+  safe("reset", "-q", "README.md");
+  const moved = oats(["instance", "diff", "dev-1", "--dir", ws, "--file", id("README.md"), "--revision", rev, "--index-revision", idx]);
+  assert.equal(moved.envelope.error.code, "E_STALE_OBSERVATION");
+  // A caller who omits --index-revision still cannot get a diff for a file whose content changed under it:
+  // the file id is bound to the index revision, so it is not in the new observation.
+  const g2 = oats(["instance", "git", "dev-1", "--dir", ws]).envelope.result;
+  assert.notEqual(g2.observation.indexRevision, idx); assert.ok(!g2.files.some((f) => f.id === id("README.md")));
 });
