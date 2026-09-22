@@ -245,7 +245,7 @@ torn lines and cleared claims silently. API 2:
 
 Desktop passes `--limit` (50|100|200) only; `--since` remains a human flag.
 
-## Schedule run history (`scheduleApi: 2`, OATS 0.24.8+) — K8
+## Schedule run history (`scheduleApi: 2`, `scheduleHistoryApi: 2` → **3**, OATS 0.24.8+) — K8
 
 `oats schedule show|list --json` entries gain **`recentRuns`**: the last 50
 settled runs (newest first) — every `lastRun` the scheduler recorded once its
@@ -258,6 +258,53 @@ copy transcripts. `nextRun`/`lastRun`/`executionStatus` are unchanged. The
 Schedules view (frame 08) renders `recentRuns` as the recent-runs list and the
 transcript pointer as the handoff; captured-policy definitions are preserved
 as they are (definition fields are untouched by this addition).
+
+### History API 3 (`scheduleHistoryApi: 3`, feature `schedule-read-2`, OATS 0.24.13+) — K8b
+
+Gate a Desktop history read on **both** `scheduleHistoryApi === 3` and
+`"schedule-read-2"` in `features[]` (`scheduleApi` stays 2 — mutation verbs are
+unchanged). API 2's reader keyed runs by outcome, read state files whole and
+unchecked, echoed a stored `definition.id` without checking it, and named a
+`transcript` that no reader backs. API 3:
+
+- **Run identity is time, not outcome.** `runId = sha256(scheduledFor|startedAt|attemptId)[0:24]`.
+  A run's later facts update its one row; `transitions[]` keeps the outcome
+  sequence (`["started","unknown","ended"]`); `settled: boolean`
+  (`pending: true` is never settled); `recordedAt`. Pre-API-3 rows are returned
+  with `runId: null, legacy: true, settled: null, transitions: null` and are
+  never merged. `lastRun` carries the same `runId` as its history row.
+- **Bounded, descriptor-safe state.** `oats-schedules.json` and
+  `.agents/schedules/state.json` are `lstat`ed (regular file only), opened
+  `O_NOFOLLOW|O_NONBLOCK`, `fstat`-verified (dev+ino), and read whole **only
+  within a 1 MiB budget** — over budget is a typed `E_SCHEDULE_STATE_OVERSIZE`
+  refusal with `details.source`, never truncated JSON. `list`/`show` carry
+  `integrity: {sources: [{path: "definitions"|"state", status: "ok"|"absent"|"refused"|"oversize"|"corrupt", bytes}]}`.
+  History is capped at 50 rows **at read** (`history: {status, stored, truncated}`);
+  one job's corrupt history (`history.status: "corrupt"`, `recentRuns: []`) or
+  bad identity (`unreadable: {code, message}`) never fails the other jobs in `list`.
+- **Subject truth.** `list` and `show` echo `scope` (the resolved schedule-owning
+  workspace) and canonical `id`. A definition whose own `id` differs from its
+  key → `E_SCHEDULE_IDENTITY` (`details.key`, `details.declared`). IDs must match
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (`E_BAD_ARGS` otherwise, before any read).
+- **Session provenance, never a transcript.** The `transcript` key is gone.
+  Each run (and `lastRun`) carries
+  `session: {instance: string|null, home: string|null, incarnation: string|null, server: string|null, delivery: "launched"|"delivered-active"|"none"}`
+  — facts the recorder had at write time (an active-session wake names the
+  instance only when the input result did; `incarnation` = the home's
+  `instance.json.createdAt` at record time; `server` = the answering peer for a
+  remote command). **There is no reader behind this block**: a consumer renders
+  provenance and a precise unavailable reason. A read-only transcript verb is a
+  separate seam (K12), not implied by this API.
+
+```
+{"scope":"/abs/ws","scheduleApi":2,"scheduleHistoryApi":3,
+ "integrity":{"sources":[{"path":"definitions","status":"ok","bytes":812},{"path":"state","status":"ok","bytes":4410}]},
+ "schedules":[{"id":"nightly","scope":"/abs/ws","scheduleApi":2,"scheduleHistoryApi":3,…,
+   "history":{"status":"ok","stored":7,"truncated":false},
+   "recentRuns":[{"runId":"3f…","scheduledFor":"<iso>","startedAt":"<iso>","outcome":"ended","settled":true,"transitions":["started","ended"],"recordedAt":"<iso>",
+                  "session":{"instance":"dev-1","home":"/abs/home","incarnation":"<iso>","server":null,"delivery":"launched"}}]}],
+ "scheduler":{…}}
+```
 
 ## Spawn preview (`oats spawn … --preview`, `spawnPreviewApi: 1`, OATS 0.24.8+)
 
