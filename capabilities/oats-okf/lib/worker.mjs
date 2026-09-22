@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isAbsolute, resolve } from 'node:path';
 import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, oats, command, fail, relPath } from './io.mjs';
-import { loadSource, loadStatus, saveStatus, updateStatus, capture, input, markerPath, homeSource } from './sources.mjs';
+import { loadSource, loadStatus, saveStatus, updateStatus, capture, input, markerPath, homeSource, settleRetiredSchedule } from './sources.mjs';
 import {capturedSource,qualifyCapturedWorker,assertCapturedRun,capturedScaffold,retainCapturedWorkerCustody,assertCapturedWorkerHome,capturedStart} from './captured-worker.mjs';
 import { metadata, splitRef } from './config.mjs';
 import { stageBase, validateBase, allowedChanges, verifyGitScope, gitPublish, directoryPublish, journalPath, baseLock, recoveryStage, reconcileDirectoryIntent, gitRecoveryState } from './stores.mjs';
@@ -63,7 +63,10 @@ export function runSource(source,{noLaunch=false,manual=false,capturedInvocation
     const previous=status.pendingRejudgment?readRun(source,status.pendingRejudgment):null;
     if(previous) checkRecoveryGuards(source,previous);
     const ids=previous?previous.inputs:status.captured.inputs.filter(id=>!status.processed.includes(id));
-    if(!ids.length) return status.finalCaptureUncertified?{status:'source-unavailable',processedCapturedInput:true,finalCaptureComplete:false}:{status:'empty',processed:true};
+    if(!ids.length) {
+      if(status.retired && !status.finalCaptureUncertified) {updateStatus(source,current=>{current.auto=false;});settleRetiredSchedule(source);}
+      return status.finalCaptureUncertified?{status:'source-unavailable',processedCapturedInput:true,finalCaptureComplete:false}:{status:'empty',processed:true};
+    }
     const selected=[];let bytes=0;
     for(const id of ids) {const n=Buffer.byteLength(JSON.stringify(input(source,id)));if(selected.length && bytes+n>192000) break;selected.push(id);bytes+=n;}
     if(!source.decl.owns.length) fail('E_OWNER','source has evidence but owns no destination; retained for explicit ownership routing');

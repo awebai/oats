@@ -67,6 +67,7 @@ export function loadBindings(file = settings()['bindings-file'], opts = {}) {
 export function declaration(soul) {
   if(fs.existsSync(join(soul,'.okf-cutover.json'))) fail('E_MIGRATION','incomplete explicit migration cutover: rerun its recorded migrate --cutover command');
   if(fs.existsSync(join(soul,'knowledge'))) fail('E_MIGRATION','legacy soul/knowledge exists: use oats okf migrate to preserve and stage it, then explicit cutover; no automatic loss');
+  if(!fs.existsSync(join(soul,'okf.json'))) fail('E_CONFIG',`soul has no okf.json: this soul reads/owns no knowledge yet. Provision it explicitly (oats okf init, or oats okf migrate for a legacy soul), or deactivate oats.okf for this soul; nothing was created`);
   return validateDeclaration(readJSON(join(soul,'okf.json')));
 }
 export function validateDeclaration(d) {

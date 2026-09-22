@@ -246,6 +246,21 @@ export function input(source,id) {
   const value=readJSON(join(dirname(source.file),'inputs',`${id}.json`));
   if(hash(value)!==id) fail('E_INPUT','durable evidence hash mismatch');return value;
 }
+/** Switch a retired source's job off once nothing is pending. Idempotent; a
+ *  scheduler failure is recorded, never thrown — the evidence is already safe. */
+export function settleRetiredSchedule(source) {
+  const status=loadStatus(source);
+  if(status.schedule?.settled===true) return {status:'already-disabled',id:status.schedule.id};
+  if(!status.retired || status.auto || status.schedule?.id===undefined) return {status:'kept'};
+  try {
+    oats(['schedule','disable',status.schedule.id,'--dir',source.context,'--json'],source.context);
+    updateStatus(source,current=>{current.schedule={...current.schedule,settled:true,settledAt:new Date().toISOString()};});
+    return {status:'disabled',id:status.schedule.id};
+  } catch(e) {
+    updateStatus(source,current=>{current.schedule={...current.schedule,settled:false,settleError:e.message};});
+    return {status:'disable-failed',id:status.schedule.id};
+  }
+}
 export function capture(source,{final=false,deadlineMs=85000}={}) {
   return withLock(join(dirname(source.file),'capture.lock'),()=>{
     const status=loadStatus(source);
@@ -318,7 +333,15 @@ export function capture(source,{final=false,deadlineMs=85000}={}) {
       }
       status.lastCapture={status:report.status,complete:report.complete===true,ignored:report.ignored||0,at:new Date().toISOString()};
       if(report.complete!==true) fail('E_CAPTURE',`capture ${report.status || 'uncertified'}: retain source and retry`);
-      if(final) {status.retired=true;status.auto=status.auto && !noLaunch;status.retiredAt=new Date().toISOString();}
+      if(final) {
+        status.retired=true;status.retiredAt=new Date().toISOString();
+        // A retired source whose every captured input is already processed has
+        // no further work: its schedule is switched off now (never deleted —
+        // the job definition stays as evidence). Anything still pending keeps
+        // the job enabled until the worker drains it (see worker.mjs).
+        const drained=status.captured.inputs.every(id=>status.processed.includes(id));
+        status.auto=status.auto && !noLaunch && !drained;
+      }
       saveCapture(source,status);return {...status.lastCapture,inputs:status.captured.inputs.length};
     } catch(e) {
       status.lastCapture={status:'incomplete',complete:false,error:e.message,at:new Date().toISOString()}; saveCapture(source,status);throw e;
@@ -351,7 +374,9 @@ export function scheduleSource(source) {
       if(!sameJson(responsible,spec.responsibleHuman)) fail('E_SCHEDULE','captured source schedule responsible human differs');
       if(actual.execution && (actual.execution.deployment!==source.executionBinding.deployment || actual.execution.resolution?.id!==source.executionBinding.resolution.id)) fail('E_SCHEDULE','captured source schedule execution binding differs');
     }
-    updateStatus(source,status=>{status.schedule={id:spec.id,status:'ready',result};});return result;
+    // A job already settled off for a retired, drained source stays settled:
+    // registration re-verifies the definition but does not forget the switch-off.
+    updateStatus(source,status=>{const settled=status.schedule?.settled===true?{settled:true,settledAt:status.schedule.settledAt}:{};status.schedule={id:spec.id,status:'ready',result,...settled};});return result;
   } catch(e) {
     updateStatus(source,status=>{status.schedule={...(status.schedule || {}),id:spec.id,status:'failed',error:e.message};});throw e;
   }
