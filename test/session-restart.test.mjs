@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, readdirSync, symlinkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -490,4 +490,43 @@ test("K3 pins: guarded retire STOPS recorded children first and refuses (E_CHILD
   const amb = planStop(repo, root, "pin-parent", { home: parent.home });
   assert.deepEqual(amb.targets.map((t) => t.instance), ["pin-parent"]); assert.equal(amb.ambiguous.length, 2); assert.ok(amb.notes.some((n) => /not unique/.test(n)));
   rmSync(twinDir, { recursive: true, force: true });
+});
+
+import { recomposeInstanceInstructions, retirePendingMarkerPath } from "../lib/core.mjs";
+test("session recompose: refreshes a LIVE home's AGENTS.md from its current soul with the spawn composer — previous text retained, instance.json + event record it, dry-run writes nothing, unchanged is a no-op, a retiring home refuses", () => {
+  const root = join(repo, "agents");
+  const h = makeHome("recompose-me");
+  const soulMd = join(root, "dev", "soul", "AGENTS.md");
+  symlinkSync(join(root, "dev", "soul"), join(h.home, "soul"));
+  writeFileSync(join(h.home, "AGENTS.md"), recomposeInstanceInstructions(h.home, { dryRun: true }).text ?? "");
+  // Seed the home with what spawn would have composed, so "unchanged" is honest.
+  recomposeInstanceInstructions(h.home);
+  const before = readFileSync(join(h.home, "AGENTS.md"), "utf8");
+  for (const f of readdirSync(h.home).filter((f) => f.startsWith(".oats-agents-md."))) rmSync(join(h.home, f));
+  // Nothing changed yet → no-op, no receipt.
+  const same = recomposeInstanceInstructions(h.home);
+  assert.equal(same.changed, false); assert.equal(same.previous, null);
+  assert.equal(readdirSync(h.home).filter((f) => f.startsWith(".oats-agents-md.")).length, 0);
+  // The canonical soul gains a role change (what a policy amendment looks like).
+  appendFileSync(soulMd, "\n## Amended\n- gate: Desktop suites + focused suite + PR CI\n");
+  const dry = recomposeInstanceInstructions(h.home, { dryRun: true });
+  assert.equal(dry.changed, true); assert.equal(dry.dryRun, true);
+  assert.equal(readFileSync(join(h.home, "AGENTS.md"), "utf8"), before, "dry-run writes nothing");
+  const r = recomposeInstanceInstructions(h.home);
+  assert.equal(r.changed, true); assert.ok(r.previous && existsSync(r.previous), "previous AGENTS.md retained as evidence");
+  assert.equal(readFileSync(r.previous, "utf8"), before);
+  const after = readFileSync(join(h.home, "AGENTS.md"), "utf8");
+  assert.match(after, /## Amended/); assert.match(after, /oats:kernel:instance-boundary/, "kernel blocks still composed by the same composer");
+  const meta = readJson(join(h.home, "instance.json"));
+  assert.ok(meta.recomposedAt); assert.ok(Array.isArray(meta.instructions) && meta.instructions.length === r.blocks.length);
+  assert.ok(readEvents(h.home).events.some((e) => e.kind === "recomposed" && e.data.previous === r.previous));
+  assert.match(r.note, /does not signal or restart/);
+  // A home mid-retirement is not recomposed.
+  write(retirePendingMarkerPath(h.home), JSON.stringify({ at: new Date().toISOString() }));
+  assert.throws(() => recomposeInstanceInstructions(h.home), (e) => e.code === "E_INSTANCE_RETIRING");
+  rmSync(retirePendingMarkerPath(h.home));
+  // CLI surface: --home is required and absolute; the feature is advertised.
+  const cli = oats(["session", "recompose", "--home", h.home, "--dry-run"]);
+  assert.equal(cli.status, 0, cli.stdout + cli.stderr); assert.equal(cli.json.result.changed, false);
+  assert.ok(oats(["version"]).json.features.includes("session-recompose"));
 });
