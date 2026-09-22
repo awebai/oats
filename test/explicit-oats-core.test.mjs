@@ -218,7 +218,7 @@ test('K6 preview: spawn --preview decides instance/home/branch/base/runtime/mode
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const p = f.run(['spawn', 'wt', '--purpose', 'fix-login', '--preview', '--json']); assert.equal(p.status, 0, p.stdout + p.stderr);
   const pv = JSON.parse(p.stdout.trim().split('\n').pop()).result;
-  assert.equal(pv.spawnPreviewApi, 1); assert.equal(pv.preview, true); assert.equal(pv.instance, 'wt-fix-login'); assert.equal(pv.branch, 'agents/wt-fix-login');
+  assert.equal(pv.spawnPreviewApi, 2); assert.equal(pv.preview, true); assert.equal(pv.instance, 'wt-fix-login'); assert.equal(pv.branch, 'agents/wt-fix-login');
   assert.deepEqual(pv.base, { ref: 'HEAD', oid: head }); assert.equal(pv.worktree, join(f.root, 'wt', 'instances', 'wt-fix-login', 'work'));
   assert.equal(pv.runtime, 'claude'); assert.equal(pv.model, 'opus'); assert.equal(pv.policy.childSpawns.allowed, true);
   assert.equal(readdirSync(join(f.root, 'wt', 'instances')).length, 0, 'preview created no home');
@@ -311,4 +311,66 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
   const spent = verificationBudget(1); const t0 = Date.now(); while (Date.now() - t0 < 3) { /* spin */ }
   assert.deepEqual(signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budget: spent }), { status: 'unknown', signer: null, reason: 'the verification budget was exhausted', failure: { code: 'budget-exhausted' } });
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('readiness-verify'));
+});
+
+test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the deployment byte-identical (no event, no daemon, no soul write); --agents-root binds the exact root with no fallback; decision.revision binds the apply via --expect-decision (drift → E_DECISION_STALE, nothing created); preflight is bounded and reported', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  const git = (...a) => spawnSync('git', ['-C', f.context, ...a], { encoding: 'utf8' }).stdout.trim();
+  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  createAgent(f.root, { name: 'boss', work: 'directory', runtime: 'claude', oatsCore: false });
+  const bossSoul = join(f.root, 'boss', 'soul', 'soul.yaml'); writeFileSync(bossSoul, readFileSync(bossSoul, 'utf8') + 'children: {"spawn":false}\n');
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  writeFileSync(join(f.bin, 'herdr'), `#!/bin/sh\necho STARTED >> "${f.base}/herdr-started"; sleep 30\n`, { mode: 0o700 });
+  const boss = spawnCore(f.root, findAgent(f.root, 'boss'), { purpose: 'p', launch: false });
+  const treeHash = () => { const out = spawnSync('bash', ['-c', `cd "${f.context}" && find . -path ./.git -prune -o -type f -print0 | sort -z | xargs -0 shasum -a 256 | shasum -a 256`], { encoding: 'utf8' }); return out.stdout.trim(); };
+  f.write(join(f.context, 'ghost.agent.md'), '---\nname: ghost\n---\n# ghost\n'); // an importable def a non-preview spawn WOULD import
+  const before = treeHash(), eventsBefore = existsSync(join(boss.home, '.oats-events.jsonl')) ? readFileSync(join(boss.home, '.oats-events.jsonl'), 'utf8') : '';
+  // Success preview with the Herdr backend requested: no daemon started, backend reported as installed but not started.
+  const ok = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--backend', 'herdr', '--agents-root', f.root, '--json']).stdout.trim().split('\n').pop()).result;
+  assert.equal(ok.spawnPreviewApi, 2); assert.deepEqual(ok.subject, { soul: 'wt', agentsRoot: f.root, dir: null });
+  assert.deepEqual(ok.backendStatus, { name: 'herdr', installed: true, started: false }); assert.equal(existsSync(join(f.base, 'herdr-started')), false, 'preview started no daemon');
+  assert.match(ok.decision.revision, /^[a-f0-9]{24}$/); assert.equal(ok.decision.instance, 'wt-a'); assert.equal(ok.decision.base.oid, git('rev-parse', 'HEAD'));
+  assert.equal(ok.preflight.status, 'complete'); assert.equal(ok.preflight.budgetMs, 20000);
+  // Refusal preview (child of a parent that forbids children): typed refusal, NO event appended to the parent.
+  const refused = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'kid', '--preview', '--parent', boss.instance, '--json']).stdout.trim().split('\n').pop());
+  assert.equal(refused.error.code, 'E_CHILD_SPAWNS_DISABLED');
+  assert.equal(existsSync(join(boss.home, '.oats-events.jsonl')) ? readFileSync(join(boss.home, '.oats-events.jsonl'), 'utf8') : '', eventsBefore, 'a refusal preview appends no event');
+  // Unknown soul in preview: never imports/creates; exact-root mismatch refuses.
+  assert.equal(JSON.parse(f.run(['spawn', 'ghost', '--preview', '--json']).stdout.trim().split('\n').pop()).error.code, 'E_SOUL_UNKNOWN'); assert.equal(existsSync(join(f.root, 'ghost')), false, 'no soul written');
+  assert.equal(JSON.parse(f.run(['spawn', 'wt', '--preview', '--agents-root', join(f.base, 'elsewhere'), '--json']).stdout.trim().split('\n').pop()).error.code, 'E_SOUL_UNKNOWN');
+  assert.equal(JSON.parse(f.run(['spawn', 'wt', '--preview', '--instructions-file', bossSoul, '--json']).stdout.trim().split('\n').pop()).error.code, 'E_BAD_ARGS');
+  assert.equal(treeHash(), before, 'deployment tree byte-identical after success + refusal + unknown-soul previews');
+  assert.equal(readdirSync(join(f.root, 'wt', 'instances')).length, 0);
+  // Apply bound to the decision: same decision → spawns; a moved base → E_DECISION_STALE with the fresh decision, nothing created.
+  const stale = ok.decision.revision;
+  spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'moved']);
+  const drift = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', stale, '--no-launch', '--json']).stdout.trim().split('\n').pop());
+  assert.equal(drift.error.code, 'E_DECISION_STALE'); assert.equal(drift.error.details.decision.base.oid, git('rev-parse', 'HEAD')); assert.notEqual(drift.error.details.decision.revision, stale);
+  assert.equal(readdirSync(join(f.root, 'wt', 'instances')).length, 0, 'stale decision created nothing'); assert.equal(git('branch', '--list', 'agents/wt-a'), '', 'and no branch');
+  const fresh = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json']).stdout.trim().split('\n').pop()).result.decision.revision;
+  const applied = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json']).stdout.trim().split('\n').pop());
+  assert.equal(applied.ok, true, JSON.stringify(applied).slice(0, 300)); assert.equal(applied.result.instance, 'wt-a');
+  // Name now taken: a re-used old decision is stale (the kernel would have auto-suffixed to wt-a-2 without the flag).
+  const again = JSON.parse(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json']).stdout.trim().split('\n').pop());
+  assert.equal(again.error.code, 'E_DECISION_STALE'); assert.equal(again.error.details.decision.instance, 'wt-a-2'); assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'stale decision created no second home');
+});
+
+test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a preview — bounded by the shared budget, reported as preflight.status timeout, probe group killed', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  // Two provider-qualified preferences force the pi catalog probe; the fake pi hangs forever.
+  createAgent(f.root, { name: 'pp', work: 'worktree', repo: f.context, runtime: 'pi', model: 'openai/gpt-x, anthropic/claude-y', oatsCore: false });
+  writeFileSync(join(f.bin, 'pi'), `#!/bin/sh\ncase "$1" in --list-models) sleep 600;; esac\nexit 0\n`, { mode: 0o700 });
+  const t0 = Date.now();
+  const out = spawnSync(process.execPath, [CLI, 'spawn', 'pp', '--preview', '--json'], { cwd: f.context, env: { ...process.env, PATH: f.bin + ':' + process.env.PATH, OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '1500' }, encoding: 'utf8', timeout: 60000 });
+  const elapsed = Date.now() - t0;
+  assert.ok(out.stdout.trim(), `no output (status ${out.status}, signal ${out.signal}, ${elapsed}ms): ${out.stderr.slice(0, 400)}`);
+  const pv = JSON.parse(out.stdout.trim().split('\n').pop());
+  assert.equal(pv.ok, true, out.stdout + out.stderr); assert.equal(pv.result.preflight.status, 'timeout'); assert.equal(pv.result.preflight.budgetMs, 1500);
+  assert.ok(elapsed < 20000, `preview returned in ${elapsed}ms despite a hanging probe`);
+  const leftover = spawnSync('pgrep', ['-f', 'list-models'], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(leftover, '', 'probe process group reaped');
 });
