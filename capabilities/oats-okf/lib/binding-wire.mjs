@@ -245,7 +245,27 @@ export function loadInvocationKnowledgeBinding(env=process.env) {
   let runtime;try{runtime=sourceRuntimeFromKnowledgeBinding(binding);}catch{invocationError();}
   return {kind:'captured',file,binding,runtime};
 }
-function problem(code) {return {code};}
+// Closed vocabulary of check-phase reasons: one fixed literal per cause, so the
+// operator learns WHICH qualification failed without any value, path, alias or
+// caught message reaching the wire. Every literal is also in oats.json
+// binding.reasons (byte-exact) — the manifest test pins that.
+const checkReasons=Object.freeze({
+  'action:not-admitted':'check action is not an admitted knowledge operation',
+  'bindings:invalid':'bound runtime bindings file is missing or invalid',
+  'bases:too-many':'more than 64 git knowledge bases declared',
+  'base:stage-failed':'declared knowledge base could not be staged from its git source',
+  'base:not-validated':'declared knowledge base is not a validated knowledge tree',
+  'base:owner-unmet':'knowledge base owner or remote custody requirement not met',
+  'base:source-mismatch':'staged git source does not match the declared knowledge base',
+  'runtime:command-missing':'harvest runtime command is not installed on this host',
+  'runtime:not-qualified':'harvest runtime could not be qualified against the accepted bases',
+});
+function problem(code,reason) {
+  if(reason===undefined) return {code};
+  if(!Object.hasOwn(checkReasons,reason)) wireError('invalid-binding');
+  return {code,message:checkReasons[reason]};
+}
+export const CHECK_REASONS=Object.values(checkReasons);
 function providerActionName(action) {
   if(action.kind==='operation' && action.slot===SLOT) return action.name;
   if(action.kind!=='command') return null;
@@ -261,19 +281,26 @@ function checkPhase(req) {
   const harvestInvocation=req.input.invocation;
   const admittedHarvest=name==='harvest' && action.kind==='operation' && action.slot==='knowledge' && action.name==='harvest'
     && harvestInvocation?.subject.kind==='persistent' && harvestInvocation.instance!==null && !!harvestInvocation.intent;
-  if(name && (unsupportedCapturedCommands.has(name) || name==='run-source' || (name==='harvest' && !admittedHarvest))) return {status:'needs-configuration',problems:[problem('provider-not-qualified')]};
+  if(name && (unsupportedCapturedCommands.has(name) || name==='run-source' || (name==='harvest' && !admittedHarvest))) return {status:'needs-configuration',problems:[problem('provider-not-qualified','action:not-admitted')]};
   if(action.kind==='hook' && action.name==='soul-scaffold') return {status:'ready',problems:[]};
-  let bindings;try{bindings=validateBindings(runtime.bindings,runtime.descriptorFile);}catch{return {status:'needs-configuration',problems:[problem('needs-configuration')]};}
+  let bindings;try{bindings=validateBindings(runtime.bindings,runtime.descriptorFile);}catch{return {status:'needs-configuration',problems:[problem('needs-configuration','bindings:invalid')]};}
   const accepted={},gitBases=Object.entries(bindings.bases).filter(([,base])=>base.kind==='git');
-  if(gitBases.length>64) return {status:'unavailable',problems:[problem('provider-not-qualified')]};
-  let scratch=null;
+  if(gitBases.length>64) return {status:'unavailable',problems:[problem('provider-not-qualified','bases:too-many')]};
+  let scratch=null,stage='base';
   try {
     if(gitBases.length) scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-binding-check-'));
-    for(const [alias,base] of Object.entries(bindings.bases)) accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias))).meta;
+    for(const [alias,base] of Object.entries(bindings.bases)) {
+      stage=base.kind==='directory'?'validate':'stage';
+      accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias))).meta;
+    }
+    stage='runtime';
     checkKnowledgeRuntime({rendered:runtime,accepted});
   } catch(error) {
-    if(error.code==='E_COMMAND') return {status:'unavailable',problems:[problem('provider-unavailable')]};
-    if(['E_OWNER','E_BASE','E_VALIDATION','E_DIRECTORY_GIT','E_CONFIRM'].includes(error.code)) return {status:'needs-configuration',problems:[problem('provider-not-qualified')]};
+    if(error.code==='E_COMMAND') return {status:'unavailable',problems:[problem('provider-unavailable','runtime:command-missing')]};
+    if(error.code==='E_OWNER') return {status:'needs-configuration',problems:[problem('provider-not-qualified','base:owner-unmet')]};
+    if(error.code==='E_CONFIRM') return {status:'needs-configuration',problems:[problem('provider-not-qualified','base:source-mismatch')]};
+    if(['E_BASE','E_VALIDATION','E_DIRECTORY_GIT'].includes(error.code)) return {status:'needs-configuration',problems:[problem('provider-not-qualified',stage==='stage'?'base:stage-failed':'base:not-validated')]};
+    if(stage==='runtime') return {status:'unavailable',problems:[problem('provider-unavailable','runtime:not-qualified')]};
     return {status:'unavailable',problems:[problem('provider-unavailable')]};
   } finally {
     if(scratch) fs.rmSync(scratch,{recursive:true,force:true});

@@ -71,7 +71,7 @@ name: domain-expert
 requires:
   knowledge:
     capability: oats.okf
-    source: git:github.com/awebai/oats-okf@v2.1.2#oats-package
+    source: git:github.com/awebai/oats-okf@v2.1.3#oats-package
 ```
 
 This illustrates software selection, not complete OKF provisioning: the chosen capability also needs its own valid knowledge declaration, bindings and accepted base.

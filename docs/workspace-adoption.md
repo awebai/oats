@@ -107,7 +107,10 @@ onboarding and legacy roster/knowledge cutover remain separate.
   production store or grants are supplied. An acceptance fixture is parent-owned
   and cannot be counted as production knowledge adoption.
 - Current authored expert editions require knowledge **oats.okf@2.1.2** and
-  messaging **oats.aweb@1.11.2** (both OATS >=0.24.4), not optional defaults. These published revisions
+  messaging **oats.aweb@1.11.2** (both OATS >=0.24.4), not optional defaults.
+  The official catalog now offers **oats.okf 2.1.3** (per-cause `check` reasons,
+  a named remedy for a soul without `okf.json`, retired sources switch their
+  job off); editions move to it when their owner re-reviews them. These published revisions
   are **not proof that their combined bindings/runtime profile is ready**. The provider
   owner supplies that evidence and any subsequently reviewed compatible revision.
   Do not replace either requirement with none or erase a read edge to launch.

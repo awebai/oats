@@ -1,7 +1,7 @@
 {
   "capability": "oats.okf",
   "command": "okf",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "compatibility": {
     "oats": ">=0.24.4"
   },
@@ -62,7 +62,16 @@
       "setting state-dir must be a normalized absolute host path",
       "setting harvest-runtime is required (pi, claude or codex)",
       "setting harvest-runtime must be pi, claude or codex",
-      "setting harvest-model must be null or a non-empty string"
+      "setting harvest-model must be null or a non-empty string",
+      "check action is not an admitted knowledge operation",
+      "bound runtime bindings file is missing or invalid",
+      "more than 64 git knowledge bases declared",
+      "declared knowledge base could not be staged from its git source",
+      "declared knowledge base is not a validated knowledge tree",
+      "knowledge base owner or remote custody requirement not met",
+      "staged git source does not match the declared knowledge base",
+      "harvest runtime command is not installed on this host",
+      "harvest runtime could not be qualified against the accepted bases"
     ]
   },
   "inject": "injects/okf.md",
@@ -76,13 +85,17 @@
       "command": "bin/oats-okf.mjs spawn",
       "required": true,
       "inputs": {
-        "sourceReceipt": { "version": 1 }
+        "sourceReceipt": {
+          "version": 1
+        }
       }
     },
     "retire": {
       "command": "bin/oats-okf.mjs retire",
       "inputs": {
-        "sourceReceipt": { "version": 1 }
+        "sourceReceipt": {
+          "version": 1
+        }
       }
     }
   },
@@ -99,8 +112,18 @@
       "context": "home",
       "description": "Capture this source into durable custody and request an independent worker.",
       "args": [
-        {"name": "native-request", "flag": "--native-request", "required": false, "description": "Captured operations require an explicit absolute backend-only native request JSON; provider owns the worker task."},
-        {"name": "worker-mode", "flag": "--worker-mode", "required": false, "description": "Captured worker mode: prepare or launch (default launch); legacy behavior is unchanged when absent."}
+        {
+          "name": "native-request",
+          "flag": "--native-request",
+          "required": false,
+          "description": "Captured operations require an explicit absolute backend-only native request JSON; provider owns the worker task."
+        },
+        {
+          "name": "worker-mode",
+          "flag": "--worker-mode",
+          "required": false,
+          "description": "Captured worker mode: prepare or launch (default launch); legacy behavior is unchanged when absent."
+        }
       ]
     }
   }

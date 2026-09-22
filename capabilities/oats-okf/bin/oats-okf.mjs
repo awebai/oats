@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { fs, join, dirname, resolve, readJSON, save, safePath, cliPath, oats, fail, unlock } from '../lib/io.mjs';
 import { loadBindings, declaration, splitRef } from '../lib/config.mjs';
-import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, service, markerPath, views } from '../lib/sources.mjs';
+import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, views } from '../lib/sources.mjs';
 import { runSource, complete, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
 import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource } from '../lib/migration.mjs';
 import { inspect } from '../lib/inspection.mjs';
@@ -121,13 +121,13 @@ else {
         let s;
         if(sourceReceipt.mode==='captured') {s=registerCaptured(home,sourceReceipt.receipt);if(s.skipped) {result={meta:{retired:true,reason:'service'}};s=null;}}
         else {if(!fs.existsSync(markerPath(home))) fail('E_MIGRATION','captured retire requires a durable registered source or explicit helper receipt');s=src();}
-        if(s) {scheduleSource(s);const r=capture(s,{final:true});result={meta:{retired:r.complete===true,source:s.file,capture:r},brief:'Final input is in durable custody. Delivery remains asynchronous.'};}
+        if(s) {scheduleSource(s);const r=capture(s,{final:true});const schedule=settleRetiredSchedule(s);result={meta:{retired:r.complete===true,source:s.file,capture:r,schedule},brief:'Final input is in durable custody. Delivery remains asynchronous.'};}
       } else if(service(home)) result={meta:{retired:true}};
       else if(!fs.existsSync(markerPath(home))) {
         if(['STATE.md','log.md','notes','.okf-harvest-record.json','.okf-harvest-record.next.json'].some(p=>fs.existsSync(join(home,p)))) fail('E_MIGRATION','unregistered/legacy source has memory; explicitly migrate/register before retirement');
         result={meta:{retired:true,reason:'nothing-to-delete'}};
       } else {
-        const s=src();scheduleSource(s);const r=capture(s,{final:true});result={meta:{retired:r.complete===true,source:s.file,capture:r},brief:'Final input is in durable custody. Delivery remains asynchronous.'};
+        const s=src();scheduleSource(s);const r=capture(s,{final:true});const schedule=settleRetiredSchedule(s);result={meta:{retired:r.complete===true,source:s.file,capture:r,schedule},brief:'Final input is in durable custody. Delivery remains asynchronous.'};
       }
     } else if(event==='harvest') {
       if(capturedHarvest) {
