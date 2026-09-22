@@ -90,7 +90,7 @@ test("writeTaskFile: mode is set at open (wx + 0600), not chmod-after", () => {
   const io = {
     mkdtempSync: () => "/fake-tmp",
     openSync: (path, flags, mode) => { opened = { path, flags, mode }; return 7; },
-    writeSync: () => {},
+    writeSync: (_fd, text) => Buffer.byteLength(text),
     closeSync: () => {},
     rmSync: () => {},
     tmpdir: () => "/fake",
@@ -197,7 +197,7 @@ test("spawnArgv: relation/relativeTo must travel together; hostile values reject
 test("cliSpawn: relation pair reaches the CLI argv; bad pairs resolve E_BAD_ARGS without exec", async () => {
   let seen = null;
   const exec = (bin, argv, o, cb) => { seen = argv; cb(null, JSON.stringify({ schemaVersion: 1, ok: true, result: { instance: "dev-1" } })); };
-  const io = { exec, mkdtempSync: () => "/t", openSync: () => 3, writeSync: () => {}, closeSync: () => {}, rmSync: () => {}, tmpdir: () => "/tmp" };
+  const io = { exec, mkdtempSync: () => "/t", openSync: () => 3, writeSync: (_fd, text) => Buffer.byteLength(text), closeSync: () => {}, rmSync: () => {}, tmpdir: () => "/tmp" };
   const env = await cliSpawn("/abs/oats", { agent: "dev", workspaceDir: "/ws", relation: "parent", relativeTo: "worker-2" }, io);
   assert.equal(env.ok, true);
   assert.ok(seen.includes("--relation") && seen.includes("parent") && seen.includes("--relative-to") && seen.includes("worker-2"));

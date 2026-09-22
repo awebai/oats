@@ -1,113 +1,181 @@
-# Spawn preview — API 2 read boundary (6b, read-first stage)
+# Spawn: API 2 observations and confirmed apply
 
-This stage adds **observations**, not guarded apply. It accepts only a compatible
-installed CLI advertising **`spawn-preview-2` and integer `spawnPreviewApi:2`**.
-API 1 is the pre-fix producer marker and is never invoked: an older parser may
-ignore `--preview`, and the original preview implementation had pre-return effects.
-Neither an OATS version alone nor the old `spawn-preview` feature enables this read.
+All lifecycle effects go through a compatible installed OATS CLI. Desktop never
+resolves placement/model defaults, computes a decision revision, imports the
+kernel to mutate, or treats preview paths as filesystem/terminal authority.
 
-## HTTP / IPC
+## Independent capability fences
 
-`POST /api/workspace-spawn-preview?ws=<advertised workspace>` accepts one JSON
-object, at most **16 KiB**, with exactly `action:"preview"`, `selector` and
-`choices`. Duplicate/missing/extra workspace query parameters refuse.
+- **READ:** integer `spawnPreviewApi===2` AND `spawn-preview-2`.
+- **Confirmed apply/retry:** integer `spawnPreviewApi===2`, integer
+  `spawnApplyApi===1`, AND all of `spawn-preview-2`, `spawn-apply-2`,
+  **`spawn-idempotency-2`**. The older `spawn-idempotency` name is insufficient:
+  its replay could fail at the branch-existence check and lacked completion custody.
 
-The selector is `{soul,agentsRoot}`, admitted as one current local roster soul.
-Choices may include purpose, branch/base, runtime/backend, launchConfig, yolo,
-allowChildSpawns, a tagged model, and an optional qualified relation anchor.
-Unknown fields, task, file flags, arbitrary repo/cwd/home/workDir/env, captured
-selectors, remote/server-marked targets and mutation/expected-decision requests
-refuse. Attached work needs authority this reader does not accept and is unavailable.
+The full apply fence is checked at admission/confirmation and at the actual
+process owner. Existing optional advertisements remain required too: runtime and
+backend lists, yolo launch option, launch-config and schedule (for wake input).
+A version string or optimistic flag probe never enables a mode.
+API 1 preview is never invoked: older parsers can ignore unknown flags and spawn.
+Missing compatible CLI means observation-only. A fully capable **local** ordinary
+request cannot bypass confirmation (`E_PLAN_REQUIRED`). API2-only/older compatible
+CLI and remote ordinary spawn remain separate; advanced fields, native-default
+sentinel and caller key/ref/decision cannot enter that legacy path (`E_PREVIEW_ONLY`).
+There is no transaction-to-legacy downgrade or remote-to-local fallback.
 
-Model modes are `{kind:"inherit"}`, `{kind:"native-default"}` or
-`{kind:"custom",value}`. The native sentinel is reserved, not silently interpreted
-as a custom model. Custom model text is advisory, not restricted to a catalog.
-A relation is `{kind:"unrelated"}` or `{kind:"child"|"sibling"|"parent",
-anchor:{instance,agent,agentsRoot,server:null}}`. Shared instance admission checks
-the anchor, and its CLI name/root pair must be unique. No inferred ancestry or
-cross-host substitution. Branch/base choices are worktree-only; Git/kernel owns
-ref validation, not the Desktop.
+## Selector and choices
 
-The normalized classifier introduced by PR73 routes every alias through the same
-main-frame/navigation/server-epoch guards. `apiUrl` still owns origin and workspace
-checks. Domain failures resolve with safe codes, never raw stderr/stack text.
-Backend admission is rechecked on both completion paths; disappeared/replaced
-souls, anchors or CLI identity cannot lend an old result to a new selection.
+A selector is `{soul,agentsRoot}`, matched to one current local roster soul.
+Choices include purpose, worktree-only branch/base, advertised runtime/backend,
+launchConfig, yolo, allowChildSpawns, model and relation. Models are
+`{kind:"inherit"}`, `{kind:"native-default"}` or `{kind:"custom",value}`; the native
+sentinel is reserved, not a custom model. Custom model text is advisory, not
+restricted to a catalog. Relations are `{kind:"unrelated"}` or
+`{kind:"child"|"sibling"|"parent",anchor:{instance,agent,agentsRoot,server:null}}`.
+Shared admission checks anchor identity/incarnation and uniqueness of the public
+CLI's name/root pair. No inferred ancestry or cross-host substitution.
 
-## Process boundary
+No arbitrary repo/cwd/home/workDir/env/file authority comes from the renderer.
+Remote/captured/attached transactions are unavailable, not translated to classic
+local operations. Git and the kernel own ref validity and default naming.
 
-The adapter repeats the API2 feature fence at the actual execution owner. Fixed
-`execFile`, `shell:false` argv starts with:
+## Read-only HTTP / process boundary
+
+`POST /api/workspace-spawn-preview?ws=<workspace>` accepts exactly
+`{action:"preview",selector,choices}`, at most **16 KiB**. Opening instruction and
+wake configuration are absent. Missing/duplicate/extra workspace query selectors
+refuse. CLI argv is fixed `execFile`, `shell:false`:
 
 ```text
 spawn <admitted-soul> --dir <admitted-context> --agents-root <admitted-root> --preview
+  [validated choices] --json
 ```
 
-Only validated optional flags follow; `--json` terminates the fixed invocation.
-There is **no** fallback, `--no-launch` workaround, apply, `--expect-decision`,
-`--task`, `--task-file`, upsert, arbitrary path or renderer environment.
-Ambient `PI_AGENTS_ROOT`, `OATS_DEPLOYMENT` and `OATS_RESOLUTION` cannot redirect
-this explicitly addressed read. The test-only `OATS_PREVIEW_PREFLIGHT_BUDGET_MS`
-override is also removed so it cannot expand the negotiated producer budget. Ordinary host observation environment belongs to
-the installed CLI. The corrected producer owns its native preflight custody.
+No task/file, expected-decision/key, no-launch workaround or fallback. Two reads
+process-wide; exact invoker/CLI/workspace/subject/anchor/choice duplicates coalesce
+before await. No unbounded queue or settled observation cache. **30s / 4MiB CLI,
+35s proxy**, clean exit and JSON-v1 envelope. Admission revalidation applies to
+success and rejection.
 
-Two distinct reads may be in flight across the process, reserved before await;
-exact invoker/CLI/workspace/subject/anchor/choice duplicates coalesce. No unbounded
-queue or settled-result cache. CLI deadline **30 seconds**, output limit **4 MiB**,
-proxy deadline **35 seconds**. Success requires clean exit and JSON-v1 envelope.
+Response: `{spawnPreviewViewApi:1,status,target,data,reason}`. Success requires
+API2, `preview:true`, byte-exact `subject{soul,agentsRoot,dir}` and consistent
+`decision{instance,home,branch,base,revision}`. Revision is opaque24-hex producer data.
+K6d additionally reports `decision.effective {repo,work,runtime,model,launchConfig,
+yolo,backend,childSpawns,relation}`. Child policy is boolean; relation is null or
+`{kind,anchor{instance,agentsRoot}}`; model/config/yolo can be null. Old API2 READ
+without effective remains an observation, never a synthesized executable plan.
 
-Opening instruction stays local during preview. It is not needed for placement
-or launch-option resolution, and neither task text nor wake configuration is sent
-to this read. Actual explicit legacy spawn retains its private0600 task-file
-boundary and existing partial-wake behavior.
+Projection preserves bounded work/runtime/model provenance, policy origin,
+capability/skill names, `backendStatus{name,installed,started:false}` and
+`preflight{status:complete|timeout,budgetMs,elapsedMs}`. Installation is not daemon
+reachability. Omitted yolo remains unknown. Task, environment, executable recipes
+and unknown trees are not exposed. Missing/mismatched data is not empty success.
 
-## Projection
+## Confirmed HTTP transaction
 
-The Desktop response is `{spawnPreviewViewApi:1,status,target,data,reason}`.
-Successful data requires `spawnPreviewApi:2`, `preview:true`, a byte-exact
-`subject {soul,agentsRoot,dir}` echo and a consistent
-`decision {instance,home,branch,base,revision}`. Names/paths are producer text;
-Desktop never derives a home or branch. Decision revision is opaque and never
-computed, applied or treated as a reservation by this consumer. Its published
-format is 24 lowercase hex characters.
+`POST /api/spawn?ws=<workspace>` has three strict action shapes:
 
-The allowlisted projection includes resolved work mode/repo/worktree,
-runtime/model/modelSource/config, yolo (unknown if omitted), relation/parent,
-prospective child policy with origin, bounded capability/skill names, backend
-name plus `backendStatus {name,installed,started:false}` and
-`preflight {status:complete|timeout,budgetMs,elapsedMs}`. Binary installation is
-not backend reachability; no daemon was started by this preview. It omits task,
-env, executable recipes and unknown trees. Missing/oversized/mismatched data is
-not an empty successful preview. Timed-out preflight is not silently Complete.
-A preview path is not file-access authority or a terminal/launch receipt.
+1. **prepare:** `{action:"prepare",selector,choices,task?,wake?}`. Capture an
+   immutable private draft; perform the read-only preview without task/wake/file
+   flags. Only a complete strong preview and observed installed backend can mint
+   an opaque server-owned `spawnRef`. Each requester gets a separate ref even if
+   the underlying observation coalesces. Prepare neither creates files nor spawns.
+2. **apply:** `{action:"apply",spawnRef}` only. No caller key, revision, target or
+   changed payload. Re-admit context/CLI/soul/anchor, synchronously reserve the one
+   backend-wide apply slot, and mint a separate64-hex key on **first confirmation**.
+   Every allowed retry retains this exact original intent/key/revision.
+3. **result:** `{action:"result",spawnRef}` only. Reads retained state, never
+   invokes a CLI, re-previews, mints a key or guesses success from names.
 
-## Modal behavior and staged submit
+Request limit **64KiB**; selector/choices16KiB, task32KiB UTF-8, wake message8KiB
+with bounded cron/timezone. At most32 prepared refs/5min,32 submitted records/30min
+and8MiB retained payload including outcome reservations. No unbounded queue or
+active-entry eviction. Pending duplicates report pending without another command;
+known complete/partial/incomplete/refused/stale results are retained. A prepared
+ref is neither a kernel reservation nor a lease over future configuration.
 
-- API2 reads run only on explicit **Preview spawn** or **Suggest default name**.
-  Typing, selecting a launch configuration, CLI refresh and roster polling do not
-  invoke K6. Supported local API2 replaces the older automatic invocation preview;
-  older/remote ordinary launch behavior remains separate, never a K6 fallback.
-- Suggest omits purpose, reports the kernel's default candidate and leaves the
-  real purpose input unchanged. Manual branch/base inputs never invent a branch
-  catalog or assume `main`; the kernel default is HEAD.
-- Native default and child permission are explicit preview choices, not implicit
-  model strings or permission granted by a successful read.
-- **Preview-only choices block existing Spawn/Mod+Enter**. A visible reset clears
-  them without clearing opening instruction. Downgrades retain values and keep
-  reset reachable. Legacy `/api/spawn` also refuses those new keys/model modes
-  with `E_PREVIEW_ONLY` instead of silently dropping them. No mutation options are
-  added by this stage; guarded apply is a separately approved companion.
-- K5 is labelled **Observed soul readiness — not the proposed launch’s readiness**.
-  It does not certify draft runtime/config/base overrides. A K6 refusal remains
-  visible regardless of an independent K5 Ready result.
-- Request/mount/workspace/CLI/selection/draft ownership gates success, rejection
-  and cleanup. Old controls cannot act after close; edits revoke old results;
-  independent read tickets do not overwrite a newer form or unlock a pending
-  legacy mutation. No terminal input, tmux viewer or workspace-transaction change.
+The new view is `{spawnApplyViewApi:1,status,target,spawnRef,preview,receipt,reason}`
+with a task-free `wakeRequested` indicator on prepared/pending/completed views.
+The normalized `/api/spawn` classifier covers aliases and ordinary requests too.
+Trusted mainFrame/navigation plus copied server/connection epoch guards precede
+and follow both awaited outcomes. Origin/workspace pinning remains in `apiUrl`;
+duplicate selectors are preserved for refusal, not silently normalized away.
+Domain errors resolve with stable safe codes.
 
-Attach knowledge, ADE auto-PR and branch enumeration remain named follow-ups,
-not parity-complete. K5 signature verification and K11 enrolment are not enabled.
+## Apply transport and qualified results
 
-Qualification uses inert CLI/HTTP/IPC/DOM fixtures and computed three-theme AA,
-not native UI/model/auth acceptance. Full root gates belong to PR CI; no operator
-preview/spawn, GUI, signature fetch, install or restart is part of local testing.
+```text
+spawn <admitted-soul> --dir <admitted-context> --agents-root <admitted-root>
+  [original validated choices] --expect-decision <stored-revision>
+  --idempotency-key <stored-key> --task-file <owned-temp>
+  [--wake-file <owned-temp>] --json
+```
+
+Private files are created0600 inside private directories; short writes refuse
+before CLI dispatch rather than launch with truncated instructions. Cleanup is
+attempted on all construction/settlement/error paths. Retries use new owned paths with the
+same bytes, not expired temp paths. `PI_AGENTS_ROOT`, `OATS_DEPLOYMENT`,
+`OATS_RESOLUTION` and test-only `OATS_PREVIEW_PREFLIGHT_BUDGET_MS` are stripped.
+No shell, renderer recipe/env, direct kernel fallback, automatic acquire/trust,
+`--no-launch`, or task text in argv/logs/replies. **60s / 4MiB CLI,65s proxy**;
+result lookup has a short10s proxy deadline, prepare35s.
+
+The private adapter's `{started,envelope}` records possible dispatch, not creation
+or rollback. The broker must qualify success: full returned decision equals the
+confirmed decision (including effective), exact soul/name/home/work/repo/branch
+and model/runtime facts, and typed launched/replayed fields. Raw recipes, attach
+commands, task content and warning text are dropped; only warning count crosses.
+Malformed/mismatched receipts, transport loss and ambiguous post-dispatch failures
+are **unknown**, not permission for a fresh spawn/key. A timeout does not prove
+rollback or stop an already launched agent.
+
+- `E_DECISION_STALE`, `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`: consume the
+  attempt; any fresh decision/home is advisory. Full new review and explicit new
+  confirmation are required. Never auto-suffix, change original refs or auto-apply.
+- `E_SPAWN_INCOMPLETE`: a keyed home is recorded but launch/lineage completion is
+  unconfirmed. No completed receipt, automatic terminal handoff or second spawn.
+  Inspect its existing session through ordinary admitted surfaces.
+- Wake result: `wake{requested,saved,error}`, with nullable booleans. Known failure
+  means **created, wake not saved**, never retry-spawn. `saved:null` means
+  **“Agent created; wake outcome unavailable — check Schedules”**. No inference
+  from absence, and no raw provider error message. An explicit first-response
+  `wakeScheduleError` can still establish a save failure if home recording failed.
+
+## Recovery limits and modal ownership
+
+Review spawn → Confirm spawn is two explicit actions, including Mod+Enter. Fetching
+an unseen decision never continues directly into mutation. Any relevant draft,
+selection, CLI/workspace or mount change revokes pending read/confirmation authority.
+Older completion cannot clear a new task, re-enable a successor operation, steal
+focus or navigate another workspace. Roster changes alone are not new user drafts.
+
+**Check result** reads the retained record. Only a prior settled **unknown** may
+then invoke apply with the same ref/key as part of that explicit recovery click.
+Pending and known outcomes never re-invoke. There is no timer-driven retry.
+
+No Desktop instruction/key journal. Restart/expiry can lose the RAM ref mapping;
+a lost submitted ref is unavailable/unknown and mints nothing. Kernel key custody
+lasts only while its home survives. If that home is removed, same-key invocation
+can follow the normal creation path: it is **not** a replay-only/read-only lookup.
+Known retirement/disappearance is a roster question; prior positive keyed-home
+observations can block retry after disappearance, but no roster read closes a
+concurrent retire race. No lifetime exactly-once/no-resurrection promise.
+
+A qualified completed receipt still needs the current **exact** composite roster
+home/root/agent and running-session match before handoff. Not-launched, partial,
+incomplete, unknown, stale or mismatched results never open a guessed terminal.
+Existing anchored targets, linked-window viewers, locked keys and detach-only
+closure remain unchanged. A changed submitted draft can check its original result
+but cannot turn that old completion into authority over the new draft.
+
+Preview/Suggest remain explicit and observational; Suggest does not edit purpose.
+API2-only advanced values still block ordinary Spawn/Mod+Enter, with a reachable
+reset preserving task text. A downgraded unsubmitted confirmation needs explicit
+reset/close to leave its guarded flow; submitted uncertainty does not fall back.
+K5 remains **Observed soul readiness — not the proposed launch’s readiness**.
+
+Knowledge attachment, ADE auto-PR, branch enumeration, K5 signature verification
+and K11 enrolment remain separate open contracts, not parity-complete. Qualification
+uses inert CLI/HTTP/IPC/DOM fixtures and computed three-theme AA, not native GUI,
+model/auth/lifecycle acceptance. Full root gates belong to PR CI; no operator
+spawn/preview/signature fetch, install or restart is part of local testing.

@@ -2,7 +2,8 @@
 import { postJson, workspaceGeneration } from './views/common.mjs';
 import { createReadinessView } from './readiness-view.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, PREVIEW_ONLY, absolute } from './spawn-preview-contract.mjs';
-export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances, owns, layout, submitting = () => false }) {
+export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances, owns, layout, submitting = () => false,
+  guarded = () => false, draftChanged = () => {}, draftReset = () => {}, needsReset = () => false }) {
   const doc = modal.ownerDocument, form = modal.querySelector('.soul-form'), field = cls => modal.querySelector(`.${cls}`);
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const button = (text, cls) => { const b = node('button', text, `act ${cls}`); b.type = 'button'; return b; };
@@ -22,7 +23,8 @@ export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances
   const details = node('details', undefined, 'spawn-preview-details spawn-k6-details'); details.hidden = true; const output = node('pre'); details.append(node('summary', 'Read-only spawn decision'), output);
   const readinessDetails = node('details'); readinessDetails.append(node('summary', 'Observed soul readiness — not the proposed launch’s readiness'));
   const readinessHost = node('div'); readinessDetails.append(readinessHost); const readiness = createReadinessView(readinessHost, { ctx });
-  panel.append(work, childLabel, actions, status, details, node('p', 'Read only: this decision is not applied or reserved. Existing Spawn uses existing options only. Guarded apply, knowledge attachment, auto-PR and branch enumeration are separate follow-ups.', 'spawn-seam-note'));
+  const note = node('p', '', 'spawn-seam-note');
+  panel.append(work, childLabel, actions, status, details, note);
   form.insertBefore(panel, oldFuture); form.querySelector('.spawn-footer').prepend(readinessDetails);
   const unavailable = node('p', '', 'spawn-seam-note spawn-k6-unavailable'); form.insertBefore(unavailable, panel);
   let alive = true, enabled = false, serial = 0, fingerprint = '', nativeMode = false, busy = false, generation = workspaceGeneration();
@@ -32,12 +34,13 @@ export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances
   function visible() { for (let el = modal; el; el = el.parentElement) if (el.hidden || el.inert || el.style.display === 'none') return false; return modal.isConnected; }
   function submitReason() { return branch.value || base.value || child.value || nativeMode || field('fmodel').value === '@native-default' ? PREVIEW_ONLY : ''; }
   function syncSubmit() {
-    const reason = submitReason(), spawn = field('fspawn');
+    const reason = guarded() ? '' : submitReason(), spawn = field('fspawn');
     // Do not unlock the existing mutation controller's in-flight button.
     if (submitting()) return;
     if (spawn.dataset.previewBlocked === 'true' && !reason) { delete spawn.dataset.previewBlocked; spawn.disabled = false; spawn.title = ''; }
     if (reason) { spawn.dataset.previewBlocked = 'true'; spawn.disabled = true; spawn.title = reason; }
-    reset.disabled = !reason;
+    reset.disabled = !submitReason() && !needsReset();
+    reset.textContent = needsReset() ? 'Discard unsubmitted confirmation' : guarded() ? 'Clear advanced choices' : 'Clear preview-only choices';
   }
   function invalidate() {
     if (!alive) return;
@@ -81,7 +84,7 @@ export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances
         `Permissions override: ${data.yolo === null ? 'not reported' : data.yolo ? 'YOLO' : 'native permission policy'}`,
         `Child policy: ${data.policy.childSpawns.allowed ? 'allowed' : 'not allowed'} · ${data.policy.childSpawns.origin.kind}; captured only by actual spawn`,
         `Decision revision: ${d.revision} (not submitted)`, 'Preview is not a launch receipt or complete launch readiness.'].join('\n');
-      details.hidden = false; status.textContent = 'Preview observed. Nothing submitted for spawn; guarded apply remains unavailable.';
+      details.hidden = false; status.textContent = guarded() ? 'Preview observed. Use Review spawn for a separate, explicit confirmation.' : 'Preview observed. Nothing submitted for spawn; guarded apply remains unavailable.';
     } catch (error) { if (valid()) status.textContent = previewFailure(error?.code).reason.message; }
     finally { if (valid()) { busy = false; preview.disabled = suggest.disabled = false; syncSubmit(); } }
   }
@@ -91,16 +94,16 @@ export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances
     invalidate();
   };
   form.addEventListener('input', input); form.addEventListener('change', input);
-  native.addEventListener('click', () => { if (!accepts() || !visible() || native.disabled) return; nativeMode = !nativeMode; native.setAttribute('aria-pressed', String(nativeMode)); invalidate(); });
+  native.addEventListener('click', () => { if (!accepts() || !visible() || native.disabled) return; nativeMode = !nativeMode; native.setAttribute('aria-pressed', String(nativeMode)); invalidate(); draftChanged(); });
   preview.addEventListener('click', () => { void read(); }); suggest.addEventListener('click', () => { void read(true); });
   reset.addEventListener('click', () => {
     if (!current() || !visible()) return;
     branch.value = base.value = child.value = ''; nativeMode = false; native.setAttribute('aria-pressed', 'false');
     if (field('fmodel').value === '@native-default') field('fmodel').value = '';
-    invalidate();
+    invalidate(); draftReset(); syncSubmit();
   });
   return {
-    active: accepts, invalidate, canSubmit: submitReason, preview: read,
+    active: accepts, invalidate, choices, syncSubmission: syncSubmit, canSubmit: () => guarded() ? '' : submitReason(), preview: read,
     sync() {
       if (!alive) return;
       const c = cli(), w = workspace();
@@ -109,13 +112,18 @@ export function createSpawnPreview(modal, { ctx, soul, workspace, cli, instances
       if (next !== fingerprint) { fingerprint = next; generation = workspaceGeneration(); invalidate(); }
       const supported = accepts(), changed = supported !== enabled; enabled = supported;
       // Keep reset reachable after a downgrade with preview-only choices retained.
-      panel.hidden = !enabled && !submitReason(); unavailable.hidden = enabled;
+      panel.hidden = !enabled && !submitReason() && !needsReset(); unavailable.hidden = enabled;
       unavailable.textContent = previewFailure(w?.remote || w?.server || soul.server || field('fserver').value ? 'unsupported-remote-operation' : 'E_PREVIEW_UNAVAILABLE').reason.message;
       oldFuture.hidden = enabled; if (oldChild) oldChild.hidden = enabled;
       layout.preview.hidden = layout.launchStatus.hidden = enabled;
       if (enabled) layout.previewDetails.hidden = true;
       layout.readiness.hidden = enabled; readinessDetails.hidden = !enabled;
-      native.disabled = !enabled; native.textContent = enabled ? 'Force native default · preview only' : 'Force native default — available after K6 API 2'; native.setAttribute('aria-pressed', String(nativeMode));
+      const confirmed = guarded();
+      branchLabel.firstChild.textContent = confirmed ? 'Branch / base' : 'Branch / base · preview only';
+      childLabel.firstChild.textContent = confirmed ? 'Allow this instance to spawn children' : 'Allow this instance to spawn children · preview only';
+      note.textContent = confirmed ? 'Preview never reserves or applies a decision. Review spawn creates a separate confirmation. Knowledge attachment, auto-PR and branch enumeration remain unavailable.'
+        : 'Read only: this decision is not applied or reserved. Ordinary Spawn cannot submit these advanced choices. Guarded apply requires the compatible installed CLI; knowledge attachment, auto-PR and branch enumeration remain separate follow-ups.';
+      native.disabled = !enabled; native.textContent = enabled ? confirmed ? 'Force native default' : 'Force native default · preview only' : 'Force native default — available after K6 API 2'; native.setAttribute('aria-pressed', String(nativeMode));
       for (const el of [branch, base, child]) el.disabled = !enabled || el !== child && soul.work !== 'worktree';
       if (changed) {
         const focused = doc.activeElement === purpose;

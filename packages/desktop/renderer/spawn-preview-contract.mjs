@@ -1,5 +1,6 @@
 /** Read-only K6 API2. No API1 fallback and no mutation/decision application. */
 import { absolute, record } from './readiness-contract.mjs';
+import { spawnDecision } from './spawn-decision.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
@@ -7,7 +8,7 @@ const arg = (v, max = 1024) => typeof v === 'string' && !!v && v.length <= max &
 const safe = (v, max = 4096) => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]|https?:\/\/[^/\s]*@|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/.test(v);
 const nullable = v => v === null || safe(v);
 const names = v => Array.isArray(v) && v.length <= 512 && v.every(x => safe(x, 512));
-export const PREVIEW_ONLY = 'Preview-only choices cannot be submitted yet. Clear them to use existing spawn options; guarded apply is a separate follow-up.';
+export const PREVIEW_ONLY = 'Preview-only choices cannot enter ordinary spawn. Use a compatible guarded confirmation, or explicitly clear them to use ordinary spawn options.';
 export const previewSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.spawnPreviewApi === 2
   && Array.isArray(cli.features) && cli.features.includes('spawn-preview-2');
 export function previewSelector(v) {
@@ -74,13 +75,9 @@ export function previewData(v, expected) {
   const t = previewTarget(expected);
   if (!t || !record(v) || v.spawnPreviewApi !== 2 || v.preview !== true || !record(v.subject)
     || v.subject.soul !== t.selector.soul || v.subject.agentsRoot !== t.selector.agentsRoot || v.subject.dir !== t.context) return null;
-  const d = v.decision;
-  if (!record(d) || !name(d.instance) || !absolute(d.home) || !nullable(d.branch) || typeof d.revision !== 'string' || !/^[a-f0-9]{24}$/.test(d.revision)) return null;
-  let base = null;
-  if (d.base !== null) {
-    if (!record(d.base) || !safe(d.base.ref) || !d.base.ref || typeof d.base.oid !== 'string' || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(d.base.oid)) return null;
-    base = { ref: d.base.ref, oid: d.base.oid };
-  }
+  const d = spawnDecision(v.decision);
+  if (!d) return null;
+  const base = d.base;
   if (!['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(v.work) || !['pi', 'claude', 'codex'].includes(v.runtime)
     || !nullable(v.model) || !safe(v.modelSource) || !v.modelSource || !nullable(v.launchConfig) || v.yolo !== undefined && v.yolo !== null && typeof v.yolo !== 'boolean'
     || !absolute(v.repo) || !nullable(v.worktree) || !['tmux', 'herdr'].includes(v.backend)
@@ -94,8 +91,14 @@ export function previewData(v, expected) {
   if (Object.hasOwn(v, 'agent') && v.agent !== t.selector.soul) return null;
   const p = v.policy?.childSpawns;
   if (!record(p) || typeof p.allowed !== 'boolean' || !record(p.origin) || !safe(p.origin.kind) || !nullable(p.origin.detail ?? null)) return null;
+  // API2 observations may predate K6d. Preserve absence, never manufacture an
+  // effective plan; when supplied, it must agree with the producer's other facts.
+  if (d.effective) {
+    for (const k of ['repo', 'work', 'runtime', 'model', 'launchConfig', 'backend']) if (d.effective[k] !== v[k]) return null;
+    if (d.effective.yolo !== (v.yolo ?? null) || d.effective.childSpawns !== p.allowed || (d.effective.relation?.kind ?? null) !== v.relation) return null;
+  }
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
-    decision: { instance: d.instance, home: d.home, branch: d.branch, base, revision: d.revision },
+    decision: d,
     repo: v.repo, work: v.work, worktree: v.worktree, runtime: v.runtime, model: v.model, modelSource: v.modelSource, launchConfig: v.launchConfig,
     yolo: v.yolo ?? null, backend: v.backend,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },

@@ -1,8 +1,8 @@
 /* OATS Desktop — Workspace discovery (legacy stage id: spawn).
    Souls remain durable definitions; Launch explicitly opens the Spawn modal.
    Capabilities/Sources project only the current CLI inspection contract.
-   Launch observations and API2 K6 preview are read-only; new preview choices
-   cannot enter legacy submission. Placement and launch resolution stay CLI-owned.
+   API2 observations stay read-only; advanced choices enter only server-owned
+   confirmed CLI intents, never legacy submission. Resolution stays CLI-owned.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
@@ -10,6 +10,7 @@ import { runtimeState } from "../instance-presentation.mjs";
 import { composeSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { createSpawnLaunch } from "../spawn-launch.mjs";
 import { createSpawnPreview } from '../spawn-preview-view.mjs';
+import { createSpawnApply } from '../spawn-apply-view.mjs';
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
 import {
   escapeHtml, apiJson, postJson, ensureTheme,
@@ -759,7 +760,7 @@ function openSpawnModal(s, a, draft = {}) {
       </div>
     </section>`;
   const dialog = modal.querySelector(".spawn-dialog");
-  let submitting = false, composing = false;
+  let submitting = false, composing = false, legacyCreated = false, guardedApply = null;
   const ownsModal = () => s.alive && modalGen === workspaceGeneration() && s.modalEl === modal;
   const layout = composeSpawnDialog(modal, { soul: a, agents: s.souls.agents, workspace: s.workspace, query: draft.query || '',
     canChoose: candidate => canLaunchSoul(s, candidate),
@@ -917,11 +918,38 @@ function openSpawnModal(s, a, draft = {}) {
   });
 
   const previewRead = createSpawnPreview(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
-    instances: () => s.panelInstances, owns: () => ownsModal() && canLaunchSoul(s, a), submitting: () => submitting, layout });
+    instances: () => s.panelInstances, owns: () => ownsModal() && canLaunchSoul(s, a), submitting: () => submitting, layout,
+    guarded: () => guardedApply?.active() ?? false, draftChanged: () => guardedApply?.invalidate(), draftReset: () => guardedApply?.reset(),
+    needsReset: () => guardedApply?.needsReset() ?? false });
   const launch = createSpawnLaunch(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
     owns: () => ownsModal() && canLaunchSoul(s, a), layout, previewRead });
+  guardedApply = createSpawnApply(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
+    instances: () => s.panelInstances, owns: () => ownsModal() && canLaunchSoul(s, a) && !legacyCreated,
+    previewRead, task: () => f.querySelector('.ftask').value, wake: () => wakeFields.read(), canSubmit: () => launch.canSubmit(),
+    busy: () => submitting, setBusy: value => { submitting = value; },
+    onCreated: async (view, isCurrent) => {
+      if (!isCurrent()) return;
+      const receipt = view.receipt, status = f.querySelector('.fstatus');
+      if (view.status === 'partial') {
+        if (!f.querySelector('.guarded-schedules')) {
+          const manage = doc.createElement('button'); manage.className = 'act guarded-schedules'; manage.type = 'button'; manage.textContent = 'View schedules';
+          manage.addEventListener('click', () => { if (!ownsModal()) return; closeSpawnModal(s); s.ctx.openView?.('schedules'); });
+          f.querySelector('.frow').append(manage);
+        }
+        return; // creation succeeded; never retry spawn to repair a wake
+      }
+      if (!receipt.launched) { status.textContent = `Created ${receipt.instance} — not launched. Inspect its session from the roster.`; return; }
+      const ref = { instance: receipt.instance, home: receipt.home, agentsRoot: receipt.agentsRoot };
+      status.textContent = `Created ${receipt.instance}. Waiting for its exact roster entry…`;
+      const visible = await waitForInstanceInPanel(s, { ...ref, agent: receipt.agent }, isCurrent, { ...s.waitOpts, strict: true });
+      if (!isCurrent()) return;
+      if (!visible) { status.textContent = `Created ${receipt.instance} — not yet visible as a running session. Open it from the roster when available.`; return; }
+      closeSpawnModal(s); s.ctx.openTerminal(ref, { quiet: true });
+    },
+  });
   f.querySelector(".fspawn").addEventListener("click", async () => {
-    if (!ownsModal() || submitting || f.querySelector('.fspawn').disabled) return;
+    if (!ownsModal() || submitting || legacyCreated || f.querySelector('.fspawn').disabled) return;
+    if (guardedApply.handles()) { await guardedApply.run(); return; }
     const reason = !canLaunchSoul(s, a) ? 'This exact soul is no longer available in the current roster.' : launch.canSubmit();
     if (reason) { f.querySelector('.fstatus').textContent = reason; return; }
     submitting = true;
@@ -941,6 +969,7 @@ function openSpawnModal(s, a, draft = {}) {
     server: () => f.querySelector(".fserver")?.value || "",
     wake: () => wakeFields.read(),
     partial: (result) => {
+      legacyCreated = true;
       const manage = doc.createElement("button"); manage.className = "act"; manage.type = "button";
       manage.textContent = "View schedules";
       manage.addEventListener("click", () => {
@@ -961,7 +990,7 @@ function openSpawnModal(s, a, draft = {}) {
       launch.clear(); layout.syncRuntime();
       void fillModelOptions(); // restoring defaults also cancels any explicit-runtime catalog
     },
-    }); } finally { submitting = false; previewRead.sync(); }
+    }); } finally { submitting = false; previewRead.sync(); guardedApply.sync(); }
   });
 
   s.modalEl = modal;
@@ -975,8 +1004,8 @@ function openSpawnModal(s, a, draft = {}) {
     f.querySelector('.fspawn').dataset.shortcut = mac ? label.replace(/Enter$/, '↵') : label;
   };
   const releaseHint = onKeymapChange(updateHint); updateHint();
-  s.modalCleanup = () => { launch.dispose(); previewRead.dispose(); layout.dispose(); releaseHint(); releaseSubmit(); modelReq++; };
-  s.syncModalFacts = () => { if (!ownsModal()) return; if (launch.sync()) void fillModelOptions(); previewRead.sync(); };
+  s.modalCleanup = () => { guardedApply.dispose(); launch.dispose(); previewRead.dispose(); layout.dispose(); releaseHint(); releaseSubmit(); modelReq++; };
+  s.syncModalFacts = () => { if (!ownsModal()) return; if (launch.sync()) void fillModelOptions(); previewRead.sync(); guardedApply.sync(); };
   s.syncModalRelations = () => { if (!ownsModal()) return; syncRelationControls(); s.syncModalFacts(); };
   s.syncModalRelations();
   if (ownsModal()) layout.search.focus({ preventScroll: true });
@@ -1007,7 +1036,7 @@ function openSpawnModal(s, a, draft = {}) {
    session typically follows a couple of seconds later. Exported for the
    stale-snapshot regression. delayMs is injectable so tests run without
    real waits. */
-export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, delayMs = 700, sleep } = {}) {
+export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, delayMs = 700, sleep, strict = false } = {}) {
   const wait = sleep || ((ms) => new Promise((ok) => setTimeout(ok, ms)));
   // ref: { instance, home?, agentsRoot? }. Match the COMPOSITE identity when
   // the spawn result provides it — with a same-named twin already in the
@@ -1017,8 +1046,9 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   // the auto-open can never race the tmux registration.
   const matches = (x) => x.instance === ref.instance
     && (x.server || "") === (ref.server || "")
-    && (!ref.home || !x.home || x.home === ref.home)
-    && (!ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
+    && (strict ? !!ref.home && x.home === ref.home : !ref.home || !x.home || x.home === ref.home)
+    && (strict ? !!ref.agentsRoot && x.agentsRoot === ref.agentsRoot : !ref.agentsRoot || !x.agentsRoot || x.agentsRoot === ref.agentsRoot)
+    && (!strict || !ref.agent || x.agent === ref.agent)
     && !!x.running && (!!x.tmux?.session || !!x.sessionTarget || (!!x.server && x.savedRoute));
   for (let i = 0; i < tries; i++) {
     if (!isCurrent()) return false;          // ws switched / superseded: stop
