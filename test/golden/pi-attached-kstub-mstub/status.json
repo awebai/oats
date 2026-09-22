@@ -25,6 +25,15 @@
             "scope": "<base>/scope"
           },
           "spawnOrigin": "operator",
+          "policy": {
+            "childSpawns": {
+              "allowed": true,
+              "origin": {
+                "kind": "default",
+                "detail": "no declaration: children allowed"
+              }
+            }
+          },
           "capabilityMeta": {
             "golden.knowledge": {
               "state": "STATE.md",
@@ -394,6 +403,15 @@
           },
           "parentInstance": "dev-owner",
           "spawnOrigin": "instance",
+          "policy": {
+            "childSpawns": {
+              "allowed": true,
+              "origin": {
+                "kind": "default",
+                "detail": "no declaration: children allowed"
+              }
+            }
+          },
           "capabilityMeta": {
             "golden.knowledge": {
               "state": "STATE.md",

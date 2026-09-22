@@ -82,7 +82,7 @@ test("inspect answers souls with editability, capabilities with health separate 
   assert.equal(res.knowledge.provider, "test.notes"); assert.deepEqual(res.knowledge.operations.map((o) => o.name).sort(), ["harvest", "inspect"]);
   // K4: declarations/provenance/readiness come from each soul's own file; the
   // scope's portable source context is exactly what souls record.
-  assert.equal(dev.soulsApi, 1); assert.deepEqual(dev.declarations, { requires: null, defaults: null, knowledge: null, teams: null, resources: null });
+  assert.equal(dev.soulsApi, 1); assert.deepEqual(dev.declarations, { requires: null, defaults: null, knowledge: null, teams: null, resources: null, children: null });
   assert.equal(dev.provenance, null); assert.deepEqual(dev.readiness, { source: "unrecorded", requirements: null, status: "undeclared" });
   const needy = res.souls.find((s) => s.name === "needy");
   assert.equal(needy.readiness.status, "sources-missing");

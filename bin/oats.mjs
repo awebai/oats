@@ -60,12 +60,13 @@ import { approveCapturedCapability } from "../lib/artifact-approvals.mjs";
 import { loadSetupExpertEdition, SETUP_EXPERT, SETUP_CAPABILITIES } from "../lib/setup-expert-source.mjs";
 import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire } from "../lib/instance-lifecycle.mjs";
+import { readinessOf, policyOf } from "../lib/readiness.mjs";
 import { parsePortableSource } from "../lib/source-spec.mjs";
 
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "instance", "operation", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "catalog", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "instance", "operation", "readiness", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "catalog", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -823,7 +824,7 @@ function homeContexts(home, meta) {
  *  about the soul, not a prompt to infer one. */
 function soulDeclarations(soulDir) {
   const file = join(soulDir, "soul.yaml");
-  const empty = { declarations: { requires: null, defaults: null, knowledge: null, teams: null, resources: null }, provenance: null, problems: [] };
+  const empty = { declarations: { requires: null, defaults: null, knowledge: null, teams: null, resources: null, children: null }, provenance: null, problems: [] };
   if (!existsSync(file)) return empty;
   let parsed;
   try { parsed = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8"))); }
@@ -831,7 +832,7 @@ function soulDeclarations(soulDir) {
   const section = (key) => (parsed[key] !== undefined && parsed[key] !== null && typeof parsed[key] === "object") ? parsed[key] : (parsed[key] === undefined ? null : parsed[key]);
   const provenance = section("provenance");
   return {
-    declarations: { requires: section("requires"), defaults: section("defaults"), knowledge: section("knowledge"), teams: section("teams"), resources: section("resources") },
+    declarations: { requires: section("requires"), defaults: section("defaults"), knowledge: section("knowledge"), teams: section("teams"), resources: section("resources"), children: section("children") },
     provenance: provenance && typeof provenance === "object" ? {
       kind: provenance.kind ?? null, source: provenance.source ?? null, revision: provenance.revision ?? null,
       path: provenance.path ?? null, workspaceRevision: provenance.workspaceRevision ?? null,
@@ -861,8 +862,12 @@ function soulEntry(soul, root, { capability } = {}) {
  *  invoking process's ambient agents-root override must not redirect them
  *  to its own deployment. */
 function dropAmbientRoot() { delete process.env.PI_AGENTS_ROOT; }
-function inspectCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+function inspectCmd() { const result = computeInspect(); if (!result) return; if (JSON_MODE) { const { _print, ...data } = result; jsonOk(data); return; } printInspect(result); }
+/** The inspect answer as data — shared by `oats inspect` and `oats readiness`
+ *  (K5), so the readiness quartet is derived from the SAME capability,
+ *  activation, trust and soul facts inspect reports, never a second opinion. */
+function computeInspect({ onFail } = {}) {
+  const bail = onFail || ((code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg)));
   dropAmbientRoot();
   const homeFlag = flag("home");
   const home = homeFlag === true ? bail("E_BAD_ARGS", "--home needs an absolute instance home") : homeFlag;
@@ -937,7 +942,7 @@ function inspectCmd() {
         const h = capabilityHealth(p.level, c, rows.capabilities[c.id], rows.packages[p.package]);
         byId.set(c.id, {
           id: c.id, package: p.package, version: c.version || null, layer: c.manifest?.layer || null, command: c.manifest?.command || null,
-          origin: "installed", level: p.level, source: p.source || null, dir: h.dir,
+          origin: "installed", level: p.level, source: p.source || null, commit: p.commit ?? rows.packages[p.package]?.commit ?? null, dir: h.dir,
           health: { status: h.status, code: h.code, detail: h.detail, installed: !!c.installed, locked: true, trusted: c.trusted === true, integrity: c.integrity || null, installedIntegrity: h.integrity ?? null },
         });
       }
@@ -1052,7 +1057,12 @@ function inspectCmd() {
     problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability })),
       ...(meta ? snapshotCaps.filter((c) => !mans[c.id]).map((c) => ({ code: "captured-capability-missing", message: `${c.id} was active when this home was composed but no manifest for it is acquired now`, capability: c.id })) : [])],
   };
-  if (JSON_MODE) { jsonOk(result); return; }
+  result._print = { ctx, selectedSoul, home };
+  return result;
+}
+function printInspect(result) {
+  const { ctx, selectedSoul, home } = result._print; delete result._print;
+  const { souls, layers, capabilities } = result;
   console.log(`oats inspect — ${shortPath(ctx)}${selectedSoul ? ` soul ${selectedSoul.name}` : ""}${home ? ` home ${shortPath(home)}` : ""}`);
   for (const s of souls) console.log(`  soul ${s.name} [${s.kind}${s.capability ? ` ${s.capability}` : ""}] runtime ${s.runtime}${s.model ? ` model ${s.model}` : ""} work ${s.work}${s.editable.fields.length ? "" : " (read-only)"}`);
   for (const l of LAYERS) console.log(`  layer ${l}: ${layers[l].id || (layers[l].disabled ? "disabled" : "none")}${layers[l].provenance ? `  (${layers[l].provenance})` : ""}`);
@@ -3186,6 +3196,33 @@ function instanceCmd() {
     bail(e.code || "E_GIT_FAILED", e.message, e.observation ? { observation: e.observation } : undefined);
   }
 }
+/** `oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json` — K5. */
+function readinessCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  dropAmbientRoot();
+  const inspect = computeInspect({ onFail: bail });
+  if (!inspect) return;
+  const soul = flag("soul") === true ? null : flag("soul") || inspect.selected?.soul || null;
+  const verify = args.includes("--verify-signatures");
+  let catalog = null; try { catalog = describeOfficialCatalog(); catalog = { packages: Object.fromEntries(catalog.packages.map((p) => [p.package, p])) }; } catch { catalog = null; }
+  const deploymentDir = inspect.scope?.context ?? null;
+  const readiness = readinessOf(inspect, { soul, verifySignatures: verify, catalog, deploymentDir });
+  if (args.includes("--policy")) {
+    const homeOpt = flag("home");
+    let meta = null;
+    if (homeOpt && homeOpt !== true) { try { meta = JSON.parse(readFileSync(join(homeOpt, "instance.json"), "utf8")); } catch (e) { return bail("E_SESSION_UNKNOWN", `${homeOpt}: ${e.message}`); } }
+    readiness.policy = policyOf({ instanceMeta: meta, soul: soul ? inspect.souls.find((s) => s.name === soul) : null }).policy;
+    readiness.notes.push("policy: a lifecycle-authority claim enforced by the spawn route, not an OS sandbox");
+  }
+  if (JSON_MODE) { jsonOk(readiness); return; }
+  console.log(`readiness — ${readiness.subject.kind === "soul" ? `soul ${readiness.subject.name}` : shortPath(readiness.subject.context)}: ${readiness.summary.ready ? "READY" : `${readiness.summary.fail} failing, ${readiness.summary.unknown} unknown of ${readiness.summary.required} required`}`);
+  for (const [name, check] of Object.entries(readiness.checks)) {
+    console.log(`  ${name}: ${check.status}`);
+    for (const i of check.items) console.log(`    ${i.status.padEnd(14)} ${i.subject}${i.required ? "" : " (optional)"}${i.reason ? ` — ${i.reason}` : ""}${i.signature ? ` · signature ${i.signature.status}${i.signature.signer?.label ? ` by ${i.signature.signer.label}` : ""}` : ""}${i.remedy ? `  → ${i.remedy}` : ""}`);
+  }
+  if (readiness.policy) console.log(`  policy: child spawns ${readiness.policy.childSpawns.allowed ? "allowed" : "disabled"} (${readiness.policy.childSpawns.origin.kind}${readiness.policy.childSpawns.enforced ? ", enforced" : ""}); worktrees ${readiness.policy.worktrees.allowed === null ? "unknown" : readiness.policy.worktrees.allowed ? "allowed" : "not in this work mode"}`);
+  for (const n of readiness.notes) console.log(`  note: ${n}`);
+}
 function catalogCmd() {
   const described = describeOfficialCatalog();
   if (JSON_MODE) { jsonOk(described); return; }
@@ -4096,7 +4133,7 @@ function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before a local soul could be upserted
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect — including root discovery and local-agent upsert (an
   // --instructions-file spawn must not scaffold/overwrite a local soul before
@@ -4214,8 +4251,11 @@ function spawnCmd() {
   } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message); throw e; }
   let r;
   try {
+    if (args.includes("--allow-child-spawns") && args.includes("--no-child-spawns")) bail("E_BAD_ARGS", "--allow-child-spawns and --no-child-spawns contradict");
+    if (flag("base") === true) bail("E_BAD_ARGS", "--base needs a ref");
     r = spawnInstance(root, agent, {
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
+      ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
       repo: (requestedWork || agent.work) === "directory"
@@ -4223,7 +4263,13 @@ function spawnCmd() {
       work: requestedWork, workDir, runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
       launch: !args.includes("--no-launch"),
+      // K6: --preview decides everything and touches nothing; --base <ref>
+      // selects a worktree's start point; --model @native-default is the
+      // explicit "runtime's own default" (distinct from omitting --model).
+      ...(args.includes("--preview") ? { preview: true } : {}),
+      ...(flag("base") !== undefined && flag("base") !== true ? { baseRef: flag("base") } : {}),
     });
+    if (args.includes("--preview")) { if (JSON_MODE) { jsonOk(r); return; } console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created`); return; }
   } catch (e) {
     // A typed CLI failure keeps ITS OWN code: re-badging an unsafe-config-key
     // (raised by the readers spawn walks) as E_SPAWN_FAILED tells an agent
@@ -4237,6 +4283,8 @@ function spawnCmd() {
     // An unmet declared requirement is a fact about the soul's configuration
     // (with a remedy), not a spawn-mechanism failure: keep its code and details.
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
+    if (e?.code === "E_CHILD_SPAWNS_DISABLED") { bail(e.code, e.message, { parent: e.parent, policy: e.policy }); throw e; }
+    if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
     bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
@@ -5322,6 +5370,7 @@ else if (cmd === "config") configCmd();
 else if (cmd === "trust") trust();
 else if (cmd === "list") listCmd();
 else if (cmd === "catalog") catalogCmd();
+else if (cmd === "readiness") readinessCmd();
 else if (cmd === "instance") instanceCmd();
 else if (cmd === "remove") removeCmd();
 else if (cmd === "migrate") migrateCmd();
@@ -5530,6 +5579,11 @@ Usage:
   oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key>
                                              quiesce (SIGTERM, bounded, never escalated),
                                              children first; home/work/launch retained
+  oats readiness [--soul <n>] [--home <abs>] [--verify-signatures] [--policy] [--json]
+                                             installed | trusted | configured | enrolled, each
+                                             pass|fail|unknown|not-applicable with items and
+                                             remedies; signature status per artifact; enforced
+                                             child-spawn / worktree policy with origins
   oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
   oats retire <instance> [--discard-worktree] [--delete-branch]
                                              retire; a worktree is RETAINED (re-homed under
