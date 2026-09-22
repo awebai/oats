@@ -194,10 +194,23 @@ torn lines and cleared claims silently. API 2:
 
 - **Bounded, descriptor-safe read.** Each source (`home` =
   `<home>/.oats-events.jsonl`, `workspace` = `<ws>/.agents/events/<agent>--<instance>.jsonl`)
-  is `lstat`ed first; anything but a regular file is **refused unopened**
-  (`integrity.sources[].status: "refused"`). At most the last 4 MiB is read by
-  descriptor (`status: "tail"`, the partial first line dropped); otherwise `"ok"`
-  or `"absent"`.
+  is `lstat`ed first; anything but a regular file is **refused unopened**.
+  The open itself is `O_RDONLY|O_NOFOLLOW|O_NONBLOCK` and the descriptor is
+  `fstat`ed: it must be a regular file with the same device+inode lstat saw
+  (closes the lstat→open swap). At most the last 4 MiB is read by descriptor.
+  **Canonical source shape**: `{path: "home"|"workspace", status: "ok"|"absent"|"refused"|"tail", bytes}`
+  — `"tail"` means only the last 4 MiB was read (partial first line dropped);
+  there is no separate `tail` boolean.
+- **Row fields.** `incarnation` is the writing home's `instance.json.createdAt`
+  (ISO) or `null` for rows written before the tag; the result's top-level
+  `incarnation` is the current home's `createdAt` or `null` if unreadable. A
+  row with `incarnation: null` never matches the current incarnation, so it
+  cannot contribute a current waiting claim. Dedup identity is
+  `producer|at|kind|incarnation|data`.
+- **`waitingClaims[]` row shape**: `{producer: string, waiting: boolean, since: ISO, reason: string|null}`
+  — one row per producer with a claim in the current incarnation, INCLUDING
+  cleared ones (`waiting: false`, `reason: null`, `since` = the clearing row's
+  `at`). `waitingOnYou` = the newest `waiting: true` row or `null`.
 - **Address history.** `--home <abs>` must be a home of exactly `<instance>` under
   the scope (`E_HOME_MISMATCH` otherwise, like K1). Rows whose `instance`/`home`
   are not the admitted address are dropped and counted (`integrity.foreignRows`).
