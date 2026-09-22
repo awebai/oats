@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 17:30Z · main `1b8349e5` · Slice 5 ✅ (PR71) · security follow-up ✅ (PR73) · K5 pins ✅ (PR74/75) · **K6b ✅ (PR76: `spawnPreviewApi 2` / `spawn-preview-2` — side-effect-free preview, `--agents-root`, `--expect-decision`/`E_DECISION_STALE`, bounded preflight)** · **PR77 ✅ killGroup pid-0 guard (HIGH; engineer-found)** · OKF 2.1.3 ✅ · engineer → **6b READ wiring** (API 2 gate) → 6b apply companion (proposal) → 7b → 8 · open contracts: K11 admission, attach-knowledge (OKF node refs), auto-PR (P1 write approval), branch enumeration · **0.24.9** after 6b read (release-notes file FIRST)
+**Last update:** 2026-09-22 19:10Z · **v0.24.9 PUBLISHED** (tag `04a4f709`; both packages on npm, tarball shasum `6333c01c`; bump PR79 → main `a5cc390e`; artifact probe: readiness/preview API 2/bound apply/E_DECISION_STALE/retire retention/no-git verify all pass, caller alive, soul intact) · **6b READ MERGED** (PR78) · K6b ✅ · PR77 ✅ · engineer → **6b APPLY companion proposal** → 7b → 8 · open contracts: K11, attach-knowledge, auto-PR, branch enumeration
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
