@@ -11,6 +11,8 @@ import { instanceGitCSS } from '../renderer/instance-git.mjs';
 import { pullRequest } from '../renderer/forge-contract.mjs';
 import { target as forgeTarget, pr as forgePr } from './helpers/forge-fixture.mjs';
 import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialog.mjs';
+import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
+import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture } from './helpers/lifecycle-fixture.mjs';
 
 const renderer = new URL("../renderer/", import.meta.url);
@@ -372,6 +374,34 @@ for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations m
       assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${name} ${selector}`);
       for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
     }
+  }
+});
+
+for (const [name] of palettes) test(`${name}: actual readiness quartet, policy and unavailable controls use computed AA surfaces`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
+  for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const raw = readinessFixture(); raw.checks.installed.status = 'fail'; raw.checks.installed.items[0].status = 'fail'; raw.summary.pass--; raw.summary.fail++;
+  const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
+  t.after(() => { component.dispose(); dom.window.close(); });
+  await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.readiness-view h2', '.oats-view', 'fg', 'bg'], ['.readiness-context', '.oats-view', 'muted', 'bg'],
+    ['.readiness-item summary', '.readiness-checks', 'fg', 'surface'], ['.readiness-item dt', '.readiness-checks', 'muted', 'surface'],
+    ['.readiness-badge[data-state=pass]', '.readiness-badge[data-state=pass]', 'ok', 'surface-2'],
+    ['.readiness-badge[data-state=fail]', '.readiness-badge[data-state=fail]', 'danger', 'surface-2'],
+    ['.readiness-badge[data-state=unknown]', '.readiness-badge[data-state=unknown]', 'warn', 'surface-2'],
+    ['.readiness-badge[data-state=not-applicable]', '.readiness-badge[data-state=not-applicable]', 'muted', 'surface-2'],
+    ['.readiness-policy summary', '.oats-view', 'fg', 'bg'], ['.readiness-refresh', '.readiness-refresh', 'fg', 'surface'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+  for (const selector of ['.readiness-verify', '.readiness-enrol']) {
+    const el = doc.querySelector(selector); assert.equal(el.disabled, true); assert.equal(dom.window.getComputedStyle(el).opacity, '1');
   }
 });
 

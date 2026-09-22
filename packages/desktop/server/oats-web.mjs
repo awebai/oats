@@ -40,6 +40,8 @@ import { capabilityRequest } from "./capabilities.mjs";
 import { catalogRequest } from "./catalog.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
+import { readinessRequest } from './readiness.mjs';
+import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
@@ -453,6 +455,7 @@ function cliStatus() {
     features: cliState.features || [],
     scheduleApi: cliState.scheduleApi || null,
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
+    readinessApi: cliState.readinessApi === 1 ? 1 : null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -1063,6 +1066,18 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { forgeApi: 1, status: "unavailable", data: null,
           reason: { code: "E_BAD_ARGS", message: "Invalid forge request." } });
       }
+    }
+    if (path === '/api/workspace-readiness' && req.method === 'POST') {
+      try {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
+        const request = await readStrictBody(req);
+        const getContext = () => {
+          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          return { workspace, cli: cliState, agents: workspace && !workspace.remote && !workspace.server ? agentsData(workspace.id).agents : [],
+            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        return send(res, 200, await readinessRequest(request, getContext));
+      } catch { return send(res, 400, readinessFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/instance-lifecycle' && req.method === 'POST') {
       try {

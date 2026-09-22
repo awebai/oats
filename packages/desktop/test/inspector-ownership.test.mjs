@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
+import { createReadinessView } from '../renderer/readiness-view.mjs';
+import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
@@ -178,7 +180,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText, createSoulMark, renderSoulDeclarations });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText, createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus });
 }
 test('mutation: committing post-save data before validation is detected by Cancel', async () => {
   const factory = mutant("const refreshed = await request({ action: 'inspect', selector: target.selector }, query);", "const refreshed = data = await request({ action: 'inspect', selector: target.selector }, query);");

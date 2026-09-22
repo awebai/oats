@@ -32,6 +32,7 @@ import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs } from "./workspace-registry.mjs";
 import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
+import { proxyReadiness } from './readiness-proxy.mjs';
 import { startSingleInstance } from "./single-instance.mjs";
 import { prepareTerminalAttachments } from "./terminal-attachments.mjs";
 
@@ -313,6 +314,15 @@ ipcMain.handle("cli:pick", async (e) => {
 // ---- IPC: API proxy -----------------------------------------------------
 // The renderer never talks to the network directly; ctx.api() lands here.
 ipcMain.handle("api", async (e, pathname, opts) => {
+  // Classify the URL the backend actually sees, including dot/backslash
+  // aliases. Raw-prefix classification could bypass this route's frame guard.
+  const readiness = typeof pathname === 'string' && (() => {
+    try { return new URL(pathname, base()).pathname === '/api/workspace-readiness'; } catch { return false; }
+  })();
+  if (readiness) {
+    return proxyReadiness(e, pathname, opts, { rendererURL: RENDERER_URL,
+      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
+  }
   const lifecycle = typeof pathname === 'string' && /^\/api\/instance-lifecycle(?:[?#]|$)/.test(pathname);
   const forgeRequest = lifecycle || typeof pathname === 'string' && /^\/api\/(?:forge-connections|instance-forge)(?:[?#]|$)/.test(pathname);
   const failure = lifecycle ? lifecycleFailure : forgeFailure;
