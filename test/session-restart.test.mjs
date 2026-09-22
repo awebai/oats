@@ -437,7 +437,7 @@ test("K7 events: stop/restart/retire write producer-attributed events to the hom
   startInstanceSession(home, { env: env() }); assert.ok(await waitFor(() => runningPid(home) !== null));
   const one = stopInstanceSession(home, { graceMs: 5000 }); assert.equal(one.stopped, true);
   const ev = readEvents(home);
-  assert.equal(ev.eventsApi, 1); assert.deepEqual(ev.events.map((e) => e.kind), ["stopped"]); assert.equal(ev.events[0].producer, "kernel"); assert.equal(ev.events[0].data.signal, "SIGTERM");
+  assert.equal(ev.eventsApi, 2); assert.deepEqual(ev.events.map((e) => e.kind), ["stopped"]); assert.equal(ev.events[0].producer, "kernel"); assert.equal(ev.events[0].data.signal, "SIGTERM");
   assert.equal(ev.waitingOnYou, null); assert.equal(ev.lastEvent.kind, "stopped");
   assert.ok(existsSync(join(home, ".oats-events.jsonl")) && existsSync(join(repo, ".agents", "events", `dev--${name}.jsonl`)), "both logs");
   // A producer claim is the only way waitingOnYou becomes non-null.
