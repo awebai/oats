@@ -409,6 +409,10 @@ test('K6c spawn idempotency: --expect-decision + --idempotency-key — a retry o
   assert.equal(first.ok, true, JSON.stringify(first).slice(0, 300)); assert.equal(first.result.instance, 'wt-a'); assert.equal(first.result.replayed, false);
   const meta = JSON.parse(readFileSync(join(f.root, 'wt', 'instances', 'wt-a', 'instance.json'), 'utf8'));
   assert.equal(meta.spawnIdempotencyKey, 'k-1'); assert.equal(meta.decision.revision, rev);
+  // The receipt echoes the FULL bound decision — the same shape the preview showed, effective included.
+  const shown = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision; // placement now differs (taken) but the SHAPE is what we check
+  assert.deepEqual(Object.keys(first.result.decision).sort(), Object.keys(shown).sort()); assert.deepEqual(Object.keys(first.result.decision.effective).sort(), Object.keys(shown.effective).sort());
+  assert.equal(first.result.decision.effective.model, 'opus'); assert.equal(first.result.decision.effective.work, 'worktree');
   // Lost response → retry with the same key: replay, nothing new.
   const again = last(f.run(['spawn', 'wt', '--purpose', 'a', '--expect-decision', rev, '--idempotency-key', 'k-1', '--no-launch', '--json']));
   assert.equal(again.ok, true, JSON.stringify(again).slice(0, 300)); assert.equal(again.result.replayed, true); assert.equal(again.result.instance, 'wt-a'); assert.equal(again.result.home, first.result.home);
