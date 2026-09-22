@@ -411,8 +411,9 @@ location. The receipt says so:
     `retention.branchDeletionSkipped {expected, actual, reason}`.
   - **Ambiguous parentage is reported, never acted on.** Recorded parentage is
     a bare name; if a child's parent name resolves to several homes under the
-    root, that child appears under `ambiguous[]` (stop and retire plans) with
-    the reason and is excluded from `targets`/`children`.
+    root, that child appears under `ambiguous[]` — `plan.ambiguous` on a stop
+    plan, `plan.facts.ambiguous` on a retire plan — with the reason, and is
+    excluded from `targets`/`children`.
 - **Stop replay horizon**: stop receipts are stored **per idempotency key**
   (`<home>/.oats-stop-receipt.<key>.json`); any earlier key replays its own
   receipt for as long as the home exists. Retire receipts live beside the
@@ -428,6 +429,28 @@ location. The receipt says so:
 `scheduleHistoryApi`). **Gate on these, never on a version string and never by
 optimistic invocation**: an older CLI ignores an unknown `--plan` on `retire`
 and *retires*. Absent feature → the view is unavailable.
+
+## Instruction refresh (`oats session recompose`, feature `session-recompose`, OATS 0.24.8+)
+
+A live instance's composed `AGENTS.md` is generated at spawn and outranks any
+mail or tracked file *in the running context*. When a soul changes (a role or
+budget amendment) and a respawn is not possible or wanted, an operator
+refreshes the home in place:
+
+- `oats session recompose --home <abs> [--dry-run] --json` → `{home, instance,
+  agent, soulDir, contextDir, changed, dryRun, blocks[{source,file}], previous,
+  note}`. Same composer spawn used, the home's own `soul` link and recorded
+  context/work mode. `changed:false` is a no-op (no receipt). On change the
+  prior text is retained as `previous` (`<home>/.oats-agents-md.<stamp>.previous`),
+  `instance.json` gains `instructions[]`/`recomposedAt`, and a `recomposed`
+  event is appended.
+- **Nothing is signalled or restarted** — the harness re-reads on its own
+  schedule; the receipt's `note` says so. Refuses a retiring home
+  (`E_INSTANCE_RETIRING`), captured incarnations and capability-defined souls
+  (`E_UNSUPPORTED_MODE`: those are refreshed by a new resolution / package).
+- Gate on `features.includes("session-recompose")`. It is an **operator
+  action** (the human or the instance's parent), never something a Desktop
+  poll or an agent runs on itself.
 
 ## Mutations exposed to Desktop v1
 

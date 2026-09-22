@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 22:20Z · **Slice 2b MERGED** (PR65: GitHub Connections + PR card, ADE integration, gh custody) · all kernel seams on main · engineer → 2c → 5 → 6b → 7b → 8 · lead: reviews; tag 0.24.8 on next consuming slice
+**Last update:** 2026-09-22 10:30Z (clock verified with `date -u`; the previous "22:20Z" stamp was a wall-clock error) · **Slice 2b MERGED** (PR65) · **K3 producer pins closed** (PR66 advertisement + guarded Remove; PR67 kernel-owned child stop, confirmed-branch binding, per-key stop replay, ambiguous parentage) · `oats session recompose` seam (in-place instruction refresh) · engineer wiring **2c** on `aed94b74` → 5 → 6b → 7b → 8 · lead: reviews; tag 0.24.8 when 2c lands
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
