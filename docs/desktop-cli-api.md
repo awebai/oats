@@ -313,12 +313,20 @@ the UI says so.
 - **Typed linkage on every item**: `capability {id, level, scope}` and
   `origin {kind: requires|declares|default|inventory, target}`; plus
   `summary.byCapability[] {capability, origin, required, checks{installed,
-  trusted, configured, enrolled}, ready}` — the SAME items regrouped, no second
-  observation. Render per-capability rows from this; never parse subjects.
-- **Selector echo**: `subject.selector` = exactly what the read was made with —
-  `{kind:"scope", context}` · `{kind:"soul", soul, agentsRoot|null, context}` ·
-  `{kind:"home", home, soul, agentsRoot|null}`. Bind results to your admitted
-  target by comparing it; no revision is invented.
+  trusted, configured, enrolled}, ownReady, ready}` — the SAME items regrouped,
+  no second observation. `ownReady` is the capability's own four verdicts;
+  `ready` is `ownReady` AND no **subject-level blocker** — items that belong to
+  no capability (workspace membership, soul declarations) are listed in
+  `summary.subjectBlockers[] {check, subject, status}` and block every row.
+  A per-capability row never says ready while the subject is blocked, and a
+  row's verdict is never promoted to the subject's `summary.ready`. Render
+  per-capability rows from this; never parse subjects.
+- **Selector echo**: `subject.selector` = the arguments **as given, byte-exact,
+  no realpath** — `{kind:"scope", dir|null}` · `{kind:"soul", soul,
+  agentsRoot|null, dir|null}` · `{kind:"home", home, soul, agentsRoot|null}`.
+  Compare with what you sent, byte for byte; never filesystem-normalize a
+  response path. The canonical scope is `subject.context` (may differ from
+  `dir`, e.g. `/var` vs `/private/var` on macOS).
 - **Unreadable member document** (`oats.yaml` unreadable, or `workspace:`
   present but not a mapping) → `enrolled` item `unknown` with
   `evidence.file`, never `not-applicable`. A declared backlink stays `unknown`
@@ -330,9 +338,11 @@ the UI says so.
 - **`--agents-root <abs>`** is accepted with `--soul` (and with `--home`), as
   inspect takes it — pin the exact root you admitted.
 - **Signature verification (feature `readiness-verify`)**: `--verify-signatures`
-  is bounded custody — one total budget per capability (60 s default) shared by
-  fetch and verify, Git children killed with their process group on timeout,
-  scratch repository removed on every exit including signals, `GIT_CONFIG_GLOBAL
+  is bounded custody — **one total budget per readiness read** (120 s default)
+  shared by every capability's fetch and verify (an exhausted budget refuses the
+  remaining capabilities with `budget-exhausted`, no fetch), each Git child in
+  its own process group and the **whole group** SIGKILLed on timeout or failure,
+  scratch repositories removed on normal exit and on SIGINT/SIGTERM/SIGHUP, `GIT_CONFIG_GLOBAL
   =/dev/null` + no system config + no prompts/askpass, **only https/ssh**
   transports. `signature.failure` is `null` or `{code}` from the closed set
   `transport-not-allowed | fetch-failed | fetch-timeout | budget-exhausted |
