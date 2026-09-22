@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 22:40Z · **v0.24.12 PUBLISHED** (tag `9411d3e0`; bump PR94 → main `6c632893`; artifact probe: eventsApi 2, refused symlink source + workspace fallback, E_HOME_MISMATCH) · **7b COMPLETE** (PR93 `20da1072`) · kernel K7b PR89/90/92 + K6h PR91 · engineer → **8 (K8 schedule runs) proposal** · remaining Desktop parity: 8, then rest of frame 10 · open: K11, attach-knowledge, auto-PR, branch enumeration
+**Last update:** 2026-09-22 23:45Z · v0.24.12 published · **slice 8 approved** (no polling; command-running GET `/api/schedules` to be REMOVED; remote history unsupported; captured edit = honest limitation; transcript = provenance only, read-only transcript verb = K12 Decision later) · **K8b PR95 → main `ee60d1e2`** (`schedule-read-2` / `scheduleHistoryApi 3`: runId by time, bounded fd state reads + 1 MiB budget, per-job isolation, scope/id echo, `session` provenance replaces `transcript`) · 12 receipts to engineer · engineer wiring 8 → then rest of frame 10 · open: K11, K12 transcript, attach-knowledge, auto-PR, branch enumeration
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
