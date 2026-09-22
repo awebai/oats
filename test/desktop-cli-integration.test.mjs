@@ -86,16 +86,33 @@ exec ${JSON.stringify(process.execPath)} ${JSON.stringify(js)} "$@"
   return { bin, real: realpathSync(bin), calls: () => readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)) };
 }
 
+/** A port the OS just handed us (bind :0, read, release). Under a concurrent
+ *  test run a random port can already belong to ANOTHER test's server; with the
+ *  child's stdio ignored its EADDRINUSE exit was silent and the poll below
+ *  happily talked to a stranger — the "incompatible CLI" case then read the
+ *  wrong server's healthy answer. */
+async function freePort() {
+  const { createServer } = await import("node:net");
+  return new Promise((resolve, reject) => {
+    const s = createServer(); s.unref();
+    s.on("error", reject);
+    s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); });
+  });
+}
 async function startServer(env) {
-  const port = 4300 + Math.floor(Math.random() * 1500);
+  const port = await freePort();
   const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT],
-    { stdio: "ignore", env: { ...process.env, ...env } });
-  for (let i = 0; i < 40; i++) {
+    { stdio: ["ignore", "ignore", "pipe"], env: { ...process.env, ...env } });
+  let stderr = ""; proc.stderr.on("data", (d) => { stderr += d; });
+  let exited = null; proc.on("exit", (code, sig) => { exited = { code, sig }; });
+  const deadline = Date.now() + 15000; // come-up under a loaded concurrent run, not a fixed 4 s
+  while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 100));
+    if (exited) throw new Error(`server exited before coming up (${exited.code ?? exited.sig}): ${stderr.trim().slice(0, 300)}`);
     try { await fetch(`http://127.0.0.1:${port}/api/panel`); return { proc, port }; } catch { /* retry */ }
   }
   proc.kill();
-  throw new Error("server did not come up");
+  throw new Error(`server did not come up on ${port}: ${stderr.trim().slice(0, 300)}`);
 }
 
 test("desktop server: /api/cli reports discovery status; compatible fake CLI accepted via OATS_DESKTOP_OATS_BIN", async () => {
