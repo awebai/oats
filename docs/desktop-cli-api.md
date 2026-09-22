@@ -298,6 +298,48 @@ instance's recorded (enforced) one; with only `--soul` it is the declaration
 (`enforced: false`). It is a lifecycle-authority claim, not an OS sandbox —
 the UI says so.
 
+### Slice-5 producer pins (0.24.9+; all additive — gate items on field presence)
+
+- **`configured` is EFFECTIVE activation.** `activation.enabled` is the resolved
+  verdict for the subject; a capability *declared* for the soul but disabled is
+  `fail` with reason `declared for soul <n> but disabled (…)`. Declaration is
+  never activation.
+- **Trust is not-applicable for data-only capabilities.** The inspect row now
+  carries `health.executableSurface` (manifest commands/hooks/launch env — what
+  `oats trust` approves). No surface → `trusted` item `not-applicable`, reason
+  `no executable surface`, whatever the lock records. This is why a fresh
+  `oats trust <package> --all-capabilities` "skipped" `oats.core` and readiness
+  still said fail before 0.24.9.
+- **Typed linkage on every item**: `capability {id, level, scope}` and
+  `origin {kind: requires|declares|default|inventory, target}`; plus
+  `summary.byCapability[] {capability, origin, required, checks{installed,
+  trusted, configured, enrolled}, ready}` — the SAME items regrouped, no second
+  observation. Render per-capability rows from this; never parse subjects.
+- **Selector echo**: `subject.selector` = exactly what the read was made with —
+  `{kind:"scope", context}` · `{kind:"soul", soul, agentsRoot|null, context}` ·
+  `{kind:"home", home, soul, agentsRoot|null}`. Bind results to your admitted
+  target by comparing it; no revision is invented.
+- **Unreadable member document** (`oats.yaml` unreadable, or `workspace:`
+  present but not a mapping) → `enrolled` item `unknown` with
+  `evidence.file`, never `not-applicable`. A declared backlink stays `unknown`
+  with reason `reciprocal admission not observed …` until the CLI fetches the
+  workspace's members (K11).
+- **Captured homes refuse**: `readiness --home <captured>` →
+  `E_UNSUPPORTED_MODE` (`details.captured: true`) before any current-config
+  interpretation.
+- **`--agents-root <abs>`** is accepted with `--soul` (and with `--home`), as
+  inspect takes it — pin the exact root you admitted.
+- **Signature verification (feature `readiness-verify`)**: `--verify-signatures`
+  is bounded custody — one total budget per capability (60 s default) shared by
+  fetch and verify, Git children killed with their process group on timeout,
+  scratch repository removed on every exit including signals, `GIT_CONFIG_GLOBAL
+  =/dev/null` + no system config + no prompts/askpass, **only https/ssh**
+  transports. `signature.failure` is `null` or `{code}` from the closed set
+  `transport-not-allowed | fetch-failed | fetch-timeout | budget-exhausted |
+  verifier-failed | verifier-timeout | cannot-check`; `signature.reason` is a
+  fixed sentence, **never stderr**. Gate the *Verify signatures…* action on the
+  feature name; keep it an explicit user action.
+
 ## Lifecycle plans — Stop and Remove (`lifecycleApi: 1`, OATS 0.24.8+)
 
 The Desktop's Stop and Remove confirmations render **plans**: a read-only
