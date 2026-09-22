@@ -35,6 +35,11 @@ function gitify(dir) {
   execFileSync("git", ["init", "-q", dir]);
   execFileSync("git", ["-C", dir, "config", "user.email", "t@example.invalid"]);
   execFileSync("git", ["-C", dir, "config", "user.name", "T"]);
+  // The rollback assertion snapshots the whole scope INCLUDING .git/: Git's
+  // background auto-maintenance may drop .git/objects/maintenance.lock between
+  // "before" and "after" on CI, which read as a failed rollback. Not our bytes.
+  execFileSync("git", ["-C", dir, "config", "maintenance.auto", "false"]);
+  execFileSync("git", ["-C", dir, "config", "gc.auto", "0"]);
   execFileSync("git", ["-C", dir, "add", "-A"]);
   // --allow-empty: several scopes here start with no tracked content at all.
   execFileSync("git", ["-C", dir, "commit", "-qm", "init", "--allow-empty"]);
