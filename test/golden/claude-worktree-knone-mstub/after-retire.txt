@@ -16,6 +16,10 @@ worktree <base>/scope/repo
 HEAD <sha>
 branch refs/heads/main
 
+worktree <base>/scope/.agents/worktrees/repo/agents-dev-claude-worktree-knone-mstub
+HEAD <sha>
+branch refs/heads/agents/dev-claude-worktree-knone-mstub
+
 # git branch
 agents/dev-claude-worktree-knone-mstub
 main

@@ -221,10 +221,33 @@ What Remove would touch, with the design's defaults. Read-only.
 ```
 
 `pullRequest` is **always `"unknown"` from the kernel**: forge facts belong to
-the ADE's connection (P1). Branch actions in the eventual apply use the
-**worktree's** branch (`facts.work.branch`), never `recordedBranch`. The
-retention/re-home apply (`git worktree move` to a deployment-level root) is
-K3b and will take this plan's revision.
+the ADE's connection (P1). Branch actions use the **worktree's** branch
+(`facts.work.branch`), never `recordedBranch`.
+
+### `oats retire <instance> [--discard-worktree] [--delete-branch] --json` — retention is the default (K3b)
+
+Plain `retire` now **retains** a worktree-mode instance's work: the worktree
+cannot stay under the removed home, so it is **re-homed** with
+`git worktree move` to `<workspace>/.agents/worktrees/<repo>/<branch>` (a
+`-2`, `-3` suffix if taken; detached → `detached-<oid12>`), with staged,
+unstaged and untracked state intact, and the repository knows the new
+location. The receipt says so:
+
+```json
+{"retired":"dev-1","retention":{"worktree":"retained","movedTo":"/ws/.agents/worktrees/repo/feat-x","branch":"feat/x","detachedAt":null,"recordedBranch":"agents/dev-1"},
+ "worktreeRemoved":false,"branchDeleted":false, "workRecovery":{…}}
+```
+
+- `--discard-worktree` restores removal (`retention.worktree: "removed"`).
+- `--delete-branch` deletes the **worktree's verified branch**
+  (`retention.branchDeleted`), never the recorded spawn name, and implies
+  discarding the worktree (a checked-out branch cannot be deleted).
+- A failed move keeps the home and refuses `E_WORK_PRESERVATION_FAILED` —
+  nothing is lost; retry or pass `--discard-worktree`.
+- Non-worktree modes report `retention: null`. Quarantine/rollback paths keep
+  their removal semantics.
+- The Remove dialog's "also delete worktree / branch" checkboxes map to these
+  two flags; the kernel never touches a PR.
 
 ## Mutations exposed to Desktop v1
 

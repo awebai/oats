@@ -1,6 +1,7 @@
 {
   "retired": "dev-pi-attached-kstub-mstub",
   "agent": "dev",
+  "retention": null,
   "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,

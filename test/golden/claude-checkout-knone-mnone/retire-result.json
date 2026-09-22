@@ -1,6 +1,7 @@
 {
   "retired": "dev-claude-checkout-knone-mnone",
   "agent": "dev",
+  "retention": null,
   "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,

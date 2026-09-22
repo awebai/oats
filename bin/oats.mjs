@@ -4273,7 +4273,7 @@ function spawnCmd() {
 
 function retireCmd() {
   const name = args[1];
-  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--home <path>] [--self] [--delete-branch] [--keep-dir] [--force] [--json]");
+  if (!name || name.startsWith("--")) die("usage: oats retire <instance> [--plan] [--home <path>] [--self] [--discard-worktree] [--delete-branch] [--keep-dir] [--force] [--json]");
   let homeFlag = flag("home");
   if (homeFlag === true) die("--home needs the instance home path");
   if (args.includes("--plan")) {
@@ -4304,7 +4304,7 @@ function retireCmd() {
     if (hit && resolve(hit.root) !== resolve(root)) { root = hit.root; (args.includes("--json") ? console.error : console.log)(`(cross-repo: instance homes at ${shortPath(root)})`); }
   }
   const retiringHome = homeFlag || findInstanceHome(root, name);
-  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
+  const r = retireInstance(root, name, { home: homeFlag, self: isSelf, deleteBranch: args.includes("--delete-branch"), discardWorktree: args.includes("--discard-worktree"), keepDir: args.includes("--keep-dir"), force: args.includes("--force") });
   // A retired home's wake jobs are forgotten (definitions only; nothing is
   // stopped by this); a deferred self-retire keeps them until the home is gone.
   if (retiringHome && r.removedDir !== false && !r.deferred) { try { const gone = removeWakeForHome(scheduleScopeOf(workspaceOf(root)), retiringHome); if (gone.length) r.wakeSchedulesRemoved = gone; } catch (e) { r.warnings = [...(r.warnings || []), `wake schedules not cleaned: ${e.message}`]; } }
@@ -5531,6 +5531,11 @@ Usage:
                                              quiesce (SIGTERM, bounded, never escalated),
                                              children first; home/work/launch retained
   oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
+  oats retire <instance> [--discard-worktree] [--delete-branch]
+                                             retire; a worktree is RETAINED (re-homed under
+                                             <workspace>/.agents/worktrees/<repo>/<branch>)
+                                             unless discarded; --delete-branch deletes the
+                                             worktree's verified branch and implies discard
   oats update <package> [<package>@<ref>]    transactional package update: temp fetch,
       [--to <ref>] [--dir <d>]              closure validation, diff, lock replace,
                                             all capability approvals invalidated; a

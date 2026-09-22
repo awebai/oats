@@ -1,7 +1,14 @@
 {
   "retired": "dev-pi-worktree-kstub-mstub-model",
   "agent": "dev",
-  "worktreeRemoved": true,
+  "retention": {
+    "worktree": "retained",
+    "movedTo": "<base>/scope/.agents/worktrees/repo/agents-dev-pi-worktree-kstub-mstub-model",
+    "branch": "agents/dev-pi-worktree-kstub-mstub-model",
+    "detachedAt": null,
+    "recordedBranch": "agents/dev-pi-worktree-kstub-mstub-model"
+  },
+  "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,
   "capabilityMeta": {

@@ -1,6 +1,12 @@
 {
   "retired": "dev-pi-worktree-kstub-mstub-deletebranch",
   "agent": "dev",
+  "retention": {
+    "worktree": "removed",
+    "branch": "agents/dev-pi-worktree-kstub-mstub-deletebranch",
+    "recordedBranch": "agents/dev-pi-worktree-kstub-mstub-deletebranch",
+    "branchDeleted": "agents/dev-pi-worktree-kstub-mstub-deletebranch"
+  },
   "worktreeRemoved": true,
   "branchDeleted": true,
   "removedDir": true,

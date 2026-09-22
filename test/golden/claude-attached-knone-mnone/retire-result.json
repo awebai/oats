@@ -1,6 +1,7 @@
 {
   "retired": "dev-claude-attached-knone-mnone",
   "agent": "dev",
+  "retention": null,
   "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,

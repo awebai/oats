@@ -19,6 +19,10 @@ worktree <base>/scope/repo
 HEAD <sha>
 branch refs/heads/main
 
+worktree <base>/scope/.agents/worktrees/repo/agents-dev-pi-worktree-kstub-mstub-model
+HEAD <sha>
+branch refs/heads/agents/dev-pi-worktree-kstub-mstub-model
+
 # git branch
 agents/dev-pi-worktree-kstub-mstub-model
 main

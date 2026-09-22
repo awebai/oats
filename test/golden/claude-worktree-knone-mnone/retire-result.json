@@ -1,7 +1,14 @@
 {
   "retired": "dev-claude-worktree-knone-mnone",
   "agent": "dev",
-  "worktreeRemoved": true,
+  "retention": {
+    "worktree": "retained",
+    "movedTo": "<base>/scope/.agents/worktrees/repo/agents-dev-claude-worktree-knone-mnone",
+    "branch": "agents/dev-claude-worktree-knone-mnone",
+    "detachedAt": null,
+    "recordedBranch": "agents/dev-claude-worktree-knone-mnone"
+  },
+  "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,
   "capabilityMeta": {}

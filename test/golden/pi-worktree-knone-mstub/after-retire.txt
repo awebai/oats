@@ -16,6 +16,10 @@ worktree <base>/scope/repo
 HEAD <sha>
 branch refs/heads/main
 
+worktree <base>/scope/.agents/worktrees/repo/agents-dev-pi-worktree-knone-mstub
+HEAD <sha>
+branch refs/heads/agents/dev-pi-worktree-knone-mstub
+
 # git branch
 agents/dev-pi-worktree-knone-mstub
 main

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -434,4 +434,41 @@ test("recovery copies only staged objects the clone lacks: one batch check, no p
   assert.equal(execFileSync("git", ["-C", recoveryRepo, "diff", "--cached", "--name-only"], { encoding: "utf8" }).trim(), "staged-only.txt");
   assert.equal(readFileSync(join(recoveryRepo, "staged-only.txt"), "utf8"), "staged, never committed\n");
   assert.equal(readFileSync(join(recoveryRepo, "loose.txt"), "utf8"), "untracked human bytes\n");
+});
+
+test("K3b retention: plain retire RE-HOMES the worktree (dirty state intact, branch untouched) under <workspace>/.agents/worktrees/<repo>/<branch>; --discard-worktree removes; --delete-branch uses the worktree's verified branch and implies discard", () => {
+  const f = fixture();
+  const spawned = spawn(f, "keep");
+  const work = join(spawned.home, "work");
+  const git = (...args) => execFileSync("git", ["-C", work, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  git("switch", "--quiet", "-c", "feat/kept-after-retire");
+  write(join(work, "wip.txt"), "uncommitted work\n"); git("add", "wip.txt");
+  write(join(work, "scratch.txt"), "untracked\n");
+  const head = git("rev-parse", "HEAD");
+  const retired = cli(f, ["retire", "dev-keep", "--json"]);
+  assert.equal(retired.status, 0, `${retired.stderr}\n${retired.stdout}`);
+  const r = JSON.parse(retired.stdout);
+  assert.equal(r.worktreeRemoved, false); assert.equal(r.branchDeleted, false);
+  assert.equal(r.retention.worktree, "retained"); assert.equal(r.retention.branch, "feat/kept-after-retire");
+  assert.notEqual(r.retention.recordedBranch, "feat/kept-after-retire", "recorded spawn branch is reported as recorded, not used");
+  assert.match(r.retention.movedTo, /\/\.agents\/worktrees\/[^/]+\/feat-kept-after-retire$/);
+  assert.equal(existsSync(spawned.home), false, "home released");
+  const moved = r.retention.movedTo;
+  const g2 = (...args) => execFileSync("git", ["-C", moved, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  assert.equal(g2("symbolic-ref", "--short", "HEAD"), "feat/kept-after-retire"); assert.equal(g2("rev-parse", "HEAD"), head);
+  assert.equal(readFileSync(join(moved, "wip.txt"), "utf8"), "uncommitted work\n"); assert.match(g2("status", "--porcelain"), /^A  wip\.txt/m, "staged state survives the move");
+  assert.equal(readFileSync(join(moved, "scratch.txt"), "utf8"), "untracked\n");
+  const repoGit = (...args) => execFileSync("git", ["-C", f.repo, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const listed = repoGit("worktree", "list", "--porcelain").split("\n").filter((l) => l.startsWith("worktree ")).map((l) => { try { return realpathSync(l.slice(9)); } catch { return l.slice(9); } });
+  assert.ok(listed.includes(realpathSync(moved)), `the repository knows the re-homed worktree: ${listed.join(", ")}`);
+  assert.ok(repoGit("branch", "--list", "feat/kept-after-retire"), "branch untouched");
+
+  // Discard restores removal; delete-branch uses the VERIFIED branch and implies discard.
+  const d = spawn(f, "discard"); const dw = join(d.home, "work");
+  execFileSync("git", ["-C", dw, "switch", "--quiet", "-c", "feat/to-delete"]);
+  const rd = JSON.parse(cli(f, ["retire", "dev-discard", "--delete-branch", "--json"]).stdout);
+  assert.equal(rd.retention.worktree, "removed"); assert.equal(rd.retention.branchDeleted, "feat/to-delete"); assert.equal(rd.branchDeleted, true);
+  assert.equal(repoGit("branch", "--list", "feat/to-delete"), "", "the worktree's actual branch was deleted, not the recorded one");
+  assert.ok(repoGit("branch", "--list", rd.retention.recordedBranch), "the recorded spawn branch (never checked out after the switch) is untouched");
+  assert.equal(existsSync(dw), false);
 });
