@@ -507,3 +507,44 @@ test('K6f retention: a fresh keyed (decision-bound, idempotent) spawn with a wak
   assert.ok(!(r.workRecovery?.classes || []).includes('changed instance-home bytes'), `kernel writes must not read as user changes: ${JSON.stringify(r.workRecovery ?? r).slice(0, 400)}`);
   assert.equal(r.workRecovery ?? null, null, `a fresh, untouched home needs no work recovery: ${JSON.stringify(r.workRecovery ?? null)}`);
 });
+
+test('K6g retention authority: kernel post-spawn fields (spawnCompleted, wake) never read as changes, but authored home bytes written in the launch→completion interval are STILL recovered at retire — nothing but the kernel fields is ever re-blessed', t => {
+  const f = fixture(t);
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
+  spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  createAgent(f.root, { name: 'wt', work: 'worktree', repo: f.context, runtime: 'claude', model: 'opus', oatsCore: false });
+  // The "runtime": tmux is faked so the launch writes an authored STATE.md into the home the moment it starts —
+  // i.e. BEFORE the kernel's completion marker and the CLI's wake record are written.
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const wins = join(f.base, 'tmux-wins'); writeFileSync(wins, '');
+  const fakeTmux = (writeState) => `#!/bin/sh
+case "$1" in
+  display-message) echo /tmp/oats-k6g-fake.sock ;;
+  new-window) prev=""; for a in "$@"; do case "$prev" in -n) echo "$a" >> ${wins};; -c) ${writeState ? `printf 'agent wrote this at launch\\n' > "$a/STATE.md"` : ':'};; esac; prev="$a"; done ;;
+  list-windows) cat ${wins} ;;
+  kill-window) : ;;
+esac
+exit 0
+`;
+  writeFileSync(join(f.bin, 'tmux'), fakeTmux(true), { mode: 0o700 });
+  const last = r => JSON.parse(r.stdout.trim().split('\n').pop());
+  const rev = last(f.run(['spawn', 'wt', '--purpose', 'g', '--preview', '--json'])).result.decision.revision;
+  const sp = last(f.run(['spawn', 'wt', '--purpose', 'g', '--expect-decision', rev, '--idempotency-key', 'kg', '--wake-every', '10', '--wake-message', 'hi', '--backend', 'tmux', '--json']));
+  assert.equal(sp.ok, true, JSON.stringify(sp).slice(0, 400));
+  const home = join(f.root, 'wt', 'instances', 'wt-g');
+  assert.equal(readFileSync(join(home, 'STATE.md'), 'utf8'), 'agent wrote this at launch\n', 'the launch wrote authored bytes into the home');
+  const meta = JSON.parse(readFileSync(join(home, 'instance.json'), 'utf8')); assert.equal(meta.spawnCompleted, true); assert.equal(meta.wake?.saved, true, 'kernel fields were written AFTER the authored bytes');
+  const plan = JSON.parse(f.run(['retire', 'wt-g', '--plan', '--json']).stdout).result;
+  const r = JSON.parse(f.run(['retire', 'wt-g', '--plan-revision', plan.planRevision, '--idempotency-key', 'rg', '--json']).stdout);
+  assert.equal(r.retired, 'wt-g', JSON.stringify(r).slice(0, 300));
+  assert.ok(r.workRecovery, 'authored STATE.md must be recovered — the kernel fields must not have blessed it into the baseline');
+  assert.ok(r.workRecovery.classes.includes('changed instance-home bytes'), JSON.stringify(r.workRecovery.classes));
+  assert.equal(readFileSync(join(r.workRecovery.path, 'home', 'STATE.md'), 'utf8'), 'agent wrote this at launch\n', 'recovered bytes are the authored ones');
+  // And the pure kernel-fields case still retires clean (K6f's original point).
+  writeFileSync(join(f.bin, 'tmux'), fakeTmux(false), { mode: 0o700 });
+  const rev2 = last(f.run(['spawn', 'wt', '--purpose', 'h', '--preview', '--json'])).result.decision.revision;
+  assert.equal(last(f.run(['spawn', 'wt', '--purpose', 'h', '--expect-decision', rev2, '--idempotency-key', 'kh', '--wake-every', '10', '--wake-message', 'hi', '--backend', 'tmux', '--json'])).ok, true);
+  const plan2 = JSON.parse(f.run(['retire', 'wt-h', '--plan', '--json']).stdout).result;
+  const r2 = JSON.parse(f.run(['retire', 'wt-h', '--plan-revision', plan2.planRevision, '--idempotency-key', 'rh', '--json']).stdout);
+  assert.equal(r2.workRecovery ?? null, null, `kernel fields alone: clean — ${JSON.stringify(r2.workRecovery ?? null)}`);
+});
