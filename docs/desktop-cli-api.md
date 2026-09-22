@@ -239,6 +239,40 @@ executable, runtime packages, child-spawn policy) and returns what the spawn
   knowledge provider (05 excluded, attach stays), auto-PR intent (ADE-owned,
   P1).
 
+### Preview API 2 (0.24.9+, feature `spawn-preview-2`) — the safe-mode fence
+
+**API 1 previews wrote before they returned** (a refused child spawn appended an
+event to the parent; a Herdr backend could be started; an unknown soul could be
+imported from an importable def). A consumer must therefore gate on
+**`spawnPreviewApi === 2` AND `features.includes("spawn-preview-2")`** — API 1 is
+the pre-fix marker and is never accepted for dispatch.
+
+- **No writes, success or refusal.** A preview appends no event, starts no
+  daemon (`backendStatus {name, installed, started:false}` reports what it
+  observed), and never creates/updates a soul (`E_SOUL_UNKNOWN` instead of an
+  import; `--instructions-file`/`--def-file` refused with `E_BAD_ARGS`). Test:
+  the deployment tree is byte-identical after a success, a refusal and an
+  unknown-soul preview.
+- **Exact root**: `spawn <soul> --agents-root <abs>` binds the soul to that root
+  (as inspect/readiness take it) — no team-soul / capability-agent / importable-
+  def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes
+  `subject {soul, agentsRoot|null, dir|null}` **as given, byte-exact**.
+- **Decision binding**: `decision {instance, home, branch, base{ref,oid},
+  revision}` (24-hex). Apply with `spawn … --expect-decision <revision>`: the
+  kernel recomputes name/home/branch/base under the same placement path and
+  refuses **`E_DECISION_STALE`** with `details.decision` (the fresh one) on ANY
+  drift — no auto-suffix, no silent re-base, nothing created. A GUI re-previews
+  and re-confirms; it never second-guesses names or paths. Without the flag the
+  CLI keeps its legacy auto-suffix for humans.
+- **Bounded preflight**: every native probe a preview runs (`pi --list-models`,
+  `pi list`, `claude plugin list`) shares ONE budget (20 s default), runs in its
+  own process group and is group-killed on timeout; `preflight {status:
+  complete|timeout, budgetMs, elapsedMs}` says which. A hanging runtime cannot
+  hang a preview.
+- Still absent (named follow-ups, not parity-done): attach-knowledge node refs
+  (provider contract), auto-PR (P1/ADE write approval), branch enumeration
+  (producer seam).
+
 ## Readiness quartet, signatures, enforced policy (`oats readiness`, `readinessApi: 1`, OATS 0.24.8+)
 
 `oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json`

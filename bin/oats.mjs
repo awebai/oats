@@ -4182,7 +4182,21 @@ function spawnCmd() {
   let root;
   try { root = ensureRoot(dirFlag()); }
   catch (e) { bail("E_NO_DEPLOYMENT", e.message || e); throw e; }
+  const isPreview = args.includes("--preview");
+  // --agents-root <abs>: the exact root the soul must live in (as inspect and
+  // readiness take it). With it, no team-soul / capability-agent / importable-
+  // def fallback: the soul is there or the spawn refuses E_SOUL_UNKNOWN.
+  const agentsRootFlag = flag("agents-root");
+  if (agentsRootFlag !== undefined && (agentsRootFlag === true || !isAbsolute(String(agentsRootFlag)))) bail("E_BAD_ARGS", "--agents-root needs an absolute agents root");
+  if (agentsRootFlag !== undefined && realOrResolved(String(agentsRootFlag)) !== realOrResolved(root)) {
+    const teamHit = findTeamAgent(dirFlag(), name), hit = (teamHit?.matches || []).find((m) => realOrResolved(m.root) === realOrResolved(String(agentsRootFlag)));
+    if (!hit) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)} (this scope's root is ${shortPath(root)})`);
+    root = hit.root;
+  }
   let agent = findAgent(root, name);
+  if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
+  if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
+  if (isPreview && (flag("instructions-file") !== undefined || flag("def-file") !== undefined)) bail("E_BAD_ARGS", "--preview does not take --instructions-file/--def-file: a preview never writes a soul");
   const instrFile = flag("instructions-file");
   const defFile = flag("def-file");
   if (!agent && !instrFile && !defFile) {
@@ -4305,8 +4319,10 @@ function spawnCmd() {
       // K6: --preview decides everything and touches nothing; --base <ref>
       // selects a worktree's start point; --model @native-default is the
       // explicit "runtime's own default" (distinct from omitting --model).
-      ...(args.includes("--preview") ? { preview: true } : {}),
+      ...(args.includes("--preview") ? { preview: true, subject: { soul: name, agentsRoot: agentsRootFlag !== undefined ? String(agentsRootFlag) : null, dir: flag("dir") !== undefined && flag("dir") !== true ? String(flag("dir")) : null } } : {}),
       ...(flag("base") !== undefined && flag("base") !== true ? { baseRef: flag("base") } : {}),
+      // A confirmed preview binds this apply (K6b): drift → E_DECISION_STALE, nothing created.
+      ...(flag("expect-decision") !== undefined && flag("expect-decision") !== true ? { expectDecision: String(flag("expect-decision")) } : {}),
     });
     if (args.includes("--preview")) { if (JSON_MODE) { jsonOk(r); return; } console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created`); return; }
   } catch (e) {
@@ -4324,6 +4340,8 @@ function spawnCmd() {
     if (e?.code === "E_REQUIREMENT_INACTIVE") { bail(e.code, e.message, { soul: e.soul, capabilities: e.capabilities, context: e.context, remedy: e.remedy }); throw e; }
     if (e?.code === "E_CHILD_SPAWNS_DISABLED") { bail(e.code, e.message, { parent: e.parent, policy: e.policy }); throw e; }
     if (["E_BRANCH_EXISTS", "E_BASE_UNKNOWN"].includes(e?.code)) { bail(e.code, e.message); throw e; }
+    // K6b: the confirmed decision drifted — the fresh decision travels with the refusal so a GUI re-previews.
+    if (e?.code === "E_DECISION_STALE") { bail(e.code, e.message, { decision: e.decision }); throw e; }
     bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
   // The instance exists from here on: a failed wake save is reported beside
@@ -5000,7 +5018,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history", "session-recompose", "readiness-verify"], instanceGitApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 1, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "schedule-history", "session-recompose", "readiness-verify", "spawn-preview-2"], instanceGitApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 1, scheduleHistoryApi: 2, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
