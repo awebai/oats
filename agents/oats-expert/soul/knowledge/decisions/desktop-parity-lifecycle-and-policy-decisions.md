@@ -102,7 +102,7 @@ labelled as such.
   verification on acquired artifacts; enforced child-spawn policy; typed
   lifecycle events. Each lands as its own reviewed PR; the engineer's slices
   2c/5/6 wait on them.
-- Provider: P1 (`oats.git`, GitHub backend) is a new official capability —
+- Provider: P1 (`oats.forge` — renamed from the working name `oats.git`; it talks to a forge, not Git — GitHub backend first) is a new official capability —
   spec'd as a separate Decision (dispatch contract for additive-capability
   structured views, credential policy, auto-PR).
 - Desktop: renders these semantics and nothing stronger.

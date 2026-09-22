@@ -1,13 +1,21 @@
 ---
 type: Decision
-title: P1 — GitHub/PR data for the Desktop comes from an official `oats.git` capability, dispatched through a typed additive-view contract
-status: proposed
-description: The redesign's Git & GitHub panel needs PR/checks/reviews facts that the kernel must not fetch itself (network, credentials, a specific forge). Proposal: an official additive capability `oats.git` (GitHub backend first) owns forge reads; the kernel gains a typed structured-view dispatch for additive capabilities (today `operation run` only addresses layer slots); credentials stay in native custody (`gh auth`), never copied into OATS; automatic PR is provider-owned per the accepted lifecycle decision. Renderer never calls `gh`.
-tags: [decision, desktop, git, github, capability, oats.git, dispatch, credentials, auto-pr, s8, p1]
+title: P1 — forge data (PRs, checks, reviews) for the Desktop comes from an official `oats.forge` capability, dispatched through a typed additive-view contract
+status: accepted
+description: The redesign's Git & GitHub panel needs PR/checks/reviews facts that the kernel must not fetch itself (network, credentials, a specific forge). Accepted 2026-09-22: an official additive capability `oats.forge` (GitHub backend first; defined in the oats repo) owns forge reads; the kernel gains a typed structured-view dispatch for additive capabilities (today `operation run` only addresses layer slots); credentials stay in native custody (`gh auth`), never copied into OATS; automatic PR is provider-owned per the accepted lifecycle decision. Renderer never calls `gh`.
+tags: [decision, desktop, forge, github, capability, oats.forge, dispatch, credentials, auto-pr, s8, p1]
 timestamp: 2026-09-22
 ---
 
-**Status: proposed — for the human's review before implementation.**
+**Status: accepted (human, 2026-09-22).** Name settled as **`oats.forge`**: the
+capability does not do Git — K1 in the kernel does (local, read-only). It talks
+to a *forge* (the established term for GitHub/GitLab/Gitea/Forgejo-class
+collaboration platforms: pull requests, checks, reviews). `oats.forge` would have
+misdescribed it; `oats.github` would have baked one backend into the id and
+split the view contract per forge. One capability, backends inside, one view
+contract (`oats.forge:pull-request`) the Desktop consumes regardless of which
+forge an instance's remote points at. **Defined in the oats repo**
+(`capabilities/oats-forge/`), listed in the reviewed official catalog.
 
 # Context
 
@@ -44,22 +52,22 @@ Desktop a forge client with its own credential handling and no reuse for
 tmux/CLI users or other consumers. Rejected: the Desktop consumes published
 DTOs; it is not where policy lives.
 
-**C. Official additive capability `oats.git` + typed additive-view dispatch
+**C. Official additive capability `oats.forge` + typed additive-view dispatch
 (recommended).** The capability owns forge reads (GitHub backend via `gh`,
 native custody); the kernel gains one generic addition — additive capabilities
 may declare **structured views** the kernel can dispatch and validate — so the
-Desktop asks the kernel for `oats.git:pull-request` for an instance and gets a
+Desktop asks the kernel for `oats.forge:pull-request` for an instance and gets a
 typed, provider-attributed answer or a typed unavailability. Reusable by
 every consumer; forge-neutral at the contract; credentials never move.
 
 # Decision (proposed)
 
-## 1. `oats.git` is an official additive capability
+## 1. `oats.forge` is an official additive capability
 
-- Lives in the oats repo under `capabilities/oats-git/` and is listed in the
+- Lives in the oats repo under `capabilities/oats-forge/` and is listed in the
   reviewed `package-catalog.json` (official marketplace) like the other
   official capabilities. Not on every soul by default; **activated per
-  deployment/soul by the operator** (`oats use oats.git …`).
+  deployment/soul by the operator** (`oats use oats.forge …`).
 - **Backends** are internal to the capability; v1 ships **GitHub** via the
   installed `gh` CLI. Backend selection is by the instance's remote URL host,
   refusing unknown hosts as `unsupported-forge` — never guessing.
@@ -106,7 +114,7 @@ every consumer; forge-neutral at the contract; credentials never move.
 
 ## 4. Automatic PR (restating the accepted decision §5, now with an owner)
 
-Provider-owned by `oats.git`; **off** by default; enabled per spawn (K6 field
+Provider-owned by `oats.forge`; **off** by default; enabled per spawn (K6 field
 `openPullRequest: {mode: "off" | "first-pushed-commit"}`, later `draft` vs
 `ready` if ever wanted); triggers on the first non-empty pushed commit;
 opens a **draft** against the selected base, title from the opening
@@ -115,7 +123,7 @@ Undrafting is human.
 
 # Consequences
 
-- Desktop slice **2b** (PR card) consumes `oats view oats.git:pull-request`
+- Desktop slice **2b** (PR card) consumes `oats view oats.forge:pull-request`
   through the existing server boundary discipline; renders typed unavailability
   (capability not active / `gh` not authenticated / unsupported forge) as such.
 - K6 gains the `openPullRequest` field; K2 (typed events) records PR ids.
@@ -125,11 +133,12 @@ Undrafting is human.
 - Capability implementation is ordinary capability work (own repo dir, own
   tests, `gh` behind an adapter with inert fixtures); it is *not* kernel code.
 
-# Open for the human
+# Resolved with the human
 
-- Confirm option C and the name `oats.git` (alternatives: `oats.forge`,
-  `oats.github` — I prefer forge-neutral id + GitHub backend).
-- Confirm CLI verb for additive views (`oats view` vs extending `operation run`
-  with `<capability>:<name>` addressing).
-- Confirm that automatic PR stays **off** by default with no deployment-level
-  override to "on" in v1 (per-spawn only).
+- Option C accepted; name **`oats.forge`** (forge-neutral id, GitHub backend
+  first); defined in the oats repo.
+- CLI verb: `oats view <capability>:<name>` (additive, addressed by capability
+  id — kept distinct from slot-addressed `operation run`); lead's call, no
+  objection raised.
+- Automatic PR: off by default, per-spawn only in v1 (no deployment-level
+  "on"); lead's call, no objection raised.

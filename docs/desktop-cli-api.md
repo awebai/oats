@@ -147,7 +147,7 @@ returns a bounded unified diff:
   render a diff against a tree that is not the one on screen. A path in
   `--file` is `E_BAD_ARGS`.
 
-No GitHub/PR data here: that is a capability seam (see the `oats.git` decision).
+No forge (PR/checks/reviews) data here: that is the `oats.forge` capability seam (P1 decision).
 
 ## Mutations exposed to Desktop v1
 
