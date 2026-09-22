@@ -1,4 +1,5 @@
-/** Shell-owned contextual surface. No IO, instance lookup, or lifecycle actions. */
+/** Shell-owned contextual surface. Optional Git reads are delegated to an
+ * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
 #context-panel.context-panel { display:flex; flex:0 0 340px; width:340px; min-width:0; min-height:0; flex-direction:column; box-sizing:border-box; overflow:hidden; border-left:1px solid var(--border); background:var(--surface); color:var(--fg); font:13px/1.45 -apple-system,"Segoe UI",system-ui,sans-serif; }
 #context-panel.context-panel[hidden], #context-panel [hidden] { display:none !important; }
@@ -48,7 +49,7 @@ const reported = value => typeof value === 'string' && value.length ? value
  */
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
-  applyFocus = callback => callback(), onFocusModeChange = noop,
+  applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
   const root = suppliedRoot ?? document?.getElementById('context-panel');
@@ -84,11 +85,13 @@ export function createContextPanel({
     }
     return true;
   };
-  const focus = el => {
-    if (!visible(el)) return;
+  const projectFocus = callback => {
     const previous = applyingFocus; applyingFocus = true;
-    try { applyFocus(() => el.focus({ preventScroll: true })); }
+    try { return applyFocus(callback); }
     finally { applyingFocus = previous; }
+  };
+  const focus = el => {
+    if (visible(el)) projectFocus(() => el.focus({ preventScroll: true }));
   };
   const rail = node('div', 'context-panel-rail');
   const expand = control('context-panel-expand', '‹', 'Expand context panel', () => setCollapsed(false));
@@ -136,8 +139,9 @@ export function createContextPanel({
   pages.get('soul').append(node('h2', null, 'Reported soul'), node('p', 'context-panel-note',
     'Metadata reported by this instance. Soul defaults, instructions, and capability configuration are not inspected or changed here.'));
   facts('soul', [['agent', 'Soul'], ['description', 'Description'], ['agentsRoot', 'Agents root']]);
-  pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
-    'Integration unavailable. Exact-instance Git inspection is pending the K1 contract. GitHub integration is not connected. No changes, diffs, pull requests, or checks are reported here.'));
+  const gitPanel = typeof createGitPanel === 'function' ? createGitPanel(pages.get('git'), { applyFocus: projectFocus }) : null;
+  if (!gitPanel) pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
+    'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
   const stages = node('div', 'context-panel-stages');
   root.classList.add('context-panel');
   if (!root.hasAttribute('aria-label')) root.setAttribute('aria-label', 'Context panel');
@@ -161,6 +165,8 @@ export function createContextPanel({
       tab.setAttribute('aria-selected', String(selected)); tab.tabIndex = selected ? 0 : -1;
       pages.get(id).hidden = !selected;
     }
+    gitPanel?.update({ active: expanded && hasGeneric() && pref().tab === 'git',
+      workspace: context.workspace, instance: context.instance, key: context.key });
     const toggle = document.getElementById('panel-toggle');
     if (toggle) {
       toggle.disabled = !present || focusMode;
@@ -266,6 +272,7 @@ export function createContextPanel({
         focusMode = false; app?.classList.remove('focus-mode');
         for (const slot of slots.values()) slot.wrapper.remove();
         slots.clear(); context = { workspace: null, owner: null, instance: null, key: null };
+        gitPanel?.dispose();
         rail.remove(); generic.remove(); stages.remove();
         if (changed) onFocusModeChange(false);
       });

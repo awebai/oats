@@ -26,6 +26,7 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, openSync, writeSync, closeSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { gitFileId, gitRevision, gitIndexRevision, gitObservation } from './renderer/instance-git-contract.mjs';
 
 const ENVELOPE_TIMEOUT_MS = 60_000;
 
@@ -190,6 +191,44 @@ export function cliCatalog(bin, options = {}, io = {}) {
 /** Classic inventory at a server-admitted context, never a captured/remote read. */
 export function cliList(bin, options = {}, io = {}) {
   return cliRead(bin, options, io, true);
+}
+
+const GIT_READ_ERRORS = {
+  E_BAD_ARGS: 'Invalid instance Git read arguments',
+  E_GIT_FAILED: 'The installed OATS CLI could not read this Git worktree',
+  E_NO_WORKTREE: 'This instance has no available Git worktree',
+  E_SESSION_UNKNOWN: 'The instance is no longer available; refresh the roster',
+  E_AMBIGUOUS_INSTANCE: 'The instance is ambiguous; select a uniquely reported instance',
+  E_HOME_MISMATCH: 'The selected instance address no longer matches',
+  E_STALE_OBSERVATION: 'The worktree observation changed; re-observe before selecting a diff',
+  'unsupported-action': 'This CLI does not support Git inspection for this captured target',
+};
+export function gitReadFailure(code, details) {
+  const error = Object.hasOwn(GIT_READ_ERRORS, code) ? { code, message: GIT_READ_ERRORS[code] } : readError(code).error;
+  const observation = code === 'E_STALE_OBSERVATION' && gitObservation(details?.observation);
+  return { schemaVersion: 1, ok: false, error: { ...error, ...(observation ? { details: { observation } } : {}) } };
+}
+
+/** K1 read adapter. Not a roster resolver: only the server boundary may supply
+ * the instance/home/context triple. The boundary requires the hardened K1
+ * contract. No direct Git command or renderer path arguments. */
+export async function cliInstanceGit(bin, options = {}, io = {}) {
+  try {
+    const base = ['action', 'instance', 'context', 'home'];
+    const diff = options?.action === 'diff';
+    const allowed = diff ? [...base, 'fileId', 'revision', 'indexRevision'] : base;
+    if (!absoluteReadPath(bin) || !readObject(options) || !['git', 'diff'].includes(options.action)
+      || Object.keys(options).some(k => !allowed.includes(k))
+      || typeof options.instance !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(options.instance)
+      || !absoluteReadPath(options.context) || !absoluteReadPath(options.home)
+      || (diff && (!gitFileId(options.fileId) || !gitRevision(options.revision) || !gitIndexRevision(options.indexRevision)))) return gitReadFailure('E_BAD_ARGS');
+    const argv = ['instance', options.action, options.instance, '--dir', options.context, '--home', options.home];
+    if (diff) argv.push('--file', options.fileId, '--revision', options.revision, '--index-revision', options.indexRevision);
+    argv.push('--json');
+    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, 15_000) : 15_000;
+    const result = await runJson(bin, argv, { cwd: options.context, exec: io.exec, timeout, strictExit: true });
+    return result.ok ? result : gitReadFailure(result.error?.code, result.error?.details);
+  } catch { return gitReadFailure('E_CLI_FAILED'); }
 }
 
 /**

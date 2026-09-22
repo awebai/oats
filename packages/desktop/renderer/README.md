@@ -275,10 +275,11 @@ filesystem access or Electron dependency is introduced.
 ## Context panel and focus mode
 
 The shell owns one right-side **Details** region outside all editor groups.
-A selected terminal shows reported Instance / Soul metadata; Git & GitHub is a
-clearly unavailable integration in this slice, awaiting its qualified CLI/provider
-contracts (no inferred zero changes, PRs or checks). Empty groups and file/brain
-tabs do not inherit another terminal's context. Roster refresh matches the exact
+A selected terminal shows reported Instance / Soul metadata. Its **Git & GitHub**
+tab uses the qualified K1 CLI read boundary for worktree/branch/changes and a
+bounded unified diff; the GitHub/PR card remains unavailable pending P1 (no
+inferred PRs or checks). Empty groups and file/brain tabs do not inherit another
+terminal's context. Roster refresh matches the exact
 workspace/terminal identity and never selects or focuses a panel; a missing or
 ambiguous observation makes session state unknown.
 
@@ -296,6 +297,51 @@ Mod+F leaves focus mode to reveal the filter. Panel collapse and selected tab ar
 session-local per workspace; focus mode is a temporary presentation override.
 Both actions are palette/editor-visible with no new default shortcuts. Native
 terminal input and per-window lifecycle policies are unchanged.
+
+### Git inspection (slice 2a)
+
+**Desktop Git reads = K1 route only.** The legacy background collector's Git
+commands and unused aggregate parsers are retired. They ran against every
+instance tree without helper controls and substituted healthy zero aggregates
+on failure. Local roster `git` is now explicitly null, overriding recorded
+metadata; remote legacy data stays inert. No renderer interprets it as clean.
+
+`instance-git.mjs` is an injected, on-demand read controller. The context-panel
+host projects effective visibility and the committed terminal's exact identity;
+first-visible and explicit Refresh read, ordinary roster polls do not. Hiding,
+covering, switching workspace/instance or disposing revokes old controls and
+pending success **and** rejection. Separate observation/file tickets protect
+retries and same-file reselection; global workspace generations protect A→B→A.
+Focus recovery stays inside the host's projection guard, not a new terminal-open
+intent. No terminal keyboard or viewer lifecycle changes.
+
+The panel displays the actual observed worktree/branch/revision/time, recorded
+branch drift, and **separate upstream/default-branch comparisons**. Missing refs
+and counts remain unknown, not 0/0. File kinds/counts and rename paths are the
+reported ones; there are no invented per-file line totals. A selected file's
+patch is read-only, text-only and against the captured OID (or empty for an
+untracked file), never the moving HEAD. Binary and 256 KiB truncation are explicit;
+a 4,000-line presentation limit is separately labeled. Failed refreshes retain an
+explicitly stale observation with actions disabled, never a healthy empty tree.
+
+`POST /api/instance-git?ws=<id>` accepts only the qualified
+`{instance,agent,agentsRoot,server?}` selector plus action and opaque diff
+id/revisions. The server, not the renderer, supplies `--home` and `--dir` from
+its exact roster/scope. The accepted installed CLI must meet the 0.24.7 floor and
+return `instanceGitApi:1`; diff responses must carry the hardened `readOnly`
+contract and captured-OID `against`. Unsupported/missing commands are unavailable,
+not a direct-Git fallback. Remote inspection is explicitly unavailable until a
+negotiated remote command exists. `E_STALE_OBSERVATION` clears the patch and
+re-observes; the user selects again, never an automatically substituted file.
+
+The single POST route is loopback Host/Origin guarded and workspace-pinned in
+the privileged proxy. Reads use fixed argv, `shell:false`, 15-second / 4 MiB execution bounds,
+in-flight coalescing and a four-flight cap, with no persistent server cache.
+Only validated DTO fields and sanitized diagnostics cross the boundary; paths
+in a patch/observation do not authorize arbitrary file opening. See
+[the Desktop Git boundary](../docs/desktop-git-inspection.md) for request and
+refusal details. DOM/CSSOM and computed-token AA tests do not establish native
+or rendered acceptance.
 
 ## Editor groups (splits) and the hideable sidebar (shell-level)
 

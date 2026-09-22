@@ -38,6 +38,7 @@ export function apiUrl(pathname, base, wsId = null, allowedWs = undefined) {
   // here makes an omitted ?ws= fail SAFE (verified workspace) even before
   // views append it themselves.
   const wsScoped = url.pathname === "/api/panel" || url.pathname === "/api/agents"
+    || url.pathname === "/api/instance-git" // body-addressed instance family; one fixed POST route
     || /^\/api\/(brain|session|keys|interrupt|chat)\//.test(url.pathname);
   if (wsId && wsScoped) {
     const asked = url.searchParams.get("ws");

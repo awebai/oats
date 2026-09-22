@@ -6,7 +6,7 @@
  *
  * A zero-dependency localhost HTTP server (spawned by the Electron main
  * process; the desktop renderer is its only client):
- *   GET  /api/panel                 roster JSON (instances, git, task, tmux state)
+ *   GET  /api/panel                 roster JSON (instances, task, tmux state; local Git unobserved)
  *   GET  /api/agents                available agents (souls) per workspace root
  *   POST /api/spawn                 { agent, agentsRoot, task?, purpose?, relation?, relativeTo? } → spawn an instance
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
@@ -14,6 +14,7 @@
  *   POST /api/keys/<instance>       { data } → raw key bytes into the session (no Enter)
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
+ *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
  *   POST /api/catalog               {} → effective catalog from the accepted local CLI (>=0.24.6)
  *   POST /api/capabilities?ws=<id>   { action: list, selector: { context? } } → classic inventory
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
@@ -37,6 +38,7 @@ import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { catalogRequest } from "./catalog.mjs";
+import { instanceGitRequest } from "./instance-git.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
 
@@ -457,13 +459,11 @@ function cliStatus() {
 }
 
 /* ── Non-blocking roster snapshot ──
-   collectControlPane is synchronous and expensive (git status across every
-   agent root — 200-600ms on team workspaces). Running it inside the serving
-   process froze the event loop, so a roster poll landing between two
-   keystrokes stalled /api/keys and the echo fetch — the panel felt laggy no
-   matter how fast the key path itself was. The server therefore NEVER
-   collects: a child process (`oats-web.mjs collect`) refreshes a snapshot in
-   the background every few seconds, and all requests are served from it. */
+   collectControlPane performs synchronous directory/metadata and session reads.
+   Keep that work outside the serving process so roster collection cannot stall
+   key/echo handling. A child (`oats-web.mjs collect`) refreshes the snapshot in
+   the background. The historical per-tree Git commands have been RETIRED:
+   local roster Git is null; only the on-demand K1 route observes Git now. */
 let snapshot = { at: 0, byWs: new Map() };   // wsId -> panelData
 let collecting = false;
 function mergeRemotePanels(byWs) {
@@ -1040,6 +1040,25 @@ const server = createServer(async (req, res) => {
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
+    }
+    if (path === "/api/instance-git" && req.method === "POST") {
+      try {
+        if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(key => key !== "ws")) {
+          throw Object.assign(new Error("Expected one workspace selector"), { code: "E_BAD_ARGS" });
+        }
+        const request = await readStrictBody(req);
+        const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+        // Never collect Git here or use snapshotPanel's fallback workspace.
+        // An absent exact snapshot is unavailable; refreshing the roster is
+        // the existing collector's job, not an authority to infer another home.
+        const result = await instanceGitRequest(request, { workspace, cli: cliState,
+          instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] });
+        return send(res, 200, result);
+      } catch (error) {
+        const bad = error?.code === "E_BAD_ARGS";
+        return send(res, bad ? 400 : 503, { code: bad ? "E_BAD_ARGS" : "E_CLI_FAILED",
+          error: bad ? "Git inspection requires one workspace selector and a JSON object body up to 64 KiB" : "Git inspection is unavailable" });
+      }
     }
     if (path === "/api/catalog" && req.method === "POST") {
       try {
