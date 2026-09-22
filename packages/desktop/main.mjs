@@ -34,6 +34,7 @@ import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
+import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance } from "./single-instance.mjs";
 import { prepareTerminalAttachments } from "./terminal-attachments.mjs";
@@ -325,6 +326,10 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   }
   if (route === 'spawn-preview') {
     return proxySpawnPreview(e, pathname, opts, { rendererURL: RENDERER_URL,
+      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
+  }
+  if (route === 'instance-events') {
+    return proxyInstanceEvents(e, pathname, opts, { rendererURL: RENDERER_URL,
       connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
   }
   if (route === 'readiness') {

@@ -9,7 +9,7 @@
    force-directed: deterministic, no jitter.
    Node cards show reported runtime state (running = filled orange dot;
    stopped = hollow dot + dashed card; unknown distinct). Activity is NOT
-   inferred from task/transcript prose: K7 observations remain unknown. Click
+   inferred from task/transcript prose: K7 reads are explicit and selected-only. Click
    selects and shows the action popover; double-click / Enter opens the
    terminal; hovering highlights the lineage.
    Canvas: pan by drag, zoom by pinch/⌘-wheel or the −/+/fit controls; the
@@ -19,9 +19,11 @@
    4s refresh).
    Keyboard: arrows walk the tree, Enter/t opens the terminal, b Brain,
    s Spawn view, o action popover, +/- zoom, f fits, Escape clears.
-   Contract: mount(el, ctx) / unmount(); data from GET /api/panel only. */
+   Contract: mount(el, ctx) / unmount(); roster from GET /api/panel, explicit
+   selected activity from the guarded K7 POST /api/instance-events boundary. */
 import { computeClusters, siblingEdges } from "./clusters.mjs";
 import { runtimeState, runtimeCounts } from "../instance-presentation.mjs";
+import { createInstanceEventsView, instanceEventsCSS } from "../instance-events-view.mjs";
 import { instanceId, resolveLinkId } from "../instance-tree.mjs";
 import { projectActivePanel, activeSignature, activeTargetLabel, canAddressInstance, BRAIN_UNAVAILABLE } from "../active-observation.mjs";
 import {
@@ -98,6 +100,7 @@ export const hierarchyCSS = `
 .hier-pop .pacts { display:flex; gap:6px; flex-wrap:wrap; }
 .hier-pop .pacts button { flex: 1; }
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
+${instanceEventsCSS}
 `;
 
 const NODE_W = 220, NODE_H = 60, GAP_X = 50, GAP_Y = 40, PAD = 40;
@@ -306,8 +309,8 @@ export function mount(el, ctx) {
     s.tx = e.clientX - s.pan.x; s.ty = e.clientY - s.pan.y;
     applyTransform(s);
   });
-  s.win.addEventListener('blur', s.onBlur = () => { s.windowFocused = false; cancelGesture(s); });
-  s.win.addEventListener('focus', s.onFocus = () => { s.windowFocused = true; });
+  s.win.addEventListener('blur', s.onBlur = () => { s.windowFocused = false; s.activity?.invalidate(); cancelGesture(s); });
+  s.win.addEventListener('focus', s.onFocus = () => { s.windowFocused = true; s.activity?.sync(); });
   s.win.addEventListener('resize', s.onResize = () => { if (visibleOwner(s)) { if (!s.fitted) fit(s); positionPop(s); } });
   s.win.addEventListener("mouseup", s.onUp = (e) => {
     if (!visibleOwner(s)) { cancelGesture(s); return; }
@@ -317,7 +320,7 @@ export function mount(el, ctx) {
 
   // zoom: pinch / ⌘-wheel zooms about the cursor; plain wheel pans
   s.canvas.addEventListener("wheel", (e) => {
-    if (!visibleOwner(s) || e.defaultPrevented) return;
+    if (!visibleOwner(s) || e.defaultPrevented || e.target.closest?.('.hier-pop')) return;
     e.preventDefault();
     if (e.ctrlKey || e.metaKey) {
       const factor = Math.exp(-e.deltaY * 0.01);
@@ -365,6 +368,7 @@ export function unmount() { if (state) teardown(state); }
 function teardown(s) {
   if (!s.alive) return;
   s.alive = false; s.request++; s.actionTicket++; s.pending = null; s.pan = null; s.drag = null;
+  s.activity?.dispose(); s.activity = null;
   s.win.clearTimeout(s.clickResetTimer);
   s.timers.forEach(clearInterval);
   (s.disposers || []).forEach((off) => { try { off(); } catch {} });
@@ -401,9 +405,13 @@ function notice(s, message) {
   if (text) text.textContent = message; else el.textContent = message;
   el.hidden = !message;
 }
-function clearCanvas(s) {
+function clearCanvas(s, retainedPop = null) {
   const controls = s.canvas.querySelector('.hier-zoom');
-  s.canvas.innerHTML = ''; if (controls) s.canvas.append(controls);
+  if (retainedPop) {
+    // A remove+reinsert collapses native text ranges even when the same popup
+    // object is reused. Keep the reading surface CONNECTED during roster paint.
+    for (const child of [...s.canvas.children]) if (child !== controls && child !== retainedPop) child.remove();
+  } else { s.canvas.innerHTML = ''; if (controls) s.canvas.append(controls); }
   s.nodeEls.clear(); s.dragConsumedClick = null; s.canvas.removeAttribute?.('aria-activedescendant');
 }
 function cancelGesture(s) {
@@ -471,7 +479,7 @@ function render(s) {
   const prevPop = s.popFor, preservedPop = s.pop, focused = docOf(s).activeElement;
   const preserveFocus = preservedPop?.contains(focused);
   s.renderEpoch = (s.renderEpoch || 0) + 1;
-  clearCanvas(s);
+  clearCanvas(s, visibleOwner(s, preservedPop) ? preservedPop : null);
   const list = s.panel.instances || [];
   const { running, stopped, unknown } = runtimeCounts(list);
   const status = `<b>${running}</b> running · <b>${stopped}</b> stopped${unknown ? ` · <b>${unknown}</b> unknown` : ""}`;
@@ -582,7 +590,7 @@ function render(s) {
     group.prepend(head);
     stage.append(group);
   }
-  canvas.append(stage);
+  canvas.insertBefore(stage, preservedPop?.parentNode === canvas ? preservedPop : null);
   // first paint (or workspace switch): fit the forest to the visible screen
   if (!s.fitted) fit(s); else applyTransform(s);
   if (s.sel && !list.some((i) => instanceId(i) === s.sel)) s.sel = null;
@@ -593,7 +601,7 @@ function render(s) {
     // Retain the actual focused control, but never reclaim focus moved by a
     // synchronous blur handler elsewhere. No request completion selects a node.
     if (preserveFocus && visibleOwner(s, focused) && docOf(s).activeElement === docOf(s).body) focused.focus({ preventScroll: true });
-  } else { s.pop = null; s.popFor = null; }
+  } else { s.activity?.dispose(); s.activity = null; preservedPop?.remove(); s.pop = null; s.popFor = null; }
 }
 
 function nodeEl(s, n, wsName) {
@@ -826,6 +834,7 @@ function paintSelection(s) {
 }
 
 function closePop(s) {
+  s.activity?.dispose(); s.activity = null;
   s.pop?.remove(); s.pop = null; s.popFor = null;
   s.actionTicket = (s.actionTicket || 0) + 1;
 }
@@ -853,13 +862,30 @@ function openPop(s, id, retained = null) {
     restart?.addEventListener('click', () => { if (owns()) invokeInstance(s, id, 'restart'); });
     workspace?.addEventListener('click', () => openWorkspace(s, owns));
     const status = node(s, 'p', '', 'pstatus'); status.setAttribute('role', 'status');
-    pop.append(actions, node(s, 'p', 'Activity/waiting: available after K7. Git: available after K1/P1.', 'pactions-note'),
+    pop.append(actions, node(s, 'p', 'Git: available after K1/P1.', 'pactions-note'),
       node(s, 'p', 'Brain: choose the exact soul in Workspace.', 'pactions-note'), status);
   }
   s.pop = pop; s.popFor = id;
   // Keep action text screen-sized: camera zoom transforms nodes, not the popup.
-  s.canvas.append(pop);
+  if (pop.parentNode !== s.canvas) s.canvas.append(pop);
+  if (!retained) s.activity = createInstanceEventsView(pop, { ctx: s.ctx,
+    summary: pop.querySelector('.pavailability'), selection: () => activitySelection(s, id),
+    layout: () => { if (s.pop === pop && visibleOwner(s, pop)) positionPop(s); },
+    owner: () => dataCurrent(s) && !s.stale && visibleOwner(s, pop) && s.pop === pop && s.popFor === id });
   updatePop(s);
+}
+
+function activitySelection(s, id) {
+  const i = selectedInstance(s, id);
+  if (!i) return null;
+  const selection = row => ({ workspace: currentWorkspace(), selector: { instance: row.instance, agent: row.agent,
+    agentsRoot: row.agentsRoot, server: row.server || null }, home: row.home, incarnation: row.createdAt ?? null, remote: row.remote });
+  const selected = selection(i);
+  if (s.pending) {
+    const next = s.pending.panel.instances.filter(row => instanceId(row) === id);
+    if (s.pending.panel.error || next.length !== 1 || JSON.stringify(selection(next[0])) !== JSON.stringify(selected)) return null;
+  }
+  return selected;
 }
 
 function updatePop(s) {
@@ -877,6 +903,7 @@ function updatePop(s) {
   terminal.disabled = !allowed || (i.running === true ? !s.ctx.openTerminal : i.running === false ? !s.ctx.startInstance : true);
   terminal.title = terminal.disabled ? 'Requires a current, addressed instance with known runtime state and an available route.' : i.running === false ? 'Open the existing Start dialog' : 'Open this exact instance terminal';
   const restart = pop.querySelector('.prestart'); if (restart) restart.disabled = !allowed || i.running !== true;
+  s.activity?.sync();
   positionPop(s);
 }
 
@@ -916,7 +943,7 @@ function onKey(s, e) {
   if (e.key === 'Escape') { e.preventDefault(); s.sel = null; paintSelection(s); closePop(s); s.canvas.focus?.({ preventScroll: true }); return; }
   // Native popup buttons own Enter/Space; tree commands must not also open a
   // terminal when the focused button's intent is Start, Restart or Workspace.
-  if (e.target.closest?.('button,input,select,textarea,[contenteditable=true]')) return;
+  if (e.target.closest?.('.hier-pop,button,input,select,textarea,summary,[contenteditable=true]')) return;
   if (e.repeat && !['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) return;
   // [ / ] hop between clusters (selects the hopped-to cluster's first node)
   // — structural like the arrows; fit moved to the rebindable hier.fit action
