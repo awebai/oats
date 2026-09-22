@@ -84,7 +84,7 @@ export function createDeploymentInventory(host, { ctx }) {
   const status = node('p', '', 'inventory-status'); status.setAttribute('role', 'status');
   const scope = node('p', '', 'inventory-note');
   const note = node('p', 'Classic acquisition inventory only. Scope-qualified rows are not joined to catalog mappings or activation by name. Captured D/R inventory is not reported by this read; inspect an explicitly selected home separately. Packages are transport, not executable approval. Inventory and inspection are independent reads, not an atomic snapshot.', 'inventory-note');
-  const readiness = node('p', 'Readiness: Unknown. Installed / trusted / configured / enrolled readiness requires the forthcoming CLI readiness contract. Reported byte installation and executable approval below are not readiness results. Verified signatures and enforced policy are unknown.', 'inventory-note');
+  const readiness = node('p', 'Readiness: Unknown for these classic acquisition rows. See the separate scope-bound effective-readiness section. Independent inventory and readiness observations are not joined by capability name; byte installation and executable approval below are not a quartet result.', 'inventory-note');
   const body = node('div', undefined, 'inventory-body'); section.append(header, scope, status, note, readiness, body); host.append(section);
   const owns = (ticket, gen) => alive && serial === ticket && workspaceGeneration() === gen;
   function reason(next) {

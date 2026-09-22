@@ -4,9 +4,12 @@ import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
 import { capabilityFacts, reportedText } from './workspace-discovery.mjs';
 import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs';
+import { createReadinessView, readinessCSS } from './readiness-view.mjs';
+import { cliStatus } from './views/cli-status.mjs';
 
 export const inspectorCSS = `
 ${declarationsCSS}
+${readinessCSS}
 .souls { container-type:inline-size; }
 .souls-body { display:grid; grid-template-columns:minmax(0,1fr); flex:1; min-height:0; min-width:0; }
 .souls-body.inspecting { grid-template-columns:minmax(0,1fr) 340px; }
@@ -53,7 +56,7 @@ ${declarationsCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], changed, closed }) {
+export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, changed, closed }) {
   const doc = container.ownerDocument;
   let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, busy = false;
   const pendingOperations = new WeakMap();
@@ -66,7 +69,15 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   const mutationButton = (text, run) => { const control = button(text, run); control.dataset.mutate = '1'; control.disabled = !available(); return control; };
   const request = (body, query = wsQuery()) => postJson(ctx, `/api/capabilities${query}`, body);
   const valid = (id, gen) => alive && id === serial && gen === workspaceGeneration();
-  let status, content, summary;
+  let status, content, summary, readiness;
+  function syncReadiness() {
+    const w = workspace();
+    const ref = selection?.instance;
+    const selector = ref ? { kind: 'instance', instance: ref.instance, agent: ref.agent, agentsRoot: ref.agentsRoot, server: ref.server ?? null }
+      : selection?.agent ? { kind: 'soul', soul: selection.agent.name, agentsRoot: selection.agent.agentsRoot }
+        : { kind: 'scope', context: selection?.selector?.context || w?.scope };
+    readiness?.update({ active: !!selection && selectionGen === workspaceGeneration(), workspace: w, selector, cli: cliStatus(), identity: ref?.createdAt });
+  }
   function message(text, error = false) {
     if (!status) return; status.textContent = text; status.classList.toggle('error', error);
   }
@@ -74,7 +85,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     container.hidden = false;
     if (presentation) presentation.setPresent(true);
     else container.parentElement?.classList.add('inspecting');
-    container.replaceChildren();
+    readiness?.dispose(); readiness = null; container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     // Hosted X hides the slot without deselecting or rebuilding an editor.
     const closeControl = button('×', () => {
@@ -95,6 +106,8 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     }
     status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
     content = node('div', undefined, 'inspector-content'); container.append(head, summary, status, content);
+    const readinessHost = node('div', undefined, 'inspector-content'); container.append(readinessHost);
+    readiness = createReadinessView(readinessHost, { ctx }); syncReadiness();
     if (selection.agent) renderSelectedSoul();
   }
   // Resets are silent by default: workspace/subtab/disposal must not focus an
@@ -104,6 +117,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   }
   function reset(restoreFocus = false) {
     serial++; selection = null; selectionGen = null; data = null; busy = false; container.hidden = true;
+    readiness?.dispose(); readiness = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
     else container.parentElement?.classList.remove('inspecting');
@@ -331,6 +345,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (!count) content.append(node('p', 'The active providers do not declare operations.'));
   }
   function syncAvailability() {
+    syncReadiness();
     if (!selection || !content) return;
     for (const control of content.querySelectorAll('[data-mutate]')) control.disabled = busy || pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration();
     for (const control of container.querySelectorAll('[data-launch]')) {

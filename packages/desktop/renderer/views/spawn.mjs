@@ -237,7 +237,7 @@ ${spawnDialogCSS}</style>
     available: () => cliAvailable() && cliStatus()?.operationsApi === 1 && cliStatus()?.features?.includes('operations'),
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
-    instances: agent => soulInstances(s, agent),
+    instances: agent => soulInstances(s, agent), workspace: () => s.workspace,
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); ctx.openView?.("schedules"); } },
     changed: () => refresh(s), closed: ({ restoreFocus } = {}) => {
       const ref = s.inspectRef; s.inspectRef = null;
@@ -250,7 +250,7 @@ ${spawnDialogCSS}</style>
     },
   });
   s.discovery = createWorkspaceDiscovery(s.q("workspace-header"), s.q("workspace-discovery"), {
-    ctx, soulsPanel: s.q("souls-grid"),
+    ctx, soulsPanel: s.q("souls-grid"), onIntent: () => nextSelectionIntent(),
     onTab: tab => {
       s.spawnOp++; closeSpawnModal(s); s.inspector.close();
       s.q("souls-bar").hidden = tab !== "souls";

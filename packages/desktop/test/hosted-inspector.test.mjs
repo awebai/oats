@@ -7,10 +7,11 @@ import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
+import { createReadinessView } from '../renderer/readiness-view.mjs';
 import { createPanelOwner } from '../renderer/panel-owner.mjs';
 import { createContextPanel } from '../renderer/context-panel.mjs';
 import { currentWorkspace, setWorkspace, postJson, wsQuery, workspaceGeneration } from '../renderer/views/common.mjs';
-import { refreshCli } from '../renderer/views/cli-status.mjs';
+import { refreshCli, cliStatus } from '../renderer/views/cli-status.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
 import { capabilityFacts, reportedText } from '../renderer/workspace-discovery.mjs';
@@ -298,7 +299,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 

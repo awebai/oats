@@ -6,12 +6,15 @@ import { createCapabilityMark } from './identity-marks.mjs';
 import { createOfficialCatalog, officialCatalogCSS } from './official-catalog.mjs';
 import { createDeploymentInventory, inventoryCSS } from './deployment-inventory.mjs';
 import { portableSources, renderPortableSources, sourcesCSS } from './soul-declarations.mjs';
+import { createReadinessView, readinessCSS } from './readiness-view.mjs';
+const readinessDismissed = new Set(); // session/workspace scoped, never a membership fact
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
 export const discoveryCSS = `
 ${officialCatalogCSS}
 ${inventoryCSS}
 ${sourcesCSS}
+${readinessCSS}
 .workspace-header { min-height:48px; flex:none; display:flex; align-items:center; flex-wrap:nowrap; gap:2px 14px; padding:0 16px; border-bottom:1px solid var(--border); background:var(--surface); box-sizing:border-box; }
 .oats-view .workspace-header .field { min-height:28px; height:28px; padding:4px 8px; font-size:12px; }
 .workspace-header h1 { margin:0; flex:none; font-size:14px; font-weight:700; }
@@ -95,12 +98,12 @@ function gate(workspace) {
   return '';
 }
 
-export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, inspect }) {
+export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab, onIntent, inspect }) {
   const doc = header.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const button = (text, run) => { const el = node('button', text, 'act'); el.type = 'button'; el.addEventListener('click', run); return el; };
   let alive = true, serial = 0, rosterGen = null, workspace = null, tab = 'souls', selector = {}, result = null, loading = false, failure = '', query = '';
-  let contexts = [], renderedBody = null;
+  let contexts = [], renderedBody = null, reviewing = false, empty = false;
   const inspectionCliIdentity = () => {
     const cli = cliStatus();
     return JSON.stringify([cli?.ok, cli?.bin, cli?.version, cli?.operationsApi, cli?.features, cli?.remote]);
@@ -110,6 +113,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   header.append(node('h1', 'Workspace'));
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
   const controls = new Map(), counts = new Map();
+  const readinessEntry = button('Readiness…', () => setReview(true)); readinessEntry.classList.add('workspace-readiness-entry'); readinessEntry.disabled = true;
   for (const name of workspaceTabs) {
     const control = button(name[0].toUpperCase() + name.slice(1), () => setTab(name));
     control.className = ""; // tabs are not generic action buttons
@@ -150,20 +154,45 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const catalog = createOfficialCatalog(catalogHost, { ctx });
   const inventoryHost = node('div', undefined, 'workspace-inventory');
   const inventory = createDeploymentInventory(inventoryHost, { ctx });
-  const body = node('div'); panel.append(catalogHost, inventoryHost, status, body, note);
+  const effectiveHost = node('div'), effective = createReadinessView(effectiveHost, { ctx });
+  const frameHost = node('section', undefined, 'workspace-readiness-frame'); frameHost.hidden = true;
+  const readinessFrame = createReadinessView(frameHost, { ctx, onSkip: () => {
+    const key = dismissalKey(); readinessDismissed.add(key);
+    if (readinessDismissed.size > 64) readinessDismissed.delete(readinessDismissed.values().next().value);
+    setReview(false); readinessEntry.focus({ preventScroll: true });
+  } });
+  const invitation = node('div', 'Review the independent readiness checks for this workspace.', 'readiness-invitation'); invitation.hidden = true;
+  invitation.append(button('Review readiness', () => setReview(true)));
+  header.append(readinessEntry);
+  const frameParent = panel.parentElement || panel; frameParent.append(invitation, frameHost);
+  const body = node('div'); panel.append(catalogHost, inventoryHost, effectiveHost, status, body, note);
+  const dismissalKey = () => JSON.stringify([workspace?.id, workspace?.scope, workspace?.server]);
+  function setReview(show) {
+    if (!alive || rosterGen !== workspaceGeneration() || !workspace) return;
+    onIntent?.(); reviewing = show; onTab?.(show ? 'readiness' : tab); syncPresentation(); render();
+  }
+  function syncPresentation() {
+    soulsPanel.hidden = reviewing || tab !== 'souls'; panel.hidden = reviewing || tab === 'souls';
+    tools.hidden = reviewing || tab === 'souls'; frameHost.hidden = !reviewing;
+    invitation.hidden = reviewing || tab !== 'souls' || !empty || !workspace || readinessDismissed.has(dismissalKey());
+  }
   function syncReadSurfaces() {
     const cli = cliStatus();
     // Catalog belongs to the installed local CLI, never the selected scope.
     // Generations invalidate A→B→A completions; identical roster/CLI polls do
     // not rebuild controls or re-run the command. No wsQuery on this endpoint.
-    catalog.update({ active: tab === 'capabilities', identity: JSON.stringify([
+    catalog.update({ active: tab === 'capabilities' && !reviewing, identity: JSON.stringify([
       workspaceGeneration(), cli?.ok ?? null, cliKnownUnavailable(), cli?.bin ?? null, cli?.version ?? null,
     ]) });
     const context = selector.context || workspace?.scope;
-    inventory.update({ active: tab === 'capabilities', workspace, context, selector, cli,
+    inventory.update({ active: tab === 'capabilities' && !reviewing, workspace, context, selector, cli,
       identity: JSON.stringify([workspaceGeneration(), workspace?.id, workspace?.scope, workspace?.remote, workspace?.server,
         context, cli?.ok ?? null, cli?.bin ?? null, cli?.version ?? null]) });
     inventory.setQuery(query);
+    const readinessState = { workspace, selector: { kind: 'scope', context }, cli };
+    effective.update({ ...readinessState, active: tab === 'capabilities' && !reviewing });
+    effective.setQuery(query);
+    readinessFrame.update({ ...readinessState, active: reviewing });
   }
   // Reveal only in the horizontal strip. scrollIntoView would also move the
   // outer workspace/page (and focus() without preventScroll does likewise).
@@ -192,7 +221,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   function setTab(name) {
     if (!workspaceTabs.includes(name) || !alive) return false;
-    const changed = name !== tab; tab = name;
+    const changed = name !== tab || reviewing; tab = name; reviewing = false;
     panel.id = `workspace-${name === 'souls' ? 'capabilities' : name}`;
     panel.setAttribute('aria-labelledby', `workspace-tab-${name}`);
     for (const [key, control] of controls) {
@@ -201,7 +230,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
       // the active tab. Inactive tabs point at it too (always an extant id).
       control.setAttribute('aria-controls', key === 'souls' ? soulsPanel.id : panel.id);
     }
-    soulsPanel.hidden = tab !== 'souls'; panel.hidden = tab === 'souls'; tools.hidden = tab === 'souls';
+    syncPresentation();
     if (changed) tools.open = false;
     if (changed) onTab?.(tab);
     render(); if (tab !== 'souls' && !result && !loading) void load();
@@ -282,6 +311,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   function updateRoster(agents, panelData) {
     rosterGen = workspaceGeneration(); workspace = panelData.workspace || null;
+    empty = agents.length === 0; readinessEntry.disabled = !workspace;
+    syncPresentation();
     contexts = [{ context: '', label: 'Workspace defaults' }];
     for (const agent of agents) {
       // These are the existing admitted agents-root parent scopes, not a
@@ -304,7 +335,9 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   setTab('souls');
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
-    reset() { rosterGen = null; workspace = null; selector = {}; contexts = []; query = ''; search.value = ''; scope.replaceChildren(); invalidate(); updateCounts(null); },
-    dispose() { alive = false; serial++; catalog.dispose(); inventory.dispose(); },
+    reset() { rosterGen = null; workspace = null; selector = {}; contexts = []; query = ''; reviewing = false; empty = false; readinessEntry.disabled = true;
+      search.value = ''; scope.replaceChildren(); syncPresentation(); onTab?.(tab); invalidate(); updateCounts(null); },
+    dispose() { alive = false; serial++; catalog.dispose(); inventory.dispose(); effective.dispose(); readinessFrame.dispose(); frameHost.remove(); invitation.remove(); },
+    reviewReadiness() { setReview(true); },
   };
 }
