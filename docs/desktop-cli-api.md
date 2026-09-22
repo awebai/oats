@@ -305,6 +305,11 @@ the pre-fix marker and is never accepted for dispatch.
   replay; `saved:null` means *not recorded* (crash in the interval) — render
   "Agent created; wake outcome unavailable — check Schedules", never
   saved/not-saved without the record.
+- **Retention stays clean**: the completion marker and the wake record are
+  kernel writes to `instance.json` made after the spawn's retirement baseline;
+  the kernel re-stamps the baseline's home fingerprint after each, so a fresh
+  keyed home retires with **no** `changed instance-home bytes` — only the
+  agent's own changes ever read as work to recover.
 - **Idempotent apply** (0.24.10+, feature `spawn-idempotency`): `spawn …
   --expect-decision <rev> --idempotency-key <key>` records the key and the
   decision in the new home's `instance.json`; a **retry with the same key**
