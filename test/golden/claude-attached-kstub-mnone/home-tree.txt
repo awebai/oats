@@ -10,6 +10,7 @@
 .agents/skills/oats-packages/SKILL.md
 .claude/
 .claude/skills -> ../.agents/skills
+.oats-events.jsonl
 AGENTS.md
 CLAUDE.md -> AGENTS.md
 STATE.md

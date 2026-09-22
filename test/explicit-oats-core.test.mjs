@@ -235,3 +235,22 @@ test('K6 preview: spawn --preview decides instance/home/branch/base/runtime/mode
   assert.equal(spawnSync('git', ['-C', applied.home + '/work', 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim(), release, 'worktree starts at the selected base');
   retireInstance(f.root, applied.instance, { discardWorktree: true });
 });
+
+test('K7 events: spawn writes spawned (+launched when launching); a refused child spawn writes child-spawn-refused on the PARENT; oats instance events reads them', t => {
+  const f = fixture(t), cap = join(f.context, '.agents/capabilities/owned/core');
+  f.write(join(cap, 'oats.json'), { capability: 'oats.core', version: '1.0.0', description: 'Inert', inject: 'inject.md', skills: ['skills'] });
+  f.write(join(cap, 'inject.md'), 'CORE'); f.write(join(cap, 'skills/oats-operate/SKILL.md'), '# op\n');
+  f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n  additive:\n    oats.core:\n      global: true\n');
+  const created = createAgent(f.root, { name: 'evboss', work: 'directory', runtime: 'claude' });
+  writeFileSync(join(created.soul, 'soul.yaml'), readFileSync(join(created.soul, 'soul.yaml'), 'utf8') + 'children: {"spawn":false}\n');
+  createAgent(f.root, { name: 'evkid', work: 'directory', runtime: 'claude' });
+  writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
+  const boss = spawnCore(f.root, findAgent(f.root, 'evboss'), { purpose: 'p', launch: false });
+  assert.throws(() => spawnCore(f.root, findAgent(f.root, 'evkid'), { purpose: 'k', launch: false, parent: boss.instance }), e => e.code === 'E_CHILD_SPAWNS_DISABLED');
+  const r = f.run(['instance', 'events', boss.instance, '--json']); assert.equal(r.status, 0, r.stdout + r.stderr);
+  const ev = JSON.parse(r.stdout.trim().split('\n').pop()).result;
+  assert.deepEqual(ev.events.map(e => e.kind), ['spawned', 'child-spawn-refused']);
+  assert.equal(ev.events[0].data.launched, false); assert.equal(ev.events[1].data.policy.allowed, false); assert.match(ev.events[1].data.child, /^evkid-k/);
+  assert.equal(ev.waitingOnYou, null);
+  retireInstance(f.root, boss.instance);
+});

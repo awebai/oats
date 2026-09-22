@@ -20,6 +20,7 @@ instances/dev-owner/.agents/skills/oats-packages/
 instances/dev-owner/.agents/skills/oats-packages/SKILL.md
 instances/dev-owner/.claude/
 instances/dev-owner/.claude/skills -> ../.agents/skills
+instances/dev-owner/.oats-events.jsonl
 instances/dev-owner/AGENTS.md
 instances/dev-owner/CLAUDE.md -> AGENTS.md
 instances/dev-owner/TASK.md
