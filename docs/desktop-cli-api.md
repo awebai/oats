@@ -147,7 +147,7 @@ returns a bounded unified diff:
   render a diff against a tree that is not the one on screen. A path in
   `--file` is `E_BAD_ARGS`.
 
-No forge (PR/checks/reviews) data here: that is the `oats.forge` capability seam (P1 decision).
+No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
 
 ## Mutations exposed to Desktop v1
 

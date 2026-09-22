@@ -76,10 +76,9 @@ declaration, overridable at spawn; the policy is recorded in the instance
 metadata and the resolution. It is a lifecycle-authority claim, not an OS
 sandbox, and the UI says so.
 
-# 5. Automatic PR: provider-owned, default off, first pushed commit, draft
+# 5. Automatic PR: default off, first pushed commit, draft — owner amended to the ADE (P1, 2026-09-22)
 
-**Decision.** "Open PR automatically" is a P1 (Git/GitHub capability)
-feature, **default off**, recorded at spawn. Trigger: the **first non-empty
+**Decision.** "Open PR automatically" is **default off**, recorded at spawn as an intent. *Amended by P1:* the owner is the **ADE** (Desktop) through the workstation's GitHub connection — not a capability; reach is stated in the UI (only while the Desktop runs and is connected). Trigger: the **first non-empty
 commit pushed** to the instance's branch (the provider observes pushes; OATS
 never commits or pushes on the operator's behalf). It opens the PR as a
 **draft** against the selected base, titled from the opening instruction,
@@ -102,7 +101,5 @@ labelled as such.
   verification on acquired artifacts; enforced child-spawn policy; typed
   lifecycle events. Each lands as its own reviewed PR; the engineer's slices
   2c/5/6 wait on them.
-- Provider: P1 (`oats.forge` — renamed from the working name `oats.git`; it talks to a forge, not Git — GitHub backend first) is a new official capability —
-  spec'd as a separate Decision (dispatch contract for additive-capability
-  structured views, credential policy, auto-PR).
+- P1: forge connections are **ADE/workstation integrations, not capabilities** (human, 2026-09-22; see `p1-forge-connection-is-an-ade-integration.md`). Working names `oats.git`/`oats.forge` retired.
 - Desktop: renders these semantics and nothing stronger.
