@@ -85,6 +85,10 @@ async function api(pathname, opts) {
 
 const ctx = {
   api,
+  // Existing broker invalidation covers backend replacement as well as forge
+  // account changes. Read views may revoke observations; no new IPC authority.
+  connectionGeneration: () => connectionGeneration,
+  subscribeConnections,
   hasWorkspaceSwitcher: true,
   // Workspace selections compete with pending shell chooser/tab opens too.
   onSelectionIntent: () => tabOpenIntents.invalidate(),

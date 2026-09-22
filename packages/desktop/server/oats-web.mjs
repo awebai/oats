@@ -43,6 +43,8 @@ import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { spawnPreviewRequest } from './spawn-preview.mjs';
+import { instanceEventsRequest } from './instance-events.mjs';
+import { eventsFailure } from '../renderer/instance-events-contract.mjs';
 import { spawnApplyRequest } from './spawn-apply.mjs';
 import { spawnApplySupported, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
@@ -462,6 +464,7 @@ function cliStatus() {
     readinessApi: cliState.readinessApi === 1 ? 1 : null,
     spawnPreviewApi: cliState.spawnPreviewApi === 2 ? 2 : null,
     spawnApplyApi: cliState.spawnApplyApi === 1 ? 1 : null,
+    eventsApi: cliState.eventsApi === 2 ? 2 : null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -1072,6 +1075,18 @@ const server = createServer(async (req, res) => {
         return send(res, 400, { forgeApi: 1, status: "unavailable", data: null,
           reason: { code: "E_BAD_ARGS", message: "Invalid forge request." } });
       }
+    }
+    if (path === '/api/instance-events' && req.method === 'POST') {
+      try {
+        if (url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws') || [...url.searchParams.keys()].some(k => k !== 'ws')) throw new Error('bad query');
+        const request = await readStrictBody(req, 16384);
+        const getContext = () => {
+          const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+          return { workspace, cli: cliState, epoch: cliProbeGeneration,
+            instances: workspace ? snapshot.byWs.get(workspace.id)?.instances || [] : [] };
+        };
+        return send(res, 200, await instanceEventsRequest(request, getContext));
+      } catch { return send(res, 400, eventsFailure('E_BAD_ARGS')); }
     }
     if (path === '/api/workspace-spawn-preview' && req.method === 'POST') {
       try {

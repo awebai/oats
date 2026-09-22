@@ -1,5 +1,6 @@
 /** Presentation of the existing /api/panel roster, not an activity/Git resolver. */
 import { instanceId, distinguishingRootTags } from './instance-tree.mjs';
+import { eventsTimestamp } from './instance-events-contract.mjs';
 
 const object = value => value && typeof value === 'object' && !Array.isArray(value);
 const text = value => typeof value === 'string' ? value : typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
@@ -15,7 +16,8 @@ export function projectActivePanel(panel) {
     if (!object(raw) || typeof raw.instance !== 'string' || !raw.instance) throw new Error('The roster contains an invalid instance identity.');
     for (const key of identityFields) if (raw[key] != null && (typeof raw[key] !== 'string' || raw[key].includes('\0'))) throw new Error('The roster contains an invalid instance address.');
     const instance = { instance: raw.instance, running: panel.error ? null : raw.running === true ? true : raw.running === false ? false : null,
-      savedRoute: raw.savedRoute === true, remote: raw.remote === true || panel.workspace?.remote === true };
+      savedRoute: raw.savedRoute === true, remote: raw.remote === true || panel.workspace?.remote === true,
+      createdAt: eventsTimestamp(raw.createdAt) ? raw.createdAt : null };
     for (const key of [...identityFields, ...displayed]) instance[key] = text(raw[key]);
     for (const key of ['parentInstance', 'siblingInstance']) instance[key] = typeof raw[key] === 'string' ? raw[key] : '';
     const id = instanceId(instance);
