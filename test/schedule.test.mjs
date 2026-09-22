@@ -245,7 +245,7 @@ test("the CLI answers the envelope for add, list, show, update, enable, disable,
   let out = run("add", "nightly", "--file", spec);
   assert.equal(out.ok, true); assert.equal(out.result.schedule.id, "nightly"); assert.ok(out.result.schedule.nextRun);
   out = run("list");
-  assert.deepEqual(Object.keys(out.result), ["schedules", "scheduler"]);
+  assert.deepEqual(Object.keys(out.result), ["scope", "scheduleApi", "scheduleHistoryApi", "integrity", "schedules", "scheduler"]); // K8b: scope echo + integrity
   assert.equal(out.result.schedules[0].id, "nightly");
   for (const k of ["installed", "active", "lastTick", "maxConcurrent"]) assert.ok(k in out.result.scheduler, k);
   assert.equal(out.result.scheduler.installed, false);
@@ -650,7 +650,8 @@ test("K8 recentRuns: every settled lastRun is recorded once (newest first, bound
   st.jobs.j.lastRun = { ...st.jobs.j.lastRun, note: "late field" }; S.writeState(ws, st);
   let d = S.describe(ws, "j"); assert.equal(d.scheduleApi, 2);
   assert.equal(d.recentRuns.length, 1, "re-saving the same run updates, never duplicates"); assert.equal(d.recentRuns[0].note, "late field");
-  assert.deepEqual(d.recentRuns[0].transcript, { instance: "x-1", home: join(ws, "agents", "x", "instances", "x-1"), kind: "session" });
+  assert.equal(d.recentRuns[0].transcript, undefined, "K8b: no transcript key — a name that promised a reader");
+  assert.deepEqual(d.recentRuns[0].session, { instance: "x-1", home: join(ws, "agents", "x", "instances", "x-1"), incarnation: null, server: null, delivery: "launched" }, "K8b: session PROVENANCE");
   assert.equal(d.recentRuns[0].key, undefined, "the dedupe key stays internal");
   for (let i = 1; i <= 60; i++) { st.jobs.j.lastRun = { scheduledFor: `2026-09-22T1${String(i).padStart(2, "0").slice(0, 1)}:${String(i % 60).padStart(2, "0")}:00.000Z`, startedAt: `s${i}`, outcome: i % 7 === 0 ? "blocked" : "ended" }; S.writeState(ws, st); }
   d = S.describe(ws, "j"); assert.equal(d.recentRuns.length, 50, "bounded"); assert.equal(d.recentRuns[0].startedAt, "s60", "newest first");
