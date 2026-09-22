@@ -360,3 +360,70 @@ test("a captured provider with no contribution at spawn still takes part (launch
   assert.ok(!v.argv.includes("--req-hook"), JSON.stringify(v.argv)); assert.match(pk(v).detail, /nothing probed|no runtime package requirement/);
   write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.req:\n      from: owned\n      global: true\n      settings:\n        mode: on\n/, ""));
 });
+
+// ---- K3: stop plan → apply (recursive, retained, bounded, idempotent) and the retire plan ----
+import { planStop, applyStop, planRetire, descendantsOf } from "../lib/instance-lifecycle.mjs";
+import { stopInstanceSession } from "../lib/core.mjs";
+
+test("K3 stop: plan reports real session/work facts and recorded children deepest-first; apply stops children before the parent, retains everything, records an idempotent receipt; stale revision refuses with the fresh plan", async () => {
+  const root = join(repo, "agents");
+  const mk = (name, extraMeta = {}) => makeHome(name, { command: renderFor(join(root, "dev", "instances", name), name, join(binDir, "polite")), launch: recipeFor(join(root, "dev", "instances", name), name, { executable: join(binDir, "polite") }), ...extraMeta });
+  const parent = mk("k3-parent"), child = mk("k3-child"), grandchild = mk("k3-grandchild");
+  for (const [h, p] of [[child.home, "k3-parent"], [grandchild.home, "k3-child"]]) { const m = readJson(join(h, "instance.json")); m.parentInstance = p; write(join(h, "instance.json"), JSON.stringify(m, null, 2)); }
+  for (const h of [parent.home, child.home, grandchild.home]) { startInstanceSession(h, { env: env() }); assert.ok(await waitFor(() => runningPid(h) !== null)); }
+  const kids = descendantsOf(root, "k3-parent");
+  assert.deepEqual(kids.map((k) => [k.instance, k.depth]), [["k3-grandchild", 2], ["k3-child", 1]], "deepest first");
+  const plan = planStop(repo, root, "k3-parent");
+  assert.equal(plan.lifecycleApi, 1); assert.equal(plan.recursive, true);
+  assert.deepEqual(plan.targets.map((t) => t.instance), ["k3-grandchild", "k3-child", "k3-parent"]);
+  for (const t of plan.targets) { assert.equal(t.session.present, true); assert.notEqual(t.session.state, "shell"); assert.equal(t.work.observed, false, "checkout homes without <home>/work: work is NOT observed, not 'clean'"); assert.equal(t.midTask, true, "a running session is reported activity"); }
+  assert.match(plan.planRevision, /^[a-f0-9]{24}$/);
+  const nonRecursive = planStop(repo, root, "k3-parent", { recursive: false });
+  assert.deepEqual(nonRecursive.targets.map((t) => t.instance), ["k3-parent"]); assert.deepEqual(nonRecursive.skipped.map((s) => s.instance).sort(), ["k3-child", "k3-grandchild"]);
+  // Apply with a stale revision refuses and carries the fresh plan.
+  assert.throws(() => applyStop(repo, root, "k3-parent", { planRevision: "0".repeat(24), idempotencyKey: "k1" }), (e) => e.code === "E_PLAN_STALE" && e.plan.planRevision === plan.planRevision);
+  assert.throws(() => applyStop(repo, root, "k3-parent", { planRevision: plan.planRevision, idempotencyKey: "bad key!" }), (e) => e.code === "E_BAD_ARGS");
+  for (const h of [parent.home, child.home, grandchild.home]) assert.notEqual(runningPid(h), null, "refusals stopped nothing");
+  const receipt = applyStop(repo, root, "k3-parent", { planRevision: plan.planRevision, idempotencyKey: "k3-once", graceMs: 5000 });
+  assert.equal(receipt.ok, true); assert.equal(receipt.replayed, false);
+  assert.deepEqual(receipt.results.map((r) => [r.instance, r.stopped]), [["k3-grandchild", true], ["k3-child", true], ["k3-parent", true]], "children first");
+  assert.deepEqual(receipt.retained, ["home", "work", "transcript", "launch"]);
+  for (const h of [parent.home, child.home, grandchild.home]) { await waitFor(() => runningPid(h) === null, "harness gone"); assert.ok(existsSync(join(h, "instance.json")) && existsSync(join(h, "TASK.md")), "home retained"); assert.equal(existsSync(join(h, ".oats-stop-pending.json")), false, "marker released"); }
+  // Retry with the same key replays the receipt; a new plan says everything is idle.
+  const replay = applyStop(repo, root, "k3-parent", { planRevision: "whatever", idempotencyKey: "k3-once" });
+  assert.equal(replay.replayed, true); assert.deepEqual(replay.results, receipt.results);
+  const after = planStop(repo, root, "k3-parent");
+  for (const t of after.targets) assert.ok(["shell", "stopped"].includes(t.session.state), t.session.state);
+  assert.notEqual(after.planRevision, plan.planRevision, "the revision follows the facts");
+  // Restart still works from the retained launch configuration.
+  const again = startInstanceSession(parent.home, { env: env() }); assert.ok(again.reused); assert.ok(await waitFor(() => runningPid(parent.home) !== null));
+  const one = stopInstanceSession(parent.home, { graceMs: 5000 }); assert.equal(one.stopped, true);
+  assert.deepEqual(stopInstanceSession(parent.home), { home: parent.home, backend: "tmux", stopped: false, alreadyIdle: true, state: stopInstanceSession(parent.home).state, receipt: null }, "stopping an idle instance is a no-op that says so");
+});
+
+test("K3 stop: a SIGTERM-ignoring child is reported still running in the receipt (ok:false), nothing escalated; the parent is still stopped", async () => {
+  const root = join(repo, "agents");
+  const p = makeHome("k3-p2", { command: renderFor(join(root, "dev", "instances", "k3-p2"), "k3-p2", join(binDir, "polite")), launch: recipeFor(join(root, "dev", "instances", "k3-p2"), "k3-p2", { executable: join(binDir, "polite") }) });
+  const s = makeHome("k3-stubborn-child", { command: renderFor(join(root, "dev", "instances", "k3-stubborn-child"), "k3-stubborn-child", join(binDir, "stubborn")), launch: recipeFor(join(root, "dev", "instances", "k3-stubborn-child"), "k3-stubborn-child", { executable: join(binDir, "stubborn") }) });
+  { const m = readJson(join(s.home, "instance.json")); m.parentInstance = "k3-p2"; write(join(s.home, "instance.json"), JSON.stringify(m, null, 2)); }
+  for (const h of [p.home, s.home]) { startInstanceSession(h, { env: env() }); assert.ok(await waitFor(() => runningPid(h) !== null)); }
+  const stubbornPid = runningPid(s.home);
+  const plan = planStop(repo, root, "k3-p2");
+  const receipt = applyStop(repo, root, "k3-p2", { planRevision: plan.planRevision, idempotencyKey: "k3-two", graceMs: 1500 });
+  assert.equal(receipt.ok, false);
+  const kid = receipt.results.find((r) => r.instance === "k3-stubborn-child"), par = receipt.results.find((r) => r.instance === "k3-p2");
+  assert.equal(kid.ok, false); assert.equal(kid.code, "E_SESSION_STOP_FAILED"); assert.deepEqual(kid.stillRunning, [stubbornPid]);
+  assert.equal(par.ok, true); assert.equal(par.stopped, true);
+  assert.equal(runningPid(s.home), stubbornPid, "the stubborn harness is untouched by any stronger signal");
+  process.kill(stubbornPid, "SIGKILL"); // test cleanup only
+});
+
+test("K3 retire plan: facts with the design's defaults; pull request is UNKNOWN to the kernel; recorded children listed; ambiguity refuses", () => {
+  const root = join(repo, "agents");
+  const plan = planRetire(repo, root, "k3-p2");
+  assert.equal(plan.action, "retire"); assert.equal(plan.facts.pullRequest, "unknown");
+  assert.deepEqual(plan.defaults, { retainWorktree: false, deleteBranch: false, stopChildren: true, retainChildren: true }, "checkout mode: nothing to re-home");
+  assert.deepEqual(plan.facts.children.map((c) => c.instance), ["k3-stubborn-child"]);
+  assert.ok(plan.notes.some((n) => /pull request state is unknown/.test(n)));
+  assert.throws(() => planRetire(repo, root, "nope-1"), (e) => e.code === "E_SESSION_UNKNOWN");
+});

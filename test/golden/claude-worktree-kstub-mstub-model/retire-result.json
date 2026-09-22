@@ -1,7 +1,14 @@
 {
   "retired": "dev-claude-worktree-kstub-mstub-model",
   "agent": "dev",
-  "worktreeRemoved": true,
+  "retention": {
+    "worktree": "retained",
+    "movedTo": "<base>/scope/.agents/worktrees/repo/agents-dev-claude-worktree-kstub-mstub-model",
+    "branch": "agents/dev-claude-worktree-kstub-mstub-model",
+    "detachedAt": null,
+    "recordedBranch": "agents/dev-claude-worktree-kstub-mstub-model"
+  },
+  "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,
   "capabilityMeta": {

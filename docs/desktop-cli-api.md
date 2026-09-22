@@ -155,6 +155,100 @@ returns a bounded unified diff:
 
 No forge (PR/checks/reviews) data here: forge connections are an ADE/workstation integration (P1 decision), read by the Desktop server through the forge's own CLI; the kernel only reports the instance's `remote` so the ADE can pick a backend.
 
+## Lifecycle plans — Stop and Remove (`lifecycleApi: 1`, OATS 0.24.8+)
+
+The Desktop's Stop and Remove confirmations render **plans**: a read-only
+statement of what the action would touch, with the facts a human needs, and a
+`planRevision` hashed from the facts that make the action safe. Apply carries
+the revision back; if reality moved, apply **refuses with the fresh plan**
+(`E_PLAN_STALE`, `details.plan`) instead of acting on a world the human did
+not see. An `idempotencyKey` makes a retried apply return the first receipt.
+
+### `oats instance stop <instance> --plan [--no-recursive] [--home <abs>] [--dir <d>] --json`
+
+```json
+{"lifecycleApi":1,"action":"stop","instance":"dev-1","home":"/abs/home","recursive":true,"at":"<iso>",
+ "targets":[{"instance":"dev-1-child","agent":"dev","home":"/abs/child","depth":1,"workMode":"worktree","launched":true,
+   "session":{"state":"unknown","present":true,"backend":"tmux","established":true},
+   "work":{"observed":true,"revision":"<oid>","branch":"feat/x","detached":false,"drift":false,"changed":2,"untracked":1,"upstream":{"ref":null,"ahead":null,"behind":null},"base":{"ref":"origin/main","ahead":1,"behind":0},"remote":{"host":"github.com","path":"acme/one"}},
+   "retiring":false,"stopPending":false,"midTask":true}],
+ "skipped":[],"planRevision":"<24 hex>","notes":[]}
+```
+
+- `targets` are the instance's **recorded descendants deepest-first, then the
+  instance** (recorded parentage — `parentInstance` — is the only relation the
+  kernel knows). `--no-recursive` lists them under `skipped` instead.
+- `session.state` is the backend's word: `shell`/`stopped`/`not-launched` are
+  idle; `unknown` means a non-shell process is running whose identity tmux
+  cannot name (the ordinary state of a launched harness). If the state **could
+  not be established**, `established:false`, `present:null`,
+  `state:"unestablished"`, with a `reason` — render that as unknown, never as
+  idle.
+- `work` is K1's observation (`observed:false` with a `reason` when there is no
+  work tree or it cannot be read — not "clean").
+- `midTask` is **reported** activity: `true` (running session or dirty work),
+  `false` (established idle and observed clean), or `"unknown"`.
+
+### `oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key> [--no-recursive] [--grace-ms <n>] --json`
+
+Quiesces each target (SIGTERM to the harness processes, bounded wait, **never
+escalated**), children first, under a per-home stop marker; retains home, work
+tree, transcript and launch configuration so `oats session restart` brings the
+instance back. Refuses `E_PLAN_STALE` (fresh plan attached),
+`E_INSTANCE_RETIRING`, `E_LIFECYCLE_BUSY`.
+
+```json
+{"lifecycleApi":1,"action":"stop","instance":"dev-1","home":"/abs/home","idempotencyKey":"k","planRevision":"<rev>","at":"<iso>",
+ "ok":false,"results":[{"instance":"dev-1-child","home":"/abs/child","ok":false,"code":"E_SESSION_STOP_FAILED","message":"…still running after 1500 ms; nothing was escalated","stillRunning":[4242]},
+                       {"instance":"dev-1","home":"/abs/home","ok":true,"stopped":true,"alreadyIdle":false,"state":"shell"}],
+ "retained":["home","work","transcript","launch"],"replayed":false}
+```
+
+`ok:false` means at least one target is still running; the receipt says which
+pid. Nothing was killed harder. A replay (`replayed:true`) is the recorded
+receipt for that key, not a second action.
+
+### `oats retire <instance> --plan [--home <abs>] [--dir <d>] --json`
+
+What Remove would touch, with the design's defaults. Read-only.
+
+```json
+{"lifecycleApi":1,"action":"retire","instance":"dev-1","home":"/abs/home","at":"<iso>",
+ "facts":{"session":{…},"work":{…K1 summary…},"workMode":"worktree","repo":"/abs/repo","recordedBranch":"agents/dev-1",
+          "children":[{"instance":"dev-1-child","agent":"dev","home":"/abs/child","session":{…}}],"pullRequest":"unknown"},
+ "defaults":{"retainWorktree":true,"deleteBranch":false,"stopChildren":true,"retainChildren":true},
+ "planRevision":"<24 hex>","notes":["the worktree is on feat/x, not the recorded agents/dev-1; branch actions use the worktree's branch", "…"]}
+```
+
+`pullRequest` is **always `"unknown"` from the kernel**: forge facts belong to
+the ADE's connection (P1). Branch actions use the **worktree's** branch
+(`facts.work.branch`), never `recordedBranch`.
+
+### `oats retire <instance> [--discard-worktree] [--delete-branch] --json` — retention is the default (K3b)
+
+Plain `retire` now **retains** a worktree-mode instance's work: the worktree
+cannot stay under the removed home, so it is **re-homed** with
+`git worktree move` to `<workspace>/.agents/worktrees/<repo>/<branch>` (a
+`-2`, `-3` suffix if taken; detached → `detached-<oid12>`), with staged,
+unstaged and untracked state intact, and the repository knows the new
+location. The receipt says so:
+
+```json
+{"retired":"dev-1","retention":{"worktree":"retained","movedTo":"/ws/.agents/worktrees/repo/feat-x","branch":"feat/x","detachedAt":null,"recordedBranch":"agents/dev-1"},
+ "worktreeRemoved":false,"branchDeleted":false, "workRecovery":{…}}
+```
+
+- `--discard-worktree` restores removal (`retention.worktree: "removed"`).
+- `--delete-branch` deletes the **worktree's verified branch**
+  (`retention.branchDeleted`), never the recorded spawn name, and implies
+  discarding the worktree (a checked-out branch cannot be deleted).
+- A failed move keeps the home and refuses `E_WORK_PRESERVATION_FAILED` —
+  nothing is lost; retry or pass `--discard-worktree`.
+- Non-worktree modes report `retention: null`. Quarantine/rollback paths keep
+  their removal semantics.
+- The Remove dialog's "also delete worktree / branch" checkboxes map to these
+  two flags; the kernel never touches a PR.
+
 ## Mutations exposed to Desktop v1
 
 The commands below use the same envelope. Additional capability operations

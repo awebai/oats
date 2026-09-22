@@ -1,7 +1,14 @@
 {
   "retired": "dev-pi-worktree-kstub-mnone",
   "agent": "dev",
-  "worktreeRemoved": true,
+  "retention": {
+    "worktree": "retained",
+    "movedTo": "<base>/scope/.agents/worktrees/repo/agents-dev-pi-worktree-kstub-mnone",
+    "branch": "agents/dev-pi-worktree-kstub-mnone",
+    "detachedAt": null,
+    "recordedBranch": "agents/dev-pi-worktree-kstub-mnone"
+  },
+  "worktreeRemoved": false,
   "branchDeleted": false,
   "removedDir": true,
   "capabilityMeta": {}
