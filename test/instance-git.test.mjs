@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { parsePorcelainV2 } from "../lib/instance-git.mjs";
+import { parsePorcelainV2, parseRemoteUrl } from "../lib/instance-git.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-instance-git-")));
@@ -71,6 +71,9 @@ test("instance git: branch/status from the TREE (recorded branch drift named), u
   assert.deepEqual(g.summary, { changed: 1, renamed: 1, copied: 0, unmerged: 0, untracked: 1 });
   for (const f of g.files) assert.match(f.id, /^[a-f0-9]{24}$/);
   assert.ok(g.notes.some((n) => /no upstream/.test(n)));
+  // P1: the remote is reported (parsed, no network) so an ADE can pick a forge backend without running Git.
+  assert.equal(g.remote.name, "origin"); assert.equal(g.remote.source, "origin"); assert.equal(g.remote.host, null, "a local bare path has no host");
+  assert.equal(g.remote.url, work + ".git");
   // With an upstream, ahead/behind come from git's own branch.ab.
   git(work, "push", "-q", "-u", "origin", "feat/y"); write(join(work, "src", "c.txt"), "c\n"); git(work, "add", "src/c.txt"); git(work, "commit", "-qm", "local only");
   const g2 = oats(["instance", "git", "dev-1", "--dir", ws]).envelope.result;
@@ -157,4 +160,27 @@ test("hardening: configured external diff/textconv/fsmonitor helpers NEVER execu
   // the file id is bound to the index revision, so it is not in the new observation.
   const g2 = oats(["instance", "git", "dev-1", "--dir", ws]).envelope.result;
   assert.notEqual(g2.observation.indexRevision, idx); assert.ok(!g2.files.some((f) => f.id === id("README.md")));
+});
+
+test("remote url parsing: ssh scp-like, ssh://, https with user, .git suffix, ports; local paths and junk are null", () => {
+  assert.deepEqual(parseRemoteUrl("git@github.com:awebai/oats.git"), { host: "github.com", path: "awebai/oats" });
+  assert.deepEqual(parseRemoteUrl("https://github.com/awebai/oats.git"), { host: "github.com", path: "awebai/oats" });
+  assert.deepEqual(parseRemoteUrl("https://GitHub.com/awebai/oats/"), { host: "github.com", path: "awebai/oats" });
+  assert.deepEqual(parseRemoteUrl("ssh://git@gitlab.example.com:2222/group/sub/repo.git"), { host: "gitlab.example.com", path: "group/sub/repo" });
+  assert.deepEqual(parseRemoteUrl("https://user@dev.azure.com/org/proj/_git/repo"), { host: "dev.azure.com", path: "org/proj/_git/repo" });
+  assert.deepEqual(parseRemoteUrl("/local/path/repo.git"), { host: null, path: null });
+  assert.deepEqual(parseRemoteUrl("not a url"), { host: null, path: null });
+  assert.deepEqual(parseRemoteUrl(""), { host: null, path: null }); assert.deepEqual(parseRemoteUrl(null), { host: null, path: null });
+});
+
+test("remote: branch-configured remote wins over origin; no remote at all is null (never invented)", () => {
+  const work = repo(join(base, "r5"), { remote: false });
+  const { ws, home } = scope("s5", { work });
+  assert.equal(oats(["instance", "git", "dev-1", "--dir", ws, "--home", home]).envelope.result.remote, null);
+  git(work, "remote", "add", "origin", "git@github.com:acme/one.git"); git(work, "remote", "add", "fork", "https://github.com/me/one.git");
+  const viaOrigin = oats(["instance", "git", "dev-1", "--dir", ws, "--home", home]).envelope.result.remote;
+  assert.deepEqual(viaOrigin, { name: "origin", url: "git@github.com:acme/one.git", host: "github.com", path: "acme/one", source: "origin" });
+  git(work, "config", "branch.main.remote", "fork");
+  const viaBranch = oats(["instance", "git", "dev-1", "--dir", ws, "--home", home]).envelope.result.remote;
+  assert.deepEqual(viaBranch, { name: "fork", url: "https://github.com/me/one.git", host: "github.com", path: "me/one", source: "branch-upstream" });
 });

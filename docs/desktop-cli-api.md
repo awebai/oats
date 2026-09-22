@@ -105,6 +105,7 @@ un-materialized tree → `E_NO_WORKTREE`.
  "recorded":{"branch":"feat/x","repo":"/abs/repo","drift":true},
  "upstream":{"ref":"origin/feat/y","ahead":1,"behind":0},
  "base":{"ref":"origin/main","source":"origin/HEAD","mergeBase":"<oid>","ahead":2,"behind":0},
+ "remote":{"name":"origin","url":"git@github.com:acme/one.git","host":"github.com","path":"acme/one","source":"branch-upstream|origin"},
  "summary":{"changed":1,"renamed":1,"copied":0,"unmerged":0,"untracked":1},
  "files":[{"id":"<24 hex>","kind":"renamed","xy":"R.","submodule":false,"score":"R100","path":"src/new.txt","origPath":"src/old.txt"}],
  "notes":[]}
@@ -119,6 +120,11 @@ un-materialized tree → `E_NO_WORKTREE`.
   unmerged | untracked. Ignored files are not listed.
 - `files[].id` is **opaque**, minted under (`revision`, `indexRevision`). It is
   the only way to ask for a diff.
+- `remote` (0.24.8+): the branch's configured remote (`source: branch-upstream`),
+  else `origin`, else `null` — never invented. `host`/`path` are **parsed** from
+  the URL (ssh/https forms; `.git` stripped) so an ADE can choose a forge backend
+  and a `owner/repo` **without running Git**; a local path has `host: null`. No
+  network, no forge knowledge in the kernel.
 
 `oats instance diff <instance> --file <id> --revision <rev> [--index-revision <idx>] --json`
 returns a bounded unified diff:
