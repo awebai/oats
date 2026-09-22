@@ -112,6 +112,7 @@ function shell(t) {
   const document = dom.window.document; const style = document.createElement('style'); style.textContent = contextPanelCSS + instanceGitCSS; document.head.append(style);
   const calls = [], pending = [];
   const c = { document, window: dom.window, createContextPanel, createInstanceGitPanel, workspace: '/A', gen: 0, currentWorkspace: () => c.workspace,
+    connectionGeneration: 0, subscribeConnections: () => () => {}, ctx: { openExternal: assert.fail }, openConnections: assert.fail,
     workspaceGeneration: () => c.gen, updateSidebarControls() {}, api(path, opts) {
       const d = deferred(); calls.push({ path, ...opts, body: JSON.parse(opts.body) }); pending.push(d); return d.promise;
     } };

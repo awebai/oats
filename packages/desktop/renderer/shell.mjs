@@ -23,6 +23,7 @@ import {
   registerAction, setActiveContexts, getBinding, onKeymapChange, formatChord, handleKeydown, matchEvent, runAction,
 } from "./keybindings.mjs";
 import { createKeybindingsEditor } from "./keybindings-editor.mjs";
+import { createConnections, connectionsCSS } from "./connections.mjs";
 import { rosterKeyAction, moveTarget } from "./roster-keys.mjs";
 import { createViewLifecycle } from "./view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "./tab-keys.mjs";
@@ -58,7 +59,15 @@ const desk = window.oatsDesktop;
 initTheme();
 mountShellIcons(document);
 const identityStyle = document.createElement("style");
-identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS + notificationCSS; document.head.append(identityStyle);
+identityStyle.textContent = identityCSS + contextPanelCSS + instanceGitCSS + notificationCSS + connectionsCSS; document.head.append(identityStyle);
+let connectionGeneration = 0;
+const connectionListeners = new Set();
+const subscribeConnections = fn => { connectionListeners.add(fn); return () => connectionListeners.delete(fn); };
+const offForgeChanges = desk.onForgeChanged?.(() => {
+  connectionGeneration++;
+  for (const fn of [...connectionListeners]) fn();
+});
+window.addEventListener('pagehide', () => offForgeChanges?.(), { once: true });
 const notifications = createNotificationCenter({ document, generation: workspaceGeneration, subscribe: onWorkspaceChange,
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
@@ -544,6 +553,11 @@ const contextPanel = createContextPanel({
   document,
   createGitPanel: (parent, focus) => createInstanceGitPanel(parent, { ...focus,
     generation: workspaceGeneration,
+    connectionGeneration: () => connectionGeneration, subscribeConnections,
+    connect: choice => openConnections(choice), openExternal: ctx.openExternal,
+    requestForge: (workspace, body) => api(`/api/instance-forge?ws=${encodeURIComponent(workspace)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    }),
     request: (workspace, body) => api(`/api/instance-git?ws=${encodeURIComponent(workspace)}`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     }),
@@ -1172,6 +1186,7 @@ const palette = createPalette({
     { label: "Theme: cycle White / Solarized / Dark", detail: chordDetail("app.themeToggle"), run: () => toggleTheme() },
     ...THEMES.map(({ id, label }) => ({ label: `Theme: ${label}`, detail: chordDetail(`app.theme.${id}`), run: () => runAction(`app.theme.${id}`) })),
     { label: "Shortcuts: edit keyboard shortcuts…", detail: chordDetail("app.shortcuts"), run: () => openShortcutsEditor() },
+    { label: "Settings: Connections…", detail: "GitHub CLI accounts on this machine", run: () => openConnections() },
     { label: "Workspace: switch…", detail: chordDetail("app.workspaces"), run: () => workspaceLabel.openMenu() },
     { label: "Instances: focus the sidebar roster", detail: chordDetail("sidebar.focusFilter"), run: () => focusRoster() },
     { label: "Sidebar: toggle (hide/show)", detail: chordDetail("sidebar.toggle"), run: () => toggleSidebar() },
@@ -1230,7 +1245,29 @@ onWorkspaceChange(() => {
 
 // ── shortcuts editor (rail-footer button + palette + Mod+,) ────────────
 const shortcutsEditor = createKeybindingsEditor({ doc: document, isMac });
-function openShortcutsEditor() { tabOpenIntents.invalidate(); shortcutsEditor.open(); }
+function openShortcutsEditor() { tabOpenIntents.invalidate(); connections.close(); shortcutsEditor.open(); }
+const connections = createConnections({ doc: document, desk,
+  request: body => api('/api/forge-connections', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  subscribe: subscribeConnections, generation: () => connectionGeneration, openShortcuts: openShortcutsEditor,
+  onIntent: () => tabOpenIntents.invalidate(), applyFocus: fn => tabOpenIntents.applyFocus(fn), captureFocus: () => tabOpenIntents.begin(),
+  terminalFactory: mount => {
+    const term = new Terminal({ ...terminalOptions({ ...terminalTypography(), theme: xtermTheme() }), scrollback: 200, allowProposedApi: false });
+    const fit = new FitAddon.FitAddon(); term.loadAddon(fit); term.open(mount);
+    const offTheme = onThemeChange(() => { term.options.theme = xtermTheme(); });
+    const offType = onTerminalTypographyChange(value => { term.options.fontSize = value.fontSize; term.options.fontFamily = value.fontFamily; });
+    const observers = new Set();
+    return {
+      get cols() { return term.cols; }, get rows() { return term.rows; },
+      write: value => term.write(value), focus: () => term.focus(), fit: () => fit.fit(),
+      onData: fn => term.onData(fn), setKeyHandler: fn => term.attachCustomKeyEventHandler(fn),
+      onResize: fn => { const observer = new ResizeObserver(fn); observers.add(observer); observer.observe(mount);
+        return { dispose: () => { observer.disconnect(); observers.delete(observer); } }; },
+      dispose: () => { for (const observer of observers) observer.disconnect(); offTheme(); offType(); term.dispose(); },
+    };
+  },
+});
+function openConnections(choice = {}) { tabOpenIntents.invalidate(); shortcutsEditor.close(); connections.open(choice); }
+window.addEventListener('pagehide', () => connections.dispose(), { once: true });
 
 function focusRoster() {
   tabOpenIntents.invalidate(); // also when the filter already has DOM focus
@@ -1306,6 +1343,7 @@ registerAction({ id: "app.palette", label: "Open the command palette", context: 
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });
 registerAction({ id: "app.shortcuts", label: "Edit keyboard shortcuts", context: "global", run: () => openShortcutsEditor() });
+registerAction({ id: "app.connections", label: "Settings: Connections", context: "global", run: () => openConnections() });
 const unregisterOpenFile = registerAction({ id: "app.openFile", label: "File: open read-only…", context: "global", defaultChord: "Mod+O", run: () => fileOpener.choose() });
 window.addEventListener("pagehide", () => { tabOpenIntents.invalidate(); unregisterOpenFile(); fileOpener.dispose(); }, { once: true });
 // stage-switch actions derive from the nav manifest (same rule as the

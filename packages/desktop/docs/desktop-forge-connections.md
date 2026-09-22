@@ -1,0 +1,179 @@
+# Desktop forge connections
+
+Connections are **workstation/ADE accounts**, not capabilities. Settings →
+Connections contains the GitHub card; the selected instance's Git & GitHub panel
+shows pull-request facts. Every local workspace uses gh's native account store.
+No OATS config, soul, instance, lock or catalog is changed. GitLab and automatic
+PR creation are not implemented by this surface.
+
+The accepted product decision is
+`agents/oats-expert/soul/knowledge/decisions/p1-forge-connection-is-an-ade-integration.md`.
+
+## Installed CLI and credential custody
+
+Desktop requires a released **GitHub CLI >=2.81.0 <3**. It discovers an absolute,
+regular executable from process PATH or bounded native installation locations,
+then requires a successful `--version` probe. A missing binary reports
+`cli-not-installed`; an old/unrecognized version reports `E_GH_VERSION` with a
+literal installation hint. There is no text-mode fallback, installation, login
+shell discovery or renderer-selected executable.
+
+Only gh reads/writes its native authentication store. Desktop never reads gh's
+configuration files, invokes `auth token`/`--show-token`/`--with-token`, persists
+credentials, or forwards subprocess diagnostics. Its child environment preserves
+native profile/keychain/network settings while excluding GH_TOKEN, GITHUB_TOKEN,
+enterprise token overrides, GH_HOST/GH_REPO, debug, pager, browser-command and
+Git/loader overrides. Server and main verify the same native-profile identity.
+
+Status uses fixed `auth status --active --json hosts --jq <literal projection>`.
+The projection retains only validated host/account/state fields and a closed
+error category. In JSON mode **exit zero is not proof of authentication**. A
+successful active account must also match the result of
+`api user --hostname HOST --jq .login`. Authentication refusal, unavailable
+transport, malformed output and missing CLI remain distinct; stdout/stderr do
+not become UI messages. No status or PR polling timer is installed.
+
+Admitted hosts are github.com and hosts reported by gh itself. An unknown
+Enterprise remote is unsupported, with the literal remedy to configure it using
+GitHub CLI first (`gh auth login --hostname <host>` from a terminal). There is no
+arbitrary hostname field or inference that an arbitrary remote is GitHub.
+Process-local host references expire after 15 minutes; account/action references
+after 120 seconds without renewal. Each registry has a hard cap of 32. This lets
+a just-disconnected Enterprise host show Not connected/Reconnect temporarily,
+without persisting a connection-fact cache.
+
+## Read-only HTTP boundaries
+
+Both new routes are POSTs behind the existing loopback Host and POST Origin
+guards. Neither command execution nor auth mutation is exposed through GET.
+Requests are JSON objects bounded to 64 KiB. Unknown fields refuse.
+
+- **POST `/api/forge-connections`**: no query parameters. Empty body selects the
+  default GitHub host; `{hostRef}` selects an opaque, already-admitted host or
+  account reference. This is machine-scoped and does not require a workspace or
+  compatible OATS installation. It returns a `forgeApi:1` connection state,
+  selected host/login, opaque references, bounded host choices, read epoch/time,
+  and typed executable/profile metadata for main-process revalidation.
+- **POST `/api/instance-forge?ws=<id>`**: exactly one advertised workspace, no
+  extra query parameters; strict `{selector, observationKey}`. Selector uses
+  K1's instance/agent/agentsRoot/server tuple. The server resolves the exact home
+  and scope from its own roster. Missing/ambiguous targets and remote
+  workspaces/instances refuse **before any process**. Main's proxy pins this
+  route to its verified workspace set.
+
+The installed K1 response must have its own `remote` field; this is a **presence
+check**, not an OATS0.24.8 version check. Absent means unavailable; explicit null
+means no-remote; a local path or unrecognized host is unsupported. The existing
+K1 compatibility/instanceGitApi gates remain in force. Desktop does not run Git.
+
+K1's `remote.url` can contain userinfo: **it is never forwarded or logged**. The
+server projects validated host/path privately and adds a keyed, opaque
+`observationKey` to its Git response envelope. The fingerprint includes the
+exact target/CLI, worktree, revision, branch and remote selection. It is only a
+comparison guard; it never becomes a CLI argument. The PR boundary observes K1
+before and after the gh read, refusing if the comparison key/target/scope moved.
+Answers echo the target and K1 revision/branch/key they were computed for.
+
+Fixed PR argv:
+
+```text
+gh pr view --repo HOST/OWNER/REPO \
+  --json number,title,state,isDraft,baseRefName,headRefName,url,reviewDecision,statusCheckRollup,updatedAt \
+  -- BRANCH
+```
+
+Host, repository and branch come exclusively from K1. The end-of-options marker
+prevents branch-as-option interpretation, and returned `headRefName` must match
+exactly (including numeric-branch/PR-selector ambiguity). Only gh's closed
+`no pull requests found for branch "…"` diagnostic for this branch means
+no-pull-request. Other failures are unavailable.
+
+Four forge reads can be in flight; identical requests coalesce before the cap.
+Discovery and host-status work also coalesce. A proxy-owned read-epoch header,
+which overwrites any renderer spelling, partitions pre/post-auth flights. There
+is no persistent response cache. Each gh read is limited to 10 seconds; probe
+2 seconds, discovery5 seconds; PR stdout1 MiB, status64 KiB, stderr16 KiB.
+K1 calls retain their15-second cap within the PR request's45-second total budget
+(proxy50 seconds). Connections uses20 seconds (proxy25 seconds). Limits and
+failures release flights and return closed local messages.
+
+## Connect and Disconnect: privileged main only
+
+There is **no HTTP login/logout endpoint**. Narrow preload channels request
+Connect/Disconnect by opaque connection reference. Main re-reads that reference,
+checks the absolute binary/version/stamp and native profile, and validates the
+trusted **top-level** senderFrame. Other frames, windows, leases and malformed
+arguments resolve stable domain refusals. All preparation, dialogs and PTYs
+share one main-owned authentication-operation slot.
+
+Connect prepares only:
+
+```text
+gh auth login --web --skip-ssh-key --hostname HOST
+```
+
+This is a separate ephemeral node-pty broker, never an agent terminal, shell,
+tmux viewer or arbitrary executable/argv/cwd API. The UI labels it exactly:
+
+> GitHub CLI sign-in · live terminal output from `gh`
+
+It has 200 lines of ephemeral scrollback, a1 MiB output ceiling and a15-minute
+hard lifetime. Output listeners are installed before the first resize/ready
+handshake starts gh. Input is a closed enum: Enter/arrows/Tab/Escape/y/n/Ctrl-C.
+There is no byte/paste/token-input or attachment channel. Shift+Tab leaves the
+terminal so keyboard users can reach Close sign-in. OSC/clipboard/link controls
+and terminal string-control payloads are discarded; no hyperlink addon is
+installed. No transcript, log or crash-diagnostic persistence is added.
+
+**Explicit residual:** this pane displays live process output, not typed
+connection facts. Known credential-pattern redaction occurs before IPC, across
+chunk and ANSI boundaries, but is **best-effort against a defective executable**.
+Official gh without debug/`--show-token` does not print the access token. An
+arbitrary byte stream cannot honestly be certified secret-free. The operator
+completes gh's own web/device flow; Desktop does not extract a device code into a
+new credential UI.
+
+Closing/cancelling/navigation/renderer death/quit affects only the owned gh child
+and lease. A workspace switch cannot retarget its input. A prepared operation is
+refused if the backend generation or executable stamp changes before starting.
+Existing agent tmux anchoring, linked-window viewers, locked keys and detach-only
+closure are unchanged.
+
+Disconnect shows a main-owned confirmation naming the current account and host.
+It explains that this affects all workspaces/other uses of that gh account and
+**does not revoke the token on GitHub**. After confirmation the account, host,
+profile, binary and owner are revalidated, then only:
+
+```text
+gh auth logout --hostname HOST --user LOGIN
+```
+
+is run. An action receipt never asserts that the host is disconnected: gh may
+have selected another stored account. Auth start and every end/cancel increment
+the connection generation; fresh status/PR reads determine what is shown.
+
+## Rendering and verification
+
+Connection states: connected (login+host), not-connected, cli-not-installed,
+unavailable. PR states add available, no-pull-request, unsupported-forge and
+no-remote. Unknown is not empty, passing, or authenticated. PR text is inert;
+links must be HTTPS for the exact admitted host/repository/number, without
+userinfo/query authority, and use the existing external-open path.
+
+The card labels checks **Reported PR checks**. CheckRun and StatusContext are
+separate producer unions; only known states map to pass/fail/pending, while
+neutral/skipped are explicit. Null checks are not an observed empty list. The
+requested fields do not establish exhaustive pagination or bind checks to the
+local HEAD: **K1 revision is correlation, not push proof**. No auto-PR, review
+thread delivery, merge, commit or push is inferred or implemented.
+
+Renderer reads are guarded on success and rejection by lifetime/selection,
+workspace generation, observation and request tickets, plus connection
+generation. The auth pane has a separate open intent so its own Connect event
+cannot revoke itself. Stale controls and close/reopen completions cannot act on
+a newer selection or lease.
+
+Tests use inert CLI/PTY/dialog fixtures, a generated fake executable, the shipped
+HTTP callback and DOM/CSSOM; no native gh authentication or GUI launch is needed.
+Computed three-theme contrast is not native rendering evidence. Operator/CI
+owns final native authentication, keyboard and rendered acceptance.

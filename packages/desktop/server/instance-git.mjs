@@ -3,6 +3,7 @@
 import { isAbsolute, basename } from 'node:path';
 import { cliInstanceGit, gitReadFailure } from '../cli-adapter.mjs';
 import { parseSemver } from '../cli-locator.mjs';
+import { forgeObservation } from './forge-observation.mjs';
 import { INSTANCE_GIT_MINIMUM_VERSION, gitFileId, gitRevision, gitIndexRevision, gitState, gitDiff, gitTarget } from '../renderer/instance-git-contract.mjs';
 
 const object = v => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -40,28 +41,36 @@ function supported(cli) {
   return version && !version.prerelease && (version.nums[0] - floor[0] || version.nums[1] - floor[1] || version.nums[2] - floor[2]) >= 0;
 }
 
+/** Shared admission only: no process, fallback workspace or caller-owned cwd. */
+export function admitInstanceGit(request, { workspace, instances = [], cli } = {}) {
+    const denied = (target, code) => ({ failure: unavailable(target, code) });
+    if (!validRequest(request)) return denied(null, 'E_BAD_ARGS');
+    if (!workspace || typeof workspace.id !== 'string' || !workspace.id || !absolute(workspace.scope)) return denied(null, 'E_WORKSPACE_UNKNOWN');
+    const selector = request.selector, wantedHost = selector.server ?? null;
+    const matches = (Array.isArray(instances) ? instances : []).filter(i => object(i) && host(i.server)
+      && i.instance === selector.instance && i.agent === selector.agent && i.agentsRoot === selector.agentsRoot && (i.server ?? null) === wantedHost);
+    if (matches.length !== 1) return denied(null, matches.length ? 'E_AMBIGUOUS_INSTANCE' : 'E_SESSION_UNKNOWN');
+    const instance = matches[0];
+    if (!absolute(instance.home) || basename(instance.home) !== instance.instance) return denied(null, 'E_HOME_MISMATCH');
+    const target = gitTarget({ workspace: workspace.id, instance: instance.instance, agent: instance.agent, agentsRoot: instance.agentsRoot, home: instance.home, server: instance.server ?? null });
+    if (!target) return denied(null, 'E_HOME_MISMATCH');
+    if (workspace.remote || workspace.server || instance.remote || target.server) return denied(target, 'unsupported-remote-operation');
+    if (cli?.ok !== true || !absolute(cli.bin)) return denied(target, 'cli-unavailable');
+    if (!supported(cli)) return denied(target, 'cli-no-instance-git');
+    const action = request.action, context = workspace.scope, bin = cli.bin;
+    const selection = action === 'diff' ? { fileId: request.fileId, revision: request.revision, indexRevision: request.indexRevision } : {};
+    return { target, action, context, bin, selection, options: { action, instance: target.instance, home: target.home, context, ...selection } };
+}
+
 /** Four flights total per boundary, even across invokers/CLIs/targets. Identical
  * requests coalesce before the cap; fulfilled and rejected flights both leave. */
 export function createInstanceGitBoundary({ invoke: defaultInvoke = cliInstanceGit } = {}) {
   const byInvoker = new WeakMap(); let flights = 0;
   return async function instanceGitRequest(request, { workspace, instances = [], cli, invoke = defaultInvoke } = {}) {
-    if (!validRequest(request)) return unavailable(null, 'E_BAD_ARGS');
-    if (!workspace || typeof workspace.id !== 'string' || !workspace.id || !absolute(workspace.scope)) return unavailable(null, 'E_WORKSPACE_UNKNOWN');
-    const selector = request.selector, wantedHost = selector.server ?? null;
-    const matches = (Array.isArray(instances) ? instances : []).filter(i => object(i) && host(i.server)
-      && i.instance === selector.instance && i.agent === selector.agent && i.agentsRoot === selector.agentsRoot && (i.server ?? null) === wantedHost);
-    if (matches.length !== 1) return unavailable(null, matches.length ? 'E_AMBIGUOUS_INSTANCE' : 'E_SESSION_UNKNOWN');
-    const instance = matches[0];
-    if (!absolute(instance.home) || basename(instance.home) !== instance.instance) return unavailable(null, 'E_HOME_MISMATCH');
-    const target = gitTarget({ workspace: workspace.id, instance: instance.instance, agent: instance.agent, agentsRoot: instance.agentsRoot, home: instance.home, server: instance.server ?? null });
-    if (!target) return unavailable(null, 'E_HOME_MISMATCH');
-    if (workspace.remote || workspace.server || instance.remote || target.server) return unavailable(target, 'unsupported-remote-operation');
-    if (cli?.ok !== true || !absolute(cli.bin)) return unavailable(target, 'cli-unavailable');
-    if (!supported(cli)) return unavailable(target, 'cli-no-instance-git');
+    const admitted = admitInstanceGit(request, { workspace, instances, cli });
+    if (admitted.failure) return admitted.failure;
+    const { target, action, context, bin, selection, options } = admitted;
     if (typeof invoke !== 'function') return unavailable(target, 'E_CLI_FAILED');
-    const action = request.action, context = workspace.scope, bin = cli.bin;
-    const selection = action === 'diff' ? { fileId: request.fileId, revision: request.revision, indexRevision: request.indexRevision } : {};
-    const options = { action, instance: target.instance, home: target.home, context, ...selection };
     const key = JSON.stringify([bin, cli.version, workspace.id, context, target.home, target.instance, target.agent, target.agentsRoot, target.server, action, selection]);
     let pending = byInvoker.get(invoke);
     if (!pending) { pending = new Map(); byInvoker.set(invoke, pending); }
@@ -73,7 +82,7 @@ export function createInstanceGitBoundary({ invoke: defaultInvoke = cliInstanceG
       if (!envelope.ok) return unavailable(target, envelope.error?.code, envelope.error?.details);
       const data = action === 'git' ? gitState(envelope.result, target) : gitDiff(envelope.result, selection);
       if (!data || !absolute(data.observation.worktree)) return unavailable(target, 'E_CLI_PROTOCOL');
-      return wrap(target, data);
+      return { ...wrap(target, data), ...(action === 'git' ? { observationKey: forgeObservation(envelope.result, target, cli).observationKey } : {}) };
     }).catch(() => unavailable(target, 'E_CLI_FAILED')).finally(() => { pending.delete(key); flights--; });
     pending.set(key, read);
     return read;

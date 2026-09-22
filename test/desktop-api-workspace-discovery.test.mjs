@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { apiUrl, apiInit } from "../packages/desktop/api-url.mjs";
+import * as forge from '../packages/desktop/forge-proxy.mjs';
+import { forgeFailure } from '../packages/desktop/renderer/forge-contract.mjs';
 
 const source = readFileSync(new URL("../packages/desktop/main.mjs", import.meta.url), "utf8");
 const apiStart = source.indexOf('ipcMain.handle("api",');
-const apiEnd = source.indexOf("// ---- IPC: integrated terminal", apiStart);
+const apiEnd = source.indexOf("// ---- IPC: workstation forge auth", apiStart);
 const invalidation = source.match(/onInvalidate: \(\) => \{([^}]+)\}/)?.[1];
 assert.ok(apiStart >= 0 && apiEnd > apiStart && invalidation);
 
@@ -16,7 +18,7 @@ function bridge() {
   let advertised = ["/"];
   let panelFails = false;
   let heldResponse = null;
-  let inTransition = false;
+  let inTransition = false, forgeInvalidations = 0;
   const requests = [];
   const fetch = async (input) => {
     const url = new URL(input);
@@ -33,17 +35,18 @@ function bridge() {
     return { ok, status: ok ? 200 : 503, text: async () => JSON.stringify(body) };
   };
   const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let serverEpoch = 0;\n'
+    + 'const { isForgePath, forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
-  const invalidate = new Function("fetch", "apiUrl", "apiInit", "ipcMain", "guard", "serverHost", setup)(
+  const invalidate = new Function("fetch", "apiUrl", "apiInit", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", setup)(
     fetch, apiUrl, apiInit, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
-    { inTransition: () => inTransition },
+    { inTransition: () => inTransition }, forge, forgeFailure, () => { forgeInvalidations++; },
   );
   return {
     call: (path, opts) => handler({}, path, opts),
     advertise: (ids) => { advertised = ids; },
     failPanel: () => { panelFails = true; },
     holdNext: () => { let release; heldResponse = new Promise((resolve) => { release = resolve; }); return release; },
-    invalidate, requests,
+    invalidate, requests, forgeInvalidations: () => forgeInvalidations,
     beginTransition: () => { inTransition = true; invalidate(); },
     endTransition: () => { inTransition = false; },
   };
@@ -90,6 +93,7 @@ test("an outgoing backend response cannot restore its invalidated choices", asyn
   const release = b.holdNext();
   const pending = b.call("/api/panel");
   b.invalidate();
+  assert.equal(b.forgeInvalidations(), 1, 'server replacement also revokes forge read generations');
   release();
   await pending;
   const result = await b.call("/api/agents?ws=" + encodeURIComponent(remote));

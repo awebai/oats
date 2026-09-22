@@ -2,7 +2,8 @@
 
 The selected terminal's Git & GitHub panel is a read-only consumer of the
 installed OATS CLI's **instanceGitApi 1** contract. GitHub/PR/check/review data is
-not part of K1 and stays explicitly unavailable pending P1. No Git command,
+not part of K1: it uses the separate, approved [forge Connections boundary](desktop-forge-connections.md).
+K1 supplies routing metadata only, never forge facts. No Git command,
 filesystem diff reader, kernel import, editor action, terminal mutation or
 acquisition/trust operation is implemented in this view.
 
@@ -79,7 +80,9 @@ The Desktop wrapper has `instanceGitApi:1`, `minimumVersion`, a server-derived
 `target` (including workspace/name/agent/root/home/server), `status`, `data` and
 `reason`. `status` is `available`, `unavailable` or `stale`. Unavailable/stale
 responses have null data and a stable code/message. An unresolved target is
-null and cannot authorize a read.
+null and cannot authorize a read. Successful Git envelopes also carry an opaque
+`observationKey` for the separate forge read. Raw `remote.url` is never included
+in renderer data; a presence-gated private projection supplies forge routing.
 
 The boundary verifies the observation's home/name/agent, revision/fingerprint,
 nullable comparisons, file kinds/IDs and counts. Diff verifies ID, both revisions,

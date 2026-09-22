@@ -9,6 +9,7 @@ const paths = Object.freeze({
   theme: '<circle cx="8" cy="8" r="6"/><path d="M8 2a6 6 0 0 0 0 12Z" fill="currentColor" stroke="none"/>',
   shortcuts: '<rect x="1.5" y="3.5" width="13" height="9" rx="1.5"/><path d="M4 6h.1M6.5 6h.1M9 6h.1M11.5 6h.1M4 8.5h.1M6.5 8.5h.1M9 8.5h.1M11.5 8.5h.1M5 10.5h6"/>',
   palette: '<path d="m3 4 4 4-4 4M9 12h4"/>',
+  settings: '<path d="M2 4h2m3 0h7M2 8h7m3 0h2M2 12h4m3 0h5"/><circle cx="5.5" cy="4" r="1.5"/><circle cx="10.5" cy="8" r="1.5"/><circle cx="7.5" cy="12" r="1.5"/>',
   chevron: '<path d="m4 6 4 4 4-4"/>',
   splitRight: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M8 2v12"/>',
   splitDown: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 8h12"/>',
