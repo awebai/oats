@@ -4,6 +4,13 @@ Your messaging layer is **aweb**. You have (or will be minted) a team-scoped
 aweb identity — alias = your instance name — on your deployment's team (see
 `instance.json` / your TASK.md briefing for the team).
 
+Some instances serve a resident global identity through an expiring session
+grant instead of holding their own root keys. In that mode, your TASK.md and
+`instance.json` identify the resident alias, scopes, and expiry; root keys are
+not in your home, and mint/revoke/join/identity-lifecycle commands are not yours
+to run. If `aw mail` or `aw chat` says the grant expired or was revoked, stop
+messaging and report the condition to your coordinator/human.
+
 **Load the skills at the right moments — do not work from memory:**
 
 - **Before your first `aw mail`/`aw chat` of a session**, load the
