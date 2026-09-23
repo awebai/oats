@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, spawnInstanceAsync, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  spawnInstance, spawnInstanceAsync, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
@@ -2324,9 +2324,10 @@ async function spawnCmd() {
   // <agents-root>/<name>/soul/ is not an instance (reported as soulFetched).
   const providerPairs = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
-  let wsPrepared, soulFetched = false;
+  let wsPrepared, soulFetched = false, wsSoulUnknown = null;
+  let hasLocal = true;
   {
-    let hasLocal = true; try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
+    try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
     if (hasLocal) {
       let discovery = null;
       try {
@@ -2351,8 +2352,12 @@ async function spawnCmd() {
           let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
           bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
         }
-        if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
-        throw e;
+        // Not a workspace soul: a capability-defined agent (a module's `agents:`
+        // soul, resolved below from a materialized copy) or a local-only soul
+        // (--instructions-file/--def-file) may still answer to this name.
+        if (e?.code === "E_SOUL_UNKNOWN" && !isPreview) { wsSoulUnknown = e; }
+        else if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+        else throw e;
       }
     } else if (providerPairs.length) bail("E_BAD_ARGS", "--provider needs a workspace deployment (oats-local.yaml); this directory has none");
   }
@@ -2369,6 +2374,33 @@ async function spawnCmd() {
       note(`(capability agent: "${name}" from ${capAgent.capability} — fresh soul, instances home locally)`);
     }
   }
+  if (!agent && !instrFile && !defFile && hasLocal) {
+    // Workspace model: the agent is declared by a capability some INSTANCE already
+    // materialized (the --parent home first, then any home under this root) —
+    // OKF's memory-harvest worker spawned by a knowledge source, for example.
+    const anchorName = flag("parent") || flag("relative-to");
+    const anchorHome = anchorName ? (findInstanceHome(root, String(anchorName)) ?? null) : null;
+    let modAgent;
+    try { modAgent = findModuleCapabilityAgent(root, name, { anchorHome }); }
+    catch (e) { bail(e.code || "E_CAPABILITY_BROKEN", e.message, e.details); }
+    if (modAgent) {
+      agent = modAgent;
+      note(`(capability agent: "${name}" from ${modAgent.capability}, materialized in ${shortPath(modAgent._manifestSource)} — fresh soul, instances home locally)`);
+    } else {
+      // No instance carries it: resolve from the deployment's LOCK — an approved
+      // package whose capability declares agents/<name> is fetched into the
+      // deployment's module store and read from there.
+      try {
+        const { resolvePackageCapabilityAgent } = await import("../lib/instance-resolution.mjs");
+        const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
+        if (hit) {
+          agent = capabilityAgentFromDir(hit.dir, name, root, { module: { from: { kind: "package", package: hit.package, version: hit.version, commit: hit.commit } } });
+          if (agent) note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home locally)`);
+        }
+      } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+    }
+  }
+  if (!agent && wsSoulUnknown && !instrFile && !defFile) bail(wsSoulUnknown.code, wsSoulUnknown.message, wsSoulUnknown.details);
   if (!agent && !instrFile && !defFile) {
     // Cross-repo lookup: the soul may live in a sibling repo of the team scope.
     // Unique match wins; the instance homes with its owning repo's agents root.
