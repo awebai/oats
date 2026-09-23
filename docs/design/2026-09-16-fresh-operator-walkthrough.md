@@ -1,5 +1,7 @@
 # Fresh operator walkthrough: working preparation versus pending launch
 
+> **Superseded (2026-09-23).** The acceptance driver and helper this walkthrough runs (`test/portable-onboarding-public.acceptance.mjs`, `test/helpers/portable-onboarding-consumer.mjs`) were deleted with the workspace model v2; the 0.25 operator path is `oats onboard` → `oats sync` → `oats spawn` (`docs/first-team.md`). Read [2026-09-23-simplified-workspace-model.md](2026-09-23-simplified-workspace-model.md) (worked example) and [2026-09-23-workspace-module-contracts.md](2026-09-23-workspace-module-contracts.md) (normative) instead; kept as history.
+
 ## Scope of this evidence
 
 This is a **source-level integration walkthrough**, not a claim about an installed
@@ -20,24 +22,27 @@ backlink; inspection/preparation never adopts or contacts that workspace.
 
 ## Reproduce the pinned public consumer
 
-From the framework worktree, with the existing locked root dependencies installed
-and both exact core commits available in the local Git object database:
+**No longer runnable.** The acceptance driver and its helper were deleted with
+the workspace model v2; the command below fails with `Could not find
+'test/portable-onboarding-public.acceptance.mjs'`. The equivalent 0.25 evidence
+is the CLI suite over the Northwind fixture (`test/onboard.test.mjs`,
+`test/spawn-standalone.test.mjs`, `test/fixtures/northwind/build.mjs`).
 
-```bash
-node --test --test-timeout=60000 test/portable-onboarding-public.acceptance.mjs
+```text
+# historical (deleted): node --test --test-timeout=60000 test/portable-onboarding-public.acceptance.mjs
 ```
 
-This explicit acceptance driver is separate from the default `*.test.mjs` suite:
+This explicit acceptance driver was separate from the default `*.test.mjs` suite:
 a shallow checkout or source tarball need not contain a historical cross-branch
-commit. An explicit run **fails** if the pin or matching dependency lock is absent;
-it never silently skips, fetches a moving branch, substitutes current core or
-strips unsupported request fields.
+commit. An explicit run **failed** if the pin or matching dependency lock was absent;
+it never silently skipped, fetched a moving branch, substituted current core or
+stripped unsupported request fields.
 
-`test/helpers/portable-onboarding-consumer.mjs` archives committed core objects
-into owned ignored `stage/onboarding-consumer-*` scratch and verifies the pin and
-held-patch exclusion. It links only this worktree's dependencies after comparing
-the complete npm lock. No working files from another agent are loaded and no Git
-worktree/branch is added, reset or merged. Only the fixture's scratch is removed
+`test/helpers/portable-onboarding-consumer.mjs` (deleted) archived committed core objects
+into owned ignored `stage/onboarding-consumer-*` scratch and verified the pin and
+held-patch exclusion. It linked only this worktree's dependencies after comparing
+the complete npm lock. No working files from another agent were loaded and no Git
+worktree/branch was added, reset or merged. Only the fixture's scratch was removed
 on completion.
 
 The test runs real native Git observations with isolated host configuration and

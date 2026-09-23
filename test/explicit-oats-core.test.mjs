@@ -129,12 +129,13 @@ test('declared oats.core that is NOT active refuses spawn with the remedy (no ho
   assert.ok(created.notes.some(n => n.code === 'next-step' && /oats\.core/.test(n.message) && /workspace model v2/.test(n.message) && !/oats use/.test(n.message)), 'create names the activation step before spawn');
   const agent = findAgent(f.root, 'plain');
   assert.throws(() => planInstanceResources({ resolved: composeInstanceAgentsMd(created.soul, f.context, 'plain', 'directory', 'persistent').resolved, soulDir: created.soul, agent, contextDir: f.context }),
-    e => e.code === 'E_REQUIREMENT_INACTIVE' && e.capabilities.join() === 'oats.core' && /oats use oats.core --soul plain/.test(e.remedy));
+    // Phase C (M16): the remedy names the workspace-model path (oats-local.yaml + oats sync), never the removed `oats use` / `oats install`.
+    e => e.code === 'E_REQUIREMENT_INACTIVE' && e.capabilities.join() === 'oats.core' && /add oats-local\.yaml \(workspace: <ref> or standalone: <ref>\) beside agents\/ and run oats sync/.test(e.remedy) && !/oats (use|install)\b/.test(e.remedy) && !/oats (use|install)\b/.test(e.message));
   writeFileSync(join(f.bin, 'claude'), `#!/bin/sh\nexit 98\n`, { mode: 0o700 });
   const refused = f.run(['spawn', 'plain', '--no-launch', '--json']);
   assert.equal(refused.status, 1); const envelope = JSON.parse(refused.stdout.trim().split('\n').pop());
   assert.equal(envelope.error.code, 'E_REQUIREMENT_INACTIVE', 'kept its own code, not E_SPAWN_FAILED');
-  assert.deepEqual(envelope.error.details.capabilities, ['oats.core']); assert.match(envelope.error.details.remedy, /^oats use oats.core --soul plain/);
+  assert.deepEqual(envelope.error.details.capabilities, ['oats.core']); assert.match(envelope.error.details.remedy, /^add oats-local\.yaml \(workspace: <ref> or standalone: <ref>\) beside agents\/ and run oats sync$/);
   assert.equal(existsSync(join(f.root, 'plain', 'instances')) && readdirSync(join(f.root, 'plain', 'instances')).length, 0, 'refusal happens before any home is created');
   // Opting out is removing the declaration: legacy kernel skills return.
   const file = join(created.soul, 'soul.yaml');

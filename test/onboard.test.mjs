@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import YAML from "yaml";
-import { buildNorthwind } from "./fixtures/northwind/build.mjs";
+import { buildNorthwind, moveMember } from "./fixtures/northwind/build.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
@@ -89,8 +89,12 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.deepEqual(sync.approvalNeeded.map((a) => a.id), ["nw.tools", "oats.framework", "oats.okf"]);
     assert.deepEqual(sync.problems, []);
 
-    // Next steps: the §4 taught layout — clone members you work IN, spawn the setup expert.
-    assert.equal(res.next.spawn, `oats spawn oats-setup-expert --dir ${dep}`);
+    // Next steps: the §4 taught layout — clone members you work IN, then spawn. The setup-expert hint is
+    // CONDITIONAL (Phase C, M14): Northwind lists no soul named oats-setup-expert, so next.spawn is null and
+    // the first three listed souls are offered instead.
+    assert.equal(res.next.spawn, null);
+    assert.deepEqual(res.next.souls, ["campaign-writer", "data-analyst", "platform-engineer"]);
+    assert.ok(!Object.hasOwn(res, "standalone"), "a readable workspace is not standalone");
     assert.deepEqual(res.next.clone.map((c) => c.name).sort(), ["agents", "data", "marketing", "nw-tools", "platform"]);
     for (const c of res.next.clone) { assert.equal(typeof c.url, "string"); assert.ok(c.dir.startsWith(dep + "/"), c.dir); }
     assert.equal(res.next.clone.find((c) => c.name === "agents").dir, join(dep, "agents-repo"), "a member named agents is cloned beside agents/ (the instance homes), never into it");
@@ -156,9 +160,29 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.match(r.stdout, /Clone the members you will work IN beside oats-local\.yaml/);
     assert.match(r.stdout, new RegExp(`git clone \\S+platform\\.git \\S*nw2/platform`));
     assert.match(r.stdout, new RegExp(`git clone \\S+agents\\.git \\S*nw2/agents-repo`));
-    assert.match(r.stdout, new RegExp(`oats spawn oats-setup-expert --dir \\S*nw2`));
+    assert.doesNotMatch(r.stdout, /oats spawn oats-setup-expert/, "no such soul in this workspace → no setup-expert hint");
+    assert.match(r.stdout, /No soul named oats-setup-expert is listed here/);
+    assert.match(r.stdout, new RegExp(`spawn any listed soul: oats spawn <soul> --dir \\S*nw2 \\(e\\.g\\. campaign-writer, data-analyst, platform-engineer\\)`));
     assert.match(r.stdout, /oats sync --dir \S*nw2` in a terminal to approve nw\.tools 0\.4\.0, oats\.framework 1\.1\.3, oats\.okf 2\.1\.3/);
     assert.deepEqual(tree(dep2), ["agents/", "oats-local.yaml", "oats-lock.json"]);
+
+    // ---- M14, the positive branch: once a member lists a soul named oats-setup-expert, the hint appears ----
+    await moveMember(fx, "data", async (work, { writeTree }) => {
+      await writeTree({
+        "souls/oats-setup-expert/soul.yaml": { yaml: { schemaVersion: 2, name: "oats-setup-expert", description: "Guides the setup of this workspace.", work: "directory", capabilities: {} } },
+        "souls/oats-setup-expert/AGENTS.md": "# oats-setup-expert\n\nYou guide the setup.\n",
+      });
+    }, { message: "data: add oats-setup-expert" });
+    const dep2c = join(base, "nw2c");
+    r = oats(["onboard", dep2c, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
+    assert.equal(r.status, 2, r.stderr);
+    doc = envelope(r);
+    assert.equal(doc.result.next.spawn, `oats spawn oats-setup-expert --dir ${dep2c}`, "a discovered soul named oats-setup-expert enables the hint");
+    r = oats(["onboard", join(base, "nw2d"), "--workspace", fx.refs.agents], { cwd: base, env, base });
+    assert.equal(r.status, 2, r.stderr);
+    assert.match(r.stdout, /Spawn the setup expert to guide the rest/);
+    assert.match(r.stdout, new RegExp(`oats spawn oats-setup-expert --dir \\S*nw2d`));
+    assert.doesNotMatch(r.stdout, /spawn any listed soul/);
 
     // ---- a ref that is not a workspace host: refused, and the two files are rolled back ----
     const dep3 = join(base, "nw3");

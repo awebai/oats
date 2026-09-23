@@ -82,6 +82,21 @@ a version**. The workspace's `packages:` says which version; materialization
     readable member whose workspace you cannot read still offers its souls
     with `from: here` capabilities; `from: <other member>` / `from: package`
     are unresolvable and workspace defaults do not apply.
+    *Clarified 2026-09-23 (review findings M6/M7):* a standalone view is a
+    **member** whose workspace cannot be read — the repo carries an
+    `oats-membership.yaml`; a repo with no backlink is not one and is
+    `E_WORKSPACE_SCHEMA` (not a workspace host), never a standalone view. The
+    fallback engages **only on access failures** of the host
+    (`E_REMOTE_UNREADABLE` with reason `auth` — permission denials classify
+    as `auth` — or `not-found`);
+    a `network` or `timeout` failure is surfaced as-is — an offline laptop
+    must never be silently downgraded to "public contributor". The view is
+    marked everywhere it is reported: `oats sync --json` `standalone: true`
+    with `workspace.name = standalone:<repo>`, `oats workspace status` and
+    the roster, and `instance.json.workspace.standalone: true` on every
+    instance spawned from it (`false` on a workspace spawn); the discovery
+    itself carries `standalone: true` and `standaloneReason` (the access
+    failure that triggered it).
 11. **No `@revision` on members.** A member is always its latest state; a
     team that wants frozen capabilities publishes them as a package.
 12. **One workspace per org; teams are labels.** `teams:` in the workspace
@@ -178,6 +193,12 @@ a version**. The workspace's `packages:` says which version; materialization
     interpret. A `byTeam` label absent from `teams:` is `E_WORKSPACE_SCHEMA`.
     `team:` stays a label (decision 12); what a team means to a provider is
     payload addressed by that label.
+    *Clarified 2026-09-23 (review finding, byTeam leakage):* `byTeam` is a
+    **reserved key** — legal only at the top level of `workspace.messaging`.
+    In any other payload layer (a soul's `messaging:` / `knowledge:` /
+    `tasks:`, `oats-local.yaml` `settings.<cap>`, `spawn --provider`), at
+    any depth, it is `E_WORKSPACE_SCHEMA { reason: "reserved-key" }`, so a
+    provider can never receive a `byTeam` it would have to interpret.
 24. **A store names a repository; the root inside it is the provider's.**
     `stores: { <name>: <repo ref> }` never grows a `#path` — a repo ref names
     one thing (a repo) everywhere in the model. Where the base lives inside
@@ -191,6 +212,19 @@ a version**. The workspace's `packages:` says which version; materialization
     own package is not a workspace choice; without it the standalone spawn is
     the hollow agent the framework already refuses. A soul may still say
     `oats.core: off`.
+    *Clarified 2026-09-23 (review finding S4):* the kernel default is a
+    default, not an addition — **any** mention of `oats.core` in the soul's
+    `capabilities:` (any `from:`, or `off`) suppresses it; the soul's own
+    line is then what resolves (`from: package` through the lock, `from:
+    here` from the repo, `off` removes). Only a soul that says nothing about
+    `oats.core` receives `oats.core: { from: package }`.
+    *Clarified 2026-09-23 (M6/M7, see decision 10):* the standalone spawn is
+    marked `instance.json.workspace.standalone: true`; the package resolves
+    through the operator's lock exactly as in a workspace
+    (`E_PACKAGE_UNAPPROVED` until `oats sync` approves it), and the view
+    exists only for a repo that *is* a member whose host failed for access
+    reasons — not for a network failure and not for a repo without a
+    backlink.
 26. **Mixed public/private organisations host the workspace file in a
     private repo that is not a public member.** The workspace file is
     readable by everyone who may see the member LIST; a public member never

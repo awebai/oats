@@ -779,3 +779,44 @@ test("e2e MED: a catalog-locked package resolves from the lock's recorded url wi
   assert.equal(r.modules.find((m) => m.name === "oats.okf").from.repoKey, K.okf);
   assert.equal(r.modules.find((m) => m.name === "oats.okf").dir, "oats-package/capabilities/oats-okf", "module.dir is the manifest-listed directory (≠ the capability name)");
 });
+
+/* ───────────────────────────── Phase C regressions (adversarial review) ── */
+
+test("M9: `byTeam` is reserved — refused (E_WORKSPACE_SCHEMA reason reserved-key, path named) in spawn.providers[cap], local.settings[cap], a soul slot payload and NESTED inside workspace.messaging.byTeam[label]", async () => {
+  const ws = workspaceFile();
+  ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
+  ws.messaging = { private: "per-human", byTeam: { engineering: { channels: ["eng"] } } };
+  const d = discovery({ workspace: ws });
+  const rm = () => findSoul(d, "release-manager");
+  // spawn --provider
+  await rejectsCode(resolveSoul(d, rm(), opts({ spawn: { providers: { "nw-chat": { byTeam: { engineering: { channels: ["hijack"] } } } } } })), "E_WORKSPACE_SCHEMA", (e) => {
+    assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/spawn/providers/nw-chat/byTeam");
+  });
+  // oats-local.yaml settings
+  await rejectsCode(resolveSoul(d, rm(), opts({ local: { schemaVersion: 2, workspace: R.agents, settings: { "nw-chat": { byTeam: {} } } } })), "E_WORKSPACE_SCHEMA", (e) => {
+    assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/settings/nw-chat/byTeam");
+  });
+  // soul slot payload — even when the slot resolves to no module
+  const d2 = discovery({ workspace: ws, souls: { s: soulDef("s", { team: "engineering", messaging: { byTeam: { engineering: {} } } }) } });
+  await rejectsCode(resolveSoul(d2, findSoul(d2, "s"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/messaging/byTeam"); });
+  const d3 = discovery({ souls: { s: soulDef("s", { knowledge: { byTeam: { x: 1 } } }) } });
+  await rejectsCode(resolveSoul(d3, findSoul(d3, "s"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/knowledge/byTeam"); });
+  // nested inside a team's own payload (the top-level byTeam is the legal one; a second level is not)
+  const ws4 = { ...ws, messaging: { private: "per-human", byTeam: { engineering: { channels: ["eng"], byTeam: { engineering: { channels: ["deeper"] } } } } } };
+  const d4 = discovery({ workspace: ws4 });
+  await rejectsCode(resolveSoul(d4, findSoul(d4, "release-manager"), opts()), "E_WORKSPACE_SCHEMA", (e) => { assert.equal(e.details.reason, "reserved-key"); assert.equal(e.details.path, "/messaging/byTeam/engineering/byTeam"); });
+  // the legal top-level byTeam still works and never reaches the provider
+  const ok = await resolveSoul(d, rm(), opts());
+  assert.deepEqual(ok.payloads["nw-chat"], { private: "per-human", channels: ["northwind-eng"] });
+  assert.equal("byTeam" in ok.payloads["nw-chat"], false);
+});
+
+test("M5: spawn.providers keyed by a poison name (constructor) is E_WORKSPACE_SCHEMA poison-key; an inherited (non-own) provider key is not a request", async () => {
+  const d = discovery();
+  await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), opts({ spawn: { providers: { constructor: { x: "1" } } } })), "E_WORKSPACE_SCHEMA", (e) => assert.equal(e.details.reason, "poison-key"));
+  // a providers object that only INHERITS a key for a resolved module must not merge it (own keys only)
+  const inherited = Object.create({ "oats.okf": { owns: "HIJACKED" } });
+  const r = await resolveSoul(d, findSoul(d, "release-manager"), opts({ spawn: { providers: inherited } }));
+  assert.deepEqual(r.payloads["oats.okf"], { owns: "release-manager", reads: ["platform-engineer"] });
+  assert.equal(({}).constructor.x, undefined, "Object.prototype untouched");
+});

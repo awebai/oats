@@ -58,8 +58,10 @@ infers a field that is not there:
   since 0.24.8: `{spawn: boolean}`, see readiness policy).
 - `provenance: { kind, source, revision, path, workspaceRevision } | null` —
   where this soul copy came from, as recorded by the kernel when it created
-  it (`oats onboard` records `packaged-definition` or
-  `exported-edition-copy`). Souls created before 0.24.7 or authored by hand
+  it (the 0.24 bootstrap recorded `packaged-definition` or
+  `exported-edition-copy`; the 0.25 `oats onboard` creates no soul and records
+  nothing here — see [`oats onboard`](#oats-onboard-dir---workspace-repo-ref---json--onboardapi-2)).
+  Souls created before 0.24.7 or authored by hand
   read `null`; render that as *unrecorded*, not as local or as anything else.
 - `readiness` — the soul's **declared sources**, joined against
   `result.capabilities[]` from the same payload. Distinct from launchability
@@ -683,14 +685,17 @@ location. The receipt says so:
 
 ### Feature advertisement — gate every new command on the probe
 
-`oats version --json` `features` now lists: `catalog`, `instance-git`,
+`oats version --json` `features` now lists: `instance-git`,
 `instance-git-remote`, `souls-declarations`, `lifecycle-plans`,
 `retire-retention`, `readiness`, `spawn-preview`, `instance-events`,
 `schedule-history`, and carries the API integers (`instanceGitApi`, `soulsApi`,
 `lifecycleApi`, `readinessApi`, `spawnPreviewApi`, `eventsApi`,
 `scheduleHistoryApi`). **Gate on these, never on a version string and never by
 optimistic invocation**: an older CLI ignores an unknown `--plan` on `retire`
-and *retires*. Absent feature → the view is unavailable.
+and *retires*. Absent feature → the view is unavailable. (`catalog` was the
+0.24 `oats catalog` verb's flag; the verb is removed under the workspace model
+and the flag is no longer advertised — the official catalog is reached through
+`packages:` + `oats sync`, not a command.)
 
 ## Workspace model (`workspaceApi: 2`)
 
@@ -717,6 +722,58 @@ Every `commit` is a full 40-hex OID; every digest is `sha256-<hex>`; every
 ```json
 {"schemaVersion":1,"ok":false,"error":{"code":"E_UNKNOWN_COMMAND","message":"unknown command \"install\" — removed by the workspace model v2; use oats sync","details":{"removed":"install","replacement":"oats sync"}}}
 ```
+
+### `oats onboard [<dir>] --workspace <repo ref> [--json]` → `onboardApi: 2`
+
+The **bootstrap** of a deployment (decision 9): realizes a workspace on this
+machine in the taught `<name>-workspace/` layout. It writes
+`<dir>/oats-local.yaml` (`{ schemaVersion: 2, workspace: <ref> }`), creates
+`<dir>/agents/` (the instance homes), then runs exactly the `oats sync` body
+over the directory just written — discover over the remotes, confirm
+membership, resolve `packages:`, approve (TTY) or list what needs approval,
+write `oats-lock.json`. It installs nothing, creates no soul, spawns nothing
+and writes no `oats-config.yaml`; the member clones and the setup-expert spawn
+are printed as next steps. `<dir>` defaults to cwd; `--dir <d>` is the same
+argument (give it once). `--workspace` is required and must be a ref
+`lib/remote.mjs` parses (`E_REPO_REF`) — checked **before** anything is
+written. Captured selectors are refused (`E_BAD_ARGS`).
+
+```json
+{"onboardApi":2,
+ "local":"/abs/acme-workspace/oats-local.yaml","dir":"/abs/acme-workspace","agents":"/abs/acme-workspace/agents",
+ "lock":"/abs/acme-workspace/oats-lock.json",
+ "sync":{"syncApi":1,"…":"the full sync report (next section)"},
+ "hosting":{"host":"github.com/acme/agents","hostIsMember":true,
+            "rule":"If any member is private, host oats-workspace.yaml in a private repo that is not a public member (a dedicated <org>/workspace repo); public contributors then use the standalone case (from: here capabilities + oats.core)."},
+ "next":{"clone":[{"key":"github.com/acme/agents","name":"agents","url":"https://github.com/acme/agents.git","dir":"/abs/acme-workspace/agents-repo"},
+                  {"key":"github.com/acme/platform","name":"platform","url":"https://github.com/acme/platform.git","dir":"/abs/acme-workspace/platform"}],
+         "spawn":"oats spawn oats-setup-expert --dir /abs/acme-workspace"}}
+```
+
+- `sync` is the `syncApi: 1` report of the first sync (members, packages,
+  changes, `approvalNeeded`, `problems`); `lock` is the lock it wrote.
+- **Exit `2` with `ok: true`** when `sync.approvalNeeded` is non-empty (approval
+  is interactive-only; tell the operator to run `oats sync --dir <dir>` in a
+  terminal). Exit `0` otherwise.
+- `hosting` states decision 26 (the kernel cannot see forge visibility, so it
+  reports `hostIsMember` and the rule rather than judging).
+- `next.clone[]` is one row per **confirmed** member (`url` = what the
+  workspace's `members:` ref resolves to; `dir` = `<dir>/<name>`, or
+  `<dir>/agents-repo` for a member called `agents`, since `agents/` is the
+  instance homes). `next.spawn` is the setup-expert spawn command string.
+- Errors (all `E_*`): `E_BAD_ARGS` (usage; missing `--workspace`; dir given
+  twice), `E_REPO_REF`, `E_ALREADY_ONBOARDED { local, dir }` — **this**
+  directory already has `oats-local.yaml` (an enclosing deployment's file does
+  not count; run `oats sync` there instead), `E_ONBOARD_FAILED { dir }`
+  (cannot inspect/write the directory; `<dir>` exists and is not a directory).
+  Failures while **discovering** — `E_REMOTE_UNREADABLE`, `E_WORKSPACE_SCHEMA`
+  (not a workspace host), `E_LOCAL_MISSING`, plus `E_PACKAGE_MISSING` /
+  `E_PACKAGE_INTEGRITY` / `E_LOCK_SCHEMA` and the other `sync` errors raised
+  before the workspace was read — roll back the files onboarding created and
+  carry `details.rolledBack: true` and `details.dir`; a typo'd ref never
+  leaves a half-onboarded directory that looks finished. Once the workspace
+  has been read, a later failure keeps the files (a lock may exist) and
+  carries `details.dir` + `details.local` instead.
 
 ### `oats sync [--dir <d>] --json` → `syncApi: 1`
 
@@ -773,8 +830,13 @@ checkout walked up from `--dir`; otherwise reports the line to add.
 {"action":"add","id":"oats.aweb","value":"v1.11.2","edited":false,"file":null,"line":"packages:\n  oats.aweb: v1.11.2","hint":"oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`"}
 ```
 
-`remove` → `{ action: "remove", id, value: null, previous: "<old value>", edited, file }`
-(`E_PACKAGE_MISSING` when the id is not declared). `E_USAGE`,
+`remove` → `{ action: "remove", id, value: null, previous: "<old value>", edited: true, file }`
+on the tracked branch. On the untracked branch the shape is
+`{ action: "remove", id, value: null, edited: false, file: null, line: null, hint }`
+— **no `previous`** (nothing was read), `line: null` (there is no line to add
+for a removal). **Both branches** answer `E_PACKAGE_MISSING { id, path? }` when
+`<id>` is not declared in `packages:` — the untracked branch reads the file it
+found to check the declaration even though it does not edit it. `E_USAGE`,
 `E_WORKSPACE_SCHEMA` (bad id/value, or the edit would make the file invalid),
 `E_REPO_REF`. No network.
 
@@ -860,7 +922,10 @@ between preview and apply is `E_DECISION_STALE`):
 - `--provider <cap> <key>=<value>` (repeatable; `a.b=c` nests) is accepted by
   preview and apply. `E_BAD_ARGS` for a malformed pair or when the deployment
   has no `oats-local.yaml`; `E_CAPABILITY_MISSING { capability, soul, modules[] }`
-  when the soul does not resolve that capability.
+  when the soul does not resolve that capability. `byTeam` is a **reserved
+  key**: legal only at the top level of the workspace file's `messaging:`;
+  anywhere else in any payload layer (soul, `oats-local.yaml` `settings`,
+  `--provider`, at any depth) it is `E_WORKSPACE_SCHEMA { reason: "reserved-key", path, key }`.
 - Soul lookup: `E_SOUL_UNKNOWN { name, members[] }` (not among confirmed
   members or externals), `E_SOUL_AMBIGUOUS { name, repos[] }` (name it
   `<repo>/<soul>`). Resolution errors keep their codes (`E_NOT_A_MEMBER`,
@@ -884,9 +949,18 @@ Written by materialization inside the spawn transaction; read back by
    "oats.okf":{"from":{"kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>","integrity":"sha256-…","repoKey":"github.com/awebai/oats-okf"},
                "commit":"<oid>","digest":"sha256-…","materializedAt":"<iso>"}},
  "providers":{"acme-release-tooling":{},"oats.okf":{"owns":"release-manager","reads":["platform-engineer"],"state-dir":"/Users/ana/.oats/okf"}},
- "workspace":{"key":"github.com/acme/agents","commit":"<oid>","resolution":"<24 hex>",
-              "soul":{"repoKey":"github.com/acme/agents","commit":"<oid>","team":"engineering"}}}
+ "workspace":{"key":"github.com/acme/agents","commit":"<oid>","resolution":"<24 hex>","standalone":false,
+              "soul":{"repoKey":"github.com/acme/agents","commit":"<oid>","team":"engineering"}},
+ "capabilities":[{"id":"oats.okf","capability":"oats.okf","origin":"package:oats.okf@2.1.3","…":"one row per module"}]}
 ```
+
+`workspace.standalone` is `true` when the instance was spawned from the
+**standalone view** (decisions 10/25: a *member* whose workspace could not be
+read — `workspace.key` is then the member repo's key, and `modules` holds the
+soul's `from: here` capabilities plus `oats.core`); `false` for a workspace
+spawn. The same view is marked `standalone: true` in `oats sync --json` (with
+`workspace.name` = `standalone:<repo>`) and in the roster. `capabilities[]` is
+the per-module row set (`toCapabilityRows`) that `oats inspect`/`status` read.
 
 `digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
 `providers.<cap>` is the merged payload (soul ⊕ `oats-local.yaml`

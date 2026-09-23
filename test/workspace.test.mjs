@@ -629,3 +629,57 @@ test("MED-5: soul schema requires name, description AND work (contract §2); pac
   }
   for (const v of ["v2.1.3", "git:github.com/x/y@v1", "git:git@github.com:x/y.git@v1", `git:${parseRepoRef("/tmp/p.git").url}@v0.4.0`]) assert.deepEqual(ws(v), [], v);
 });
+
+/* ───────────────────────────── Phase C regressions (adversarial review) ── */
+
+test("M9: `byTeam` is reserved at validation — soul slot payloads, local settings[cap] and NESTED under messaging.byTeam[label] are reserved-key problems; the top-level workspace.messaging.byTeam is legal", () => {
+  const reserved = (problems, path) => problems.filter((p) => p.reason === "reserved-key").map((p) => p.path).includes(path);
+  // soul.yaml: each slot payload
+  for (const slot of ["knowledge", "messaging", "tasks"]) {
+    const problems = validateSoul(soul("s", { [slot]: { byTeam: { engineering: {} } } }));
+    assert.ok(reserved(problems, `/${slot}/byTeam`), `${slot}: ${JSON.stringify(problems)}`);
+    assert.match(problems.find((p) => p.reason === "reserved-key").message, /reserved/);
+  }
+  assert.deepEqual(validateSoul(soul("s", { knowledge: { owns: "s", nested: { byTeam: 1 } } })), [], "only the payload's top level is the kernel's; deeper keys belong to the provider");
+  // oats-local.yaml: settings[cap]
+  const local = { schemaVersion: 2, workspace: WS, settings: { "oats.aweb": { byTeam: { engineering: {} } }, "oats.okf": { storeRoot: "x" } } };
+  const lp = validateLocal(local);
+  assert.ok(reserved(lp, "/settings/oats.aweb/byTeam"), JSON.stringify(lp));
+  assert.deepEqual(validateLocal({ schemaVersion: 2, workspace: WS, settings: { "oats.okf": { storeRoot: "x" } } }), []);
+  // loadLocal surfaces it as E_WORKSPACE_SCHEMA with details.reason
+  const dir = mkdtempSync(join(tmpdir(), "oats-ws-reserved-"));
+  try {
+    writeFileSync(join(dir, "oats-local.yaml"), YAML.stringify(local));
+    assert.throws(() => loadLocal(dir), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.reason === "reserved-key" && e.details.problems.some((p) => p.path === "/settings/oats.aweb/byTeam"));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+  // oats-workspace.yaml: top-level byTeam is THE legal place; a byTeam inside a team's payload is not
+  const okWs = workspaceFile({ messaging: { private: "per-human", byTeam: { engineering: { channels: ["eng"] } } } });
+  assert.deepEqual(validateWorkspace(okWs), []);
+  const nested = workspaceFile({ messaging: { private: "per-human", byTeam: { engineering: { channels: ["eng"], byTeam: { engineering: {} } } } } });
+  const wp = validateWorkspace(nested);
+  assert.ok(reserved(wp, "/messaging/byTeam/engineering/byTeam"), JSON.stringify(wp));
+});
+
+test("S4: standaloneRepo — ANY soul mention of oats.core (from: package, from: here, from: <repo>, off) suppresses the kernel default; only its absence adds it", async () => {
+  const remote = northwind();
+  const repo = await discoverRepo(R.data, { remote });
+  const analyst = repo.souls.find((s) => s.name === "data-analyst");
+  const withCaps = (capabilities) => ({ ...repo, souls: [{ ...analyst, definition: { ...analyst.definition, capabilities } }] });
+  const view = (capabilities) => standaloneRepo(R.data, C.data, withCaps(capabilities), { remote });
+  // absent → the default is added
+  assert.deepEqual(view({}).members[0].souls[0].capabilities, { "oats.core": { from: "package" } });
+  // off → gone, no problem recorded
+  const off = view({ "oats.core": "off" });
+  assert.deepEqual(off.members[0].souls[0].capabilities, {});
+  assert.ok(!off.problems.some((p) => p.path.endsWith("/capabilities/oats.core")));
+  // from: package → the soul's own choice, honoured
+  assert.deepEqual(view({ "oats.core": { from: "package" } }).members[0].souls[0].capabilities, { "oats.core": { from: "package" } });
+  // from: here → judged like any other capability: the repo has no such capability → E_CAPABILITY_MISSING, and NO default is re-added
+  const here = view({ "oats.core": { from: "here" } });
+  assert.deepEqual(here.members[0].souls[0].capabilities, {});
+  assert.ok(here.problems.some((p) => p.code === "E_CAPABILITY_MISSING" && p.path.endsWith("/capabilities/oats.core")));
+  // from: <other repo> → E_NOT_A_MEMBER standalone, and NO default is re-added
+  const other = view({ "oats.core": { from: K.agents } });
+  assert.deepEqual(other.members[0].souls[0].capabilities, {});
+  assert.ok(other.problems.some((p) => p.code === "E_NOT_A_MEMBER" && p.path.endsWith("/capabilities/oats.core")));
+});

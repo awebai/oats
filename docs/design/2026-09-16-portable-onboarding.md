@@ -1,5 +1,7 @@
 # Portable fresh onboarding and source discovery
 
+> **Superseded (2026-09-23).** The 0.24 onboarding facade this note describes (`lib/portable-onboarding-acceptance.mjs`, `test/portable-onboarding-public.acceptance.mjs`, source editions, exports) was deleted with the workspace model v2; the 0.25 bootstrap is `oats onboard [<dir>] --workspace <ref>` (contract §6, `docs/desktop-cli-api.md`). Read [2026-09-23-simplified-workspace-model.md](2026-09-23-simplified-workspace-model.md) (worked example) and [2026-09-23-workspace-module-contracts.md](2026-09-23-workspace-module-contracts.md) (normative) instead; kept as history.
+
 16 September 2026. This module supports a controlled fresh setup path while
 historical in-place migration is deferred. It does not alter the Portable Souls
 architecture or weaken the existing partial/unknown evidence safeguards.
@@ -109,7 +111,7 @@ onboarding CLI is still separate integration work.
 
 ## Fresh acceptance driver
 
-`lib/portable-onboarding-acceptance.mjs` keeps acceptance above the same facade:
+`lib/portable-onboarding-acceptance.mjs` (deleted with v2) kept acceptance above the same facade:
 
 - `compareFreshSourceAcceptance({organization,standalone})` accepts only issued,
   ready inspections and proves qualified identity, exact commit, export and
@@ -147,7 +149,7 @@ the helper does not claim CLI router availability.
 
 ## Pinned real public consumer
 
-`test/portable-onboarding-public.acceptance.mjs` additionally executes the real
+`test/portable-onboarding-public.acceptance.mjs` (deleted with v2) additionally executed the real
 public preparation/approval/retained-inspection APIs archived from exact core
 `c5c6a3c9171e424a36a1bdbf3932b9319a3c6c72`, without merging its branch. It uses
 isolated local Git transport, temporary deployments and a declared inert fixture

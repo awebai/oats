@@ -24,7 +24,7 @@ Everything below this line that describes per-soul `source:` provenance, `oats.y
 - [Portable Souls explainer](2026-09-14-portable-souls-explainer.md) — the short version.
 - [Portable souls and Git-backed workspaces](2026-09-14-portable-souls-and-git-workspaces.md) — the accepted architecture.
 - [Contract amendments (14 Sep)](2026-09-14-portable-souls-contract-amendments.md) · [portable declarations](2026-09-15-portable-declarations.md) · [portable data/digest contract](2026-09-15-portable-data-contract.md) · [source observation](2026-09-15-source-observation.md).
-- [Fresh-install-first rollout](2026-09-16-fresh-install-first-rollout.md) · [fresh operator walkthrough](2026-09-16-fresh-operator-walkthrough.md) · [portable onboarding and discovery](2026-09-16-portable-onboarding.md) · [migration evidence](2026-09-16-portable-migration-evidence.md).
+- [Fresh-install-first rollout](2026-09-16-fresh-install-first-rollout.md) · [fresh operator walkthrough](2026-09-16-fresh-operator-walkthrough.md) · [portable onboarding and discovery](2026-09-16-portable-onboarding.md) · [migration evidence](2026-09-16-portable-migration-evidence.md) — the `lib/portable-migration*`, `lib/portable-onboarding-acceptance.mjs` modules and the `portable-onboarding-public` acceptance driver these cite are deleted; each note carries a superseded banner pointing at the [simplified workspace model](2026-09-23-simplified-workspace-model.md).
 
 ## Retained execution — artifacts, approval, capture (0.24; artifact/approval parts superseded by lock v3)
 

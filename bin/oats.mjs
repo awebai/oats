@@ -15,7 +15,7 @@
  * nothing is installed. `oats-local.yaml` names the workspace, `oats sync`
  * observes it over Git remotes and writes `oats-lock.json` (lockfileVersion 3).
  * `init` / `use` / `install` / `restore` / `list` / `catalog` / `remove` /
- * `migrate` / `trust` are gone with the installed-capability tier.
+ * `migrate` / `trust` / `inject` are gone with the installed-capability tier.
  */
 import { existsSync, lstatSync, mkdirSync, readFileSync, readSync, realpathSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -29,7 +29,7 @@ import {
   readCapabilityLocks, admitCapturedAction, beginCapturedIntent, settleCapturedIntent, listInstalledPackages, readPackageLocks,
   officialPackageCatalog, describeOfficialCatalog, approveAvailableCapability,
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir,
-  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
+  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, spawnInstanceAsync, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
@@ -67,7 +67,7 @@ import { readEvents } from "../lib/instance-events.mjs";
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "capabilities", "create", "doctor", "inspect", "instance", "operation", "package", "readiness", "soul", "souls", "launch-config", "experimental", "onboard", "inject", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "type", "update", "version", "workspace"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "capabilities", "create", "doctor", "inspect", "instance", "operation", "package", "readiness", "soul", "souls", "launch-config", "experimental", "onboard", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "type", "update", "version", "workspace"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -1225,11 +1225,14 @@ async function soulCmd() {
 function doctorJson(dir) {
   const ctx = resolve(dir || process.cwd());
   const soulName = flag("soul");
+  const ws = doctorLockData(ctx);
+  // A v2 deployment (oats-local.yaml found walking up) has NO config chain, layers,
+  // acquired packages or installed tier: those keys are omitted, not emitted empty.
+  if (ws.local) { console.log(JSON.stringify(doctorWorkspaceJson(ctx, soulName, ws), null, 2)); return; }
   const r = resolveForDoctor(ctx, soulName, { json: true });
   const mans = capabilityManifests(ctx);
   const composition = doctorComposition(ctx, soulName);
   const chain = configChain(ctx);
-  const ws = doctorLockData(ctx);
   const oasScopes = detectOasScopes(ctx);
   console.log(JSON.stringify({
     schemaVersion: 1,
@@ -1268,20 +1271,64 @@ retiredLocks: (() => { try { return Object.entries(readCapabilityLocks(ctx)); } 
   }, null, 2));
 }
 
+/** The v2 doctor payload: the deployment declaration + lock (offline) and, with
+ *  --soul, the composed instructions. No v1 keys (chain/layers/acquired/injects…). */
+function doctorWorkspaceJson(ctx, soulName, ws) {
+  const composition = doctorComposition(ctx, soulName);
+  return {
+    schemaVersion: 1, workspaceApi: 2, context: ctx,
+    workspace: { file: ws.local.path, ref: ws.local.workspace },
+    workspaceError: ws.localError, lockFile: ws.lockFile, packages: ws.packages, lockError: ws.lockError,
+    information: operationalKnowledgeNote(composition, soulName) ? [operationalKnowledgeNote(composition, soulName)] : [],
+    composedInstructions: composition?.text, instructionBlocks: composition?.blocks,
+  };
+}
+/** Kernel/bridge version skew (published in lockstep from one tag). */
+function doctorVersionSkew() {
+  const piPkgFile = join(homedir(), ".pi", "agent", "npm", "node_modules", "@awebai", "oats-pi", "package.json");
+  if (!existsSync(piPkgFile)) return;
+  const bridge = JSON.parse(readFileSync(piPkgFile, "utf8")).version;
+  if (bridge !== OATS_VERSION) console.log(`WARNING: version skew — kernel ${OATS_VERSION}, pi bridge ${bridge}; run \`oats update\` (they publish in lockstep)\n`);
+}
+/** The "Workspace (v2, offline view)" + "Locked packages" sections, shared by both doctor shapes. */
+function printDoctorWorkspace(ws) {
+  console.log("\nWorkspace (v2, offline view):");
+  if (ws.local) console.log(`  oats-local.yaml  ${shortPath(ws.local.path)}  → workspace ${ws.local.workspace}`);
+  else if (ws.localError) console.log(`  ERROR: ${ws.localError.message} [${ws.localError.code}]`);
+  else console.log("  (no oats-local.yaml found walking up — this scope realizes no v2 workspace; run `oats sync` from one that does)");
+  console.log("\nLocked packages (oats-lock.json v3):");
+  if (ws.lockError) {
+    console.log(`  ERROR: ${ws.lockError.message} [${ws.lockError.code}]`);
+    if (ws.lockError.file) console.log(`         the lock is never auto-repaired; delete ${shortPath(ws.lockError.file)} and run \`oats sync\``);
+  } else if (!ws.packages.length) console.log(ws.lockFile ? "  (none)" : "  (no lock yet — run `oats sync`)");
+  for (const p of ws.packages) {
+    console.log(`  ${p.id} ${p.version}  ${p.source}  @ ${p.commit.slice(0, 12)}  ${p.approved ? `approved ${p.approved.at}` : "APPROVAL NEEDED (oats sync)"}`);
+    if (p.capabilities.length) console.log(`             capabilities: ${p.capabilities.join(", ")}`);
+  }
+  console.log("  membership, discovery and drift need the remotes: `oats workspace status`, `oats sync`.");
+}
 function doctor(dir) {
   const ctx = resolve(dir || process.cwd());
   const soulName = flag("soul");
+  const ws = doctorLockData(ctx);
+  console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
+  doctorVersionSkew();
+  if (ws.local) {
+    // A v2 deployment: nothing is installed and there is no config chain — the v1
+    // sections (Config chain / Layers / Kernel injection / Acquired packages / lock
+    // warnings) would describe a tier this deployment does not have.
+    const composition = doctorComposition(ctx, soulName);
+    printDoctorWorkspace(ws);
+    if (soulName) {
+      const information = operationalKnowledgeNote(composition, soulName);
+      if (information) console.log(`\nINFO: ${information}`);
+      console.log(`\nFinal composed AGENTS.md for ${soulName}:\n\n${composition.text}`);
+    } else console.log("\nPass --soul <name> to inspect final composed AGENTS.md.");
+    return;
+  }
   const chain = configChain(ctx);
   const r = resolveForDoctor(ctx, soulName);
   const composition = doctorComposition(ctx, soulName);
-  console.log(`oats doctor — resolved from ${shortPath(ctx)}\n`);
-
-  // Kernel/bridge version skew (published in lockstep from one tag).
-  const piPkgFile = join(homedir(), ".pi", "agent", "npm", "node_modules", "@awebai", "oats-pi", "package.json");
-  if (existsSync(piPkgFile)) {
-    const bridge = JSON.parse(readFileSync(piPkgFile, "utf8")).version;
-    if (bridge !== OATS_VERSION) console.log(`WARNING: version skew — kernel ${OATS_VERSION}, pi bridge ${bridge}; run \`oats update\` (they publish in lockstep)\n`);
-  }
 
   console.log("Config chain (closest first):");
   if (chain.length === 0) console.log("  (none — no oats-config.yaml found walking up)");
@@ -1380,21 +1427,7 @@ function doctor(dir) {
   // Workspace model v2: nothing is installed. Doctor reports the lock (v3) and
   // the deployment declaration OFFLINE — membership, discovery and package
   // resolution go to the remotes and belong to `oats sync` / `oats workspace status`.
-  console.log("\nWorkspace (v2, offline view):");
-  const ws = doctorLockData(ctx);
-  if (ws.local) console.log(`  oats-local.yaml  ${shortPath(ws.local.path)}  → workspace ${ws.local.workspace}`);
-  else if (ws.localError) console.log(`  ERROR: ${ws.localError.message} [${ws.localError.code}]`);
-  else console.log("  (no oats-local.yaml found walking up — this scope realizes no v2 workspace; run `oats sync` from one that does)");
-  console.log("\nLocked packages (oats-lock.json v3):");
-  if (ws.lockError) {
-    console.log(`  ERROR: ${ws.lockError.message} [${ws.lockError.code}]`);
-    if (ws.lockError.file) console.log(`         the lock is never auto-repaired; delete ${shortPath(ws.lockError.file)} and run \`oats sync\``);
-  } else if (!ws.packages.length) console.log(ws.lockFile ? "  (none)" : "  (no lock yet — run `oats sync`)");
-  for (const p of ws.packages) {
-    console.log(`  ${p.id} ${p.version}  ${p.source}  @ ${p.commit.slice(0, 12)}  ${p.approved ? `approved ${p.approved.at}` : "APPROVAL NEEDED (oats sync)"}`);
-    if (p.capabilities.length) console.log(`             capabilities: ${p.capabilities.join(", ")}`);
-  }
-  console.log("  membership, discovery and drift need the remotes: `oats workspace status`, `oats sync`.");
+  printDoctorWorkspace(ws);
 
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
@@ -1404,86 +1437,6 @@ function doctor(dir) {
 }
 
 // ---------- config editing (structural: parse → mutate → re-serialize the capabilities block) ----------
-function originToFrom(origin) {
-  const o = String(origin || "");
-  if (o.startsWith("installed:")) return "installed";
-  if (o.startsWith("owned:")) return "owned";
-  if (o.startsWith("path:")) return undefined; // path declarations stay hand-authored
-  return undefined;
-}
-
-function serializeBinding(value, indent) {
-  if (value === true || value === false) return ` ${value}`;
-  const lines = [""];
-  if (value.enabled !== undefined) lines.push(`${indent}enabled: ${value.enabled}`);
-  if (value.settings && Object.keys(value.settings).length) {
-    lines.push(`${indent}settings:`);
-    for (const [k, v] of Object.entries(value.settings)) lines.push(`${indent}  ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`);
-  }
-  return lines.join("\n");
-}
-
-/** Serialize one capability entry map at the given base indent, with the conventional injection comment. */
-function serializeCapabilityEntry(id, entry, baseIndent) {
-  const i = baseIndent;
-  const lines = [];
-  if (entry.capability) lines.push(`${i}capability: ${entry.capability}`);
-  if (entry.from) lines.push(`${i}from: ${entry.from}`);
-  if (entry.global !== undefined) lines.push(`${i}global:${serializeBinding(entry.global, i + "  ")}`);
-  const types = entry["agent-types"];
-  if (types && Object.keys(types).length) {
-    lines.push(`${i}agent-types:`);
-    for (const [t, v] of Object.entries(types)) lines.push(`${i}  ${t}:${serializeBinding(v, i + "    ")}`);
-  }
-  if (entry.souls && Object.keys(entry.souls).length) {
-    lines.push(`${i}souls:`);
-    for (const [s, v] of Object.entries(entry.souls)) lines.push(`${i}  ${s}:${serializeBinding(v, i + "    ")}`);
-  }
-  if (entry.settings && Object.keys(entry.settings).length) {
-    lines.push(`${i}settings:`);
-    for (const [k, v] of Object.entries(entry.settings)) lines.push(`${i}  ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`);
-  }
-  if (entry["injection-override"] !== undefined) lines.push(`${i}injection-override: ${entry["injection-override"]}`);
-  else if (entry.from === "owned" || String(entry.from || "").startsWith("path:"))
-    lines.push(`${i}# injection edited at source: .agents/capabilities/owned/${id}/injects/`);
-  else lines.push(`${i}# injection-override: .agents/injections/capabilities/${id}.md`);
-  return lines;
-}
-
-/** Re-serialize the whole `capabilities:` block from its parsed model. */
-function serializeCapabilities(caps) {
-  const lines = ["capabilities:", "  # Fundamental layers — exclusive slots; a capability entry or an explicit none.", "  layers:"];
-  for (const layer of LAYERS) {
-    const entry = caps.layers?.[layer];
-    if (entry === undefined) continue;
-    if (entry === "none") { lines.push(`    ${layer}: none`); continue; }
-    lines.push(`    ${layer}:`);
-    lines.push(...serializeCapabilityEntry(entry.capability, entry, "      "));
-  }
-  const additive = Object.entries(caps.additive || {});
-  if (additive.length) {
-    lines.push("  additive:");
-    for (const [id, entry] of additive) {
-      lines.push(`    ${id}:`);
-      lines.push(...serializeCapabilityEntry(id, entry, "      "));
-    }
-  }
-  return lines.join("\n") + "\n";
-}
-
-/** Replace (or append) the top-level capabilities: block in config text. */
-function replaceCapabilitiesBlock(text, caps) {
-  const serialized = serializeCapabilities(caps);
-  const lines = text.replace(/\n*$/, "\n").split("\n");
-  const start = lines.findIndex((l) => /^capabilities:\s*(#.*)?$/.test(l));
-  if (start < 0) return text.replace(/\n*$/, "\n\n") + serialized;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^[^\s#]/.test(lines[i])) { end = i; break; }
-    if (/^#/.test(lines[i]) && i + 1 < lines.length && /^[^\s]/.test(lines[i + 1] || "")) { end = i; break; }
-  }
-  return [...lines.slice(0, start), ...serialized.replace(/\n$/, "").split("\n"), "", ...lines.slice(end)].join("\n").replace(/\n{3,}/g, "\n\n").replace(/\n*$/, "\n");
-}
 /** Replace (or append, or drop with "") the top-level launch-configs block:
  *  the span from its key line (bare, quoted, or the inline `launch-configs: {...}`
  *  form) to the next top-level line is replaced; every byte before and after
@@ -1734,15 +1687,6 @@ async function launchConfigCmd() {
 }
 
 
-/** Load the parsed capabilities model of a config file ({layers:{}, additive:{}}). */
-function readCapabilitiesModel(file) {
-  if (!existsSync(file)) return { layers: {}, additive: {} };
-  const cfg = withConfigFile(file, () => parseYamlNested(readFileSync(file, "utf8")));
-  const caps = cfg.capabilities || {};
-  return { layers: { ...(caps.layers || {}) }, additive: { ...(caps.additive || {}) } };
-}
-
-
 /** `oats instance <git|diff> <instance>` — K1: read-only Git observation of one
  *  instance's work tree. The instance is addressed qualified: an explicit
  *  --home, or a name under the --dir scope (team roots included) that resolves
@@ -1910,12 +1854,25 @@ function catalogForSync(bail) {
 
 /** The package requests of a standalone view: the catalog's own pin of the package
  *  providing oats.core (decision 25) — nothing else, since the version list lives in
- *  the workspace file we cannot read. */
+ *  the workspace file we cannot read. The request is written as resolvePackages
+ *  expects a CATALOG entry: the bare version (`v1.1.3`), never the catalog's raw ref
+ *  (`oats-framework/v1.1.3` is a tag PATH the one grammar refuses); parsePackageRequest
+ *  recomposes the tag from the catalog's own convention.
+ *  → { packages: { <id>: <version> }, problems: [ { code: "E_PACKAGE_MISSING", … } ] } */
 function standalonePackages(catalog) {
-  const alias = describeOfficialCatalog().capabilityAliases.find((a) => a.capability === "oats.core");
-  const id = alias?.package ?? "oats.framework";
-  const version = catalog[id]?.ref;
-  return version ? { [id]: version } : {};
+  let id = "oats.framework", file = process.env.OATS_PACKAGE_CATALOG || null;
+  try { const d = describeOfficialCatalog(); file = d.catalog.file; id = d.capabilityAliases.find((a) => a.capability === "oats.core")?.package ?? id; } catch { /* the catalog is diagnosed below */ }
+  const version = standaloneCatalogVersion(catalog?.[id]?.ref);
+  if (version) return { packages: { [id]: version }, problems: [] };
+  const why = catalog?.[id] ? `its ref ${JSON.stringify(catalog[id].ref)} carries no version` : `it has no entry ${JSON.stringify(id)}`;
+  return { packages: {}, problems: [{ code: "E_PACKAGE_MISSING", id, reason: "no-catalog", catalog: file, path: `/packages/${id}`, message: `the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}): ${why}; standalone spawns will be refused until it does` }] };
+}
+/** The bare version of a catalog ref: its LAST path segment when that is a version
+ *  (`v1.1.3` → `v1.1.3`; `oats-framework/v1.1.3` → `v1.1.3`; `main` → null). */
+function standaloneCatalogVersion(ref) {
+  if (typeof ref !== "string" || !ref.trim()) return null;
+  const tail = ref.trim().split("/").filter(Boolean).pop() ?? "";
+  return classifyPackageValue(tail).kind === "catalog" ? tail : null;
 }
 
 /** Discover the workspace named by oats-local.yaml over the real remote. */
@@ -2008,8 +1965,11 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   try { previous = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   let resolved;
   // Standalone: no workspace file → the only package request is the kernel's
-  // default, at the catalog's pinned version (decision 25).
-  const packageSource = discovery.standalone === true ? { packages: standalonePackages(catalog) } : discovery.workspace;
+  // default, at the catalog's pinned version (decision 25). A catalog that cannot
+  // name it is a PROBLEM of this sync (reported, exit unchanged), not a silent empty lock.
+  const standalone = discovery.standalone === true ? standalonePackages(catalog) : null;
+  const packageSource = standalone ? { packages: standalone.packages } : discovery.workspace;
+  const problems = [...discovery.problems, ...(standalone?.problems ?? [])];
   try { resolved = await resolvePackages(packageSource, { catalog, lock: previous, remoteOptions: ctx.remoteOptions }); }
   catch (e) {
     if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
@@ -2041,8 +2001,8 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock, { includePrivate: true });
-  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, problems: discovery.problems };
-  return { report, lock, discovery, approvalNeeded, interactive, items, lockFile };
+  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, problems };
+  return { report, lock, discovery, approvalNeeded, interactive, items, lockFile, problems };
 }
 
 /** The human §8 report of a sync (text mode). */
@@ -2068,7 +2028,7 @@ function printSyncReport(ctx, synced) {
   for (const s of items.souls) { const t = teams.get(s.team) || { souls: 0, capabilities: 0 }; t.souls++; teams.set(s.team, t); }
   for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
   console.log(`teams      ${[...teams.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([team, n]) => `${team} ${n.souls} soul${n.souls === 1 ? "" : "s"}${n.capabilities ? `, ${n.capabilities} capabilit${n.capabilities === 1 ? "y" : "ies"}` : ""}`).join(" · ") || "(none)"}`);
-  for (const p of discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
+  for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
   if (approvalNeeded.length) {
     console.log(`\nApproval needed for ${approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")} — ${interactive ? "declined; " : "not a terminal; "}the lock records them unapproved. Run \`oats sync\` in a terminal to approve their executables (spawns of souls using them are refused until then).`);
   } else console.log(`\nlock       ${shortPath(lockFile)}`);
@@ -2123,6 +2083,18 @@ async function packageCmd() {
   const line = sub === "add" ? `  ${id}: ${YAML.stringify(value).trim()}` : null;
   const checkout = workspaceCheckoutFrom(dirFlag());
   if (!checkout) {
+    // Untracked branch (the workspace file is shared through Git, not edited here). A `remove`
+    // still checks the id against the DISCOVERED workspace when this directory realizes one
+    // (oats-local.yaml): removing what is not declared is E_PACKAGE_MISSING, as in the tracked branch.
+    if (sub === "remove") {
+      let ctx = null; try { const found = loadLocal(dirFlag()); ctx = { dir: dirFlag(), localPath: found.path, local: found.local, deploymentDir: dirname(found.path), remoteOptions: remoteOptionsFromEnv() }; }
+      catch (e) { if (e?.code !== "E_LOCAL_MISSING") return bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
+      if (ctx) {
+        const discovery = await discoverForCli(ctx, bail);
+        const declared = discovery.standalone === true ? standalonePackages(catalogForSync(bail)).packages : (discovery.workspace?.packages || {});
+        if (!Object.hasOwn(declared, id)) return bail("E_PACKAGE_MISSING", `packages.${id} is not declared by workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${discovery.standalone === true ? " — standalone: only the kernel's default package is requested" : ""}`, { id, workspace: discovery.key, declared: Object.keys(declared).sort() });
+      }
+    }
     if (JSON_MODE) { jsonOk({ action: sub, id, value: value ?? null, edited: false, file: null, line: sub === "add" ? `packages:\n${line}` : null, hint: "oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`" }); return; }
     if (sub === "add") console.log(`oats-workspace.yaml is not in this checkout. Add under packages: in the workspace repo, then \`oats sync\`:\n\npackages:\n${line}`);
     else console.log(`oats-workspace.yaml is not in this checkout. Remove \`${id}\` from packages: in the workspace repo, then \`oats sync\`.`);
@@ -2169,14 +2141,18 @@ async function workspaceCmd() {
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   const members = memberRows(discovery);
   const packages = packageRows(lock);
-  const declared = Object.keys(discovery.workspace.packages || {}).sort();
+  // Standalone (decision 10): there is no workspace file — the declared packages are the
+  // kernel's own default (decision 25) and there are no teams.
+  const standalone = discovery.standalone === true;
+  const declared = Object.keys(standalone ? standalonePackages(catalogForSync(bail)).packages : (discovery.workspace?.packages || {})).sort();
   const locked = new Set(packages.map((p) => p.id));
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
   const approval = { approved: packages.filter((p) => p.approved).map((p) => p.id), needed: packages.filter((p) => !p.approved).map((p) => p.id) };
-  const result = { workspaceStatusApi: 1, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, approval, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
+  const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace?.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, approval, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
+  if (standalone) console.log(`  (standalone — the workspace of ${memberLabel(discovery.key)} cannot be read; its own souls + oats.core)\n`);
   console.log("Members:");
   printTable(["member", "status", "commit", "team", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.team ?? "—", m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
   for (const m of members.filter((m) => !m.confirmed)) console.log(`    ${m.name}: ${m.detail}`);
@@ -2197,12 +2173,13 @@ async function itemsCmd(kind) {
   let lock;
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   const items = workspaceItems(discovery, lock)[kind];
-  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
-  console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})\n`);
+  const standalone = discovery.standalone === true;
+  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
+  console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — standalone: the workspace of ${memberLabel(discovery.key)} cannot be read` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.team, s.work ?? "—"]));
   else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.name, c.origin, c.team, c.layer ?? "—"]));
-  const unsynced = Object.keys(discovery.workspace.packages || {}).filter((id) => !lock.packages[id]);
+  const unsynced = Object.keys(discovery.workspace?.packages || {}).filter((id) => !lock.packages[id]);
   if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
 }
 
@@ -2220,7 +2197,9 @@ async function statusDrift(data) {
   let lock = null;
   try { if (existsSync(join(deploymentDir, LOCK_FILE))) lock = readLock(deploymentDir); } catch { lock = null; }
   let discovery;
-  try { discovery = await discoverWorkspace(ctx.local.workspace, { local: ctx.local, remoteOptions: remoteOptionsFromEnv() }); }
+  // The standalone view (decisions 10/25) is a discovery too: drift of a standalone
+  // instance is computed against its member's current state, not reported "unreachable".
+  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
     return { drift: new Map(), unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) } };
@@ -2332,24 +2311,46 @@ async function spawnCmd() {
     root = hit.root;
   }
   let agent = findAgent(root, name);
-  // Workspace model: a soul that lives in a MEMBER repo (or an external pin) is
-  // discovered over the remotes and its source copied under <agents-root>/<name>/soul/
-  // — the classic skeleton then reads it like any local soul. Its capabilities are
-  // resolved and materialized per instance further down (prepared).
-  let wsPrepared;
-  if (!agent && !isPreview) {
-    try {
-      const { loadLocal } = await import("../lib/workspace.mjs");
-      let hasLocal = true; try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else throw e; }
-      if (hasLocal) {
-        const { prepareInstance, ensureWorkspaceSoul, parseProviderFlags } = await import("../lib/instance-resolution.mjs");
-        const pp = []; for (let i = 0; i < args.length; i++) if (args[i] === "--provider" && args[i + 1] && args[i + 2]) { pp.push([args[i + 1], args[i + 2]]); i += 2; }
-        wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(pp) } });
-        await ensureWorkspaceSoul(wsPrepared, root);
-        agent = findAgent(root, name);
-        if (agent) note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""})`);
+  // Workspace model: with an oats-local.yaml the soul is ALWAYS discovered over the
+  // remotes and resolved (member = latest state, package = locked+approved) — never
+  // "whatever <agents-root>/<name>/soul/ happens to hold": that copy is a per-commit
+  // cache (ensureWorkspaceSoul refreshes it when the member moved), so a second
+  // spawn sees the member's CURRENT soul, not the first spawn's. A preview runs the
+  // same read-only discovery+resolution; the fetched soul copy it may leave under
+  // <agents-root>/<name>/soul/ is not an instance (reported as soulFetched).
+  const providerPairs = [];
+  for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
+  let wsPrepared, soulFetched = false;
+  {
+    let hasLocal = true; try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
+    if (hasLocal) {
+      let discovery = null;
+      try {
+        const { prepareInstance, ensureWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
+        const remoteOptions = remoteOptionsFromEnv();
+        const { local } = loadLocal(dirFlag());
+        discovery = await discoverOrStandalone(local, { remoteOptions });
+        wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
+        const soulName = wsPrepared.soulEntry.name;
+        const stampFile = join(root, soulName, ".oats-soul-source.json");
+        const stampBefore = (() => { try { return JSON.parse(readFileSync(stampFile, "utf8")); } catch { return null; } })();
+        const soulDir = await ensureWorkspaceSoul(wsPrepared, root);
+        soulFetched = !stampBefore || stampBefore.commit !== wsPrepared.soulEntry.commit || stampBefore.repoKey !== wsPrepared.soulEntry.repoKey;
+        if (!agent || soulFetched || agent._dir !== dirname(soulDir)) agent = findAgent(root, soulName);
+        if (!agent) bail("E_SOUL_UNKNOWN", `soul "${name}" was fetched to ${shortPath(soulDir)} but is not readable as a soul there`);
+        note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""}${soulFetched ? "; soul source fetched" : ""})`);
+      } catch (e) {
+        // Standalone (decisions 10/25): the ONLY package request is the kernel's own
+        // default; when the catalog cannot name it, say so instead of "add it to packages:"
+        // (there is no workspace file to add it to).
+        if (e?.code === "E_PACKAGE_MISSING" && discovery?.standalone === true) {
+          let file = process.env.OATS_PACKAGE_CATALOG || null; try { file = describeOfficialCatalog().catalog.file; } catch { /* keep the env value */ }
+          bail(e.code, `${e.details?.capability ?? "oats.core"}: the catalog has no package providing oats.core (OATS_PACKAGE_CATALOG=${file ?? "<bundled>"}) — standalone spawns resolve only the kernel's default package from the catalog`, { ...(e.details ?? {}), standalone: true, reason: "no-catalog", catalog: file });
+        }
+        if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details);
+        throw e;
       }
-    } catch (e) { if (e?.code === "E_SOUL_UNKNOWN" || e?.code === "E_SOUL_AMBIGUOUS") bail(e.code, e.message, e.details); if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+    } else if (providerPairs.length) bail("E_BAD_ARGS", "--provider needs a workspace deployment (oats-local.yaml); this directory has none");
   }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
@@ -2464,19 +2465,15 @@ async function spawnCmd() {
   // package = locked+approved) and copied whole into the new home. Without one
   // (a bare agents root, tests) the classic soul-directory spawn proceeds.
   let prepared;
-  const providerPairs = [];
-  for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
-  try {
-    const { prepareInstance, parseProviderFlags, toCapabilityRows, modulesPreview } = await import("../lib/instance-resolution.mjs");
-    const { loadLocal } = await import("../lib/workspace.mjs");
-    let hasLocal = true; try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else throw e; }
-    if (hasLocal) {
-      prepared = wsPrepared ?? await prepareInstance(dirFlag(), agent.name, { spawn: { providers: parseProviderFlags(providerPairs) } });
+  if (wsPrepared) {
+    try {
+      const { toCapabilityRows, modulesPreview } = await import("../lib/instance-resolution.mjs");
+      prepared = wsPrepared;
       prepared.capabilityRows = []; // filled after materialization (paths live in the home); preview uses modulesPreview
       prepared.preview = modulesPreview(prepared.resolution, root, agent.name);
       prepared.toCapabilityRows = toCapabilityRows;
-    } else if (providerPairs.length) bail("E_BAD_ARGS", "--provider needs a workspace deployment (oats-local.yaml); this directory has none");
-  } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+    } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+  }
   let r;
   try {
     if (args.includes("--allow-child-spawns") && args.includes("--no-child-spawns")) bail("E_BAD_ARGS", "--allow-child-spawns and --no-child-spawns contradict");
@@ -2503,7 +2500,14 @@ async function spawnCmd() {
       ...(flag("idempotency-key") !== undefined && flag("idempotency-key") !== true ? { idempotencyKey: String(flag("idempotency-key")) } : {}),
     };
       r = prepared ? await spawnInstanceAsync(root, agent, spawnOpts) : spawnInstance(root, agent, spawnOpts); }
-    if (args.includes("--preview")) { if (JSON_MODE) { jsonOk(r); return; } console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created`); return; }
+    if (args.includes("--preview")) {
+      // A workspace preview may have fetched the soul's SOURCE under <agents-root>/<name>/soul/
+      // (a per-commit cache, not an instance): the result says so.
+      if (prepared) r.soulFetched = soulFetched;
+      if (JSON_MODE) { jsonOk(r); return; }
+      console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created${soulFetched ? ` (the soul source was fetched to ${shortPath(join(root, r.agent, "soul"))} — a per-commit copy, not an instance)` : ""}`);
+      return;
+    }
   } catch (e) {
     // A typed CLI failure keeps ITS OWN code: re-badging an unsafe-config-key
     // (raised by the readers spawn walks) as E_SPAWN_FAILED tells an agent
@@ -2864,23 +2868,28 @@ async function onboardCmd() {
   const synced = await performSync(ctx, syncBail, { onDiscovered: () => { discovered = true; } });
 
   // (4) The taught layout as next steps (design doc §4), and the envelope.
-  const ws = synced.discovery.workspace;
+  const standalone = synced.discovery.standalone === true;
   const members = synced.report.members;
-  const spawnHint = `oats spawn oats-setup-expert --dir ${shortPath(dir)}`;
+  // The setup expert is suggested only when THIS workspace lists a soul by that name (a
+  // confirmed member's or, standalone, the repo's own); otherwise any listed soul is spawnable.
+  const soulNames = synced.items.souls.map((s) => s.name);
+  const setupExpert = soulNames.includes("oats-setup-expert");
+  const spawnHint = setupExpert ? `oats spawn oats-setup-expert --dir ${shortPath(dir)}` : null;
+  const anySoulHint = `spawn any listed soul: oats spawn <soul> --dir ${shortPath(dir)}${soulNames.length ? ` (e.g. ${soulNames.slice(0, 3).join(", ")})` : ""}`;
   // A member's clone goes beside oats-local.yaml under its repo name; `agents/` is the instance
   // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4).
   const cloneDirOf = (m) => join(dir, m.name === "agents" ? "agents-repo" : m.name);
-  const clones = members.filter((m) => m.confirmed).map((m) => ({ key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: cloneDirOf(m) }));
+  const clones = members.filter((m) => m.confirmed || (standalone && m.key === synced.discovery.key)).map((m) => ({ key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: cloneDirOf(m) }));
   // Decision 26: the host publishes the member list to whoever can read it. When the host is
   // itself a member (the common `agents` shape) that is fine for an all-private or all-public
   // organisation; a mixed one needs a private host that is NOT a public member. The kernel
   // cannot see forge visibility, so it states the rule rather than judging.
   const hostIsMember = members.some((m) => m.key === synced.discovery.key);
   const hosting = { host: synced.discovery.key, hostIsMember, rule: "If any member is private, host oats-workspace.yaml in a private repo that is not a public member (a dedicated <org>/workspace repo); public contributors then use the standalone case (from: here capabilities + oats.core)." };
-  const result = { onboardApi: 2, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, hosting, next: { clone: clones, spawn: spawnHint } };
+  const result = { onboardApi: 2, standalone: standalone || undefined, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, hosting, next: { clone: clones, spawn: spawnHint, souls: soulNames.slice(0, 3) } };
   if (JSON_MODE) { jsonOk(result); process.exitCode = synced.approvalNeeded.length ? 2 : 0; return; }
 
-  console.log(`Onboarded ${shortPath(dir)} into workspace ${ws.name} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).\n`);
+  console.log(`Onboarded ${shortPath(dir)} into workspace ${workspaceName(synced.discovery)} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).${standalone ? `\n  (standalone — the workspace of ${memberLabel(synced.discovery.key)} cannot be read from here; you get its own souls + oats.core)` : ""}\n`);
   printSyncReport(ctx, synced);
   console.log(`
 Layout (the taught convention — the kernel finds clones through oats-local.yaml, so any layout works):
@@ -2897,16 +2906,18 @@ Next:
   2. Check who may read the host: ${synced.discovery.key}${hostIsMember ? " is itself a member" : " is a dedicated host"}. The workspace file
      names every member, so if any member is private the host must be a private repo that is not
      a public member; public contributors then get the standalone case (from: here + oats.core).
-  3. Spawn the setup expert to guide the rest (souls, teams, provider settings, approvals):
-       ${spawnHint}${synced.approvalNeeded.length ? `\n  (first: \`oats sync --dir ${shortPath(dir)}\` in a terminal to approve ${synced.approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")})` : ""}`);
+  3. ${setupExpert ? "Spawn the setup expert to guide the rest (souls, teams, provider settings, approvals):" : "No soul named oats-setup-expert is listed here —"}
+       ${spawnHint ?? anySoulHint}${synced.approvalNeeded.length ? `\n  (first: \`oats sync --dir ${shortPath(dir)}\` in a terminal to approve ${synced.approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")})` : ""}`);
   process.exitCode = synced.approvalNeeded.length ? 2 : 0;
 }
 
-/** The clone URL of a member row: what the remote observed (from the workspace's members: refs). */
+/** The clone URL of a member row: what the remote observed (from the workspace's members: refs;
+ *  standalone, the one repo oats-local.yaml named). */
 function memberUrlOf(discovery, key) {
-  for (const ref of discovery.workspace.members || []) {
+  for (const ref of discovery.workspace?.members || []) {
     try { const parsed = remoteModule.parseRepoRef(ref); if (parsed.key === key) return parsed.url; } catch { /* schema already validated */ }
   }
+  if (discovery.standalone === true && discovery.key === key) return discovery.url ?? null;
   return null;
 }
 
@@ -3102,59 +3113,6 @@ function typeCmd() {
   console.log(`Souls join it with: oats create <agent> --type ${name} (or type: ${name} in soul.yaml)`);
 }
 
-// ---------- injection eject ----------
-function injectCmd() {
-  const sub = args[1];
-  const target = args[2];
-  if (sub !== "eject" || !target || target.startsWith("--")) die("usage: oats inject eject <capability-id|oats> [--dir <dir>]");
-  const dir = dirFlag();
-  const file = join(dir, "oats-config.yaml");
-  if (!existsSync(file)) die(`no oats-config.yaml at ${shortPath(dir)} — run oats init first`);
-  if (["checkout", "worktree", "attached", "workspace"].includes(target)) die("work-mode injection overrides were removed — the packaged briefings are the contract; work modes support only setup: (env bootstrap script)");
-  const isWorkMode = false;
-  const isKernel = target === "oats";
-  const src = isKernel ? packagedInject("oats", dir) : isWorkMode ? packagedInject(`work-${target}`, dir) : packagedInject(target, dir);
-  if (!src) die(`no packaged default injection found for "${target}"`);
-  const rel = isKernel ? ".agents/injections/oats-defaults/oats.md" : isWorkMode ? `.agents/injections/workmodes/${target}.md` : `.agents/injections/capabilities/${target}.md`;
-  const destAbs = join(dir, rel);
-  if (existsSync(destAbs)) die(`${shortPath(destAbs)} already exists — edit it directly (it is already your override)`);
-  let text = readFileSync(file, "utf8");
-  if (!isWorkMode && !isKernel) {
-    const caps = readCapabilitiesModel(file);
-    const entry = Object.values(caps.layers).find((e) => e && e !== "none" && e.capability === target) || caps.additive[target];
-    if (!entry) die(`capability "${target}" has no entry in ${shortPath(file)} — activate it first (oats use ${target})`);
-    const m = capabilityManifest(target, dir);
-    const owned = entry.from === "owned" || String(entry.from || "").startsWith("path:") || String(m?._origin || "").startsWith("owned:") || String(m?._origin || "").startsWith("path:");
-    if (owned) die(`"${target}" is owned/path-sourced — you own its source; edit its injects/ file directly instead of ejecting`);
-    entry["injection-override"] = rel;
-    text = replaceCapabilitiesBlock(text, caps);
-  } else {
-    const lines = text.replace(/\n*$/, "\n").split("\n");
-    const headRe = isKernel ? /^oats:\s*(#.*)?$/ : /^work-modes:\s*(#.*)?$/;
-    let idx = lines.findIndex((l) => headRe.test(l));
-    if (idx < 0) { lines.push("", isKernel ? "oats:" : "work-modes:"); idx = lines.length - 1; }
-    if (isKernel) {
-      lines.splice(idx + 1, 0, `  injection-override: ${rel}`);
-      const c = lines.findIndex((l, i2) => i2 > idx + 1 && l.trim() === `# injection-override: ${rel}`);
-      if (c >= 0) lines.splice(c, 1);
-    } else {
-      let mIdx = lines.findIndex((l, i2) => i2 > idx && new RegExp(`^  ${target}:`).test(l));
-      if (mIdx < 0) { lines.splice(idx + 1, 0, `  ${target}:`, `    injection-override: ${rel}`); }
-      else {
-        lines.splice(mIdx + 1, 0, `    injection-override: ${rel}`);
-        const c = lines.findIndex((l, i2) => i2 > mIdx + 1 && l.trim() === `# injection-override: ${rel}`);
-        if (c >= 0) lines.splice(c, 1);
-      }
-    }
-    text = lines.join("\n").replace(/\n*$/, "\n");
-  }
-  mkdirSync(dirname(destAbs), { recursive: true });
-  writeFileSync(destAbs, readFileSync(src, "utf8"));
-  writeFileSync(file, text);
-  console.log(`Ejected packaged injection → ${shortPath(destAbs)}`);
-  console.log(`Set injection-override in ${shortPath(file)}. Edit the ejected file; it no longer tracks package updates.`);
-}
-
 // ---------- update ----------
 function updateCmd() {
   const checkOnly = args.includes("--check");
@@ -3208,7 +3166,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3573,7 +3531,7 @@ async function serverRouteCmd() {
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
 /** Removed 0.24 verbs → their v2 replacement (workspace model v2, decision 5). Checked before capability dispatch. */
-const REMOVED_VERBS = { install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "oats sync (approval is asked once per package version)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)" };
+const REMOVED_VERBS = { install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "oats sync (approval is asked once per package version)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)", inject: "injection overrides are not part of the workspace model yet; edit the capability inject in its member repo" };
 try {
 // Inspect explicit selectors with the existing parser before new-work routing,
 // including selectors before the command. Inherited captures are not prepare inputs.
@@ -3646,7 +3604,6 @@ else if (cmd === "update") {
   updateCmd();
 }
 else if (cmd === "type") typeCmd();
-else if (cmd === "inject") injectCmd();
 else if (cmd === "readiness") readinessCmd();
 else if (cmd === "instance") instanceCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
@@ -3888,8 +3845,6 @@ Usage:
                                              worktree's verified branch and implies discard
   oats type add <name> [--description <d>]   declare an agent type (family) in config;
   oats type list                             souls join via create --type / soul.yaml
-  oats inject eject <cap|work-mode|oats>      copy a packaged injection to the conventional
-      [--dir <d>]                           .agents/injections/ path and set injection-override
   oats root                                  print this package's install root
                                             (adapters resolve the kernel from it)
 

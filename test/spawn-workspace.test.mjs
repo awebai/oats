@@ -80,10 +80,32 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     assert.equal(r.status, 1, r.stdout + r.stderr);
     assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED");
     assert.ok(!existsSync(join(agentsRoot, "release-manager", "instances", "release-manager-x")), "a refused spawn leaves no home");
+    // Phase C (H5): a PREVIEW of a soul never applied on this machine runs the same read-only discovery +
+    // resolution — it is refused for the same reason as the apply (not E_SOUL_UNKNOWN because no local soul copy exists yet).
+    r = oats(spawnArgs("release-manager", "--preview"), { cwd: dep, env, base });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED", "preview reaches resolution before any apply");
 
     // ---- approve by editing the lock (what `sync` on a TTY records) ----
     for (const p of Object.values(lock.packages)) p.approved = { executables: "sha256-" + "0".repeat(64), at: "2026-09-23T00:00:00.000Z" };
     writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+
+    // ---- Phase C (H5): preview BEFORE any apply of this soul: modules[] listed, soulFetched:true, no instance ----
+    r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, `preview before apply\n${r.stdout}\n${r.stderr}`);
+    const firstPreview = envelope(r).result;
+    assert.equal(firstPreview.preview, true);
+    assert.deepEqual(firstPreview.modules.map((m) => m.name).sort(), ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"]);
+    assert.ok(firstPreview.modules.every((m) => m.changedSince === null), "no previous instance → changedSince null");
+    assert.equal(firstPreview.soulFetched, true, "the preview fetched the soul SOURCE (a per-commit copy, not an instance) and says so");
+    assert.ok(isRegular(join(agentsRoot, "release-manager", "soul", "soul.yaml")), "the fetched soul copy is under <agents-root>/<soul>/soul/");
+    assert.ok(!existsSync(join(agentsRoot, "release-manager", "instances")), "a preview creates no instance");
+    r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(envelope(r).result.soulFetched, false, "a second preview at the same commit reuses the copy");
+    r = oats(spawnArgs("release-manager", "--preview").filter((a) => a !== "--json"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /^preview release-manager → release-manager-x .*nothing was created$/m, "text preview: no fetch note when the copy is reused");
 
     // ---- spawn release-manager with an instance-level provider payload ----
     r = oats(spawnArgs("release-manager", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
@@ -93,7 +115,7 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     const spawned = doc.result;
     assert.equal(spawned.instance, "release-manager-x");
     assert.equal(spawned.launched, false);
-    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering/, "progress goes to stderr");
+    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering\)/, "progress goes to stderr (the soul copy from the preview is reused: no fetch note)");
     const home = spawned.home;
     assert.equal(home, join(agentsRoot, "release-manager", "instances", "release-manager-x"));
 
@@ -152,7 +174,31 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     assert.ok(isRegular(join(agentsRoot, "release-manager", "soul", "soul.yaml")));
     assert.ok(isRegular(join(agentsRoot, "release-manager", "soul", "AGENTS.md")));
 
-    // ---- preview: modules[] with changedSince false (nothing moved yet) ----
+    // ---- Phase C (H2): the soul copy is a per-commit cache — a later spawn sees the member's CURRENT soul ----
+    const stampFile = join(agentsRoot, "release-manager", ".oats-soul-source.json");
+    const stampBefore = JSON.parse(readFileSync(stampFile, "utf8"));
+    assert.equal(stampBefore.commit, fx.commits.agents);
+    assert.equal(meta.workspace.soul.commit, stampBefore.commit, "instance.json.workspace.soul.commit == the stamp commit");
+    const soulMove = await moveMember(fx, "agents", async (work, { fs, path }) => {
+      await fs.appendFile(path.join(work, "souls", "release-manager", "AGENTS.md"), "\nH2: release policy revised after the first spawn.\n");
+    }, { message: "agents: revise release-manager soul" });
+    assert.notEqual(soulMove.commit, stampBefore.commit);
+    r = oats(spawnArgs("release-manager", "--provider", "oats.okf", "state-dir=/tmp/x").map((a) => (a === "x" ? "h2" : a)), { cwd: dep, env, base });
+    assert.equal(r.status, 0, `second spawn after the soul moved\n${r.stdout}\n${r.stderr}`);
+    assert.match(r.stderr, /workspace soul: "release-manager" from .*agents\.git @ [0-9a-f]{12}, team engineering; soul source fetched\)/, "the moved soul is fetched again");
+    const homeH2 = envelope(r).result.home;
+    assert.equal(homeH2, join(agentsRoot, "release-manager", "instances", "release-manager-h2"));
+    assert.match(readFileSync(join(homeH2, "AGENTS.md"), "utf8"), /H2: release policy revised after the first spawn\./, "the new home is composed from the CURRENT soul");
+    assert.doesNotMatch(readFileSync(join(home, "AGENTS.md"), "utf8"), /H2: release policy revised/, "the first instance never changes under itself (decision 7)");
+    const stampAfter = JSON.parse(readFileSync(stampFile, "utf8"));
+    assert.equal(stampAfter.commit, soulMove.commit, "the soul stamp follows the member");
+    const metaH2 = JSON.parse(readFileSync(join(homeH2, "instance.json"), "utf8"));
+    assert.equal(metaH2.workspace.soul.commit, soulMove.commit, "instance.json.workspace.soul.commit == the refreshed stamp commit");
+    assert.match(readFileSync(join(agentsRoot, "release-manager", "soul", "AGENTS.md"), "utf8"), /H2: release policy revised/, "the soul copy under <agents-root>/<soul>/soul/ is refreshed");
+    // The member's OTHER items moved with that commit too: nw-house-style / nw-release-tooling are member-tier.
+    assert.equal(metaH2.modules["nw-house-style"].commit, soulMove.commit);
+
+    // ---- preview: modules[] with changedSince false against the NEWEST instance (release-manager-h2) ----
     const rmProvider = ["--provider", "oats.okf", "state-dir=/tmp/x"];
     r = oats(spawnArgs("release-manager", "--preview", ...rmProvider), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -160,13 +206,14 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     let preview = doc.result;
     assert.equal(preview.preview, true); assert.equal(preview.spawnPreviewApi, 2);
     assert.equal(preview.team, "engineering");
-    assert.equal(preview.resolution, meta.workspace.resolution, "same inputs (incl. the provider payload) → same revision");
-    assert.equal(preview.decision?.resolution, meta.workspace.resolution, "the decision binds the resolution revision");
+    assert.equal(preview.resolution, metaH2.workspace.resolution, "same inputs (incl. the provider payload) → same revision");
+    assert.equal(preview.decision?.resolution, metaH2.workspace.resolution, "the decision binds the resolution revision");
+    assert.notEqual(metaH2.workspace.resolution, meta.workspace.resolution, "the member move changed the revision of the member-tier modules");
     r = oats(spawnArgs("release-manager", "--preview"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.notEqual(envelope(r).result.resolution, meta.workspace.resolution, "the instance-level payload is part of the revision (decision 14)");
+    assert.notEqual(envelope(r).result.resolution, metaH2.workspace.resolution, "the instance-level payload is part of the revision (decision 14)");
     assert.deepEqual(preview.modules.map((m) => m.name).sort(), expectedModules);
-    assert.ok(preview.modules.every((m) => m.changedSince === false), `nothing changed since release-manager-x: ${JSON.stringify(preview.modules.map((m) => [m.name, m.changedSince]))}`);
+    assert.ok(preview.modules.every((m) => m.changedSince === false), `nothing changed since release-manager-h2: ${JSON.stringify(preview.modules.map((m) => [m.name, m.changedSince]))}`);
     assert.equal(preview.modules.find((m) => m.name === "oats.okf").layer, "knowledge");
     assert.ok(!existsSync(join(agentsRoot, "release-manager", "instances", "release-manager-x2")), "a preview creates nothing");
 
@@ -180,24 +227,28 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     assert.equal(toolsMeta.modules["nw-lint"].from.kind, "package", "non-collapse: nw-lint is package-tier even though nw-tools is a member");
     assert.ok(isRegular(join(toolsHome, ".agents", "skills", "nw-tools-dev", "package-conventions", "SKILL.md")));
 
-    // ---- status before any move: no drift lines in the default view ----
+    // ---- status before the nw-tools move: release-manager-x (spawned before the agents soul move) shows the
+    // agents member moved (H2 above); release-manager-h2 and tools-expert-x are current ----
     r = oats(["status", "--dir", dep, "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     let st = JSON.parse(r.stdout);
     assert.deepEqual(st.workspace, { reachable: true });
     const instanceOf = (payload, name) => payload.agents.flatMap((a) => a.instances).find((i) => i.instance === name);
-    let rm = instanceOf(st, "release-manager-x");
+    let rm = instanceOf(st, "release-manager-h2");
     assert.ok(Array.isArray(rm.modules) && rm.modules.length === 5, "--json: instances[].modules[] has 5 rows");
     assert.ok(rm.modules.every((m) => m.status === "current"), JSON.stringify(rm.modules.map((m) => [m.name, m.status])));
+    const rmOld = instanceOf(st, "release-manager-x");
+    assert.equal(rmOld.modules.find((m) => m.name === "nw-house-style").status, "moved", "the first instance records the agents member before the soul move");
+    assert.equal(rmOld.modules.find((m) => m.name === "nw-deploy").status, "current");
     r = oats(["status", "--dir", dep], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.doesNotMatch(r.stdout, /modules:/, "the default view lists only moved/missing modules");
     assert.doesNotMatch(r.stdout, /unreachable/);
+    assert.doesNotMatch(r.stdout, /nw-tools-dev/, "nothing of nw-tools moved yet");
     r = oats(["status", "--dir", dep, "--verbose"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, new RegExp(`modules: nw-house-style from agents @ ${fx.commits.agents.slice(0, 7)}$`, "m"), "--verbose lists every module");
+    assert.match(r.stdout, new RegExp(`modules: nw-house-style from agents @ ${fx.commits.agents.slice(0, 7)}$`, "m"), "--verbose lists every module (release-manager-h2 is at the current agents commit)");
     assert.match(r.stdout, new RegExp(`modules: nw-deploy from package nw\\.tools v0\\.4\\.0 @ ${fx.commits["nw-tools"].slice(0, 7)}$`, "m"));
-    assert.doesNotMatch(r.stdout, /moved since|no longer present/);
+    assert.doesNotMatch(r.stdout, /no longer present/);
 
     // ---- move nw-tools (edit the MEMBER capability); the package tag does not move ----
     const move = await moveMember(fx, "nw-tools", async (work, { fs, path }) => {
@@ -212,7 +263,7 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     assert.equal(preview.modules.find((m) => m.name === "nw-deploy").changedSince, false, "a member move never touches the package pinned from that repo");
     assert.equal(preview.modules.find((m) => m.name === "nw-deploy").from.commit, fx.tags["nw-tools"].commit);
     assert.ok(preview.modules.every((m) => m.changedSince === false));
-    assert.equal(preview.resolution, meta.workspace.resolution, "release-manager's revision is unchanged by the nw-tools move");
+    assert.equal(preview.resolution, metaH2.workspace.resolution, "release-manager's revision is unchanged by the nw-tools move");
     // tools-expert: nw-tools-dev is MEMBER-tier → changedSince names the previous instance and its commit.
     r = oats(spawnArgs("tools-expert", "--preview"), { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -231,7 +282,7 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     r = oats(["status", "--dir", dep, "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     st = JSON.parse(r.stdout);
-    rm = instanceOf(st, "release-manager-x");
+    rm = instanceOf(st, "release-manager-h2");
     assert.equal(rm.modules.length, 5);
     assert.ok(!rm.modules.some((m) => m.name === "nw-tools-dev"), "release-manager never had nw-tools-dev");
     assert.ok(rm.modules.every((m) => m.status === "current"), `release-manager is unaffected by the move: ${JSON.stringify(rm.modules.map((m) => [m.name, m.status]))}`);
@@ -242,7 +293,9 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     r = oats(["status", "--dir", dep], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, new RegExp(`modules: nw-tools-dev from nw-tools @ ${move.previous.slice(0, 7)} {2}\\[member moved since \\(now @ ${move.commit.slice(0, 7)}\\)\\]`));
-    assert.equal((r.stdout.match(/modules:/g) || []).length, 1, "only the moved module appears in the default view");
+    // Default view: only moved/missing rows — nw-tools-dev (tools-expert-x) plus release-manager-x's two agents-tier modules moved by the H2 soul commit.
+    assert.equal((r.stdout.match(/modules: nw-tools-dev/g) || []).length, 1, "the moved nw-tools module appears once");
+    assert.equal((r.stdout.match(/modules:/g) || []).length, 3, "only moved modules appear in the default view (nw-tools-dev + release-manager-x's nw-house-style/nw-release-tooling)");
 
     // ---- a capability removed from a member → 'capability no longer present' ----
     await moveMember(fx, "nw-tools", async (work, { fs, path }) => { await fs.rm(path.join(work, "capabilities", "nw-tools-dev"), { recursive: true }); });

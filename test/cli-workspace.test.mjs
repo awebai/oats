@@ -202,6 +202,19 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     assert.equal(readFileSync(join(clone, "oats-workspace.yaml"), "utf8"), before, "add + remove round-trips to the original bytes");
     r = oats(["package", "remove", "nope", "--json", "--dir", clone], { cwd: base, env, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_PACKAGE_MISSING");
+    // Phase C (M15): the UNTRACKED branch (no workspace checkout, but a deployment with oats-local.yaml)
+    // checks the id against the DISCOVERED workspace too — an undeclared id is E_PACKAGE_MISSING in both branches.
+    r = oats(["package", "remove", "nope", "--json", "--dir", dep], { cwd: base, env, base });
+    assert.equal(r.status, 1, r.stdout + r.stderr); assert.equal(envelope(r).error.code, "E_PACKAGE_MISSING");
+    assert.deepEqual(envelope(r).error.details.declared, ["nw.tools", "oats.framework", "oats.okf"]);
+    r = oats(["package", "remove", "oats.okf", "--json", "--dir", dep], { cwd: base, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(envelope(r).result.edited, false, "a declared id in the untracked branch still prints the instruction (the file is shared through Git)");
+    assert.match(envelope(r).result.hint, /not in this checkout/);
+    r = oats(["package", "remove", "nope", "--dir", dep], { cwd: base, env, base });
+    assert.equal(r.status, 1); assert.match(r.stderr, /packages\.nope is not declared by workspace northwind/);
+    // Without any deployment (no oats-local.yaml, no checkout) nothing can be checked: the instruction is printed.
+    r = oats(["package", "remove", "nope", "--json", "--dir", elsewhere], { cwd: base, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr); assert.equal(envelope(r).result.edited, false);
     // Phase B (CLI M4): `remove <id> --json` never reports "--json" as the value.
     r = oats(["package", "add", "oats.aweb", "v1.11.2", "--json", "--dir", clone], { cwd: base, env, base });
     r = oats(["package", "remove", "oats.aweb", "--json", "--dir", clone], { cwd: base, env, base });
@@ -233,20 +246,25 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     // ---- doctor reports the lock offline (no remote access) ----
     r = oats(["doctor", dep], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Workspace \(v2, offline view\):/);
     assert.match(r.stdout, /Locked packages \(oats-lock\.json v3\):/);
     assert.match(r.stdout, /oats\.okf 2\.1\.3 {2}catalog:oats\.okf {2}@ [0-9a-f]{12} {2}APPROVAL NEEDED/);
+    // Phase C (M18): a v2 deployment has no config chain / layers / installed tier — the v1 half is not printed.
+    for (const v1 of [/Config chain/, /Layers:/, /Layers unresolved/, /Kernel injection:/, /Unconditional injections/, /Acquired capability packages/, /Active capabilities:/, /is in installed\/ but has no lock entry/, /oats-config\.yaml/]) assert.doesNotMatch(r.stdout, v1, `v1 doctor section leaks on a v2 deployment: ${v1}`);
     r = oats(["doctor", dep, "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
     const dj = JSON.parse(r.stdout);
     assert.equal(dj.workspace.ref, fx.refs.agents); assert.equal(dj.lockFile, join(dep, "oats-lock.json"));
     assert.deepEqual(dj.packages.map((p) => p.id), ["nw.tools", "oats.framework", "oats.okf"]);
+    assert.equal(dj.workspaceApi, 2);
+    for (const k of ["chain", "layers", "acquired", "injects", "kernelInjection", "capabilities", "retiredLocks", "retiredArtifacts", "oasScopes", "team"]) assert.ok(!(k in dj), `--json omits the v1 key ${k} on a v2 deployment`);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("removed 0.24 verbs are unknown commands: install / use / init / trust / list / catalog / remove / migrate exit nonzero and name the v2 replacement", () => {
+test("removed 0.24 verbs are unknown commands: install / use / init / trust / list / catalog / remove / migrate / inject exit nonzero and name the v2 replacement", () => {
   const base = fixtureBase();
   try {
-    for (const verb of ["install", "use", "init", "trust", "list", "catalog", "remove", "migrate", "config"]) {
+    for (const verb of ["install", "use", "init", "trust", "list", "catalog", "remove", "migrate", "config", "inject"]) {
       let r = oats([verb], { cwd: base, base });
       assert.notEqual(r.status, 0, `${verb} must fail`);
       assert.match(r.stderr, new RegExp(`unknown command "${verb}" — removed by the workspace model v2`), `${verb}: ${r.stderr}`);
@@ -257,6 +275,11 @@ test("removed 0.24 verbs are unknown commands: install / use / init / trust / li
       assert.match(doc.error.message, new RegExp(`unknown command "${verb}" — removed by the workspace model v2; use `), `${verb} --json carries the replacement`);
       assert.equal(doc.error.details?.removed ?? doc.error.removed, verb);
     }
+    // Phase C (M17): `oats inject eject <cap>` (wrote oats-config.yaml injection-override) is gone with the v1 config surface.
+    const inj = oats(["inject", "eject", "oats", "--json"], { cwd: base, base });
+    assert.equal(inj.status, 1); assert.equal(envelope(inj).error.code, "E_UNKNOWN_COMMAND");
+    assert.match(envelope(inj).error.details.replacement, /injection overrides are not part of the workspace model yet/);
+    assert.doesNotMatch(oats(["--help"], { cwd: base, base }).stdout, /oats inject/, "usage no longer lists inject");
     // `oats install` with what used to be a source argument is equally gone.
     const r = oats(["install", "oats.okf", "--json"], { cwd: base, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_UNKNOWN_COMMAND");
@@ -282,6 +305,7 @@ test("oats version --json advertises workspaceApi 2 and only the wired v2 featur
     assert.ok(doc.features.includes("workspace-v2"));
     // Phase C: spawn runs on resolve/materialize, so both features are now advertised (a feature is listed only once wired).
     for (const f of ["instance-modules", "spawn-provider-payload"]) assert.ok(doc.features.includes(f), `${f} is wired in Phase C`);
+    assert.ok(!doc.features.includes("catalog"), "the `catalog` verb is removed, so the feature is no longer advertised");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
