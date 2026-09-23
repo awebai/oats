@@ -308,23 +308,23 @@ try {
   // can spawn (its required spawn hook refuses to bootstrap on read).
   const nodes = join(room, "okf-nodes.json");
   write(nodes, JSON.stringify({ expert: { path: "expert", owner: "smoke-owner" } }));
-  // TODO(kernel): `oats okf init --soul probe` from the deployment (no instance
-  // home) answers E_CAPABILITY_INACTIVE under the workspace model — the
-  // non-home dispatch branch (bin/oats.mjs capabilityCommand → dispatch, the
-  // `else` resolving through resolveOatsConfig(context, --soul)) still reads the
-  // v1 config chain instead of preparing the soul's resolution (prepareInstance)
-  // from oats-local.yaml. Until that branch resolves through the workspace,
-  // provision through the package's own executable with the dispatcher's
-  // contract (OATS_SETTINGS = the soul's effective oats.okf settings, absolute
-  // OATS_CLI_BIN). The bytes are the same digest-approved oats.okf source (the
-  // npm mirror equals the inventory, asserted above).
-  const okfInit = spawnSync(process.execPath, [join(kernelRoot, "capabilities/oats-okf/bin/oats-okf.mjs"), "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"], {
-    cwd: deployment, encoding: "utf8", env: { ...cliEnv, OATS_CAPABILITY: "oats.okf", OATS_SETTINGS: JSON.stringify({ "bindings-file": bindings }), OATS_CLI_BIN: realpathSync(oats) },
-  });
-  assert.equal(okfInit.status, 0, okfInit.stdout + okfInit.stderr);
-  const okfInitAnswer = JSON.parse(okfInit.stdout);
-  assert.equal(okfInitAnswer.ok, true, okfInit.stdout);
-  assert.equal(okfInitAnswer.result.status, "accepted");
+  // Operator-level dispatch (contracts doc, "Post-0.25.0 clarifications"): from
+  // the deployment (no instance home) `oats okf init --soul probe` resolves
+  // exactly as `oats spawn probe` would, fetches oats.okf into the deployment's
+  // module store <deployment>/.oats/modules/oats.okf@<commit12>/ and runs THAT
+  // copy with the soul's merged oats.okf payload (bindings-file) as OATS_SETTINGS.
+  // Without --soul there is no resolution to answer from: E_BAD_ARGS naming it.
+  const noSoul = JSON.parse(cli(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"], { expectExit: 1 }));
+  assert.equal(noSoul.ok, false); assert.equal(noSoul.error.code, "E_BAD_ARGS", JSON.stringify(noSoul)); assert.match(noSoul.error.message, /--soul/);
+  assert.ok(!existsSync(join(deployment, ".oats", "modules")), "a refused dispatch fetches nothing");
+  const okfInitAnswer = boundary(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"]);
+  assert.equal(okfInitAnswer.status, "accepted", JSON.stringify(okfInitAnswer));
+  assert.ok(existsSync(join(accepted, "okf-base.json")), "okf init wrote the accepted base");
+  const storeEntries = readdirSync(join(deployment, ".oats", "modules")).filter((n) => !n.startsWith("."));
+  assert.deepEqual(storeEntries.map((n) => n.replace(/@[0-9a-f]{12}$/, "@<commit12>")), ["oats.okf@<commit12>"], `module store: ${storeEntries.join(", ")}`);
+  assert.equal(storeEntries[0].slice("oats.okf@".length), approvedLock.packages["oats.okf"].commit.slice(0, 12), "the store copy is the LOCKED commit");
+  assert.ok(existsSync(join(deployment, ".oats", "modules", storeEntries[0], "bin", "oats-okf.mjs")), "the store copy carries the executable that ran");
+  assert.ok(!existsSync(join(agentsRoot, "probe", "instances")), "init ran before any instance existed");
 
   // ---- spawn the OKF probe through the packed CLI, scaffold only.
   const spawned = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "packed", "--no-launch", "--json"]);
@@ -540,7 +540,7 @@ try {
       trackedSourceAliasPreserved: true, moduleMatchesInventory: true, requiredHooks: true, dispatchFromModules: true, largePipedInspection: true,
       sourceCustody: true, independentWorker: true, acceptedCompletion: true,
       scaffoldedAndRetired: ["source", "worker", "fresh-reader"], liveLaunches: 0,
-      initViaModuleBinary: "TODO kernel: non-home `oats okf init` dispatch does not resolve the soul through the workspace" },
+      operatorDispatchFromDeployment: { command: "okf init --soul probe", store: storeEntries[0], soulRequired: true } },
     optionalTheory: { package: distribution.package, excludedFromNpm: true, acquiredFromGitFixture: true, exactCommit: theoryCommit, sourceRemoved: true,
       references: expectedClosure.length - 1, trackedSourceAliasPreserved: true, scaffoldedAndRetired: theoryProbes, liveLaunches: 0 },
   }, null, 2));

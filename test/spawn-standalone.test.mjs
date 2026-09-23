@@ -39,6 +39,7 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(r.status, 2, r.stderr);
     let doc = envelope(r);
     assert.equal(doc.ok, true);
+    const approvalNeeded = doc.result.approvalNeeded;
     assert.equal(doc.result.standalone, true);
     assert.equal(doc.result.workspace.name, "standalone:data");
     const lockPath = join(dep, "oats-lock.json");
@@ -94,7 +95,7 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED");
 
     // approve, spawn
-    for (const e of Object.values(lock.packages)) e.approved = { executables: "sha256-" + "0".repeat(64), at: new Date().toISOString(), by: "test" };
+    for (const [id, e] of Object.entries(lock.packages)) e.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: new Date().toISOString(), by: "test" };
     writeFileSync(lockPath, JSON.stringify(lock, null, 2));
     r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
@@ -226,9 +227,11 @@ test("H4: an oats-config.yaml beside a v3 lock (a launch-config, say) does not m
   const dep = join(base, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   try {
-    assert.equal(oats(["sync", "--dir", dep, "--json"], { base, env }).status, 2);
+    const synced = oats(["sync", "--dir", dep, "--json"], { base, env });
+    assert.equal(synced.status, 2);
+    const approvalNeeded = envelope(synced).result.approvalNeeded;
     const lockPath = join(dep, "oats-lock.json"); const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-    for (const e of Object.values(lock.packages)) e.approved = { executables: "sha256-" + "0".repeat(64), at: new Date().toISOString(), by: "test" };
+    for (const [id, e] of Object.entries(lock.packages)) e.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: new Date().toISOString(), by: "test" };
     writeFileSync(lockPath, JSON.stringify(lock, null, 2));
     writeFileSync(join(dep, "oats-config.yaml"), "name: northwind-workspace\nlaunch-configs:\n  default:\n    runtime: pi\n");
     const r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });

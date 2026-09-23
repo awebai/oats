@@ -349,3 +349,112 @@ recommendation is: **souls only in public members; executable capabilities come
 from packages (approved per version) or from private members.** The onboarding
 skill (Phase E) states this beside the hosting rule (decision 26).
 
+
+### 0.25.1 fix round (team review, 2026-09-23) — appended, not edited in place
+
+Each item names the section it refines and the review finding it closes. The
+implementation lands in kernel 0.25.1 (`docs/release-notes/v0.25.1.md`); no
+API integer or feature name changes.
+
+**§3 slot `none` (L1).** A soul's `none` for a slot **empties the slot and drops
+any layer-bearing capability the WORKSPACE DEFAULTS contributed for that
+layer** — whether it arrived through `defaults.<slot>`, `defaults.capabilities`
+or `defaults.byTeam[team].capabilities`. A layer-bearing capability **the soul
+itself declares** in its own `capabilities:` alongside `none` for that layer is
+`E_SLOT_CONFLICT { reason: "none" }` (spell `<cap>: off` to remove it). This
+replaces the Phase B reading under which a layered default arriving via
+`defaults.capabilities` was itself a conflict: the workspace's choice is a
+default and `none` is the soul's answer to it; only the soul contradicting
+itself is loud.
+
+**§2/§5 per-commit soul cache (M1).** `ensureWorkspaceSoul` fetches a soul's
+source at `(repoKey, commit)` into `<deployment>/agents/<name>/souls/<commit12>/`
+— **immutable once written** (staged, then renamed in; never removed by the
+kernel) — and maintains `<deployment>/agents/<name>/soul` as a **symlink to the
+current commit's directory**, swapped atomically (symlink to a temp name +
+rename over) so classic readers (`findAgent`, `doctor`, the classic spawn path)
+keep seeing "current". A spawned home's `<home>/soul` links **its own commit's
+directory** (the realpath of `souls/<commit12>/`), never the swapped pointer:
+a running instance's soul never changes under it (decision 7), a `--preview`
+may fetch a new commit and swap the pointer without touching any directory an
+instance links, and OKF 2's owner pin (`owners.json` = `realpath(<home>/soul)`)
+stays valid for the instance that registered it. `.oats-soul-source.json`
+remains the stamp of "current". A 0.25.0 layout (`agents/<name>/soul` a real
+directory, no `souls/`) is migrated in place on first use: the directory moves
+to `souls/<commit from the stamp, else unknown>/` and the pointer replaces it.
+A soul symlink whose target lies inside the same `agents/<name>/souls/` is the
+one kernel-owned symlink soul readers accept.
+
+**§1 transport (M2).** `parseRepoRef(ref).key` is unchanged — `<host>/<path>`
+is the identity everywhere and every comparison is by key. The **fetch url
+honours the form written**: `git@host:org/repo(.git)` and `ssh://…` fetch over
+SSH as written; `https://…` fetches over HTTPS; the bare scheme
+`git:host/org/repo` fetches over HTTPS by default **unless
+`remoteOptions.transport === "ssh"`** (a per-machine choice; `oats-local.yaml`
+may carry it once the schema admits it — reported by lane 3, not landed here).
+The operator's SSH access is therefore used when the operator wrote an SSH ref,
+and a private repo no longer degrades to `not-found` → standalone through an
+unintended HTTPS probe. When the standalone fallback engages the discovery
+carries `standaloneReason`/`hostFailure { code, reason, url }` so the CLI can
+print *why*.
+
+**§3/§4 approval re-verified at spawn (M3).** For a `from: package` module
+`resolveSoul` recomputes `executablesDigest` over the package tree **at the
+locked `entry.commit`** and requires equality with `entry.approved.executables`
+→ else `E_PACKAGE_UNAPPROVED { reason: "digest-mismatch", approved, actual }`.
+The one digest definition is `lib/packages.mjs#executablesDigestAt(remote, ref,
+commit, path, capabilities)`, shared by `sync` and `resolve`; a hand-edited lock
+(same id/version, different commit, copied approval) can no longer materialize
+and run unapproved hooks. Cached per `(id, commit)` within a process.
+
+**§1 peeled commit OIDs (M4).** `observeRemote(ref, { at })` accepts an
+annotated tag's OID (or name) but **records the peeled commit** (`<oid>^{commit}`)
+as `commit` — in its result, in the lock, in `fetchRemoteTree`'s errors and in
+every `instance.json` record. A tag OID is never stored where a commit is
+expected.
+
+**§1 listing hygiene (L3, L4).** `listRemoteTree` filters by depth **before**
+asserting entry-name safety, so one unsafe deep name does not blank a member's
+souls (unsafe names at the kept depth are still `E_REMOTE_TREE_UNSAFE`). A git
+child killed for `maxBuffer` (`ENOBUFS`) is not reported as `timeout`; an
+unclassified listing failure is wrapped as `E_REMOTE_UNREADABLE { reason:
+"unknown" }` so discovery records a problem row instead of aborting.
+
+**§2 `validateWorkspace` absolute paths (L2).** The absolute-path refusal
+applies to **ref/path fields only** — `members[]`, `packages` values, `stores`
+values, `external[].source` / `external[].soul`, `defaults.*.from` — never to
+`teams.<label>.description` or to the opaque `messaging` payload.
+
+**§3 revision (L6).** `Resolution.revision = hash(declRevision, payloadRevision)`
+where `declRevision` covers the declarations (member/package commits, the
+composed capability set, skills, injects) and `payloadRevision` covers the
+payload layers (soul slot payloads ⊕ `oats-local.yaml settings` ⊕
+`--provider`). Both are exposed on the Resolution; decision binding keeps using
+`revision`, so a settings-only difference still refuses a stale apply, while
+`spawn --preview` can say **`changed since: declarations | payload | both`**
+instead of a bare `changedSince`.
+
+**§6 operator-level dispatch (B3, implements the rule stated above).** Outside a
+home, with `oats-local.yaml` present, `oats <ns> <cmd> … --soul <name>` runs
+`prepareInstance(dir, name)`, picks the module whose `manifest.command === <ns>`,
+ensures its tree in `<deployment>/.oats/modules/<cap>@<commit12>/` (member: the
+member repo at `module.from.commit`, `module.dir`; package: the lock entry) and
+dispatches to that copy with `OATS_SETTINGS = resolution.payloads[cap]` and
+`OATS_CLI_BIN`. `--soul` absent → `E_BAD_ARGS` naming it; a namespace no module
+provides → `E_UNKNOWN_COMMAND`. Trust is the resolution's (membership;
+`E_PACKAGE_UNAPPROVED` for an unapproved package).
+
+**§5/§6 `work: workspace` under v2 (B2, implements the rule stated above).**
+With `prepared` present, a `work: workspace` soul's `./work` links the
+deployment directory (`prepared.deployment`, the one holding `oats-local.yaml`);
+no branch is recorded; the "needs a declared boundary" remedy names
+`oats-local.yaml`, not `oats-config.yaml`. The classic root is unchanged.
+
+**Decision 13 reach (L7).** "Harnesses start normally" is a property of the
+0.25 **launcher**: every `pi` launch a 0.25 kernel performs — module homes and
+classic 0.24 homes alike — starts pi with cwd = home, the composed `AGENTS.md`
+appended, and pi's own skill/context discovery intact. Consequently `oats
+session recompose` refuses a **module home** (`instance.json.modules` present)
+with `E_UNSUPPORTED_MODE` ("re-spawn"); the `session-recompose` feature name
+stays advertised because the verb still serves classic homes
+(`docs/desktop-cli-api.md`).

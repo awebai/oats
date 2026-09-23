@@ -1,5 +1,15 @@
 # Migrating from OAS to OATS
 
+> **0.25 status — this is a 0.22–0.24 procedure.** `oats migrate` and
+> `oats trust` are **removed verbs** in the 0.25 kernel (`E_UNKNOWN_COMMAND`
+> naming the replacement), and 0.25 reads none of the files this page
+> converts to (`oats-config.yaml`, `oats-lock.json` v2, the `installed/` tier).
+> An OAS deployment reaches 0.25 in two steps: run this page's commands with a
+> **0.24.x** kernel (`npm install -g @awebai/oats@0.24`), then rebuild for the
+> workspace model with [rebuild-to-v2.md](rebuild-to-v2.md) — which is a rewrite
+> of three shared files, not a conversion, so an operator comfortable with the
+> v2 declarations may skip straight to it and let the old files go.
+
 OATS is the successor to OAS. **OATS 0.22.0 was published on 2026-09-03**:
 the kernel, Pi adapter, and Desktop assets are available. The published
 kernel acquired the official OKF, aweb, authoring, and development packages
@@ -17,15 +27,15 @@ while its knowledge and messaging configuration remains unmigrated.
 > before activation/spawn. The v2 integration is [prepared](release-notes/v0.23.1.md),
 > not a claim that those dependencies or any deployment have already changed.
 
-## Upgrade one scope
+## Upgrade one scope (0.24.x kernel)
 
 Finish or preserve active work before changing a daily-use deployment.
-Install OATS alongside the old CLI, then inspect the plan for the exact
-scope you intend to convert:
+Install OATS **0.24.x** alongside the old CLI (the 0.25 line has no `oats
+migrate`), then inspect the plan for the exact scope you intend to convert:
 
 ```bash
-npm install -g @awebai/oats@latest
-pi install npm:@awebai/oats-pi@latest
+npm install -g @awebai/oats@0.24
+pi install npm:@awebai/oats-pi@0.24
 oats migrate --from-oas --dry-run --dir /path/to/scope
 ```
 
@@ -39,10 +49,11 @@ oats doctor /path/to/scope
 ```
 
 Run the exact `oats trust <capability> --dir <scope>` commands printed by
-migration for the executable capabilities you approve. Trust does not
-transfer automatically. Verify the team ID and messaging membership with
-`oats aweb setup --dir /path/to/scope`, then exercise a real task, harvest,
-and retirement as described in [Run your first team](first-team.md).
+migration for the executable capabilities you approve (0.24: per-artifact
+trust; under 0.25 approval is per package version through `oats sync`). Trust
+does not transfer automatically. Verify the team ID and messaging membership
+with `oats aweb setup --dir /path/to/scope`, then exercise a real task,
+harvest, and retirement as described in [Run your first team](first-team.md).
 
 For a multi-repository deployment, start with one scope. The explicit
 `--recursive --dir /path/to/workspace` form converts every discovered OAS

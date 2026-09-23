@@ -231,10 +231,22 @@ and needs equivalent registration glue when switched to session delivery.
 
 ## Shared permission setting
 
-Set `yolo: true` in an `oats-config.yaml` to apply it to that scope. The closest
-scope wins; an optional `yolo` in soul.yaml overrides it; `oats spawn --yolo` or
-`--no-yolo` overrides both. `oats create` accepts those flags too. Desktop offers
-the same per-launch choice. With no setting, native policy is retained.
+The opt-in is per launch or per soul: `oats spawn --yolo` / `--no-yolo`
+(`oats create` accepts the same flags), an optional `yolo` in `soul.yaml`
+(0.24 schema; the v2 `soul.yaml` schema does not carry it — use the spawn flag
+or a launch configuration), and the Desktop's per-launch choice. With no
+setting, native policy is retained.
+
+*0.24 classic deployments* may also set `yolo: true` in an `oats-config.yaml`
+to apply it to that scope; the closest scope wins, soul overrides scope, the
+spawn flag overrides both. *Under the workspace model* `oats-config.yaml` is
+not configuration ([configuration.md](configuration.md)); the kernel's
+`composeInstance` still consults the classic chain for the machine-level knobs
+`yolo` and `launch-configs` when such a file happens to sit above the
+deployment, but nothing writes one and the rebuild guide tells you to delete
+it — treat a scope-level `yolo` as a 0.24 feature and prefer the explicit
+spawn flag.
+
 Autonomous or unattended execution is not permission to synthesize `yolo: true`.
 Explicit user CLI/UI input or a user-selected configuration is the opt-in; explicit
 `false` remains false.

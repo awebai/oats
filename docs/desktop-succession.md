@@ -12,10 +12,17 @@ the OATS Desktop app (`packages/desktop/` in the framework repo):
 
 ## Migrating a deployment that used `oats.web`
 
+Under the **0.25 workspace model** there is nothing to uninstall: remove
+`oats.web` from `oats-workspace.yaml` `packages:` / `defaults.capabilities`
+and from any `soul.yaml` `capabilities:`, run `oats sync` (the lock v3 entry
+disappears with the declaration), and use the Desktop app (step 3 below).
+
+For a **0.24 classic** deployment:
+
 1. Remove the `oats.web` entry from `capabilities.additive` in every
    `oats-config.yaml` in your config chain.
-2. Remove the `oats.web` entry from `oats-lock.json` at the same scope(s), and
-   delete any stale installed copy under `.agents/capabilities/installed/`.
+2. Remove the `oats.web` entry from `oats-lock.json` (v2) at the same scope(s),
+   and delete any stale installed copy under `.agents/capabilities/installed/`.
 3. Use the OATS Desktop app instead: `cd packages/desktop && npm install &&
    npm run rebuild && npm start` (see `packages/desktop/README.md`).
 

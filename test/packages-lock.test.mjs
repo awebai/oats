@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
 import {
-  approve, classifyPackageValue, executablesDigest, manifestExecutables, packageProviding, parsePackageRequest,
+  approve, classifyPackageValue, executablesDigest, executablesDigestAt, manifestExecutables, packageProviding, parsePackageRequest,
   readLock, readPackageManifests, readPackageTree, resolvePackages, writeLock, canonicalLock, validateLock,
   LOCK_FILE, DEFAULT_PACKAGE_PATH,
 } from "../lib/packages.mjs";
@@ -505,4 +505,52 @@ test("LOW: manifest/tree hygiene — missing capability dir is E_PACKAGE_MANIFES
   assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: "constructor" } }, files: {} }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && /not in the package/.test(e.message));
   assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: 42 } }, files: {} }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && /must be a string/.test(e.message));
   assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: "..\\x.mjs" } }, files: { "..\\x.mjs": "x" } }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && /relative path/.test(e.message));
+});
+
+// ---------- 0.25.1 fix lanes: M3 (lane 4) — executablesDigestAt, the ONE definition bin and resolve share ----------
+
+test("M3: executablesDigestAt(remote, ref, commit, path, capabilities?) equals executablesDigest(readPackageTree(...)), lists the executables, verifies the capability set, and is cached per (remote, commit, path)", async () => {
+  const f = fixture();
+  const expected = executablesDigest(await readPackageTree(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package"));
+  const r = await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package");
+  assert.equal(r.digest, expected, "same computation sync approves with");
+  assert.deepEqual(r.capabilities, ["oats.okf"]);
+  assert.deepEqual(r.executables, [
+    { capability: "oats.okf", kind: "command", name: "harvest", target: "bin/tool.mjs" },
+    { capability: "oats.okf", kind: "command", name: "inspect", target: "bin/tool.mjs" },
+  ]);
+  assert.ok(Object.isFrozen(r) && Object.isFrozen(r.executables), "frozen: shared through the cache");
+  // another commit → another digest (the executable moved)
+  const r2 = await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf220, "oats-package");
+  assert.notEqual(r2.digest, r.digest);
+  // capability-set verification: the lock's list must equal what the tree declares
+  assert.deepEqual((await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package", ["oats.okf"])).digest, expected);
+  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package", ["oats.okf", "ghost"]), (e) => e.code === "E_PACKAGE_INTEGRITY" && e.details.why === "capabilities" && e.details.listed.join() === "oats.okf" && e.details.locked.join() === "ghost,oats.okf");
+  // cache: same (remote, commit, path) → same object, no new reads; a different remote object has its own cache
+  const before = f.remote.calls.length;
+  assert.equal(await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package"), r, "identical (cached) result object");
+  assert.equal(f.remote.calls.length, before, "no further remote calls");
+  const g = fixture();
+  const rg = await executablesDigestAt(g.remote, g.repos.okf.url, g.commits.okf213, "oats-package");
+  assert.notEqual(rg, r, "per-remote cache"); assert.equal(rg.digest, r.digest, "same tree, same digest");
+  // input hygiene
+  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, "short", "oats-package"), (e) => e.code === "E_PACKAGE_INTEGRITY");
+  await assert.rejects(executablesDigestAt({}, f.repos.okf.url, f.commits.okf213, "oats-package"), TypeError);
+  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package", "oats.okf"), TypeError);
+  // a failed read is NOT pinned: an unknown commit rejects now and again (no cached error)
+  const bad = "0".repeat(40);
+  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, bad, "oats-package"), (e) => e.code === "E_REMOTE_UNREADABLE");
+  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, bad, "oats-package"), (e) => e.code === "E_REMOTE_UNREADABLE");
+});
+
+test("M3: resolvePackages' fast path uses the shared executablesDigestAt — a kept approval must still describe the tree", async () => {
+  const f = fixture();
+  const ws = workspace({ "oats.okf": "v2.1.3" });
+  const first = await resolvePackages(ws, { catalog: f.catalog, lock: undefined, remote: f.remote });
+  const genuine = (await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package")).digest;
+  const approved = approve(first.lock, "oats.okf", genuine, "2026-09-23T09:02:11Z");
+  const second = await resolvePackages(ws, { catalog: f.catalog, lock: approved, remote: f.remote });
+  assert.equal(second.lock.packages["oats.okf"].approved.executables, genuine);
+  const forged = approve(first.lock, "oats.okf", `sha256-${"f".repeat(64)}`, "2026-09-23T09:02:11Z");
+  await assert.rejects(resolvePackages(ws, { catalog: f.catalog, lock: forged, remote: f.remote }), (e) => e.code === "E_PACKAGE_UNAPPROVED" && e.details.executables === genuine);
 });

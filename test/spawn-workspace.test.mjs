@@ -10,7 +10,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind, moveMember, dropBacklink } from "./fixtures/northwind/build.mjs";
@@ -68,6 +68,7 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 2, `sync exits 2 with approvals pending\n${r.stdout}\n${r.stderr}`);
     assert.equal(envelope(r).ok, true);
+    const approvalNeeded = envelope(r).result.approvalNeeded; // the REAL executables digests (M3: an approval must describe the tree)
     const lockFile = join(dep, "oats-lock.json");
     assert.ok(existsSync(lockFile), "the lock is written");
     const lock = JSON.parse(readFileSync(lockFile, "utf8"));
@@ -87,7 +88,7 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED", "preview reaches resolution before any apply");
 
     // ---- approve by editing the lock (what `sync` on a TTY records) ----
-    for (const p of Object.values(lock.packages)) p.approved = { executables: "sha256-" + "0".repeat(64), at: "2026-09-23T00:00:00.000Z" };
+    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
     writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
 
     // ---- Phase C (H5): preview BEFORE any apply of this soul: modules[] listed, soulFetched:true, no instance ----
@@ -343,5 +344,72 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     assert.equal(st.workspace.reachable, false);
     assert.equal(st.workspace.code, "E_REMOTE_UNREADABLE");
     assert.ok(!Array.isArray(instanceOf(st, "release-manager-x").modules), "without discovery, modules stay the recorded map (no drift rows)");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+// ---- 0.25.1 B2: `work: workspace` on a v2 deployment — ./work is the deployment directory ----
+// Contract (docs/design/2026-09-23-workspace-module-contracts.md, "Post-0.25.0 clarifications"): a coordination
+// soul's ./work is the deployment boundary — the directory holding oats-local.yaml (the taught <name>-workspace/,
+// member clones beside it), NOT a Git tree: no branch recorded, no `team:` scope or oats-config.yaml required.
+// A v2 `work: workspace` soul is committed into the Northwind agents member (moveMember shows how) and spawned
+// through the real CLI; the classic (non-prepared) workspace-mode path is exercised by directory-work-mode.test.mjs.
+test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work → the oats-local.yaml directory, no branch, no oats-config.yaml", { timeout: 600_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    mkdirSync(join(base, "home"));
+    const dep = join(base, "northwind-workspace");
+    const agentsRoot = join(dep, "agents");
+    mkdirSync(agentsRoot, { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    assert.ok(!existsSync(join(dep, ".git")) && !existsSync(join(dep, "oats-config.yaml")), "the deployment is a plain directory: no Git, no oats-config.yaml");
+    // The coordination soul lives in the agents member (team engineering, so byTeam defaults resolve).
+    const added = await moveMember(fx, "agents", async (work, { fs, path }) => {
+      await fs.mkdir(path.join(work, "souls", "coordinator"), { recursive: true });
+      await fs.writeFile(path.join(work, "souls", "coordinator", "soul.yaml"), "schemaVersion: 2\nname: coordinator\ndescription: cross-repo coordinator — routes work, edits nothing\nwork: workspace\nteam: engineering\ncapabilities:\n  oats.core: { from: package }\n");
+      await fs.writeFile(path.join(work, "souls", "coordinator", "AGENTS.md"), "# coordinator\n\nYou coordinate across member clones; ./work is the deployment boundary.\n");
+    }, { message: "agents: add coordinator (work: workspace)" });
+    assert.match(added.commit, HEX40);
+    // sync → approve with the digests the sync report computed (what a TTY sync records)
+    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 2, `sync\n${r.stdout}\n${r.stderr}`);
+    const syncDoc = envelope(r);
+    const needed = syncDoc.result?.approvalNeeded ?? [];
+    const lockFile = join(dep, "oats-lock.json");
+    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: needed.find((a) => a.id === id)?.executables ?? "sha256-" + "0".repeat(64), at: "2026-09-23T00:00:00.000Z" };
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    // spawn: no --work override, no --repo — the soul's `work: workspace` decides
+    r = oats(["spawn", "coordinator", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "b2", "--no-launch", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn coordinator\n${r.stdout}\n${r.stderr}`);
+    const doc = envelope(r);
+    assert.equal(doc.ok, true);
+    const home = doc.result.home;
+    assert.equal(home, join(agentsRoot, "coordinator", "instances", "coordinator-b2"));
+    assert.equal(doc.result.work, "workspace");
+    assert.ok(lstatSync(join(home, "work")).isSymbolicLink(), "home/work is a link (the deployment is nobody's to own)");
+    assert.equal(realpathSync(join(home, "work")), realpathSync(dep), "home/work → the directory holding oats-local.yaml");
+    assert.ok(existsSync(join(home, "work", "oats-local.yaml")), "…so ./work/oats-local.yaml is the deployment's");
+    const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+    assert.equal(meta.work, "workspace");
+    assert.ok(meta.branch === undefined || meta.branch === null, `no branch is recorded for a workspace boundary (got ${JSON.stringify(meta.branch)})`);
+    assert.equal(meta.workspace.soul.commit, added.commit);
+    assert.equal(meta.workspace.soul.team, "engineering");
+    assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /oats:work-mode:workspace/, "the workspace work-mode briefing is composed in");
+    // The M1 soul cache shape holds for this soul too: home/soul → souls/<commit12>/, agents/<name>/soul is the pointer.
+    assert.equal(realpathSync(join(home, "soul")), realpathSync(join(agentsRoot, "coordinator", "souls", added.commit.slice(0, 12))));
+    assert.ok(lstatSync(join(agentsRoot, "coordinator", "soul")).isSymbolicLink());
+    // preview is fine on the same soul (nothing created)
+    r = oats(["spawn", "coordinator", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "b2p", "--no-launch", "--preview", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `preview coordinator\n${r.stdout}\n${r.stderr}`);
+    assert.equal(envelope(r).result.work, "workspace");
+    assert.ok(!existsSync(join(agentsRoot, "coordinator", "instances", "coordinator-b2p")));
+    // classic root unchanged: a spawn of a checkout-mode soul still records its branch
+    r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "rm", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn release-manager (directory)\n${r.stdout}\n${r.stderr}`);
+    assert.ok(isDir(join(envelope(r).result.home, "work")), "directory mode still owns a real ./work");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

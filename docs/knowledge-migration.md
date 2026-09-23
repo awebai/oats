@@ -39,17 +39,25 @@ Choose stable base IDs, stable owner IDs, nonoverlapping node paths and durable
 permissions. Confirm aliases and owners explicitly, rather than deriving them
 from an instance branch or name.
 
-Configure the absolute `bindings-file` for each source soul. Remove obsolete v1
-settings such as `record-window-turns` and `record-window-bytes`; v2 accepts only
-`bindings-file`, `harvest-runtime` and `harvest-model`. Provision **empty owned
-nodes** using `oats okf init`. Accept Git initialization through a reviewed PR
-before migration delivery; directory provisioning requires explicit confirmation
-and a genuinely non-Git location.
+Configure the absolute `bindings-file` **and** `state-dir` for each source soul
+— the oats.okf 2.1.x binding requires both as normalized absolute host paths
+(`setting state-dir is required (absolute host path)` is a refusal, not a
+default). Remove obsolete v1 settings such as `record-window-turns` and
+`record-window-bytes`; v2 accepts exactly `bindings-file`, `state-dir`,
+`harvest-runtime` and `harvest-model`. Under the 0.25 workspace model these live
+in `oats-local.yaml` `settings.oats.okf` ([configuration.md](configuration.md));
+a rebuilt deployment gets a **fresh** `state-dir`
+([rebuild-to-v2.md §7b](rebuild-to-v2.md#7b-okf-2-start-a-fresh-state-dir-do-not-re-point-the-old-one)).
+Provision **empty owned nodes** using `oats okf init`. Accept Git initialization
+through a reviewed PR before migration delivery; directory provisioning requires
+explicit confirmation and a genuinely non-Git location.
 
 ## 3. Stage and deliver each legacy bundle
 
-From the durable deployment configuration context in an operator shell without
-inherited instance identity, selecting the source soul:
+From the deployment directory (the one holding `oats-local.yaml`) in an operator
+shell without inherited instance identity, selecting the source soul with
+`--soul` — the kernel resolves the command exactly as `oats spawn --soul <x>`
+would ([knowledge.md](knowledge.md#inspection-and-operator-commands)):
 
 ```bash
 oats okf migrate --legacy /absolute/soul/knowledge --base project --node expert --output /absolute/empty-migration-stage --soul domain-expert --json
