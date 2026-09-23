@@ -1,5 +1,8 @@
-import { apiJson, postJson, ensureTheme, onWorkspaceChange, workspaceGeneration, wsQuery } from "./common.mjs";
+import { apiJson, postJson, ensureTheme, workspaceGeneration, wsQuery } from "./common.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
+import { createScheduleObservationView, scheduleObservationCSS } from "../schedule-observation-view.mjs";
+import { scheduleEditReason } from "../schedule-read-data.mjs";
+import { cliCard, cliKnownUnavailable, onCliChange } from "./cli-status.mjs";
 
 let mounted;
 let preselection;
@@ -36,11 +39,12 @@ const CSS = `
 @media(max-width:650px) { .schedule-form .schedule-pair { grid-template-columns:1fr; } }
 `;
 
-export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
+export function createSchedulesView(el, ctx, readOptions = {}) {
   const doc = el.ownerDocument;
   ensureTheme(doc);
-  el.innerHTML = `<style>${CSS}</style><section class="oats-view schedules-view">
-    <header><h2>Schedules</h2><button class="act schedule-new">New schedule</button><button class="act schedule-refresh">Refresh</button></header>
+  el.innerHTML = `<style>${CSS}${scheduleObservationCSS}</style><section class="oats-view schedules-view">
+    <header><h2>Schedules</h2><button class="act primary schedule-new">New schedule</button><button class="act schedule-refresh">Refresh</button></header>
+    <div class="schedule-cli" hidden></div>
     <p>Schedules run on this workspace’s server, including while the GUI is closed.</p>
     <div class="schedule-status" role="status"></div>
     <div class="schedule-host-actions"></div>
@@ -77,14 +81,20 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     </form><div class="schedule-list"></div></section>`;
   const q = selector => el.querySelector(selector);
   const form = q("form"), field = name => form.elements.namedItem(name);
+  const card = cliCard(doc, ctx); q('.schedule-cli').append(card.el);
+  const syncCard = () => { q('.schedule-cli').hidden = !cliKnownUnavailable(); };
+  const offCard = onCliChange(syncCard); syncCard();
   const nestedWake = wakeScheduleFields(doc);
   q(".schedule-spawn-options").append(nestedWake.el);
-  let alive = true, request = 0, busy = false, available = false, editing = null;
-  let schedules = [], agents = [], instances = [];
-  let operationRequest = 0;
+  let alive = true, busy = false, available = false, editing = null, formReady = false;
+  let agents = [], instances = [], original = null, baseline = {}, originalWake = null, definition = null, definitionRevision = null;
+  const definitionKey = job => JSON.stringify(['id', 'scope', 'kind', 'captured', 'createdAt', 'updatedAt', 'agent', 'home', 'operation', 'cron', 'tz', 'enabled'].map(k => job?.[k]));
+  let operationRequest = 0, formOperation = 0, mutationOperation = 0, observation;
+  const ownsForm = (token, lease) => alive && token === formOperation && observation?.owns(lease);
+  const preserve = (name, key = name) => original && original.kind === field("kind").value && Object.hasOwn(original, key) && field(name).value === baseline[name] ? original[key] : field(name).value;
   const button = (label, action, disabled = false) => {
     const b = doc.createElement("button"); b.className = "act"; b.type = "button";
-    b.textContent = label; b.disabled = disabled; b.addEventListener("click", action); return b;
+    b.textContent = label; b.disabled = disabled; b.addEventListener("click", () => { if (alive && b.isConnected && !b.disabled && observation?.canMutate()) action(); }); return b;
   };
   const error = message => { q(".schedule-error").textContent = message; };
   const fill = (select, rows, label, value) => {
@@ -106,138 +116,128 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
     void loadOperations(typeof preferred === "string" ? preferred : undefined);
   }
   async function loadOperations(preferred = field("providerOperation").value) {
-    const token = ++operationRequest, generation = workspaceGeneration();
+    const token = ++operationRequest, formToken = formOperation, lease = observation.lease();
     if (field("kind").value !== "operation") return;
     field("providerOperation").replaceChildren();
     q(".schedule-provider-note").textContent = "Loading operations for this home…";
     try {
       const inspection = await postJson(ctx, `/api/capabilities${wsQuery()}`, { action: "inspect", selector: { home: field("home").value } });
-      if (!alive || token !== operationRequest || generation !== workspaceGeneration()) return;
+      if (token !== operationRequest || !ownsForm(formToken, lease) || form.hidden) return;
       const operations = (inspection.capabilities || []).filter(cap => cap.layer && cap.activation?.enabled).flatMap(cap =>
         (cap.operations || []).filter(op => op.kind === "action" && op.available && !op.args?.some(arg => arg.required)).map(op => ({ address: `${cap.layer}:${op.name}`, label: `${cap.layer}: ${op.name} — ${op.description || cap.id}` })));
       fill(field("providerOperation"), operations, op => op.label, op => op.address);
       if (operations.some(op => op.address === preferred)) field("providerOperation").value = preferred;
       q(".schedule-provider-note").textContent = operations.length ? "Resolved through this home's active provider at each run." : "No available provider actions for this home.";
     } catch (error) {
-      if (alive && token === operationRequest && generation === workspaceGeneration()) q(".schedule-provider-note").textContent = error.message;
+      if (token === operationRequest && ownsForm(formToken, lease) && !form.hidden) q(".schedule-provider-note").textContent = error.message;
     }
   }
   field("home").addEventListener("change", () => void loadOperations());
-  function openForm(job, soul) {
-    editing = job?.id || null; form.reset();
+  async function openForm(job, soul, observedDefinition = null) {
+    if (!observation?.canMutate() || busy) return;
+    const token = ++formOperation, lease = observation.lease(); ++operationRequest;
+    editing = job?.id || null; original = job ? structuredClone(job) : null; definition = observedDefinition; definitionRevision = observation.revision(); formReady = false; form.reset();
     q(".schedule-form-error").textContent = "";
     q(".schedule-form-title").textContent = editing ? `Edit ${editing}` : "New schedule";
-    fill(field("agent"), agents.filter(a => a.work !== "attached"), a => `${a.name} · ${a.agentsRoot}`, a => JSON.stringify([a.name, a.repo || null, a.agentsRoot]));
-    fill(field("home"), instances, i => `${i.instance} · ${i.home}`, i => i.home);
+    field("agent").replaceChildren(); field("home").replaceChildren();
     field("id").disabled = !!editing; field("id").value = editing || "";
     field("tz").value = job?.tz || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
     field("cron").value = job?.cron || "*/15 * * * *";
     field("repeat").value = [...field("repeat").options].some(o => o.value === field("cron").value) ? field("cron").value : "custom";
     field("enabled").checked = job?.enabled ?? true;
     field("kind").value = job?.kind || (soul ? "spawn" : "wake");
-    if (job?.agent || soul) field("agent").value = JSON.stringify([job?.agent || soul.name, job?.repo || soul?.repo || null, job?.agentsRoot || soul?.agentsRoot]);
-    if (job?.home || job?.cwd) field("home").value = job.home || job.cwd;
+    // Target options are filled by the owned roster read below, never inferred
+    // from a history/session provenance address.
     field("task").value = job?.message || job?.task || "";
     field("purpose").value = job?.purpose || "";
     nestedWake.set(job?.wake);
     for (const name of ["runtime", "model", "backend"]) field(name).value = job?.[name] || "";
     field("yolo").value = job?.yolo === undefined ? "" : String(job.yolo);
-    syncKind(job?.operation); form.hidden = false; field(editing ? "cron" : "id").focus();
+    baseline = Object.fromEntries([...form.elements].filter(f => f.name).map(f => [f.name, f.value]));
+    originalWake = job?.wake ? { ...nestedWake.read() } : null;
+    form.hidden = false; field(editing ? "cron" : "id").focus(); render();
+    try {
+      const suffix = wsQuery();
+      const [roster, panel] = await Promise.all([apiJson(ctx, `/api/agents${suffix}`), apiJson(ctx, `/api/panel${suffix}`)]);
+      if (!ownsForm(token, lease) || form.hidden) return;
+      agents = roster.agents || []; instances = panel.instances || [];
+      fill(field("agent"), agents.filter(a => a.work !== "attached"), a => `${a.name} · ${a.agentsRoot}`, a => JSON.stringify([a.name, a.repo || null, a.agentsRoot]));
+      fill(field("home"), instances, i => `${i.instance} · ${i.home}`, i => i.home);
+      if (job?.agent || soul) field("agent").value = JSON.stringify([job?.agent || soul.name, job?.repo || soul?.repo || null, job?.agentsRoot || soul?.agentsRoot]);
+      if (job?.home) field("home").value = job.home;
+      baseline.agent = field("agent").value; baseline.home = field("home").value;
+      formReady = true; syncKind(job?.operation); render();
+    } catch {
+      if (ownsForm(token, lease)) { q(".schedule-form-error").textContent = "Could not read targets for this form. Reopen it to retry."; render(); }
+    }
+  }
+  async function editJob(job) {
+    if (!observation.canMutate() || busy) return;
+    const token = ++formOperation, lease = observation.lease(); ++operationRequest;
+    try {
+      const shown = await observation.show(job.id);
+      if (!ownsForm(token, lease) || !shown) return;
+      if (!shown.draft) { error(scheduleEditReason(shown.schedules[0].editReason) || "This schedule cannot be edited here."); return; }
+      await openForm(shown.draft, null, shown.schedules[0]);
+    } catch (e) { if (ownsForm(token, lease)) error(e.message); }
   }
   async function mutate(operation, id, spec) {
-    if (busy || !available) return;
-    const generation = workspaceGeneration(); busy = true; error(""); q(".schedule-operation-result").textContent = ""; render();
+    if (busy || !available || !observation.canMutate()) return;
+    const lease = observation.lease(), op = ++mutationOperation, formToken = formOperation;
+    const owns = () => alive && op === mutationOperation && observation.owns(lease);
+    busy = true; observation.setBusy(true); error(""); q(".schedule-operation-result").textContent = ""; render();
     q(".schedule-save").disabled = true;
     try {
       const result = await postJson(ctx, `/api/schedules${wsQuery()}`, { operation, id, ...(spec ? { spec } : {}) });
-      if (!alive || generation !== workspaceGeneration()) return;
-      if (operation === "add" || operation === "update") form.hidden = true;
+      if (!owns()) return;
+      if ((operation === "add" || operation === "update") && formToken === formOperation) form.hidden = true;
       if (operation === "run" && result.run) q(".schedule-operation-result").textContent = scheduleOutcome(result.run);
       if (operation === "reconcile") q(".schedule-operation-result").textContent = [result.reconciled === "unknown" ? "Run state is still unknown." : `Run state: ${result.reconciled || "checked"}.`, result.remedy].filter(Boolean).join(" ");
       await refresh();
     } catch (e) {
-      if (alive && generation === workspaceGeneration()) {
-        error(e.message); if (!form.hidden) q(".schedule-form-error").textContent = e.message;
+      if (owns()) {
+        error(e.message); if (!form.hidden && formToken === formOperation) q(".schedule-form-error").textContent = e.message;
       }
     } finally {
-      if (alive && generation === workspaceGeneration()) { busy = false; q(".schedule-save").disabled = false; render(); }
+      if (owns()) { busy = false; observation.setBusy(false); render(); }
     }
   }
   function render() {
     q(".schedule-new").disabled = busy || !available;
-    q(".schedule-save").disabled = busy || !available;
-    for (const control of form.querySelectorAll("input, select, textarea")) control.disabled = busy || (control.name === "id" && !!editing);
+    q(".schedule-save").disabled = busy || !available || !formReady;
+    for (const control of form.querySelectorAll("input, select, textarea")) control.disabled = busy || (control.name === "id" && !!editing)
+      || (!formReady && ["agent", "home", "providerOperation"].includes(control.name));
     q(".schedule-host-actions").querySelectorAll("button").forEach(b => { b.disabled = busy || !available; });
-    const list = q(".schedule-list");
-    const focused = doc.activeElement?.closest?.("[data-schedule-id]");
-    const focusId = focused?.dataset.scheduleId, focusLabel = focused && doc.activeElement.textContent;
-    list.replaceChildren();
-    if (!schedules.length) { const p = doc.createElement("p"); p.textContent = available ? "No schedules in this workspace." : "Schedules unavailable."; list.append(p); }
-    for (const job of schedules) {
-      const card = doc.createElement("article"); card.className = "schedule-card"; card.dataset.scheduleId = job.id;
-      const title = doc.createElement("h3"); title.textContent = `${job.id} · ${job.enabled ? "Enabled" : "Paused"}`; card.append(title);
-      const target = job.kind === "spawn" ? `Launch ${job.agent}` : job.kind === "wake" ? `Wake ${job.home}` : job.kind === "operation" ? `${job.operation} · ${job.home}` : `Command: ${(job.argv || []).join(" ")}`;
-      for (const text of [target, `${job.cron} · ${job.tz}`, `Next: ${when(job.nextRun)}`, `Last: ${when(job.lastRun?.startedAt)} · ${scheduleOutcome(job.lastRun)}`]) {
-        const p = doc.createElement("p"); p.textContent = text; card.append(p);
-      }
-      const actions = doc.createElement("div"); actions.className = "schedule-actions";
-      const editable = job.kind !== "command";
-      actions.append(button("Edit", () => openForm(job), busy || !available || !editable));
-      actions.append(button(job.enabled ? "Pause" : "Enable", () => mutate(job.enabled ? "disable" : "enable", job.id), busy || !available));
-      actions.append(button("Run now", () => mutate("run", job.id), busy || !available || !job.enabled));
-      if (job.lastRun?.outcome === "unknown") actions.append(button("Check run state", () => mutate("reconcile", job.id), busy || !available));
-      actions.append(button("Delete", () => {
-        // Two explicit clicks; no native modal and no interruption of agents.
-        actions.replaceChildren(button("Confirm deletion", () => mutate("remove", job.id)), button("Cancel", render));
-      }, busy || !available));
-      card.append(actions); list.append(card);
-      if (focusId === job.id) [...actions.children].find(b => b.textContent === focusLabel)?.focus();
-    }
   }
   async function refresh() {
-    const serial = ++request, generation = workspaceGeneration();
-    const suffix = wsQuery();
-    try {
-      const [data, roster, panel] = await Promise.all([
-        apiJson(ctx, `/api/schedules${suffix}`), apiJson(ctx, `/api/agents${suffix}`), apiJson(ctx, `/api/panel${suffix}`),
-      ]);
-      if (!alive || serial !== request || generation !== workspaceGeneration()) return;
-      available = true; schedules = data.schedules || []; agents = roster.agents || []; instances = panel.instances || [];
-      const host = data.scheduler || {};
-      q(".schedule-status").textContent = !host.installed ? "Scheduler is not installed on this host. Saved schedules will not run until it is enabled."
-        : host.registered === false ? "This workspace is not registered with the host scheduler. Enable it to run these schedules."
-        : !host.active ? "Scheduler is installed but inactive."
-          : `Scheduler enabled · Last check: ${when(host.lastTick)} · Up to ${host.maxConcurrent || 1} scheduled agent(s) at once`;
-      q(".schedule-host-actions").replaceChildren(...(!host.installed || !host.active || host.registered === false
-        ? [button("Enable host scheduler", () => mutate("host-install"), busy)] : []));
-      render();
-      if (preselection) {
-        const selected = preselection; preselection = null;
-        if (selected.generation === generation) openForm(null, selected.soul);
-      }
-    } catch (e) {
-      if (!alive || serial !== request || generation !== workspaceGeneration()) return;
-      available = false; error(e.message); q(".schedule-status").textContent = "Could not read schedule status.";
-      q(".schedule-save").disabled = true; render();
+    const lease = observation.lease(), generation = workspaceGeneration();
+    await observation.refresh();
+    if (!alive || !observation.owns(lease)) return;
+    if (preselection && form.hidden && observation.canMutate()) {
+      const selected = preselection; preselection = null;
+      if (selected.generation === generation) void openForm(null, selected.soul);
     }
   }
   field("kind").addEventListener("change", syncKind);
   field("repeat").addEventListener("change", () => { if (field("repeat").value !== "custom") field("cron").value = field("repeat").value; });
   field("cron").addEventListener("input", () => { field("repeat").value = "custom"; });
   form.addEventListener("submit", event => {
-    event.preventDefault(); if (busy || !available) return;
+    event.preventDefault(); if (busy || !available || !formReady || !observation.canMutate() || form.hidden) return;
     const kind = field("kind").value;
-    const spec = { kind, cron: field("cron").value.trim(), tz: field("tz").value.trim(), enabled: field("enabled").checked };
+    const spec = { kind, cron: preserve("cron"), tz: preserve("tz"), enabled: field("enabled").checked };
     if (kind === "spawn") {
-      const [agent, repo, agentsRoot] = JSON.parse(field("agent").value || "[]"); Object.assign(spec, { agent, repo, agentsRoot, task: field("task").value });
-      if (field("purpose").value.trim()) spec.purpose = field("purpose").value.trim();
-      try { const wake = nestedWake.read(); if (wake) spec.wake = wake; }
-      catch (e) { q(".schedule-form-error").textContent = e.message; return; }
-      for (const name of ["runtime", "model", "backend"]) if (field(name).value) spec[name] = field(name).value;
+      const [agent, repo, agentsRoot] = JSON.parse(field("agent").value || "[]"); Object.assign(spec, { agent, repo, agentsRoot, task: preserve("task", "task") });
+      if (field("purpose").value) spec.purpose = preserve("purpose");
+      try {
+        const wake = nestedWake.read();
+        if (wake) spec.wake = Object.fromEntries(['cron', 'tz', 'message'].map(key => [key,
+          original?.wake && original.kind === kind && wake[key] === originalWake?.[key] ? original.wake[key] : wake[key]]));
+      } catch (e) { q(".schedule-form-error").textContent = e.message; return; }
+      for (const name of ["runtime", "model", "backend"]) if (field(name).value || original && Object.hasOwn(original, name)) spec[name] = preserve(name);
       if (field("yolo").value) spec.yolo = field("yolo").value === "true";
     } else {
       spec.home = field("home").value;
-      if (kind === "wake") spec.message = field("task").value;
+      if (kind === "wake") spec.message = preserve("task", "message");
       if (kind === "operation") {
         if (!field("providerOperation").value) { q(".schedule-form-error").textContent = "Select an available provider operation"; return; }
         spec.operation = field("providerOperation").value;
@@ -247,12 +247,38 @@ export function createSchedulesView(el, ctx, { pollMs = 30000 } = {}) {
   });
   q(".schedule-new").addEventListener("click", () => openForm());
   q(".schedule-refresh").addEventListener("click", refresh);
-  q(".schedule-cancel").addEventListener("click", () => { form.hidden = true; q(".schedule-new").focus(); });
-  const unsubscribe = onWorkspaceChange(() => {
-    form.hidden = true; busy = false; available = false; schedules = []; agents = []; instances = []; editing = null;
-    error(""); q(".schedule-operation-result").textContent = ""; q(".schedule-host-actions").replaceChildren(); render(); void refresh();
+  q(".schedule-cancel").addEventListener("click", () => { ++formOperation; ++operationRequest; form.hidden = true; if (observation.owns(observation.lease())) q(".schedule-new").focus(); });
+  observation = createScheduleObservationView(q(".schedule-list"), ctx, { ...readOptions, onEdit: editJob, onMutate: mutate,
+    onControls(state) {
+      available = state.canMutate;
+      if (!form.hidden && editing && definitionRevision !== state.revision) {
+        definitionRevision = state.revision;
+        const current = state.data?.schedules.find(s => s.id === editing);
+        if (!definition?.createdAt || !definition?.updatedAt || !current || definitionKey(current) !== definitionKey(definition)) {
+          ++formOperation; ++operationRequest; formReady = false;
+          q('.schedule-form-error').textContent = 'Definition observation changed or cannot be matched. Draft retained; reopen Edit before saving.';
+        }
+      }
+      const host = state.scheduler;
+      q(".schedule-status").textContent = !host ? "Scheduler status not observed."
+        : host.installed === false ? "Scheduler is not installed on this host. Saved schedules will not run until it is enabled."
+        : host.registered === false ? "This workspace is not registered with the host scheduler. Enable it to run these schedules."
+        : host.active === false ? "Scheduler is installed but inactive."
+        : host.installed === true && host.active === true && host.registered === true ? `Scheduler enabled · Last check: ${when(host.lastTick)} · Up to ${host.maxConcurrent ?? "unknown"} scheduled agent(s) at once`
+        : "Scheduler state is not fully reported.";
+      const actions = q(".schedule-host-actions");
+      if (host && (host.installed === false || host.active === false || host.registered === false)) {
+        if (!actions.firstChild) actions.append(button("Enable host scheduler", () => mutate("host-install"), !available));
+      } else actions.replaceChildren();
+      render();
+    },
+    onInvalidate(clear) {
+      ++formOperation; ++operationRequest; ++mutationOperation; busy = false; available = false;
+      if (clear) { form.hidden = true; formReady = false; agents = []; instances = []; editing = null; original = null;
+        error(""); q(".schedule-operation-result").textContent = ""; q(".schedule-host-actions").replaceChildren(); }
+      render();
+    },
   });
   render(); void refresh();
-  const timer = pollMs > 0 ? setInterval(refresh, pollMs) : null;
-  return { refresh, dispose() { alive = false; ++request; unsubscribe(); if (timer) clearInterval(timer); el.replaceChildren(); } };
+  return { refresh, dispose() { alive = false; ++formOperation; ++operationRequest; ++mutationOperation; observation.dispose(); offCard(); card.dispose(); el.replaceChildren(); } };
 }

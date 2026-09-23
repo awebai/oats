@@ -35,6 +35,7 @@ import { appMenuTemplate } from "./app-menu.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
 import { proxyInstanceEvents } from './instance-events-proxy.mjs';
+import { proxyScheduleRead, isScheduleReadAlias } from './schedule-read-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance } from "./single-instance.mjs";
 import { prepareTerminalAttachments } from "./terminal-attachments.mjs";
@@ -330,6 +331,10 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   }
   if (route === 'instance-events') {
     return proxyInstanceEvents(e, pathname, opts, { rendererURL: RENDERER_URL,
+      connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
+  }
+  if (route === 'schedule-read' || route === 'schedules' && isScheduleReadAlias(opts)) {
+    return proxyScheduleRead(e, pathname, opts, { rendererURL: RENDERER_URL,
       connection: () => ({ base: base(), wsId, allowedWs, epoch: serverEpoch, transition: serverHost.inTransition() }) });
   }
   if (route === 'readiness') {

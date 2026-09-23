@@ -45,6 +45,8 @@ import { readinessFailure } from '../renderer/readiness-contract.mjs';
 import { spawnPreviewRequest } from './spawn-preview.mjs';
 import { instanceEventsRequest } from './instance-events.mjs';
 import { eventsFailure } from '../renderer/instance-events-contract.mjs';
+import { scheduleReadRequestBoundary } from './schedule-read.mjs';
+import { scheduleReadAlias, scheduleReadFailure } from '../renderer/schedule-read-contract.mjs';
 import { spawnApplyRequest } from './spawn-apply.mjs';
 import { spawnApplySupported, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
@@ -460,6 +462,7 @@ function cliStatus() {
     launchOptions: cliState.launchOptions || [],
     features: cliState.features || [],
     scheduleApi: cliState.scheduleApi || null,
+    scheduleHistoryApi: cliState.scheduleHistoryApi === 3 ? 3 : null,
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
     readinessApi: cliState.readinessApi === 1 ? 1 : null,
     spawnPreviewApi: cliState.spawnPreviewApi === 2 ? 2 : null,
@@ -996,7 +999,7 @@ const readBody = (req) => new Promise((ok) => {
 
 // New read commands cannot turn malformed JSON into an empty valid request.
 // Keep the legacy parser for the other existing request families.
-const readStrictBody = (req, limit = 65536) => new Promise((ok, reject) => {
+const readStrictBody = (req, limit = 65536, measured = false) => new Promise((ok, reject) => {
   const bad = () => reject(Object.assign(new Error(`Expected a JSON object body up to ${limit} bytes`), { code: "E_BAD_ARGS" }));
   const chunks = []; let size = 0;
   req.on("data", c => {
@@ -1010,7 +1013,7 @@ const readStrictBody = (req, limit = 65536) => new Promise((ok, reject) => {
       const raw = Buffer.concat(chunks).toString("utf8");
       const body = JSON.parse(raw.trim() ? raw : "{}");
       if (!body || typeof body !== "object" || Array.isArray(body)) return bad();
-      ok(body);
+      ok(measured ? { body, bytes: size } : body);
     } catch { bad(); }
   });
   req.on("error", bad);
@@ -1171,11 +1174,27 @@ const server = createServer(async (req, res) => {
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }
     }
-    if (path === "/api/schedules" && ["GET", "POST"].includes(req.method)) {
-      const workspaceId = url.searchParams.get("ws");
-      const workspace = workspaceId ? workspaces().find(w => w.id === workspaceId) : req.method === "GET" ? workspaces()[0] : undefined;
+    if (path === '/api/workspace-schedules' || path === '/api/schedules') {
+      const readFailure = code => ({ ...scheduleReadFailure(code), workspace: null });
+      if (req.method !== 'POST') return send(res, 405, readFailure('E_METHOD_NOT_ALLOWED'));
+      let request, bytes;
       try {
-        const request = req.method === "GET" ? { operation: "list" } : await readBody(req);
+        // The legacy path also carries existing <=64KiB mutations. Its shared
+        // decoder stays bounded at that size; read aliases have a strict16KiB
+        // acceptance limit (including whitespace) before admission/dispatch.
+        ({ body: request, bytes } = await readStrictBody(req, path === '/api/schedules' ? 65536 : 16384, true));
+      } catch { return send(res, 400, readFailure('E_BAD_ARGS')); }
+      if (path === '/api/workspace-schedules' || ['list', 'show'].includes(request.operation)) {
+        if (bytes > 16384 || url.searchParams.getAll('ws').length !== 1 || !url.searchParams.get('ws')
+          || [...url.searchParams.keys()].some(k => k !== 'ws')) return send(res, 400, readFailure('E_BAD_ARGS'));
+        const input = path === '/api/schedules' ? scheduleReadAlias(request) : request;
+        const getContext = () => ({ workspace: workspaces().find(w => w.id === url.searchParams.get('ws')), cli: cliState, epoch: cliProbeGeneration });
+        return send(res, 200, await scheduleReadRequestBoundary(input, getContext));
+      }
+      // Mutation admission/CLI contract remains separate. No default workspace,
+      // history-enabled write, or roster/host collection on the read path.
+      const workspace = workspaces().find(w => w.id === url.searchParams.get('ws'));
+      try {
         const result = await scheduleRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],

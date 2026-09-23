@@ -5,6 +5,7 @@ import { cliSchedule } from "../cli-adapter.mjs";
 const fail = (message, code = "E_BAD_ARGS") => { throw Object.assign(new Error(message), { code }); };
 
 export async function scheduleRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliSchedule, inspect = capabilityRequest }) {
+  if (["list", "show"].includes(request?.operation)) fail("Schedule reads require the History API 3 boundary", "E_SCHEDULE_READ_UNAVAILABLE");
   if (!workspace) fail("Select a known workspace", "E_WORKSPACE_UNKNOWN");
   if (!cli?.ok || ![1, 2].includes(cli.scheduleApi) || !cli.features?.includes("schedule")) fail("Update the installed oats CLI to use schedules", "cli-no-schedule");
   const server = workspace.server || undefined;
@@ -29,7 +30,7 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       spec = { ...spec, kind: "spawn", agent: matches[0].name, agentsRoot: matches[0].agentsRoot, task: value.task };
       if (matches[0].repo) spec.repo = matches[0].repo;
       for (const key of ["runtime", "model", "backend", "purpose"]) {
-        if (value[key] !== undefined && value[key] !== "") {
+        if (value[key] !== undefined && (value[key] !== "" || key === "model")) {
           if (typeof value[key] !== "string") fail(`Invalid ${key}`);
           spec[key] = value[key];
         }

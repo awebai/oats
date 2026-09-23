@@ -33,6 +33,7 @@ module.exports = {
     "forge-cli.mjs", "forge-auth.mjs", "forge-auth-output.mjs", "forge-proxy.mjs",
     "lifecycle-cli.mjs",
     "instance-events-cli.mjs", "instance-events-proxy.mjs",
+    "schedule-read-cli.mjs", "schedule-read-proxy.mjs",
     "readiness-cli.mjs", "readiness-proxy.mjs",
     "spawn-preview-cli.mjs", "spawn-preview-proxy.mjs",
     "spawn-apply-cli.mjs", "spawn-apply-proxy.mjs",

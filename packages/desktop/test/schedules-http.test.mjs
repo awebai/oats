@@ -39,7 +39,9 @@ console.log(JSON.stringify(a[0]==='version'?{schemaVersion:1,name:'@awebai/oats'
     assert.ok(ready, stderr);
     const probe = await (await post("/api/cli/reprobe", {})).json();
     assert.equal(probe.scheduleApi, 1, JSON.stringify(probe));
-    const read = await fetch(base + "/api/schedules"); assert.equal(read.status, 200); assert.deepEqual((await read.json()).schedules, []);
+    const read = await fetch(base + "/api/schedules"); assert.equal(read.status, 405); assert.equal((await read.json()).reason.code, 'E_METHOD_NOT_ALLOWED');
+    const alias = await post(`/api/schedules?ws=${encodeURIComponent(ws)}`, { operation: 'list' });
+    assert.equal((await alias.json()).reason.code, 'E_SCHEDULE_READ_UNAVAILABLE');
     for (const query of ["", "?ws=%2Fmissing"]) {
       const response = await post("/api/schedules" + query, { operation: "disable", id: "daily" });
       assert.equal(response.status, 409); assert.equal((await response.json()).code, "E_WORKSPACE_UNKNOWN");
@@ -48,6 +50,7 @@ console.log(JSON.stringify(a[0]==='version'?{schemaVersion:1,name:'@awebai/oats'
     assert.equal(response.status, 200); assert.equal((await response.json()).operation, "disable");
     const calls = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line));
     assert.deepEqual(calls.filter(a => a[0] === "schedule" && a[1] === "disable"), [["schedule", "disable", "daily", "--dir", ws, "--json"]]);
+    assert.equal(calls.some(a => a[0] === 'schedule' && ['list', 'show'].includes(a[1])), false);
   } finally {
     const exited = proc.exitCode !== null || proc.signalCode !== null ? Promise.resolve() : once(proc, "exit");
     try { process.kill(-proc.pid, "SIGTERM"); } catch { /* already stopped */ }

@@ -7,6 +7,7 @@ import { scheduleRequest } from "../server/schedules.mjs";
 import { createSchedulesView, scheduleOutcome } from "../renderer/views/schedules.mjs";
 import { wakeScheduleFields } from "../renderer/wake-schedule-fields.mjs";
 import { setWorkspace } from "../renderer/views/common.mjs";
+import { scheduleReadData } from "../renderer/schedule-read-data.mjs";
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const cli = { ok: true, bin: "/installed/oats", scheduleApi: 1, features: ["schedule"], remote: ["schedule"] };
@@ -53,15 +54,15 @@ test("schedule boundary resolves homes in the selected workspace and refuses uns
   await scheduleRequest({ operation: "add", id: "review", spec }, context);
   assert.equal(calls[0].spec.home, home); assert.equal(calls[0].workspaceDir, "/team");
   await assert.rejects(scheduleRequest({ operation: "add", id: "review", spec: { ...spec, home: "/other/home" } }, context), /existing agent home/);
-  await assert.rejects(scheduleRequest({ operation: "list" }, { ...context, workspace: undefined }), /known workspace/);
-  await assert.rejects(scheduleRequest({ operation: "list" }, { ...context, cli: { ...cli, scheduleApi: undefined } }), /Update/);
+  await assert.rejects(scheduleRequest({ operation: "disable", id: "review" }, { ...context, workspace: undefined }), /known workspace/);
+  await assert.rejects(scheduleRequest({ operation: "disable", id: "review" }, { ...context, cli: { ...cli, scheduleApi: undefined } }), /Update/);
   await scheduleRequest({ operation: "add", id: "digest", spec: { ...spec, kind: "operation", operation: "knowledge:digest" } }, { ...context,
     inspect: async () => ({ capabilities: [{ layer: "knowledge", activation: { enabled: true }, operations: [{ name: "digest", kind: "action", available: true }] }] }),
   });
   assert.equal(calls.at(-1).spec.operation, "knowledge:digest");
   assert.equal(calls.at(-1).spec.home, home);
   assert.equal(calls.at(-1).spec.kind, "operation");
-  await scheduleRequest({ operation: "list" }, { ...context, workspace: { ...workspace, server: "hetzner", registrationPresent: true } });
+  await scheduleRequest({ operation: "disable", id: "review" }, { ...context, workspace: { ...workspace, server: "hetzner", registrationPresent: true } });
   assert.equal(calls.at(-1).server, "hetzner"); assert.equal(calls.at(-1).workspaceDir, "/local");
 });
 
@@ -76,28 +77,38 @@ test("scheduled spawn keeps same-named souls in different repositories distinct"
 });
 
 function setup({ mutate, read, host = { installed: true, active: true, registered: true, lastTick: "2026-09-07T11:59:00Z", maxConcurrent: 1 } } = {}) {
-  const dom = new JSDOM("<body><main></main></body>"); const el = dom.window.document.querySelector("main");
+  const dom = new JSDOM("<body><main></main></body>", { pretendToBeVisual: true }); const el = dom.window.document.querySelector("main");
   const calls = []; setWorkspace("/team");
   const ctx = { api: async (path, opts) => {
     calls.push({ path, opts });
+    if (path.startsWith("/api/workspace-schedules")) {
+      const input = JSON.parse(opts.body), scope = new URL(path, 'http://local').searchParams.get('ws');
+      const raw = read ? await read(path) : { schedules: [job], scheduler: host };
+      const schedules = raw.schedules.map(s => ({ ...s, scope, scheduleApi: 2, scheduleHistoryApi: 3, running: false,
+        nextRun: s.nextRun ? new Date(s.nextRun).toISOString() : null, executionStatus: { kind: 'legacy' },
+        lastRun: s.lastRun ? { ...s.lastRun, runId: 'opaque', session: { instance: null, home: null, incarnation: null, server: null, delivery: 'none' } } : null,
+        history: { status: 'ok', stored: 0, truncated: false }, recentRuns: [] }));
+      const value = input.action === 'show' ? { schedule: schedules.find(s => s.id === input.id) }
+        : { scope, scheduleApi: 2, scheduleHistoryApi: 3, schedules, scheduler: raw.scheduler, integrity: { sources: [{ path: 'definitions', status: 'ok', bytes: 100 }, { path: 'state', status: 'ok', bytes: 200 }] } };
+      return { scheduleReadViewApi: 1, status: 'available', workspace: scope, scope, reason: null, data: scheduleReadData(value, scope, input) };
+    }
     if (opts?.method === "POST") return mutate ? mutate(path, JSON.parse(opts.body)) : { schedule: job };
-    if (path.startsWith("/api/schedules")) return read ? read(path) : { schedules: [job], scheduler: host };
     if (path.startsWith("/api/agents")) return { agents: [{ name: "reviewer", repo: "src", repoName: "src", agentsRoot: "/team/src/agents", work: "worktree" }] };
     if (path.startsWith("/api/panel")) return { instances: [{ home, instance: "reviewer-seat" }] };
     assert.fail(path);
   } };
-  const view = createSchedulesView(el, ctx, { pollMs: 0 });
+  const view = createSchedulesView(el, ctx, { cli: () => ({ ...cli, scheduleHistoryApi: 3, features: ['schedule', 'schedule-read-2'] }), subscribeCli: () => () => {} });
   return { dom, el, calls, view, cleanup() { view.dispose(); dom.window.close(); } };
 }
 
-test("wake form saves exact home/message and polling preserves unsaved input", async () => {
+test("wake form saves exact home/message and explicit refresh preserves unsaved input", async () => {
   const s = setup();
   try {
     await tick(); s.el.querySelector(".schedule-new").click(); const form = s.el.querySelector("form");
     form.elements.id.value = "check-work"; form.elements.task.value = "Check work <literally>";
     await s.view.refresh(); assert.equal(form.elements.task.value, "Check work <literally>");
     form.dispatchEvent(new s.dom.window.Event("submit", { cancelable: true })); await tick();
-    const request = s.calls.find(c => c.opts?.method === "POST");
+    const request = s.calls.find(c => c.path.startsWith('/api/schedules') && c.opts?.method === "POST");
     assert.equal(new URL(request.path, "http://local").searchParams.get("ws"), "/team");
     const body = JSON.parse(request.opts.body); assert.equal(body.operation, "add");
     assert.equal(body.spec.home, home); assert.equal(body.spec.message, "Check work <literally>");
@@ -116,7 +127,7 @@ test("editing only a spawn cron preserves its purpose and recurring wake through
     } });
   } });
   try {
-    await tick(); [...s.el.querySelectorAll(".schedule-card button")].find(b => b.textContent === "Edit").click();
+    await tick(); [...s.el.querySelectorAll(".schedule-card button")].find(b => b.textContent === "Edit").click(); await tick();
     const form = s.el.querySelector("form"); form.elements.cron.value = "0 4 * * *";
     form.dispatchEvent(new s.dom.window.Event("submit", { cancelable: true })); await tick();
     assert.equal(saved.cron, "0 4 * * *"); assert.equal(saved.purpose, "sweep"); assert.deepEqual(saved.wake, wake);
@@ -127,10 +138,10 @@ test("editing only a spawn cron preserves its purpose and recurring wake through
 test("double submit dispatches once; late result from prior workspace cannot erase the next draft", async () => {
   let finish; const s = setup({ mutate: () => new Promise(resolve => { finish = resolve; }) });
   try {
-    await tick(); s.el.querySelector(".schedule-new").click(); const form = s.el.querySelector("form");
+    await tick(); s.el.querySelector(".schedule-new").click(); await tick(); const form = s.el.querySelector("form");
     form.elements.id.value = "check-work"; form.elements.task.value = "Check work";
     const submit = () => form.dispatchEvent(new s.dom.window.Event("submit", { cancelable: true }));
-    submit(); submit(); assert.equal(s.calls.filter(c => c.opts?.method === "POST").length, 1);
+    submit(); submit(); assert.equal(s.calls.filter(c => c.path.startsWith('/api/schedules') && c.opts?.method === "POST").length, 1);
     setWorkspace("/other"); await tick(); s.el.querySelector(".schedule-new").click(); form.elements.task.value = "New workspace draft";
     finish({ schedule: job }); await tick();
     assert.equal(form.hidden, false); assert.equal(form.elements.task.value, "New workspace draft");
@@ -141,23 +152,23 @@ test("host installation is explicit and a saved job does not imply a functioning
   const s = setup({ host: { installed: true, active: true, registered: false } });
   try {
     await tick(); assert.match(s.el.textContent, /not registered/);
-    assert.equal(s.calls.some(c => c.opts?.method === "POST"), false);
+    assert.equal(s.calls.some(c => c.path.startsWith('/api/schedules') && c.opts?.method === "POST"), false);
     s.el.querySelector(".schedule-host-actions button").click(); await tick();
-    assert.equal(JSON.parse(s.calls.find(c => c.opts?.method === "POST").opts.body).operation, "host-install");
+    assert.equal(JSON.parse(s.calls.find(c => c.path.startsWith('/api/schedules') && c.opts?.method === "POST").opts.body).operation, "host-install");
   } finally { s.cleanup(); }
 });
 
 test("read failures disable mutations; schedule failures stay visible with the draft", async () => {
   const s = setup({ mutate: async () => { throw new Error("Invalid cron: month"); } });
   try {
-    await tick(); s.el.querySelector(".schedule-new").click(); const form = s.el.querySelector("form");
+    await tick(); s.el.querySelector(".schedule-new").click(); await tick(); const form = s.el.querySelector("form");
     form.elements.id.value = "check-work"; form.elements.task.value = "Keep me";
     form.dispatchEvent(new s.dom.window.Event("submit", { cancelable: true })); await tick();
     assert.equal(form.hidden, false); assert.equal(form.elements.task.value, "Keep me");
     assert.match(s.el.querySelector(".schedule-form-error").textContent, /Invalid cron/);
   } finally { s.cleanup(); }
   const failed = setup({ read: async () => { throw new Error("Update oats"); } });
-  try { await tick(); assert.equal(failed.el.querySelector(".schedule-new").disabled, true); assert.match(failed.el.textContent, /Update oats/); }
+  try { await tick(); assert.equal(failed.el.querySelector(".schedule-new").disabled, true); assert.match(failed.el.textContent, /could not complete the schedule read/); }
   finally { failed.cleanup(); }
 });
 
