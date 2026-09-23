@@ -182,7 +182,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-owner' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-owner/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
+          "command": "OATS_INSTANCE='dev-owner' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-owner' PI_AGENT_INSTANCE='dev-owner' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-owner' '<base>/bin/pi' --append-system-prompt '<base>/scope/agents/dev/instances/dev-owner/AGENTS.md' --approve --name 'dev-owner' '@TASK.md'",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false
@@ -360,7 +360,7 @@
               "file": "TASK.md"
             }
           },
-          "command": "OATS_INSTANCE='dev-pi-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone' PI_AGENT_INSTANCE='dev-pi-attached-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone' '<base>/bin/pi' --no-skills --skill '<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone/.agents/skills' --no-context-files --no-prompt-templates --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone/AGENTS.md' --approve --name 'dev-pi-attached-knone-mnone' '@TASK.md'",
+          "command": "OATS_INSTANCE='dev-pi-attached-knone-mnone' OATS_INSTANCE_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone' PI_AGENT_INSTANCE='dev-pi-attached-knone-mnone' PI_AGENT_HOME='<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone' '<base>/bin/pi' --append-system-prompt '<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone/AGENTS.md' --approve --name 'dev-pi-attached-knone-mnone' '@TASK.md'",
           "createdAt": "<createdAt>",
           "launched": false,
           "running": false

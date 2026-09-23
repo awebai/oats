@@ -171,14 +171,14 @@ test("pi and Claude instances receive the same exact local skills and generated 
       assert.ok(diskMeta.capabilities.some((c) => c.id === "acme.review"));
       assert.deepEqual(diskMeta.skills.map((s) => s.name), names);
       if (meta.runtime === "pi") {
-        // Strict curriculum: ambient discovery off, the composed set added back
-        // explicitly, and the instance's own AGENTS.md delivered by flag because
-        // --no-context-files also suppresses it. (This assertion previously
-        // required --no-skills to be ABSENT, under the superseded
-        // ambient-coexistence decision.)
-        assert.match(meta.command, /--skill /);
-        assert.match(meta.command, /--no-skills/);
-        assert.match(meta.command, /--no-context-files/);
+        // Workspace model, decision 13: the harness starts NORMALLY. The composed
+        // skills live at <home>/.agents/skills (pi discovers them from its cwd),
+        // the instance's AGENTS.md is delivered by --append-system-prompt, and no
+        // ambient-discovery flags are passed (ambient vs composed = harness precedence).
+        assert.doesNotMatch(meta.command, /--no-skills/);
+        assert.doesNotMatch(meta.command, /--no-context-files/);
+        assert.doesNotMatch(meta.command, /--no-prompt-templates/);
+        assert.match(meta.command, /--append-system-prompt/);
         // Extensions stay AMBIENT by founder ruling: operators run cross-agent
         // pi extensions (web search, formatting) that every instance keeps.
         assert.doesNotMatch(meta.command, /--no-extensions/);
@@ -269,8 +269,7 @@ test("pi task positional precedes capability-contributed launch args", () => {
     const contributedArgIndex = meta.command.lastIndexOf("--append-system-prompt");
     assert.ok(taskIndex >= 0, meta.command);
     assert.ok(contributedArgIndex > taskIndex, `task must precede contributed args: ${meta.command}`);
-    assert.match(meta.command, /--no-skills/);
-    assert.match(meta.command, /--no-context-files/);
+    assert.doesNotMatch(meta.command, /--no-skills/); // decision 13: harness starts normally
   } finally { process.env.PATH = oldPath; }
 });
 
@@ -826,7 +825,7 @@ test("injection-override is rejected on owned/path capabilities; old injection k
   assert.throws(() => resolveOatsConfig(repo, "dev"), /renamed to "injection-override:"/);
 });
 
-test("oats type add declares agent types; inject eject copies a packaged default and sets the override", () => {
+test("oats type add declares agent types; inject eject is a removed verb", () => {
   const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
   // Installed-provenance capability (eject allowed) and an owned one (refused).
   const inst = join(repo, ".agents", "capabilities", "installed", "chat");
@@ -841,18 +840,11 @@ test("oats type add declares agent types; inject eject copies a packaged default
   assert.match(cfg, /agent-types:\n  reviewers:\n    description: Review agents/);
   r = spawnSync(process.execPath, [CLI, "type", "list", "--dir", repo], { encoding: "utf8" });
   assert.match(r.stdout, /reviewers/);
-  // Eject the capability injection.
+  // `inject eject` was removed by the workspace model (injection overrides are
+  // not part of it yet; a capability's inject is edited in its member repo).
   r = spawnSync(process.execPath, [CLI, "inject", "eject", "acme.chat", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const ejected = join(repo, ".agents", "injections", "capabilities", "acme.chat.md");
-  assert.equal(readFileSync(ejected, "utf8"), "## Packaged instructions");
-  const cap = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "acme.chat");
-  assert.equal(cap.inject, ejected);
-  // Second eject refuses; owned capability refuses.
-  r = spawnSync(process.execPath, [CLI, "inject", "eject", "acme.chat", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 1); assert.match(r.stderr, /already exists/);
-  r = spawnSync(process.execPath, [CLI, "inject", "eject", "acme.own", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 1); assert.match(r.stderr, /owned\/path-sourced/);
+  assert.equal(r.status, 1); assert.match(r.stderr, /removed by the workspace model/);
+  assert.equal(existsSync(join(repo, ".agents", "injections")), false);
 });
 
 test("owned capabilities at a non-git scope are discovered and config-owned trusted", () => {

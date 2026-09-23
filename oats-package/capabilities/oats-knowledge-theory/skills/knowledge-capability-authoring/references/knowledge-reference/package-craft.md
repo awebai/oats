@@ -104,11 +104,19 @@ not satisfy a skill's missing reference if it is outside the capability root.
 
 ## Acquisition, activation and trust
 
-At an explicitly chosen *test* scope, acquisition and activation are separate:
+In a *test* workspace, pin the package by a direct ref and give it to a soul:
+
+```yaml
+# test workspace's oats-workspace.yaml
+packages:
+  example.knowledge-pkg: git:/abs/path/to/source-repo.git@v0.1.0   # a tag; branches are refused
+defaults:
+  knowledge: { example.knowledge: { from: package } }
+```
 
 ```bash
-oats install /path/to/source/oats-package --dir /path/to/test-scope
-oats use example.knowledge --global --dir /path/to/test-scope
+oats sync --dir /path/to/test-workspace      # resolve, lock, approve once
+oats spawn <soul> --preview --json           # the module as it would be materialized
 ```
 
 These are illustrative user operations, not instructions to change a live
