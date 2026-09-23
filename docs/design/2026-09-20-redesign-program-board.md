@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-23 12:30Z · **⏸ PARITY PIPELINE PAUSED by the human** for an architecture simplification · **Workspace model v2 ACCEPTED** (13 decisions; `decisions/workspace-model-v2.md` `d9a73765`; worked example + **Phase 4 implementation plan PROPOSED** in docs/design) · team notified (Antares relay 201777df; engineer ebfda8a7) · in flight: 10B-0 terminal owner-lease security PR (→ 0.24.14 w/ 10A) · 10A merged `e5cdaf95` unreleased · awaiting human on the plan (shape, lanes, 0.25.0)
+**Last update:** 2026-09-23 17:40Z · **Workspace model v2 phases A–C ON MAIN (`59ae22df`, PR99) → `v0.25.0` tagged (release run in flight)** · Phase D next (framework repos as the first workspace; six expert souls; `oats.core`/`oats.setup` rewrite) · ⏸ parity pipeline still paused except 10B-0 (→ 0.24.14 when the engineer hands off; note: 0.24.14 must be cut from the 0.24 line, not main).
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
