@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-23 00:40Z · **v0.24.13 PUBLISHED** (tag `ac420b88`; bump PR97 → main `0a24ce3d`; artifact probe: scheduleHistoryApi 3, identity-mismatch isolated, one-run transitions, session provenance, no transcript) · **slice 8 COMPLETE** (PR96 `3a187a80`) · kernel K8b PR95 · **all contract-bearing slices done: 2b 2c 5 6a 6b 7a 7b 8** · engineer → frame 10 remainder proposal, then parity stock-take · open: K11 admission seam, K12 transcript verb (Decision drafts owed), attach-knowledge, auto-PR, branch enumeration
+**Last update:** 2026-09-23 12:30Z · **⏸ PARITY PIPELINE PAUSED by the human** for an architecture simplification · **Workspace model v2 ACCEPTED** (13 decisions; `decisions/workspace-model-v2.md` `d9a73765`; worked example + **Phase 4 implementation plan PROPOSED** in docs/design) · team notified (Antares relay 201777df; engineer ebfda8a7) · in flight: 10B-0 terminal owner-lease security PR (→ 0.24.14 w/ 10A) · 10A merged `e5cdaf95` unreleased · awaiting human on the plan (shape, lanes, 0.25.0)
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
