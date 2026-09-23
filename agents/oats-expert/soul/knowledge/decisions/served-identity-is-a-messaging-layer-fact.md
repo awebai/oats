@@ -2,7 +2,7 @@
 type: Decision
 title: Per-spawn identity choice (local | global) — the served principal is a messaging-layer fact the kernel binds and shows, never a kernel vocabulary
 status: proposed
-description: PROPOSED (2026-09-23, to the human) from an OSS request that every instance creation offer a local (instance-lifetime) or global (resident identity served through a grant) messaging identity. Kernel asks reduced to two provider-neutral additions — `decision.effective.providers` binds the merged per-module payloads a spawn applied, and roster/inspect copy a documented messaging-layer meta key `identity` — with NO new `oats spawn` flags; the choice travels through the existing `--provider <cap> k=v` payload and the provider owns every identity-specific rule.
+description: PROPOSED (2026-09-23, to the human) from an OSS request that every instance creation offer a local (instance-lifetime) or global (resident identity served through a grant) messaging identity. Kernel asks reduced to three provider-neutral additions — `decision.effective.providers` binds the merged per-module payloads a spawn applied; roster/inspect copy a documented messaging-layer meta key `identity`; a manifest-declared `hostOnly` settings key is refused by the resolver in every committed or per-spawn layer — with NO new `oats spawn` flags; the choice travels through the existing `--provider <cap> k=v` payload and the provider owns every identity-specific rule.
 tags: [identity, messaging, provider-payload, spawn, decision-record, desktop, kernel-boundary]
 timestamp: 2026-09-23
 ---
@@ -66,12 +66,21 @@ resolution revision.
   and a *Resident* field (prefilled from preview `settings.<cap>.identity`) and
   forwards them as `--provider` pairs; its arg allowlist gains one `provider`
   rule (capability id, dotted key, value grammar), not identity-named rules.
+- **Kernel (K1″) — host-only settings keys.** A capability manifest may mark a
+  settings key `"hostOnly": true`. The resolver refuses that key in the
+  workspace base payload, `byTeam[*]`, the soul's slot and `--provider`
+  layers with `E_WORKSPACE_SCHEMA { reason: "host-only-key", path, key }`;
+  only `oats-local.yaml settings.<cap>` may carry it. This generalises the
+  kernel-fixed reserved `byTeam` key (decision 23, `reservedKeyProblems`) into
+  a capability-declared attribute, and it is the ONLY place the rule can be
+  enforced: the hook receives one merged `OATS_SETTINGS` without provenance,
+  so a provider cannot tell a `residents` map from a committed file apart from
+  one from the host file. Until K1″ ships the hole is documented, not closed.
 - **Provider owns every identity rule** (oats.aweb 1.12): reads `team` and
-  `identity.{mode,resident,scopes,ttl,source}` from `OATS_SETTINGS`; the
-  host-owned `residents.<name>: /abs/custody` map is accepted **only** from
-  `oats-local.yaml settings.<cap>` and **refused** from any committed or
-  per-spawn slot (a committed workspace file must never point a spawn at a
-  custody root); `mode: global` without a resolvable resident is `E_CONFIG`
+  `identity.{mode,resident,scopes,ttl,source}` from `OATS_SETTINGS`; declares
+  `residents` as `hostOnly` in its manifest (the host-owned
+  `residents.<name>: /abs/custody` map — a committed workspace file must never
+  point a spawn at a custody root); `mode: global` without a resolvable resident is `E_CONFIG`
   naming the file that should hold it; a grant whose team differs from the
   payload team is revoked and the spawn fails with nothing kept; retire
   revokes and deregisters, a failed revoke is nonzero with the TTL note.
@@ -84,7 +93,8 @@ resolution revision.
 
 ## Consequences
 
-- Kernel additions are two provider-neutral fields; no CLI grammar grows.
+- Kernel additions are two provider-neutral fields plus one manifest attribute
+  (`settings.<key>.hostOnly`); no CLI grammar grows.
 - The Desktop's confirmed apply binds provider facts for the first time
   (they were previously covered only through the resolution revision).
 - A 0.24 kernel is unaffected; on it the same keys work through capability
@@ -95,5 +105,10 @@ resolution revision.
 
 ## Status
 
-Proposed to the human 2026-09-23. Until accepted, no kernel change lands;
+Proposed to the human 2026-09-23; amended the same day with K1″ after the
+provider's author showed the refusal cannot live in the hook (no provenance in
+the merged payload). Implementation of the provider half is with a developer
+instance under the OSS coordinator's review; K1′/K1″/K2 are the maintainer's
+after acceptance (or a developer of theirs against this text, if the human
+prefers). Until accepted, no kernel change lands;
 the provider work proceeds on its own repo lane under the usual PR review.
