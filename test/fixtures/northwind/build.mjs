@@ -586,6 +586,10 @@ function pkgOkfRepo() {
   process.stdout.write(JSON.stringify({ ok: true, action: cmd, args: rest }) + "\\n");
   process.exit(0);
 }
+if (cmd === "spawn" && process.env.OATS_INSTANCE_HOME) {
+  // Record the identity the kernel handed the hook (what a real provider keys durable state on).
+  (await import("node:fs")).writeFileSync(process.env.OATS_INSTANCE_HOME + "/.okf-hook-env.json", JSON.stringify({ OATS_SOUL: process.env.OATS_SOUL, OATS_SOUL_ID: process.env.OATS_SOUL_ID, OATS_AGENT: process.env.OATS_AGENT }));
+}
 `,
     ),
   };
