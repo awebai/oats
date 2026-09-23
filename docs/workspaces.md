@@ -122,9 +122,8 @@ capabilities:
   acme-deploy: { from: package }           # provided by acme.tools, pinned in packages:
   acme-house-style: off                    # removes a workspace default
 
-knowledge:                                 # provider payload, opaque to the kernel
-  owns: release-manager
-  reads: [platform-engineer]
+knowledge:                                 # provider payload, opaque to the kernel — the slot capability's BINDING keys
+  harvest-runtime: claude                  # (oats.okf 2.1.3: what this soul owns/reads is in souls/<name>/okf.json, not here — see below)
 messaging:
   channels: [acme-eng]
 tasks: none                                # empties the slot
@@ -133,7 +132,15 @@ compatibility:                             # optional FLOORS on package versions
   oats.okf: ">=2.1"
 ```
 
-Beside it: `AGENTS.md` (canonical), `CLAUDE.md → AGENTS.md`, `skills/`. Every
+Beside it: `AGENTS.md` (canonical), `CLAUDE.md → AGENTS.md`, `skills/`, and
+whatever the slot providers read from the soul directory — for `oats.okf`
+2.1.3 that is **`okf.json`** (`{ version: 1, owner, owns: ["<base>/<node>"],
+reads: […] }`, written by `oats okf init|migrate`), the soul's knowledge
+declaration; it travels with the soul into the per-commit soul cache. The
+`knowledge:` payload on `soul.yaml` reaches OKF as `OATS_SETTINGS` and may
+carry only the binding's settings keys (`bindings-file`, `state-dir`,
+`harvest-runtime`, `harvest-model`); `owns`/`reads`/`root` there are refused by
+the provider, not read (a soul payload grammar is an OKF follow-up). Every
 `souls/*/soul.yaml` in a member is discoverable; one that wants to stay
 internal says `private: true` (spawnable only from its own repo). A soul's
 `name` must equal its directory name; the first of two souls declaring one
@@ -257,8 +264,11 @@ integrity on the next `oats sync` and asks again.
 
 `oats sync` confirms membership, resolves every `packages:` entry to a commit +
 content digest, asks (on a terminal) for any missing per-version executable
-approval, writes `oats-lock.json` (lockfileVersion 3) and reports what changed.
-`oats package add <id> <version|git:…@…>` / `oats package remove <id>` edit
+approval — or takes it from repeatable `--approve <id>@<version>` flags for
+unattended runs (each approves exactly the entry the resolution contains; the
+digest is always computed, never typed; Ctrl+D at the prompt is a decline,
+exit `2`) — writes `oats-lock.json` (lockfileVersion 3), creates `agents/` if
+absent and reports what changed. `oats package add <id> <version|git:…@…>` / `oats package remove <id>` edit
 `packages:` in the workspace file when it is tracked by the current checkout,
 else print the line to add — the workspace file is shared through Git. Details:
 [packages.md](packages.md).
@@ -298,6 +308,7 @@ Nothing is symlinked, nothing is shared between instances.
 ```
 <agents-root>/<soul>/instances/<instance>/
 ├── AGENTS.md                          # composed: soul AGENTS.md + kernel/work-mode blocks + each module's inject
+│                                      #   (with oats.core resolved, the module's "You run on OATS" block is the only one — the kernel's legacy copy is suppressed)
 ├── CLAUDE.md → AGENTS.md
 ├── .agents/skills/<capability>/<skill>/SKILL.md    # full copies; where pi/codex look
 ├── .claude/skills → ../.agents/skills
@@ -317,10 +328,14 @@ bumped affects only new spawns. Details and DTOs:
 [souls-and-instances.md](souls-and-instances.md), [desktop-cli-api.md](desktop-cli-api.md).
 
 **Drift is shown, not prevented.** `oats status` compares each instance's
-recorded modules with the workspace's current picture: `current`, `moved`
-(member or package now at another commit) or `missing` (capability no longer
-present, member unconfirmed, package no longer locked). `oats spawn --preview`
-lists `changedSince` the newest previous instance of the same soul.
+recorded modules — and its recorded **soul source** (`instance.json.workspace.soul`)
+— with the workspace's current picture: `current`, `moved` (member or package
+now at another commit) or `missing` (capability no longer present, member
+unconfirmed, package no longer locked). The text form is `soul: <name> from
+<member> @ <c7>  [member moved since …]` above the module rows; `--json`
+carries `instances[].soul`. `oats spawn --preview` lists `changedSince` the
+newest previous instance of the same soul, plus `providers` (the `--provider`
+map as given) and `settings.<cap>` (the merged payload each provider receives).
 
 **Harnesses start normally.** OATS is a skill contributor, not a skill sandbox:
 cwd = the instance home, the harness's own skill discovery intact
@@ -344,7 +359,7 @@ store** — it organises and can supply defaults. The messaging provider's paylo
 
 | What it is | Where | Example |
 |---|---|---|
-| True of every instance of the soul | `soul.yaml` → `knowledge:` / `messaging:` / `tasks:` | `knowledge: { owns: release-manager }` |
+| True of every instance of the soul | `soul.yaml` → `knowledge:` / `messaging:` / `tasks:` | `messaging: { channels: [acme-eng] }`; `knowledge: { harvest-runtime: claude }` |
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 
@@ -365,9 +380,21 @@ messaging:
 
 A soul with `team: cloud` hands its messaging provider `{ team: aweb:example.cloud, … }`;
 a label under `byTeam` that is not declared in `teams:` is `E_WORKSPACE_SCHEMA`.
-A store (`stores: { <name>: <repo ref> }`) names a repository; where the base
-lives inside it is the knowledge provider's own binding key (`root` for OKF),
-given in the payload — a repo ref never carries a `#path`.
+**`byTeam` is kernel-merged; whether a provider honours what arrives is the
+provider's.** `spawn --preview` shows the merged `settings.<cap>` so the
+delivery is verifiable, and `instance.json.providers.<cap>` records it — but
+oats.aweb **1.11.2 does not read `team` from its payload** (it resolves the
+team from the removed `oats-config.yaml` `team:` block, else the active team at
+the `.aw` root it finds), so for 1.11.2 `byTeam` is a recorded intent, not a
+per-label identity; the per-repo `.aw` placement in
+[rebuild-to-v2.md §8b](rebuild-to-v2.md#8b-where-the-team-aw-lives-now-oatsaweb-1112-and-what-byteam-does-today)
+is the working alternative. An oats.aweb release that reads `team` from the
+payload closes the gap without a workspace edit (release notes will name it).
+A store (`stores: { <name>: <repo ref> }`) names a repository; where a
+knowledge base lives inside it is the knowledge provider's own concern — for
+OKF 2.1.3 that is the **bindings file** (`bases.<alias>.repository` + `root`,
+`oats-local.yaml settings.oats.okf.bindings-file`), not a soul payload key; a
+repo ref never carries a `#path`.
 
 `--provider` for a capability the soul does not resolve is `E_CAPABILITY_MISSING`;
 `__proto__`/`constructor`/`prototype` as a key at any depth is refused.
@@ -382,8 +409,16 @@ BatchMode: nothing ever prompts). Neither the repo that defines a capability nor
 the repo that hosts the workspace needs to be cloned.
 
 **The only thing that needs a clone is a soul's work target** (`work:
-worktree | checkout`). Spawning a soul whose repo is not yet cloned is a guided
-clone-then-spawn, a job for the onboarding skill, not the kernel.
+worktree | checkout`). The kernel finds it, first hit wins: (1) `oats spawn
+… --repo <abs path>`; (2) `oats-local.yaml` `clones: { <repo key>: <abs
+path> }` (keys are canonical repo keys — any ref spelling is normalised through
+`parseRepoRef`); (3) the convention `<deployment>/<member name>` (the last
+segment of the repo key; a member named `agents` is looked for at
+`<deployment>/agents-repo`, since `agents/` is the instance root). None →
+`E_CLONE_MISSING` naming the three remedies; a directory whose `origin` is a
+different repo → `E_CLONE_MISMATCH`. Spawning a soul whose repo is not yet
+cloned is a guided clone-then-spawn, a job for the onboarding skill, not the
+kernel.
 
 The deployment directory is **yours to choose** (decision 9) — an existing folder that already holds your member clones is the usual case; `oats onboard <dir>` adds what the kernel needs and nothing else:
 
@@ -397,10 +432,12 @@ The deployment directory is **yours to choose** (decision 9) — an existing fol
 ```
 
 The kernel never depends on this shape: `oats-local.yaml` is found by walking
-up from the current directory (`E_LOCAL_MISSING` otherwise); clones are found
-through `clones:` or the convention. A soul that lives in a member repo is
-fetched into `<agents-root>/<soul>/soul/` at its discovered commit before its
-first spawn (idempotent per commit); its instances then materialize as above.
+up from the current directory (`E_LOCAL_MISSING` otherwise); `agents/` is
+created by `oats sync` when absent; clones are found through `--repo`,
+`clones:` or the convention, in that order. A soul that lives in a member repo
+is fetched into `<agents-root>/<soul>/souls/<commit12>/` at its discovered
+commit before its first spawn (idempotent per commit; `<agents-root>/<soul>/soul`
+points at the current one); its instances then materialize as above.
 
 ## The standalone case
 
@@ -419,7 +456,9 @@ approved like any package (a soul may say `oats.core: off`); and the
 operator's `oats-local.yaml` may name the repo directly (`workspace: <member
 ref>` — the kernel notices it is a member whose workspace it cannot read and
 falls back to the standalone view — or `standalone: <repo ref>` to ask for
-that view explicitly).
+that view explicitly). `oats onboard` lists the host among the clones to make
+like any member (the host is a member; its souls may need a work clone); under
+an explicit `standalone:` header its next steps say so and name that one repo.
 
 **Executables from public members.** Membership is the trust (decision 2): a
 member capability's hooks and command scripts run on every operator's machine at

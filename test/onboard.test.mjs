@@ -218,3 +218,79 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+// ---- lane 3 (0.25.2) ----
+// R10: (1) onboard's next steps list the HOST exactly like any other member when it is one — a clone is
+// needed only if someone works IN it; there is no special "workspace clone" — and a clone already present
+// (beside oats-local.yaml or named in clones:) is reported, not re-suggested. (2) The standalone header says
+// WHY the view is standalone: `standalone:` in oats-local.yaml → "explicit"; an unreadable host → the access
+// failure — never "cannot be read" when nothing was refused.
+test("0.25.2 R10: onboard next-steps treat the host as a member like the others (clone only to work IN it; present clones reported); standalone headers say explicit vs unreadable-host", { timeout: 300_000 }, async () => {
+  const base = fixtureBase();
+  const { makeUnreadable } = await import("./fixtures/northwind/build.mjs");
+  let unreadable = null;
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    mkdirSync(join(base, "home"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+
+    // (1) host = agents (a member). Pre-place a clone of platform beside the deployment.
+    const dep = join(base, "dep");
+    mkdirSync(join(dep, "platform"), { recursive: true });
+    spawnSync("git", ["clone", "-q", fx.refs.platform, join(dep, "platform")], { encoding: "utf8" });
+    assert.ok(existsSync(join(dep, "platform", ".git")), "a platform clone is present before onboarding");
+    let r = oats(["onboard", dep, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    const res = envelope(r).result;
+    assert.equal(res.hosting.hostIsMember, true);
+    const host = res.next.clone.find((c) => c.name === "agents");
+    assert.ok(host, "the host is in the clone list like every confirmed member");
+    assert.equal(host.host, true); assert.equal(host.present, false);
+    assert.equal(host.dir, join(dep, "agents-repo"));
+    assert.ok(res.next.clone.filter((c) => c.name !== "agents").every((c) => c.host === false));
+    const platform = res.next.clone.find((c) => c.name === "platform");
+    assert.equal(platform.present, true); assert.equal(platform.dir, join(dep, "platform"));
+    // Text: the host line is an ordinary `git clone` line plus the rule; the present clone is reported, not re-suggested.
+    rmSync(join(dep, "oats-local.yaml")); rmSync(join(dep, "oats-lock.json")); // onboard again in text mode over the same directory
+    r = oats(["onboard", dep, "--workspace", fx.refs.agents], { cwd: base, env, base });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`git clone \\S+agents\\.git \\S*dep/agents-repo`), "the host is listed as a clone like the others");
+    assert.match(r.stdout, /↑ the host is a member like the others: clone it only if someone works IN it — the workspace file is read over the remote/);
+    assert.doesNotMatch(r.stdout, /workspace clone/i);
+    assert.match(r.stdout, /dep\/platform {2}✓ already here$/m, "the pre-placed clone is reported");
+    assert.doesNotMatch(r.stdout, /git clone \S+platform\.git/, "…and not suggested again");
+    assert.match(r.stdout, /is itself a member\./);
+
+    // (2a) explicit standalone (`standalone:` in oats-local.yaml, the workspace IS readable): the header says so.
+    const sa = join(base, "sa");
+    mkdirSync(join(sa, "agents"), { recursive: true });
+    writeFileSync(join(sa, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.marketing}\nstandalone: ${fx.refs.marketing}\n`);
+    r = oats(["sync", "--dir", sa], { cwd: sa, env, base });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout, /^workspace {2}\(standalone view of marketing \(explicit in oats-local\.yaml\): its own souls \+ oats\.core\)/m, r.stdout);
+    assert.doesNotMatch(r.stdout, /cannot be read/, "nothing was refused: the header must not claim the workspace cannot be read");
+    r = oats(["souls", "--dir", sa], { cwd: sa, env, base });
+    assert.match(r.stdout, /— standalone view of marketing \(explicit in oats-local\.yaml\)/);
+    assert.doesNotMatch(r.stdout, /cannot be read/);
+    r = oats(["workspace", "status", "--dir", sa], { cwd: sa, env, base });
+    assert.match(r.stdout, /^ {2}\(standalone view of marketing \(explicit in oats-local\.yaml\): its own souls \+ oats\.core\)$/m);
+
+    // (2b) unreadable host (workspace: names a member whose host cannot be read): the header names the failure.
+    unreadable = await makeUnreadable(fx, "agents");
+    const un = join(base, "un");
+    mkdirSync(join(un, "agents"), { recursive: true });
+    writeFileSync(join(un, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.data}\n`);
+    r = oats(["sync", "--dir", un], { cwd: un, env, base });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout, /^workspace {2}\(standalone — the workspace of data cannot be read \(E_REMOTE_UNREADABLE: (?:not-found|auth) — \S+agents\.git\); its own souls \+ oats\.core\)/m, r.stdout);
+    r = oats(["onboard", join(base, "un2"), "--workspace", fx.refs.data], { cwd: base, env, base });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.match(r.stdout, /^ {2}\(standalone — the workspace of data cannot be read from here \(E_REMOTE_UNREADABLE: (?:not-found|auth) — \S+agents\.git\); its own souls \+ oats\.core\)$/m, r.stdout);
+    assert.match(r.stdout, /\(the host \S+agents\.git is not a member: nothing to clone|git clone \S+data\.git/, "standalone next steps still list the member");
+  } finally {
+    if (unreadable) await unreadable.restore();
+    rmSync(base, { recursive: true, force: true });
+  }
+});

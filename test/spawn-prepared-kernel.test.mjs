@@ -225,3 +225,122 @@ test("M16: E_REQUIREMENT_INACTIVE's remedy names oats-local.yaml + oats sync (no
     return true;
   });
 });
+
+// ---- lane 2 (0.25.2 operator-rebuild round): R3 kernel block, R5 preview payloads ----
+//
+//   R3  a workspace spawn whose RESOLUTION carries oats.core (here: the Northwind workspace default)
+//       composes exactly one "You run on OATS" section — the module's — and no `kernel:oats` block,
+//       whatever the soul's v1 `requires:` block says; a soul that resolves NO oats.core/oats.setup
+//       module (`oats.core: off`) still gets the kernel block. The kernel's bundled operational
+//       skill trio is never consulted for a prepared spawn.
+//   R5  the prepared preview shows `providers` (the --provider map as parsed) and `settings.<cap>`
+//       (the MERGED payload per module — what the provider will receive, == instance.json.providers).
+import { moveMember } from "./fixtures/northwind/build.mjs";
+
+/** bin/oats.mjs' hand-over plus the parsed --provider map on prepared.spawn (what R5 reads). */
+async function prepareWithProviders(d, soul, providers) {
+  const { prepared, agent } = await prepare(d, soul, providers);
+  prepared.spawn = { providers };
+  return { prepared, agent };
+}
+const withFixtureEnv = async (d, fn) => {
+  const saved = { ...process.env };
+  Object.assign(process.env, { OATS_PACKAGE_CATALOG: d.env.OATS_PACKAGE_CATALOG, OATS_REMOTE_CACHE: d.env.OATS_REMOTE_CACHE, OATS_TMUX_SESSION: d.env.OATS_TMUX_SESSION, PI_AGENTS_TMUX_SESSION: d.env.PI_AGENTS_TMUX_SESSION });
+  try { return await fn(); } finally {
+    for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
+    Object.assign(process.env, saved);
+  }
+};
+
+test("R3: the resolution decides the kernel 'You run on OATS' block — oats.core as a workspace module suppresses it (one section, no kernel:oats marker); `oats.core: off` keeps it; the bundled kernel skill trio is never composed for a prepared spawn", { timeout: 300_000 }, async () => {
+  const d = await deployment();
+  // A member soul that switches the workspace default oats.core OFF (members resolve at latest; no re-sync needed).
+  await moveMember(d.fx, "agents", async (_work, { writeTree }) => writeTree({
+    "souls/no-core/soul.yaml": { yaml: { schemaVersion: 2, name: "no-core", description: "No operational module.", work: "directory", capabilities: { "oats.core": "off" }, knowledge: "none" } },
+    "souls/no-core/AGENTS.md": "# no-core\n",
+  }));
+  await withFixtureEnv(d, async () => {
+    // (a) release-manager: oats.core arrives through the workspace default; the soul has no v1 `requires:`.
+    const rm = await prepareWithProviders(d, "release-manager", { "oats.okf": { "state-dir": "/tmp/x" } });
+    assert.ok(rm.prepared.resolution.modules.some((m) => m.name === "oats.core"), "precondition: oats.core is a module of the resolution");
+    const rmSoulDir = join(d.root, "release-manager", "soul");
+    const rmComposition = composeInstanceAgentsMd(rmSoulDir, d.dep, "release-manager", "directory", "persistent", rm.prepared);
+    assert.equal(rmComposition.resolved.kernelInjection.inject, undefined, "R3: no kernel inject when the resolution carries oats.core");
+    assert.equal(rmComposition.resolved.kernelInjection.provenance, "declared oats.core (workspace module)");
+    assert.equal(rmComposition.oatsCoreDeclared, true, "doctor's operational-knowledge note reads the same answer");
+    assert.ok(!rmComposition.blocks.some((b) => b.source === "kernel:oats"), "R3: no kernel:oats block composed");
+    const rmPlanned = planInstanceResources({ resolved: rmComposition.resolved, soulDir: rmSoulDir, agent: rm.agent, contextDir: d.dep, composition: rmComposition, prepared: rm.prepared });
+    assert.ok(!rmPlanned.some((r) => r.type === "skill-tree" && r.source === "kernel"), "R3: legacyOperationalSkills is not consulted for a prepared spawn");
+    const rmSpawned = await spawnInstanceAsync(d.root, rm.agent, { prepared: rm.prepared, purpose: "r3", work: "directory", repo: d.dep, launch: false });
+    const rmMd = readFileSync(join(rmSpawned.home, "AGENTS.md"), "utf8");
+    assert.equal((rmMd.match(/You run on OATS/g) || []).length, 1, "R3: exactly ONE 'You run on OATS' section");
+    assert.doesNotMatch(rmMd, /<!-- oats:kernel:oats /, "R3: no kernel:oats marker");
+    assert.match(rmMd, /<!-- oats:capability:oats\.core /, "the module's inject is the one section");
+    assert.doesNotMatch(rmMd, /Load the oats skill before/, "the kernel's text naming the bundled `oats` skill is gone");
+    const rmSkills = readdirSync(join(rmSpawned.home, ".agents", "skills")).sort();
+    assert.deepEqual(rmSkills, ["nw-deploy", "nw-release-tooling", "oats.core", "oats.okf", "release-checklist"], "R3: module skills + the soul's own; none of the kernel's bundled trio (oats, oats-config, oats-packages)");
+    retireInstance(d.root, rmSpawned.instance);
+
+    // (b) no-core: the soul turned oats.core OFF → no oats.core/oats.setup module → the kernel block stays.
+    const nc = await prepareWithProviders(d, "no-core", {});
+    assert.deepEqual(nc.prepared.resolution.modules.map((m) => m.name), ["nw-house-style"], "precondition: oats.core is off");
+    const ncSoulDir = join(d.root, "no-core", "soul");
+    const ncComposition = composeInstanceAgentsMd(ncSoulDir, d.dep, "no-core", "directory", "persistent", nc.prepared);
+    assert.ok(ncComposition.resolved.kernelInjection.inject, "R3: the kernel block is kept when no operational module resolves");
+    assert.equal(ncComposition.resolved.kernelInjection.provenance, "default");
+    assert.equal(ncComposition.oatsCoreDeclared, false);
+    assert.equal(ncComposition.blocks.filter((b) => b.source === "kernel:oats").length, 1);
+    const ncPlanned = planInstanceResources({ resolved: ncComposition.resolved, soulDir: ncSoulDir, agent: nc.agent, contextDir: d.dep, composition: ncComposition, prepared: nc.prepared });
+    assert.ok(!ncPlanned.some((r) => r.type === "skill-tree" && r.source === "kernel"), "R3: even with the kernel block, a prepared spawn gets no bundled kernel skills");
+    const ncSpawned = await spawnInstanceAsync(d.root, nc.agent, { prepared: nc.prepared, purpose: "r3", work: "directory", repo: d.dep, launch: false });
+    const ncMd = readFileSync(join(ncSpawned.home, "AGENTS.md"), "utf8");
+    assert.equal((ncMd.match(/You run on OATS/g) || []).length, 1, "R3: still exactly one section — the kernel's");
+    assert.match(ncMd, /<!-- oats:kernel:oats /);
+    assert.doesNotMatch(ncMd, /<!-- oats:capability:oats\.core /);
+    const ncSkillsDir = join(ncSpawned.home, ".agents", "skills");
+    assert.ok(!existsSync(ncSkillsDir) || !readdirSync(ncSkillsDir).some((n) => ["oats", "oats-config", "oats-packages"].includes(n)), "R3: no bundled kernel skill tree in the home");
+    retireInstance(d.root, ncSpawned.instance);
+  });
+});
+
+test("R5: a prepared preview shows `providers` (the --provider map as parsed) and `settings.<cap>` (the merged payload the provider receives); without --provider, settings come from soul/local only", { timeout: 300_000 }, async () => {
+  const d = await deployment();
+  // Machine-level payload (oats-local.yaml settings.<cap>) so the merge has a second layer to show.
+  writeFileSync(join(d.dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${d.fx.refs.agents}\nsettings:\n  oats.okf:\n    state-dir: /tmp/from-local\n    verbose: true\n`);
+  await withFixtureEnv(d, async () => {
+    const common = { purpose: "r5", work: "directory", repo: d.dep, launch: false, preview: true };
+    // (a) with --provider: the key shows under BOTH providers.<cap> (as given) and settings.<cap> (merged, --provider wins).
+    const withP = await prepareWithProviders(d, "release-manager", { "oats.okf": { "state-dir": "/tmp/x", extra: { nested: 1 } } });
+    const pv = await spawnInstanceAsync(d.root, withP.agent, { prepared: withP.prepared, ...common });
+    assert.deepEqual(pv.providers, { "oats.okf": { "state-dir": "/tmp/x", extra: { nested: 1 } } }, "R5: providers is the --provider map exactly as parsed");
+    assert.deepEqual(Object.keys(pv.settings).sort(), EXPECTED_MODULES, "R5: one settings entry per module");
+    assert.equal(pv.settings["oats.okf"]["state-dir"], "/tmp/x", "R5: --provider wins over oats-local.yaml settings in the merged payload");
+    assert.equal(pv.settings["oats.okf"].verbose, true, "R5: the local layer is in the merged payload");
+    assert.deepEqual(pv.settings["oats.okf"].extra, { nested: 1 });
+    assert.equal(pv.settings["oats.okf"].owns, "release-manager", "R5: the soul's knowledge: payload is in the merged payload");
+    assert.deepEqual(pv.settings["oats.okf"], withP.prepared.resolution.payloads["oats.okf"], "R5: settings.<cap> IS the resolution's merged payload");
+    assert.deepEqual(pv.settings["nw-deploy"], {}, "a module with no payload shows an empty object, not undefined");
+    // preview == apply: what apply records as instance.json.providers is exactly the preview's settings.
+    const applied = await spawnInstanceAsync(d.root, withP.agent, { prepared: withP.prepared, purpose: "r5", work: "directory", repo: d.dep, launch: false });
+    const meta = JSON.parse(readFileSync(join(applied.home, "instance.json"), "utf8"));
+    assert.deepEqual(meta.providers["oats.okf"], pv.settings["oats.okf"], "R5: preview settings.<cap> == instance.json.providers.<cap> after apply");
+    assert.equal(meta.capabilities.find((c) => c.id === "oats.okf").settings["state-dir"], "/tmp/x");
+    retireInstance(d.root, applied.instance);
+
+    // (b) without --provider: providers is empty and settings carry soul + local only.
+    const noP = await prepareWithProviders(d, "release-manager", {});
+    const pv2 = await spawnInstanceAsync(d.root, noP.agent, { prepared: noP.prepared, ...common });
+    assert.deepEqual(pv2.providers, {}, "R5: no --provider → an empty map (not null)");
+    assert.equal(pv2.settings["oats.okf"]["state-dir"], "/tmp/from-local", "R5: settings from oats-local.yaml only");
+    assert.equal(pv2.settings["oats.okf"].owns, "release-manager", "R5: soul payload still present");
+    assert.equal(pv2.settings["oats.okf"].extra, undefined, "nothing from a --provider that was not given");
+
+    // (c) the preview's payload objects are copies: mutating them never reaches the frozen resolution.
+    pv2.settings["oats.okf"].mutated = true;
+    assert.equal(noP.prepared.resolution.payloads["oats.okf"].mutated, undefined);
+
+    // (d) a classic (non-prepared) preview carries neither field.
+    const classic = await spawnInstanceAsync(d.root, noP.agent, { ...common });
+    assert.equal(classic.providers, undefined); assert.equal(classic.settings, undefined);
+  });
+});

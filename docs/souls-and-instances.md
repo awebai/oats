@@ -25,10 +25,12 @@ A soul is durable and committed. It is the part you review, improve, and keep.
   AGENTS.md            # canonical operating doc
   CLAUDE.md → AGENTS.md
   skills/              # skills specific to this expert
+  okf.json             # if the soul uses oats.okf: { version: 1, owner, owns: ["<base>/<node>"], reads: […] } — the provider's, not the kernel's
 ```
 
-(A deployment's own `agents/<name>/soul/` has the same shape; a member soul is
-fetched there at its discovered commit before its first spawn.)
+(A deployment's `agents/<name>/souls/<commit12>/` has the same shape; a member
+soul is fetched there at its discovered commit before its first spawn, and
+`agents/<name>/soul` points at the current commit.)
 
 ### `soul.yaml` v2
 
@@ -47,8 +49,8 @@ capabilities:                             # WHERE each capability comes from —
   acme-house-style: off                   # removes a workspace/team default
 
 knowledge:                                # provider payloads — opaque to the kernel, consumed by the slot's capability
-  owns: release-manager
-  reads: [platform-engineer]
+  harvest-runtime: claude                 #   (oats.okf 2.1.3 reads only its binding's settings keys here; what the soul
+                                          #    owns/reads is in this directory's okf.json — see "Soul anatomy")
 messaging:
   channels: [acme-eng]
 tasks: none                               # `none` empties the slot (drops the workspace default)
@@ -63,7 +65,7 @@ compatibility:                            # optional floors on PACKAGE versions 
 | `team` | A label declared in the workspace's `teams:`; may add `defaults.byTeam` capabilities. Never gates or restricts. |
 | `private` | `true` keeps the soul out of workspace discovery; its own repo can still spawn it. |
 | `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[team]`; the soul wins. |
-| `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider's `binding` contract validates the result. |
+| `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider's `binding` contract validates the result — and refuses keys it does not declare. For `oats.okf` 2.1.3 the admitted keys are its settings (`bindings-file`, `state-dir`, `harvest-runtime`, `harvest-model`); the soul's `owns`/`reads` live in `souls/<name>/okf.json`, which OKF reads from the soul directory. |
 | `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 
 Schema: [`soul.schema.json`](soul.schema.json). Not in v2: `kind`, `type`,
@@ -82,7 +84,9 @@ souls — is ordinary capability content: **`oats.core`** (package
 `defaults.capabilities: { oats.core: { from: package } }`; a soul may say
 `oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
 knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
-composes its own instance-boundary and work-mode briefings.
+composes its own instance-boundary and work-mode briefings — and, when
+`oats.core` resolves as a module, leaves the "You run on OATS" briefing to the
+module's inject (one block, not two; 0.25.2).
 
 ## Instance anatomy
 
@@ -134,7 +138,7 @@ skills and instructions), a workspace spawn records:
     }
   },
   "providers": {
-    "oats.okf": { "owns": "release-manager", "reads": ["platform-engineer"], "state-dir": "/Users/ana/.oats/okf" },
+    "oats.okf": { "bindings-file": "/Users/ana/.oats/okf-bindings.json", "state-dir": "/Users/ana/.oats/okf", "harvest-runtime": "claude" },
     "acme-release-tooling": {}
   },
   "workspace": {
@@ -149,9 +153,13 @@ skills and instructions), a workspace spawn records:
   shows `moved` / `missing` per module (drift is shown, not prevented).
 - `providers.<cap>` — the merged provider payload the capability was bound with
   (soul ⊕ machine settings ⊕ `--provider`), so a later inspection can tell
-  which instance holds a retained seat or a one-off state root.
+  which instance holds a retained seat or a one-off state root. `spawn
+  --preview` shows the same map before anything exists, as `settings.<cap>`,
+  beside `providers` (the `--provider` flags as given).
 - `workspace` — the workspace commit observed at spawn, the soul's repo/commit/
-  team, and the **resolution revision** the spawn decision bound.
+  team, and the **resolution revision** the spawn decision bound. `oats status`
+  compares `workspace.soul` with the member's current commit too: `soul: <name>
+  from <member> @ <c7>  [member moved since …]` (`--json`: `instances[].soul`).
 
 A running instance never changes under itself: a member moving or a package
 bump affects only new spawns.
@@ -183,7 +191,9 @@ From a deployment (where `oats-local.yaml` is), a spawn: reads the local file �
 discovers the workspace over its remotes and confirms membership → finds the
 soul among the confirmed members (or `external:`; an ambiguous bare name is
 `E_SOUL_AMBIGUOUS` — say `<repo>/<soul>`) → fetches the soul's source into
-`<agents-root>/<soul>/soul/` at its commit → resolves every capability by
+`<agents-root>/<soul>/souls/<commit12>/` at its commit (the home links that
+directory; `<agents-root>/<soul>/soul` points at the current one) → resolves
+every capability by
 `from:` (member = latest, package = locked + approved) → creates the home →
 **materializes each module whole** into `.oats/modules/` and copies its skills
 into `.agents/skills/` (a transaction: any failure leaves nothing behind) →
@@ -194,8 +204,10 @@ unchanged. This is a normal agent process with its own home and tools, not a
 subagent call.
 
 `--preview` reports `modules[]` (`from`, `layer`, `changedSince` the newest
-previous instance of the soul), `team`, the `resolution` revision and the
-decision it would bind; the apply refuses with `E_DECISION_STALE` if a member
+previous instance of the soul), `team`, the `resolution` revision, the decision
+it would bind, `providers` (the `--provider` map exactly as given) and
+`settings.<cap>` (the merged payload each provider's binding will receive);
+the apply refuses with `E_DECISION_STALE` if a member
 moved in between. `--provider <cap> key=value` (repeatable; dotted keys nest)
 must name a capability the soul resolves (`E_CAPABILITY_MISSING` otherwise) and
 needs a workspace deployment. The full DTOs are in
@@ -324,7 +336,10 @@ directory is for, not a place to settle in.
 ### `worktree` — isolated branch
 
 `work/` is a git worktree on the instance's own branch, by default
-`agents/<instance>`.
+`agents/<instance>`. The worktree is created from the member's **clone**, found
+as `--repo`, then `oats-local.yaml` `clones:`, then `<deployment>/<member name>`
+(`E_CLONE_MISSING` / `E_CLONE_MISMATCH` otherwise — see
+[configuration.md](configuration.md)).
 
 Use this for agents that will edit code or docs independently.
 
@@ -341,7 +356,8 @@ inside each fresh worktree. Failures warn but do not block spawn.
 
 ### `checkout` — shared current branch
 
-`work/` is a symlink to the repo checkout itself.
+`work/` is a symlink to the repo checkout itself (the member clone, found as for
+`worktree`).
 
 Use this for maintainers, coordinators, auditors, or agents working on the
 repo's current state.
@@ -382,8 +398,10 @@ exchanged for a symlink. Recovery does not replace the worker's delivery protoco
 
 ### `workspace` — cross-repo coordinator
 
-`work/` is a symlink to the **whole deployment** (the directory holding `oats-local.yaml`
-directory holding `oats-local.yaml` and the member clones) — not a repo. Every
+`work/` is a symlink to the **whole deployment** — the directory holding
+`oats-local.yaml`, with `agents/` and the member clones that sit beside it —
+not a repo (0.25.1; a member cloned elsewhere is reached through
+`oats-local.yaml` `clones:`). Every
 member repo is read-context; the instance's product is coordination:
 routing, analysis, task-writing, messaging, spawning specialists.
 
