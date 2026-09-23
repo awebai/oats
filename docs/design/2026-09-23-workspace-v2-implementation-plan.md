@@ -52,7 +52,7 @@ Each phase = one developer-swarm workflow (parallel agents, disjoint files, agai
 | Risk | Mitigation |
 |---|---|
 | Remote access context is subtle (SSH vs HTTPS vs `gh` token; private repos) | W2 uses git itself (`git ls-remote`, `git archive`/shallow fetch) with the operator's configured credential helpers — no new credential store; typed `cannot read` never guesses |
-| `core.mjs` entanglement makes W8 risky | W8 is deletion behind a green W7; the seam guarantees nothing live depends on what is deleted; CI + the Northwind fixture + Desktop suites are the gate |
+| `core.mjs` entanglement makes W8 risky | W8 is deletion behind a green W7; `rg` proof of zero importers per module before each deletion (the v1-residue table from the Phase C review); CI + the Northwind fixture + Desktop suites are the gate |
 | Package approval UX ("asks once") in non-interactive spawns | `oats sync` is where approval is asked; `spawn` refuses `E_PACKAGE_UNAPPROVED` pointing at `sync` — never prompts mid-spawn |
 | Latest-state members drift between preview and apply | The resolution records the member commit; apply re-observes and refuses `E_DECISION_STALE` if it moved — same mechanism as today's decision revision |
 | Desktop relying on "installed" | Removed as a state in W12; until then the Capabilities view keeps working on 0.24.x DTOs (contracts unchanged) |
