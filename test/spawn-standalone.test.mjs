@@ -217,3 +217,24 @@ test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framewor
     rmSync(base, { recursive: true, force: true });
   }
 });
+
+test("H4: an oats-config.yaml beside a v3 lock (a launch-config, say) does not make the classic config chain strict-parse the v3 lock — spawn and doctor stay green", { timeout: 240_000 }, async () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-h4-"));
+  const fx = await buildNorthwind(join(base, "fx"));
+  const catalogFile = join(base, "catalog.json"); writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
+  const env = { OATS_PACKAGE_CATALOG: catalogFile };
+  const dep = join(base, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
+  writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+  try {
+    assert.equal(oats(["sync", "--dir", dep, "--json"], { base, env }).status, 2);
+    const lockPath = join(dep, "oats-lock.json"); const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+    for (const e of Object.values(lock.packages)) e.approved = { executables: "sha256-" + "0".repeat(64), at: new Date().toISOString(), by: "test" };
+    writeFileSync(lockPath, JSON.stringify(lock, null, 2));
+    writeFileSync(join(dep, "oats-config.yaml"), "name: northwind-workspace\nlaunch-configs:\n  default:\n    runtime: pi\n");
+    const r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
+    assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(envelope(r).ok, true);
+    const d = oats(["doctor", "--dir", dep], { base, env });
+    assert.doesNotMatch(d.stdout + d.stderr, /unsupported lockfileVersion|invalid-lock/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
