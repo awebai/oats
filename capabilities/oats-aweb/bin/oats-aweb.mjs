@@ -261,6 +261,16 @@ function resolveResidentCustody(name) {
 function revokeGrant(custody, grantId) {
   return run(["aw", "--identity-home", join(custody, ".aw"), "id", "grant", "revoke", grantId, "--json"], custody, 60000, { env: { AWEB_IDENTITY_HOME: join(custody, ".aw") } });
 }
+function recoverGrantHome(grantHome) {
+  try {
+    const text = readFileSync(join(grantHome, "grant.yaml"), "utf8");
+    const scalar = (key) => {
+      const m = text.match(new RegExp(`^\\s*${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`, "m"));
+      return m ? m[1].trim() : undefined;
+    };
+    return { grantId: scalar("grant_id"), team: scalar("team_id"), expiresAt: scalar("expires_at") };
+  } catch { return {}; }
+}
 function globalGrantSpawn() {
   const { team, payload, env: envTeam } = payloadTeam();
   if (!team) fatal("identity.mode \"global\" requires settings.oats.aweb.team (or OATS_TEAM_ID/OATS_TEAM_NAME) before minting a grant");
@@ -275,7 +285,17 @@ function globalGrantSpawn() {
   const failAfterMint = (message, code = 1) => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}` }, code); };
   try {
     const raw = run(["aw", "--identity-home", join(custody, ".aw"), "id", "grant", "mint", "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"], custody, 60000, { env: { AWEB_IDENTITY_HOME: join(custody, ".aw") } });
-    const minted = lastJsonLine(raw, "aw id grant mint");
+    let minted;
+    try { minted = lastJsonLine(raw, "aw id grant mint"); }
+    catch (parseError) {
+      const recovered = recoverGrantHome(grantHome);
+      if (recovered.grantId) {
+        meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes } }) };
+        try { revokeGrant(custody, recovered.grantId); } catch { /* retire compensation gets meta */ }
+        failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`);
+      }
+      throw parseError;
+    }
     const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;
     const expiresAt = typeof minted.expires_at === "string" ? minted.expires_at : undefined;
     const mintedTeam = typeof minted.team_id === "string" ? minted.team_id : undefined;
@@ -453,7 +473,7 @@ function retainedSeatSpawn(source, takeOver) {
     if (takenOver) warnings.push(`oats-aweb: took over the retained identity from ${takenOver} on identity.takeOver: true; if that runtime was still alive there are now two seats with one key — stop the old one`);
     if (hostNote) warnings.push(`oats-aweb: seated${hostNote}`);
     out({
-      meta: { team, alias, retained: true, source, lock: lockPath, delivery: deliveryMode, identity: identityMeta({ mode: "local", alias, team }), ...(takenOver ? { tookOverFrom: takenOver } : {}) },
+      meta: { team, alias, retained: true, source, lock: lockPath, delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team, address: shownAddress || expectedAddress || null }), ...(takenOver ? { tookOverFrom: takenOver } : {}) },
       ...(env ? { env } : {}),
       brief: `Comms: you are the retained seat of the existing aweb identity "${alias}" on team ${team} (same did and address as the seat you replace; its contacts, routes and conversations are yours).${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill).`,
       ...(launch ? { launch } : {}),
@@ -466,6 +486,7 @@ function retainedSeatSpawn(source, takeOver) {
 }
 
 if (event === "spawn") {
+  if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
   if (identityMode === "global") globalGrantSpawn();
   if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true);
   let minted;                 // external identity, once `aw team join` succeeds
@@ -571,7 +592,6 @@ if (event === "spawn") {
   }
 } else if (event === "retire") {
   let meta = JSON.parse(process.env.OATS_META || "{}");
-  if (meta.identity?.mode === "global") globalGrantRetire(meta);
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
@@ -580,6 +600,7 @@ if (event === "spawn") {
     if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
     out({ meta: { retired: true, retained: true, identityReleased: true, ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}` });
   }
+  if (meta.identity?.mode === "global") globalGrantRetire(meta);
   // No alias means the spawn hook never reported an identity: nothing exists to
   // undo, which is completion. An alias WITH no local `.aw` is the opposite —
   // the remote record exists and its key is gone, so the self-delete cannot be

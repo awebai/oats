@@ -24,7 +24,7 @@ fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHom
 const cmd = a[0] === "--identity-home" ? a.slice(2) : a;
 function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
 if (s === "version") { console.log("aw 1.36.1"); process.exit(0); }
-if (s.startsWith("wake ")) process.exit(0);
+if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
 if (s.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(JSON.stringify({ token: "TOK-secret" })); process.exit(0); }
 if (s.startsWith("team join")) { console.log(JSON.stringify({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
@@ -34,8 +34,9 @@ if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "mint") {
   const out = val("--out");
   if (!out) { console.error("missing --out"); process.exit(2); }
   fs.mkdirSync(out, { recursive: true, mode: 0o700 });
-  fs.writeFileSync(path.join(out, "grant.yaml"), "version: 1\\ngrant_id: grant-123\\nteam_id: " + (process.env.FAKE_GRANT_TEAM || "t:example.test") + "\\n");
+  fs.writeFileSync(path.join(out, "grant.yaml"), "version: 1\\ngrant_id: grant-123\\nteam_id: " + (process.env.FAKE_GRANT_TEAM || "t:example.test") + "\\nexpires_at: 2026-09-24T07:00:00Z\\n");
   console.log("progress: minted");
+  if (process.env.FAKE_MINT_NO_JSON) process.exit(0);
   console.log(JSON.stringify({ grant_id: "grant-123", expires_at: "2026-09-24T07:00:00Z", team_id: process.env.FAKE_GRANT_TEAM || "t:example.test", alias: "resident-alias", address: process.env.FAKE_GRANT_ADDRESS || "oats.aweb.ai/resident-alias", out }));
   process.exit(0);
 }
@@ -101,6 +102,17 @@ test("global mode requires a named resident resolved from host settings and name
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("global mode rejects identity.source because source belongs to retained-seat local mode", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", source: join(custody, ".aw"), resident: "merlin" }, residents: { merlin: custody } }) });
+    assert.notEqual(r.status, 0);
+    assert.match(r.doc.warning, /identity\.mode.*global/);
+    assert.match(r.doc.warning, /identity\.source/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and identity meta, and registers session delivery", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
@@ -137,6 +149,33 @@ test("global mode revokes and removes the grant when the minted team differs fro
     const revoke = logLines(base).find((l) => l.argv.join(" ").includes("id grant revoke"));
     assert.deepEqual(revoke.argv, ["--identity-home", join(custody, ".aw"), "id", "grant", "revoke", "grant-123", "--json"]);
     assert.equal(revoke.cwd, realpathSync(custody));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global mode compensates if wake registration fails after mint", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_NO_WAKE: "1" });
+    assert.notEqual(r.status, 0);
+    assert.equal(r.doc.meta.identity.grant.id, "grant-123");
+    assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed after wake registration failure");
+    const revoke = logLines(base).find((l) => l.argv.join(" ").includes("id grant revoke"));
+    assert.ok(revoke, "minted grant revoked during compensation");
+    assert.match(r.doc.warning, /wake register/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global mode compensates when mint writes a grant home but prints no JSON", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_MINT_NO_JSON: "1" });
+    assert.notEqual(r.status, 0);
+    assert.equal(r.doc.meta.identity.grant.id, "grant-123");
+    assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed after malformed mint output");
+    assert.ok(logLines(base).some((l) => l.argv.join(" ").includes("id grant revoke grant-123")), "grant revoked despite missing JSON output");
+    assert.match(r.doc.warning, /returned no JSON/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
