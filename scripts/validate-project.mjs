@@ -4,6 +4,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseYamlNested } from "@awebai/oats";
+import { parse as parseYamlFull } from "yaml";
 import { checkOkfMirror } from "./check-okf-mirror.mjs";
 import { checkKnowledgeTheoryPackage } from "./check-knowledge-theory-package.mjs";
 import { checkReleaseVersions } from "./check-package-dry-runs.mjs";
@@ -37,6 +38,14 @@ for (const [path, schema] of [[manifestSchemaPath, manifestSchema], [configSchem
 }
 const validateManifest = ajv.compile(manifestSchema);
 const validateConfig = ajv.compile(configSchema);
+// Workspace model (v2) declaration schemas — documentation examples are checked
+// against the schema their shape names (see exampleKind below).
+const v2Schemas = Object.fromEntries(["oats-workspace", "oats-membership", "soul", "oats-local"].map((name) => {
+  const path = join(root, "docs", `${name}.schema.json`);
+  const schema = json(path);
+  if (!ajv.validateSchema(schema)) fail(`${relative(root, path)} is not a valid JSON Schema: ${ajv.errorsText()}`);
+  return [name, ajv.compile(schema)];
+}));
 const validatePackage = ajv.compile(json(packageSchemaPath));
 const theoryManifest = join(root, "oats-package/oats-package.json");
 if (!validatePackage(json(theoryManifest))) fail(`oats-package/oats-package.json: ${ajv.errorsText(validatePackage.errors)}`);
@@ -109,14 +118,39 @@ for (const file of publicMarkdown) {
     }
   }
 }
+/** Which declaration a YAML example is, by shape. A block that is only a fragment
+ *  (a `# soul.yaml` comment header, a partial `capabilities:` excerpt, a mixed
+ *  illustration with several files) is not a document and is skipped. */
+function exampleKind(block, parsed) {
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const keys = Object.keys(parsed);
+  const has = (k) => keys.includes(k);
+  if (parsed.schemaVersion === 2) {
+    if (has("members") || has("teams") || has("defaults") || has("stores") || has("external")) return has("name") ? "oats-workspace" : null;
+    if (has("workspace") && keys.every((k) => ["schemaVersion", "workspace", "team"].includes(k))) return "oats-membership";
+    if (has("workspace") || has("standalone") || has("clones") || has("settings") || has("souls")) return "oats-local";
+    if (has("name") && has("description") && has("work")) return "soul";
+    return null;
+  }
+  // Legacy oats-config.yaml shape (still validated: the schema is documentation of what 0.24 read).
+  if (/^(?:\s*)(?:groups|layers|skill-overrides|agents-md-injection|oats|work-modes):/m.test(block)) return "oats-config";
+  if (has("capabilities") && (has("name") || has("agent-types") || has("launch-configs")) && !has("schemaVersion")) return "oats-config";
+  return null;
+}
 for (const file of exampleMarkdown) {
   const text = readFileSync(file, "utf8");
   for (const match of text.matchAll(/```ya?ml\s*\n([\s\S]*?)```/g)) {
     const block = match[1];
-    if (!/^(?:\s*)(?:capabilities|groups|layers|skill-overrides|agents-md-injection|oats|work-modes):/m.test(block)) continue;
+    let parsed;
+    // v2 declarations use lists of mappings, which the kernel's mini parser does not
+    // model; the full YAML parser reads examples. Placeholder grammar (`<slug>`, `…`)
+    // fails to parse or to classify and is skipped as illustration.
+    try { parsed = parseYamlFull(block); } catch { continue; }
+    const kind = exampleKind(block, parsed);
+    if (!kind) continue;
     examples++;
-    const parsed = parseYamlNested(block);
-    if (!validateConfig(parsed)) fail(`${relative(root, file)} YAML example #${examples}: ${ajv.errorsText(validateConfig.errors)}`);
+    const validator = kind === "oats-config" ? validateConfig : v2Schemas[kind];
+    if (!validator(parsed)) fail(`${relative(root, file)} YAML example #${examples} (${kind}): ${ajv.errorsText(validator.errors)}`);
   }
 }
 

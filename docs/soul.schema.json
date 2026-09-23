@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/soul-v2.json",
   "title": "Soul declaration v2 (soul.yaml)",
   "description": "Authored shape only. A soul names each capability WITH WHERE IT COMES FROM (`from: here | <repo key> | package`) — a location, never a version. Provider payloads (knowledge, messaging, tasks) are opaque to the kernel; `none` empties the slot. Membership, privacy and team semantics are enforced by discovery/resolution, not here.",

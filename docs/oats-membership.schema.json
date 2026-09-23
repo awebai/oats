@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/membership-v2.json",
   "title": "Repository membership backlink v2 (oats-membership.yaml)",
   "description": "The repo's half of the reciprocal handshake: it names the workspace it belongs to, plus an optional default team label for the repo's items. Nothing else. A backlink is consent, not admission — the workspace must list the repo too.",

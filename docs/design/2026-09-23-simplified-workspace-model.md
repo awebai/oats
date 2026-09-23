@@ -131,8 +131,8 @@ packages:
 # ownership signal) and may supply additive defaults below.
 teams:
   global:      { description: Org-wide souls and house capabilities }
-  engineering: { description: Platform, data and release automation }
-  marketing:   { description: Campaigns, content and positioning }
+  engineering: { description: "Platform, data and release automation" }
+  marketing:   { description: "Campaigns, content and positioning" }
 
 # What every soul gets unless it says otherwise.
 defaults:
@@ -161,7 +161,7 @@ messaging:
 # By-reference adoption of souls from repos that are NOT members. A stranger's
 # repo cannot be "latest state", so these stay pinned.
 external:
-  - source: git:github.com/oss-collective/experts@9c4e1f2a
+  - source: git:github.com/oss-collective/experts@9c4e1f2a9c4e1f2a9c4e1f2a9c4e1f2a9c4e1f2a
     soul: souls/security-reviewer
 ```
 

@@ -44,7 +44,7 @@ once per package version — exit `2` until approved in a terminal), and prints
 which members to clone beside it. Read `oats souls` / `oats capabilities`,
 then `oats spawn oats-setup-expert` for the guided rest. Exact shapes and
 errors (`E_ALREADY_ONBOARDED`, `E_REPO_REF`, `details.rolledBack`):
-[desktop-cli-api.md](desktop-cli-api.md#oats-onboard-dir---workspace-repo-ref---json--onboardapi-2).
+[desktop-cli-api.md](desktop-cli-api.md#oats-onboard-onboardapi-2).
 
 Shared vs local is now one rule: **what is true of the workspace lives in the
 host repo and the members (Git); what is true of this machine lives in

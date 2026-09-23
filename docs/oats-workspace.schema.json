@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/workspace-v2.json",
   "title": "Workspace declaration v2 (oats-workspace.yaml)",
   "description": "Data shape only. Members carry NO revision (a member is always its latest state); `external` sources REQUIRE a full 40-hex commit; absolute filesystem paths are refused anywhere in this file (host paths belong in oats-local.yaml). Reciprocal membership is observed over Git remotes, not declared here.",

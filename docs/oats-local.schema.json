@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://oats.dev/schemas/local-v2.json",
   "title": "Deployment-local overrides v2 (oats-local.yaml)",
   "description": "The operator's side of a workspace: which workspace this machine realizes, where member clones live when not at the taught convention, host-owned capability settings (absolute paths belong HERE, never in the workspace file), and souls disabled on this machine. Never shared through Git.",

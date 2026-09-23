@@ -217,7 +217,7 @@ version to check (`why: "unversioned"`): pin a tagged version.
 ## Publishing a package from a member repo
 
 A repo can be a **member** of the workspace **and** publish a package; the two
-roles never collapse (see [workspaces.md](workspaces.md#member-tier-vs-package-tier--the-non-collapse-rule)):
+roles never collapse (see [workspaces.md](workspaces.md#member-tier-vs-package-tier-the-non-collapse-rule)):
 
 1. Put the package under `oats-package/` with its `oats-package.json` and
    capability directories. Everything under `capabilities/` at the repo root

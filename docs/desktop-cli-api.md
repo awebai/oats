@@ -60,7 +60,7 @@ infers a field that is not there:
   where this soul copy came from, as recorded by the kernel when it created
   it (the 0.24 bootstrap recorded `packaged-definition` or
   `exported-edition-copy`; the 0.25 `oats onboard` creates no soul and records
-  nothing here — see [`oats onboard`](#oats-onboard-dir---workspace-repo-ref---json--onboardapi-2)).
+  nothing here — see [`oats onboard`](#oats-onboard-onboardapi-2)).
   Souls created before 0.24.7 or authored by hand
   read `null`; render that as *unrecorded*, not as local or as anything else.
 - `readiness` — the soul's **declared sources**, joined against
@@ -723,7 +723,9 @@ Every `commit` is a full 40-hex OID; every digest is `sha256-<hex>`; every
 {"schemaVersion":1,"ok":false,"error":{"code":"E_UNKNOWN_COMMAND","message":"unknown command \"install\" — removed by the workspace model v2; use oats sync","details":{"removed":"install","replacement":"oats sync"}}}
 ```
 
-### `oats onboard [<dir>] --workspace <repo ref> [--json]` → `onboardApi: 2`
+### oats onboard (onboardApi 2)
+
+`oats onboard [<dir>] --workspace <repo ref> [--json]`
 
 The **bootstrap** of a deployment (decision 9): realizes a workspace on this
 machine in the taught `<name>-workspace/` layout. It writes

@@ -80,7 +80,7 @@ needs a clone — discovery and resolution run over the remotes).
 `E_ALREADY_ONBOARDED` (use `oats sync`); a mistyped ref is `E_REPO_REF`, an
 unreadable one `E_REMOTE_UNREADABLE` with `details.rolledBack: true` — nothing
 half-written is left behind. Exact shapes:
-[desktop-cli-api.md](desktop-cli-api.md#oats-onboard-dir---workspace-repo-ref---json--onboardapi-2).
+[desktop-cli-api.md](desktop-cli-api.md#oats-onboard-onboardapi-2).
 
 Host-owned provider values (absolute paths, state roots) go under `settings:` in
 `oats-local.yaml` afterwards — never in the workspace file, whose schema refuses
