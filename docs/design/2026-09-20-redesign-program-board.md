@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-23 20:00Z · **0.25.0 + 0.25.1 PUBLISHED** (workspace model A–C + team-review fixes) · Phase D plan next · **Desktop engineer paused by the human** (10B-0 uncommitted foundation preserved; resume is the human's call; 0.24.14 to be cut from a maintenance branch off `e5cdaf95` when its PR lands) · parity pipeline ⏸.
+**Last update:** 2026-09-23 20:00Z · **0.25.0 + 0.25.1 + 0.25.2 PUBLISHED** (workspace model A–C + team-review fixes + operator-rebuild round) · Phase D plan next · **Desktop engineer paused by the human** (10B-0 uncommitted foundation preserved; resume is the human's call; 0.24.14 to be cut from a maintenance branch off `e5cdaf95` when its PR lands) · parity pipeline ⏸.
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
