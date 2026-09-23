@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-22 23:45Z · v0.24.12 published · **slice 8 approved** (no polling; command-running GET `/api/schedules` to be REMOVED; remote history unsupported; captured edit = honest limitation; transcript = provenance only, read-only transcript verb = K12 Decision later) · **K8b PR95 → main `ee60d1e2`** (`schedule-read-2` / `scheduleHistoryApi 3`: runId by time, bounded fd state reads + 1 MiB budget, per-job isolation, scope/id echo, `session` provenance replaces `transcript`) · 12 receipts to engineer · engineer wiring 8 → then rest of frame 10 · open: K11, K12 transcript, attach-knowledge, auto-PR, branch enumeration
+**Last update:** 2026-09-23 00:40Z · **v0.24.13 PUBLISHED** (tag `ac420b88`; bump PR97 → main `0a24ce3d`; artifact probe: scheduleHistoryApi 3, identity-mismatch isolated, one-run transitions, session provenance, no transcript) · **slice 8 COMPLETE** (PR96 `3a187a80`) · kernel K8b PR95 · **all contract-bearing slices done: 2b 2c 5 6a 6b 7a 7b 8** · engineer → frame 10 remainder proposal, then parity stock-take · open: K11 admission seam, K12 transcript verb (Decision drafts owed), attach-knowledge, auto-PR, branch enumeration
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
