@@ -337,6 +337,13 @@ type a digest. An `--approve` that names an id or version the resolution does
 not contain is an error, not a silent skip; an entry the flags do not cover
 stays unapproved (exit `2`, as above).
 
+`<version>` is the value `sync --json` reports as `approvalNeeded[].version`,
+which is what the lock records as the package's `version`. For a **catalog**
+package that is the published version (`oats.okf@2.1.4`). For a **git** source
+pinned by commit (`git:github.com/awebai/oats-okf@<oid>`) it is the **full
+commit OID**, not the `git:` reference and not a tag name — copy it from the
+`approvalNeeded` line rather than from your workspace file.
+
 ## 7b. OKF 2: start a FRESH `state-dir` — do not re-point the old one
 
 OKF 2 pins each knowledge **owner** to a soul by path: at source registration
