@@ -8,6 +8,8 @@ import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
 import * as tree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
+import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
+import { instanceSplitPlan } from '../renderer/instance-split.mjs';
 import { runtimeState } from "../renderer/instance-presentation.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 
@@ -35,6 +37,8 @@ function fixture(t, stylesheet = css) {
   };
   const context = {
     ...tree, document: doc, instanceActions, captureInstanceActionMenu, runtimeState, createRuntimeBadge,
+    instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
+    applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
     contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
@@ -43,6 +47,8 @@ function fixture(t, stylesheet = css) {
     openTerminalTab: assert.fail, openInstanceStart: assert.fail, openLifecycleDialog: assert.fail, onRosterRowKey: assert.fail,
     api: assert.fail, showStage: assert.fail, refreshContextRoster: assert.fail,
   };
+  context.splitOpenState = () => ({ split: null, activeId: context.activeTab, tabs: context.tabs, workspace: 'A', visible: false });
+  context.ownsInstanceTarget = target => context.contextInstances.filter(row => sameInstanceActionTarget(target, row, 'A')).length === 1;
   const render = runInNewContext(`${renderSource}\nrenderContextRoster`, context);
   render(roster);
   return { doc, rule, render, rows: [...doc.querySelectorAll(".ctx-tree-row")],
@@ -176,7 +182,7 @@ test("roster DOM contract: identity, active/focus state and closed action menus 
     assert.equal(menu.getAttribute("role"), "menu");
     assert.equal(menu.parentElement, trigger.parentElement);
     assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action),
-      button.disabled ? ["inspect", "stop", "retire"] : ["inspect", "restart", "stop", "retire"]);
+      button.disabled ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
   }
   const active = u.doc.querySelector(".ctx-inst.active");
   assert.equal(active.dataset.treeInstance, tree.instanceId(roster[1]));

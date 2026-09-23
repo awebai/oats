@@ -1,3 +1,5 @@
+import { createWorkspaceMark } from "./identity-marks.mjs";
+
 export function workspaceChoiceLabels(choices) {
   const base = choices.map((choice) => choice.name
     || String(choice.id || "").split("/").filter(Boolean).at(-1)
@@ -23,6 +25,7 @@ export function createWorkspaceSwitcher({
   const q = (id) => document.getElementById(id);
   const trigger = q("ws-trigger"), currentName = q("ws-name"), menu = q("ws-menu");
   const menuSearch = q("ws-menu-search"), options = q("ws-options"), addOpen = q("ws-add-open");
+  addOpen.textContent = '＋ Add local workspace…'; addOpen.setAttribute('aria-label', 'Add local workspace…');
   const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
   options.after(empty);
   const modal = q("ws-modal"), dialog = modal.querySelector(".ws-dialog");
@@ -50,7 +53,7 @@ export function createWorkspaceSwitcher({
       ? document.activeElement.dataset.workspaceId : "";
     options.replaceChildren();
     workspaces.forEach((workspace, index) => {
-      const haystack = `${labels[index]} ${workspace.id} ${workspace.team?.name || ""}`.toLocaleLowerCase();
+      const haystack = `${labels[index]} ${workspace.id} ${workspace.team?.name || ""} ${workspace.server || ""}`.toLocaleLowerCase();
       if (query && !haystack.includes(query)) return;
       const button = document.createElement("button");
       button.type = "button";
@@ -71,8 +74,12 @@ export function createWorkspaceSwitcher({
       const path = document.createElement("span");
       path.className = "ws-option-path";
       path.textContent = workspace.id;
-      copy.append(name, path);
-      button.append(check, copy);
+      const meta = document.createElement('span'); meta.className = 'ws-option-meta';
+      meta.textContent = [typeof workspace.team?.name === 'string' ? workspace.team.name : '',
+        typeof workspace.server === 'string' && workspace.server ? `Server: ${workspace.server}` : ''].filter(Boolean).join(' · ');
+      meta.hidden = !meta.textContent;
+      copy.append(name, meta, path);
+      button.append(createWorkspaceMark(document, workspace), copy, check);
       button.addEventListener("click", () => {
         if (menu.hidden || !button.isConnected || !options.contains(button)) return;
         closeMenu(true);

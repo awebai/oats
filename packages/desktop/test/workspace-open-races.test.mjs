@@ -19,7 +19,7 @@ function fixture(t, kind) {
   const requests = [], opened = [], activated = [];
   const context = {
     document: dom.window.document, console,
-    workspace: "A", generation: 0,
+    workspace: "A", generation: 0, connectionGeneration: 0,
     currentWorkspace: () => context.workspace, workspaceGeneration: () => context.generation,
     tabs: new Map([[1, { key: "first" }], [2, { key: "second" }]]), pendingTerms: new Set(), split: null,
     fillEmptyGroup,

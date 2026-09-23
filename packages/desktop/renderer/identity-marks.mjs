@@ -21,6 +21,10 @@ function identityMark(doc, name, color, kind) {
   el.textContent = monogram(name);
   return el;
 }
+export function createWorkspaceMark(doc, workspace) {
+  return identityMark(doc, workspace?.name || String(workspace?.id || '').split('/').filter(Boolean).at(-1),
+    colorForIdentity({ root: workspace?.id, host: workspace?.server }), 'workspace-avatar');
+}
 export function createSoulMark(doc, soul) {
   return identityMark(doc, soul?.name, soulColor(soul), 'soul-avatar');
 }

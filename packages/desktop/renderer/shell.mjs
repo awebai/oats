@@ -10,6 +10,9 @@
 // sidebar roster via clusterInstances — lineage clusters with identity keys.)
 import { currentWorkspace, workspaceGeneration, setWorkspace, adoptWorkspace, onWorkspaceChange, instanceApiPath, httpError } from "./views/common.mjs";
 import { instanceActions, captureInstanceActionMenu } from "./instance-actions.mjs";
+import { instanceActionTarget, sameInstanceActionTarget } from "./instance-action-target.mjs";
+import { createInstancePrAction } from "./instance-pr-action.mjs";
+import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
 import {
@@ -70,6 +73,7 @@ const offForgeChanges = desk.onForgeChanged?.(() => {
 });
 window.addEventListener('pagehide', () => offForgeChanges?.(), { once: true });
 const notifications = createNotificationCenter({ document, generation: workspaceGeneration, subscribe: onWorkspaceChange,
+  workspace: currentWorkspace, connectionGeneration: () => connectionGeneration, subscribeConnections,
   onIntent: () => { if (!tabOpenIntents.isApplyingFocus()) tabOpenIntents.invalidate(); },
   applyFocus: callback => tabOpenIntents.applyFocus(callback),
   fallbackFocus: () => document.getElementById('focus-mode-toggle'),
@@ -93,6 +97,15 @@ const ctx = {
   // Workspace selections compete with pending shell chooser/tab opens too.
   onSelectionIntent: () => tabOpenIntents.invalidate(),
   notify: notifications.notify,
+  notifySpawn: (instance, workspace, epoch) => {
+    const target = instanceActionTarget(workspace, instance, { requireBirth: true });
+    if (!target || workspace !== currentWorkspace() || epoch !== connectionGeneration) return;
+    notifications.notify(`${target.instance} spawned`, {
+      descriptor: { kind: 'open-instance', target, connectionEpoch: epoch },
+      activate: (descriptor, owns) => openTerminalTab(descriptor.target, { expected: descriptor.target, valid: owns,
+        onError: message => { throw new Error(message); } }),
+    });
+  },
   openFile: (path) => openViewTab("markdown", `≡ ${String(path).split("/").pop()}`, { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
   startInstance: (instance) => openInstanceStart(instance),
@@ -212,6 +225,15 @@ let contextRosterEl = null;
 let contextFilter = "";
 let contextInstances = [];
 let contextWorkspace = "";
+let activeInstanceMenu = null;
+const splitOpenState = () => ({ split, activeId: activeTab, tabs, workspace: currentWorkspace(), visible: tabLayerVisible });
+const ownsInstanceTarget = target => target?.workspace === currentWorkspace() && contextWorkspace === currentWorkspace()
+  && contextInstances.filter(row => sameInstanceActionTarget(target, row, currentWorkspace())).length === 1;
+function menuState(value, element) {
+  if (value) activeInstanceMenu = value;
+  else if (activeInstanceMenu?.element === element) activeInstanceMenu = null;
+  updateActiveContexts();
+}
 const collapsedInstances = new Set();
 const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
@@ -236,6 +258,7 @@ function updateActiveContexts(tabLayerOn = tabLayerVisible) {
   const set = new Set();
   if (tabLayerOn) set.add("tabs");
   else if (stage) set.add(`stage:${stage.name}`);
+  if (activeInstanceMenu?.element.isConnected && activeInstanceMenu.element.dataset.instanceMenuOpen === 'true' && activeInstanceMenu.element.contains(document.activeElement) && activeInstanceMenu.owns()) set.add('instance-menu');
   setActiveContexts(set);
 }
 
@@ -430,9 +453,22 @@ function renderContextRoster(instances) {
           start.addEventListener("click", () => openInstanceStart(i));
           rowWrap.append(start);
         }
+        const actionTarget = instanceActionTarget(ws, i), menuConnection = connectionGeneration;
+        const menuOwner = () => currentWorkspace() === ws && workspaceGeneration() === rosterGeneration && connectionGeneration === menuConnection
+          && (!actionTarget || ownsInstanceTarget(actionTarget));
         rowWrap.append(instanceActions(document, i, {
+          scope: ws, owner: menuOwner, onMenuState: menuState, onFocusChange: () => updateActiveContexts(), dispatch: runAction,
+          shortcut: id => { const chord = getBinding(id); return chord ? formatChord(chord, isMac) : ''; },
+          extra: [
+            { action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split', reason: () => !actionTarget ? 'Instance identity is not fully reported.'
+              : i.running !== true ? 'No live terminal is reported.' : instanceSplitPlan(splitOpenState()).reason },
+            { action: 'open-pr', actionId: 'instance.openPullRequest', label: 'Open pull request…', reason: !actionTarget ? 'Instance identity is not fully reported.'
+              : i.server || i.remote ? 'Remote PR inspection is unavailable; no local fallback.' : '' },
+          ],
           invoke: async (action, instance) => {
             if (currentWorkspace() !== ws || workspaceGeneration() !== rosterGeneration) throw new Error("Workspace changed; select the instance again");
+            if (action === 'open-split') return openTerminalTab(instance, { inSplit: true, expected: actionTarget, valid: menuOwner });
+            if (action === 'open-pr') return instancePrAction.open(actionTarget);
             if (action === "start" || action === "restart") { openInstanceStart(instance, { restart: action === "restart" }); return; }
             if (action === "inspect") {
               const owns = tabOpenIntents.begin();
@@ -466,6 +502,7 @@ function renderContextRoster(instances) {
   });
   // roving tabindex: exactly one row enters the tab order — the focused row
   // when it survived the rebuild, else the first enabled one
+  applyChordTitles(); updateActiveContexts();
   const rowsAfter = [...listEl.querySelectorAll(".ctx-inst")];
   const focusedRow = rowsAfter.find((r) => r === listEl.ownerDocument.activeElement);
   const tabbable = focusedRow || rowsAfter.find((r) => !r.disabled);
@@ -557,8 +594,11 @@ const wsActiveTerminal = new Map(); // workspace id -> last-active terminal tab 
 const brainIntents = createIntentGate();
 // Terminal and artifact opens compete for the same foreground selection.
 const tabOpenIntents = createSelectionOwnership({ currentWorkspace, workspaceGeneration });
+const instancePrAction = createInstancePrAction({ ctx, beginIntent: () => tabOpenIntents.begin(), currentTarget: ownsInstanceTarget,
+  generation: workspaceGeneration, connectionGeneration: () => connectionGeneration, report: message => ctx.notify(message), openExternal: ctx.openExternal });
+window.addEventListener('pagehide', () => instancePrAction.dispose(), { once: true });
 const contextPanel = createContextPanel({
-  document,
+  document, connectionGeneration: () => connectionGeneration, subscribeConnections,
   createGitPanel: (parent, focus) => createInstanceGitPanel(parent, { ...focus,
     generation: workspaceGeneration,
     connectionGeneration: () => connectionGeneration, subscribeConnections,
@@ -985,17 +1025,21 @@ const pendingTerms = new Set(); // keys with a tab CREATION in flight (post-reso
  * bare-name open and a sidebar open of the same identity share one tab —
  * and an existing tab can never be activated for a name that has since
  * become ambiguous (resolution refuses before dedup can activate). */
-async function openTerminalTab(ref, { quiet = false } = {}) {
-  const notify = quiet ? (msg) => console.warn(`[terminal open] ${msg}`) : (msg) => alert(msg);
+async function openTerminalTab(ref, { quiet = false, inSplit = false, expected = null, valid = () => true, onError } = {}) {
+  const notify = onError || (quiet ? (msg) => console.warn(`[terminal open] ${msg}`) : (msg) => alert(msg));
   // Quiet opens must NEVER reject either (review ff70e1c nit): the refusal
   // messages route through notify, but transport failures (the panel fetch,
   // the tab mount) would still escape as an unhandled rejection from an
   // automated caller that does not await. runOpenFlow catches every quiet
   // rejection into notify; interactive opens keep throwing.
-  return runOpenFlow(() => openTerminalTabFlow(ref, notify), { quiet, notify });
+  return runOpenFlow(() => openTerminalTabFlow(ref, notify, { inSplit, expected, valid }), { quiet, notify });
 }
 
-async function openTerminalTabFlow(ref, notify) {
+async function openTerminalTabFlow(ref, notify, options = {}) {
+  if (options.valid && !options.valid()) return;
+  const planned = options.inSplit ? instanceSplitPlan(splitOpenState()) : null;
+  const layoutIdentity = planned ? instanceSplitIdentity(splitOpenState()) : null;
+  if (planned && !planned.available) return notify(planned.reason);
   // A sidebar-tree selection opens its terminal directly — the persistent
   // sidebar roster IS the instances surface (there is no Instances stage;
   // scope correction of PR #29).
@@ -1007,7 +1051,13 @@ async function openTerminalTabFlow(ref, notify) {
   // same-named instance in another workspace — or another agents root
   // (review 46f3fdc) — is a different terminal.
   const ws = currentWorkspace();
-  const owns = tabOpenIntents.begin();
+  const selected = tabOpenIntents.begin(), connection = connectionGeneration;
+  const owns = () => selected() && connection === connectionGeneration && (!options.valid || options.valid());
+  const commitDestination = () => {
+    if (!planned) return true;
+    if (!owns() || instanceSplitIdentity(splitOpenState()) !== layoutIdentity) return false;
+    split = planned.split; return true;
+  };
   let panel;
   try {
     panel = await api(`/api/panel${ws ? `?ws=${encodeURIComponent(ws)}` : ""}`);
@@ -1027,6 +1077,7 @@ async function openTerminalTabFlow(ref, notify) {
       : `unknown instance "${r.name}"`);
   }
   const { inst, key } = r;
+  if (options.expected && !sameInstanceActionTarget(options.expected, inst, ws)) return notify('The selected instance identity changed. Use the current roster.');
   try { await whenKeyFree(key); }
   catch (e) { if (!owns()) return; throw e; }
   if (!owns()) return;
@@ -1034,6 +1085,7 @@ async function openTerminalTabFlow(ref, notify) {
   // quick-open, post-spawn open) — activating an existing tab focuses its
   // terminal input so the user can type into tmux immediately.
   for (const [tid, t] of tabs) if (t.key === key) {
+    if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
     t.instanceRef = inst;
     split = fillEmptyGroup(split, tid);
     selectTab(tid, { intent: owns, focusContent: true }); return;
@@ -1041,13 +1093,13 @@ async function openTerminalTabFlow(ref, notify) {
   if (pendingTerms.has(key)) return; // an open for this key is already in flight
   pendingTerms.add(key);
   try {
-    await openTerminalTabInner(inst, ws, key, owns, notify);
+    await openTerminalTabInner(inst, ws, key, owns, notify, commitDestination);
   } finally {
     pendingTerms.delete(key);
   }
 }
 
-async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert(msg)) {
+async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert(msg), commitDestination = () => true) {
   // inst is the RESOLVED roster instance (openTerminalTab resolves + keys
   // before dedup; review 7d740f9). Re-check ownership here — whenKeyFree
   // may have waited across a workspace switch.
@@ -1056,6 +1108,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   if (inst.server && !inst.savedRoute) return notify("No saved route for this remote instance on this machine");
   if (!inst.running || (!inst.server && !inst.tmux?.session && !inst.sessionTarget)) return notify(inst.runtimeError || `"${name}" has no live terminal session`);
 
+  if (!commitDestination()) return notify('The terminal destination changed. Select the instance again.');
   const wrap = document.createElement("div");
   wrap.className = "term-wrap";
 
@@ -1370,6 +1423,12 @@ function cycleTab(delta) {
 // ── action registry: every mouse affordance, one keyboard action ────────
 // Default chords live in the engine's DEFAULT_KEYMAP (keybindings.mjs);
 // user overrides persist in localStorage via the shortcuts editor.
+for (const [id, action, label] of [['instance.openSplit', 'open-split', 'Instance menu: Open in split'], ['instance.openPullRequest', 'open-pr', 'Instance menu: Open pull request']]) {
+  registerAction({ id, label, context: 'instance-menu', run: () => {
+    const menu = activeInstanceMenu;
+    if (menu?.owns() && menu.element.isConnected && menu.element.dataset.instanceMenuOpen === 'true' && menu.element.contains(document.activeElement)) void menu.run(action);
+  } }); // no new default chord, especially no terminal Ctrl interception
+}
 registerAction({ id: "app.palette", label: "Open the command palette", context: "global", run: () => { tabOpenIntents.invalidate(); palette.toggle(); } });
 registerAction({ id: "app.quickOpenSouls", label: "Quick open a soul to spawn", context: "global", run: () => { tabOpenIntents.invalidate(); quickOpen.toggle(); } });
 registerAction({ id: "app.chooseSoul", label: "Spawn instance: choose a soul in Workspace", context: "global", run: () => openWorkspaceSouls() });

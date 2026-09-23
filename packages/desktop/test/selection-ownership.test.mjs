@@ -20,6 +20,8 @@ import { splitControlsState } from "../renderer/split-controls.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import * as instanceTree from "../renderer/instance-tree.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
+import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
+import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
 import { runtimeState } from "../renderer/instance-presentation.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { rosterKeyAction, moveTarget } from "../renderer/roster-keys.mjs";
@@ -46,7 +48,9 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
   const requests = [], loads = [], attachments = [], terms = [], detached = [], actions = new Map();
   const c = {
     document, console, navigator: { platform: "MacIntel" },
-    workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
+    workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
+    instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity,
+    menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
@@ -57,7 +61,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     workspaceLabel: { reset() {} }, stageSidebarMode: () => "overview", NAV: [{ name: "hierarchy" }],
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
-    updateActiveContexts: on => { c.tabLayerVisible = on; },
+    updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Panel behavior is covered with the real presenter in split-empty-shell.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {},
@@ -91,6 +95,8 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
       onTermData: () => () => {}, onTermExit: () => () => {},
     },
   };
+  c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
+  c.ownsInstanceTarget = target => target?.workspace === c.workspace && c.contextInstances.filter(row => sameInstanceActionTarget(target, row, c.workspace)).length === 1;
   const functions = names.map(name => {
     const match = shellSource.match(new RegExp(`(?:async )?function ${name}\\([^]*?\\n\\}`));
     assert.ok(match, `exercise shipped ${name}`); return match[0];

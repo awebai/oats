@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
+import { registerAction, setActiveContexts, getBinding, formatChord, setBinding, resetBinding, runAction, handleKeydown, onKeymapChange } from '../renderer/keybindings.mjs';
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
 import { cliRetire, parseRetireEnvelope } from "../cli-adapter.mjs";
 
@@ -47,6 +50,60 @@ test("instance actions keep full identity and open plan dialogs, never dispatch 
   assert.equal(triggerOf(select).disabled, false);
   assert.equal(triggerOf(instanceActions(dom.window.document, { ...instance, savedRoute: false }, {})).disabled, true);
   dom.window.close();
+});
+
+test('frame10 extra actions dispatch registered IDs, refresh reasons/hints on open, and skip disabled entries', async () => {
+  const dom = menuDom(), doc = dom.window.document; let available = false, hint = 'first', active;
+  const calls = [], dispatched = [];
+  const control = instanceActions(doc, { instance: 'dev', home: '/home/dev' }, { scope: 'A', invoke: async action => calls.push(action),
+    extra: [{ action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split', reason: () => available ? '' : 'Select a destination.' }],
+    shortcut: () => hint, onMenuState: value => { active = value; }, dispatch: id => { dispatched.push(id); return active?.run('open-split'); } });
+  doc.body.append(control); const trigger = triggerOf(control), item = control.querySelector('[data-action="open-split"]');
+  assert.equal(item.disabled, true); trigger.click(); assert.equal(doc.activeElement.dataset.action, 'inspect');
+  control.querySelector('[role=menu]').hidePopover(); available = true; hint = 'rebound'; trigger.click(); assert.equal(item.disabled, false); assert.equal(item.querySelector('kbd').textContent, 'rebound');
+  item.click(); await new Promise(setImmediate); assert.deepEqual(dispatched, ['instance.openSplit']); assert.deepEqual(calls, ['open-split']); assert.equal(active, null); dom.window.close();
+});
+for (const reject of [false, true]) test(`frame10 owner revokes menu late ${reject ? 'rejection' : 'success'} and old completion cannot unlock another workspace`, async () => {
+  const dom = menuDom(), doc = dom.window.document; let current = true, finish, fail; const effects = [];
+  const options = { scope: 'A', owner: () => current, invoke: () => new Promise((a,b) => { finish = a; fail = b; }), done: () => effects.push('done'), report: () => effects.push('error') };
+  const row = { instance: 'dev', home: '/home/dev', createdAt: 'birth' }, first = instanceActions(doc, row, options); doc.body.append(first);
+  first.querySelector('[data-action=inspect]').click(); current = false;
+  const next = instanceActions(doc, row, { ...options, scope: 'B', owner: () => true }); doc.body.append(next);
+  assert.equal(triggerOf(next).disabled, false, 'pending key includes workspace'); if (reject) fail(Error('PRIVATE')); else finish({}); await new Promise(setImmediate);
+  assert.deepEqual(effects, []); assert.equal(triggerOf(first).disabled, true); assert.equal(triggerOf(next).disabled, false);
+  dom.window.close();
+});
+test('shipped frame10 action registration is menu-focus scoped, mouse/key equivalent and live rebind-aware without default Ctrl chords', async () => {
+  const dom = menuDom(), doc = dom.window.document, source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8'), off = [], calls = [];
+  const c = { document: doc, activeInstanceMenu: null, tabLayerVisible: false, stage: null, setActiveContexts, getBinding, formatChord,
+    baseTitles: new WeakMap(), isMac: true, registerAction: spec => off.push(registerAction(spec)) };
+  const functions = ['updateActiveContexts', 'menuState', 'applyChordTitles'].map(name => source.match(new RegExp(`function ${name}\\([^]*?\\n\\}`))[0]).join('\n');
+  const start = source.indexOf('for (const [id, action, label] of'), end = source.indexOf('registerAction({ id: "app.palette"', start);
+  const s = runInNewContext(`${functions}\n${source.slice(start, end)}\n({ menuState, updateActiveContexts, applyChordTitles })`, c);
+  const offKeys = onKeymapChange(s.applyChordTitles);
+  try {
+    assert.equal(getBinding('instance.openSplit'), null); assert.equal(getBinding('instance.openPullRequest'), null);
+    setBinding('instance.openSplit', 'Mod+Shift+S');
+    const outside = doc.createElement('input'); doc.body.append(outside);
+    const control = instanceActions(doc, { instance: 'dev', home: '/dev' }, { scope: 'A', owner: () => true,
+      extra: [{ action: 'open-split', actionId: 'instance.openSplit', label: 'Open in split' }],
+      shortcut: id => getBinding(id) ? formatChord(getBinding(id), true) : '', dispatch: runAction,
+      onMenuState: s.menuState, onFocusChange: s.updateActiveContexts, invoke: async action => calls.push(action) });
+    doc.body.append(control); triggerOf(control).click();
+    const event = new dom.window.KeyboardEvent('keydown', { key: 'S', metaKey: true, shiftKey: true, cancelable: true });
+    assert.equal(handleKeydown(event, { isMac: true }), true); await new Promise(setImmediate); assert.deepEqual(calls, ['open-split']);
+    triggerOf(control).click(); setBinding('instance.openSplit', 'Mod+Shift+O');
+    assert.equal(control.querySelector('kbd').textContent, formatChord('Mod+Shift+O', true));
+    control.querySelector('[data-action=open-split]').click(); await new Promise(setImmediate); assert.deepEqual(calls, ['open-split', 'open-split']);
+    triggerOf(control).click(); outside.focus(); runAction('instance.openSplit'); await new Promise(setImmediate);
+    assert.equal(calls.length, 2); assert.equal(runAction('instance.openSplit'), false);
+    resetBinding('instance.openSplit'); assert.equal(getBinding('instance.openSplit'), null);
+  } finally { offKeys(); resetBinding('instance.openSplit'); resetBinding('instance.openPullRequest'); for (const dispose of off) dispose(); setActiveContexts(new Set()); dom.window.close(); }
+});
+test('frame10 hidden or removed controls cannot execute or restore focus', async () => {
+  const dom = menuDom(), doc = dom.window.document, wrap = doc.createElement('div'); doc.body.append(wrap);
+  let calls = 0; const control = instanceActions(doc, { instance: 'dev', home: '/home/dev' }, { invoke: async () => { calls++; } }); wrap.append(control);
+  wrap.hidden = true; await choose(control, 'inspect'); assert.equal(calls, 0); wrap.hidden = false; control.remove(); await choose(control, 'inspect'); assert.equal(calls, 0); dom.window.close();
 });
 
 test("retire adapter preserves incomplete local results and routes remote by saved identity", async () => {

@@ -3,7 +3,7 @@
 export const contextPanelCSS = `
 #context-panel.context-panel { display:flex; flex:0 0 340px; width:340px; min-width:0; min-height:0; flex-direction:column; box-sizing:border-box; overflow:hidden; border-left:1px solid var(--border); background:var(--surface); color:var(--fg); font:13px/1.45 -apple-system,"Segoe UI",system-ui,sans-serif; }
 #context-panel.context-panel[hidden], #context-panel [hidden] { display:none !important; }
-#context-panel.context-panel.is-collapsed { flex-basis:34px; width:34px; }
+#context-panel.context-panel.is-collapsed { flex-basis:44px; width:44px; }
 #context-panel .context-panel-header { display:flex; align-items:center; flex:none; height:48px; box-sizing:border-box; border-bottom:1px solid var(--border); padding:0 6px; gap:4px; }
 #context-panel .context-panel-tabs { display:flex; flex:1; min-width:0; height:100%; align-items:center; gap:2px; }
 #context-panel .context-panel-control { font:inherit; color:var(--muted); background:var(--surface); border:0; border-radius:4px; cursor:pointer; padding:6px; }
@@ -12,7 +12,11 @@ export const contextPanelCSS = `
 #context-panel .context-panel-control:hover { background:var(--surface-2); color:var(--fg); }
 #context-panel .context-panel-control:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 #context-panel .context-panel-rail { display:flex; flex-direction:column; align-items:center; flex:1; min-height:0; }
-#context-panel .context-panel-expand { width:32px; min-height:48px; padding:0; }
+#context-panel .context-panel-rail { gap:4px; padding:8px 0; box-sizing:border-box; }
+#context-panel .context-panel-rail-tab { position:relative; width:30px; height:30px; padding:0; }
+#context-panel .context-panel-rail-tab[aria-pressed=true] { color:var(--accent); background:var(--sel); }
+#context-panel .context-panel-dot { position:absolute; right:1px; top:1px; width:7px; height:7px; border-radius:50%; background:var(--accent); border:1px solid var(--surface); }
+#context-panel .context-panel-expand { width:30px; min-height:30px; padding:0; margin-top:auto; }
 #context-panel .context-panel-generic, #context-panel .context-panel-stages { display:flex; flex:1; min-height:0; min-width:0; flex-direction:column; overflow:hidden; }
 #context-panel .context-panel-page { flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box; overflow-wrap:anywhere; }
 #context-panel .context-panel-page h2 { font-size:14px; margin:0 0 12px; }
@@ -50,6 +54,7 @@ const reported = value => typeof value === 'string' && value.length ? value
 export function createContextPanel({
   document: suppliedDocument, root: suppliedRoot, onIntent = noop,
   applyFocus = callback => callback(), onFocusModeChange = noop, createGitPanel,
+  connectionGeneration = () => 0, subscribeConnections = () => noop,
 } = {}) {
   const document = suppliedDocument ?? suppliedRoot?.ownerDocument ?? globalThis.document;
   const root = suppliedRoot ?? document?.getElementById('context-panel');
@@ -57,6 +62,9 @@ export function createContextPanel({
 
   let disposed = false, focusMode = false, applyingFocus = false, epoch = 0;
   let context = { workspace: null, owner: null, instance: null, key: null };
+  let gitSummary = null;
+  const contextIdentity = () => JSON.stringify([context.workspace, context.key, context.instance?.home, context.instance?.agent,
+    context.instance?.agentsRoot, context.instance?.server || null, context.instance?.createdAt ?? null]);
   const preferences = new Map(); // Only chrome preferences, never selection.
   const slots = new Map();
   const app = document.getElementById('app');
@@ -94,19 +102,44 @@ export function createContextPanel({
     if (visible(el)) projectFocus(() => el.focus({ preventScroll: true }));
   };
   const rail = node('div', 'context-panel-rail');
-  const expand = control('context-panel-expand', '‹', 'Expand context panel', () => setCollapsed(false));
-  expand.setAttribute('aria-expanded', 'false'); expand.setAttribute('aria-controls', 'context-panel');
+  rail.setAttribute('role', 'toolbar'); rail.setAttribute('aria-label', 'Context sections'); rail.setAttribute('aria-orientation', 'vertical');
+  const expand = control('context-panel-expand', '‹', 'Expand context panel', event => {
+    if (!disposed && visible(event.currentTarget)) { onIntent(event); setCollapsed(false); }
+  });
+  expand.setAttribute('aria-expanded', 'false'); expand.setAttribute('aria-controls', 'context-panel'); expand.dataset.action = 'panel.toggle';
+  const railTabs = new Map();
+  for (const [id, glyph, label] of [['instance', 'ⓘ', 'Instance'], ['git', '⑂', 'Git & GitHub'], ['soul', '✦', 'Soul']]) {
+    const button = control('context-panel-rail-tab', glyph, label, event => {
+      if (disposed || root.hidden || !hasGeneric() || !pref().collapsed || !visible(button)) return;
+      onIntent(event);
+      project(() => { pref().tab = id; pref().collapsed = false; });
+      focus(tabs.get(id));
+    });
+    button.dataset.contextRail = id; button.setAttribute('aria-controls', `context-panel-page-${id}`);
+    railTabs.set(id, button); rail.append(button);
+  }
+  const gitDot = node('span', 'context-panel-dot'); gitDot.hidden = true; gitDot.setAttribute('aria-hidden', 'true'); railTabs.get('git').append(gitDot);
   rail.append(expand);
+  rail.addEventListener('keydown', event => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey || !visible(event.target)) return;
+    const buttons = [...railTabs.values(), expand].filter(visible), at = buttons.indexOf(document.activeElement);
+    if (at < 0) return;
+    event.preventDefault(); event.stopPropagation(); onIntent(event);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (at + (event.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length;
+    focus(buttons[next]);
+  });
   const generic = node('div', 'context-panel-generic');
   const header = node('div', 'context-panel-header');
   const tablist = node('div', 'context-panel-tabs');
   tablist.setAttribute('role', 'tablist'); tablist.setAttribute('aria-label', 'Instance context');
-  const collapse = control('context-panel-collapse', '›', 'Collapse context panel', () => setCollapsed(true));
+  const collapse = control('context-panel-collapse', '›', 'Collapse context panel', event => {
+    if (!disposed && visible(event.currentTarget)) { onIntent(event); setCollapsed(true); }
+  });
   collapse.setAttribute('aria-expanded', 'true'); collapse.setAttribute('aria-controls', 'context-panel');
   header.append(tablist, collapse); generic.append(header);
   const tabs = new Map(), pages = new Map();
   for (const [id, label] of [['instance', 'Instance'], ['git', 'Git & GitHub'], ['soul', 'Soul']]) {
-    const tab = control('context-panel-tab', label, label, () => selectTab(id));
+    const tab = control('context-panel-tab', label, label, event => selectTab(id, event));
     tab.id = `context-panel-tab-${id}`; tab.dataset.contextTab = id;
     tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `context-panel-page-${id}`);
     tab.addEventListener('keydown', event => {
@@ -115,7 +148,7 @@ export function createContextPanel({
         : event.key === 'ArrowLeft' ? (index + ids.length - 1) % ids.length
           : event.key === 'Home' ? 0 : event.key === 'End' ? ids.length - 1 : null;
       if (next === null || event.altKey || event.ctrlKey || event.metaKey) return;
-      event.preventDefault(); selectTab(ids[next]); focus(tabs.get(ids[next]));
+      event.preventDefault(); selectTab(ids[next], event); focus(tabs.get(ids[next]));
     });
     tabs.set(id, tab); tablist.append(tab);
     const page = node('section', 'context-panel-page');
@@ -139,7 +172,19 @@ export function createContextPanel({
   pages.get('soul').append(node('h2', null, 'Reported soul'), node('p', 'context-panel-note',
     'Metadata reported by this instance. Soul defaults, instructions, and capability configuration are not inspected or changed here.'));
   facts('soul', [['agent', 'Soul'], ['description', 'Description'], ['agentsRoot', 'Agents root']]);
-  const gitPanel = typeof createGitPanel === 'function' ? createGitPanel(pages.get('git'), { applyFocus: projectFocus }) : null;
+  const gitPanel = typeof createGitPanel === 'function' ? createGitPanel(pages.get('git'), { applyFocus: projectFocus,
+    onObservation(summary) {
+      if (disposed) return;
+      gitSummary = summary && summary.identity === contextIdentity() && summary.connection === connectionGeneration() ? { ...summary } : null;
+      paintGitDot();
+    },
+  }) : null;
+  function paintGitDot() {
+    const changed = hasGeneric() && gitSummary?.identity === contextIdentity() && gitSummary.connection === connectionGeneration() && gitSummary.changed === true;
+    gitDot.hidden = !changed;
+    const label = changed ? 'Git & GitHub — changes in the last accepted observation' : 'Git & GitHub';
+    railTabs.get('git').title = label; railTabs.get('git').setAttribute('aria-label', label);
+  }
   if (!gitPanel) pages.get('git').append(node('h2', null, 'Git & GitHub'), node('p', 'context-panel-note',
     'Integration unavailable. This host has no K1 Git reader. No changes, diffs, pull requests, or checks are reported here.'));
   const stages = node('div', 'context-panel-stages');
@@ -149,7 +194,7 @@ export function createContextPanel({
 
   const currentSlot = () => context.owner == null ? null : slots.get(context.owner);
   const slotPresent = slot => !!slot && slot.epoch === epoch && slot.present;
-  const hasGeneric = () => context.owner == null && (context.instance != null || context.key != null);
+  function hasGeneric() { return context.owner == null && (context.instance != null || context.key != null); }
   const hasContent = () => context.owner != null ? slotPresent(currentSlot()) : hasGeneric();
   function render() {
     const present = !disposed && hasContent(), collapsed = pref().collapsed;
@@ -157,6 +202,8 @@ export function createContextPanel({
     root.hidden = !present || focusMode;
     root.classList.toggle('is-collapsed', collapsed);
     rail.hidden = !present || !collapsed || focusMode;
+    for (const [id, button] of railTabs) { button.hidden = !hasGeneric(); button.setAttribute('aria-pressed', String(pref().tab === id)); }
+    paintGitDot();
     generic.hidden = !expanded || !hasGeneric();
     stages.hidden = !expanded || context.owner == null;
     for (const slot of slots.values()) slot.wrapper.hidden = !expanded || slot !== currentSlot() || !slotPresent(slot);
@@ -203,8 +250,9 @@ export function createContextPanel({
       if (el.textContent !== value) el.textContent = value;
     }
   }
-  function selectTab(id) {
-    if (!tabs.has(id)) return;
+  function selectTab(id, event) {
+    if (!tabs.has(id) || !hasGeneric() || !visible(tabs.get(id))) return;
+    onIntent(event);
     project(() => { pref().tab = id; });
   }
   function setCollapsed(value) { project(() => { pref().collapsed = !!value; }); }
@@ -217,6 +265,7 @@ export function createContextPanel({
     if (!disposed && !applyingFocus && !root.hidden && visible(event.target)) onIntent(event);
   };
   root.addEventListener('pointerdown', entry); root.addEventListener('focusin', entry);
+  const offConnection = subscribeConnections(() => { gitSummary = null; paintGitDot(); });
   render();
   return {
     setContext({ workspace = null, owner = null, instance = null, key = null } = {}) {
@@ -225,7 +274,9 @@ export function createContextPanel({
           epoch++;
           for (const slot of slots.values()) slot.present = false;
         }
+        const previous = contextIdentity();
         context = { workspace, owner, instance, key };
+        if (previous !== contextIdentity() || owner != null) gitSummary = null;
         projectMetadata();
       });
     },
@@ -276,7 +327,7 @@ export function createContextPanel({
         rail.remove(); generic.remove(); stages.remove();
         if (changed) onFocusModeChange(false);
       });
-      disposed = true; preferences.clear();
+      disposed = true; preferences.clear(); offConnection?.(); gitSummary = null;
       root.removeEventListener('pointerdown', entry); root.removeEventListener('focusin', entry);
     },
   };

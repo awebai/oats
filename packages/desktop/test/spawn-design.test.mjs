@@ -30,7 +30,8 @@ async function setup(t, opts = {}) {
   const polls = []; globalThis.setInterval = fn => { polls.push(fn); return 0; };
   let agents = opts.agents || [soul()], cli = opts.cli || CLI;
   const calls = [], opens = [], doc = dom.window.document;
-  const ctx = { hasWorkspaceSwitcher: true, api: async (path, options = {}) => {
+  const ctx = { hasWorkspaceSwitcher: true, connectionGeneration: () => opts.connection?.() ?? 0, notifySpawn: opts.notifySpawn,
+    api: async (path, options = {}) => {
     const body = options.body ? JSON.parse(options.body) : null; calls.push({ path, body });
     if (path === '/api/cli') return cli;
     if (path.startsWith('/api/agents')) return { agents };
@@ -457,6 +458,34 @@ test('downgraded plain confirmation has reachable explicit reset without discard
   const reset = dialog.querySelector('.spawn-k6-reset'); assert.equal(reset.closest('.spawn-k6-panel').hidden, false); assert.equal(reset.disabled, false); assert.equal(reset.textContent, 'Discard unsubmitted confirmation');
   reset.click(); assert.equal(dialog.querySelector('.ftask').value, 'keep ordinary task'); assert.equal(dialog.querySelector('.fspawn').textContent, 'Spawn');
   assert.equal(reset.disabled, true); assert.equal(tx.commands.length, 0); assert.equal(u.spawns().length, 0);
+});
+test('frame10 legacy success uses exact returned home/root/agent for its optional Open toast', async t => {
+  const notices = [], row = { instance: 'created', agent: 'dev', home: '/team/a/agents/dev/instances/created', agentsRoot: '/team/a/agents', createdAt: '2026-09-23T00:00:00.000Z', running: true, tmux: { session: 'fixture' } };
+  const u = await setup(t, { connection: () => 3, notifySpawn: (...args) => notices.push(args), spawn: async () => ({ instance: row.instance, home: row.home, launched: true }),
+    panel: () => ({ workspace: { id: '/team', scope: '/team' }, workspaces: [], instances: [row] }) }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); assert.deepEqual(notices, [[row, '/team', 3]]); assert.equal(u.opens.length, 1);
+});
+for (const rejection of [false, true]) test(`frame10 connection change revokes legacy spawn ${rejection ? 'rejection' : 'success'} notifications`, async t => {
+  let connection = 0; const gate = deferred(), notices = [], u = await setup(t, { connection: () => connection, notifySpawn: (...args) => notices.push(args), spawn: () => gate.promise }), dialog = await u.open();
+  u.change('.ftask', 'keep'); dialog.querySelector('.fspawn').click(); await tick(); connection++;
+  if (rejection) gate.reject(Error('PRIVATE')); else gate.resolve({ instance: 'created', launched: true }); await tick();
+  assert.equal(notices.length, 0); assert.equal(u.opens.length, 0); assert.equal(dialog.querySelector('.ftask').value, 'keep'); assert.doesNotMatch(dialog.textContent, /PRIVATE/);
+});
+test('frame10 complete guarded spawn hands the unique admitted birth to the shell toast, not a guessed receipt name', async t => {
+  const tx = transactions({ invoke: () => ({ started: true, envelope: envelope(creation(applyPreview(tx.t))) }) }), wanted = applyPreview(tx.t), notices = [];
+  const row = { instance: wanted.instance, agent: 'dev', home: wanted.home, agentsRoot: '/team/a/agents', createdAt: '2026-09-23T00:00:00.000Z', running: true, tmux: { session: 'fixture' } };
+  const u = await setup(t, { cli: guardedCli(), apply: tx.call, connection: () => 4, notifySpawn: (...args) => notices.push(args), panel: () => ({ workspace: { id: '/team', scope: '/team' }, workspaces: [], instances: [row] }) }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  assert.deepEqual(notices, [[row, '/team', 4]]); assert.notEqual(notices[0][0], row); assert.equal(u.opens.length, 1);
+});
+for (const rejection of [false, true]) test(`frame10 connection change revokes guarded spawn ${rejection ? 'rejection' : 'success'} toast and terminal handoff`, async t => {
+  let connection = 0; const gate = deferred(), tx = transactions({ invoke: () => gate.promise }), notices = [];
+  const u = await setup(t, { cli: guardedCli(), apply: tx.call, connection: () => connection, notifySpawn: (...args) => notices.push(args) }), dialog = await u.open();
+  dialog.querySelector('.fspawn').click(); await tick(); dialog.querySelector('.fspawn').click(); await tick();
+  const before = dialog.querySelector('.fstatus').textContent, panelReads = u.calls.filter(c => c.path.startsWith('/api/panel')).length; connection++;
+  if (rejection) gate.reject(Error('PRIVATE')); else gate.resolve({ started: true, envelope: envelope(creation(applyPreview(tx.t))) }); await tick();
+  assert.equal(notices.length, 0); assert.equal(u.opens.length, 0); assert.doesNotMatch(dialog.textContent, /PRIVATE/);
+  assert.equal(dialog.querySelector('.fstatus').textContent, before); assert.equal(u.calls.filter(c => c.path.startsWith('/api/panel')).length, panelReads);
 });
 test('qualified guarded handoff waits for exact home/root/agent and running roster, not a name-only twin', async t => {
   const tx = transactions({ invoke: () => ({ started: true, envelope: envelope(creation(applyPreview(tx.t))) }) });

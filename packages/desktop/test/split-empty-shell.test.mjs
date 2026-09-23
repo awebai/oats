@@ -17,6 +17,8 @@ import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { DEFAULT_KEYMAP } from "../renderer/keybindings.mjs";
 import { splitControlsState } from "../renderer/split-controls.mjs";
+import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
+import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
 import * as layout from "../renderer/split-layout.mjs";
 import * as workspaceTabs from "../renderer/workspace-tabs.mjs";
 
@@ -55,7 +57,7 @@ function shell(t, shellSource = source) {
     api(path) { const gate = { ...deferred(), path }; requests.push(gate); return gate.promise; },
     updateSidebarControls() {}, // chrome is exercised by shell-design.test.mjs
     resolveTerminalOpen, terminalKey, reserveKey, whenKeyFree, wirePaneSelection, createTabChrome, tabKeyAction, focusAfterLastTab,
-    splitControlsState, ...layout, ...workspaceTabs,
+    splitControlsState, instanceSplitPlan, instanceSplitIdentity, sameInstanceActionTarget, ...layout, ...workspaceTabs,
     projectSplitDom(els, ...args) { projections.push(els); return projectSplitDom(els, ...args); },
     terminalOptions, terminalTypography: () => ({ fontSize: 13, fontFamily: "mono" }), xtermTheme: () => ({}),
     onThemeChange: () => () => {}, onTerminalTypographyChange: () => () => {}, requestAnimationFrame: fn => fn(),
@@ -76,6 +78,7 @@ function shell(t, shellSource = source) {
     registerAction: action => actions.set(action.id, action.run),
   };
   c.tabOpenIntents = createSelectionOwnership(c);
+  c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
   const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "showStage", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups",
     "updateSplitControls", "onTabKeydown", "addTab", "selectTab", "activateTab", "closeTab", "showTerminalContext",
     "openTerminalTabFlow", "openTerminalTabInner", "renderWorkspaceContext", "restoreWorkspaceTabs", "focusActiveTerminal",
@@ -111,6 +114,28 @@ function shell(t, shellSource = source) {
   };
 }
 
+test('frame10 exact Open in split moves the existing viewer; no second PTY or lost source tabs', async t => {
+  const s = shell(t); await s.open('base'); const ref = { ...instance('chosen'), agent: 'dev', createdAt: '2026-09-23T00:00:00.000Z' }; const old = await s.open(ref);
+  const pending = s.openTerminalTabFlow(ref, assert.fail, { inSplit: true, expected: instanceActionTarget('A', ref) });
+  s.requests.at(-1).resolve({ instances: [ref] }); await pending;
+  assert.equal(s.attachments.length, 2); assert.equal(s.terms.length, 2); assert.deepEqual(s.detached, []);
+  assert.deepEqual(s.c.split.groups.map(g => [...g.tabs]), [[1], [old.id]]); assert.equal(s.c.activeTab, old.id); assert.equal(s.c.tabs.size, 2);
+});
+for (const reject of [false, true]) test(`frame10 newer destination intent revokes old split ${reject ? 'failure' : 'success'}`, async t => {
+  const s = shell(t); await s.open('base'); const pending = s.openTerminalTabFlow(instance('chosen'), assert.fail, { inSplit: true });
+  s.splitPane('col'); const next = s.c.split;
+  if (reject) s.requests.at(-1).reject(Error('PRIVATE')); else s.requests.at(-1).resolve({ instances: [instance('chosen')] });
+  await pending; assert.equal(s.c.split, next); assert.equal(s.attachments.length, 1); assert.equal(s.c.activeTab, null);
+});
+test('frame10 split refuses unsignaled layout drift and a reused home before committing a destination', async t => {
+  const s = shell(t); await s.open('base'); const errors = [], ref = { ...instance('base'), agent: 'dev', createdAt: '2026-09-23T00:00:00.000Z' };
+  let pending = s.openTerminalTabFlow(ref, m => errors.push(m), { inSplit: true }); s.c.activeTab = null;
+  s.requests.at(-1).resolve({ instances: [ref] }); await pending; assert.match(String(errors.pop()), /destination changed/); assert.equal(s.c.split, null);
+  s.c.activeTab = 1;
+  pending = s.openTerminalTabFlow(ref, m => errors.push(m), { inSplit: true, expected: instanceActionTarget('A', ref) });
+  s.requests.at(-1).resolve({ instances: [{ ...ref, createdAt: '2026-09-24T00:00:00.000Z' }] }); await pending;
+  assert.match(String(errors.pop()), /identity changed/); assert.equal(s.c.split, null); assert.equal(s.attachments.length, 1);
+});
 for (const count of [1, 3]) test(`${count} initial tab(s): shipped close → select empty → reopen retains the chosen destination`, async t => {
   const s = shell(t), opened = [];
   for (let i = 0; i < count; i++) opened.push(await s.open(`instance-${i}`));
