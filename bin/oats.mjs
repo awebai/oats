@@ -815,7 +815,7 @@ function computeInspect({ onFail } = {}) {
   // Capabilities: installed state and health from the package engine (exactly
   // what `oats list` reports), owned/path manifests beside them, and the
   // ACTIVATION for the selected soul (or global) from the resolver.
-  const mans = capabilityManifests(ctx);
+  const mans = capabilityManifests(manifestSource(meta, home, ctx));
   let lockError = null;
   const byId = new Map();
   try {
@@ -1079,7 +1079,7 @@ function operationCmd() {
   }
   // Provider resolution: the snapshot's active capabilities for a home, the
   // config for a soul/scope.
-  const mans = capabilityManifests(ctx);
+  const mans = capabilityManifests(manifestSource(meta, home, ctx));
   let provider, settings, team, disabled = null;
   if (meta) {
     const ids = (meta.capabilities || []).map((c) => c.id);
@@ -1887,6 +1887,10 @@ async function discoverForCli(ctx, bail) {
 }
 
 const short = (oid) => (typeof oid === "string" ? oid.slice(0, 8) : "?");
+/** Where a reader takes capability manifests from: the instance home's own
+ *  materialized modules when the home has them (workspace model), else the
+ *  context directory (classic chain). */
+const manifestSource = (meta, home, ctx) => (meta && meta.modules && typeof meta.modules === "object" && home ? realOrResolved(home) : ctx);
 /** Display name of a discovery: the workspace's name, or the standalone label (decision 10). */
 const workspaceName = (discovery) => discovery.workspace?.name ?? `standalone:${memberLabel(discovery.key)}`;
 const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || String(key);
@@ -2995,9 +2999,11 @@ function capabilityCommand() {
     // manifests. Null-prototype because the dispatcher indexes it with the
     // namespace the operator typed on the command line.
     let capSettings = Object.create(null);
+    let instanceModules = false;
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
+        instanceModules = !!(meta.modules && typeof meta.modules === "object");
         activeIds = (meta.capabilities || []).map((c) => c.id);
         for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
         context = meta.repo || context;
@@ -3011,7 +3017,9 @@ function capabilityCommand() {
         teamCtx = resolved.team;
       }
     } catch (e) { bail("E_CONFIG_BROKEN", e.message || e); throw e; }
-    const mans = Object.values(capabilityManifests(context)).filter((m) => m.command === cmd && m.commands);
+    // Workspace model: an instance's own materialized modules are the command
+    // namespaces available to it (instance.json.modules → <home>/.oats/modules).
+    const mans = Object.values(capabilityManifests(instanceModules ? instanceHome : context)).filter((m) => m.command === cmd && m.commands);
     if (!mans.length) return NOT_DISPATCHED;
     if (mans.length > 1) bail("E_DUPLICATE_NAMESPACE", `duplicate operational command namespace "${cmd}": ${mans.map((m) => m.capability).join(", ")}`);
     const m = mans[0];

@@ -348,10 +348,12 @@ test("spawn hook environment rejects invalid values, namespace violations, core 
 
   for (const [id, env, error] of [
     ["aweb-evil.identity", { AWEB_IDENTITY_HOME: "/stolen" }, /must use a lowercase dotted ID/],
-    ["aweb@evil", { AWEB_IDENTITY_HOME: "/stolen" }, /must use a lowercase dotted ID/],
-    ["aweb/evil", { AWEB_IDENTITY_HOME: "/stolen" }, /must use a lowercase dotted ID/],
-    ["aweb.evil@other", { AWEB_IDENTITY_HOME: "/stolen" }, /must use a lowercase dotted ID/],
-    ["aweb.evil/other", { AWEB_IDENTITY_HOME: "/stolen" }, /must use a lowercase dotted ID/],
+    // Workspace-model grammar (^[a-z0-9][a-z0-9._-]*$): `@`, `/` and upper case are
+    // refused at manifest load, before any authority rule is consulted.
+    ["aweb@evil", { AWEB_IDENTITY_HOME: "/stolen" }, /capability ID must match/],
+    ["aweb/evil", { AWEB_IDENTITY_HOME: "/stolen" }, /capability ID must match/],
+    ["aweb.evil@other", { AWEB_IDENTITY_HOME: "/stolen" }, /capability ID must match/],
+    ["aweb.evil/other", { AWEB_IDENTITY_HOME: "/stolen" }, /capability ID must match/],
     ["node.evil", { NODE_OPTIONS: "--require=evil" }, /process bootstrap/],
     ["java.evil", { JAVA_TOOL_OPTIONS: "-javaagent:evil.jar" }, /process bootstrap/],
     ["dotnet.evil", { DOTNET_STARTUP_HOOKS: "evil.dll" }, /process bootstrap/],
@@ -721,19 +723,26 @@ test("a hook may set a variable under a declared extra namespace at spawn, and t
 });
 
 test("launch environment authority requires an unambiguous dotted capability ID", () => {
+  // Workspace-model grammar refuses `@`, `/` and upper case at manifest load;
+  // an id that passes the grammar but is not dotted still fails the authority rule.
   for (const id of ["aweb@evil", "aweb/evil", "aweb.evil@other", "aweb.evil/other", "Aweb.evil"]) {
     const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
     capability(repo, "invalid-id", { capability: id, environment: ["AWEB_IDENTITY_HOME"] });
     write(join(repo, "oats-config.yaml"), "name: invalid-id-test\n");
+    assert.throws(() => capabilityManifest(id, repo), /capability ID must match/);
+  }
+  for (const id of ["aweb-evil", "aweb_evil.x-"]) {
+    const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
+    capability(repo, "undotted-id", { capability: id, environment: ["AWEB_IDENTITY_HOME"] });
+    write(join(repo, "oats-config.yaml"), "name: undotted-id-test\n");
     assert.throws(() => capabilityManifest(id, repo), /must use a lowercase dotted ID/);
   }
 
-  // Preserve the wider pre-existing namespaced-ID contract for capabilities
-  // that request no environment authority.
+  // A capability that requests no environment authority needs only the grammar.
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  capability(repo, "compatible-id", { capability: "aweb.evil/other" });
+  capability(repo, "compatible-id", { capability: "aweb-evil" });
   write(join(repo, "oats-config.yaml"), "name: compatible-id-test\n");
-  assert.equal(capabilityManifest("aweb.evil/other", repo).capability, "aweb.evil/other");
+  assert.equal(capabilityManifest("aweb-evil", repo).capability, "aweb-evil");
 });
 
 test("executable and nested skill paths cannot escape the package integrity boundary", () => {
