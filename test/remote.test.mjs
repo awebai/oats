@@ -63,12 +63,30 @@ function fixture() {
 // parseRepoRef
 // ---------------------------------------------------------------------------
 
-test("parseRepoRef accepts all four hosted forms and canonicalizes to one key", () => {
-  const expected = { host: "github.com", path: "org/repo", url: "https://github.com/org/repo.git", key: "github.com/org/repo" };
-  for (const text of ["git:github.com/org/repo", "git:github.com/org/repo.git", "https://github.com/org/repo", "https://github.com/org/repo.git", "git@github.com:org/repo.git", "git@GitHub.com:org/repo"]) {
-    assert.deepEqual({ ...parseRepoRef(text) }, expected, text);
+test("parseRepoRef: every hosted form gives ONE key; the fetch url honours the form written (M2)", () => {
+  const key = "github.com/org/repo";
+  // https forms canonicalise; the bare git: scheme defaults to https.
+  for (const text of ["git:github.com/org/repo", "git:github.com/org/repo.git", "https://github.com/org/repo", "https://github.com/org/repo.git", "https://GitHub.com/org/repo"]) {
+    assert.deepEqual({ ...parseRepoRef(text) }, { host: "github.com", path: "org/repo", url: "https://github.com/org/repo.git", key }, text);
+  }
+  // ssh forms: same key, url kept AS WRITTEN (the operator's ssh access is what gets used).
+  for (const text of ["git@github.com:org/repo.git", "git@GitHub.com:org/repo", "ssh://git@github.com/org/repo.git", "ssh://git@github.com:2222/org/repo", "ssh://github.com/org/repo"]) {
+    const r = parseRepoRef(text);
+    assert.equal(r.key, key, text); assert.equal(r.url, text, `${text}: url is the ssh form as written`);
+    assert.equal(r.host, "github.com");
   }
   assert.equal(parseRepoRef("git:gitlab.com/group/sub/repo").key, "gitlab.com/group/sub/repo");
+  // remoteOptions.transport steers ONLY the bare git: scheme.
+  assert.equal(parseRepoRef("git:github.com/org/repo", { transport: "ssh" }).url, "git@github.com:org/repo.git");
+  assert.equal(parseRepoRef("git:github.com/org/repo", { transport: "https" }).url, "https://github.com/org/repo.git");
+  assert.equal(parseRepoRef("git:github.com/org/repo", { cacheDir: "/x" }).url, "https://github.com/org/repo.git", "default https; unrelated options ignored");
+  assert.equal(parseRepoRef("https://github.com/org/repo", { transport: "ssh" }).url, "https://github.com/org/repo.git", "an explicit https form stays https");
+  assert.equal(parseRepoRef("git@github.com:org/repo.git", { transport: "https" }).url, "git@github.com:org/repo.git", "an explicit ssh form stays ssh");
+  assert.equal(caught(() => parseRepoRef("git:github.com/org/repo", { transport: "scp" })).code, "E_REPO_REF");
+  // Parsed ssh refs round-trip and compare by KEY.
+  const ssh = parseRepoRef("git@github.com:org/repo.git");
+  assert.equal(parseRepoRef(ssh), ssh);
+  assert.equal(parseRepoRef("https://github.com/org/repo").key, ssh.key, "the identity is the key, whatever the transport");
 });
 
 test("parseRepoRef accepts absolute paths and file:// URLs as local refs", () => {
@@ -346,9 +364,35 @@ test("HIGH: fetchRemoteTree refuses tree entry names that escape or subvert the 
     assert.equal(e.code, "E_REMOTE_TREE_UNSAFE", entries[0].name);
     assert.equal(e.details.why, "path");
     assert.ok(!existsSync(top), `nothing written for ${entries[0].name}`);
-    const listed = await caughtAsync(listRemoteTree(f.repo.bare, c, "", opts));
+    // listRemoteTree refuses the same names AT a kept depth (deep enough to see every crafted entry).
+    const listed = await caughtAsync(listRemoteTree(f.repo.bare, c, "", { ...opts, depth: 8 }));
     assert.equal(listed.code, "E_REMOTE_TREE_UNSAFE", "listRemoteTree refuses the same names");
   }
+});
+
+test("L3: listRemoteTree filters by depth BEFORE the entry-name check — one deep unsafe name does not blank the listing; an unsafe name at a kept depth is still refused", async () => {
+  const f = fixture();
+  const opts = { cacheDir: f.cacheDir };
+  const w = f.repo.work;
+  const run = (input, ...args) => execFileSync("git", args, { cwd: w, env: GIT_ENV, input, stdio: ["pipe", "pipe", "pipe"] }).toString("utf8").trim();
+  const blob = run("x\n", "hash-object", "-w", "--stdin");
+  const mkTree = (entries) => run(Buffer.concat(entries.map(({ mode, name, oid }) => Buffer.concat([Buffer.from(`${mode} ${name}\0`), Buffer.from(oid, "hex")]))), "hash-object", "-w", "-t", "tree", "--stdin", "--literally");
+  // souls/a/soul.yaml (good) + souls/a/deep/bad\name.txt (unsafe, depth 3 under souls/)
+  const deep = mkTree([{ mode: "100644", name: "bad\\name.txt", oid: blob }]);
+  const a = mkTree([{ mode: "100644", name: "soul.yaml", oid: blob }, { mode: "040000", name: "deep", oid: deep }]);
+  const souls = mkTree([{ mode: "040000", name: "a", oid: a }]);
+  const root = mkTree([{ mode: "040000", name: "souls", oid: souls }]);
+  const c = run("", "commit-tree", root, "-m", "deep-unsafe");
+  git(w, "push", "-q", "origin", `${c}:refs/heads/deep-unsafe`);
+
+  const listed = await listRemoteTree(f.repo.bare, c, "souls", { ...opts, depth: 2 });
+  assert.deepEqual(listed.map((e) => e.path), ["a", "a/deep", "a/soul.yaml"], "the member's souls are listed; the deep bad name is below the requested depth");
+  const e = await caughtAsync(listRemoteTree(f.repo.bare, c, "souls", { ...opts, depth: 3 }));
+  assert.equal(e.code, "E_REMOTE_TREE_UNSAFE"); assert.equal(e.details.why, "path"); assert.equal(e.details.path, "souls/a/deep/bad\\name.txt");
+  // fetchRemoteTree still inspects the WHOLE subtree: the deep bad name refuses the fetch.
+  const fetched = await caughtAsync(fetchRemoteTree(f.repo.bare, c, "souls", join(f.base, "l3-out"), opts));
+  assert.equal(fetched.code, "E_REMOTE_TREE_UNSAFE"); assert.equal(fetched.details.why, "path");
+  assert.ok(!existsSync(join(f.base, "l3-out")));
 });
 
 test("MED: fetchRemoteTree refuses case-/normalization-colliding entries and a dangling-symlink destDir as oats errors", async () => {
@@ -433,4 +477,114 @@ test("LOW: contentDigest ignores a top-level .git directory (a local checkout di
   }
   chmodSync(join(copy, "capabilities/nw-tool/bin/run.mjs"), 0o755);
   assert.equal(contentDigest(checkout), contentDigest(copy));
+});
+
+// ---------------------------------------------------------------------------
+// post-0.25.0 fixes (M2, M4, L4)
+// ---------------------------------------------------------------------------
+
+test("M2: the fetch url is the form written — an ssh ref is fetched over ssh, the bare git: scheme follows remoteOptions.transport, and every form shares ONE cache keyed by identity", async () => {
+  const base = scratch();
+  const calls = [];
+  // A fake exec: records the url handed to ls-remote/fetch and answers as an unreachable host
+  // (no real network). What matters is WHICH url git was asked for.
+  const exec = async (args) => {
+    calls.push(args);
+    if (args[0] === "init") { execFileSync("git", args, { env: GIT_ENV, stdio: "ignore" }); return { stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }; }
+    if (args.includes("rev-parse")) { const e = new Error("missing"); e.code = 128; e.stderr = Buffer.from("fatal: Needed a single revision"); throw e; }
+    const e = new Error("fail"); e.code = 128; e.stderr = Buffer.from("ssh: Could not resolve hostname example.invalid"); throw e;
+  };
+  const cacheDir = join(base, "cache");
+  const urlOf = (word) => calls.filter((a) => a.includes(word)).map((a) => a[a.indexOf(word) + (word === "fetch" ? 6 : 2)]);
+  const oid = "0123456789abcdef0123456789abcdef01234567";
+
+  const sshRef = "git@example.invalid:org/repo.git";
+  const e1 = await caughtAsync(observeRemote(sshRef, { cacheDir, exec }));
+  assert.equal(e1.code, "E_REMOTE_UNREADABLE"); assert.equal(e1.details.url, sshRef, "the error names the ssh url as written");
+  assert.deepEqual(urlOf("ls-remote"), [sshRef], "ls-remote asked the SSH url, not an https rewrite");
+  await caughtAsync(observeRemote(sshRef, { cacheDir, exec, at: oid }));
+  assert.deepEqual(urlOf("fetch"), [sshRef], "fetch asked the SSH url too");
+
+  calls.length = 0;
+  await caughtAsync(observeRemote("git:example.invalid/org/repo", { cacheDir, exec }));
+  assert.deepEqual(urlOf("ls-remote"), ["https://example.invalid/org/repo.git"], "bare git: scheme → https by default");
+  calls.length = 0;
+  await caughtAsync(observeRemote("git:example.invalid/org/repo", { cacheDir, exec, transport: "ssh" }));
+  assert.deepEqual(urlOf("ls-remote"), ["git@example.invalid:org/repo.git"], "…and ssh when remoteOptions.transport asks for it");
+  calls.length = 0;
+  await caughtAsync(observeRemote("https://example.invalid/org/repo", { cacheDir, exec, transport: "ssh" }));
+  assert.deepEqual(urlOf("ls-remote"), ["https://example.invalid/org/repo.git"], "an explicit https form is never rewritten to ssh");
+
+  // ONE cache repo for the identity, whatever the transport: the cache is keyed by `key`.
+  assert.equal(readdirSync(cacheDir).length, 1, "ssh/https/git: forms of one repo share one cache dir");
+  assert.equal(caught(() => parseRepoRef("git:example.invalid/org/repo", { transport: "rsync" })).code, "E_REPO_REF");
+});
+
+test("M4: an annotated tag's own OID given as `at` is accepted but the PEELED commit is what gets recorded (result, pin, errors)", async () => {
+  const f = fixture();
+  const opts = { cacheDir: f.cacheDir };
+  const tagOid = git(f.repo.work, "rev-parse", "refs/tags/v1.0.0-annotated");
+  assert.equal(git(f.repo.work, "cat-file", "-t", tagOid), "tag");
+  assert.notEqual(tagOid, f.c1);
+
+  const obs = await observeRemote(f.repo.bare, { ...opts, at: tagOid });
+  assert.equal(obs.commit, f.c1, "observeRemote records the peeled commit, not the tag OID");
+  assert.equal(obs.ref, null);
+  const [hash] = readdirSync(f.cacheDir);
+  const pins = git(join(f.cacheDir, hash), "for-each-ref", "--format=%(refname) %(objectname)", "refs/oats/").split("\n");
+  assert.ok(pins.includes(`refs/oats/commits/${f.c1} ${f.c1}`), `the pin is on the commit: ${pins}`);
+  assert.ok(!pins.includes(`refs/oats/commits/${tagOid} ${tagOid}`), "the tag OID is never pinned as a commit");
+
+  // The reads accept the tag OID too and use the peeled commit for the tree.
+  assert.equal((await readRemoteFile(f.repo.bare, tagOid, "README.md", opts)).bytes.toString(), "# hello\n");
+  assert.deepEqual((await listRemoteTree(f.repo.bare, tagOid, "", { ...opts, depth: 1 })).map((e) => e.path), ["README.md", "capabilities"]);
+  const missing = await caughtAsync(fetchRemoteTree(f.repo.bare, tagOid, "nope", join(f.base, "m4"), opts));
+  assert.equal(missing.code, "E_REMOTE_PATH_MISSING"); assert.equal(missing.details.commit, f.c1, "errors carry the peeled commit");
+  const r = await fetchRemoteTree(f.repo.bare, tagOid, "capabilities/nw-tool", join(f.base, "m4-ok"), opts);
+  assert.equal(r.files, 4);
+
+  // A second observe of the tag OID is a cache hit (the tag object is pinned alongside).
+  const calls = [];
+  const exec = (a, o) => { calls.push(a); return runGit(a, o); };
+  assert.equal((await observeRemote(f.repo.bare, { ...opts, exec, at: tagOid })).commit, f.c1);
+  assert.equal(calls.filter((a) => a.includes("fetch")).length, 0, "no refetch");
+  // A tag of a tree/blob still does not peel to a commit → refused (unchanged).
+  const tree = git(f.repo.work, "rev-parse", `${f.c1}^{tree}`);
+  git(f.repo.work, "tag", "-a", "treetag-a", "-m", "t", tree); git(f.repo.work, "push", "-q", "origin", "refs/tags/treetag-a");
+  const treeTagOid = git(f.repo.work, "rev-parse", "refs/tags/treetag-a");
+  const bad = await caughtAsync(observeRemote(f.repo.bare, { ...opts, at: treeTagOid }));
+  assert.equal(bad.code, "E_REMOTE_UNREADABLE"); assert.equal(bad.details.reason, "not-found"); assert.equal(bad.details.type, "tag");
+});
+
+test("L4: a maxBuffer overflow is NOT a timeout; a timeout kill is; an unclassified ls-tree failure becomes E_REMOTE_UNREADABLE { reason: unknown }, never a raw error", async () => {
+  const { classifyRemoteFailure } = await import("../lib/remote.mjs");
+  const f = fixture();
+  const opts = { cacheDir: f.cacheDir };
+  const blob = git(f.repo.work, "rev-parse", `${f.c1}:README.md`);
+
+  // 1. overflow: Node kills the child, but that is not the timeout.
+  const over = await caughtAsync(runGit(["-C", f.repo.bare, "cat-file", "blob", blob], { maxBuffer: 1 }));
+  assert.equal(over.overflowed, true); assert.equal(over.timedOut, false);
+  assert.notEqual(classifyRemoteFailure(over), "timeout", "overflow never reads as timeout");
+  // 2. a real timeout kill is a timeout.
+  const slow = await caughtAsync(runGit(["-C", f.repo.bare, "log", "--all", "-p", "--stdin"], { timeout: 50 }));
+  assert.equal(slow.timedOut, true); assert.equal(slow.overflowed, false);
+  assert.equal(classifyRemoteFailure(slow), "timeout");
+  // Synthetic shapes classifyRemoteFailure must get right.
+  assert.equal(classifyRemoteFailure({ code: "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "network", "a maxBuffer kill is not a timeout even when Node reports killed/signal");
+  assert.equal(classifyRemoteFailure({ killed: true, signal: "SIGKILL", stderr: Buffer.alloc(0) }), "timeout");
+
+  // 3. an unclassified listing failure surfaces as E_REMOTE_UNREADABLE unknown (enumerateRepo → problem row).
+  const overflowLs = (args, o) => args.includes("ls-tree") ? runGit(args, { ...o, maxBuffer: 1 }) : runGit(args, o);
+  const e = await caughtAsync(listRemoteTree(f.repo.bare, f.c1, "", { ...opts, exec: overflowLs }));
+  assert.equal(e.code, "E_REMOTE_UNREADABLE"); assert.equal(e.details.reason, "unknown"); assert.equal(e.details.overflowed, true);
+  assert.equal(e.details.key, `local/${f.repo.bare}`); assert.equal(e.details.commit, f.c1);
+  const crash = (args, o) => { if (args.includes("ls-tree")) { const x = new Error("boom"); x.code = 137; x.stderr = Buffer.from("fatal: something git never said before"); return Promise.reject(x); } return runGit(args, o); };
+  const e2 = await caughtAsync(fetchRemoteTree(f.repo.bare, f.c1, "", join(f.base, "l4"), { ...opts, exec: crash }));
+  assert.equal(e2.code, "E_REMOTE_UNREADABLE"); assert.equal(e2.details.reason, "unknown"); assert.match(e2.message, /something git never said before/);
+  assert.ok(!existsSync(join(f.base, "l4")));
+  const e3 = await caughtAsync(readRemoteFile(f.repo.bare, f.c1, "README.md", { ...opts, exec: crash }));
+  assert.equal(e3.code, "E_REMOTE_UNREADABLE"); assert.equal(e3.details.reason, "unknown");
+  // A missing tree still answers the contract's shapes, not "unknown".
+  assert.deepEqual(await listRemoteTree(f.repo.bare, f.c1, "nope", opts), []);
 });

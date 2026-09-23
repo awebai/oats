@@ -232,6 +232,59 @@ a version**. The workspace's `packages:` says which version; materialization
     the workspace from public contributors, who then get the standalone case
     (hence 25). The onboarding skill states this rule.
 
+# Clarifications from the 0.25.1 team review (2026-09-23)
+
+Appended after 0.25.0 shipped; each refines a decision above and is recorded
+normatively in `docs/design/2026-09-23-workspace-module-contracts.md`
+("0.25.1 fix round"). No decision is reversed.
+
+- **Decision 7, made literal (per-commit soul cache).** "A running instance
+  never changes under itself" now covers the **soul body**, not only the
+  modules: the kernel fetches a soul at `(member, commit)` into
+  `<deployment>/agents/<name>/souls/<commit12>/` (immutable, never removed by
+  the kernel), keeps `agents/<name>/soul` as an atomically swapped pointer to
+  the current commit, and links each home to **its own** commit directory. A
+  preview that fetches a newer commit swaps the pointer and touches no
+  directory an instance links. Path-pinned provider state (OKF 2's
+  `owners.json` = `realpath(<home>/soul)`) therefore stays valid per instance
+  — and is per commit, which the rebuild guide states (§7b: a rebuilt
+  deployment starts a fresh `state-dir`; the old one is frozen custody).
+- **Decision 6/8, approval is enforced where it matters (spawn).** The lock's
+  per-version approval is re-verified at `resolveSoul`: the executables digest
+  is recomputed over the package tree at the locked commit and must equal the
+  approved one, else `E_PACKAGE_UNAPPROVED`. `sync` writing the approval was
+  never the gate; the spawn is.
+- **Decision 9/10, remotes are read as written.** The canonical **key**
+  (`<host>/<path>`) stays the identity everywhere; the **fetch url** honours
+  the ref's written form (SSH stays SSH, HTTPS stays HTTPS; the bare `git:`
+  scheme defaults to HTTPS unless the machine asks for SSH). "Observed with the
+  operator's own access" means the operator's SSH access too; a private repo is
+  never probed over an unintended HTTPS url and thereby degraded to the
+  standalone view. Annotated tags are **peeled**: only commit OIDs are recorded.
+- **Slot `none` (decisions 12/14, resolution order).** A soul's `none` for a
+  slot empties the slot and drops whatever layer-bearing capability the
+  **workspace defaults** contributed for that layer (by any of the three default
+  routes); only a layer-bearing capability the soul **itself** declares next to
+  `none` is `E_SLOT_CONFLICT`. The workspace proposes; the soul answers; a soul
+  contradicting itself is the one loud case.
+- **Decision 17, drift with a cause.** `revision = hash(declRevision,
+  payloadRevision)`; decision binding is unchanged, and a preview can say
+  whether "changed since" is declarations, payload or both — a settings-only
+  change on a machine is not mistaken for a member that moved.
+- **Decision 13, reach.** Applies to every `pi` launch a 0.25 kernel performs,
+  classic 0.24 homes included; there is no per-home posture switch. In-place
+  recompose of a module home is refused (`E_UNSUPPORTED_MODE`) — the refresh is
+  a new spawn.
+- **Decision 14, operator-level provider commands.** A knowledge layer's
+  operator commands run before any instance exists (`oats okf init … --soul
+  <x>` from the deployment) resolve **exactly as a spawn of that soul would** and
+  dispatch to the deployment's per-commit module store with the soul's merged
+  payload — never "the newest instance's copy", never an unlocked cache read.
+- **`work: workspace` under v2.** The coordination soul's `./work` is the
+  deployment directory (the one holding `oats-local.yaml`); no branch; the clone
+  map (`oats-local.yaml clones:`) is how it finds a member whose clone is
+  elsewhere.
+
 # What is removed
 
 Per-soul `source: git:…@v#…` lines and the `git:`/`repo:`/`path:` grammar in

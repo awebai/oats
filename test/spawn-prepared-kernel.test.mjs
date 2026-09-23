@@ -51,7 +51,8 @@ async function deployment() {
   assert.equal(r.status, 2, `sync exits 2 with approvals pending\n${r.stdout}\n${r.stderr}`);
   const lockFile = join(dep, "oats-lock.json");
   const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-  for (const p of Object.values(lock.packages)) p.approved = { executables: "sha256-" + "0".repeat(64), at: "2026-09-23T00:00:00.000Z" };
+  const approvalNeeded = JSON.parse(r.stdout.trim().split("\n").pop()).result.approvalNeeded;
+  for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
   writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
   return { base, fx, dep, root, env, remoteOptions: { cacheDir: join(base, "cache") } };
 }

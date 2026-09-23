@@ -6,7 +6,7 @@
 // Northwind fixture (local bare repos) for the soul fetch/refresh.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import YAML from "yaml";
@@ -183,7 +183,7 @@ test("findSoulEntry admits the standalone view's own (unconfirmed) row and refus
 
 /* ───────────────────────────── ensureWorkspaceSoul refresh ────────────── */
 
-test("ensureWorkspaceSoul: fetches the soul source once per (repo, commit), and REFRESHES it atomically when the soul's commit moves (H2)", { timeout: 180_000 }, async () => {
+test("ensureWorkspaceSoul: fetches the soul source once per (repo, commit), and a moved commit gets its OWN per-commit directory while the pointer swaps (H2 → M1)", { timeout: 180_000 }, async () => {
   const base = mkdtempSync(join(tmpdir(), "oats-ir-soul-"));
   try {
     const fx = await buildNorthwind(join(base, "fx"));
@@ -191,32 +191,43 @@ test("ensureWorkspaceSoul: fetches the soul source once per (repo, commit), and 
     const agentsRoot = join(base, "agents");
     const entry = (commit) => ({ name: "release-manager", repoKey: fx.keys.agents, commit, path: "souls/release-manager" });
     const p1 = { soulEntry: entry(fx.commits.agents), remoteOptions };
+    const agentDir = join(agentsRoot, "release-manager");
+    const pointer = join(agentDir, "soul");
+    const c12 = (c) => String(c).slice(0, 12);
+    // M1 (0.25.1): per-commit cache agents/<name>/souls/<commit12>/ (immutable, never removed);
+    // agents/<name>/soul is an atomically swapped SYMLINK to the current commit's directory.
     const soulDir = await ensureWorkspaceSoul(p1, agentsRoot);
-    assert.equal(soulDir, join(agentsRoot, "release-manager", "soul"));
+    assert.equal(soulDir, realpathSync(join(agentDir, "souls", c12(fx.commits.agents))));
+    assert.ok(lstatSync(pointer).isSymbolicLink(), "agents/<name>/soul is the kernel pointer");
+    assert.equal(realpathSync(pointer), soulDir);
     assert.ok(existsSync(join(soulDir, "soul.yaml")) && existsSync(join(soulDir, "AGENTS.md")) && existsSync(join(soulDir, "CLAUDE.md")));
-    const stamp = () => JSON.parse(readFileSync(join(agentsRoot, "release-manager", ".oats-soul-source.json"), "utf8"));
+    const stamp = () => JSON.parse(readFileSync(join(agentDir, ".oats-soul-source.json"), "utf8"));
     assert.equal(stamp().commit, fx.commits.agents);
     const before = readFileSync(join(soulDir, "AGENTS.md"), "utf8");
     // same commit → reused, not refetched (a local marker survives)
     writeFileSync(join(soulDir, ".marker"), "x");
     assert.equal(await ensureWorkspaceSoul(p1, agentsRoot), soulDir);
-    assert.ok(existsSync(join(soulDir, ".marker")), "same commit: the soul dir is reused as is");
-    // the soul moves upstream → a spawn at the new commit REPLACES the copy (atomically: the old dir is gone, no staging left)
+    assert.ok(existsSync(join(soulDir, ".marker")), "same commit: the per-commit dir is reused as is");
+    // the soul moves upstream → a NEW per-commit dir; the pointer swaps; the OLD dir is untouched (a running instance links it)
     const moved = await moveMember(fx, "agents", async (work, { fs, path }) => {
       await fs.appendFile(path.join(work, "souls/release-manager/AGENTS.md"), "\n## Refreshed\n");
     });
     assert.notEqual(moved.commit, moved.previous);
     const p2 = { soulEntry: entry(moved.commit), remoteOptions };
-    assert.equal(await ensureWorkspaceSoul(p2, agentsRoot), soulDir);
-    const after = readFileSync(join(soulDir, "AGENTS.md"), "utf8");
-    assert.notEqual(after, before); assert.match(after, /## Refreshed/);
+    const soulDir2 = await ensureWorkspaceSoul(p2, agentsRoot);
+    assert.equal(soulDir2, realpathSync(join(agentDir, "souls", c12(moved.commit))));
+    assert.notEqual(soulDir2, soulDir);
+    assert.match(readFileSync(join(soulDir2, "AGENTS.md"), "utf8"), /## Refreshed/);
+    assert.equal(readFileSync(join(soulDir, "AGENTS.md"), "utf8"), before, "the previous commit's directory is untouched");
+    assert.ok(existsSync(join(soulDir, ".marker")), "…including local state in it");
+    assert.equal(realpathSync(pointer), soulDir2, "the pointer now shows the new commit");
     assert.equal(stamp().commit, moved.commit);
-    assert.ok(!existsSync(join(soulDir, ".marker")), "a different commit replaces the directory wholesale");
-    const leftovers = readdirSync(join(agentsRoot, "release-manager")).filter((n) => n.startsWith(".soul-staging-") || n.startsWith("soul.previous-"));
-    assert.deepEqual(leftovers, [], "no staging or previous directories remain");
-    // a stale stamp with a matching commit but a missing soul.yaml refetches too
-    rmSync(join(soulDir, "soul.yaml"));
-    assert.equal(await ensureWorkspaceSoul(p2, agentsRoot), soulDir);
-    assert.ok(existsSync(join(soulDir, "soul.yaml")));
+    const leftovers = readdirSync(join(agentDir, "souls")).filter((n) => n.startsWith("."));
+    assert.deepEqual(leftovers, [], "no staging directories remain");
+    // a damaged entry (soul.yaml gone) is set aside and refetched; the pointer still resolves
+    rmSync(join(soulDir2, "soul.yaml"));
+    const refetched = await ensureWorkspaceSoul(p2, agentsRoot);
+    assert.ok(existsSync(join(refetched, "soul.yaml")));
+    assert.equal(realpathSync(pointer), refetched);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

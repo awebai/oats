@@ -450,6 +450,26 @@ the pre-fix marker and is never accepted for dispatch.
 
 ## Readiness quartet, signatures, enforced policy (`oats readiness`, `readinessApi: 1`, OATS 0.24.8+)
 
+> **0.25 status — the producers below are the 0.24 tier.** The readiness DTO
+> (`readinessApi: 1`) still ships unchanged, but its four checks are *produced*
+> by the classic observers: `installed` by `oats list` over the
+> `.agents/capabilities/installed/` tier, `trusted` by the per-artifact approval
+> that `oats trust` wrote, `configured` by `oats-config.yaml` activation, and
+> `enrolled` by the `oats.yaml` backlink. On a **workspace deployment**
+> (`oats-local.yaml` present) none of those sources exists: nothing is installed,
+> approval is per package version in `oats-lock.json` v3 (`oats sync`), activation
+> is derived (workspace defaults ⊕ soul `capabilities:`), and membership is
+> `oats-membership.yaml` observed over the remotes. `oats list` and `oats trust`
+> are removed verbs (`E_UNKNOWN_COMMAND`), so a `remedy` naming them cannot be
+> run. Treat the field names and producer strings as the stable wire shape they
+> are; for the workspace-model facts read `oats spawn <soul> --preview --json`
+> (`modules[]` with from/commit/digest — the "installed" and "configured"
+> truth), `oats sync --json` `approvalNeeded[]` (the "trusted" truth) and
+> `oats workspace status --json` (the "enrolled" truth). Re-basing the quartet on
+> those producers is an open thread of [the workspace model](#workspace-model-workspaceapi-2);
+> when it lands it will be announced as a new feature name, not a silent change of
+> `readinessApi: 1`.
+
 `oats readiness [--soul <name>] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json`
 is the first-run readiness view (frame 09) and the Capabilities readiness rows
 (frame 04). Every fact is derived from the **same** data `oats inspect` reports
@@ -1026,6 +1046,18 @@ refreshes the home in place:
   schedule; the receipt's `note` says so. Refuses a retiring home
   (`E_INSTANCE_RETIRING`), captured incarnations and capability-defined souls
   (`E_UNSUPPORTED_MODE`: those are refreshed by a new resolution / package).
+- **Module homes (0.25+) are `E_UNSUPPORTED_MODE` too.** A home whose
+  `instance.json` carries `modules{}` (spawned on a workspace deployment,
+  `instance-modules`) answers `E_UNSUPPORTED_MODE` ("recompose from
+  materialized modules is not supported yet; re-spawn"): its `AGENTS.md` was
+  composed from the soul at a recorded member commit plus the materialized
+  modules' injects, and the instance never changes under itself (decision 7).
+  The refresh path for such a home is a new spawn (the soul is re-fetched at
+  the member's current commit). `session-recompose` **stays advertised** in
+  `features[]` because the verb still works for classic homes; gate the UI
+  action on the feature AND on the absence of `instance.json.modules`
+  (`oats status --json` `instances[].modules` is non-empty for a module home),
+  and render the typed refusal otherwise.
 - Gate on `features.includes("session-recompose")`. It is an **operator
   action** (the human or the instance's parent), never something a Desktop
   poll or an agent runs on itself.

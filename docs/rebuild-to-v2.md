@@ -16,6 +16,19 @@ schemaVersion 2 only; found 1"`, `E_LOCK_SCHEMA`), never a silent fallback.
 Keep the 0.24 kernel installed until the last 0.24 deployment you care about is
 rebuilt; the two do not share files.
 
+**One thing a 0.25 kernel changes for a classic home it does launch.** Decision
+13 ("harnesses start normally") is a property of the 0.25 *launcher*, not of the
+v2 files: every `pi` launch a 0.25 kernel performs — `oats spawn`, `oats session
+start|restart`, scheduled runs — starts pi with cwd = the instance home and pi's
+own skill and context discovery intact (`--append-system-prompt <home>/AGENTS.md`,
+no `--no-skills` / `--no-context-files` / `--no-prompt-templates` exclusion).
+That holds for a classic 0.24 home (no `oats-local.yaml`, spawned through the
+pre-v2 compose path that 0.25 still carries) exactly as for a module home. If you
+relied on 0.24's ambient-skill exclusion to hide machine-level or repo-level
+skills from an instance, that isolation is gone the moment a 0.25 kernel
+launches it — keep the 0.24 kernel for those homes, or accept the ambient set
+(the spawn preview lists composed skill names so a clash is visible).
+
 ## 1. Decide the one workspace
 
 One workspace per organisation. Pick the repo that **hosts**
@@ -93,6 +106,29 @@ Delete `oats.yaml`. Its `exports:` lists are gone: every `souls/*/soul.yaml` and
 `capabilities/*/oats.json` is discoverable; add `private: true` to the ones that
 should stay internal. The host repo backlinks to itself like any member.
 
+## 3b. Move the souls: `agents/<name>/soul/` → `souls/<name>/`
+
+In 0.24 a repo's souls lived at `agents/<name>/soul/` beside that soul's
+instances. Under v2 discovery looks **only** at `souls/<name>/soul.yaml`; the
+`agents/` directory belongs to the *deployment* (instance homes and, under the
+kernel's per-commit soul cache, the fetched soul copies — see §7b) and is not
+read as a soul source. Move every soul as a tracked rename so history follows:
+
+```bash
+mkdir -p souls
+git mv agents/release-manager/soul souls/release-manager
+# … one line per soul; then
+git rm -r --cached agents 2>/dev/null; echo 'agents/' >> .gitignore   # instances were never meant to be tracked
+```
+
+`souls/<name>/` keeps its `AGENTS.md`, `CLAUDE.md → AGENTS.md` alias, `skills/`,
+`knowledge/` and `soul.yaml` (rewritten in §4); the directory name must equal
+`soul.yaml#name`. Then fix whatever enumerates the old path: repo tests, scripts,
+CI checks and any `oats.yaml`-era `exports:` tooling that globbed
+`agents/*/soul/soul.yaml` (`git grep -n 'agents/.*/soul'` finds them) — under v2
+they enumerate `souls/*/soul.yaml`. A soul left under `agents/` is invisible to
+`oats souls` and to `oats spawn`; nothing warns about it.
+
 ## 4. Edit every `soul.yaml` to v2
 
 | 0.24 | v2 |
@@ -128,6 +164,24 @@ are required. Capabilities the repo exports live at
 `capabilities/<name>/oats.json` — the manifest is unchanged; you may add
 `private: true` / `team:`.
 
+**Carry `team:` on every soul, or on its repo's membership.** A soul's team is
+`soul.yaml#team`, else `oats-membership.yaml#team`, else *unassigned*
+(`null`). Labels never gate anything, but the kernel addresses provider payload
+by label: an unlabelled soul receives the messaging **base** payload only —
+`workspace.messaging` minus `byTeam`, no `byTeam.<label>` block, and no
+`defaults.byTeam.<label>` capabilities either. If your 0.24 deployment had one
+messaging identity per team (§1), a soul that loses its label silently lands
+outside every team-addressed payload; nothing refuses it. Label the membership
+when a whole repo belongs to one team, and the soul when it does not.
+
+**Per-soul memory-harvest opt-out:** not available in OKF 2.1.3 — an OKF 2.1.4
+item. The 2.1.3 `knowledge:` payload admits `owner`, `owns`, `reads` and
+`stores` (plus the kernel-rendered `runtime`/`execution`); there is no key that
+keeps a soul registered for reads while excluding it from harvest. A soul that
+must not be harvested today says `knowledge: none` (no OKF at all for that
+soul) or `oats.okf: off`; do not invent a key — the binding refuses unknown
+payload keys.
+
 ## 5. Write `oats-local.yaml` on each machine
 
 ```
@@ -142,11 +196,26 @@ schemaVersion: 2
 workspace: git:github.com/acme/agents
 settings:                                   # what used to be `settings:` under capabilities.layers.* in oats-config.yaml
   oats.okf:
-    bindings-file: /Users/ana/.oats/okf-bindings.json
-    state-dir: /Users/ana/.oats/okf
+    bindings-file: /Users/ana/.oats/okf-bindings.json   # required by the OKF binding: absolute host path
+    state-dir: /Users/ana/.oats/okf-state               # required by the OKF binding: absolute host path; FRESH for a rebuilt deployment (§7b)
+    harvest-runtime: pi                                 # optional: pi | claude | codex (default pi)
+  oats.aweb:
+    delivery: channel                                   # channel (default) | session — see capabilities/oats-aweb/oats.json#settings.delivery
 souls:
   disabled: [data-analyst]
 ```
+
+`settings.<cap>` is merged into that capability's payload after the soul's
+slot payload and before `spawn --provider` (decision 14); the keys are the
+capability's own (`oats.json#settings`). For **`oats.okf` 2.1.3** the binding
+requires both `bindings-file` and `state-dir` as normalized absolute host
+paths (`setting state-dir is required (absolute host path)` is a refusal, not a
+default) and accepts `harvest-runtime` / `harvest-model`. For **`oats.aweb`**
+the one machine-level key is `delivery`: `channel` (the native aweb channel
+packages wake the instance; default) or `session` (delivery is external —
+`AWEB_DELIVERY=session`, the host wake broker registers the instance once it
+exists; requires an `aw` that ships `aw wake`). `identity.source` is also legal
+here but see §8 for why it belongs at spawn.
 
 Move host paths from `oats-config.yaml` `settings:` here; the `souls:` blocks of
 `oats-config.yaml` become `--provider` flags at spawn (step 8). Delete
@@ -178,6 +247,42 @@ Declined or non-interactive → exit `2`, the lock records the entry
 unapproved, and spawns of souls using it are refused (`E_PACKAGE_UNAPPROVED`)
 until you run `oats sync` in a terminal and say yes. Member capabilities need no
 approval: membership is the trust.
+
+## 7b. OKF 2: start a FRESH `state-dir` — do not re-point the old one
+
+OKF 2 pins each knowledge **owner** to a soul by path: at source registration
+(the `oats.okf` spawn hook) it writes `owners.json` in `state-dir` as
+`{ <owner id>: realpath(<home>/soul) }` and refuses a later registration whose
+owner resolves to a different path (`E_OWNER stable owner ID already identifies
+a different soul in this state namespace`).
+
+Under v2 that path is no longer your checkout. `oats spawn` fetches the soul
+from its member repo at the confirmed commit into the deployment's
+**per-commit soul cache**, `agents/<name>/souls/<commit12>/` (immutable once
+written; `agents/<name>/soul` is a kernel-swapped pointer to the current one),
+and the instance's `<home>/soul` links **its own commit's directory** — so the
+realpath the hook pins is `<deployment>/agents/<name>/souls/<commit12>`, which
+never equals the 0.24 pin (`<repo>/agents/<name>/soul`) and changes whenever the
+member moves. Two consequences:
+
+- **Do not reuse the 0.24 `state-dir`.** Its `owners.json` pins every owner to
+  the old path; the first v2 spawn of each soul would be refused with `E_OWNER`.
+  Give the rebuilt deployment a fresh `state-dir` (§5) and a fresh
+  `bindings-file` if the old one names the old state root. The old `state-dir`
+  is **frozen custody**: read-only history (`oats okf inspect --source
+  <old-state>/sources/<id>/source.json …` still works against it), never edited,
+  never re-pointed at the new soul path. Accepted knowledge is not affected —
+  it lives in the bases, not in `state-dir`.
+- **The owner pin is per commit.** OKF 2.1.3 records the realpath at first
+  registration and the kernel keeps that commit directory for as long as any
+  instance links it, so a running instance's pin stays valid; a *later* spawn of
+  the same soul at a newer member commit links a different directory and
+  registers under the same owner id → `E_OWNER` again. Until OKF re-bases the
+  pin on the owner identity rather than the path (an OKF 2.1.4 item), the
+  practical rule is: one `state-dir` per (deployment, soul commit) is safe;
+  moving a member that owns knowledge means a fresh `state-dir` for the new
+  commit's spawns (the previous one becomes frozen custody, as above). Plan
+  knowledge-owning souls' member commits deliberately.
 
 ## 8. Re-take a retained messaging seat with `spawn --provider`
 
@@ -220,6 +325,7 @@ oats status                   # per instance: modules … [member moved since (n
 |---|---|
 | `oats-config.yaml` (and the laptop/workspace/repo config chain, `agent-types`, `capabilities.layers`/`additive`, `souls:`, adopted config templates) | `oats-workspace.yaml` defaults + `soul.yaml` `capabilities:`; `oats-local.yaml` for host settings; `spawn --provider` for per-instance facts |
 | `oats.yaml` | `oats-membership.yaml` |
+| `agents/<name>/soul/` as the tracked soul source | `souls/<name>/` (tracked); `agents/` is deployment state — instance homes and the kernel's per-commit soul cache `agents/<name>/souls/<commit12>/` |
 | `.agents/capabilities/installed/` and `owned/` | nothing is installed; `<instance>/.oats/modules/<cap>/` per instance; member capabilities under `<repo>/capabilities/` |
 | `oats init`, `oats use`, `oats install`, `oats restore`, `oats trust`, `oats list`, `oats catalog`, `oats remove`, `oats migrate`, `oats config` | `oats sync`, `oats package add \| remove`, `oats workspace status`, `oats capabilities`, `oats souls` — each removed verb answers `E_UNKNOWN_COMMAND` naming its replacement |
 | lock v1 / v2 | lock v3 (`packages` only, with `url`, `capabilities`, `approved`) |

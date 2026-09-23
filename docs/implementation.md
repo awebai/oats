@@ -64,6 +64,20 @@ their names.
 
 ## Resolution
 
+**Workspace model (0.25, current).** `lib/instance-resolution.mjs#prepareInstance(dir, soul)`
+loads `oats-local.yaml`, discovers the workspace over its Git remotes
+(`lib/workspace.mjs#discoverWorkspace`, or the standalone view), finds the
+soul among the confirmed members / external souls, and calls
+`lib/resolve.mjs#resolveSoul` → an immutable Resolution: `modules[]` (each
+`from: member|package` with commit and digest), `slots`, merged provider
+`payloads`, `skills`, `injects`, `revision`. Capability order is
+`defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[team]` ⊕
+`soul.capabilities` (soul wins; `off` removes; a soul's `<slot>: none` empties
+the slot). `lib/materialize.mjs` then copies every module whole into the home.
+The normative contract is
+[docs/design/2026-09-23-workspace-module-contracts.md](design/2026-09-23-workspace-module-contracts.md).
+
+**Classic 0.24 (superseded; still carried for homes without `oats-local.yaml`).**
 `configChain(context)` loads `oats-config.yaml` from closest scope outward.
 `resolveCapabilities(context, soulName)`:
 
@@ -196,14 +210,28 @@ never reconciled into committed souls.
 
 ## Acquisition and trust
 
-External installation copies/clones one exact artifact and writes
-`oats-lock.json` with source, version/commit, and SHA-256 tree integrity. An
-existing destination is never pulled silently. Resolution rejects changed
-locked artifacts and unlocked installed/path packages.
+**Workspace model (0.25, current).** Nothing is installed. `oats sync`
+(`lib/packages.mjs#resolvePackages`) resolves every `packages:` entry of
+`oats-workspace.yaml` to a commit, computes the package tree's integrity and
+writes `oats-lock.json` **lockfileVersion 3** (`packages.<id>: { source, url,
+path, version, commit, integrity, capabilities[], approved }`). Executable
+approval is **per package version**, recorded in the lock as
+`approved: { executables: sha256-…, at }` after `oats sync` shows the
+executables and the operator says yes; a spawn of a soul using an unapproved
+package is `E_PACKAGE_UNAPPROVED`, and 0.25.1 re-verifies the approved digest
+against the package tree at the locked commit at every spawn. Member-tier
+capabilities need no approval: membership is the trust (decision 2). The
+verbs `oats install|trust|list|restore|use|migrate` are removed
+(`E_UNKNOWN_COMMAND` naming the replacement).
+
+**Classic 0.24 (superseded).** External installation copies/clones one exact
+artifact and writes `oats-lock.json` with source, version/commit, and SHA-256
+tree integrity. An existing destination is never pulled silently. Resolution
+rejects changed locked artifacts and unlocked installed/path packages.
 
 Executable package hooks, commands, and launch-environment authority are omitted
-until `oats trust <id>` marks the exact locked integrity approved. Bundled
-packages are framework-trusted.
+until `oats trust <id>` (0.24) marks the exact locked integrity approved.
+Bundled packages are framework-trusted.
 Packages under a scope's `owned/` subtree are config-owned. Anything under
 `installed/` requires a matching lock entry, so an acquired artifact cannot
 bypass executable trust by its directory location.
@@ -211,7 +239,7 @@ bypass executable trust by its directory location.
 Distribution packages generalize this: a package materializes each capability it
 exports into `.agents/capabilities/installed/<id>/`, each independently
 addressable and independently trusted at its own artifact integrity. There is no
-persistent package store. The `lockfileVersion: 2` lock records package
+persistent package store. The 0.24 `lockfileVersion: 2` lock records package
 provenance (`packages`) and materialized capability identity (`capabilities`)
 separately. See `docs/design/package-engine-contract.md` for the resolver/lock
 API and error taxonomy.

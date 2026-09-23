@@ -199,8 +199,7 @@ test("workspace schema refusals each name the offending path", () => {
   refuse({ name: "Northwind" }, "/name");
   refuse({ schemaVersion: 1 }, "/schemaVersion", /expected 2/);
   refuse({ stores: { org: "/Users/ana/knowledge" } }, "/stores/org", /absolute paths are refused/);
-  refuse({ messaging: { statePath: "/var/oats/state" } }, "/messaging/statePath", /absolute paths are refused/);
-  refuse({ messaging: { statePath: "C:\\oats" } }, "/messaging/statePath", /absolute paths are refused/);
+  // (L2, 0.25.1: the messaging payload is opaque to the kernel — no absolute-path scan there; see the lane-4 block at the end)
   refuse({ external: [{ source: `${R.experts}@9c4e1f2a`, soul: "souls/x" }] }, "/external/0/source", /does not match/);
   refuse({ external: [{ source: R.experts, soul: "souls/x" }] }, "/external/0/source");
   refuse({ external: [{ source: `${R.experts}@${C.experts}`, soul: "../escape" }] }, "/external/0/soul");
@@ -682,4 +681,27 @@ test("S4: standaloneRepo — ANY soul mention of oats.core (from: package, from:
   const other = view({ "oats.core": { from: K.agents } });
   assert.deepEqual(other.members[0].souls[0].capabilities, {});
   assert.ok(other.problems.some((p) => p.code === "E_NOT_A_MEMBER" && p.path.endsWith("/capabilities/oats.core")));
+});
+
+/* ───────────────────────────── 0.25.1 fix lanes: L2 (lane 4) ───────────── */
+
+test("L2: the absolute-path refusal applies to REF/PATH fields only — members, packages, stores, external source/soul, defaults from — never to teams.*.description or the opaque messaging payload (incl. byTeam)", () => {
+  const remote = northwind();
+  const paths = (overrides) => validateWorkspace(workspaceFile(overrides), { remote }).map((p) => p.path);
+  // free text and provider payloads may mention or carry host paths: not the kernel's business
+  assert.deepEqual(paths({ teams: { ...workspaceFile().teams, engineering: { description: "Owns /srv/platform, C:\\build and \\\\share\\ops" } } }), []);
+  assert.deepEqual(paths({ messaging: { private: "per-human", statePath: "/var/oats/state", socket: "C:\\oats\\sock", byTeam: { engineering: { socket: "/tmp/eng.sock", channels: ["/dev/null"] } } } }), []);
+  // ref/path fields are still refused, each at its own path
+  const abs = (overrides, path) => assert.ok(validateWorkspace(workspaceFile(overrides), { remote }).some((p) => p.path === path && /absolute paths are refused/.test(p.message)), `expected an absolute-path refusal at ${path}`);
+  abs({ members: [R.agents, "/Users/ana/agents"] }, "/members/1");
+  abs({ stores: { org: "/Users/ana/knowledge" } }, "/stores/org");
+  abs({ stores: { org: "C:\\knowledge" } }, "/stores/org");
+  abs({ packages: { "x.pkg": "/abs/bare.git" } }, "/packages/x.pkg");
+  abs({ external: [{ source: `/abs/experts@${C.experts}`, soul: "souls/x" }] }, "/external/0/source");
+  abs({ external: [{ source: `${R.experts}@${C.experts}`, soul: "/abs/souls/x" }] }, "/external/0/soul");
+  abs({ defaults: { capabilities: { x: { from: "/abs/path" } } } }, "/defaults/capabilities/x/from");
+  abs({ defaults: { knowledge: { x: { from: "C:\\abs" } } } }, "/defaults/knowledge/x/from");
+  abs({ defaults: { byTeam: { engineering: { capabilities: { x: { from: "/abs" } } } } } }, "/defaults/byTeam/engineering/capabilities/x/from");
+  // a LOCAL REMOTE is a repo ref, not an absolute path (contract §2 Phase B): file:/// and git:/abs/bare.git@<ref> pass
+  assert.deepEqual(paths({ members: [R.agents, "file:///abs/bare.git"], packages: { "loc.pkg": "git:/abs/bare.git@v1" } }).filter((p) => /members|packages/.test(p)), []);
 });

@@ -195,7 +195,8 @@ test("M4 live: a schedule over a Northwind deployment with a workspace soul mate
   let r = oats(["sync", "--dir", dep, "--json"]);
   assert.equal(r.status, 2, `sync: ${r.stdout}${r.stderr}`);
   const lockFile = join(dep, "oats-lock.json"); const lock = readJson(lockFile);
-  for (const p of Object.values(lock.packages)) p.approved = { executables: "sha256-" + "0".repeat(64), at: new Date().toISOString() };
+  const approvalNeeded = JSON.parse(r.stdout.trim().split("\n").pop()).result.approvalNeeded;
+  for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: new Date().toISOString() };
   writeFileSync(lockFile, JSON.stringify(lock, null, 2));
   // The precondition of any schedule: the soul has been spawned once by hand, so its source sits under agents/<name>/soul (ensureWorkspaceSoul's stamp beside it).
   r = oats(["spawn", "support-triager", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "first", "--work", "directory", "--no-launch", "--json"]);

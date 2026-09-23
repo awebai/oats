@@ -100,9 +100,11 @@ secrets never belong in OATS config. See
 
 > **Removed: `oats.web`.** The browser web-panel capability was retired in
 > favor of the OATS Desktop app (`packages/desktop/`), which bundles the same
-> zero-dependency loopback server. If an `oats-lock.json` or
-> `oats-config.yaml` still names `oats.web`, remove that entry. Full
-> migration steps: [desktop-succession](desktop-succession.md).
+> zero-dependency loopback server. If an `oats-workspace.yaml` (`packages:`,
+> `defaults.capabilities`) or a `soul.yaml` still names `oats.web`, remove that
+> entry and `oats sync`; on a 0.24 classic deployment, remove it from
+> `oats-lock.json` / `oats-config.yaml`. Full migration steps:
+> [desktop-succession](desktop-succession.md).
 
 ## Building an integration
 

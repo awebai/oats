@@ -51,11 +51,13 @@ artifact**: npm drops the source worker's `CLAUDE.md -> AGENTS.md` symlink.
 Acquire the catalog Git payload; do not install a copied npm mirror as a local
 package or repair missing aliases in installed artifacts.
 
-With a released OATS >=0.23.0 kernel, acquire published OKF 2.0.0 from the
-intended deployment configuration context in an operator shell without inherited
-instance identity (an explicit `--soul` does not override an invoking instance's
-saved settings). The explicit Git source works before and after the v0.23.1
-framework catalog integration:
+Under the 0.25 workspace model OKF is a **package**: pin it once in the
+workspace file, let `oats sync` lock and approve it, and let every soul that
+fills the knowledge slot say (or inherit) `oats.okf: { from: package }`.
+Operator-level `oats okf` commands run from the deployment directory with
+`--soul <name>` (an explicit `--soul` does not override an invoking instance's
+saved settings — use a clean shell). The pinned version resolves through the
+official catalog:
 
 ```yaml
 # oats-workspace.yaml
@@ -72,6 +74,7 @@ knowledge:
 settings:
   oats.okf:
     bindings-file: /absolute/config/okf-bindings.json
+    state-dir: /absolute/state/okf
 ```
 
 ```bash
@@ -157,7 +160,9 @@ bindings, owner declarations, base metadata or indexes fail required spawn rathe
 than silently bootstrapping empty knowledge.
 
 Provisioning is an explicit operator action. Prepare node-map files (the
-`nodes` object above, without its wrapper), then:
+`nodes` object above, without its wrapper), then run from the **deployment
+directory** (the one holding `oats-local.yaml`), naming the soul whose
+`knowledge:` payload and `settings.oats.okf` the command should run with:
 
 ```bash
 # New directory base: refuses an existing destination.
@@ -165,6 +170,19 @@ oats okf init --base team --nodes /absolute/config/team-nodes.json --confirm --s
 # Git: writes an operator proposal, never pushes or claims acceptance.
 oats okf init --base project --nodes /absolute/config/project-nodes.json --output /absolute/new-bundle-stage --soul domain-expert --json
 ```
+
+These run **before any instance exists**. Outside an instance home the kernel
+resolves `oats okf … --soul <name>` exactly as `oats spawn <name>` would
+(discover → resolve → the soul's `oats.okf` module at its locked, approved
+commit), fetches that module into the deployment's module store
+(`<deployment>/.oats/modules/oats.okf@<commit12>/`) and dispatches to that copy
+with the soul's merged payload as `OATS_SETTINGS`; `--soul` is required
+(`E_BAD_ARGS` names it) unless the namespace's capability is a workspace
+default. It never runs "the newest instance's copy" and never an unapproved
+cache read (`E_PACKAGE_UNAPPROVED` until `oats sync` approves the version).
+*0.25.0 still answers `E_CAPABILITY_INACTIVE` here (the operator-level dispatch
+lands in 0.25.1); the interim is to run the module binary directly with
+`OATS_SETTINGS` and `OATS_CLI_BIN` set, as the tarball smoke does.*
 
 Put the Git proposal at the configured root in an operator-owned checkout and
 review/merge it through a PR before spawning working sources. Existing ownership
@@ -189,7 +207,7 @@ Snapshots are immutable by protocol, not live mounts. For current accepted text:
 # From the source home:
 oats okf read --base project --path expert/index.md --json
 oats okf refresh --json
-# From the deployment context, even after source retirement:
+# From the deployment directory (oats-local.yaml), even after source retirement — --soul selects the resolution:
 oats okf read --source /absolute/state/sources/UUID/source.json --base project --path expert/index.md --soul domain-expert --json
 oats okf refresh --source /absolute/state/sources/UUID/source.json --soul domain-expert --json
 ```
@@ -289,9 +307,17 @@ spawn and command exit alone are not successful learning.
 
 ## Inspection and operator commands
 
-Run home-local commands from that source home. For cross-source or retired-source
-commands, use the durable deployment context in a clean operator shell without
-another instance's `OATS_*`/`PI_*` identity; select the configured source soul.
+Run home-local commands from that source home: inside an instance the
+dispatcher resolves `okf` from the home's materialized module
+(`instance.json.modules` → `<home>/.oats/modules/oats.okf/`). For cross-source
+or retired-source commands, run from the **deployment directory** (the one
+holding `oats-local.yaml`) in a clean operator shell without another instance's
+`OATS_*`/`PI_*` identity, and select the source soul with `--soul <name>`: the
+kernel resolves that soul as a spawn would and dispatches to the deployment's
+copy of its `oats.okf` module with the soul's merged payload (see
+[Acquire, bind and provision explicitly](#acquire-bind-and-provision-explicitly)).
+No `oats-config.yaml` chain is consulted; a namespace no module of the soul
+provides is `E_UNKNOWN_COMMAND`.
 
 ```bash
 # Read-only; no capture, refresh, scheduling or worker launch:

@@ -36,9 +36,8 @@ import {
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
-  LOCK_FILE, readLock, writeLock, resolvePackages, approve as approvePackage, executablesDigest, readPackageTree,
-  classifyPackageValue, manifestExecutables, parsePackageRequest,
-} from "../lib/packages.mjs";
+  LOCK_FILE, readLock, writeLock, resolvePackages, approve as approvePackage,
+  classifyPackageValue, parsePackageRequest, executablesDigestAt } from "../lib/packages.mjs";
 import { loadLocal, discoverWorkspace, validateWorkspace } from "../lib/workspace.mjs";
 import * as remoteModule from "../lib/remote.mjs";
 import { createInterface } from "node:readline/promises";
@@ -1941,10 +1940,12 @@ function printTable(header, rows) {
 
 /** Executables digest of a locked package, read over the remote at its locked commit. */
 async function lockedExecutablesDigest(id, entry, workspace, catalog, remoteOptions) {
+  // ONE definition of the approval digest (lib/packages.mjs executablesDigestAt) — the
+  // same function resolveSoul re-runs at spawn (M3), so sync and spawn can never disagree.
   const req = parsePackageRequest(id, workspace.packages[id], catalog);
-  const tree = await readPackageTree(remoteModule, req.remoteRef, entry.commit, entry.path, { remoteOptions });
-  const targets = tree.manifests.flatMap((m) => manifestExecutables(m.manifest).map((x) => `${m.name}: ${x.kind} ${x.name} → ${x.target}`));
-  return { digest: executablesDigest(tree), targets };
+  const { digest, executables } = await executablesDigestAt(remoteModule, req.remoteRef, entry.commit, entry.path, entry.capabilities ?? null, { remoteOptions });
+  const targets = executables.map((x) => `${x.capability}: ${x.kind} ${x.name} → ${x.target}`);
+  return { digest, targets };
 }
 
 /** One yes/no question on the terminal (TTY only; the caller checks). */
@@ -3001,18 +3002,27 @@ function createCmd() {
  * oats <namespace> <command> [args…] — run a command an active capability
  * declares in its manifest (`commands: { name: "script args" }`).
  * Kernel subcommands take precedence over capability namespaces.
+ *
+ * Three contexts, one contract (OATS_CAPABILITY / OATS_SETTINGS / OATS_CLI_BIN):
+ *   - inside an instance home: the home's materialized modules (instance.json.modules);
+ *   - from a v2 DEPLOYMENT (oats-local.yaml in reach, no home): operator-level
+ *     dispatch — resolve exactly as `oats spawn --soul <x>` would, fetch the
+ *     namespace's capability into <deployment>/.oats/modules/<cap>@<commit12>/
+ *     and run THAT copy with the soul's merged payload (lib/operator-dispatch.mjs;
+ *     contracts doc, "Post-0.25.0 clarifications");
+ *   - otherwise the classic config chain.
  */
-function capabilityCommand() {
+async function capabilityCommand() {
   // JSON-aware boundary: in --json mode every dispatch failure — inactive or
   // untrusted capability, duplicate namespace, unknown subcommand, broken
   // metadata/manifests, malformed command values — must still emit exactly
   // one envelope object on stdout. The WHOLE dispatcher runs inside the
   // boundary; only "no namespace matched" escapes (returns false to the help
   // fallthrough).
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const NOT_DISPATCHED = Symbol("not-dispatched");
   let outcome;
-  try { outcome = dispatch(); }
+  try { outcome = await dispatch(); }
   catch (e) {
     // Unexpected throw from discovery/trust/decoding: keep the envelope contract.
     bail("E_CAPABILITY_BROKEN", e.message || e);
@@ -3020,7 +3030,23 @@ function capabilityCommand() {
   }
   return outcome !== NOT_DISPATCHED;
 
-  function dispatch() {
+  /** Operator-level dispatch from a deployment directory (no instance home). */
+  async function operatorDispatch() {
+    let hit;
+    try {
+      const { resolveOperatorDispatch } = await import("../lib/operator-dispatch.mjs");
+      let catalog = null; try { catalog = officialPackageCatalog(); } catch { /* the lock carries url for catalog packages */ }
+      hit = await resolveOperatorDispatch(process.cwd(), cmd, flag("soul"), { remoteOptions: remoteOptionsFromEnv(), catalog });
+    } catch (e) {
+      if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details);
+      throw e;
+    }
+    if (!hit) return NOT_DISPATCHED;
+    const teamCtx = hit.soul?.team ? { name: hit.soul.team } : undefined;
+    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, hit.settings, teamCtx, hit.ensureTree);
+  }
+
+  async function dispatch() {
     let activeIds;
     let context = process.cwd();
     let teamCtx;
@@ -3032,6 +3058,7 @@ function capabilityCommand() {
     // namespace the operator typed on the command line.
     let capSettings = Object.create(null);
     let instanceModules = false;
+    let deployment = null;
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
@@ -3043,12 +3070,19 @@ function capabilityCommand() {
         // spawned before a team: block was declared have no snapshot.
         teamCtx = meta.team || resolveOatsConfig(context).team;
       } else {
-        const resolved = resolveOatsConfig(context, flag("soul"));
-        activeIds = resolved.capabilities.map((c) => c.id);
-        for (const c of resolved.capabilities) capSettings[c.id] = c.settings || {};
-        teamCtx = resolved.team;
+        // Not inside a home: a v2 deployment (oats-local.yaml in reach) resolves
+        // through the workspace, exactly as a spawn of --soul would (below).
+        try { const { deploymentOf } = await import("../lib/operator-dispatch.mjs"); deployment = deploymentOf(context); }
+        catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
+        if (!deployment) {
+          const resolved = resolveOatsConfig(context, flag("soul"));
+          activeIds = resolved.capabilities.map((c) => c.id);
+          for (const c of resolved.capabilities) capSettings[c.id] = c.settings || {};
+          teamCtx = resolved.team;
+        }
       }
     } catch (e) { bail("E_CONFIG_BROKEN", e.message || e); throw e; }
+    if (deployment) return operatorDispatch();
     // Workspace model: an instance's own materialized modules are the command
     // namespaces available to it (instance.json.modules → <home>/.oats/modules).
     const mans = Object.values(capabilityManifests(instanceModules ? instanceHome : context)).filter((m) => m.command === cmd && m.commands);
@@ -3058,6 +3092,14 @@ function capabilityCommand() {
     if (!activeIds.includes(m.capability)) bail("E_CAPABILITY_INACTIVE", `${m.capability} command namespace is not active in the current context/instance`);
     const trust = capabilityTrust(m, context);
     if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${m.capability} executable command is blocked: ${trust.reason}`);
+    return runManifestCommand(m, capSettings[m.capability] || {}, teamCtx, () => m._dir);
+  }
+
+  /** Help / unknown-command / spec validation / exec — shared by every context.
+   *  `m` is the manifest (with `capability`; `_dir` may be absent until `ensureDir`
+   *  resolves the directory holding the executable — the operator branch fetches
+   *  the module tree only when a command is actually going to run). */
+  async function runManifestCommand(m, settings, teamCtx, ensureDir) {
     const sub = args[1];
     const cmds = Object.keys(m.commands);
     // `oats <ns> --help` and `oats <ns> <cmd> --help` answer from the manifest
@@ -3083,17 +3125,22 @@ function capabilityCommand() {
     const spec = m.commands[sub];
     if (typeof spec !== "string" || !spec.trim()) bail("E_CAPABILITY_BROKEN", `oats ${cmd} ${sub}: manifest command must be a non-empty string (got ${JSON.stringify(spec)})`);
     const [script, ...rest] = spec.trim().split(/\s+/);
+    let dir;
+    try { dir = await ensureDir(); }
+    catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) bail(e.code, e.message, e.details); throw e; }
+    const withDir = { ...m, _dir: dir };
     let abs;
-    try { abs = capabilityExecutablePath(m, script); }
+    try { abs = capabilityExecutablePath(withDir, script); }
     catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
-    if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(m._dir, script)})`);
+    if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(dir, script)})`);
     const r = spawnSync("node", [abs, ...rest, ...args.slice(2)], { stdio: "inherit", env: {
       ...process.env, OATS_CAPABILITY: m.capability,
       // Package-runtime boundary: dispatched commands receive the active
-      // capability's EFFECTIVE settings (instance snapshot or resolved context),
-      // same contract as lifecycle hooks — capabilities read their settings
-      // here instead of importing the kernel resolver.
-      OATS_SETTINGS: JSON.stringify(capSettings[m.capability] || {}),
+      // capability's EFFECTIVE settings (instance snapshot, resolved context, or
+      // the soul's merged payload on operator-level dispatch), same contract as
+      // lifecycle hooks — capabilities read their settings here instead of
+      // importing the kernel resolver.
+      OATS_SETTINGS: JSON.stringify(settings || {}),
       // PATH is not a trusted runtime boundary (maintainer finding 1): pass the
       // canonical absolute executable of THIS CLI; official consumers execFile
       // it directly and never resolve `oats` from PATH or a shell.
@@ -3675,7 +3722,7 @@ else if (cmd && Object.hasOwn(REMOVED_VERBS, cmd)) {
   console.log(usageText());
   process.exit(1);
 }
-else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && capabilityCommand()) { /* dispatched */ }
+else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && await capabilityCommand()) { /* dispatched */ }
 // No matching kernel command or capability namespace: in --json mode the help
 // text must NOT contaminate stdout — still one envelope object, nonzero exit.
 else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", `unknown command "${cmd}" — no kernel subcommand or active capability namespace matches`);
