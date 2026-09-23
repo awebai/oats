@@ -15,6 +15,8 @@ export function classifyApiRoute(pathname, base) {
       case '/api/spawn': return 'spawn-apply';
       case '/api/instance-lifecycle': return 'lifecycle';
       case '/api/instance-events': return 'instance-events';
+      case '/api/workspace-schedules': return 'schedule-read';
+      case '/api/schedules': return 'schedules';
       case '/api/forge-connections':
       case '/api/instance-forge': return 'forge';
       case '/api/capabilities': return 'capabilities';

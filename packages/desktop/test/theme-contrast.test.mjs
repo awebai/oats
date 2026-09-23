@@ -14,6 +14,10 @@ import { createLifecycleDialog, lifecycleCSS } from '../renderer/lifecycle-dialo
 import { createReadinessView, readinessCSS } from '../renderer/readiness-view.mjs';
 import { cli as readinessCli, workspace as readinessWorkspace, selector as readinessSelector, view as readinessView, data as readinessFixture } from './helpers/readiness-fixture.mjs';
 import { instance as lifeInstance, target as lifeTarget, stopPlan as stopFixture, retirePlan as retireFixture } from './helpers/lifecycle-fixture.mjs';
+import { createSchedulesView } from '../renderer/views/schedules.mjs';
+import { setWorkspace } from '../renderer/views/common.mjs';
+import { scheduleReadData } from '../renderer/schedule-read-data.mjs';
+import { cli as scheduleCli, scope as scheduleScope, data as scheduleData, entry as scheduleEntry } from './helpers/schedule-read-fixture.mjs';
 
 const renderer = new URL("../renderer/", import.meta.url);
 const css = readFileSync(new URL("theme.css", renderer), "utf8");
@@ -433,6 +437,32 @@ for (const [name] of palettes) test(`${name}: actual Connections and reported PR
     ['.forge-settings button', '.forge-settings button', 'fg', 'surface'], ['.forge-settings select', '.forge-settings select', 'fg', 'surface'],
     ['.forge-pass', '.git-card', 'ok', 'surface-2'], ['.forge-fail', '.git-card', 'danger', 'surface-2'],
     ['.forge-pending', '.git-card', 'muted', 'surface-2'], ['.forge-neutral', '.git-card', 'muted', 'surface-2'], ['.git-card a', '.git-card', 'accent', 'surface-2'],
+  ]) {
+    const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
+    assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
+    assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+  }
+});
+
+for (const [name] of palettes) test(`${name}: actual schedule table, native menu and history provenance meet computed AA`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main></main></body></html>`, { pretendToBeVisual: true });
+  const doc = dom.window.document, style = doc.createElement('style'); style.textContent = css; doc.head.append(style);
+  setWorkspace('ws');
+  const raw = scheduleData([scheduleEntry(), scheduleEntry({ id: 'captured', definitionVersion: 2 })]);
+  const view = createSchedulesView(doc.querySelector('main'), { api: async () => ({ scheduleReadViewApi: 1, status: 'available', workspace: 'ws', scope: scheduleScope,
+    data: scheduleReadData(raw, scheduleScope, { action: 'list' }), reason: null }) }, { cli: () => scheduleCli, subscribeCli: () => () => {} });
+  t.after(() => { view.dispose(); dom.window.close(); }); await new Promise(resolve => setImmediate(resolve));
+  const root = dom.window.getComputedStyle(doc.documentElement);
+  for (const [selector, painted, fg, bg] of [
+    ['.schedule-table th', '.schedule-table th', 'muted', 'surface-2'],
+    ['.schedule-table small', '.schedule-table-wrap', 'muted', 'surface'],
+    ['.schedule-menu summary', '.schedule-table-wrap', 'fg', 'surface'],
+    ['.schedule-toggle[aria-checked=true]', '.schedule-toggle', 'accent', 'surface'],
+    ['.schedule-history-note', '.schedule-history', 'muted', 'surface'],
+    ['.schedule-run-facts', '.schedule-history', 'muted', 'surface'],
+    ['.schedule-observation-status', '.schedules-view', 'muted', 'bg'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
