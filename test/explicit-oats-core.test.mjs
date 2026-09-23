@@ -458,7 +458,11 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   const results = await Promise.all([run(), run(), run()]);
   const wins = results.filter(r => r.doc.ok), losses = results.filter(r => !r.doc.ok);
   assert.equal(wins.length, 1, JSON.stringify(results.map(r => r.doc.ok ? 'ok' : r.doc.error.code)));
-  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error.code)));
+  // A loser refuses with whichever pre-placement check it reaches first after the winner's
+  // side effects landed: the exclusive mkdir (E_PLACEMENT_TAKEN), the bound decision
+  // (E_DECISION_STALE), or — in worktree mode — the winner's freshly created branch
+  // (E_BRANCH_EXISTS). All three are honest "nothing created" refusals.
+  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE', 'E_BRANCH_EXISTS'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error.code)));
   assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'exactly one home');
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-apply-2'));
 });
