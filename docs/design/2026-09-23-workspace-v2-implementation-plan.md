@@ -15,7 +15,7 @@ A clean v2 of the kernel's declaration, resolution and launch path: read `oats-w
 
 ## Work packages
 
-Each is one PR (or two small ones), reviewed by me, on `main`, behind the v2 seam until W7. Order is dependency order; W1–W3 can proceed in parallel lanes.
+Each is one PR (or two small ones), reviewed by me, on `main`, as canonical code from the first phase (no seam — see the approach above). Order is dependency order; W1–W3 can proceed in parallel lanes. **Status (2026-09-23): W1–W8 and W10 shipped in OATS 0.25.0 (PR99 `59ae22df`); W8's last part — folding the classic no-`oats-local.yaml` spawn path into the one pipeline and deleting the v1 residue — is a follow-up; W9/W9b/W11/W12 are Phases D–F.**
 
 | # | Package | Delivers | Owner | Size |
 |---|---|---|---|---|
