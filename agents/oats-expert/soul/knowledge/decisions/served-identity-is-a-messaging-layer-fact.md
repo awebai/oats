@@ -76,6 +76,11 @@ resolution revision.
   enforced: the hook receives one merged `OATS_SETTINGS` without provenance,
   so a provider cannot tell a `residents` map from a committed file apart from
   one from the host file. Until K1″ ships the hole is documented, not closed.
+  Ordering: `docs/capability-manifest.schema.json` declares settings entries
+  with `additionalProperties: false` (default / values / description only), so
+  a manifest may declare `hostOnly` only once K1″ has extended the schema on
+  main (and the provider repo's schema copy has been synced); a provider
+  release opened before that documents the rule and declares it in a patch.
 - **Provider owns every identity rule** (oats.aweb 1.12): reads `team` and
   `identity.{mode,resident,scopes,ttl,source}` from `OATS_SETTINGS`; declares
   `residents` as `hostOnly` in its manifest (the host-owned
