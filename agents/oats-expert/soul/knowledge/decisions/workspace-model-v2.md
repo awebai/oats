@@ -2,7 +2,7 @@
 type: Decision
 title: Workspace model v2 — one workspace per org, members are trust, nothing is installed, every capability is copied whole into the instance
 status: accepted
-description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Seventeen decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
+description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Twenty-one decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
 tags: [workspace, membership, capabilities, packages, provenance, materialization, teams, harness, v2]
 timestamp: 2026-09-23
 ---
@@ -126,6 +126,36 @@ a version**. The workspace's `packages:` says which version; materialization
     instance `modules: <cap> from <member> @ <commit>` and, when the
     member's current state differs, `member moved since (now @ <commit>)` /
     `capability no longer present`. No revisions.
+
+# The framework's own workspace (human, 2026-09-23, at implementation start)
+
+18. **Every repository of the OATS workspace is converted to the new format**
+    (`oats-membership.yaml`, v2 souls, capability manifests); the kernel reads
+    nothing else. This is W9 and it is not optional.
+19. **A repo can be a member AND a package publisher; the two roles do not
+    collapse.** `oats-okf`, `oats-aweb`, `oats-jira`, `oats-linear`,
+    `oats-authoring`, `oats-dev` are members of the OATS workspace (their
+    souls are discoverable at latest state) **and** their `oats-package/` is
+    consumed as a **package** — `from: package`, versioned in `packages:`,
+    locked, executables approved per version. Membership never turns a
+    package into a latest-state member capability: what a repo exports under
+    `capabilities/` is member-tier; what it publishes under `oats-package/`
+    is package-tier, and the same repo may do both. The framework's own souls
+    therefore say `oats.okf: { from: package }` even though `oats-okf` is a
+    member.
+20. **Every package repo carries a member soul that is the expert in that
+    capability** — `okf-expert` in `oats-okf`, `aweb-expert` in `oats-aweb`,
+    `jira-expert`, `linear-expert`, `authoring-expert`, `dev-expert` — a v2
+    soul under `souls/`, team `global`, whose job is to know and evolve that
+    capability (its contract, its binding, its skills, its release). They are
+    ordinary members' souls: discoverable in the OATS workspace, spawnable by
+    anyone in it, and the natural owner of their package's PRs.
+21. **The official marketplace stays**: `package-catalog.json` in the `oats`
+    repo remains the reviewed list of official packages, the place a
+    `packages:` entry written as a bare version resolves through, and the
+    source of "discoverable is not installed" — under the new model it is
+    the only way a package becomes *pinnable by id*; a package outside the
+    catalog is written as `git:<repo>@<ref>`.
 
 # What is removed
 

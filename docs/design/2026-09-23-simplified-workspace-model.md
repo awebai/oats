@@ -31,7 +31,7 @@ That removes: per-soul `source:` lines, the `git:` / `repo:` / `path:` grammar f
 
 ## 2. The imaginary company: Northwind
 
-Northwind builds a shipping platform. Northwind has an **engineering** team and a **marketing** team, and a few things that belong to everyone (**global**). They share **one workspace** — marketers use engineering capabilities and vice versa; teams are labels for organising, not walls. Their agent setup spans **five of their own repos** plus **one public repo** they borrow an expert from, and **four packages**.
+Northwind builds a shipping platform. Northwind has an **engineering** team and a **marketing** team, and a few things that belong to everyone (**global**). They share **one workspace** — marketers use engineering capabilities and vice versa; teams are labels for organising, not walls. Their agent setup spans **six of their own repos** plus **one public repo** they borrow an expert from, and **four packages**.
 
 ```
 github.com/northwind/agents        ← hosts the workspace file; org-wide souls + capabilities   (team: global)
@@ -39,14 +39,17 @@ github.com/northwind/platform      ← the product; exports souls that work IN t
 github.com/northwind/data          ← analytics; exports a soul + a data-access capability       (team: engineering)
 github.com/northwind/marketing     ← campaigns; exports souls + brand/metrics capabilities      (team: marketing)
 github.com/northwind/knowledge     ← the shared OKF knowledge base (a store, not a member)
+github.com/northwind/nw-tools      ← MEMBER *and* PACKAGE PUBLISHER: publishes package `nw.tools` (versioned, pinned,
+                                      approved) AND exports the member soul `tools-expert` who knows that package (team: engineering)
 
 github.com/oss-collective/experts  ← PUBLIC; Northwind borrows one soul, pinned (not a member)
 
-packages (versioned, from the official catalog; fetched at spawn, never "installed"):
-  oats.framework v1.1.3   → oats.core, oats.setup
-  oats.okf       v2.1.3   → knowledge layer
-  oats.aweb      v1.11.2  → messaging layer
-  oats.jira      v1.0.0   → tasks layer
+packages (versioned; fetched at spawn, never "installed"):
+  oats.framework v1.1.3   → oats.core, oats.setup          (official catalog)
+  oats.okf       v2.1.3   → knowledge layer                (official catalog)
+  oats.aweb      v1.11.2  → messaging layer                (official catalog)
+  oats.jira      v1.0.0   → tasks layer                    (official catalog)
+  nw.tools       v0.4.0   → nw-lint, nw-deploy             (Northwind's OWN package, from a member repo — written as git:…@v0.4.0)
 ```
 
 Two operators realize this workspace on their machines: **Ana** (macOS, works mostly on `platform`) and **Bo** (Linux, works on `data`). They share the declarations through Git and share nothing else.
@@ -97,15 +100,18 @@ members:
   - git:github.com/northwind/platform
   - git:github.com/northwind/data
   - git:github.com/northwind/marketing
+  - git:github.com/northwind/nw-tools          # a member that ALSO publishes a package (below)
 
 # The ONLY versioned things. Chosen once for the whole team; the lock records the
 # exact commit + integrity each version resolves to, and the one-time executable
 # approval for that version. Nothing is installed: instances fetch these at spawn.
 packages:
-  oats.framework: v1.1.3
+  oats.framework: v1.1.3                       # bare version → resolves through the official catalog
   oats.okf: v2.1.3
   oats.aweb: v1.11.2
   oats.jira: v1.0.0
+  nw.tools: git:github.com/northwind/nw-tools@v0.4.0   # not in the catalog → written as a git ref; STILL a package:
+                                                       # versioned, locked, approved — membership does not change that
 
 # Org teams — LABELS, declared once so they cannot drift into typos. A team never
 # gates, restricts or partitions anything; it organises (grouping, filtering,
@@ -333,11 +339,43 @@ messaging:
 
 Because `nw-brand-voice` is a marketing team default (`defaults.byTeam.marketing`), every marketing soul carries the brand voice without naming it; `release-manager` (engineering) could still add `nw-brand-voice: { from: northwind/marketing }` for its release announcements. **Nothing about trust, handshake, packages or the store is different for this team** — it is one more member repo with a label.
 
-### 3.5 `northwind/knowledge` — a store, not a member
+### 3.5 `northwind/nw-tools` — a member that also publishes a package (decisions 19–20)
+
+```
+nw-tools/
+├── oats-membership.yaml              ← { workspace, team: engineering }   — it IS a member
+├── souls/tools-expert/soul.yaml      ← the MEMBER soul: knows and evolves the nw.tools package
+├── capabilities/nw-tools-dev/        ← member-tier: latest state, for people working ON nw-tools
+└── oats-package/                     ← PACKAGE-tier: versioned, tagged v0.4.0, pinned in packages:, approved
+    ├── oats-package.json             ← { package: "nw.tools", version: "0.4.0", capabilities: [...] }
+    └── capabilities/
+        ├── nw-lint/oats.json
+        └── nw-deploy/oats.json       ← has bin/ → executables approved once per version
+```
+
+Two roles, two tiers, one repo — and they do not collapse into each other:
+
+- `souls/*` and `capabilities/*` are **member-tier**: discoverable at latest state because `nw-tools` completed the handshake. `nw-tools-dev` is what `tools-expert` uses while working on the package itself.
+- `oats-package/*` is **package-tier**: it is consumed only through `packages:` (`nw.tools: git:…@v0.4.0`), locked to a commit, integrity-checked, executables approved per version. `release-manager` says `nw-deploy: { from: package }` — never `from: northwind/nw-tools` — even though that repo is a member. Membership does not turn a package into a latest-state capability.
+
+```yaml
+# souls/tools-expert/soul.yaml — the package's own expert, an ordinary member soul
+schemaVersion: 2
+name: tools-expert
+description: Knows the nw.tools package — its manifests, executables, release tags and consumers; evolves it through PRs.
+work: worktree
+capabilities:
+  nw-tools-dev: { from: here }          # member-tier, latest
+  nw-lint: { from: package }            # eats its own published food, at the pinned version
+```
+
+This is exactly the shape the OATS workspace itself takes: `oats-okf`, `oats-aweb`, `oats-jira`, `oats-linear`, `oats-authoring`, `oats-dev` are members that publish packages **and** each carries its expert soul (`okf-expert`, `aweb-expert`, …); the framework's souls say `oats.okf: { from: package }`. The **official catalog** (`package-catalog.json` in the `oats` repo) stays as the reviewed marketplace: a bare-version entry like `oats.okf: v2.1.3` resolves through it; a package outside it is written as `git:<repo>@<ref>`.
+
+### 3.6 `northwind/knowledge` — a store, not a member
 
 Contains the OKF base. It appears in the workspace under `stores:`, not `members:` — it exports no souls or capabilities. Publication to it stays PR-only, as today.
 
-### 3.6 `oss-collective/experts` — the borrowed public soul
+### 3.7 `oss-collective/experts` — the borrowed public soul
 
 ```
 experts/

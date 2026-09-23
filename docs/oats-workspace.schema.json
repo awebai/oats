@@ -1,67 +1,145 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://oats.dev/schemas/workspace-v1.json",
-  "title": "Portable workspace definition v1",
-  "description": "Data shape only; hosting identity, reciprocal membership and provider readiness are verified separately.",
+  "$id": "https://oats.dev/schemas/workspace-v2.json",
+  "title": "Workspace declaration v2 (oats-workspace.yaml)",
+  "description": "Data shape only. Members carry NO revision (a member is always its latest state); `external` sources REQUIRE a full 40-hex commit; absolute filesystem paths are refused anywhere in this file (host paths belong in oats-local.yaml). Reciprocal membership is observed over Git remotes, not declared here.",
   "type": "object",
   "required": ["schemaVersion", "name"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "name": { "type": "string", "minLength": 1 },
-    "members": { "type": "array", "items": { "$ref": "#/$defs/repository" } },
-    "defaults": { "$ref": "https://oats.dev/schemas/soul-v1.json#/$defs/defaults" },
-    "knowledge": {
-      "type": "object", "required": ["stores"], "additionalProperties": false,
-      "properties": { "stores": { "type": "array", "items": { "$ref": "https://oats.dev/schemas/soul-v1.json#/properties/knowledge" } } }
+    "schemaVersion": { "const": 2 },
+    "name": { "$ref": "#/$defs/slug" },
+    "members": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/memberRef" },
+      "description": "Repo refs without revision. Each becomes a member only when its oats-membership.yaml names this workspace back."
+    },
+    "packages": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/packageId" },
+      "additionalProperties": { "$ref": "#/$defs/packageVersion" },
+      "description": "The ONLY versioned things: <package-id>: <version | git ref with @revision>."
     },
     "teams": {
-      "type": "object", "propertyNames": { "$ref": "#/$defs/alias" },
-      "properties": { "private": { "const": "per-human" } },
-      "additionalProperties": {
-        "type": "object", "required": ["provider", "id"], "additionalProperties": false,
-        "properties": { "provider": { "$ref": "https://oats.dev/schemas/soul-v1.json#/$defs/capability" }, "id": { "type": "string", "minLength": 1 } }
-      }
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/label" },
+      "additionalProperties": { "$ref": "#/$defs/team" },
+      "description": "Org team labels. A label never gates, restricts or partitions anything."
     },
-    "catalogs": {
-      "type": "array", "items": {
-        "type": "object", "required": ["source"], "additionalProperties": false,
-        "properties": { "source": { "$ref": "#/$defs/source" }, "revision": { "$ref": "#/$defs/revision" }, "path": { "$ref": "#/$defs/path" } }
-      }
+    "defaults": { "$ref": "#/$defs/defaults" },
+    "stores": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/slug" },
+      "additionalProperties": { "$ref": "#/$defs/memberRef" },
+      "description": "Knowledge stores, declared once: <name>: <repo ref>."
     },
-    "imports": { "type": "array", "items": { "$ref": "#/$defs/import" } }
+    "messaging": {
+      "type": "object",
+      "description": "Opaque provider payload consumed by the messaging-slot capability."
+    },
+    "external": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/external" },
+      "description": "Souls adopted by reference from repos that are NOT members; pinned to a full commit."
+    }
   },
   "$defs": {
-    "source": { "type": "string", "pattern": "^git:.+$" },
-    "revision": { "type": "string", "minLength": 1 },
-    "path": { "type": "string", "minLength": 1, "description": "Canonical contained repository-relative path; the shared source codec enforces semantic path rules." },
-    "alias": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
-    "repository": {
-      "type": "object", "required": ["source"], "additionalProperties": false,
-      "properties": { "source": { "$ref": "#/$defs/source" }, "revision": { "$ref": "#/$defs/revision" } }
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "capabilityName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "packageId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "packageVersion": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:v?\\d+(?:\\.\\d+)*(?:[-+][0-9A-Za-z.-]+)?|git:\\S+@\\S+)$",
+      "description": "Exactly two forms: a bare version (v2.1.3) resolved through the catalog, or git:<repo>@<ref> (a direct package ref). lib/packages.mjs#classifyPackageValue is the full grammar."
     },
-    "import": {
-      "type": "object", "required": ["source", "soul", "revision", "alias"], "additionalProperties": false,
+    "memberRef": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "description": "A repo ref (git:<host>/<path>, https://…, git@host:path.git, file:///…) with NO @revision."
+    },
+    "pinnedRef": {
+      "type": "string",
+      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)@[0-9a-f]{40}$",
+      "description": "<repo ref>@<full 40-hex commit OID>."
+    },
+    "repoKey": {
+      "type": "string",
+      "pattern": "^[^\\s@/][^\\s@]*/[^\\s@]+$",
+      "description": "Canonical repo identity <host>/<path> (or local/<abs-path> for file remotes), as produced by parseRepoRef(...).key."
+    },
+    "fromLocation": {
+      "anyOf": [
+        { "const": "package" },
+        { "const": "here" },
+        { "$ref": "#/$defs/repoKey" }
+      ],
+      "description": "WHERE a capability comes from — a location, never a version."
+    },
+    "capabilityRef": {
+      "type": "object",
+      "required": ["from"],
+      "additionalProperties": false,
+      "properties": { "from": { "$ref": "#/$defs/fromLocation" } }
+    },
+    "capabilityChoice": { "anyOf": [{ "$ref": "#/$defs/capabilityRef" }, { "const": "off" }] },
+    "capabilityMap": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/capabilityName" },
+      "additionalProperties": { "$ref": "#/$defs/capabilityChoice" }
+    },
+    "slotDefault": {
+      "anyOf": [
+        { "const": "none" },
+        {
+          "type": "object",
+          "maxProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/capabilityName" },
+          "additionalProperties": { "$ref": "#/$defs/capabilityRef" }
+        }
+      ],
+      "description": "At most one capability fills a slot; `none` leaves it empty."
+    },
+    "team": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "description": { "type": "string" } }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
       "properties": {
-        "source": { "$ref": "#/$defs/source" },
-        "soul": { "$ref": "#/$defs/path" },
-        "revision": { "$ref": "#/$defs/revision" },
-        "alias": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
-        "adoption": {
-          "type": "object", "additionalProperties": false,
-          "properties": {
-            "teamAliases": { "type": "object", "propertyNames": { "$ref": "#/$defs/alias" }, "additionalProperties": { "$ref": "#/$defs/alias" } },
-            "providers": {
-              "type": "object", "additionalProperties": false,
-              "properties": {
-                "knowledge": { "$ref": "https://oats.dev/schemas/soul-v1.json#/$defs/defaultProvider" },
-                "messaging": { "$ref": "https://oats.dev/schemas/soul-v1.json#/$defs/defaultProvider" },
-                "tasks": { "$ref": "https://oats.dev/schemas/soul-v1.json#/$defs/defaultProvider" }
-              }
-            },
-            "bindings": { "type": "object" }
+        "capabilities": { "$ref": "#/$defs/capabilityMap" },
+        "knowledge": { "$ref": "#/$defs/slotDefault" },
+        "messaging": { "$ref": "#/$defs/slotDefault" },
+        "tasks": { "$ref": "#/$defs/slotDefault" },
+        "byTeam": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/label" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": { "capabilities": { "$ref": "#/$defs/capabilityMap" } }
           }
         }
+      }
+    },
+    "external": {
+      "type": "object",
+      "required": ["source", "soul"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "$ref": "#/$defs/pinnedRef" },
+        "soul": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*$",
+          "description": "Repository-relative directory holding the soul's soul.yaml."
+        },
+        "team": { "$ref": "#/$defs/label" }
       }
     }
   }

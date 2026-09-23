@@ -1,82 +1,55 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://oats.dev/schemas/soul-v1.json",
-  "title": "Portable soul declaration v1",
-  "description": "Authored shape only. The shared source codec, provider codec and preparation transaction enforce source semantics, containment, requirements and readiness.",
+  "$id": "https://oats.dev/schemas/soul-v2.json",
+  "title": "Soul declaration v2 (soul.yaml)",
+  "description": "Authored shape only. A soul names each capability WITH WHERE IT COMES FROM (`from: here | <repo key> | package`) — a location, never a version. Provider payloads (knowledge, messaging, tasks) are opaque to the kernel; `none` empties the slot. Membership, privacy and team semantics are enforced by discovery/resolution, not here.",
   "type": "object",
   "required": ["schemaVersion", "name"],
   "additionalProperties": false,
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "name": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "schemaVersion": { "const": 2 },
+    "name": { "$ref": "#/$defs/slug" },
     "description": { "type": "string" },
-    "requires": { "$ref": "#/$defs/requirements" },
-    "defaults": { "$ref": "#/$defs/defaults" },
-    "knowledge": {
+    "work": { "enum": ["worktree", "checkout", "directory", "workspace"] },
+    "team": { "$ref": "#/$defs/label", "description": "Team label; overrides the repo's default from oats-membership.yaml." },
+    "private": { "type": "boolean", "description": "true → not discoverable in the workspace; usable only from its own repo." },
+    "capabilities": {
       "type": "object",
-      "required": ["contract", "version", "payload"],
-      "additionalProperties": false,
-      "properties": {
-        "contract": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
-        "version": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
-        "payload": {}
-      }
+      "propertyNames": { "$ref": "#/$defs/capabilityName" },
+      "additionalProperties": { "$ref": "#/$defs/capabilityChoice" }
     },
-    "teams": {
-      "type": "array", "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" }
-    },
-    "resources": {
-      "type": "array", "uniqueItems": true,
-      "items": { "type": "string", "pattern": "^(?:\\.|(?![A-Za-z]:)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/\\\\\u0000]+(?:/[^/\\\\\u0000]+)*)$" }
-    },
-    "work": { "enum": ["worktree", "checkout", "attached", "workspace", "directory"] },
-    "runtime": { "enum": ["pi", "claude", "codex"] },
-    "model": { "type": "string", "minLength": 1 },
-    "launch-config": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
-    "backend": { "enum": ["tmux", "herdr"] },
-    "yolo": { "type": "boolean" }
+    "knowledge": { "$ref": "#/$defs/slotPayload" },
+    "messaging": { "$ref": "#/$defs/slotPayload" },
+    "tasks": { "$ref": "#/$defs/slotPayload" },
+    "compatibility": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/capabilityName" },
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "description": "Optional FLOORS on package versions (semver ranges) — constraints, not sources."
+    }
   },
   "$defs": {
-    "source": { "type": "string", "pattern": "^(git|repo|path):.+$" },
-    "capability": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
-    "selection": {
-      "type": "object", "required": ["source"], "additionalProperties": false,
-      "properties": { "source": { "$ref": "#/$defs/source" }, "settings": { "type": "object" } }
+    "slug": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "label": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "capabilityName": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "repoKey": { "type": "string", "pattern": "^[^\\s@/][^\\s@]*/[^\\s@]+$" },
+    "fromLocation": {
+      "anyOf": [
+        { "const": "package" },
+        { "const": "here" },
+        { "$ref": "#/$defs/repoKey" }
+      ]
     },
-    "provider": {
-      "type": "object", "required": ["capability", "source"], "additionalProperties": false,
-      "properties": {
-        "capability": { "$ref": "#/$defs/capability" },
-        "source": { "$ref": "#/$defs/source" },
-        "settings": { "type": "object" }
-      }
+    "capabilityRef": {
+      "type": "object",
+      "required": ["from"],
+      "additionalProperties": false,
+      "properties": { "from": { "$ref": "#/$defs/fromLocation" } }
     },
-    "requiredProvider": { "anyOf": [{ "const": "any" }, { "$ref": "#/$defs/provider" }] },
-    "defaultProvider": { "anyOf": [{ "const": "none" }, { "$ref": "#/$defs/provider" }] },
-    "requirements": {
-      "type": "object", "additionalProperties": false,
-      "properties": {
-        "capabilities": {
-          "type": "object", "additionalProperties": false,
-          "patternProperties": { "^[a-z0-9][a-z0-9._-]*$": { "$ref": "#/$defs/selection" } }
-        },
-        "knowledge": { "$ref": "#/$defs/requiredProvider" },
-        "messaging": { "$ref": "#/$defs/requiredProvider" },
-        "tasks": { "$ref": "#/$defs/requiredProvider" }
-      }
-    },
-    "defaults": {
-      "type": "object", "additionalProperties": false,
-      "properties": {
-        "capabilities": {
-          "type": "object", "additionalProperties": false,
-          "patternProperties": { "^[a-z0-9][a-z0-9._-]*$": { "anyOf": [{ "$ref": "#/$defs/selection" }, { "const": false }] } }
-        },
-        "knowledge": { "$ref": "#/$defs/defaultProvider" },
-        "messaging": { "$ref": "#/$defs/defaultProvider" },
-        "tasks": { "$ref": "#/$defs/defaultProvider" }
-      }
+    "capabilityChoice": { "anyOf": [{ "$ref": "#/$defs/capabilityRef" }, { "const": "off" }] },
+    "slotPayload": {
+      "anyOf": [{ "const": "none" }, { "type": "object" }],
+      "description": "Opaque provider payload, or `none` to leave the slot empty."
     }
   }
 }
