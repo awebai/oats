@@ -1,263 +1,146 @@
 # Run your first OATS team
 
-Start with one repository and one small, real task. A soul keeps the role and
-curated skills; an instance gets a working session and repository view. With OKF
-v2, expertise lives in external owned nodes, not the soul or task branch.
+> **Workspace model (0.25).** This page is the v2 first-team guide. The 0.24
+> surface it used to describe (`oats-config.yaml`, `oats init` / `install` /
+> `use` / `trust`, the 0.24 `oats onboard --dir` bootstrap that created a local
+> `oats-setup-expert`) no longer exists; those verbs answer `E_UNKNOWN_COMMAND`
+> naming their replacement. Model: [workspaces.md](workspaces.md) ·
+> packages: [packages.md](packages.md) · moving a 0.24 deployment:
+> [rebuild-to-v2.md](rebuild-to-v2.md) (§5 is the deployment layout this page
+> creates). The [qualification example](first-team-demo.md) records real v1
+> tasks on 0.23 and is not v2 acceptance.
 
-> This guide targets the **v0.23.1 integration of published OKF 2.0.0**, whose
-> published kernel prerequisite is OATS >=0.23.0. Check the matching framework
-> release availability before installation; see [release notes](release-notes/v0.23.1.md).
-> The [qualification example](first-team-demo.md) records real **v1** tasks on
-> earlier versions, not v2 acceptance. Existing knowledge needs
-> [v1 preservation and cutover](knowledge-migration.md), not fresh initialization.
+Start with one workspace, one member repository and one small, real task. A
+soul keeps the role and its curated skills; an instance gets a working session
+and a repository view; every capability the instance runs is copied whole into
+its home at spawn from a **member** repository (latest state, trusted by
+membership) or from a **package** (a pinned version, executables approved once
+per version in the lock). Nothing is installed.
 
-## Install and choose a scope
+## 0. Prerequisites
 
-Install matching published kernel and Pi adapter releases. Have Node.js 22+, Git, tmux and an authenticated working runtime
-available. OKF's independent worker can use Pi, Claude or Codex; authenticate
-that selected runtime too. Plain-directory knowledge needs no Git/gh, although
-this guide's coding worktree does need Git.
+Node.js 22+, Git with read access to the repositories below (your own
+credential helpers; the kernel never prompts), tmux, and an authenticated
+harness (Pi, Claude or Codex).
 
 ```bash
 npm install -g @awebai/oats@latest
-pi install npm:@awebai/oats-pi@latest
-node --version
-tmux -V
-oats version
-cd /path/to/project
-oats init --raw
-oats install git:github.com/awebai/oats-okf@v2.0.0
-oats list
+node --version && tmux -V && oats version --json   # features must list workspace-v2
 ```
 
-Use a repository with an initial commit for this coding-worktree example.
-Raw initialization writes editable configuration with integrations disabled;
-installation separately acquires the published OKF 2.0.0 closure and exact lock.
-Neither step approves hooks, authenticates a runtime or joins a team. Inspect
-the acquired version before continuing. An existing development template or
-lock may still select v1: follow explicit preservation/update/cutover instead
-of applying fresh initialization or carrying v1 knowledge settings into v2.
+## 1. Declare the workspace (shared, in Git)
 
-For several repositories initialize their common workspace, then select the
-repository owning the soul with `--dir /path/to/workspace/project` for
-create/spawn/retire. A team roster does not select a work repository for spawn.
+Three files, all committed ([rebuild-to-v2.md](rebuild-to-v2.md) §§2–4 show
+each field):
 
-## Onboarding with the setup expert
+- `oats-workspace.yaml` (`schemaVersion: 2`) in **one** host repository: `name`,
+  `members: [<repo ref>, …]`, `teams:`, `packages: { oats.framework: v<x>, … }`,
+  `defaults:`. A member is a repo ref, never a revision.
+- `oats-membership.yaml` (`{ schemaVersion: 2, workspace: <host ref>, team? }`)
+  in **every** member — the backlink half of the handshake. A repo listed
+  without a backlink is `no-backlink` and contributes nothing.
+- `souls/<name>/soul.yaml` (`schemaVersion: 2`) in the member that owns the
+  soul: `name`, `description`, `work: worktree|checkout|directory|workspace`,
+  and `capabilities: { <cap>: { from: here | <repo key> | package } | off }`.
+  A capability is a directory `capabilities/<cap>/oats.json` in a member.
 
-On **OATS 0.24.2 or later**, start in an explicit empty deployment:
+The smallest real setup is one repository that is host **and** member: it
+carries the workspace file, its own `oats-membership.yaml` pointing at itself,
+one soul and, optionally, one capability. Every soul gets `oats.core` from the
+`oats.framework` package by default.
+
+## 2. Realize it on this machine — `oats onboard`
+
+`oats onboard` is the bootstrap: it writes a minimal `oats-local.yaml`, creates
+`agents/` and runs the first `sync` ([rebuild-to-v2.md](rebuild-to-v2.md) §5 is
+the resulting layout).
 
 ```bash
-oats onboard --dir /absolute/new-deployment --json
+oats onboard ~/acme-workspace --workspace git:github.com/acme/agents
 ```
 
-`oats onboard` ships from 0.24.2 (earlier kernels refuse it). It is a
-classic local bootstrap, not captured preparation or workspace enrollment. It
-acquires `oats.framework` from the official catalog, exact-locks its artifacts,
-selects only `oats.core` and `oats.setup` for the new local `oats-setup-expert`,
-and prints the exact next spawn command. Review and run the returned
-`result.next.command` when ready; it addresses this same kernel and deployment.
-Onboarding itself never launches a model, changes native authentication or
-installs capture hooks/services. **`oats setup` remains the separate record
-capture-setup command**, not an alias for onboarding.
-
-The expert receives `oats-operate`, `oats-souls`, `oats-config`, `oats-packages`
-and `oats-workspace-setup`, without duplicate legacy kernel skill copies. It has
-no hard knowledge/messaging dependency, so it can help select and configure those
-providers afterward. Catalog identity grants no executable trust: the bootstrap
-uses resource-only core/setup capabilities and refuses unexpected executable
-surfaces instead of auto-approving them.
-
-An existing roster is refused unless `--force-existing` is explicit. That flag
-permits adding the new soul, not overwriting an existing setup expert or disabling
-providers for other souls. Failures report partial acquisition/creation rather
-than claiming atomic captured preparation. Preserve that evidence before retrying.
-
-Optional `--workspace git:host/org/repository[@revision]` reads the selected
-repository through ordinary discovery: use its pinned `oats-setup-expert` import
-when present, otherwise its own advertised `souls/oats-setup-expert` edition at
-the observed revision. Missing or incompatible explicit sources refuse; they do
-not fall back to the packaged default. The copied edition's package must match
-the official acquisition; workspace policy, teams and provider adoption values
-are not silently adopted. Without this option, only the packaged definition and
-instruction text are used—no knowledge corpus is bundled. From 0.24.5, a
-`--workspace` onboarding also reads `package-catalog.json` **from the workspace
-repository at its observed revision** and acquires the `oats.framework` that
-catalog names; the kernel's bundled catalog is only the fallback (it is a
-snapshot at the kernel's own release and lags every framework release cut
-afterwards). `OATS_PACKAGE_CATALOG` still overrides both. The result reports
-`catalog.origin` (`workspace` | `bundled` | `override`), and an integrity
-refusal names the lag when the bundled entry caused it.
-
-The manual path below retains its stated older integration/version scope.
-
-## Configure explicit knowledge and optional messaging
-
-Edit the existing entries in `oats-config.yaml`; do not append a second
-`capabilities` map. This example targets only the source soul for knowledge:
-
-```yaml
-agent-types:
-  developers:
-    description: Coding experts
-capabilities:
-  layers:
-    knowledge:
-      capability: oats.okf
-      from: installed
-      souls:
-        backend-expert:
-          enabled: true
-          settings:
-            bindings-file: /absolute/config/okf-bindings.json
-            harvest-runtime: pi
-    messaging: none
-    tasks: none
+```
+~/acme-workspace/                 # the taught "<name>-workspace" convention
+├── oats-local.yaml               # { schemaVersion: 2, workspace: git:github.com/acme/agents }
+├── oats-lock.json                # lockfileVersion 3: commit + integrity + approval per package
+├── agents/                       # instance homes
+└── <member>/                     # clones of the members you work IN (printed as next steps)
 ```
 
-There is no hardcoded required harvester model in v2: omitted `harvest-model`
-uses the selected runtime's configured default. Choose a model explicitly if
-needed. Source and worker runtimes are independent.
+Read the report it prints: every member row must be `✓↔` (confirmed) — fix
+`no-backlink` / `backlink-elsewhere` / `cannot-read` before going on. If it
+exits `2`, a package needs executable approval: run `oats sync` in a terminal
+and answer `approve <id> <version>? [y/N]`. Approval is per package version,
+once, recorded in the lock; member capabilities need none. Then clone the
+member you will work in beside `oats-local.yaml` (only a soul's work target
+needs a clone — discovery and resolution run over the remotes).
 
-Review the acquired Git payload and approve executable surfaces:
+`--json` returns `onboardApi: 2` (`local`, `dir`, `agents`, `lock`, the full
+`sync` report, `hosting`, `next.clone[]`, `next.spawn`); running it twice is
+`E_ALREADY_ONBOARDED` (use `oats sync`); a mistyped ref is `E_REPO_REF`, an
+unreadable one `E_REMOTE_UNREADABLE` with `details.rolledBack: true` — nothing
+half-written is left behind. Exact shapes:
+[desktop-cli-api.md](desktop-cli-api.md#oats-onboard-onboardapi-2).
+
+Host-owned provider values (absolute paths, state roots) go under `settings:` in
+`oats-local.yaml` afterwards — never in the workspace file, whose schema refuses
+them. Do not commit `oats-local.yaml`.
+
+## 3. Look before you spawn
 
 ```bash
-oats trust oats.okf
+oats souls                    # every non-private soul of every confirmed member, with origin and team
+oats capabilities             # member (origin: member <key> @ <commit>) and package (package <id> v<ver>) capabilities
+oats workspace status         # membership table, packages, approval state
+oats spawn backend-expert --preview   # modules[] with from/commit/changedSince, composed skill names, team
 ```
 
-Use the catalog Git package, not the bundled npm mirror: npm omits the source
-worker's `CLAUDE.md` symlink, so the mirror is not a self-contained distribution.
-Acquisition alone is not activation or trust.
+The preview is where a skill-name clash between two composed capabilities
+(`E_SKILL_DUPLICATE`) or an unapproved package (`E_PACKAGE_UNAPPROVED`) shows
+up, before anything is created.
 
-Messaging is optional. If desired, retain/configure the template's `oats.aweb`
-layer, set `team.name` and any existing `team.id`, then review/trust it and run
-`oats aweb setup`. Follow its install, initialization and create/join instructions
-until it confirms membership. Join an existing team rather than duplicating it;
-setup's exit status alone does not establish onboarding completion. A source-only
-knowledge target does not require the service worker to have a messaging identity.
-
-## Create the soul and provision an external base
+## 4. Give an instance a real task
 
 ```bash
-oats create backend-expert --type developers --repo . --work worktree --runtime pi
+oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run the relevant checks, commit the code change, and report what changed."
+oats status
 ```
 
-Edit `agents/backend-expert/soul/AGENTS.md` for the role and required checks.
-V2 does not scaffold knowledge in the soul. For a small local first base, create
-`/absolute/config/okf-bindings.json`:
+`--runtime pi|claude|codex` picks the harness; complete any native folder
+trust or authentication prompt in the printed session. The instance home is
+`agents/<soul>/instances/<instance>/`; `work/` is its repository view;
+`.oats/modules/<cap>/` and `.agents/skills/<cap>/` are the copied capabilities;
+`instance.json` records `modules` (from, commit, digest), `providers` and
+`workspace`. A running instance never changes under itself — a member that
+moves affects only new spawns, and `oats status` shows the drift
+(`member moved since (now @ …)` / `capability no longer present`).
 
-```json
-{"version":1,"stateDir":"../durable-okf-state","bases":{"team":{"id":"team-knowledge","kind":"directory","path":"../team-knowledge"}}}
-```
+Instance-specific provider values belong to the spawn:
+`oats spawn <soul> --provider <cap> key=value` (repeatable; dotted keys nest),
+recorded under `instance.json.providers.<cap>`.
 
-Those paths resolve from `/absolute/config`, not the project. Choose durable,
-physical paths outside the source home/worktree and **outside every Git working
-tree**, including ignored directories. State, accepted bases and bindings must
-not overlap. Review [full placement rules](knowledge.md#bindings-document).
+## 5. Judge and retire
 
-Create `/absolute/config/team-nodes.json`:
-
-```json
-{"backend":{"path":"backend","owner":"backend-expert-stable-id"}}
-```
-
-Explicitly provision the new base, refusing any existing destination:
-
-```bash
-oats okf init --base team --nodes /absolute/config/team-nodes.json --confirm --soul backend-expert --json
-```
-
-Write `agents/backend-expert/soul/okf.json`:
-
-```json
-{"version":1,"owner":"backend-expert-stable-id","owns":["team/backend"],"reads":[]}
-```
-
-For team-shared Git knowledge instead, follow [Git provisioning](knowledge.md#owner-and-base-descriptors)
-and review/merge its initialization PR before spawning. Git knowledge always
-uses PR delivery, not commits on the coding instance's branch.
-
-Review and commit soul/configuration/lock changes, generated ignore rules and
-the adopted template base under `.agents/config-templates/adopted/`. Keep
-credentials and private durable evidence out of Git. Check `oats doctor --soul
-backend-expert --json`. Configuration and a successful doctor do not substitute
-for accepted-base validation by the required spawn hook.
-
-## Give an instance a real task
-
-```bash
-oats spawn backend-expert --purpose first-fix --task "Fix one small issue, run the relevant checks, commit the code change, and report what changed. Read the relevant accepted knowledge indexes and capture non-obvious lessons in notes."
-oats status --team
-```
-
-Choose `--runtime claude` or `codex` if preferred. Complete any native folder
-trust, authentication or messaging-plugin confirmations in the printed session.
-A created window is not proof the agent is working.
-
-The instance home is under `agents/<soul>/instances/<instance>/`; `work/` is its
-Git worktree. `knowledge/view.json` identifies immutable accepted snapshots.
-The worker reads indexes selectively, maintains state/log/notes, and never edits
-accepted knowledge. This is instructional, not an OS filesystem sandbox.
-Review its code commits through the repository's ordinary PR workflow.
-
-## Inspect, judge and retire
-
-From the source home, read-only inspection shows identity-matching state/log/notes
-plus durable processing receipts:
-
-```bash
-oats okf inspect --json
-```
-
-Spawn registered one per-source command job, but **did not install a host timer**.
-For this first task an operator may request one manual harvest from the source
-home; without `--no-launch` this starts the configured model worker:
-
-```bash
-oats okf harvest --json
-```
-
-The worker judges durable notes **and captured record**, in its own directory
-execution space. It leaves live notes and soul skills untouched. Directory
-delivery is recoverable publication with validation and receipts. Git delivery
-requires a real reviewed PR and merge-visible acceptance. Inspect receipts rather
-than equating a worker spawn with learning. See [operator commands](knowledge.md#inspection-and-operator-commands)
-for scaffold-only requests, completion and retry.
-
-Source retirement need not wait for a worker to finish: it must first certify
-final notes/record custody. From the repository scope:
+Review the instance's code through the repository's ordinary PR workflow. Then:
 
 ```bash
 oats retire backend-expert-first-fix
-oats status --team
+oats status
 ```
 
-Read the retirement result. An uncertified capture retains the home for retry;
-never delete it to bypass recovery. Durable descriptors, evidence and runs survive
-successful retirement. Use `oats okf inspect --source <absolute-source.json>
---soul backend-expert --json` from deployment context afterward. If messaging is
-active, also verify its retirement receipt and roster rather than assuming local
-cleanup proves identity release.
+Read the retirement result rather than assuming local cleanup proves release;
+knowledge and messaging capabilities (packages such as `oats.okf`, `oats.aweb`)
+add their own retire hooks and receipts — see [knowledge.md](knowledge.md) and
+[capabilities.md](capabilities.md) once you add them to `packages:` and to the
+soul's `capabilities:`.
 
-For automatic future judgment, review [source jobs](schedules.md#okf-v2-source-jobs)
-and explicitly opt into host-timer installation. No-launch tests should never
-install it or enable live model launches.
+## The standalone case
 
-After provider acceptance, start a fresh instance of the same soul on a useful
-task. Check that it finds **and uses** the promoted lesson without the original
-source. That is the learning acceptance step; a no-launch reader only verifies
-scaffolding and references.
-
-## Optional host-wide conversation capture
-
-Knowledge judgment and the native conversation record are separate. OKF uses
-source-targeted native capture through the CLI; host-wide watcher/hook setup is
-an additional deliberate operator action:
-
-```bash
-oats setup
-oats capture --status
-oats recall "a phrase from your completed task"
-```
-
-Capture respects privacy exclusions. Native turns are content-addressed; signed
-aweb messages retain their source signatures. See [where the turn record fits](2026-09-03-architecture-proposal.md#where-the-turn-record-fits).
+If you can read a member repository but not its workspace host (a public member
+of a privately hosted workspace — decision 26), point `oats-local.yaml` at the
+member: `oats sync` and `oats spawn` then give the **standalone view** — the
+repo's own souls with their `from: here` capabilities plus `oats.core`, marked
+`standalone: true` in `sync --json` and `instance.json.workspace.standalone`.
+A repository with no `oats-membership.yaml` is not a member and gets no such
+view (`E_WORKSPACE_SCHEMA`); a network failure reading the host is
+`E_REMOTE_UNREADABLE`, never a silent standalone.

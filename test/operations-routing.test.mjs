@@ -11,7 +11,7 @@ test.after(() => rmSync(base, { recursive: true, force: true }));
 function write(p, c) { mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, c); }
 function gitRepo(dir) { mkdirSync(dir, { recursive: true }); execFileSync("git", ["init", "-q", dir]); execFileSync("git", ["-C", dir, "config", "user.email", "t@example.invalid"]); execFileSync("git", ["-C", dir, "config", "user.name", "T"]); write(join(dir, ".gitignore"), "\n"); execFileSync("git", ["-C", dir, "add", "."]); execFileSync("git", ["-C", dir, "commit", "-qm", "init"]); }
 
-test("inspect, use, soul set and operation run route to a registered server over its saved route: explicit --dir travels as is, --home is its own context, instructions travel on stdin, an old remote is refused before anything is sent", () => {
+test("inspect, soul set and operation run route to a registered server over its saved route: explicit --dir travels as is, --home is its own context, instructions travel on stdin, an old remote is refused before anything is sent", () => {
   const env = { ...process.env, OATS_HOME_DIR: join(base, "oats-home") };
   for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete env[k];
   // A fake ssh that logs its argv and runs the remote command locally through sh -c with THIS stdin.
@@ -50,11 +50,7 @@ test("inspect, use, soul set and operation run route to a registered server over
   // A scope command without --dir gets the registered workspace.
   r = oats(["inspect", "--server", "build", "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(sent().split("\n").some((l) => l.includes(`inspect --dir ${team}`)), "the registered workspace scopes an unscoped command");
-  // use on the member scope, receipt relayed.
-  r = oats(["use", "test.notes", "--soul", "dev", "--disable", "--server", "build", "--dir", member, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.equal(r.json().result.action, "disable"); assert.equal(r.json().result.server, "build");
-  assert.match(readFileSync(join(member, "oats-config.yaml"), "utf8"), /dev: false/);
-  oats(["use", "test.notes", "--soul", "dev", "--inherit", "--server", "build", "--dir", member, "--json"]);
+  // (`oats use` routing was removed with the config surface — workspace model v2.)
   // soul set with instructions: the bytes travel on ssh stdin, never the local path.
   const instr = join(base, "local-instructions.md"); writeFileSync(instr, "# remote dev\n\n$(not run) `literal`\n");
   r = oats(["soul", "set", "dev", "--server", "build", "--dir", member, "--model", "opus", "--instructions-file", instr, "--json"]); assert.equal(r.status, 0, r.stdout + r.stderr);

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oats.dev/schemas/local-v2.json",
+  "title": "Deployment-local overrides v2 (oats-local.yaml)",
+  "description": "The operator's side of a workspace: which workspace this machine realizes, where member clones live when not at the taught convention, host-owned capability settings (absolute paths belong HERE, never in the workspace file), and souls disabled on this machine. Never shared through Git.",
+  "type": "object",
+  "required": ["schemaVersion", "workspace"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "description": "Repo ref of the workspace host; observed over the remote, need not be cloned."
+    },
+    "standalone": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "description": "Repo ref to realize in the STANDALONE view (decision 10): its own souls and from: here capabilities plus oats.core (decision 25), no workspace lookup. Use when the repo's workspace cannot be read; `workspace:` still names the repo you point the kernel at."
+    },
+    "clones": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[^\\s@/][^\\s@]*/[^\\s@]+$" },
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "description": "<repo key>: <path on this machine> for member clones outside the convention."
+    },
+    "settings": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" }
+      },
+      "description": "<capability>: { <key>: <value> } host-owned values the manifests ask for."
+    },
+    "souls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "disabled": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+        }
+      }
+    }
+  }
+}

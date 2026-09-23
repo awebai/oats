@@ -68,6 +68,11 @@ test('read adapters always resolve typed failures, never accept success on faile
     [(_b, _a, _o, done) => done({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER', killed: true }, JSON.stringify(envelope({}))), 'E_CLI_OUTPUT_LIMIT'],
     [() => { throw new Error('SECRET synchronous spawn exception'); }, 'E_CLI_FAILED'],
     [(_b, _a, _o, done) => done(new Error('exit 1'), JSON.stringify(failure('invalid-lock'))), 'invalid-lock'],
+    // Workspace model v2 removed `list`/`catalog`: the kernel answers a typed
+    // E_UNKNOWN_COMMAND (details.removed/replacement). It is an unsupported read
+    // (E_USAGE), not a retry-shaped E_CLI_FAILED, and its replacement hint never
+    // leaks through as UI text.
+    [(_b, _a, _o, done) => done(new Error('exit 1'), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_UNKNOWN_COMMAND', message: 'SECRET removed', details: { removed: 'list', replacement: 'SECRET oats capabilities' } } })), 'E_USAGE'],
     [(_b, _a, _o, done) => done(null, JSON.stringify(failure('SECRET'))), 'E_CLI_FAILED'],
   ];
   for (const read of [cliCatalog, cliList]) for (const [exec, code] of executions) {

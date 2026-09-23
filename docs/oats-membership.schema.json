@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oats.dev/schemas/membership-v2.json",
+  "title": "Repository membership backlink v2 (oats-membership.yaml)",
+  "description": "The repo's half of the reciprocal handshake: it names the workspace it belongs to, plus an optional default team label for the repo's items. Nothing else. A backlink is consent, not admission — the workspace must list the repo too.",
+  "type": "object",
+  "required": ["schemaVersion", "workspace"],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "description": "Repo ref of the workspace host, without revision."
+    },
+    "team": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Default team label for souls and capabilities in this repo that carry no `team:` of their own."
+    }
+  }
+}

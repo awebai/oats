@@ -2,7 +2,7 @@
 type: Decision
 title: Workspace model v2 — one workspace per org, members are trust, nothing is installed, every capability is copied whole into the instance
 status: accepted
-description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Seventeen decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
+description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Twenty-two decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
 tags: [workspace, membership, capabilities, packages, provenance, materialization, teams, harness, v2]
 timestamp: 2026-09-23
 ---
@@ -82,6 +82,21 @@ a version**. The workspace's `packages:` says which version; materialization
     readable member whose workspace you cannot read still offers its souls
     with `from: here` capabilities; `from: <other member>` / `from: package`
     are unresolvable and workspace defaults do not apply.
+    *Clarified 2026-09-23 (review findings M6/M7):* a standalone view is a
+    **member** whose workspace cannot be read — the repo carries an
+    `oats-membership.yaml`; a repo with no backlink is not one and is
+    `E_WORKSPACE_SCHEMA` (not a workspace host), never a standalone view. The
+    fallback engages **only on access failures** of the host
+    (`E_REMOTE_UNREADABLE` with reason `auth` — permission denials classify
+    as `auth` — or `not-found`);
+    a `network` or `timeout` failure is surfaced as-is — an offline laptop
+    must never be silently downgraded to "public contributor". The view is
+    marked everywhere it is reported: `oats sync --json` `standalone: true`
+    with `workspace.name = standalone:<repo>`, `oats workspace status` and
+    the roster, and `instance.json.workspace.standalone: true` on every
+    instance spawned from it (`false` on a workspace spawn); the discovery
+    itself carries `standalone: true` and `standaloneReason` (the access
+    failure that triggered it).
 11. **No `@revision` on members.** A member is always its latest state; a
     team that wants frozen capabilities publishes them as a package.
 12. **One workspace per org; teams are labels.** `teams:` in the workspace
@@ -126,6 +141,96 @@ a version**. The workspace's `packages:` says which version; materialization
     instance `modules: <cap> from <member> @ <commit>` and, when the
     member's current state differs, `member moved since (now @ <commit>)` /
     `capability no longer present`. No revisions.
+
+# The framework's own workspace (human, 2026-09-23, at implementation start)
+
+18. **Every repository of the OATS workspace is converted to the new format**
+    (`oats-membership.yaml`, v2 souls, capability manifests); the kernel reads
+    nothing else. This is W9 and it is not optional.
+19. **A repo can be a member AND a package publisher; the two roles do not
+    collapse.** `oats-okf`, `oats-aweb`, `oats-jira`, `oats-linear`,
+    `oats-authoring`, `oats-dev` are members of the OATS workspace (their
+    souls are discoverable at latest state) **and** their `oats-package/` is
+    consumed as a **package** — `from: package`, versioned in `packages:`,
+    locked, executables approved per version. Membership never turns a
+    package into a latest-state member capability: what a repo exports under
+    `capabilities/` is member-tier; what it publishes under `oats-package/`
+    is package-tier, and the same repo may do both. The framework's own souls
+    therefore say `oats.okf: { from: package }` even though `oats-okf` is a
+    member.
+20. **Every package repo carries a member soul that is the expert in that
+    capability** — `okf-expert` in `oats-okf`, `aweb-expert` in `oats-aweb`,
+    `jira-expert`, `linear-expert`, `authoring-expert`, `dev-expert` — a v2
+    soul under `souls/`, team `global`, whose job is to know and evolve that
+    capability (its contract, its binding, its skills, its release). They are
+    ordinary members' souls: discoverable in the OATS workspace, spawnable by
+    anyone in it, and the natural owner of their package's PRs.
+21. **The official marketplace stays**: `package-catalog.json` in the `oats`
+    repo remains the reviewed list of official packages, the place a
+    `packages:` entry written as a bare version resolves through, and the
+    source of "discoverable is not installed" — under the new model it is
+    the only way a package becomes *pinnable by id*; a package outside the
+    catalog is written as `git:<repo>@<ref>`.
+
+22. **`oats.core` and `oats.setup` are rewritten, not patched, for this
+    architecture** (human, 2026-09-23). An agent with `oats.core` must be
+    able to work well inside an instance under the new model — its home
+    layout, the verbs it actually uses, what workspace/member/package/team
+    mean from its seat, drift. An agent with `oats.setup` must understand
+    the whole architecture and its best practices: the handshake and why,
+    every declaration file field by field, member-tier vs package-tier and
+    the non-collapse rule, packages/lock/approval, catalog vs `git:` refs,
+    `sync`, the `<name>-workspace/` convention, private/external/standalone
+    cases, the three provider-payload homes, and what is deliberately not
+    versioned. Skills are snapshot-tested against the shipped CLI so they
+    cannot drift from the commands.
+
+23. **Per-team provider payload is kernel semantics** (2026-09-23, from a
+    review of a mixed public/private deployment with two messaging teams).
+    `workspace.messaging` may carry `byTeam: { <label>: <payload> }`; the
+    kernel merges `base ⊕ byTeam[soul.team]` before the soul/machine/spawn
+    layers and strips `byTeam` so the provider never sees a key it must
+    interpret. A `byTeam` label absent from `teams:` is `E_WORKSPACE_SCHEMA`.
+    `team:` stays a label (decision 12); what a team means to a provider is
+    payload addressed by that label.
+    *Clarified 2026-09-23 (review finding, byTeam leakage):* `byTeam` is a
+    **reserved key** — legal only at the top level of `workspace.messaging`.
+    In any other payload layer (a soul's `messaging:` / `knowledge:` /
+    `tasks:`, `oats-local.yaml` `settings.<cap>`, `spawn --provider`), at
+    any depth, it is `E_WORKSPACE_SCHEMA { reason: "reserved-key" }`, so a
+    provider can never receive a `byTeam` it would have to interpret.
+24. **A store names a repository; the root inside it is the provider's.**
+    `stores: { <name>: <repo ref> }` never grows a `#path` — a repo ref names
+    one thing (a repo) everywhere in the model. Where the base lives inside
+    the repo is a provider binding key (`root` for OKF), given in the soul's
+    or the default's payload. Two bases in two repos stay apart because no
+    soul names the other store.
+25. **`oats.core` is the kernel's default in the standalone case too.** A
+    soul spawned from a repo whose workspace cannot be read gets its
+    `from: here` capabilities PLUS `oats.core` from the official catalog,
+    approved through the operator's lock like any package. The framework's
+    own package is not a workspace choice; without it the standalone spawn is
+    the hollow agent the framework already refuses. A soul may still say
+    `oats.core: off`.
+    *Clarified 2026-09-23 (review finding S4):* the kernel default is a
+    default, not an addition — **any** mention of `oats.core` in the soul's
+    `capabilities:` (any `from:`, or `off`) suppresses it; the soul's own
+    line is then what resolves (`from: package` through the lock, `from:
+    here` from the repo, `off` removes). Only a soul that says nothing about
+    `oats.core` receives `oats.core: { from: package }`.
+    *Clarified 2026-09-23 (M6/M7, see decision 10):* the standalone spawn is
+    marked `instance.json.workspace.standalone: true`; the package resolves
+    through the operator's lock exactly as in a workspace
+    (`E_PACKAGE_UNAPPROVED` until `oats sync` approves it), and the view
+    exists only for a repo that *is* a member whose host failed for access
+    reasons — not for a network failure and not for a repo without a
+    backlink.
+26. **Mixed public/private organisations host the workspace file in a
+    private repo that is not a public member.** The workspace file is
+    readable by everyone who may see the member LIST; a public member never
+    hosts it when any member is private; the private member hosting it hides
+    the workspace from public contributors, who then get the standalone case
+    (hence 25). The onboarding skill states this rule.
 
 # What is removed
 

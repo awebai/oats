@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { bytesIntegrity } from "../lib/portable-digest.mjs";
 import { buildFreshPreparationRequest, inspectPortableOnboarding, preflightFreshDeployment } from "../lib/portable-onboarding.mjs";
-import { compareFreshSourceAcceptance, prepareFreshOnboarding } from "../lib/portable-onboarding-acceptance.mjs";
 import { oatsError } from "../lib/errors.mjs";
 
 const W = "git:https://example.invalid/workspace.git", S = "git:https://example.invalid/source.git", C = "git:https://example.invalid/catalog.git";
@@ -89,87 +88,6 @@ test("explicit onboarding inspection separates source, deployment, work target, 
   assert.equal(Object.hasOwn(prepared.preparation, "directory"), false);
   assert.equal(prepared.workTarget.path, workTarget); assert.equal(existsSync(deployment), false);
   assert.throws(() => buildFreshPreparationRequest(result, { directory: join(root, "private-scratch") }), { code: "invalid-declaration" });
-});
-
-test("acceptance driver compares one unchanged source and rechecks fresh state before explicit preparation", (t) => {
-  const raw = mkdtempSync(join(tmpdir(), "oats-fresh-acceptance-")), root = realpathSync(raw);
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const organizationDeployment = join(root, "organization-deployment"), standaloneDeployment = join(root, "standalone-deployment");
-  const organizationWork = join(root, "organization-work"), standaloneWork = join(root, "standalone-work");
-  for (const path of [organizationDeployment, standaloneDeployment, organizationWork, standaloneWork]) mkdirSync(path);
-  mkdirSync(join(organizationWork, ".git"));
-  const f = repositoryFixture(), workspace = { source: W, revision: "main", origin }, member = { source: S, origin };
-  const organization = inspectPortableOnboarding({ deployment: organizationDeployment, workTarget: organizationWork,
-    source: "expert", origin, workspace, member }, { repositories: f.repositories });
-  const source = { source: S, soul: "agents/expert", revision: "main", alias: "standalone" };
-  const standalone = inspectPortableOnboarding({ deployment: standaloneDeployment, workTarget: standaloneWork,
-    source, origin, standaloneContextKey: "operator-context-1" }, { repositories: f.repositories });
-  const comparison = compareFreshSourceAcceptance({ organization, standalone });
-  assert.equal(comparison.status, "ready"); assert.equal(comparison.source.identity.repository.id, "source");
-  assert.equal(comparison.source.commit, "b".repeat(40)); assert.equal(comparison.organization.context.kind, "workspace");
-  assert.equal(comparison.standalone.context.key, "operator-context-1"); assert.equal(comparison.standalone.workTarget.git.present, false);
-
-  const operator = { policy: {}, document: { kind: "operator", id: "acceptance-bindings" }, bindings: { writeDestination: "private-store" } };
-  const pending = prepareFreshOnboarding(standalone, { operator });
-  assert.equal(pending.status, "pending"); assert.equal(pending.code, "onboarding-integration-required");
-  assert.equal(pending.mutationAttempted, false); assert.equal(pending.resolution, null);
-  assert.deepEqual(pending.requestedBindings, operator.bindings);
-  let calls = 0;
-  const prepared = prepareFreshOnboarding(standalone, { operator }, { prepareCapturedComposition(request) {
-    calls++; assert.equal(Object.hasOwn(request, "directory"), false); assert.equal(request.standaloneContextKey, "operator-context-1");
-    return { status: "approval-required", resolution: null, selections: [{ request: { source: "catalog:example" },
-      artifactSet: `sha256-${"a".repeat(64)}`, approvalRequired: ["example.action"] }], problems: [] };
-  } });
-  assert.equal(prepared.status, "approval-required"); assert.equal(prepared.mutationAttempted, true); assert.equal(prepared.resolution, null);
-  assert.deepEqual(prepared.approvalRequests, [{ capability: "example.action", artifactSet: `sha256-${"a".repeat(64)}`, request: { source: "catalog:example" } }]);
-  assert.deepEqual(prepared.requestedBindings, operator.bindings); assert.equal(calls, 1);
-
-  write(join(standaloneDeployment, "oats-lock.json"), { lockfileVersion: 1, capabilities: {} });
-  assert.throws(() => prepareFreshOnboarding(standalone, { operator }, { prepareCapturedComposition() { calls++; } }), { code: "fresh-deployment-required" });
-  assert.equal(calls, 1, "stale ready inspection refuses before the mutating adapter");
-});
-
-test("fresh mutation recheck rejects replaced roots while allowing ordinary project edits", t => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-onboarding-root-custody-")));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const f = repositoryFixture();
-  for (const changed of ["deployment", "workTarget"]) {
-    const deployment = join(root, `${changed}-deployment`), workTarget = join(root, `${changed}-work`);
-    mkdirSync(deployment); mkdirSync(workTarget);
-    const input = { deployment, workTarget, origin, standaloneContextKey: null,
-      source: { source: S, soul: "agents/expert", revision: "main", alias: "standalone" } };
-    const inspection = inspectPortableOnboarding(input, { repositories: f.repositories });
-    const selected = input[changed], preserved = `${selected}-preserved`;
-    write(join(selected, "project.txt"), "ordinary edit remains outside the software pin\n");
-    assert.equal(prepareFreshOnboarding(inspection).code, "onboarding-integration-required", "ordinary content edits do not invalidate directory identity");
-    renameSync(selected, preserved); mkdirSync(selected);
-    let calls = 0;
-    assert.throws(() => prepareFreshOnboarding(inspection, {}, { prepareCapturedComposition() { calls++; } }), { code: "selection-changed" });
-    assert.equal(calls, 0, "replacement refuses before mutation even when the new deployment is otherwise fresh");
-    assert.equal(readFileSync(join(preserved, "project.txt"), "utf8"), "ordinary edit remains outside the software pin\n");
-    assert.equal(existsSync(join(deployment, ".agents")), false);
-    const renewed = inspectPortableOnboarding(input, { repositories: f.repositories });
-    assert.equal(prepareFreshOnboarding(renewed).code, "onboarding-integration-required", "an explicit new inspection can select the new roots");
-  }
-});
-
-test("absent deployment and parent witnesses require reinspection after provisioning or replacement", t => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "oats-onboarding-provision-custody-")));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const parent = join(root, "parent"), workTarget = join(root, "project"); mkdirSync(parent); mkdirSync(workTarget);
-  const input = { deployment: join(parent, "fresh"), workTarget, origin, standaloneContextKey: null,
-    source: { source: S, soul: "agents/expert", revision: "main", alias: "standalone" } };
-  const f = repositoryFixture(), inspect = () => inspectPortableOnboarding(input, { repositories: f.repositories });
-  const initial = inspect();
-  assert.equal(prepareFreshOnboarding(initial).code, "fresh-deployment-provisioning-required");
-  renameSync(parent, `${parent}-preserved`); mkdirSync(parent);
-  assert.throws(() => prepareFreshOnboarding(initial), { code: "selection-changed" });
-  const beforeProvisioning = inspect(); mkdirSync(input.deployment);
-  let calls = 0;
-  assert.throws(() => prepareFreshOnboarding(beforeProvisioning, {}, { prepareCapturedComposition() { calls++; } }), { code: "selection-changed" });
-  assert.equal(calls, 0);
-  assert.equal(prepareFreshOnboarding(inspect()).code, "onboarding-integration-required");
-  assert.equal(existsSync(join(input.deployment, ".agents")), false);
 });
 
 test("supplied false-like workspace values cannot bypass explicit standalone context", t => {

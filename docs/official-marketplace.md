@@ -10,14 +10,17 @@ or workspace membership alone does not make a package official.
 - Browse the catalog for the kernel/source version you use. Each package entry
   identifies its repository, release ref and payload root; capability aliases
   can point to the package that supplies them.
-- Today, `oats install <capability-or-package-id>` resolves official short names
-  through the CLI's catalog. For example, `oats install oats.okf --dir /absolute/scope`
-  selects the listed package; it does not enroll a team or adopt
-  the publisher's workspace. See [package operations](packages.md).
+- A workspace pins an official package by **bare version** in its
+  `packages:` map (`oats.okf: v2.1.3`); `oats sync` resolves it through the
+  catalog to an exact commit, locks it and asks for executable approval once
+  per version. A package outside the catalog is written `git:<repo>@<ref>`.
+  Pinning does not enroll a team or adopt the publisher's workspace. See
+  [packages](packages.md).
 - The Desktop marketplace view/search is **planned for the parity phase**, not
   shipped by this policy or by OATS 0.24. There is no new marketplace CLI verb.
-- **Discoverable ≠ installed ≠ approved.** Acquisition and exact locking are
-  separate from capability selection and per-capability executable approval.
+- **Discoverable ≠ pinned ≠ approved.** A catalog listing grants nothing; a
+  `packages:` pin selects a version; the lock's per-version approval is what
+  lets its executables run. Nothing is installed.
   Official status never grants trust, credentials or permission to run code.
 - Listing also does not prove that every harness, provider combination or
   deployment profile is supported. Check the package's declared compatibility,

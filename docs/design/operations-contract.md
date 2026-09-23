@@ -88,6 +88,7 @@ name the provider answered is kept for `oats schedule reconcile`.
 
 ## Mutations
 
+*(0.24 only — `oats use` was removed by the workspace model v2; activation is the soul's `capabilities:` + workspace defaults. Kept for history.)*
 `oats use ... --json` answers `{ capability, action: enable|disable|
 layer-none|inherit, target, layer, level, file, settings, before, after
 {..., effective}, remaining?, note?, missingRequires }`. `--inherit`

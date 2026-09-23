@@ -34,8 +34,8 @@ Classic `kind`/`type`/`repo` declarations and config-targeted agent types are a 
 
 ## Workspace, repository and adoption contracts
 
-- `oats-workspace.yaml` declares intended members, defaults, imports and optional provider-owned stores/team/catalog references.
-- `oats.yaml` advertises a repository's actual soul/package/knowledge exports and, for membership, a workspace backlink.
+- `oats-workspace.yaml` (v2) declares members, the pinned `packages:`, team labels, defaults per slot and per team, stores, the messaging payload and pinned `external:` souls.
+- `oats-membership.yaml` is a repository's half of the handshake: the workspace backlink plus an optional default team label. Everything under `souls/` and `capabilities/` is discoverable by convention (`private: true` opts out); there are no export lists.
 - Membership requires compatible observations on both sides; folder adjacency or a copied declaration is not admission.
 - External source import does not adopt the publisher's workspace. A framework repository may host its own development workspace without imposing it on consumers.
 - Operator choices and workspace defaults must respect source requirements. Git read access is not write permission, executable approval or messaging enrollment.
@@ -96,7 +96,7 @@ The work target is independent of source publication and knowledge placement. Pr
 
 ## Kernel briefings versus operational capabilities
 
-The kernel owns only what describes the layout it creates: the `instance-boundary` briefing (home versus `work/`), the selected work-mode briefing and config-declared injections. Knowing how to *operate* OATS (status, spawn, retire, soul discovery) and how to *configure* it (workspaces, packages, trust) is capability content — accepted as the official capabilities `oats.core` (explicit default on every soul, removable) and `oats.setup` (held by the onboarding-created `oats-setup-expert`). At the0.24 baseline those skills are still kernel-shipped; see the [workspace guide](workspaces.md#how-a-soul-knows-oats-accepted-direction-not-yet-shipped) and the adoption plan's distribution packages.
+The kernel owns only what describes the layout it creates: the `instance-boundary` briefing (home versus `work/`), the selected work-mode briefing and config-declared injections. Knowing how to *operate* OATS (status, spawn, retire, soul discovery) and how to *configure* it (workspaces, packages, approval) is capability content — the official capabilities `oats.core` (a workspace default via `defaults.capabilities`, removable per soul with `off`) and `oats.setup` (held by an onboarding expert), both provided by the `oats.framework` package; see [souls and instances](souls-and-instances.md#oats-operational-knowledge-is-a-capability).
 
 ## Capture and knowledge are separate
 

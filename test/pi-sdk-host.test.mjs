@@ -48,7 +48,9 @@ test("captured host renderer preserves explicit prefix while legacy renderer sta
   assert.notEqual(capturedPiSessionDirectory(f.home), nativeHistoryPath(f.home));
   assert.ok(!capturedPiSessionDirectory(f.home).startsWith(nativeHistoryPath(f.home) + "/"));
   const legacy = renderLaunchRecipe({ ...f.recipe, executable: "/bin/pi", args: [] }, { home: f.home, instance: "unit" });
-  assert.ok(legacy.includes("--no-context-files"));
+  // decision 13: the native (legacy) renderer starts pi normally — no ambient-discovery flags.
+  assert.ok(!legacy.includes("--no-context-files"));
+  assert.ok(legacy.includes("--append-system-prompt"));
   assert.ok(!legacy.includes("--oats-pi-host"));
 });
 

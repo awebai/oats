@@ -1,6 +1,6 @@
 # Package-runtime API contract (addendum to the package-engine contract)
 
-Status: **FROZEN** for the capability-materialization delivery, as an addendum to
+Status: **SUPERSEDED** with its parent (workspace model v2 — see [2026-09-23-workspace-module-contracts.md](2026-09-23-workspace-module-contracts.md)); kept as history. Original status: **FROZEN** for the capability-materialization delivery, as an addendum to
 [`package-engine-contract.md`](./package-engine-contract.md). It answers the
 maintainer's four clarifications on the M1 freeze (maintainer review of
 1db919b): the public package-runtime boundary, the npm runtime closure,

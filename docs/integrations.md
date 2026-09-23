@@ -29,54 +29,50 @@ offers comments.
 
 ## Selecting an integration
 
-Configuration activates the package for the intended target; the manifest
-already declares the slot, so `oats use` writes the entry under
-`capabilities.layers.<slot>`:
+The workspace supplies a default per slot; a soul may name another, or `none`.
+The manifest already declares the slot, so a soul's `capabilities:` entry does
+not repeat it — a capability with `layer: knowledge` fills the knowledge slot
+wherever it arrives from:
 
 ```yaml
-agent-types:
-  product-agents:
-    description: Planner, developer, and reviewer souls (they declare `type: product-agents`)
+# oats-workspace.yaml — one default per slot, for every soul
+defaults:
+  knowledge: { oats.okf: { from: package } }
+  messaging: { oats.aweb: { from: package } }
+  tasks: { oats.linear: { from: package } }
 
+# souls/planner/soul.yaml — keep the defaults, supply the soul's payloads
+knowledge:
+  owns: planner
+  reads: [developer]
+messaging:
+  channels: [product]
+tasks:
+  team: ENG
+  project: Agent Platform
+
+# souls/support-triager/soul.yaml — opt out of one slot, replace another
+knowledge: none                            # empties the slot
 capabilities:
-  layers:
-    knowledge:
-      capability: oats.okf
-      from: installed
-      settings:
-        bindings-file: /absolute/config/okf-bindings.json
-    messaging:
-      capability: oats.aweb
-      from: installed
-      agent-types:
-        product-agents:
-          enabled: true
-          settings:
-            team: example-team
-    tasks:
-      capability: oats.linear
-      from: installed
-      agent-types:
-        product-agents:
-          enabled: true
-          settings:
-            team: ENG
-            project: Agent Platform
+  oats.jira: { from: package }             # its manifest says layer: tasks → replaces the default
 ```
 
-CLI equivalents:
+Packages are pinned once in the workspace's `packages:`
+(`oats.okf: v2.1.3`, …) and synced ([packages.md](packages.md)). Host-owned
+values (absolute paths) go in `oats-local.yaml`:
 
-```bash
-oats use oats.okf --global --settings bindings-file=/absolute/config/okf-bindings.json
-oats use oats.aweb --type product-agents
-oats use oats.linear --type product-agents
-oats use none --layer tasks        # leave an inherited slot deliberately unfilled
+```yaml
+settings:
+  oats.okf:
+    bindings-file: /absolute/config/okf-bindings.json
+  oats.aweb:
+    delivery: channel
 ```
 
-Every matching soul gets one implementation per slot. A non-matching soul can
-resolve a different one or leave a slot unfilled. `none` is a layer
-selection, not a policy: a soul with `messaging: none` has no address, which
-is different from a soul whose type restricts its reach.
+Every soul gets one implementation per slot. Two layered capabilities arriving
+for one slot (a default plus a soul entry, or two soul entries) is
+`E_SLOT_CONFLICT`; spell `<cap>: off` to remove the one you do not want. `none`
+is a slot selection, not a policy: a soul with `messaging: none` has no address.
 
 ## Bundled integrations
 
@@ -156,8 +152,12 @@ exist and match its owner. Acquisition/activation never bootstraps a knowledge
 base. If activating globally, provision each working soul first or target only
 ready sources.
 
-```bash
-oats use oats.okf --soul domain-expert --settings bindings-file=/absolute/config/okf-bindings.json harvest-runtime=claude
+```yaml
+# oats-local.yaml
+settings:
+  oats.okf:
+    bindings-file: /absolute/config/okf-bindings.json
+    harvest-runtime: claude
 ```
 
 - `harvest-runtime: pi | claude | codex` defaults to `pi`, independently of the
@@ -197,8 +197,9 @@ that CLI cannot revoke the certificate.
 
 ## oats.aweb settings (1.10.0)
 
-Set with `oats use oats.aweb --settings <key>=<value>` at a scope, or per
-soul through the binding's `settings:` map.
+Set in `oats-local.yaml` under `settings.oats.aweb.<key>` (host-owned), in the
+soul's `messaging:` payload (true of every instance), or per spawn with
+`oats spawn … --provider oats.aweb <key>=<value>`.
 
 - `delivery: channel | session` (default `channel`). `session` hands
   notification delivery to the host wake broker: `AWEB_DELIVERY=session` in

@@ -23,10 +23,9 @@ The CLI diagnoses stale references instead of failing opaquely:
 
 - `oats doctor` warns when an `oats-lock.json` still pins `oats.web`, with the
   fix spelled out.
-- Bare `oats install` reports the lock entry as `RETIRED` (with guidance)
-  rather than a restore failure.
-- `oats install oats.web` and a config activation of `oats.web` fail with a
-  message naming the successor and the exact cleanup steps.
+- A soul or workspace default naming `oats.web` fails at resolution with a
+  message naming the successor and the exact cleanup steps (remove it from
+  `packages:` / the soul's `capabilities:`).
 
 ## Migrating `oats pane` usage
 

@@ -1,6 +1,11 @@
 #!/usr/bin/env node
+// Clean-room tarball smoke for the WORKSPACE MODEL (lock v3, oats-local.yaml,
+// oats-workspace.yaml, materialized per-instance modules). It packs the kernel
+// and the pi adapter, installs both into an isolated app from the tarballs, and
+// drives the packed CLI end to end against the REAL official OKF package and the
+// packed kernel's own oats.framework payload — never against the checkout.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync,
@@ -10,12 +15,13 @@ import { createRequire } from "node:module";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 // Test-driver helpers only. Runtime imports resolve against installed bytes.
-// The optional Git payload is copied once into an isolated fixture repository;
-// all post-acquisition curriculum reads use installed bytes after its deletion.
+// The optional Git payloads are copied once into isolated fixture repositories;
+// all post-sync reads use installed/materialized bytes after their deletion.
 import { CAPABILITY_PATH, EXPERT_PATH, SKILL_PATH, checkKnowledgeTheoryPackage, checkReferenceClosure, treeFiles } from "./check-knowledge-theory-package.mjs";
 import { checkJavaScript, checkKernelPackFiles, checkNpmOkfPayload } from "./check-package-dry-runs.mjs";
 import { checkOkfMirror, checkOkfPayload, materializeOkfGitPayload, payloadEntries } from "./check-okf-mirror.mjs";
 
+const started = Date.now();
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const room = realpathSync(mkdtempSync(join(tmpdir(), "oats-packed-smoke-")));
 const keep = process.env.OATS_KEEP_SMOKE === "1";
@@ -23,6 +29,7 @@ const run = (command, args, options = {}) => execFileSync(command, args, {
   encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000, stdio: options.capture ? ["ignore", "pipe", "pipe"] : "ignore", ...options,
 });
 const write = (path, content) => { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); };
+const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 
 function pack(cwd, destination) {
   const output = run("npm", ["pack", "--json", "--pack-destination", destination], { cwd, capture: true });
@@ -31,15 +38,19 @@ function pack(cwd, destination) {
   if (cwd === repo) checkKernelPackFiles(parsed[0]);
   return join(destination, parsed[0].filename);
 }
-function gitRepo(path) {
+function gitRepo(path, message = "smoke fixture") {
   mkdirSync(path, { recursive: true });
-  run("git", ["init", "-q", path]);
+  if (!existsSync(join(path, ".git"))) run("git", ["init", "-q", path]);
   run("git", ["-C", path, "config", "user.name", "OATS Smoke"]);
   run("git", ["-C", path, "config", "user.email", "smoke@example.invalid"]);
-  write(join(path, ".gitignore"), "\n");
-  run("git", ["-C", path, "add", "."]);
-  run("git", ["-C", path, "commit", "-qm", "smoke fixture"]);
+  run("git", ["-C", path, "add", "-A"]);
+  run("git", ["-C", path, "commit", "-qm", message]);
+  return run("git", ["-C", path, "rev-parse", "HEAD"], { capture: true }).trim();
 }
+const fingerprint = (root) => treeFiles(root).map((file) => {
+  const path = join(root, file);
+  return `${file}:${lstatSync(path).isSymbolicLink() ? `link:${readlinkSync(path)}` : createHash("sha256").update(readFileSync(path)).digest("hex")}`;
+});
 
 try {
   const app = join(room, "app");
@@ -66,6 +77,7 @@ try {
   // No inherited instance identity, provider credentials, custom native roots,
   // scheduler config, npm/node hooks or real user Git configuration. Set this
   // BEFORE any npm/git command and before importing the installed kernel.
+  // The remote cache lives under $HOME/.cache (kernel default) — inside the room.
   const env = Object.fromEntries(["PATH", "SystemRoot", "ComSpec", "PATHEXT", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL"]
     .filter((key) => process.env[key] !== undefined).map((key) => [key, process.env[key]]));
   Object.assign(env, {
@@ -73,6 +85,7 @@ try {
     OATS_HOME_DIR: join(home, ".oats"),
     OATS_PKG_ROOT: kernelRoot,
     OATS_PACKAGE_CATALOG: catalog,
+    OATS_TMUX_SESSION: `none-${process.pid}`,
     OATS_SMOKE_UNEXPECTED_EXEC: unexpectedExec,
     CLAUDE_CONFIG_DIR: join(home, ".claude"), PI_CODING_AGENT_DIR: join(home, ".pi/agent"), CODEX_HOME: join(home, ".codex"),
     XDG_CONFIG_HOME: join(home, ".config"), XDG_DATA_HOME: join(home, ".local/share"),
@@ -115,123 +128,255 @@ try {
   checkOkfPayload(join(payload, "capabilities/oats-okf"), inventory);
   assert.equal(readFileSync(join(payload, "oats-package.json"), "utf8"), inventory.distributionManifestText);
   assert.equal(readFileSync(join(payload, "LICENSE"), "utf8"), inventory.distributionLicenseText);
-  const packedCatalog = JSON.parse(readFileSync(join(kernelRoot, "package-catalog.json"), "utf8"));
+  const packedCatalog = readJson(join(kernelRoot, "package-catalog.json"));
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
-  const bundledVersion = JSON.parse(readFileSync(join(kernelRoot, "capabilities/oats-okf/oats.json"), "utf8")).version;
+  const bundledVersion = readJson(join(kernelRoot, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
   assert.equal(bundledVersion, "2.1.3");
-  gitRepo(officialRepo);
-  const okfCommit = run("git", ["-C", officialRepo, "rev-parse", "HEAD"], { capture: true }).trim();
+  const okfCommit = gitRepo(officialRepo, "okf");
+  const okfTag = `v${bundledVersion}`;
+  run("git", ["-C", officialRepo, "tag", okfTag]);
   const okfAlias = "agents/memory-harvest/CLAUDE.md";
   const trackedAlias = `oats-package/capabilities/oats-okf/${okfAlias}`;
   assert.match(run("git", ["-C", officialRepo, "ls-tree", okfCommit, "--", trackedAlias], { capture: true }), /^120000 blob /);
   assert.equal(run("git", ["-C", officialRepo, "show", `${okfCommit}:${trackedAlias}`], { capture: true }), "AGENTS.md");
-  write(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(officialRepo).href, ref: okfCommit, path: "oats-package" } }, capabilities: {} }, null, 2));
+
+  // Optional theory uses a DIFFERENT release channel: the exact self-contained
+  // Git payload (oats.framework), not an npm copy with its source CLAUDE.md
+  // symlink missing. Copy the whole candidate payload verbatim into an isolated
+  // Git fixture tagged with its manifest version; the catalog resolves it.
+  checkKnowledgeTheoryPackage({ repoRoot: repo });
+  const theoryRepo = join(room, "official", "oats-framework");
+  const theorySource = join(theoryRepo, "oats-package");
+  cpSync(join(repo, "oats-package"), theorySource, { recursive: true, verbatimSymlinks: true });
+  checkKnowledgeTheoryPackage({ packageRoot: theorySource, parity: false });
+  const distribution = readJson(join(theorySource, "oats-package.json"));
+  assert.equal(distribution.package, "oats.framework");
+  const theoryTag = `v${distribution.version}`;
+  const theoryCommit = gitRepo(theoryRepo, "framework");
+  run("git", ["-C", theoryRepo, "tag", theoryTag]);
+  const theoryAliasPath = `oats-package/${CAPABILITY_PATH}/${EXPERT_PATH}/CLAUDE.md`;
+  assert.match(run("git", ["-C", theoryRepo, "ls-tree", theoryCommit, "--", theoryAliasPath], { capture: true }), /^120000 blob /, "Git payload must track the source alias as a symlink");
+  assert.equal(run("git", ["-C", theoryRepo, "show", `${theoryCommit}:${theoryAliasPath}`], { capture: true }), "AGENTS.md");
+  const theoryCap = join(theorySource, CAPABILITY_PATH);
+  const theorySkill = join(theoryCap, SKILL_PATH);
+  const expectedClosure = checkReferenceClosure(theorySkill);
+  const canonicalRefs = ["knowledge-capability-authoring.md", ...treeFiles(join(kernelRoot, "docs/knowledge-reference")).map((f) => `knowledge-reference/${f}`)];
+  assert.deepEqual(treeFiles(join(theorySkill, "references")), canonicalRefs.sort());
+  for (const file of canonicalRefs) assert.ok(readFileSync(join(kernelRoot, "docs", file)).equals(readFileSync(join(theorySkill, "references", file))), `packed reference drift: ${file}`);
+  const skillFingerprint = fingerprint(theorySkill);
+  const capFingerprint = fingerprint(theoryCap);
+  const expertInstructions = readFileSync(join(theoryCap, EXPERT_PATH, "AGENTS.md"), "utf8");
+  assert.equal(readlinkSync(join(theoryCap, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
+
+  // The offline official catalog: both packages by tag, from file:// fixtures.
+  write(catalog, JSON.stringify({ packages: {
+    "oats.okf": { url: pathToFileURL(officialRepo).href, ref: okfTag, path: "oats-package" },
+    "oats.framework": { url: pathToFileURL(theoryRepo).href, ref: theoryTag, path: "oats-package" },
+  } }, null, 2));
 
   const adapterLoader = await import(pathToFileURL(join(adapterRoot, "extension", "core-loader.mjs")).href);
   if (adapterLoader.OATS_PKG_ROOT !== kernelRoot) throw new Error("packed pi adapter did not resolve packed kernel");
-  const kernelPackage = JSON.parse(readFileSync(join(kernelRoot, "package.json"), "utf8"));
+  const kernelPackage = readJson(join(kernelRoot, "package.json"));
   if (adapterLoader.kernelVersion() !== kernelPackage.version) throw new Error("packed adapter/kernel version mismatch");
   // Resolve the installed public export, not a private kernel filesystem path.
   const installedRequire = createRequire(join(app, "package.json"));
   assert.equal(installedRequire.resolve("@awebai/oats/package.json"), join(kernelRoot, "package.json"));
   const core = await import(pathToFileURL(installedRequire.resolve("@awebai/oats")).href);
+  const theoryManifest = core.loadPackageManifestAt(theorySource);
+  assert.equal(theoryManifest.package, distribution.package);
+  assert.deepEqual(theoryManifest._capabilities.map((c) => c.id), ["oats.knowledge-theory", "oats.core", "oats.setup"]);
+  core.assertCapabilitySelfContained(theoryCap, readJson(join(theoryCap, "oats.json")));
 
-  const workspace = join(room, "workspace"); const agentsRoot = join(workspace, "agents");
-  const modernRepo = join(workspace, "modern"); gitRepo(modernRepo); mkdirSync(agentsRoot, { recursive: true });
-  run(oats, ["init", "--raw", "--knowledge", "oats.okf", "--no-tmux-mouse", "--dir", modernRepo], { env });
-  const initConfig = readFileSync(join(modernRepo, "oats-config.yaml"), "utf8");
-  if (!/oats\.okf/.test(initConfig)) throw new Error("packed oats init did not activate declared knowledge package");
+  // ---- The workspace: one host repo that is also its single member, holding
+  // the souls. The deployment is a separate directory with only oats-local.yaml.
+  const hostRepo = join(room, "workspace-host");
+  const hostRef = pathToFileURL(hostRepo).href; // bare absolute paths are refused in oats-workspace.yaml
+  const soulsDir = join(hostRepo, "souls");
+  write(join(hostRepo, "oats-workspace.yaml"), [
+    "schemaVersion: 2", "name: smoke",
+    "members:", `  - ${hostRef}`,
+    "packages:", `  oats.okf: ${okfTag}`, `  oats.framework: ${theoryTag}`,
+    "teams:", "  global: { description: all }",
+    "defaults:", "  knowledge:", "    oats.okf: { from: package }",
+    "",
+  ].join("\n"));
+  write(join(hostRepo, "oats-membership.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\n`);
+  const canonical = "# Packed probe\n\nCanonical instructions.\n";
+  write(join(soulsDir, "probe/soul.yaml"), "schemaVersion: 2\nname: probe\ndescription: Packed OKF probe\nwork: directory\n");
+  write(join(soulsDir, "probe/AGENTS.md"), canonical);
+  write(join(soulsDir, "probe/okf.json"), JSON.stringify({ version: 1, owner: "smoke-owner", owns: ["project/expert"], reads: [] }));
+  write(join(soulsDir, "probe/skills/private/SKILL.md"), "---\nname: private\ndescription: Packed private smoke skill.\n---\n# Private\n");
+  // A soul that opts out of the knowledge default and pulls the optional theory
+  // from the oats.framework package (a package without executables).
+  write(join(soulsDir, "author/soul.yaml"), "schemaVersion: 2\nname: author\ndescription: Knowledge theory author\nwork: directory\nknowledge: none\ncapabilities:\n  oats.knowledge-theory: { from: package }\n");
+  write(join(soulsDir, "author/AGENTS.md"), "# Author\n\nAuthor canonical instructions.\n");
+  const hostCommit = gitRepo(hostRepo, "workspace host");
 
-  // What a fresh deployment must look like, checked from the PACKED kernel:
-  // a capability-materialization lock, a flat artifact, no package store, no
-  // v1 residue, and nothing trusted at acquisition.
-  const initLock = JSON.parse(readFileSync(join(modernRepo, "oats-lock.json"), "utf8"));
-  if (initLock.lockfileVersion !== 2) throw new Error(`fresh init wrote lockfileVersion ${initLock.lockfileVersion}`);
-  if (!initLock.packages || !initLock.capabilities) throw new Error("fresh lock is missing a required top-level map");
-  if (initLock.capabilities["oats.okf"]?.package !== "oats.okf") throw new Error("capability row lost its provider back-reference");
-  if (initLock.capabilities["oats.okf"].trusted !== false) throw new Error("acquisition granted executable trust");
-  for (const retired of ["capabilities", "trustedCapabilities", "depsIntegrity"]) {
-    if (Object.hasOwn(initLock.packages["oats.okf"], retired)) throw new Error(`package row carries retired key "${retired}"`);
-  }
-  if (!existsSync(join(modernRepo, ".agents", "capabilities", "installed", "oats.okf", "oats.json"))) throw new Error("capability was not materialized flat");
-  if (existsSync(join(modernRepo, ".agents", "packages"))) throw new Error("a package store was materialized");
-  if (!/installed/.test(readFileSync(join(modernRepo, ".agents", "capabilities", ".gitignore"), "utf8"))) throw new Error("materialized artifacts were not ignored");
-  // And the packed doctor must not greet a deployment created seconds ago with
-  // a migration: that regression shipped through 0.19.4.
-  const freshDoctor = JSON.parse(run(oats, ["doctor", modernRepo, "--json"], { env, capture: true }));
-  if (freshDoctor.lockError) throw new Error(`fresh scope has a lock the kernel refuses: ${freshDoctor.lockError.message}`);
-  if (freshDoctor.legacyLockFiles.length || freshDoctor.officialMigration) throw new Error("packed doctor asked a fresh deployment to migrate");
-
-  const installedOkf = core.installedCapabilityDir(modernRepo, "oats.okf");
-  assert.equal(JSON.parse(readFileSync(join(installedOkf, "oats.json"), "utf8")).hooks.spawn.required, true);
-  // Installed acquisition adds only its provenance file; the source gate owns
-  // all source bytes, including the relative compatibility alias.
-  const checkInstalledOkf = () => {
-    const entries = payloadEntries(installedOkf);
-    const provenance = entries.filter((entry) => entry.path === ".oats-installation.json");
-    assert.equal(provenance.length, 1);
-    assert.equal(provenance[0].type, "file");
-    assert.equal(JSON.parse(readFileSync(join(installedOkf, ".oats-installation.json"), "utf8")).commit, okfCommit);
-    assert.deepEqual(entries.filter((entry) => entry.path !== ".oats-installation.json"), inventory.entries,
-      "installed Git source must match the entire inventory; only kernel-authored provenance is additional");
-  };
-  checkInstalledOkf();
-  assert.equal(initLock.packages["oats.okf"].commit, okfCommit);
-  assert.equal(initLock.packages["oats.okf"].path, "oats-package");
-  assert.equal(initLock.packages["oats.okf"].source, "catalog:oats.okf");
-  assert.ok(lstatSync(join(installedOkf, okfAlias)).isSymbolicLink());
-  assert.equal(readlinkSync(join(installedOkf, okfAlias)), "AGENTS.md");
-  rmSync(officialRepo, { recursive: true });
-  assert.ok(!existsSync(officialRepo), "all OKF runtime work must survive source fixture removal");
-  run(oats, ["trust", "oats.okf", "--dir", modernRepo], { env });
-  assert.equal(core.capabilityTrust(modernRepo, "oats.okf").trusted, true);
-
+  const deployment = join(room, "deployment"); const agentsRoot = join(deployment, "agents"); mkdirSync(agentsRoot, { recursive: true });
   const bindings = join(room, "okf-bindings.json");
-  const accepted = join(room, "accepted");
+  const accepted = join(room, "accepted"); // created by `okf init`, never pre-seeded
+  // Explicit bindings and stable owner: state-dir/bases live in the bindings
+  // document; the manifest's `bindings-file` setting is the only host value.
   write(bindings, JSON.stringify({ version: 1, stateDir: join(room, "okf-state"), bases: {
     project: { id: "smoke-base", kind: "directory", path: accepted },
   } }));
-  // Explicit bindings and stable owner, not legacy implicit soul/knowledge.
-  // Target the source soul so the independent service worker gets no source
-  // memory policy. Setup never installs a host backend or starts a runtime.
-  run(oats, ["use", "oats.okf", "--soul", "probe", "--settings", `bindings-file=${bindings}`, "--dir", modernRepo], { env });
-  core.createAgent(agentsRoot, { name: "probe", repo: modernRepo, work: "checkout", runtime: "pi", instructions: "# Packed probe\n\nCanonical instructions.\n" });
-  const agent = core.findAgent(agentsRoot, "probe");
-  write(join(agent._dir, "soul", "okf.json"), JSON.stringify({ version: 1, owner: "smoke-owner", owns: ["project/expert"], reads: [] }));
-  assert.ok(!existsSync(join(agent._dir, "soul", "knowledge")), "soul-scaffold must not create legacy knowledge");
-  write(join(agent._dir, "soul", "skills", "private", "SKILL.md"), "---\nname: private\ndescription: Packed private smoke skill.\n---\n# Private\n");
-  const canonical = readFileSync(join(agent._dir, "soul", "AGENTS.md"), "utf8");
-  const nodes = join(room, "okf-nodes.json");
-  write(nodes, JSON.stringify({ expert: { path: "expert", owner: "smoke-owner" } }));
+  write(join(deployment, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`);
+
   const cliEnv = { ...env, PI_AGENTS_ROOT: agentsRoot };
-  const boundary = (args, cwd = modernRepo) => {
+  const cli = (args, { cwd = deployment, identity = false, env: extra = {}, expectExit = 0 } = {}) => {
     // Scaffold-only probes have no harness to supply the normal launch identity.
-    const identity = cwd === modernRepo ? {} : {
-      OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd,
-      PI_AGENT_INSTANCE: basename(cwd), PI_AGENT_HOME: cwd,
-    };
-    const text = run(oats, args, { cwd, env: { ...cliEnv, ...identity }, capture: true });
+    const id = identity ? { OATS_INSTANCE: basename(cwd), OATS_INSTANCE_HOME: cwd, PI_AGENT_INSTANCE: basename(cwd), PI_AGENT_HOME: cwd } : {};
+    const r = spawnSync(oats, args, { cwd, env: { ...cliEnv, ...id, ...extra }, encoding: "utf8", maxBuffer: 16 * 1024 * 1024, timeout: 120_000 });
+    if (r.error) throw r.error;
+    assert.equal(r.status, expectExit, `oats ${args.join(" ")} exited ${r.status}\n${r.stdout}\n${r.stderr}`);
+    return r.stdout;
+  };
+  const boundary = (args, options = {}) => {
+    const text = cli(args, options);
     const answer = JSON.parse(text);
     assert.equal(answer.schemaVersion, 1, text);
     assert.equal(answer.ok, true, text);
     return answer.result;
   };
-  assert.equal(boundary(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"]).status, "accepted");
-  const spawned = core.spawnInstance(agentsRoot, agent, { instance: "probe-packed", repo: modernRepo, launch: false });
-  const meta = JSON.parse(readFileSync(join(spawned.home, "instance.json"), "utf8"));
-  const skills = readdirSync(join(spawned.home, ".agents", "skills")).sort();
-  assert.deepEqual(skills, ["memory-harvest", "oats", "oats-config", "oats-packages", "okf", "private"]);
+  // `oats retire --json` answers with the retirement record itself (no envelope).
+  const retire = (instance, homeDir) => {
+    const r = JSON.parse(cli(["retire", instance, "--dir", deployment, "--home", homeDir, "--json"]));
+    assert.equal(r.retired, instance, JSON.stringify(r));
+    assert.equal(r.removedDir, true, JSON.stringify(r));
+    assert.ok(!existsSync(homeDir), `${instance} home survived retirement`);
+    return r;
+  };
+
+  // ---- sync: resolve + lock (v3) both packages. Approval is per package
+  // version and is asked for every package (exit 2, digests reported); the
+  // theory package has NO executable targets, the OKF package has its scripts.
+  const syncText = cli(["sync", "--dir", deployment, "--json"], { expectExit: 2 });
+  const synced = JSON.parse(syncText);
+  assert.equal(synced.ok, true, syncText);
+  assert.deepEqual(synced.result.members.map((m) => m.status), ["confirmed"], syncText);
+  assert.deepEqual(synced.result.approvalNeeded.map((a) => a.id).sort(), ["oats.framework", "oats.okf"]);
+  const approval = synced.result.approvalNeeded.find((a) => a.id === "oats.okf");
+  const theoryApproval = synced.result.approvalNeeded.find((a) => a.id === "oats.framework");
+  assert.equal(approval.commit, okfCommit);
+  assert.match(approval.executables, /^sha256-[0-9a-f]{64}$/);
+  assert.ok(approval.targets.some((t) => /oats-okf\.mjs/.test(t)), JSON.stringify(approval.targets));
+  assert.equal(theoryApproval.commit, theoryCommit);
+  assert.deepEqual(theoryApproval.targets, [], "oats.framework carries no commands or hooks");
+  assert.match(theoryApproval.executables, /^sha256-[0-9a-f]{64}$/);
+  const lockPath = join(deployment, "oats-lock.json");
+  const checkLockShape = (lock) => {
+    assert.equal(lock.lockfileVersion, 3);
+    assert.ok(!Object.hasOwn(lock, "capabilities"), "lock v3 has no top-level capabilities map");
+    assert.deepEqual(Object.keys(lock.packages).sort(), ["oats.framework", "oats.okf"]);
+    for (const [id, row] of Object.entries(lock.packages)) {
+      assert.match(row.commit, /^[0-9a-f]{40}$/, id);
+      assert.match(row.integrity, /^sha256-[0-9a-f]{64}$/, id);
+      assert.equal(row.path, "oats-package", id);
+      assert.equal(row.source, `catalog:${id}`, id);
+    }
+    assert.equal(lock.packages["oats.okf"].commit, okfCommit);
+    assert.equal(lock.packages["oats.okf"].version, bundledVersion);
+    assert.equal(lock.packages["oats.framework"].commit, theoryCommit);
+    assert.equal(lock.packages["oats.framework"].version, distribution.version);
+    assert.doesNotMatch(JSON.stringify(lock), /"lockfileVersion":\s*2/);
+  };
+  const unapproved = readJson(lockPath);
+  checkLockShape(unapproved);
+  assert.equal(unapproved.packages["oats.okf"].approved ?? null, null);
+  assert.equal(unapproved.packages["oats.framework"].approved ?? null, null);
+  // Record the reported digests as approvals (what a TTY `oats sync` writes on "y").
+  const approvedLock = structuredClone(unapproved);
+  const at = new Date().toISOString();
+  approvedLock.packages["oats.okf"].approved = { executables: approval.executables, at };
+  approvedLock.packages["oats.framework"].approved = { executables: theoryApproval.executables, at };
+  write(lockPath, JSON.stringify(approvedLock, null, 2));
+  const approved = readJson(lockPath);
+  checkLockShape(approved);
+  assert.equal(approved.packages["oats.okf"].approved.executables, approval.executables);
+  assert.equal(approved.packages["oats.framework"].approved.executables, theoryApproval.executables);
+  assert.equal(JSON.parse(cli(["sync", "--dir", deployment, "--json"])).result.approvalNeeded.length, 0, "approved sync exits 0 with nothing pending");
+  assert.deepEqual(readJson(lockPath), approved, "a second sync is a no-op on an approved lock");
+  for (const residue of [".agents/capabilities/installed", ".agents/capabilities", "oats-config.yaml", ".agents/packages"]) {
+    assert.ok(!existsSync(join(deployment, residue)), `workspace model wrote v1 residue ${residue}`);
+  }
+  const freshDoctor = JSON.parse(cli(["doctor", deployment, "--json"]));
+  assert.equal(freshDoctor.lockError ?? null, null, `packed doctor refuses the lock it just wrote: ${JSON.stringify(freshDoctor.lockError)}`);
+  assert.ok(!freshDoctor.legacyLockFiles?.length && !freshDoctor.officialMigration, "packed doctor asked a fresh deployment to migrate");
+
+  // ---- OKF's own provisioning: the accepted base must exist before the soul
+  // can spawn (its required spawn hook refuses to bootstrap on read).
+  const nodes = join(room, "okf-nodes.json");
+  write(nodes, JSON.stringify({ expert: { path: "expert", owner: "smoke-owner" } }));
+  // TODO(kernel): `oats okf init --soul probe` from the deployment (no instance
+  // home) answers E_CAPABILITY_INACTIVE under the workspace model — the
+  // non-home dispatch branch (bin/oats.mjs capabilityCommand → dispatch, the
+  // `else` resolving through resolveOatsConfig(context, --soul)) still reads the
+  // v1 config chain instead of preparing the soul's resolution (prepareInstance)
+  // from oats-local.yaml. Until that branch resolves through the workspace,
+  // provision through the package's own executable with the dispatcher's
+  // contract (OATS_SETTINGS = the soul's effective oats.okf settings, absolute
+  // OATS_CLI_BIN). The bytes are the same digest-approved oats.okf source (the
+  // npm mirror equals the inventory, asserted above).
+  const okfInit = spawnSync(process.execPath, [join(kernelRoot, "capabilities/oats-okf/bin/oats-okf.mjs"), "init", "--base", "project", "--nodes", nodes, "--confirm", "--json"], {
+    cwd: deployment, encoding: "utf8", env: { ...cliEnv, OATS_CAPABILITY: "oats.okf", OATS_SETTINGS: JSON.stringify({ "bindings-file": bindings }), OATS_CLI_BIN: realpathSync(oats) },
+  });
+  assert.equal(okfInit.status, 0, okfInit.stdout + okfInit.stderr);
+  const okfInitAnswer = JSON.parse(okfInit.stdout);
+  assert.equal(okfInitAnswer.ok, true, okfInit.stdout);
+  assert.equal(okfInitAnswer.result.status, "accepted");
+
+  // ---- spawn the OKF probe through the packed CLI, scaffold only.
+  const spawned = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "packed", "--no-launch", "--json"]);
+  const probeHome = realpathSync(spawned.home);
+  assert.equal(probeHome, join(realpathSync(agentsRoot), "probe", "instances", spawned.instance));
+  const meta = readJson(join(probeHome, "instance.json"));
   assert.equal(meta.launched, false);
-  assert.equal(lstatSync(join(spawned.home, "AGENTS.md")).isSymbolicLink(), false);
-  assert.equal(readlinkSync(join(spawned.home, "CLAUDE.md")), "AGENTS.md");
-  assert.equal(readFileSync(join(agent._dir, "soul", "AGENTS.md"), "utf8"), canonical);
-  assert.ok(meta.capabilities.some((cap) => cap.id === "oats.okf") && /--skill /.test(meta.command));
-  const marker = JSON.parse(readFileSync(join(spawned.home, ".okf-source.json"), "utf8"));
+  assert.equal(meta.work, "directory");
+  assert.ok(meta.modules && typeof meta.modules === "object", "instance.json records materialized modules");
+  assert.equal(meta.modules["oats.okf"].commit, okfCommit);
+  assert.equal(meta.modules["oats.okf"].from.kind, "package");
+  assert.equal(meta.modules["oats.okf"].from.package, "oats.okf");
+  const okfRow = meta.capabilities.find((c) => c.id === "oats.okf");
+  assert.ok(okfRow, "instance.json.capabilities lists oats.okf");
+  assert.deepEqual([...okfRow.hooks].sort(), ["retire", "soul-scaffold", "spawn"], "capability row carries its hooks");
+  assert.equal(okfRow.settings?.["bindings-file"], bindings, "effective settings come from oats-local.yaml");
+  const okfModule = join(probeHome, ".oats/modules/oats.okf");
+  assert.equal(readJson(join(okfModule, "oats.json")).hooks.spawn.required, true);
+  assert.ok(lstatSync(join(okfModule, okfAlias)).isSymbolicLink(), "tracked alias materialized as a symlink");
+  assert.equal(readlinkSync(join(okfModule, okfAlias)), "AGENTS.md");
+  // The materialized module is the ENTIRE verified inventory: nothing added,
+  // nothing dropped, the alias included.
+  const checkOkfModule = () => assert.deepEqual(payloadEntries(okfModule), inventory.entries, "materialized package module must match the OKF source inventory exactly");
+  checkOkfModule();
+  // Skills are materialized per module (<home>/.agents/skills/<module>/<skill>)
+  // next to the soul's own skills; the harness discovers them from the home.
+  const skillsRoot = join(probeHome, ".agents", "skills");
+  const skills = readdirSync(skillsRoot).sort();
+  assert.deepEqual(skills, ["oats.okf", "private"], "module skill dirs plus the soul's private skill");
+  assert.deepEqual(readdirSync(join(skillsRoot, "oats.okf")).sort(), ["memory-harvest", "okf"], "oats.okf → okf + memory-harvest");
+  assert.ok(existsSync(join(skillsRoot, "oats.okf/okf/SKILL.md")) && existsSync(join(skillsRoot, "private/SKILL.md")));
+  assert.deepEqual(meta.skills.map((s) => [s.name, s.source]), [["private", "soul"]]);
+  assert.equal(lstatSync(join(probeHome, "AGENTS.md")).isSymbolicLink(), false);
+  assert.equal(readlinkSync(join(probeHome, "CLAUDE.md")), "AGENTS.md");
+  const composed = readFileSync(join(probeHome, "AGENTS.md"), "utf8");
+  assert.ok(composed.includes("Canonical instructions"), "canonical soul instructions composed");
+  assert.ok(composed.includes("<!-- oats:capability:oats.okf"), "OKF injection composed");
+  assert.equal(readFileSync(join(agentsRoot, "probe/soul/AGENTS.md"), "utf8"), canonical, "the fetched soul copy is the member's soul");
+  assert.doesNotMatch(meta.command, /--no-skills/, "the launch command must let the harness load the materialized skills");
+  assert.ok(meta.command.includes(join(probeHome, "AGENTS.md")), meta.command);
+  const marker = readJson(join(probeHome, ".okf-source.json"));
   assert.ok(existsSync(marker.source), "required spawn hook registered durable source");
-  assert.ok(existsSync(join(spawned.home, "knowledge/view.json")), "required hook built immutable reader view");
-  const doctor = JSON.parse(run(oats, ["doctor", modernRepo, "--soul", "probe", "--json"], { env: cliEnv, capture: true }));
-  assert.ok(doctor.composedInstructions.includes("Canonical instructions") && doctor.composedInstructions.includes("Knowledge: OKF"));
+  assert.ok(existsSync(join(probeHome, "knowledge/view.json")), "required hook built immutable reader view");
+  const doctor = JSON.parse(cli(["doctor", deployment, "--json"]));
+  assert.equal(doctor.lockError ?? null, null);
+
+  // The fixture repositories are gone from here on: every resolution, module
+  // materialization and read must come from the lock + the deployment's own
+  // remote cache, never from a source checkout.
+  rmSync(officialRepo, { recursive: true });
+  rmSync(theoryRepo, { recursive: true });
+  assert.ok(!existsSync(officialRepo) && !existsSync(theoryRepo));
 
   // Both the provider's stdout and the kernel operation envelope cross real
   // pipes. All documents exceed a pipe buffer but stay under the documented
@@ -240,16 +385,19 @@ try {
   const largeLog = "# Log\n" + "Observed β limitation in the source.\n".repeat(5000);
   const largeNote = "# Pending note\n" + "A live γ note for inspection.\n".repeat(6000);
   for (const text of [largeState, largeLog, largeNote]) assert.ok(Buffer.byteLength(text) > 128 * 1024 && Buffer.byteLength(text) < 256 * 1024);
-  write(join(spawned.home, "STATE.md"), largeState);
-  write(join(spawned.home, "log.md"), largeLog);
-  write(join(spawned.home, "notes/live.md"), largeNote);
-  const inspectSource = () => boundary(["okf", "inspect", "--source", marker.source, "--soul", "probe", "--json"]);
-  const discovered = boundary(["inspect", "--home", spawned.home, "--json"]);
+  write(join(probeHome, "STATE.md"), largeState);
+  write(join(probeHome, "log.md"), largeLog);
+  write(join(probeHome, "notes/live.md"), largeNote);
+  // Scope commands (no home) run from the source home with its identity: the
+  // dispatcher resolves the capability from that instance's materialized modules.
+  const inHome = { cwd: probeHome, identity: true };
+  const inspectSource = () => boundary(["okf", "inspect", "--source", marker.source, "--soul", "probe", "--json"], inHome);
+  const discovered = boundary(["inspect", "--home", probeHome, "--json"]);
   assert.equal(discovered.knowledge.provider, "oats.okf");
   assert.equal(discovered.knowledge.operations.find((op) => op.name === "inspect").available, true);
   for (const result of [
-    boundary(["okf", "inspect", "--json"], spawned.home),
-    boundary(["operation", "run", "knowledge:inspect", "--home", spawned.home, "--json"]).result,
+    boundary(["okf", "inspect", "--json"], inHome),
+    boundary(["operation", "run", "knowledge:inspect", "--home", probeHome, "--json"]).result,
     inspectSource(),
   ]) {
     assert.equal(result.liveMemory.available, true);
@@ -261,224 +409,140 @@ try {
     assert.equal(result.documents.at(-1).label, "Durable processing receipts");
     assert.ok(result.acceptedView.project.digest);
   }
+  // A scope command needs SOME materialized module set to dispatch from; keep a
+  // pristine module copy for after the source home is gone.
+  const scopeHome = join(room, "scope-home");
+  cpSync(probeHome, scopeHome, { recursive: true, verbatimSymlinks: true });
+  for (const f of ["STATE.md", "log.md", "notes", ".okf-source.json", "knowledge"]) rmSync(join(scopeHome, f), { recursive: true, force: true });
+  const inScope = { cwd: scopeHome, identity: true };
+  const scopeInspect = () => boundary(["okf", "inspect", "--source", marker.source, "--soul", "probe", "--json"], inScope);
   const preservedHome = join(room, "temporarily-missing-source");
-  renameSync(spawned.home, preservedHome);
-  assert.equal(inspectSource().liveMemory.reason, "missing-home");
-  write(join(spawned.home, "STATE.md"), "DO_NOT_EXPOSE_REUSED_HOME");
-  write(join(spawned.home, ".okf-source.json"), JSON.stringify({ version: 1, id: "00000000-0000-0000-0000-000000000000", source: marker.source }));
-  const reused = inspectSource();
+  renameSync(probeHome, preservedHome);
+  assert.equal(scopeInspect().liveMemory.reason, "missing-home");
+  write(join(probeHome, "STATE.md"), "DO_NOT_EXPOSE_REUSED_HOME");
+  write(join(probeHome, ".okf-source.json"), JSON.stringify({ version: 1, id: "00000000-0000-0000-0000-000000000000", source: marker.source }));
+  const reused = scopeInspect();
   assert.equal(reused.liveMemory.reason, "identity-mismatch");
   assert.equal(reused.documents.length, 1);
   assert.doesNotMatch(JSON.stringify(reused), /DO_NOT_EXPOSE_REUSED_HOME/);
-  rmSync(spawned.home, { recursive: true });
-  renameSync(preservedHome, spawned.home);
+  rmSync(probeHome, { recursive: true });
+  renameSync(preservedHome, probeHome);
 
-  core.retireInstance(agentsRoot, spawned.instance, { home: spawned.home });
-  assert.ok(!existsSync(spawned.home), "packed source retired after final durable capture");
-  const durable = inspectSource();
+  const retiredProbe = retire(spawned.instance, probeHome);
+  assert.equal(retiredProbe.capabilityMeta["oats.okf"].capture.complete, true, "retire hook captured the source before removal");
+  assert.equal(retiredProbe.capabilityMeta["oats.okf"].capture.inputs, 1);
+  const durable = scopeInspect();
   assert.equal(durable.liveMemory.reason, "retired");
   assert.equal(durable.status.retired, true);
   assert.equal(durable.status.lastCapture.complete, true);
   assert.equal(durable.documents.length, 1);
-  const refresh = boundary(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"]);
+  const refresh = boundary(["okf", "refresh", "--source", marker.source, "--soul", "probe", "--json"], inScope);
   assert.equal(dirname(refresh.path), join(dirname(marker.source), "views"));
-  const read = boundary(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"]);
+  const read = boundary(["okf", "read", "--source", marker.source, "--base", "project", "--path", "expert/index.md", "--soul", "probe", "--json"], inScope);
   assert.equal(read.text, readFileSync(join(accepted, "expert/index.md"), "utf8"));
 
   // No source home exists. The real capability asks the installed public CLI
   // for its own independent directory worker, then stages durable evidence.
-  const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"]);
+  // memory-harvest is a CAPABILITY-DEFINED agent (oats.okf agents/): with no live instance carrying
+  // the module, the kernel resolves it from the deployment's lock (approved package → fetched into
+  // <deployment>/.oats/modules/<cap>@<commit>/) and homes it under local-agents/.
+  const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"], inScope);
   assert.equal(requested.status, "ready");
-  const workerMeta = JSON.parse(readFileSync(join(requested.home, "instance.json"), "utf8"));
+  const workerMeta = readJson(join(requested.home, "instance.json"));
   assert.equal(workerMeta.launched, false);
   assert.equal(workerMeta.work, "directory");
   assert.equal(workerMeta.kind, "capability");
   assert.equal(lstatSync(join(requested.home, "work")).isSymbolicLink(), false);
   assert.ok(!existsSync(join(requested.home, ".okf-source.json")), "service worker must not become another working-memory source");
   const workerWork = join(requested.home, "work");
-  const input = JSON.parse(readFileSync(join(workerWork, "input.json"), "utf8"));
+  const input = readJson(join(workerWork, "input.json"));
   assert.equal(input.inputs.length, 1);
   assert.equal(input.inputs[0].text, largeNote, "full note survived source deletion into durable worker custody");
   const inputId = input.inputs[0].id;
-  const stage = JSON.parse(readFileSync(join(workerWork, "staging.json"), "utf8")).project.root;
+  const stage = readJson(join(workerWork, "staging.json")).project.root;
   const concept = "---\ntype: Decision\ntitle: Explicit custody\ndescription: Why explicit custody was chosen.\n---\n\nHuman accepted explicit custody to avoid silent fallback.\n" + `Evidence: OKF input ${inputId}.\n`;
   write(join(stage, "expert/decision.md"), concept);
   write(join(stage, "expert/index.md"), readFileSync(join(stage, "expert/index.md"), "utf8") + "* [Explicit custody](decision.md) - Why explicit custody was chosen.\n");
   const judgment = join(workerWork, "judgment.json");
   write(judgment, JSON.stringify({ version: 1, exclusionsReviewed: true, outcomes: [{ input: inputId, verdict: "promote", reason: "Accepted rationale, not a code description.", concepts: [{ base: "project", path: "expert/decision.md" }] }] }));
-  const completed = boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--judgment", judgment, "--soul", "probe", "--json"]);
+  const completed = boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--judgment", judgment, "--soul", "probe", "--json"], inScope);
   assert.equal(completed.receipts.project.status, "accepted");
   assert.equal(completed.processed, true);
   assert.equal(readFileSync(join(accepted, "expert/decision.md"), "utf8"), concept);
-  assert.deepEqual(boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--soul", "probe", "--json"]), completed, "completion receipt is idempotent");
+  assert.deepEqual(boundary(["okf", "complete", "--source", marker.source, "--run", requested.run, "--soul", "probe", "--json"], inScope), completed, "completion receipt is idempotent");
+  // A capability agent homes under <deployment>/local-agents/<name>/instances/; retire through the agents root it belongs to.
   core.retireInstance(agentsRoot, requested.instance, { home: requested.home });
   assert.ok(!existsSync(requested.home), "independent scaffold-only worker retired");
-  const fresh = core.spawnInstance(agentsRoot, agent, { instance: "probe-fresh", repo: modernRepo, launch: false });
-  assert.equal(readFileSync(join(fresh.home, "knowledge/bases/project/expert/decision.md"), "utf8"), concept);
-  core.retireInstance(agentsRoot, fresh.instance, { home: fresh.home });
-  assert.ok(!existsSync(fresh.home));
-  assert.notEqual(boundary(["schedule", "list", "--dir", modernRepo, "--json"]).scheduler.active, true);
-  assert.equal(core.capabilityTrust(modernRepo, "oats.okf").trusted, true, "lifecycle never mutates installed OKF");
-  checkInstalledOkf();
+  // A fresh reader of the same soul sees the accepted concept; its modules are
+  // materialized again from the cache — the source fixture no longer exists.
+  const fresh = boundary(["spawn", "probe", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", "fresh", "--no-launch", "--json"]);
+  const freshHome = realpathSync(fresh.home);
+  assert.equal(readFileSync(join(freshHome, "knowledge/bases/project/expert/decision.md"), "utf8"), concept);
+  assert.equal(readJson(join(freshHome, "instance.json")).modules["oats.okf"].commit, okfCommit);
+  assert.deepEqual(payloadEntries(join(freshHome, ".oats/modules/oats.okf")), inventory.entries);
+  retire(fresh.instance, freshHome);
+  assert.notEqual(boundary(["schedule", "list", "--dir", deployment, "--json"]).scheduler.active, true);
+  assert.deepEqual(readJson(lockPath), approved, "lifecycle never mutates the lock");
+  // Module copies are per-instance and gone with their homes; the lock is the
+  // durable trust record and the scope copy's module set is still pristine.
+  assert.deepEqual(payloadEntries(join(scopeHome, ".oats/modules/oats.okf")), inventory.entries, "lifecycle never mutates a materialized module");
+  rmSync(scopeHome, { recursive: true });
 
-  // Optional theory uses a DIFFERENT release channel: the exact self-contained
-  // Git payload, not an npm copy with its source CLAUDE.md symlink missing.
-  // Copy the whole candidate payload verbatim, record it only in an isolated
-  // Git fixture, and acquire via the installed CLI's normal direct/catalog
-  // paths. No alias synthesis or generic integrity exception is permissible.
-  checkKnowledgeTheoryPackage({ repoRoot: repo });
-  const theoryRepo = join(room, "official", "knowledge-theory");
-  const theorySource = join(theoryRepo, "oats-package");
-  cpSync(join(repo, "oats-package"), theorySource, { recursive: true, verbatimSymlinks: true });
-  checkKnowledgeTheoryPackage({ packageRoot: theorySource, parity: false });
-  gitRepo(theoryRepo);
-  const theoryCommit = run("git", ["-C", theoryRepo, "rev-parse", "HEAD"], { capture: true }).trim();
-  const aliasPath = `oats-package/${CAPABILITY_PATH}/${EXPERT_PATH}/CLAUDE.md`;
-  assert.match(run("git", ["-C", theoryRepo, "ls-tree", theoryCommit, "--", aliasPath], { capture: true }), /^120000 blob /, "Git payload must track the source alias as a symlink");
-  assert.equal(run("git", ["-C", theoryRepo, "show", `${theoryCommit}:${aliasPath}`], { capture: true }), "AGENTS.md");
-  const theoryUrl = pathToFileURL(theoryRepo).href;
-  const directTheorySource = `${theoryUrl}@${theoryCommit}`; // normal default oats-package/ selection
-  const fixtureCatalog = JSON.parse(readFileSync(catalog, "utf8"));
-  const distribution = JSON.parse(readFileSync(join(theorySource, "oats-package.json"), "utf8"));
-  const distributionCapabilities = ["oats.knowledge-theory", "oats.core", "oats.setup"];
-  delete fixtureCatalog.packages["oats.knowledge-theory"]; // replace the old fixture package identity, not capability IDs
-  fixtureCatalog.packages[distribution.package] = { url: theoryUrl, ref: theoryCommit, path: "oats-package" };
-  write(catalog, JSON.stringify(fixtureCatalog));
-  const theoryCap = join(theorySource, CAPABILITY_PATH);
-  const theorySkill = join(theoryCap, SKILL_PATH);
-  const expectedClosure = checkReferenceClosure(theorySkill);
-  const canonicalRefs = ["knowledge-capability-authoring.md", ...treeFiles(join(kernelRoot, "docs/knowledge-reference")).map((f) => `knowledge-reference/${f}`)];
-  assert.deepEqual(treeFiles(join(theorySkill, "references")), canonicalRefs.sort());
-  for (const file of canonicalRefs) assert.ok(readFileSync(join(kernelRoot, "docs", file)).equals(readFileSync(join(theorySkill, "references", file))), `packed reference drift: ${file}`);
-  const fingerprint = (root) => treeFiles(root).map((file) => {
-    const path = join(root, file);
-    return `${file}:${lstatSync(path).isSymbolicLink() ? `link:${readlinkSync(path)}` : createHash("sha256").update(readFileSync(path)).digest("hex")}`;
-  });
-  const skillFingerprint = fingerprint(theorySkill);
-  const capFingerprint = fingerprint(theoryCap);
-  const expertInstructions = readFileSync(join(theoryCap, EXPERT_PATH, "AGENTS.md"), "utf8");
-  assert.equal(readlinkSync(join(theoryCap, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md");
-  const theoryManifest = core.loadPackageManifestAt(theorySource);
-  assert.equal(theoryManifest.package, distribution.package);
-  assert.deepEqual(theoryManifest._capabilities.map((c) => c.id), distributionCapabilities);
-  core.assertCapabilitySelfContained(theoryCap, JSON.parse(readFileSync(join(theoryCap, "oats.json"), "utf8")));
-  const disabled = "capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n";
-  const theoryScopes = [];
-  for (const work of ["checkout", "directory"]) {
-    const scope = join(room, `theory-${work}`);
-    if (work === "checkout") gitRepo(scope);
-    else mkdirSync(scope);
-    const roots = join(scope, "agents"); mkdirSync(roots);
-    const config = join(scope, "oats-config.yaml"); write(config, disabled);
-    const source = work === "checkout" ? directTheorySource : distribution.package;
-    run(oats, ["install", source, "--dir", scope], { env });
-    assert.equal(readFileSync(config, "utf8"), disabled, "acquisition must not activate the package");
-    assert.deepEqual(core.resolveOatsConfig(scope, "author").capabilities, []);
-    assert.equal(core.findCapabilityAgent(scope, roots, "knowledge-theory-expert"), undefined);
-    const lock = JSON.parse(readFileSync(join(scope, "oats-lock.json"), "utf8"));
-    assert.equal(lock.lockfileVersion, 2);
-    assert.deepEqual(Object.keys(lock.packages), [distribution.package]);
-    assert.deepEqual(Object.keys(lock.capabilities).sort(), [...distributionCapabilities].sort());
-    const packageRow = lock.packages[distribution.package];
-    assert.equal(packageRow.commit, theoryCommit, "normal Git acquisition exact-locks the fixture commit");
-    assert.equal(packageRow.path, "oats-package");
-    assert.equal(packageRow.source, work === "checkout" ? `git:${directTheorySource}` : `catalog:${distribution.package}`);
-    assert.equal(packageRow.version, theoryManifest.version);
-    assert.match(packageRow.integrity, /^sha256-/);
-    const installed = core.installedCapabilityDir(scope, "oats.knowledge-theory");
-    const provenance = JSON.parse(readFileSync(join(installed, ".oats-installation.json"), "utf8"));
-    assert.equal(provenance.commit, theoryCommit);
-    assert.deepEqual(fingerprint(installed).filter((row) => !row.startsWith(".oats-installation.json:")), capFingerprint, "Git acquisition preserves the full capability including the source alias");
-    const trust = core.capabilityTrust(scope, "oats.knowledge-theory");
-    assert.equal(trust.trusted, true, "non-executable capability needs integrity, not approval");
-    assert.deepEqual(trust.executableSurface, { commands: [], hooks: [], environment: [] });
-    run(oats, ["use", "oats.knowledge-theory", "--soul", "author", "--dir", scope], { env });
-    assert.deepEqual(core.resolveOatsConfig(scope, "author").capabilities.map((cap) => cap.id), ["oats.knowledge-theory"]);
-    const listed = core.listCapabilityAgents(scope);
-    assert.deepEqual(listed.map((a) => a.name), ["knowledge-theory-expert"]);
-    assert.deepEqual(listed.diagnostics, []);
-    const expert = core.findCapabilityAgent(scope, roots, "knowledge-theory-expert");
-    assert.equal(expert.capability, "oats.knowledge-theory");
-    theoryScopes.push({ scope, roots, config, expert, work });
-  }
-  // Remove the entire fixture checkout AND its Git database. All subsequent
-  // resolution, scaffolding and reference traversal must use installed bytes.
-  rmSync(theoryRepo, { recursive: true });
-  assert.ok(!existsSync(theoryRepo));
-  assert.ok(!existsSync(theorySource));
+  // ---- Optional theory from the oats.framework package: a soul that opts out
+  // of the knowledge default and pulls oats.knowledge-theory from the package.
+  // capability-defined agents (knowledge-theory-expert, memory-harvest as a
+  // spawnable soul) resolve from materialized modules in a later phase; here
+  // the module bytes and the composed instance are what is asserted.
   const theoryProbes = [];
-  for (const { scope, roots, config, expert, work } of theoryScopes) {
-    const installed = core.installedCapabilityDir(scope, "oats.knowledge-theory");
-    const before = fingerprint(installed);
-    assert.ok(lstatSync(join(installed, EXPERT_PATH, "CLAUDE.md")).isSymbolicLink());
-    assert.equal(readlinkSync(join(installed, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md", "installed source alias survives Git transport and source deletion");
-    assert.equal(core.capabilityTrust(scope, "oats.knowledge-theory").trusted, true, "source-free artifact still passes ordinary integrity checks");
-    assert.deepEqual(checkReferenceClosure(join(installed, SKILL_PATH)), expectedClosure);
-    for (const runtime of ["pi", "claude"]) {
-      const instance = core.spawnInstance(roots, { ...expert, repo: scope }, {
-        instance: `knowledge-theory-expert-${runtime}`, runtime, work, launch: false,
-        task: "Explain adoption versus alternative theory using only the packaged curriculum.",
-      });
-      try {
-        const meta = JSON.parse(readFileSync(join(instance.home, "instance.json"), "utf8"));
-        assert.equal(meta.launched, false);
-        assert.equal(meta.work, work);
-        assert.equal(readlinkSync(join(instance.home, "CLAUDE.md")), "AGENTS.md");
-        const materialized = join(instance.home, ".agents", SKILL_PATH);
-        assert.deepEqual(fingerprint(materialized), skillFingerprint, "complete packed skill materialized without a source");
-        assert.deepEqual(checkReferenceClosure(materialized), expectedClosure);
-        assert.deepEqual(meta.skills.map((s) => s.name).sort(), ["knowledge-capability-authoring", "oats", "oats-config", "oats-packages"]);
-        const text = readFileSync(join(instance.home, "AGENTS.md"), "utf8");
-        assert.ok(text.includes(expertInstructions.trim()));
-        assert.ok(!meta.capabilities.some((c) => c.id === "oats.okf"));
-        for (const absent of ["STATE.md", "notes", "log.md", "soul/knowledge"]) assert.ok(!existsSync(join(instance.home, absent)), `knowledge none created ${absent}`);
-      } finally {
-        core.retireInstance(roots, instance.instance, { home: instance.home });
-        assert.ok(!existsSync(instance.home), "packed expert did not retire");
-      }
-      theoryProbes.push(`${work}/${runtime}`);
+  for (const runtime of ["pi", "claude"]) {
+    const author = boundary(["spawn", "author", "--dir", deployment, "--agents-root", agentsRoot, "--purpose", `theory-${runtime}`, "--runtime", runtime, "--no-launch", "--json"]);
+    const authorHome = realpathSync(author.home);
+    try {
+      const authorMeta = readJson(join(authorHome, "instance.json"));
+      assert.equal(authorMeta.launched, false);
+      assert.equal(authorMeta.runtime, runtime);
+      assert.equal(readlinkSync(join(authorHome, "CLAUDE.md")), "AGENTS.md");
+      assert.deepEqual(Object.keys(authorMeta.modules).sort(), ["oats.knowledge-theory"], "knowledge: none drops the OKF default; the theory package is the only module");
+      assert.equal(authorMeta.modules["oats.knowledge-theory"].commit, theoryCommit);
+      assert.equal(authorMeta.modules["oats.knowledge-theory"].from.package, "oats.framework");
+      const theoryModule = join(authorHome, ".oats/modules/oats.knowledge-theory");
+      assert.deepEqual(fingerprint(theoryModule), capFingerprint, "materialized module preserves the full capability including the source alias");
+      assert.ok(lstatSync(join(theoryModule, EXPERT_PATH, "CLAUDE.md")).isSymbolicLink());
+      assert.equal(readlinkSync(join(theoryModule, EXPERT_PATH, "CLAUDE.md")), "AGENTS.md", "package alias survives Git transport, cache and source deletion");
+      const materializedSkill = join(authorHome, ".agents/skills/oats.knowledge-theory", basename(SKILL_PATH));
+      assert.deepEqual(fingerprint(materializedSkill), skillFingerprint, "complete packed skill materialized without a source");
+      assert.deepEqual(checkReferenceClosure(materializedSkill), expectedClosure);
+      assert.deepEqual(readdirSync(join(authorHome, ".agents/skills")).sort(), ["oats.knowledge-theory"]);
+      assert.deepEqual(readdirSync(join(authorHome, ".agents/skills/oats.knowledge-theory")), [basename(SKILL_PATH)]);
+      const text = readFileSync(join(authorHome, "AGENTS.md"), "utf8");
+      assert.ok(text.includes("Author canonical instructions"));
+      assert.doesNotMatch(text, /Knowledge: OKF|oats:capability:oats\.okf/, "theory must not inject knowledge runtime policy");
+      assert.ok(!text.includes(expertInstructions.trim()), "the expert's instructions are the expert agent's, not the author's");
+      assert.ok(!authorMeta.capabilities.some((c) => c.id === "oats.okf"));
+      for (const absent of ["STATE.md", "notes", "log.md", ".okf-source.json", "soul/knowledge"]) assert.ok(!existsSync(join(authorHome, absent)), `knowledge none created ${absent}`);
+    } finally {
+      retire(author.instance, authorHome);
     }
-    assert.deepEqual(fingerprint(installed), before, "scaffold/retire mutated the installed expert");
-
-    // Globally enabling authoring resources must NOT inject reference theory
-    // into an ordinary worker. Knowledge runtime remains capability-owned.
-    const alternative = join(scope, ".agents/capabilities/owned/alternative");
-    write(join(alternative, "oats.json"), JSON.stringify({ capability: "example.alternative", version: "1.0.0", description: "Packed smoke alternative", layer: "knowledge", inject: "alternative.md" }));
-    write(join(alternative, "alternative.md"), "## Alternative fixture model\n\nUse the selected native retrieval contract.\n");
-    core.createAgent(roots, { name: "worker", repo: scope, work, runtime: "pi", instructions: "# Worker\n" });
-    const worker = core.findAgent(roots, "worker");
-    const alternativeConfig = "capabilities:\n  layers:\n    knowledge:\n      capability: example.alternative\n      from: owned\n      global: true\n    messaging: none\n    tasks: none\n";
-    const composed = [];
-    for (const additive of [true, false]) {
-      write(config, alternativeConfig + (additive ? "  additive:\n    oats.knowledge-theory:\n      from: installed\n      global: true\n" : ""));
-      const instance = core.spawnInstance(roots, worker, { instance: `worker-${additive}`, work, launch: false });
-      try {
-        const text = readFileSync(join(instance.home, "AGENTS.md"), "utf8");
-        assert.match(text, /Alternative fixture model/);
-        assert.doesNotMatch(text, /Knowledge theory expert|Knowledge: OKF|oats:capability:oats\.knowledge-theory/);
-        composed.push(text);
-      } finally { core.retireInstance(roots, instance.instance, { home: instance.home }); }
-      assert.ok(!existsSync(instance.home));
-    }
-    assert.equal(composed[0], composed[1], "optional theory injected mandatory policy");
+    theoryProbes.push(`directory/${runtime}`);
   }
+  assert.deepEqual(readJson(lockPath), approved, "theory spawns never mutate the lock");
   assert.ok(!existsSync(env.OATS_SMOKE_UNEXPECTED_EXEC), "a runtime/backend/host scheduler was invoked");
 
   console.log(JSON.stringify({
-    passed: true,
+    passed: true, seconds: Math.round((Date.now() - started) / 1000),
     kernelTarball: basename(kernelTgz), adapterTarball: basename(adapterTgz),
-    initDoctor: true, exactSkills: skills, canonicalSoulUnchanged: true,
-    offlineOfficialCatalog: true, freshInitMaterialized: true, nothingToMigrate: true,
-    adapterResolvedPackedKernel: true, cleanContractConfigAndSpawn: true, installedJsChecked,
+    adapterResolvedPackedKernel: true, installedJsChecked,
+    workspace: { host: hostCommit, lockfileVersion: 3, packages: Object.keys(approved.packages).sort(), approvalDigest: approval.executables, v1Residue: false, doctorLockError: null },
+    exactSkills: skills, canonicalSoulUnchanged: true, launchLoadsSkills: true,
     stubbedInactiveStatusProbes: existsSync(statusProbes) ? readFileSync(statusProbes, "utf8").trim().split("\n").length : 0,
-    optionalTheory: { excludedFromNpm: true, acquiredFromGitFixture: true, acquisitionRoutes: ["direct-git", "catalog-git"],
-      exactCommit: theoryCommit, sourceRemoved: true, references: expectedClosure.length - 1,
-      trackedSourceAliasPreserved: true, generatedAliases: true, scaffoldedAndRetired: theoryProbes, alternativeIsolated: true, liveLaunches: 0 },
     okf: { version: bundledVersion, catalogRef: pinnedRef, npm: npmOkf,
       acquiredFromVerifiedGit: true, exactCommit: okfCommit, sourceRemoved: true,
-      trackedSourceAliasPreserved: true, requiredHooks: true, largePipedInspection: true,
+      trackedSourceAliasPreserved: true, moduleMatchesInventory: true, requiredHooks: true, dispatchFromModules: true, largePipedInspection: true,
       sourceCustody: true, independentWorker: true, acceptedCompletion: true,
-      scaffoldedAndRetired: ["source", "worker", "fresh-reader"], liveLaunches: 0 },
+      scaffoldedAndRetired: ["source", "worker", "fresh-reader"], liveLaunches: 0,
+      initViaModuleBinary: "TODO kernel: non-home `oats okf init` dispatch does not resolve the soul through the workspace" },
+    optionalTheory: { package: distribution.package, excludedFromNpm: true, acquiredFromGitFixture: true, exactCommit: theoryCommit, sourceRemoved: true,
+      references: expectedClosure.length - 1, trackedSourceAliasPreserved: true, scaffoldedAndRetired: theoryProbes, liveLaunches: 0 },
   }, null, 2));
 } finally {
   if (keep) console.error(`OATS_KEEP_SMOKE=1: retained ${room}`);

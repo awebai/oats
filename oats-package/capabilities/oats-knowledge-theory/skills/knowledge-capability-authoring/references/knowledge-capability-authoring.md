@@ -40,12 +40,18 @@ aliases or relax installed-artifact integrity checks.
 Select a deployment scope explicitly and acquire the published source, then
 opt in for an author soul:
 
-```bash
-oats install git:github.com/awebai/oats@v0.23.0 --dir /path/to/scope
-oats use oats.knowledge-theory --soul <author-soul> --dir /path/to/scope
+```yaml
+# oats-workspace.yaml
+packages:
+  oats.framework: v1.1.3            # provides oats.core, oats.setup, oats.knowledge-theory
+
+# souls/<author-soul>/soul.yaml
+capabilities:
+  oats.knowledge-theory: { from: package }
 ```
 
-Git sources select `oats-package/` by default and lock the resolved commit.
+`oats sync` resolves the version to a commit and locks it; the package is read
+at `oats-package/` of its repository.
 The `oats.knowledge-theory` catalog shortcut uses that same published v0.23.0
 source. The current authoring-reference patch is package 1.0.1: once framework
 v0.23.1 is published, an explicit initial Git acquisition at that tag selects

@@ -1,5 +1,7 @@
 # Portable migration evidence reader and planner
 
+> **Superseded (2026-09-23).** The modules this note describes (`lib/portable-migration-evidence.mjs`, `lib/portable-migration.mjs`, `lib/portable-migration-store.mjs`, `lib/portable-migration-artifacts.mjs`, `lib/legacy-lock-codec.mjs`) were deleted with the workspace model v2 — there is no migration (decision 5/15: a 0.24 lock is `E_LOCK_SCHEMA`, not evidence). Read [2026-09-23-simplified-workspace-model.md](2026-09-23-simplified-workspace-model.md) (worked example) and [2026-09-23-workspace-module-contracts.md](2026-09-23-workspace-module-contracts.md) (normative) instead; kept as history.
+
 16 September 2026. This is the first read-only implementation slice of the
 Portable Souls consumer migration. The retention contract and the fifteen
 binding decisions in `2026-09-15-portable-souls-handoff.md` remain authoritative.

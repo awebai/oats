@@ -57,17 +57,33 @@ instance identity (an explicit `--soul` does not override an invoking instance's
 saved settings). The explicit Git source works before and after the v0.23.1
 framework catalog integration:
 
-```bash
-oats install git:github.com/awebai/oats-okf@v2.0.0
-oats trust oats.okf
-oats use oats.okf --soul domain-expert --settings bindings-file=/absolute/config/okf-bindings.json
-oats doctor --soul domain-expert --json
+```yaml
+# oats-workspace.yaml
+packages:
+  oats.okf: v2.1.3
+defaults:
+  knowledge: { oats.okf: { from: package } }
+
+# souls/domain-expert/soul.yaml
+knowledge:
+  owns: domain-expert
+
+# oats-local.yaml (this machine)
+settings:
+  oats.okf:
+    bindings-file: /absolute/config/okf-bindings.json
 ```
 
-Acquisition activates nothing. An existing lock remains exact until an explicit
-`oats update oats.okf`; v1 operators must plan migration before that update.
-Executable changes need review and renewed trust. Target only configured source
-souls; the service worker need not itself receive the knowledge layer.
+```bash
+oats sync                                  # resolves v2.1.3 to a commit, asks executable approval once
+oats spawn domain-expert --preview --json  # the exact oats.okf module (package, version, commit)
+```
+
+Pinning activates nothing by itself: the soul's `knowledge:` payload and the
+machine's `settings.oats.okf` must be bindable. The lock stays exact until the
+workspace bumps `packages.oats.okf`; v1 operators must plan migration before
+that bump. Executable changes come with a new version and a new approval. A
+service worker need not itself fill the knowledge slot (`knowledge: none`).
 
 ### Bindings document
 
