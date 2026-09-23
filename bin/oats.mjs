@@ -30,7 +30,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  spawnInstance, spawnInstanceAsync, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
@@ -2222,7 +2222,7 @@ function statusTeam() {
   }
 }
 
-function spawnCmd() {
+async function spawnCmd() {
   // JSON mode: contract envelope, stable error codes, stderr-only progress.
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
@@ -2258,6 +2258,25 @@ function spawnCmd() {
     root = hit.root;
   }
   let agent = findAgent(root, name);
+  // Workspace model: a soul that lives in a MEMBER repo (or an external pin) is
+  // discovered over the remotes and its source copied under <agents-root>/<name>/soul/
+  // — the classic skeleton then reads it like any local soul. Its capabilities are
+  // resolved and materialized per instance further down (prepared).
+  let wsPrepared;
+  if (!agent && !isPreview) {
+    try {
+      const { loadLocal } = await import("../lib/workspace.mjs");
+      let hasLocal = true; try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else throw e; }
+      if (hasLocal) {
+        const { prepareInstance, ensureWorkspaceSoul, parseProviderFlags } = await import("../lib/instance-resolution.mjs");
+        const pp = []; for (let i = 0; i < args.length; i++) if (args[i] === "--provider" && args[i + 1] && args[i + 2]) { pp.push([args[i + 1], args[i + 2]]); i += 2; }
+        wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(pp) } });
+        await ensureWorkspaceSoul(wsPrepared, root);
+        agent = findAgent(root, name);
+        if (agent) note(`(workspace soul: "${name}" from ${wsPrepared.soulEntry.repoKey} @ ${String(wsPrepared.soulEntry.commit).slice(0, 12)}${wsPrepared.soulEntry.team ? `, team ${wsPrepared.soulEntry.team}` : ""})`);
+      }
+    } catch (e) { if (e?.code === "E_SOUL_UNKNOWN" || e?.code === "E_SOUL_AMBIGUOUS") bail(e.code, e.message, e.details); if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
+  }
   if (agentsRootFlag !== undefined && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not at agents root ${String(agentsRootFlag)}`);
   if (isPreview && !agent) bail("E_SOUL_UNKNOWN", `soul "${name}" is not in ${shortPath(root)}; a preview never creates or imports a soul (known: ${listAgents(root).map((a) => a.name).join(", ") || "none"})`);
   if (isPreview && (flag("instructions-file") !== undefined || flag("def-file") !== undefined)) bail("E_BAD_ARGS", "--preview does not take --instructions-file/--def-file: a preview never writes a soul");
@@ -2366,11 +2385,30 @@ function spawnCmd() {
     }
     if (wake && (typeof wake.message !== "string" || !wake.message.trim())) bail("E_SCHEDULE_INVALID", "wake message: non-empty text is required");
   } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message); throw e; }
+  // Workspace model: when this deployment has an oats-local.yaml, the soul's
+  // capabilities are resolved over the workspace's remotes (member = latest,
+  // package = locked+approved) and copied whole into the new home. Without one
+  // (a bare agents root, tests) the classic soul-directory spawn proceeds.
+  let prepared;
+  const providerPairs = [];
+  for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
+  try {
+    const { prepareInstance, parseProviderFlags, toCapabilityRows, modulesPreview } = await import("../lib/instance-resolution.mjs");
+    const { loadLocal } = await import("../lib/workspace.mjs");
+    let hasLocal = true; try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else throw e; }
+    if (hasLocal) {
+      prepared = wsPrepared ?? await prepareInstance(dirFlag(), agent.name, { spawn: { providers: parseProviderFlags(providerPairs) } });
+      prepared.capabilityRows = []; // filled after materialization (paths live in the home); preview uses modulesPreview
+      prepared.preview = modulesPreview(prepared.resolution, root, agent.name);
+      prepared.toCapabilityRows = toCapabilityRows;
+    } else if (providerPairs.length) bail("E_BAD_ARGS", "--provider needs a workspace deployment (oats-local.yaml); this directory has none");
+  } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
   let r;
   try {
     if (args.includes("--allow-child-spawns") && args.includes("--no-child-spawns")) bail("E_BAD_ARGS", "--allow-child-spawns and --no-child-spawns contradict");
     if (flag("base") === true) bail("E_BAD_ARGS", "--base needs a ref");
-    r = spawnInstance(root, agent, {
+    { const spawnOpts = {
+      prepared,
       purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
@@ -2389,7 +2427,8 @@ function spawnCmd() {
       ...(flag("expect-decision") !== undefined && flag("expect-decision") !== true ? { expectDecision: String(flag("expect-decision")) } : {}),
       // K6c: with --idempotency-key, a retry of the SAME confirmed decision replays the recorded home instead of spawning twice.
       ...(flag("idempotency-key") !== undefined && flag("idempotency-key") !== true ? { idempotencyKey: String(flag("idempotency-key")) } : {}),
-    });
+    };
+      r = prepared ? await spawnInstanceAsync(root, agent, spawnOpts) : spawnInstance(root, agent, spawnOpts); }
     if (args.includes("--preview")) { if (JSON_MODE) { jsonOk(r); return; } console.log(`preview ${r.agent} → ${r.instance} (${r.work}${r.branch ? `, branch ${r.branch} from ${r.base.ref}@${r.base.oid.slice(0, 12)}` : ""}) runtime ${r.runtime}${r.model ? ` model ${r.model}` : ` (${r.modelSource})`}; nothing was created`); return; }
   } catch (e) {
     // A typed CLI failure keeps ITS OWN code: re-badging an unsafe-config-key
@@ -3556,7 +3595,7 @@ else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
 // through the shared boundary, never re-badged as a spawn-mechanism failure.
 else if (cmd === "session") await sessionCmd();
 else if (cmd === "schedule") scheduleCmd();
-else if (cmd === "spawn") { try { spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
+else if (cmd === "spawn") { try { await spawnCmd(); } catch (e) { if (TYPED_CLI_FAILURES.has(e?.code)) throw e; if (JSON_MODE) jsonFail("E_SPAWN_FAILED", e.message || e); throw e; } }
 else if (cmd === "retire") retireCmd();
 else if (cmd === "create") createCmd();
 else if (cmd === "capture" || cmd === "recall" || cmd === "setup") await recordCmd(cmd);
