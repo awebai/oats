@@ -1,11 +1,10 @@
 import test from "node:test";
-import { fixture as okfFixture, CAP as OKF_CAP, json as writeJSON } from "./helpers/okf-v2.mjs";
-import { linkExecutables } from "./helpers/host-fixture.mjs";
+import { fixture as okfFixture, json as writeJSON } from "./helpers/okf-v2.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, createAgent, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
   listInstances, resolveClaudeBinary, resolveWorkMode, retireInstance, runLifecycleHooks, spawnInstance, writeCapabilityLock,
@@ -30,25 +29,6 @@ function gitRepo(dir) {
   write(join(dir, ".gitignore"), "\n");
   execFileSync("git", ["-C", dir, "add", "."]);
   execFileSync("git", ["-C", dir, "commit", "-qm", "init"]);
-}
-
-function installFixtureOkf(base, repo) {
-  const source = join(base, "okf-source"), bin = join(base, "acquire-bin"), home = join(base, "acquire-home");
-  mkdirSync(home); linkExecutables(bin, ["node", "git"]);
-  const env = { HOME: home, PATH: bin, OATS_HOME_DIR: join(home, ".oats"), GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
-  const git = (...args) => execFileSync(join(bin, "git"), ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", ...args], { env, stdio: "pipe" });
-  git("init", "-q", "-b", "main", source);
-  cpSync(OKF_CAP, join(source, "capabilities/okf"), { recursive: true, verbatimSymlinks: true });
-  assert.equal(readlinkSync(join(source, "capabilities/okf/agents/memory-harvest/CLAUDE.md")), "AGENTS.md");
-  const manifest = JSON.parse(readFileSync(join(OKF_CAP, "oats.json"), "utf8"));
-  writeJSON(join(source, "oats-package.json"), { package: "oats.okf", version: manifest.version, description: "Fixture OKF source", compatibility: manifest.compatibility, capabilities: ["capabilities/okf"] });
-  git("-C", source, "add", "-A");
-  git("-C", source, "commit", "-qm", "fixture payload");
-  const catalog = join(base, "catalog.json");
-  writeJSON(catalog, { packages: { "oats.okf": { url: source, path: "." } } });
-  const result = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8", env: { ...env, OATS_PACKAGE_CATALOG: catalog } });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  return result;
 }
 
 function capability(repo, folder, manifest, files = {}) {
@@ -223,67 +203,6 @@ test("duplicate skill names fail unless config explicitly selects a source", () 
     const result = spawnInstance(root, agent, { instance: "dev-good", launch: false });
     assert.match(readFileSync(join(result.home, ".agents", "skills", "shared", "SKILL.md"), "utf8"), /description: B/);
   } finally { process.env.PATH = oldPath; }
-});
-
-test("classic init acquires layers as PACKAGES, bundled is rejected, restore re-materializes", () => {
-  const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
-  // A hermetic local-Git fixture catalog: an official ID resolves to a real
-  // package on disk, so this case never reaches the network. Classic init has
-  // no bundled-marketplace fallback for a cataloged ID — an unreachable source
-  // fails and the run rolls back — so the fixture IS the official source here.
-  const src = join(base, "src", "okf");
-  write(join(src, "capabilities/okf/oats.json"), JSON.stringify({
-    capability: "oats.okf", version: "2.0.0", description: "knowledge layer", layer: "knowledge",
-    commands: { harvest: "harvest.mjs" },
-  }, null, 2));
-  write(join(src, "capabilities/okf/harvest.mjs"), "// harvest\n");
-  write(join(src, "oats-package.json"), JSON.stringify({
-    package: "oats.okf", version: "2.0.0", description: "official oats.okf",
-    compatibility: { oats: ">=0.1.0" }, capabilities: ["capabilities/okf"],
-  }, null, 2));
-  gitRepo(src);
-  const catalog = join(base, "catalog.json");
-  write(catalog, JSON.stringify({ packages: { "oats.okf": { url: src, path: "." } } }));
-  const env = { ...process.env, OATS_PACKAGE_CATALOG: catalog };
-
-  let r = spawnSync(process.execPath, [CLI, "init", "--knowledge", "oats.okf", "--messaging", "none", "--no-tmux-mouse", "--dir", repo], { encoding: "utf8", env });
-  assert.equal(r.status, 0, r.stderr);
-  const config = readFileSync(join(repo, "oats-config.yaml"), "utf8");
-  assert.match(config, /from: installed/);
-  assert.doesNotMatch(config, /bundled/);
-  // Work modes scaffold shows setup:, not injection overrides.
-  assert.match(config, /work-modes:\n  worktree:\n    # setup: scripts\/setup-worktree\.sh/);
-  assert.doesNotMatch(config, /injections\/workmodes/);
-
-  // Revised-v2 flat capability state: a package row for the transport, a
-  // capability row back-referencing it, and an id-keyed artifact directory.
-  const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8"));
-  assert.equal(lock.lockfileVersion, 2);
-  assert.deepEqual(Object.keys(lock.packages), ["oats.okf"]);
-  assert.equal(lock.capabilities["oats.okf"].package, "oats.okf");
-  const artifact = join(repo, ".agents", "capabilities", "installed", "oats.okf");
-  assert.ok(existsSync(join(artifact, "oats.json")));
-
-  // Acquisition is NOT trust: the layer resolves, but its executable surface
-  // stays blocked until an explicit `oats trust`.
-  assert.equal(lock.capabilities["oats.okf"].trusted, false);
-  const cap = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
-  assert.equal(cap.trust.trusted, false);
-  assert.match(cap.trust.reason, /oats trust oats\.okf/);
-  assert.ok(cap._dir || cap.provenance);
-  assert.equal(spawnSync(process.execPath, [CLI, "trust", "oats.okf", "--dir", repo], { encoding: "utf8", env }).status, 0);
-  assert.equal(resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf").trust.trusted, true);
-
-  // from: bundled is rejected with migration guidance.
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      from: bundled\n");
-  assert.throws(() => resolveOatsConfig(repo, "dev"), /no longer supported.*oats install/s);
-  // Restore: delete the artifact, bare install re-materializes it at locked integrity.
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  layers:\n    knowledge:\n      capability: oats.okf\n      from: installed\n");
-  rmSync(artifact, { recursive: true });
-  r = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { encoding: "utf8", env });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /restored\s+package oats\.okf/);
-  assert.ok(existsSync(join(artifact, "oats.json")), "the flat capability artifact is back");
 });
 
 test("work-mode injection overrides are rejected; setup script resolves and runs at worktree spawn", () => {
@@ -760,93 +679,6 @@ test("hooks run in deterministic order, with retire reversing spawn", () => {
   assert.deepEqual(readFileSync(join(home, "order"), "utf8").trim().split("\n"), ["spawn:acme.a", "spawn:acme.z", "retire:acme.z", "retire:acme.a"]);
 });
 
-test("CLI activation writes stable global/type/soul bindings without activating acquisition", () => {
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const emptyCatalog = join(base, "empty-catalog.json");
-  write(emptyCatalog, JSON.stringify({ packages: {} }));
-  r = spawnSync(process.execPath, [CLI, "install", "oats.okf", "--dir", repo], { encoding: "utf8", env: { ...process.env, OATS_PACKAGE_CATALOG: emptyCatalog } });
-  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /not activated/);
-  // With no official catalog entry this deliberately exercises the legacy
-  // marketplace install: copied into installed/, locked, trusted at acquisition.
-  const okfLock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["oats.okf"];
-  assert.match(okfLock.source, /^marketplace:oats\.okf@/);
-  assert.equal(okfLock.trustedExecutables, true);
-  assert.ok(existsSync(join(repo, ".agents", "capabilities", "installed", "oats-okf", "oats.json")));
-  assert.equal(resolveOatsConfig(repo, "dev").capabilities.length, 0);
-  for (const argv of [
-    ["use", "oats.okf", "--global", "--dir", repo],
-    ["use", "oats.okf", "--type", "reviewers", "--disable", "--dir", repo],
-    ["use", "oats.okf", "--soul", "lead", "--dir", repo],
-  ]) {
-    r = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr);
-  }
-  const config = readFileSync(join(repo, "oats-config.yaml"), "utf8");
-  // Layer capability lands under capabilities.layers.knowledge with from + injection comment.
-  assert.match(config, /layers:\n    knowledge:\n      capability: oats\.okf/);
-  assert.match(config, /from: installed/);
-  assert.match(config, /# injection-override: \.agents\/injections\/capabilities\/oats\.okf\.md/);
-  assert.match(config, /global: true/); assert.match(config, /reviewers: false/); assert.match(config, /lead: true/);
-  assert.equal(resolveOatsConfig(repo, "reviewer").capabilities.some((c) => c.id === "oats.okf"), true);
-});
-
-test("oats use --soul on a layer set to none creates a targeted binding with global false; an existing untargeted layer keeps its implicit global when narrowed", () => {
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  r = installFixtureOkf(base, repo);
-  assert.equal(r.status, 0, r.stderr);
-  write(join(repo, "agents", "dev", "soul", "soul.yaml"), `name: dev\nkind: persistent\nrepo: ${repo}\nwork: checkout\nruntime: pi\n`);
-  write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
-  // The layer starts as an explicit none.
-  r = spawnSync(process.execPath, [CLI, "use", "none", "--layer", "knowledge", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /knowledge:\s*none/);
-  // A soul-targeted first binding replaces none WITHOUT becoming global.
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--soul", "dev", "--settings", "harvest-runtime=claude", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const cfg = readFileSync(join(repo, "oats-config.yaml"), "utf8");
-  assert.match(cfg, /global:\s*false/, "a binding created from none is not global");
-  assert.doesNotMatch(cfg, /global:\s*true/);
-  const okf = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
-  assert.equal(okf?.settings?.["harvest-runtime"], "claude");
-  // An existing untargeted (implicitly global) layer keeps everyone when narrowed by a soul.
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/\n\s*global:\s*(true|false)\n/, "\n").replace(/\n\s*souls:\n\s*dev:\s*true\n/, "\n"));
-  assert.doesNotMatch(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /global:/);
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--soul", "dev", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(readFileSync(join(repo, "oats-config.yaml"), "utf8"), /global:\s*true/, "an existing implicit-global entry is materialized as global true before narrowing");
-});
-
-test("--settings accepts multiple pairs per flag, repeated flags, and rejects malformed pairs", () => {
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  let r = spawnSync(process.execPath, [CLI, "init", "--raw", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  r = installFixtureOkf(base, repo);
-  assert.equal(r.status, 0, r.stderr);
-  // One flag, multiple consecutive k=v pairs — all pairs land, none silently dropped.
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "site=acme", "project=core", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  // Repeated flags still compose (and later flags override earlier keys).
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "depth=low", "--settings", "site=umbrella", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const okf = resolveOatsConfig(repo, "dev").capabilities.find((c) => c.id === "oats.okf");
-  // OKF declares a settings default (harvest-runtime:
-  // pi) that the kernel merges into the effective settings beneath the scope's.
-  assert.deepEqual(okf.settings, { site: "umbrella", project: "core", depth: "low", "harvest-runtime": "pi" });
-  // Malformed pair (missing '=') dies loudly.
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "nonsense", "--dir", repo], { encoding: "utf8" });
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /--settings expects key=value, got "nonsense"/);
-  // Bare --settings with no pairs dies loudly instead of being ignored.
-  r = spawnSync(process.execPath, [CLI, "use", "oats.okf", "--global", "--settings", "--dir", repo], { encoding: "utf8" });
-  assert.notEqual(r.status, 0);
-  assert.match(r.stderr, /--settings expects one or more key=value pairs/);
-});
-
 test("manifest targeting is rejected because activation is config-owned", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   capability(repo, "bad-target", { capability: "acme.bad-target", souls: ["dev"] });
@@ -903,81 +735,6 @@ test("launch environment authority requires an unambiguous dotted capability ID"
   capability(repo, "compatible-id", { capability: "aweb.evil/other" });
   write(join(repo, "oats-config.yaml"), "name: compatible-id-test\n");
   assert.equal(capabilityManifest("aweb.evil/other", repo).capability, "aweb.evil/other");
-});
-
-test("external acquisition locks exact integrity and executable trust is explicit", () => {
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  const source = join(base, "external");
-  write(join(source, "oats.json"), JSON.stringify({ capability: "vendor.tool", command: "vendor", version: "2.1.0", description: "External test tool.", environment: ["VENDOR_IDENTITY_HOME"], commands: { ping: "ping.mjs" } }));
-  write(join(source, "ping.mjs"), "console.log('pong')\n");
-  let r = spawnSync(process.execPath, [CLI, "install", source, "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /not activated/);
-  assert.match(r.stdout, /Future trust request includes launch environment: VENDOR_IDENTITY_HOME/);
-  const installed = join(repo, ".agents", "capabilities", "installed", "external");
-  const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["vendor.tool"];
-  assert.equal(lock.version, "2.1.0"); assert.equal(lock.integrity, capabilityIntegrity(installed)); assert.equal(lock.trustedExecutables, false);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive:\n    vendor.tool:\n      global: true\n");
-  assert.equal(resolveOatsConfig(repo, "dev").capabilities[0].trust.trusted, false);
-  const lockPath = join(repo, "oats-lock.json");
-  execFileSync("chmod", ["444", lockPath]);
-  let refusedPersistence;
-  try {
-    refusedPersistence = spawnSync(process.execPath, [CLI, "trust", "vendor.tool", "--dir", repo], { encoding: "utf8" });
-  } finally {
-    execFileSync("chmod", ["644", lockPath]);
-  }
-  assert.equal(refusedPersistence.status, 1, "read-only lock forces persistence to fail after pre-grant disclosure");
-  assert.match(refusedPersistence.stdout, /Requested launch environment: VENDOR_IDENTITY_HOME/);
-  assert.equal(JSON.parse(readFileSync(lockPath, "utf8")).capabilities["vendor.tool"].trustedExecutables, false, "disclosure occurred while authority was still ungranted");
-
-  r = spawnSync(process.execPath, [CLI, "trust", "vendor.tool", "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /Requested launch environment: VENDOR_IDENTITY_HOME/, "trust gate discloses exact environment authority before persistence");
-  const trustedCapability = resolveOatsConfig(repo, "dev").capabilities[0];
-  assert.equal(trustedCapability.trust.trusted, true);
-  assert.deepEqual(trustedCapability.environment, ["VENDOR_IDENTITY_HOME"]);
-  write(join(installed, "ping.mjs"), "console.log('tampered')\n");
-  assert.throws(() => resolveOatsConfig(repo, "dev"), /integrity differs/);
-});
-
-test("marketplace automatic trust discloses environment before authority persistence", () => {
-  const base = temp();
-  const framework = join(base, "framework");
-  const packageRoot = resolve(dirname(CLI), "..");
-  // The CLI's module closure: bin/oats.mjs, the whole lib/ directory (an
-  // explicit module list went stale every time a module was added, and a
-  // missing module makes the copied CLI fail to load with empty stdout),
-  // and the kernel's declared runtime dependencies (croner is imported at
-  // load by lib/schedule.mjs).
-  write(join(framework, "bin", "oats.mjs"), readFileSync(join(packageRoot, "bin", "oats.mjs")));
-  write(join(framework, "package.json"), readFileSync(join(packageRoot, "package.json")));
-  cpSync(join(packageRoot, "lib"), join(framework, "lib"), { recursive: true });
-  // Core now integrates execution-side native record custody.
-  cpSync(join(packageRoot, "packages", "record", "lib"), join(framework, "packages", "record", "lib"), { recursive: true });
-  for (const dep of Object.keys(JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")).dependencies || {})) {
-    if (existsSync(join(packageRoot, "node_modules", dep))) cpSync(join(packageRoot, "node_modules", dep), join(framework, "node_modules", dep), { recursive: true });
-  }
-  const marketplace = join(framework, "capabilities", "vendor-market");
-  write(join(marketplace, "oats.json"), JSON.stringify({
-    capability: "vendor.market", version: "1.0.0", description: "Marketplace trust ordering.",
-    environment: ["VENDOR_IDENTITY_HOME"], hooks: { spawn: "hook.mjs" },
-  }));
-  write(join(marketplace, "hook.mjs"), "console.log('{}')\n");
-
-  const repo = join(base, "repo"); mkdirSync(repo);
-  write(join(repo, "oats-config.yaml"), "name: marketplace-ordering\n");
-  const lockPath = join(repo, "oats-lock.json");
-  write(lockPath, JSON.stringify({ lockfileVersion: 1, capabilities: {} }, null, 2) + "\n");
-  execFileSync("chmod", ["444", lockPath]);
-  let result;
-  try {
-    result = spawnSync(process.execPath, [join(framework, "bin", "oats.mjs"), "install", "vendor.market", "--dir", repo], { encoding: "utf8" });
-  } finally {
-    execFileSync("chmod", ["644", lockPath]);
-  }
-  assert.equal(result.status, 1, "read-only lock forces automatic trust persistence to fail");
-  assert.match(result.stdout, /Requested launch environment: VENDOR_IDENTITY_HOME/);
-  assert.deepEqual(JSON.parse(readFileSync(lockPath, "utf8")).capabilities, {}, "automatic-trust disclosure occurred before any authority was persisted");
 });
 
 test("executable and nested skill paths cannot escape the package integrity boundary", () => {
@@ -1039,31 +796,6 @@ test("soul-scaffold ownership prevents overwrites and deletion of canonical file
   assert.equal(readlinkSync(join(restored, "CLAUDE.md")), "AGENTS.md");
 });
 
-test("bare install restores locked-but-missing capabilities with integrity verification", () => {
-  const base = temp(); const repo = join(base, "repo"); gitRepo(repo);
-  write(join(repo, "oats-config.yaml"), "name: restore-test\n");
-  const source = join(base, "external");
-  write(join(source, "oats.json"), JSON.stringify({ capability: "vendor.restorable", version: "1.0.0", description: "Restorable." }));
-  write(join(source, "body.md"), "content\n");
-  let r = spawnSync(process.execPath, [CLI, "install", source, "--dir", repo], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const artifact = join(repo, ".agents", "capabilities", "installed", "external");
-  // Install maintains the store gitignore so acquired artifacts stay uncommitted.
-  assert.match(readFileSync(join(repo, ".agents", "capabilities", ".gitignore"), "utf8"), /^installed\/$/m);
-  // Delete the artifact; bare install must restore it to the locked integrity.
-  rmSync(artifact, { recursive: true });
-  r = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { cwd: repo, encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /restored\s+vendor\.restorable/);
-  const lock = JSON.parse(readFileSync(join(repo, "oats-lock.json"), "utf8")).capabilities["vendor.restorable"];
-  assert.equal(capabilityIntegrity(artifact), lock.integrity);
-  // Drifted source aborts restore and leaves no artifact behind.
-  rmSync(artifact, { recursive: true });
-  write(join(source, "body.md"), "tampered\n");
-  r = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { cwd: repo, encoding: "utf8" });
-  assert.equal(r.status, 1); assert.match(r.stdout, /FAILED\s+vendor\.restorable/);
-  assert.equal(existsSync(artifact), false);
-});
-
 test("capabilities outside installed/ and owned/ are rejected with a move error", () => {
   const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
   write(join(repo, ".agents", "capabilities", "stray", "oats.json"), JSON.stringify({ capability: "acme.stray", version: "1.0.0", description: "Stray." }));
@@ -1123,33 +855,6 @@ test("oats type add declares agent types; inject eject copies a packaged default
   assert.equal(r.status, 1); assert.match(r.stderr, /owned\/path-sourced/);
 });
 
-test("init --template snapshots a local or named template with provenance and rewrites name", () => {
-  const base = temp();
-  const tpl = join(base, "template.yaml");
-  // `layers:` moved under `capabilities.layers` — the top-level spelling is
-  // refused outright, so a template carrying it can never be seeded.
-  writeFileSync(tpl, "name: template-origin\ncapabilities:\n  layers:\n    tasks: none\n  additive:\n    oats.okf:\n      from: installed\n      global: true\n");
-  const repo = join(base, "proj"); mkdirSync(repo);
-  let r = spawnSync(process.execPath, [CLI, "init", "--template", tpl, "--dir", repo, "--no-tmux-mouse"], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const cfg = readFileSync(join(repo, "oats-config.yaml"), "utf8");
-  assert.match(cfg, /^# template: .*template\.yaml \(snapshot/m);
-  assert.match(cfg, /^name: proj$/m);
-  assert.match(cfg, /oats\.okf/);
-  // Named template resolved through an outer config's templates: map (workspace level).
-  const ws = join(base, "ws"); const inner = join(ws, "repo2"); mkdirSync(inner, { recursive: true });
-  writeFileSync(join(ws, "oats-config.yaml"), `name: ws\ntemplates:\n  personal: ${tpl}\n`);
-  r = spawnSync(process.execPath, [CLI, "init", "--template", "personal", "--dir", inner, "--no-tmux-mouse"], { encoding: "utf8" });
-  assert.equal(r.status, 0, r.stderr);
-  const cfg2 = readFileSync(join(inner, "oats-config.yaml"), "utf8");
-  assert.match(cfg2, /^name: repo2$/m);
-  assert.doesNotMatch(cfg2, /templates:/);
-  // Unknown named template errors clearly.
-  const lone = join(base, "lone"); mkdirSync(lone);
-  r = spawnSync(process.execPath, [CLI, "init", "--template", "nope", "--dir", lone, "--no-tmux-mouse"], { encoding: "utf8" });
-  assert.equal(r.status, 1); assert.match(r.stderr, /unknown template "nope"/);
-});
-
 test("owned capabilities at a non-git scope are discovered and config-owned trusted", () => {
   const base = temp(); const ws = join(base, "workspace"); mkdirSync(ws); // no git init
   capability(ws, "lfx", { capability: "acme.lfx", inject: "inject.md" }, { "inject.md": "## LFX" });
@@ -1158,98 +863,6 @@ test("owned capabilities at a non-git scope are discovered and config-owned trus
   assert.equal(cap.trust.trusted, true); assert.equal(cap.trust.configOwned, true);
   // No git repo: install's gitignore maintenance must not have created one here.
   assert.equal(existsSync(join(ws, ".agents", "capabilities", ".gitignore")), false);
-});
-
-test("retired oats.web: config, install, and lock paths all give actionable migration diagnostics", () => {
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  // config activation of the retired capability names the migration, not "no manifest"
-  write(join(repo, "oats-config.yaml"), `capabilities:\n  additive:\n    oats.web:\n      global: true\n`);
-  assert.throws(() => resolveOatsConfig(repo), /oats\.web web panel was retired[\s\S]*OATS Desktop app[\s\S]*Remove the oats\.web entry/,
-    "config activation explains the retirement and the fix");
-  // doctor must diagnose the stale activation cleanly (text and JSON), not crash
-  const docText = spawnSync(process.execPath, [CLI, "doctor", repo], { encoding: "utf8" });
-  assert.notEqual(docText.status, 0);
-  assert.match(docText.stderr, /retired.*OATS Desktop app.*Remove the oats\.web entry/s, "doctor (text) emits the cleanup instruction");
-  assert.doesNotMatch(docText.stderr, /at resolveCapabilities|at file:/, "doctor (text) does not dump a stack trace");
-  const docJson = spawnSync(process.execPath, [CLI, "doctor", repo, "--json"], { encoding: "utf8" });
-  assert.notEqual(docJson.status, 0);
-  const dj = JSON.parse(docJson.stdout);
-  assert.equal(dj.schemaVersion, 1, "the retired-capability error document carries the doctor v1 schema version");
-  assert.deepEqual(dj.retired, ["oats.web"], "doctor --json reports the retired id");
-  assert.match(dj.error, /Remove the oats\.web entry/, "doctor --json carries the cleanup instruction");
-  // explicit install of the retired id explains instead of "not a marketplace capability"
-  const inst = spawnSync(process.execPath, [CLI, "install", "oats.web", "--dir", repo], { encoding: "utf8" });
-  assert.notEqual(inst.status, 0);
-  assert.match(inst.stderr + inst.stdout, /retired.*OATS Desktop app/s, "explicit install names the successor");
-  assert.doesNotMatch(inst.stderr + inst.stdout, /not a marketplace capability/, "no unexplained missing-capability failure");
-  // bare install with a stale lock entry reports RETIRED (actionable), and doctor warns
-  const repo2 = join(base, "repo2"); mkdirSync(repo2);
-  write(join(repo2, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
-  write(join(repo2, "oats-lock.json"), JSON.stringify({ capabilities: { "oats.web": { version: "0.9.6", integrity: "sha256-x", source: "marketplace:oats-web@0.9.6" } } }));
-  const restore = spawnSync(process.execPath, [CLI, "install", "--dir", repo2], { encoding: "utf8" });
-  assert.match(restore.stdout, /RETIRED\s+oats\.web.*Remove the oats\.web entry/s, "lock restore reports the retirement with the fix");
-  assert.doesNotMatch(restore.stdout + restore.stderr, /FAILED\s+oats\.web/, "retired lock entry is not an opaque failure");
-  const doctor = spawnSync(process.execPath, [CLI, "doctor", repo2], { encoding: "utf8" });
-  assert.match(doctor.stdout, /WARNING: oats\.web is locked in .*retired.*OATS Desktop app/s, "doctor surfaces the stale lock with migration guidance");
-  const doctorJson2 = spawnSync(process.execPath, [CLI, "doctor", repo2, "--json"], { encoding: "utf8" });
-  assert.equal(doctorJson2.status, 0, "lock-only state resolves");
-  const dj2 = JSON.parse(doctorJson2.stdout);
-  assert.equal(dj2.retiredLocks?.[0]?.id, "oats.web", "doctor --json lists the stale retired lock");
-  assert.match(dj2.retiredLocks[0].reason, /Remove the oats\.web entry/, "JSON lock report carries the fix");
-});
-
-test("retired oats.web: a STALE INSTALLED ARTIFACT never bypasses the retirement diagnostics", () => {
-  // The migration's own upgrade state: the user hasn't deleted the stale
-  // installed copy yet. Presence must not short-circuit retirement.
-  const base = temp(); const repo = join(base, "repo"); mkdirSync(repo);
-  const staleDir = join(repo, ".agents", "capabilities", "installed", "oats-web");
-  write(join(staleDir, "oats.json"), JSON.stringify({ capability: "oats.web", version: "0.9.6", description: "stale web panel copy" }));
-  write(join(repo, "oats-lock.json"), JSON.stringify({ capabilities: { "oats.web": { version: "0.9.6", integrity: "sha256-x", source: "marketplace:oats-web@0.9.6" } } }));
-  // config activation with the artifact present still throws the retirement guidance
-  write(join(repo, "oats-config.yaml"), `capabilities:\n  additive:\n    oats.web:\n      global: true\n`);
-  assert.throws(() => resolveOatsConfig(repo), /retired[\s\S]*OATS Desktop app[\s\S]*Remove the oats\.web entry/,
-    "stale artifact does not let config activation succeed");
-  // explicit install with the artifact present must not exit "Already acquired"
-  const inst = spawnSync(process.execPath, [CLI, "install", "oats.web", "--dir", repo], { encoding: "utf8" });
-  assert.notEqual(inst.status, 0, "explicit install of a retired id fails even when an artifact is present");
-  assert.match(inst.stderr, /retired.*OATS Desktop app/s);
-  assert.doesNotMatch(inst.stdout, /Already acquired/, "presence does not short-circuit retirement");
-  // bare install must report RETIRED, never ok/present
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
-  const restore = spawnSync(process.execPath, [CLI, "install", "--dir", repo], { encoding: "utf8" });
-  assert.match(restore.stdout, /RETIRED\s+oats\.web/s, "lock restore reports RETIRED despite the present artifact");
-  assert.doesNotMatch(restore.stdout, /ok\s+oats\.web/, "no 'ok' for a retired capability's stale artifact");
-  // doctor's acquired listing flags the stale artifact with the deletion hint
-  const doctor = spawnSync(process.execPath, [CLI, "doctor", repo], { encoding: "utf8" });
-  assert.match(doctor.stdout, /oats\.web[\s\S]*WARNING: artifact of a retired capability[\s\S]*also delete/, "doctor names the stale installed copy with delete guidance");
-});
-
-test("retired oats.web: non-installed origins and source-manifest retirement are handled safely", () => {
-  const base = temp();
-  // owned origin: doctor warns WITHOUT destructive delete guidance
-  const repo = join(base, "repo"); mkdirSync(repo);
-  write(join(repo, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
-  write(join(repo, ".agents", "capabilities", "owned", "oats-web", "oats.json"),
-    JSON.stringify({ capability: "oats.web", version: "0.9.6", description: "owned copy" }));
-  const doc = spawnSync(process.execPath, [CLI, "doctor", repo], { encoding: "utf8" });
-  assert.match(doc.stdout, /WARNING: artifact of a retired capability/, "owned retired artifact is flagged");
-  assert.match(doc.stdout, /remove its declaration/, "non-installed origin gets declaration guidance");
-  assert.doesNotMatch(doc.stdout, /also delete/, "no delete instruction for an owned source tree");
-  // doctor --json reports the artifact in retiredArtifacts
-  const docJson = spawnSync(process.execPath, [CLI, "doctor", repo, "--json"], { encoding: "utf8" });
-  const dj = JSON.parse(docJson.stdout);
-  assert.equal(dj.retiredArtifacts?.[0]?.id, "oats.web", "doctor --json lists the retired artifact");
-  assert.match(dj.retiredArtifacts[0].origin, /^owned:/, "artifact record carries the origin");
-  // local-path acquisition of a package whose MANIFEST declares a retired id is rejected and cleaned up
-  const src = join(base, "ext-pkg"); mkdirSync(src);
-  write(join(src, "oats.json"), JSON.stringify({ capability: "oats.web", version: "0.9.9", description: "external" }));
-  const target = join(base, "target"); mkdirSync(target);
-  write(join(target, "oats-config.yaml"), "capabilities:\n  additive: {}\n");
-  const inst = spawnSync(process.execPath, [CLI, "install", src, "--dir", target], { encoding: "utf8" });
-  assert.notEqual(inst.status, 0, "path install of a retired-manifest package fails");
-  assert.match(inst.stderr, /declares capability "oats\.web".*retired/s, "failure names the manifest's retired id");
-  assert.equal(existsSync(join(target, ".agents", "capabilities", "installed", "ext-pkg")), false, "destination artifact removed");
-  assert.equal(existsSync(join(target, "oats-lock.json")), false, "no lock entry written");
 });
 
 test("spawn lineage is explicit: ambient env never sets parent; --parent and attached owner do", () => {

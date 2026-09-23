@@ -10,7 +10,6 @@ import { inspectPortableOnboarding } from "../lib/core.mjs";
 import { buildFreshPreparationRequest } from "../lib/portable-onboarding.mjs";
 import { readCapturedInstanceIndex } from "../lib/captured-instance-index.mjs";
 import { verifyPortableArtifact } from "../lib/portable-artifacts.mjs";
-import { readApprovalLedger } from "../lib/artifact-approvals.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 const SOURCE = "git:ssh://workspace.invalid/framework.git";
@@ -250,48 +249,6 @@ test("second-operator before pair stays byte-identical; independent binding diag
   assert.equal(readFileSync(f.phaseLog, "utf8"), "normalize\nbind\nnormalize\n", "valid knowledge binds despite unsupported messaging; only conflicted slot skips bind");
   const prose = spawnSync(process.execPath, [CLI, "prepare", "--request", bogusFile], { cwd: f.workTarget, env: f.env, encoding: "utf8", timeout: 30000 });
   assert.equal(prose.status, 1); assert.ok(prose.stderr.includes(JSON.stringify(problem.key)), "human diagnostics show the existing choice key beside the message");
-});
-
-test("second-operator trust --dir on a v3 deployment gives exact approval guidance without approving or changing locks", t => {
-  const f = fixture(t), input = secondOperatorRequest(f, "prepare-valid-request.json");
-  input.deployment = join(f.root, "deployment with 'quotes'");
-  mkdirSync(input.deployment);
-  const pending = f.run(["prepare", "--request", f.request("trust-input", input)]);
-  assert.equal(pending.status, 1, pending.stdout);
-  const selection = pending.envelope.error.details.selections.find(s => s.approvalRequired.includes("fixture.learning"));
-  assert.ok(selection, pending.stdout);
-  const lockFile = join(input.deployment, "oats-lock.json"), before = readFileSync(lockFile);
-  const approvals = JSON.stringify(readApprovalLedger(input.deployment));
-  const held = f.run(["trust", "fixture.learning", "--dir", input.deployment]);
-  assert.equal(held.status, 1); assert.equal(held.envelope.error.code, "needs-configuration");
-  assert.ok(!held.stdout.includes("unsupported lockfileVersion"));
-  assert.deepEqual(held.envelope.error.details, { deployment: input.deployment, commands: [{ artifactSet: selection.artifactSet,
-    command: `oats trust fixture.learning --deployment ${quote(input.deployment)} --artifact-set ${selection.artifactSet}` }] });
-  const prose = spawnSync(process.execPath, [CLI, "trust", "fixture.learning", "--dir", input.deployment], { cwd: f.workTarget, env: f.env, encoding: "utf8", timeout: 30000 });
-  assert.equal(prose.status, 1); assert.equal(prose.stdout, ""); assert.match(prose.stderr, /--deployment .*--artifact-set /);
-  assert.ok(readFileSync(lockFile).equals(before)); assert.equal(JSON.stringify(readApprovalLedger(input.deployment)), approvals);
-  assert.equal(existsSync(f.phaseLog), false, "suggesting approval is not executing provider code");
-  const approved = f.run(["trust", "fixture.learning", "--deployment", input.deployment, "--artifact-set", selection.artifactSet]);
-  assert.equal(approved.status, 0, approved.stdout + approved.stderr);
-  assert.notEqual(JSON.stringify(readApprovalLedger(input.deployment)), approvals, "only exact explicit approval mutates the ledger");
-  assert.ok(readFileSync(lockFile).equals(before));
-  // The new discriminator must not reinterpret historical versionless v1 as v3.
-  for (const lock of [{ capabilities: {} }, { lockfileVersion: 1, capabilities: {} }, { lockfileVersion: 2, packages: {}, capabilities: {} }]) {
-    const classic = join(f.root, `classic-${lock.lockfileVersion ?? "implicit"}`); mkdirSync(classic);
-    write(join(classic, "oats-lock.json"), lock);
-    const result = f.run(["trust", "fixture.missing", "--dir", classic]);
-    assert.equal(result.status, 1); assert.ok(!["invalid-lock", "needs-configuration", "migration-required"].includes(result.envelope.error.code), result.stdout);
-    assert.deepEqual(JSON.parse(readFileSync(join(classic, "oats-lock.json"), "utf8")), lock);
-  }
-});
-
-test("second-operator trust help explains exact artifact-set approval and preparation request pairing", t => {
-  const f = fixture(t), help = f.run(["trust", "--help"]);
-  assert.equal(help.status, 0, help.stdout);
-  const usage = help.envelope.result.usage.join("\n");
-  assert.match(usage, /--deployment <abs> --artifact-set <sha256-/);
-  assert.match(usage, /selections\[\]\.artifactSet/); assert.match(usage, /approvalRequired\[\]/);
-  assert.equal(existsSync(f.transportLog), false); assert.equal(existsSync(f.phaseLog), false);
 });
 
 test("second-operator absent deployment after ready inspection is a typed provisioning hold, not raw ENOENT", t => {

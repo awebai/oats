@@ -116,22 +116,3 @@ for (const mode of ['symlink', 'hardlink', 'directory', 'notes-file']) test(`ins
   assert.equal(r.out.ok, false); assert.equal(r.out.error.code, mode === 'notes-file' ? 'E_INSPECT_FAILED' : 'E_PATH');
   assert.equal(r.out.result, undefined); assert.doesNotMatch(r.stdout, /DO_NOT_EXPOSE_UNSAFE_DOCUMENT/);
 });
-
-test('installed Git-source capability preserves the canonical soul and public dispatch through retirement and fresh-reader delivery', t => {
-  const f = fixture(t, { installed: true });
-  assert.equal(fs.readlinkSync(join(f.cap, 'agents/memory-harvest/CLAUDE.md')), 'AGENTS.md');
-  write(join(f.home, 'notes/one.md'), 'Accepted deployment-independent rationale.\n');
-  assert.equal(operation(f).result.liveMemory.available, true);
-  f.retire(f.source.instance);
-  const durable = f.inspect();
-  assert.equal(durable.liveMemory.reason, 'retired'); assert.equal(durable.status.captured.inputs.length, 1);
-  const run = f.run(); assert.equal(run.status, 'ready');
-  const metadata = readJSON(join(run.home, 'instance.json'));
-  assert.equal(metadata.work, 'directory'); assert.equal(metadata.launched, false);
-  assert.equal(metadata.parentInstance, undefined, 'retired source is not an attachment dependency');
-  assert.equal(f.complete(run).receipts.project.status, 'accepted');
-  f.retire(run.instance);
-  const reader = f.spawn('installed-reader');
-  assert.match(fs.readFileSync(join(reader.home, 'knowledge/bases/project/expert/decision.md'), 'utf8'), /avoids silent fallback/);
-  f.retire(reader.instance);
-});

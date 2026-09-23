@@ -3,43 +3,44 @@
  * oats — the OATS command line.
  *
  *   oats doctor [dir] [--json]              show the resolved config with origins
- *   oats install <name|url|path> [...]      acquire + exact-lock a capability
- *   oats trust <capability>                approve locked executable surfaces
- *   oats use <capability> [...]            activate/exclude for global/group/soul
- *   oats init [--raw]                      create an oats-config.yaml here
+ *   oats sync [--dir <d>] [--json]          discover the workspace, confirm membership,
+ *                                          resolve packages, approve, write the lock
+ *   oats package add|remove ...            edit `packages:` in the workspace file
+ *   oats workspace status                  membership table, packages, approval
+ *   oats capabilities | oats souls         every visible item of the workspace
  *
- * `use` and `init` edit the oats-config.yaml at the detected level root:
- * cwd is your home dir → laptop; cwd has .git → repo; otherwise → workspace.
- * The kernel resolves per-key closest-wins from wherever agents actually run,
- * so binding at a level scopes the capability to everything under it.
+ * Workspace model v2 (docs/design/2026-09-23-workspace-module-contracts.md §6):
+ * nothing is installed. `oats-local.yaml` names the workspace, `oats sync`
+ * observes it over Git remotes and writes `oats-lock.json` (lockfileVersion 3).
+ * `init` / `use` / `install` / `restore` / `list` / `catalog` / `remove` /
+ * `migrate` / `trust` are gone with the installed-capability tier.
  */
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { enableTmuxMouse, tmuxConfigPath, tmuxMouseEnabled } from "../lib/tmux-config.mjs";
 import {
-  LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_LOCK_FILE, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
-  acquireCapability, restoreCapabilities, marketplaceCapabilities,
-  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityIntegrity, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
-  readCapabilityLocks, writeCapabilityLock, admitCapturedAction, beginCapturedIntent, settleCapturedIntent,
-  parsePackageSource, inspectGitSourceRoot, acquirePackage, restorePackages, listInstalledPackages, readPackageLocks, readLockedConfigTemplates,
-  officialCapabilityPackage, officialPackageCatalog, describeOfficialCatalog, DEFAULT_PACKAGE_PATH,
-  approveCapability, approveAvailableCapability, updatePackage, removePackage, migrateLegacyLock, applyLegacyLockMigration,
-  packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, installedCapabilitiesDir, ownedCapabilitiesDir, loadPackageManifestAt,
-  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, assertSafeConfigWriteKey, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
+  LAYERS, WORK_MODES, LEGACY_HOME_CAPABILITIES_DIR, OATS_VERSION, OAS_SCOPE_REMEDY, RETIRED_CAPABILITIES, detectOasScopes, retiredCapabilityReason, configChain, configCapabilityEntries, manifestOperations,
+  capabilityManifests, capabilityManifest, capabilityMissingRequires, capabilityTrust, capabilityExecutablePath, activateCapturedScaffold, loadCapturedDispatch, inspectPortableOnboarding, prepareCapturedComposition, resolveCapturedHelper, capturedNativeSessionAvailability, scaffoldCapturedInstance, startCapturedInstanceSession, withCapturedBindingFile, withCapturedInvocationContextFile,
+  readCapabilityLocks, admitCapturedAction, beginCapturedIntent, settleCapturedIntent, acquirePackage, listInstalledPackages, readPackageLocks,
+  officialCapabilityPackage, officialPackageCatalog, describeOfficialCatalog, DEFAULT_PACKAGE_PATH, approveAvailableCapability,
+  packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir, loadPackageManifestAt,
+  resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, planInstanceResources, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, packagedInject, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
-  aggregateMissingRequirements, applyFromOasScope, beginRunJournal, discoverMigrationScopes, discoverOasScopes, discoverWorkspaceScopes, planFromOasScope,
-  adoptedTemplateDir, applyConfigMerge, lockedPackageCapabilities, planConfigMerge, readAdoptedTemplate, requirementInstallPlan,
-  assertNoSymlinkedParents, copyFileAtomic, writeFileAtomic,
-  runRequirementInstall, selectConfigTemplate, validateConfigTemplate, writeAdoptedTemplate,
+  assertNoSymlinkedParents, writeFileAtomic,
+  LOCK_FILE, readLock, writeLock, resolvePackages, approve as approvePackage, executablesDigest, readPackageTree,
+  classifyPackageValue, manifestExecutables, parsePackageRequest,
 } from "../lib/packages.mjs";
+import { loadLocal, discoverWorkspace, validateWorkspace } from "../lib/workspace.mjs";
+import * as remoteModule from "../lib/remote.mjs";
+import { createInterface } from "node:readline/promises";
+import YAML from "yaml";
 import { attachArgv, checkRemote, forgetSnapshot, getServer, inspectRemote, startRemote, restartRemote, launchConfigRemote, scheduleRemote, listSnapshots, readServers, rosterGroups, routeCommand, targetOf, validateServer, writeServers, SERVERS_FILE } from "../lib/servers.mjs";
 import { spawnSync as spawnSyncProc } from "node:child_process";
 import { parseEnvelopeText, scheduleScopeOf, listSchedules, describe as describeSchedule, addSchedule, updateSchedule, setEnabled as setScheduleEnabled, removeSchedule, runNow as runScheduleNow, reconcile as reconcileSchedule, tickHost, tickWorkspace, registerWorkspace, unregisterWorkspace, readRegistry, schedulerStatus, saveWakeForHome, removeWakeForHome, wakeFromFlags, withHostLock, scheduleError, SCHEDULE_API } from "../lib/schedule.mjs";
@@ -49,10 +50,8 @@ import { receiveAttachment, uploadAttachment, readStreamBounded, MAX_ATTACHMENT_
 import { capturedSelector } from "../lib/captured-selector.mjs";
 import { inspectCapturedPiOutcome } from "../lib/captured-pi-host.mjs";
 import { readCapturedResolution } from "../lib/captured-resolutions.mjs";
-import { readLock3 } from "../lib/portable-lock.mjs";
 import { oatsError } from "../lib/errors.mjs";
-import { readPortableBytes } from "../lib/portable-files.mjs";
-import { canonicalJson, parseStrictJson } from "../lib/portable-values.mjs";
+import { canonicalJson } from "../lib/portable-values.mjs";
 import { readPortablePreparationRequest } from "../lib/portable-onboarding-request.mjs";
 import { portableScope } from "../lib/portable-state.mjs";
 import { CAPTURED_OPERATION_TIMEOUT_MS, runCapturedOperationProcess } from "../lib/captured-operation-process.mjs";
@@ -68,7 +67,7 @@ import { parsePortableSource } from "../lib/source-spec.mjs";
 const args = process.argv.slice(2);
 let cmd = args[0];
 const HELP_WORDS = new Set(["help", "--help", "-h"]);
-const KERNEL_COMMANDS = new Set(["prepare", "capture", "config", "create", "doctor", "inspect", "instance", "operation", "readiness", "soul", "launch-config", "experimental", "onboard", "init", "inject", "install", "list", "catalog", "migrate", "pane", "recall", "remove", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "trust", "type", "update", "use", "version"]);
+const KERNEL_COMMANDS = new Set(["prepare", "capture", "capabilities", "create", "doctor", "inspect", "instance", "operation", "package", "readiness", "soul", "souls", "launch-config", "experimental", "onboard", "inject", "pane", "recall", "retire", "root", "schedule", "server", "session", "setup", "spawn", "status", "sync", "type", "update", "version", "workspace"]);
 const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : true) : undefined;
@@ -83,6 +82,7 @@ function valueFlag(name) {
   return value;
 }
 const die = (msg) => { console.error(`oats: ${msg}`); process.exit(1); };
+const cmdFail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
 /** Resolve the --dir flag with central validation: a value-taking flag given
  * no value (flag() → true) is E_BAD_ARGS inside the JSON boundary, never an
  * uncaught resolve(true) TypeError (reviewer-6f0a3bd). */
@@ -506,26 +506,6 @@ function scaffoldConfigName(dir) {
   return assertSafeConfigValue(basename(dir), `the scaffolded name from the directory basename ${JSON.stringify(basename(dir))}`);
 }
 
-function offerTmuxMouseScrolling() {
-  if (args.includes("--no-tmux-mouse")) return;
-  const configPath = tmuxConfigPath();
-  const current = existsSync(configPath) ? readFileSync(configPath, "utf8") : "";
-  if (tmuxMouseEnabled(current)) return;
-
-  let accepted = args.includes("--tmux-mouse");
-  if (!accepted) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) return;
-    process.stdout.write("Enable normal mouse/trackpad scrolling in tmux agent windows? [Y/n] ");
-    const buffer = Buffer.alloc(256);
-    const length = readSync(process.stdin.fd, buffer, 0, buffer.length);
-    accepted = !buffer.subarray(0, length).toString("utf8").trim().toLowerCase().startsWith("n");
-  }
-  if (!accepted) return;
-
-  const result = enableTmuxMouse(configPath);
-  console.log(`Enabled tmux mouse scrolling in ${shortPath(result.configPath)}${result.reloaded ? " (reloaded)" : ""}`);
-}
-
 // ---------- doctor ----------
 /** Doctor must diagnose, not crash: a stale activation of a retired
  * capability fails config resolution — surface the cleanup instruction
@@ -560,31 +540,32 @@ function doctorComposition(ctx, soulName) {
   if (!agent) throw new Error(`unknown soul "${soulName}" for doctor composition`);
   return composeInstanceAgentsMd(join(agent._dir, "soul"), ctx, agent.name, agent.work || "checkout", agent.kind);
 }
-/** WS2 package-layer doctor data — the ONE source for both human and --json
- * doctor output: lock v2 packages, adopted-profile provenance, available-but-
- * unapplied profiles, and missing host requirements with structured plans. */
-/** Guided-upgrade readiness for the legacy official capabilities visible from a
- * scope (release contract §4): which legacy `marketplace:` locks exist, which
- * official package supplies each one, and whether this release's catalog can
- * map them all yet. `null` when there is no legacy official state at all. */
-function officialMigrationState(legacyLocks, { teamScope, ctx }) {
-  const capabilities = [];
-  for (const l of legacyLocks) {
-    for (const [id, entry] of Object.entries(l.capabilities || {})) {
-      if (typeof entry?.source !== "string" || !entry.source.startsWith("marketplace:")) continue;
-      let m;
-      try { m = officialCapabilityPackage(id); }
-      catch (e) { return { status: "unavailable", capabilities: [], command: null, reason: `the official package catalog is unreadable: ${e.message}` }; }
-      capabilities.push({ capability: id, package: m.package, via: m.via, available: m.available, file: l.file, level: l.level });
-    }
+
+/** Workspace-model v2 doctor data, OFFLINE: the deployment declaration found
+ * walking up from ctx (oats-local.yaml) and the lock v3 beside it. Doctor never
+ * goes to the network; membership and discovery are `oats sync` / `oats workspace status`. */
+function doctorLockData(ctx) {
+  const out = { local: null, localError: null, lockFile: null, packages: [], lockError: null };
+  let lockDir = ctx;
+  try {
+    const found = loadLocal(ctx);
+    out.local = { path: found.path, workspace: found.local.workspace };
+    lockDir = dirname(found.path);
+  } catch (e) {
+    if (e?.code === "E_WORKSPACE_SCHEMA") out.localError = { code: e.code, message: e.message };
+    else if (e?.code !== "E_LOCAL_MISSING") throw e;
   }
-  if (!capabilities.length) return null;
-  const boundary = teamScope || ctx;
-  const command = `oats migrate --official --recursive --dir ${shellQuote(boundary)}`;
-  const missing = capabilities.filter((c) => !c.available);
-  return missing.length
-    ? { status: "unavailable", capabilities, command: null, reason: `no official package mapping yet for ${missing.map((c) => c.capability).join(", ")} — this release keeps the legacy capabilities working; migration becomes available when the catalog publishes them` }
-    : { status: "ready", capabilities, command, reason: null };
+  const file = join(lockDir, LOCK_FILE);
+  if (!existsSync(file)) return out;
+  out.lockFile = file;
+  try {
+    const lock = readLock(lockDir);
+    out.packages = Object.entries(lock.packages).map(([id, p]) => ({ id, version: p.version, source: p.source, path: p.path, commit: p.commit, integrity: p.integrity, capabilities: p.capabilities, approved: p.approved }));
+  } catch (e) {
+    if (e?.code !== "E_LOCK_SCHEMA") throw e;
+    out.lockError = { code: e.code, message: e.message, file: e.details?.file ?? file };
+  }
+  return out;
 }
 
 /** The health of ONE materialized capability, against the rows it was projected
@@ -624,109 +605,6 @@ function capabilityHealth(level, cap, capRow, pkgRow) {
   const executable = hasExecutableSurface(cap.manifest);
   if (executable && !cap.trusted) return { status: "untrusted", code: "untrusted-surface", dir, integrity, detail: `capability ${cap.id}: executable surface UNTRUSTED — \`oats trust ${cap.id}\`` };
   return { status: "ok", code: null, dir, integrity, detail: null };
-}
-
-function doctorPackagesData(ctx, chain, { teamScope } = {}) {
-  // reviewer-455ba15 fix 4: the ENGINE diagnostics the human doctor renders
-  // (invalid locks, missing artifacts, integrity/runtime-closure drift,
-  // capability-list mismatches, untrusted surfaces, legacy-lock states)
-  // are computed HERE so doctor --json exposes them structurally — machine
-  // consumers see every state the human report calls broken. Fail-closed
-  // reads are diagnosed, never consumed as data and never swallowed.
-  let pkgLocks = { packages: {}, legacy: [] };
-  let installedPkgs = [];
-  let lockBroken = null;
-  try { pkgLocks = readPackageLocks(ctx); installedPkgs = listInstalledPackages(ctx); }
-  catch (e) {
-    const prov = Array.isArray(e.provenance) ? e.provenance[0] : undefined;
-    lockBroken = { code: e.code || "invalid-lock", message: String(e.message || e), file: prov?.file || null, provenance: e.provenance || null };
-  }
-  const packages = [];
-  for (const p of installedPkgs) {
-    // SCOPE-EXACT, like `oats list` and `oats trust` above: `p` was derived from
-    // the lock AT `p.level`, and its artifacts live under that scope, so only
-    // that scope's rows can judge them. The MERGED maps resolve each identity
-    // closest-scope-first — right for "which capability is active here", wrong
-    // here — so a chain holding one package id at two scopes (a direct
-    // acquisition outside, the same id pulled in by a dependency closure
-    // inside, each with its own source spelling) would compare an outer
-    // artifact's provenance against the inner row it was never projected from
-    // and report a self-consistent pair as invalid-lock.
-    const rows = levelRows(pkgLocks, p.level);
-    const lock = Object.hasOwn(rows.packages, p.package) ? { ...rows.packages[p.package], _file: join(p.level, OATS_LOCK_FILE), _level: p.level } : undefined;
-    const problems = [];
-    if (!lock) problems.push({ code: "invalid-lock", detail: "installed but not locked — reacquire it" });
-    else {
-      // There is no persistent package root to hash: the package row exact-locks
-      // a remote payload, and the only bytes on disk are the flat capability
-      // artifacts. So every health check is per capability, against the artifact
-      // integrity the engine recorded for it.
-      for (const c of p.capabilities) {
-        const h = capabilityHealth(p.level, c, Object.hasOwn(rows.capabilities, c.id) ? rows.capabilities[c.id] : undefined, lock);
-        if (h.status !== "ok") problems.push({ code: h.code, detail: h.detail });
-      }
-    }
-    packages.push({
-      id: p.package, version: p.version || null, level: p.level, source: lock?.source || null,
-      path: lock?.path || null, commit: lock?.commit || null, capabilities: p.capabilities.map((c) => c.id),
-      dependencies: lock?.dependencies || [],
-      status: problems.length ? "broken" : "ok", problems,
-    });
-  }
-  for (const [id, lock] of Object.entries(pkgLocks.packages)) {
-    if (!installedPkgs.some((p) => p.package === id)) {
-      // Capability rows carry the provider back-reference — the package row has
-      // no capability list to read any more.
-      const provided = Object.entries(pkgLocks.capabilities).filter(([, c]) => c.package === id).map(([capId]) => capId);
-      packages.push({ id, version: lock.version || null, level: lock._level, source: lock.source || null, path: lock.path || null, commit: lock.commit || null, capabilities: provided, dependencies: lock.dependencies || [], status: "broken", problems: [{ code: "missing-locked-package", detail: `locked in ${lock._file} but not installed — run oats install` }] });
-    }
-  }
-  // Supported v1 scopes — empty or not — are pending an explicit LOCK-FORMAT
-  // migration (maintainer ruling). There is no second view beside this one:
-  // migration never produces residue, and the superseded transitional v2 shape
-  // is rejected wholesale by the strict reader, so it reaches doctor as the
-  // single `lockError` diagnosis above rather than as partially parsed entries.
-  const legacyLockFiles = pkgLocks.legacy
-    .map((l) => ({ file: l.file, level: l.level, lockfileVersion: l.lockfileVersion ?? 1, empty: !Object.keys(l.capabilities || {}).length, status: "pending-format-migration", action: `oats migrate --dir ${l.level}` }));
-  // Adoption provenance now comes from the visible, commit-safe adopted base —
-  // not from a provenance comment the local config could lose to an edit.
-  const adoptedTemplates = [];
-  for (const cfg of chain) {
-    const level = dirname(cfg._file);
-    let adopted;
-    try { adopted = readAdoptedTemplate(level); }
-    catch (e) { adoptedTemplates.push({ level, file: cfg._file, status: "broken", code: e.code || "E_ADOPTION_INVALID", detail: e.message }); continue; }
-    if (!adopted) continue;
-    let localChanges = null;
-    try { localChanges = readFileSync(cfg._file, "utf8") !== adopted.baseText; } catch { /* unreadable config is reported elsewhere */ }
-    adoptedTemplates.push({
-      level, file: cfg._file, package: adopted.package, template: adopted.template,
-      base: adopted.baseFile, source: adopted.metadata?.source || null,
-      version: adopted.metadata?.version || null, commit: adopted.metadata?.commit || null,
-      hash: adopted.metadata?.hash || null, localChanges, status: "ok",
-    });
-  }
-  // NOTE: doctor deliberately does NOT enumerate templates a package exports but
-  // nobody adopted. In the materialized model there is no package root on disk,
-  // so that list only exists behind a network fetch of the locked source — and
-  // a diagnostic command must never go to the network to render a hint.
-  const missingHostRequirements = aggregateMissingRequirements([ctx]).map((req) => ({
-    command: req.command, why: req.why || null, docs: req.docs || null,
-    requestedBy: req.requestedBy,
-    plan: req.plan && !req.plan.unavailable
-      ? { manager: req.plan.manager, argv: req.plan.argv, steps: req.plan.steps || [req.plan.argv], source: req.plan.source, version: req.plan.version || null, scope: req.plan.scope }
-      : null,
-    invalid: req.invalid || null,
-    conflict: req.conflict || null,
-    unavailable: req.plan?.unavailable || null,
-    // Context-complete + shell-safe: the copyable command pins the resolved
-    // scope with --dir so it cannot target another deployment from a
-    // different cwd. Command and ctx are validated/quoted for safe copying.
-    consentCommand: req.plan && !req.plan.unavailable && !req.invalid && !req.conflict
-      ? `oats install --accept-requirement ${req.command} --dir ${shellQuote(ctx)}`
-      : null,
-  }));
-  return { lockError: lockBroken, packages, legacyLockFiles, adoptedTemplates, missingHostRequirements, officialMigration: officialMigrationState(pkgLocks.legacy, { teamScope, ctx }) };
 }
 
 // ---------- inspect: one authoritative answer for GUIs ----------
@@ -1351,7 +1229,7 @@ function doctorJson(dir) {
   const mans = capabilityManifests(ctx);
   const composition = doctorComposition(ctx, soulName);
   const chain = configChain(ctx);
-  const pkg = doctorPackagesData(ctx, chain, { teamScope: r.team?.scope });
+  const ws = doctorLockData(ctx);
   const oasScopes = detectOasScopes(ctx);
   console.log(JSON.stringify({
     schemaVersion: 1,
@@ -1377,15 +1255,14 @@ retiredLocks: (() => { try { return Object.entries(readCapabilityLocks(ctx)); } 
     retiredArtifacts: Object.entries(mans)
       .filter(([id]) => retiredCapabilityReason(id))
       .map(([id, m]) => ({ id, dir: m._dir, origin: m._origin, reason: retiredCapabilityReason(id) })),
-    // Shared WS2+engine package payload (fix 4: human and JSON doctor derive
-    // from ONE computation; fail-closed reads are diagnosed via lockError —
-    // doctorPackagesData carries the engine's legacy-lock shapes).
-    packages: pkg.packages,
-    lockError: pkg.lockError,
-    legacyLockFiles: pkg.legacyLockFiles,
-    officialMigration: pkg.officialMigration,
-    adoptedTemplates: pkg.adoptedTemplates,
-    missingHostRequirements: pkg.missingHostRequirements,
+    // Workspace model v2 (offline view): the lock (v3) and the deployment
+    // declaration. Human and JSON doctor derive from ONE computation; a
+    // fail-closed lock read is diagnosed via lockError, never consumed as data.
+    workspace: ws.local ? { file: ws.local.path, ref: ws.local.workspace } : null,
+    workspaceError: ws.localError,
+    lockFile: ws.lockFile,
+    packages: ws.packages,
+    lockError: ws.lockError,
     composedInstructions: composition?.text,
     instructionBlocks: composition?.blocks,
   }, null, 2));
@@ -1500,54 +1377,24 @@ function doctor(dir) {
   }
   if (existsSync(LEGACY_HOME_CAPABILITIES_DIR)) console.log(`  WARNING: legacy ~/.oats/capabilities exists and is no longer discovered — reinstall its packages at a config scope and remove it`);
 
-  // Distribution packages: package failures are distinguished from capability
-  // failures. Doctor is the DIAGNOSIS surface — human and JSON render the SAME
-  // doctorPackagesData computation (reviewer-455ba15 fix 4); fail-closed
-  // invalid-lock raises are diagnosed here, never consumed as data.
-  console.log("\nInstalled packages:");
-  const pkg = doctorPackagesData(ctx, chain, { teamScope: r.team?.scope });
-  if (pkg.lockError) {
-    console.log(`  ERROR: ${pkg.lockError.message} [${pkg.lockError.code}]`);
-    if (pkg.lockError.file) console.log(`         fix or remove the offending entry in ${shortPath(pkg.lockError.file)} — the lock is never auto-repaired; package operations fail closed until it is valid`);
+  // Workspace model v2: nothing is installed. Doctor reports the lock (v3) and
+  // the deployment declaration OFFLINE — membership, discovery and package
+  // resolution go to the remotes and belong to `oats sync` / `oats workspace status`.
+  console.log("\nWorkspace (v2, offline view):");
+  const ws = doctorLockData(ctx);
+  if (ws.local) console.log(`  oats-local.yaml  ${shortPath(ws.local.path)}  → workspace ${ws.local.workspace}`);
+  else if (ws.localError) console.log(`  ERROR: ${ws.localError.message} [${ws.localError.code}]`);
+  else console.log("  (no oats-local.yaml found walking up — this scope realizes no v2 workspace; run `oats sync` from one that does)");
+  console.log("\nLocked packages (oats-lock.json v3):");
+  if (ws.lockError) {
+    console.log(`  ERROR: ${ws.lockError.message} [${ws.lockError.code}]`);
+    if (ws.lockError.file) console.log(`         the lock is never auto-repaired; delete ${shortPath(ws.lockError.file)} and run \`oats sync\``);
+  } else if (!ws.packages.length) console.log(ws.lockFile ? "  (none)" : "  (no lock yet — run `oats sync`)");
+  for (const p of ws.packages) {
+    console.log(`  ${p.id} ${p.version}  ${p.source}  @ ${p.commit.slice(0, 12)}  ${p.approved ? `approved ${p.approved.at}` : "APPROVAL NEEDED (oats sync)"}`);
+    if (p.capabilities.length) console.log(`             capabilities: ${p.capabilities.join(", ")}`);
   }
-  if (!pkg.lockError && !pkg.packages.length && !pkg.legacyLockFiles.length) console.log("  (none)");
-  for (const p of pkg.packages) {
-    console.log(`  ${p.id}@${p.version}  [${levelOf(p.level)} ${shortPath(p.level)}]`);
-    for (const prob of p.problems) {
-      if (prob.code === "untrusted-surface") console.log(`             ${prob.detail}`);
-      else console.log(`             ERROR: ${prob.detail} [${prob.code}]`);
-    }
-  }
-  for (const l of pkg.legacyLockFiles) {
-    if (l.empty) console.log(`  WARNING: ${shortPath(l.file)} is an empty lockfileVersion ${l.lockfileVersion} file — pending lock-format migration: run \`oats migrate --dir ${shortPath(l.level)}\` (converts to canonical v2)`);
-    else console.log(`  WARNING: ${shortPath(l.file)} is lockfileVersion ${l.lockfileVersion} — \`oats migrate\` maps its capability locks to packages`);
-  }
-  if (pkg.officialMigration) {
-    const om = pkg.officialMigration;
-    console.log(`\nOfficial capability migration (0.18 bundled capabilities → official packages):`);
-    for (const c of om.capabilities) {
-      console.log(`  ${c.capability} → package ${c.package}${c.via === "alias" ? " (catalog alias)" : ""}  ${c.available ? "[mapped]" : "[no catalog mapping yet]"}  [${shortPath(c.level)}]`);
-    }
-    if (om.status === "ready") console.log(`  READY: migrate with \`${om.command}\` (plan it first with --dry-run; approvals are re-earned afterwards)`);
-    else console.log(`  NOT YET AVAILABLE: ${om.reason}`);
-  }
-  for (const a of pkg.adoptedTemplates) {
-    if (a.status === "broken") {
-      console.log(`\nAdopted config template: BROKEN at ${shortPath(a.level)} — ${a.detail}`);
-      continue;
-    }
-    const drift = a.localChanges === null ? "" : a.localChanges ? " — local edits present (`oats config diff`)" : " — no local edits yet";
-    console.log(`\nAdopted config template: ${shortPath(a.file)} adopted ${a.package}:${a.template}${a.version ? `@${a.version}` : ""}${drift}`);
-    console.log(`  recorded base ${shortPath(a.base)} (commit it — \`oats config sync\` compares against it; package updates never rewrite your config)`);
-  }
-  if (pkg.missingHostRequirements.length) {
-    console.log("\nMissing host commands (active capabilities):");
-    for (const req of pkg.missingHostRequirements) {
-      console.log(`  ${req.command} — ${req.why || "required"} (requested by: ${req.requestedBy.map((r) => r.capability).join(", ")})`);
-      if (req.plan) console.log(`             install with consent: ${req.consentCommand}  (runs: ${req.plan.argv.join(" ")})`);
-      else if (req.docs) console.log(`             install docs: ${req.docs}`);
-    }
-  }
+  console.log("  membership, discovery and drift need the remotes: `oats workspace status`, `oats sync`.");
 
   if (soulName) {
     const information = operationalKnowledgeNote(composition, soulName);
@@ -1895,1237 +1742,7 @@ function readCapabilitiesModel(file) {
   return { layers: { ...(caps.layers || {}) }, additive: { ...(caps.additive || {}) } };
 }
 
-// ---------- use / activation ----------
-function use() {
-  const requested = args[1];
-  if (!requested || requested.startsWith("--")) cmdFail("E_USAGE", "usage: oats use <capability|none> [--global|--type <agent-type>|--soul <name>] [--disable|--inherit] [--layer <name>] [--settings k=v [k2=v2 ...]] [--dir <dir>] [--json]");
-  const dir = dirFlag();
-  const level = levelOf(dir);
-  const file = join(dir, "oats-config.yaml");
-  const layer = flag("layer");
-  if (layer && !LAYERS.includes(layer)) cmdFail("E_BAD_ARGS", `--layer must be one of: ${LAYERS.join(", ")}`);
-  const inherit = args.includes("--inherit");
-  if (inherit && args.includes("--disable")) cmdFail("E_BAD_ARGS", "choose --inherit (remove this level's binding) or --disable (explicit exclusion), not both");
-  let text = existsSync(file) ? readFileSync(file, "utf8") : `name: ${scaffoldConfigName(dir)}\n`;
-  const caps = readCapabilitiesModel(file);
-  // The receipt names what this level said before and after, and what is
-  // effective afterwards, so a GUI never has to re-read the file to know.
-  const effectiveAfter = (soulName, layerName, capId) => {
-    try {
-      const r = resolveOatsConfig(dir, soulName);
-      if (layerName) return { layer: layerName, id: r.layers[layerName]?.id || null, provenance: r.provenance[layerName] || null, disabled: !!r.layerDisabled?.[layerName] };
-      const c = r.capabilities.find((x) => x.id === capId);
-      return { capability: capId, enabled: !!c, provenance: c?.provenance || [], settings: c?.settings || {} };
-    } catch (e) { return { error: e.message }; }
-  };
-  const answer = (receipt, line) => { if (JSON_MODE) jsonOk(receipt); else console.log(line); };
-  if (requested === "none") {
-    if (!layer) cmdFail("E_BAD_ARGS", "oats use none requires --layer <name>");
-    // A layer `none` is a LEVEL statement; there is no per-soul or per-type
-    // none, so a target here must be refused, never silently widened.
-    if (flag("soul") !== undefined || flag("type") !== undefined) cmdFail("E_BAD_ARGS", `oats use none --layer ${layer} disables the layer for this whole level; it takes no --soul or --type (exclude one capability for a soul with oats use <capability> --soul <name> --disable)`);
-    const before = caps.layers[layer] === "none" ? "none" : caps.layers[layer] ? caps.layers[layer].capability : null;
-    if (inherit) {
-      if (caps.layers[layer] !== "none") cmdFail("E_NOT_BOUND", `layer ${layer} is not explicitly none at ${level} level (${shortPath(file)}); nothing to inherit from`);
-      delete caps.layers[layer];
-      writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-      answer({ capability: null, action: "inherit", target: "layer", layer, level, file, before: { layer: before }, after: { layer: null, effective: effectiveAfter(undefined, layer) } }, `Layer ${layer} at ${level} level now inherits (${shortPath(file)})`);
-      return;
-    }
-    caps.layers[layer] = "none";
-    writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-    answer({ capability: null, action: "layer-none", target: "layer", layer, level, file, before: { layer: before }, after: { layer: "none", effective: effectiveAfter(undefined, layer) } }, `Disabled fundamental layer ${layer} at ${level} level (${shortPath(file)})`);
-    return;
-  }
-  const manifest = capabilityManifest(requested, dir);
-  if (!manifest) {
-    // A scope with NO oats-config.yaml anywhere in its chain is not a config
-    // level, so `capabilityManifests` — which walks the chain — never opens this
-    // scope's installed store: a capability acquired and locked right here would
-    // otherwise be reported as never acquired. Diagnose the missing chain
-    // instead. `oats use` still writes nothing: authoring an adopter's first
-    // config is `oats init`'s job, and guessing it here would be policy.
-    if (!configChain(dir).length && ownScopeCapabilityManifest(dir, requested)) {
-      // The remedy is `--raw` on purpose: it is offline, deterministic, and
-      // writes only the minimal config this scope is missing. It never names
-      // `--package <pkg>` — that arm read the provider out of the MERGED lock
-      // chain while this gate reads own-scope only, and it dead-ends whenever
-      // the provider exports no config template. Both scope mentions use the
-      // same rendering, so the printed command is copyable verbatim.
-      cmdFail("E_NO_CONFIG", `capability "${requested}" is present in the capability store at ${shellQuote(dir)}, but there is no oats-config.yaml at this scope or any level above it — \`oats use\` activates into a config file and this scope has none. Create the minimal one with \`oats init --raw --dir ${shellQuote(dir)}\`, then re-run \`oats use ${requested}\`.`);
-      return;
-    }
-    cmdFail("E_UNKNOWN_CAPABILITY", `unknown capability "${requested}" (acquired: ${Object.keys(capabilityManifests(dir)).join(", ") || "none"}) — acquire it with \`oats install ${requested}\` (marketplace: ${Object.keys(marketplaceCapabilities()).join(", ")})`);
-  }
-  if (layer && manifest.layer !== layer) cmdFail("E_LAYER_MISMATCH", `capability "${manifest.capability}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
-  const targets = [["agent-types", flag("type")], ["souls", flag("soul")]].filter(([, value]) => value);
-  if (args.includes("--global")) targets.push(["global", undefined]);
-  if (targets.length > 1) cmdFail("E_BAD_ARGS", "choose exactly one of --global, --type, or --soul");
-  const [targetKind, targetName] = targets[0] || ["global", undefined];
-  const targetLabel = targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"}:${targetName}`;
-  const soulForEffective = targetKind === "souls" ? targetName : undefined;
-  const enabled = !args.includes("--disable");
-  const bindingOf = (e) => (!e ? undefined : targetKind === "global" ? e.global : e[targetKind]?.[targetName]);
-  const stateOf = (e) => ({ bound: bindingOf(e) !== undefined, enabled: bindingOf(e) === undefined ? null : (typeof bindingOf(e) === "object" ? bindingOf(e).enabled !== false : !!bindingOf(e)), settings: e?.settings && typeof e.settings === "object" ? { ...e.settings } : {} });
-  // --inherit removes THIS level's binding for the addressed target (and the
-  // whole entry once no target is left), so outer scopes and targets apply
-  // again. Distinct from --disable, which writes an explicit exclusion.
-  if (inherit) {
-    const existing = manifest.layer ? caps.layers[manifest.layer] : caps.additive[manifest.capability];
-    const entry0 = existing && existing !== "none" && (!manifest.layer || existing.capability === manifest.capability) ? existing : undefined;
-    const before = stateOf(entry0);
-    if (!entry0 || !before.bound) cmdFail("E_NOT_BOUND", `${manifest.capability} has no ${targetLabel} binding at ${level} level (${shortPath(file)}); nothing to inherit from`);
-    // Only the addressed target goes. Every other binding the entry carries
-    // (an explicit global, other souls, types) is policy this command cannot
-    // tell from intent, so it stays; the receipt names what still applies.
-    if (targetKind === "global") delete entry0.global;
-    else { delete entry0[targetKind][targetName]; if (!Object.keys(entry0[targetKind]).length) delete entry0[targetKind]; }
-    const remaining = [...(entry0.global !== undefined ? [`global: ${entry0.global}`] : []), ...Object.entries(entry0["agent-types"] || {}).map(([t, v]) => `type:${t}: ${JSON.stringify(v)}`), ...Object.entries(entry0.souls || {}).map(([n, v]) => `soul:${n}: ${JSON.stringify(v)}`)];
-    const targetsLeft = remaining.length > 0;
-    if (!targetsLeft) { if (manifest.layer) delete caps.layers[manifest.layer]; else delete caps.additive[manifest.capability]; }
-    writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-    const note = targetsLeft ? `this level still binds ${manifest.capability}: ${remaining.join(", ")}; remove them with oats use ${manifest.capability} --inherit --global|--type <t>|--soul <s> if the intent is full inheritance` : null;
-    answer({ capability: manifest.capability, action: "inherit", target: targetLabel, layer: manifest.layer || null, level, file, entryRemoved: !targetsLeft, remaining, note, before, after: { bound: false, enabled: null, settings: targetsLeft ? before.settings : {}, effective: effectiveAfter(soulForEffective, manifest.layer, manifest.capability) } },
-      `${manifest.capability} ${targetLabel} binding removed at ${level} level${targetsLeft ? `; still bound here: ${remaining.join(", ")}` : " (entry removed)"} (${shortPath(file)})`);
-    return;
-  }
-  // Locate or create the entry in the right subtree.
-  let entry;
-  if (manifest.layer) {
-    const existing = caps.layers[manifest.layer];
-    var entryExisted = !!(existing && existing !== "none" && existing.capability === manifest.capability);
-    entry = entryExisted ? existing : { capability: manifest.capability };
-    // One entry per layer per level: another capability's entry is never
-    // overwritten, not even by an exclusion, and the remedy is exact.
-    if (existing && existing !== "none" && existing.capability !== manifest.capability) {
-      cmdFail("E_LAYER_BOUND", `fundamental layer ${manifest.layer} already binds ${existing.capability} at ${level} level (${shortPath(file)}); remove that binding first with oats use ${existing.capability} --inherit --global (and --type/--soul for each of its targets), or disable the layer here with oats use none --layer ${manifest.layer}, then use ${manifest.capability}`);
-    }
-    caps.layers[manifest.layer] = entry;
-  } else {
-    entry = caps.additive[manifest.capability] || {};
-    caps.additive[manifest.capability] = entry;
-  }
-  const beforeState = stateOf(entryExisted || !manifest.layer ? entry : undefined);
-  const from = originToFrom(manifest._origin);
-  if (from && !entry.from) entry.from = from;
-  const settingsArgs = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] !== "--settings") continue;
-    let consumed = 0;
-    for (let j = i + 1; j < args.length && !args[j].startsWith("--"); j++, consumed++) settingsArgs.push(args[j]);
-    if (!consumed) cmdFail("E_BAD_ARGS", "--settings expects one or more key=value pairs");
-    i += consumed;
-  }
-  if (settingsArgs.length) {
-    entry.settings = entry.settings && typeof entry.settings === "object" ? entry.settings : {};
-    for (const kv of settingsArgs) {
-      const eq = kv.indexOf("=");
-      if (eq <= 0) cmdFail("E_BAD_ARGS", `--settings expects key=value, got "${kv}"`);
-      // WRITE side of the refusals the readers enforce. Two distinct hazards on
-      // this one line:
-      //   - `--settings __proto__=x` assigned through the inherited setter,
-      //     which swallowed the entry, and the command reported success for a
-      //     setting it never wrote;
-      //   - the VALUE is rendered verbatim into one `key: value` line, so a
-      //     newline-bearing value stopped being a value and became document —
-      //     a crafted one added a whole second capability entry.
-      // Both fail closed, before anything is written.
-      const key = assertSafeConfigWriteKey(kv.slice(0, eq), `--settings key ${JSON.stringify(kv.slice(0, eq))}`);
-      entry.settings[key] = assertSafeConfigValue(kv.slice(eq + 1), `--settings value for ${JSON.stringify(key)}`);
-    }
-  }
-  if (targetKind === "global") entry.global = enabled;
-  else {
-    // An EXISTING layer entry with no explicit targets is implicitly global:
-    // materialize that before narrowing, so adding a soul/type binding does not
-    // silently drop everyone else. An entry this command just created (the
-    // layer was `none` or another capability) has no implicit global to keep:
-    // a targeted first binding is written as global: false, explicitly.
-    if (manifest.layer && entry.global === undefined && !entry["agent-types"] && !entry.souls) entry.global = entryExisted;
-    entry[targetKind] = entry[targetKind] && typeof entry[targetKind] === "object" ? entry[targetKind] : {};
-    // Same write-side refusal, and for the same two reasons: `--soul
-    // __proto__` was swallowed by the inherited setter and reported as
-    // activated, and a `--soul`/`--type` NAME is written as a mapping key, so a
-    // newline in it injects document exactly like a settings value does.
-    entry[targetKind][assertSafeConfigWriteKey(targetName, `--${targetKind === "agent-types" ? "type" : "soul"} name ${JSON.stringify(String(targetName))}`)] = enabled;
-  }
-  writeFileSync(file, replaceCapabilitiesBlock(text, caps));
-  const afterState = stateOf(entry);
-  const missing = capabilityMissingRequires(manifest.capability, dir);
-  answer({ capability: manifest.capability, action: enabled ? "enable" : "disable", target: targetLabel, layer: manifest.layer || null, level, file, settings: entry.settings || {}, before: beforeState, after: { ...afterState, effective: effectiveAfter(soulForEffective, manifest.layer, manifest.capability) }, missingRequires: missing },
-    `${enabled ? "Activated" : "Excluded"} ${manifest.capability} for ${targetKind === "global" ? "global" : `${targetKind === "agent-types" ? "type" : "soul"} ${targetName}`} at ${level} level (${shortPath(file)})`);
-  if (JSON_MODE) return;
-  for (const miss of missing) console.log(`WARNING: required command "${miss.command}" not on PATH — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
-  console.log("New instances receive the resolved capability; committed souls are unchanged.");
-}
 
-// ---------- install / trust / list / remove / migrate ----------
-const cmdFail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
-/** `oats install <source>`: distribution-package acquisition (exact-lock closure,
- * activates nothing). Marketplace capability ids keep the legacy capability path
- * until workstream 3 publishes the official packages. */
-function install() {
-  const src = args[1];
-  const dir = dirFlag();
-  if (!src || src.startsWith("--")) {
-    // Usage errors surface BEFORE any restore/network side effect: a malformed
-    // --accept-requirement must not mutate the deployment and then report E_USAGE.
-    flagAll("accept-requirement");
-    reconcile(dir);
-    return;
-  }
-  const retiredReason = retiredCapabilityReason(src);
-  if (retiredReason) cmdFail("retired-capability", retiredReason);
-  // Package source? (git/path with an oats-package.json, or a catalog id) — otherwise legacy capability acquisition.
-  let parsedSrc;
-  try { parsedSrc = parsePackageSource(src); } catch { parsedSrc = undefined; }
-  const catalogId = parsedSrc?.kind === "catalog" ? parsedSrc.id : undefined;
-  const hasOfficialPackage = !!catalogId && Object.hasOwn(officialPackageCatalog(), catalogId);
-  // Once an official package catalog entry exists it becomes the default
-  // acquisition route for that short id. Existing v1 installs keep working,
-  // but a deliberate `oats install oats.okf` now acquires the package rather than
-  // creating another legacy capability lock.
-  const isMarketplaceCap = parsedSrc?.kind === "catalog" && !!marketplaceCapabilities()[catalogId] && !hasOfficialPackage;
-  const isLocalPackage = parsedSrc?.kind === "path" && existsSync(join(parsedSrc.path, "oats-package.json"));
-  const isCatalogPackage = parsedSrc?.kind === "catalog" && !isMarketplaceCap;
-  let gitInspection;
-  if (parsedSrc && (parsedSrc.kind === "git" || isLocalPackage || isCatalogPackage)) {
-    // Remote Git may be either a distribution package or the documented
-    // legacy standalone-capability repository. Inspect the fetched ROOT before
-    // any scope lock preflight; never infer root layout from closure errors.
-    if (parsedSrc.kind === "git") {
-      try { gitInspection = inspectGitSourceRoot(src); }
-      catch (e) { cmdFail(e.code || "invalid-source", e.message || e); return; }
-      if (gitInspection.payloadPackage) {
-        try { installPackage(dir, src, { rootSnapshot: gitInspection }); }
-        finally { gitInspection.cleanup(); }
-        return;
-      }
-      // Legacy standalone-capability repositories predate contained package
-      // roots, so the fallback only applies to a REPOSITORY-ROOT capability
-      // that was not asked for a specific path. A repo whose root carries
-      // oats-package.json must never silently downgrade to capability
-      // acquisition just because the selected path holds no package.
-      if (gitInspection.explicitPath || gitInspection.package || !gitInspection.capability) {
-        const where = `package path "${gitInspection.path}"`;
-        const reason = gitInspection.package
-          ? `Git source ${src} has an oats-package.json at the repository ROOT but no package at ${where}${gitInspection.explicitPath ? "" : " (the default)"} — select the root explicitly with \`${src}#.\``
-          : gitInspection.explicitPath
-            ? `Git source ${src} has no oats-package.json at ${where}`
-            : `Git source ${src} has no oats-package.json at ${where} (the default package path) and no oats.json at its root`;
-        gitInspection.cleanup();
-        cmdFail("invalid-package-manifest", reason); return;
-      }
-      // Standalone capability: hand the SAME fetched snapshot to legacy
-      // acquisition (which re-verifies that exact root layout before copying).
-    } else { installPackage(dir, src); return; }
-  }
-  let known;
-  try { known = gitInspection ? undefined : capabilityManifest(src, dir); }
-  catch (e) { gitInspection?.cleanup(); cmdFail(e.code || "invalid-lock", e.message || e); return; }
-  if (known) {
-    if (JSON_MODE) { jsonOk({ alreadyAcquired: known.capability, version: known.version || null }); return; }
-    console.log(`Already acquired capability ${known.capability} (${known.version || "unversioned"}); not activated or updated.`);
-    return;
-  }
-  let r;
-  try { r = acquireCapability(dir, src, { rootSnapshot: gitInspection }); }
-  catch (e) { cmdFail(e.code || "invalid-source", e.message); return; }
-  finally { gitInspection?.cleanup(); }
-  const lock = {
-    source: r.source,
-    version: r.manifest.version || null,
-    ...(r.commit ? { commit: r.commit } : {}), integrity: r.integrity,
-    // Marketplace packages ship with the kernel you already installed — they are
-    // trusted at acquisition; third-party git/path installs need explicit `oats trust`.
-    trustedExecutables: !!r.marketplace,
-  };
-  if (r.marketplace && r.manifest.environment?.length) {
-    (JSON_MODE ? console.error : console.log)(`Requested launch environment: ${r.manifest.environment.join(", ")}`);
-  }
-  let lockFile;
-  try { lockFile = writeCapabilityLock(dir, r.manifest.capability, lock); }
-  catch (e) {
-    // Refused lock write (e.g. legacy-lock: a converted scope rejects a NEW v1
-    // capability entry) must
-    // not strand the acquired artifact — compensate before failing.
-    rmSync(r.dest, { recursive: true, force: true });
-    cmdFail(e.code || "legacy-lock", e.message); return;
-  }
-  if (JSON_MODE) { jsonOk({ capability: r.manifest.capability, version: r.manifest.version || null, integrity: r.integrity, source: r.source, dir: r.dest, lockFile, marketplace: !!r.marketplace, trustedExecutables: !!r.marketplace }); return; }
-  console.log(`Acquired ${r.manifest.capability} → ${shortPath(r.dest)}`);
-  console.log(`Locked ${r.manifest.version || r.commit || "exact artifact"} (${r.integrity}) in ${shortPath(lockFile)}; not activated.`);
-  if (r.marketplace) console.log("Marketplace package: executables trusted at acquisition.");
-  else if (r.manifest.commands || r.manifest.hooks || r.manifest.environment?.length) {
-    if (r.manifest.environment?.length) console.log(`Future trust request includes launch environment: ${r.manifest.environment.join(", ")}`);
-    console.log(`Executable surface is blocked until: oats trust ${r.manifest.capability} --dir ${shortPath(dir)}`);
-  }
-}
-
-/** Lock-file levels from dir upward (closest last — outermost first), like restoreCapabilities' walk. */
-function lockLevelsUp(dir) {
-  const levels = [];
-  for (let d = resolve(dir); ; d = dirname(d)) {
-    if (existsSync(join(d, OATS_LOCK_FILE))) levels.push(d);
-    if (dirname(d) === d) break;
-  }
-  return levels.reverse();
-}
-
-/** Check/restore one level's v2 package locks via the ENGINE's restorePackages
- * (exact restore, no ref advancement, staging + integrity/capability/deps
- * verification inside). The engine walks the lock chain from the given dir;
- * reconciliation calls it per deduplicated level and keeps that level's rows. */
-/** Map engine restore rows to WS2 report items (kind package). */
-const pkgRow = (r) => ({
-  id: r.package, level: r.level, package: true, dir: r.dir,
-  status: r.status === "ok" ? "present" : r.status, reason: r.reason, code: r.code,
-});
-
-/** Restore-and-partition for reconciliation (reviewer-455ba15 fix 1): the
- * engine's restorePackages walks the WHOLE lock chain from a directory and has
- * no exact-level option, so invoke it ONCE per deepest scope and PARTITION the
- * report rows by lock level — never re-invoke per level (each re-invocation
- * re-runs restore side effects for every ancestor lock). Returns a Map
- * level(resolved) → rows. */
-function partitionedPackageRestore(deepestDir) {
-  const byLevel = new Map();
-  const add = (level, row) => {
-    const key = resolve(level);
-    if (!byLevel.has(key)) byLevel.set(key, []);
-    byLevel.get(key).push(row);
-  };
-  for (const r of restorePackages(deepestDir)) add(r.level, pkgRow(r));
-  // EMPTY v1 lock files surface too (maintainer ruling): the engine's restore
-  // report only rows NON-empty v1 files. Walk the raw lock chain (a lock-only
-  // scope has no config, so configChain-based reads cannot see it) and emit a
-  // LEGACY row for each empty v1 file so reconciliation shows the pending
-  // lock-format migration.
-  for (const level of lockLevelsUp(deepestDir)) {
-    try {
-      const parsed = JSON.parse(readFileSync(join(level, OATS_LOCK_FILE), "utf8"));
-      if (parsed.lockfileVersion !== 2 && !Object.keys(parsed.capabilities || {}).length) {
-        add(level, { id: null, level, package: true, status: "legacy", reason: `empty lockfileVersion ${parsed.lockfileVersion ?? 1} file — pending lock-format migration: oats migrate --dir ${level}` });
-      }
-    } catch { /* malformed locks raise via restorePackages above */ }
-  }
-  return byLevel;
-}
-
-function installPackage(dir, src, opts = {}) {
-  const bail = (e) => (JSON_MODE ? jsonFail(e.code || "invalid-source", e.message || e) : die(e.message || e));
-  let r;
-  try { r = acquirePackage(dir, src, opts); }
-  catch (e) { bail(e); return true; }
-  // Packages are transport; capabilities are what lands on disk. Report both,
-  // and let the CAPABILITY rows carry the provenance an operator acts on.
-  if (JSON_MODE) { jsonOk({ root: r.root, installed: r.installed, capabilities: r.capabilities, lockFile: r.lockFile, depWarnings: r.depWarnings || [] }); return true; }
-  for (const p of r.installed) {
-    console.log(`${p.kept ? "ok       " : "Acquired "}${p.package}@${p.version}`);
-    console.log(`  locked ${p.commit === "local" ? "local tree" : p.commit} at path ${p.path} (${p.integrity})`);
-    for (const c of r.capabilities.filter((x) => x.package === p.package)) {
-      console.log(`  capability ${c.capability}@${c.version}${c.layer ? `  layer: ${c.layer}` : ""} → ${shortPath(c.dir)}  (${c.integrity})`);
-    }
-    if (!r.capabilities.some((x) => x.package === p.package)) console.log("  capabilities: (none)");
-  }
-  for (const w of r.depWarnings || []) console.log(`WARNING: ${w}`);
-  console.log(`Locked in ${shortPath(r.lockFile)}; nothing activated.`);
-  // Read the executable surface off the ENGINE's projection, not a config-chain
-  // manifest lookup: at a scope with no config yet, that lookup sees nothing.
-  const executables = r.capabilities
-    .filter((c) => c.executableSurface?.commands?.length || c.executableSurface?.hooks?.length || c.executableSurface?.environment?.length)
-    .map((c) => c.capability);
-  if (executables.length) console.log(`Executable surfaces blocked until trusted: ${executables.map((c) => `oats trust ${c}`).join("; ")}`);
-  return true;
-}
-
-/** Bare `oats install` chain restore: engine packages (lock v2) + legacy locked
- * capabilities (v1). Returns { report, failed }; output goes to stdout (human)
- * or stderr (JSON mode) — the reconcile envelope owns stdout in JSON mode. */
-function restore(dir) {
-  const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  // Fail-closed locks: restorePackages/restoreCapabilities RAISE typed
-  // invalid-lock — let the reconcile boundary surface the code verbatim
-  // (never softened to empty); this throw is caught by reconcile().
-  const pkgReport = restorePackages(dir).map((r) => ({
-    id: r.package, level: r.level, package: true, dir: r.dir,
-    status: r.status === "ok" ? "present" : r.status, reason: r.reason, code: r.code,
-  }));
-  const report = [...restoreCapabilities(dir), ...pkgReport];
-  if (!report.length) note("Nothing to restore — no locked capabilities in the config chain.");
-  let failed = 0;
-  for (const r of report) {
-    const what = r.package ? `package ${r.id ?? "(lock)"}` : r.id;
-    if (r.status === "present") note(`ok        ${what}  (${shortPath(r.dir)})`);
-    else if (r.status === "restored") note(`restored  ${what} → ${shortPath(r.dir)}${r.integrity ? `  (${r.integrity})` : ""}`);
-    else if (r.status === "legacy") note(`LEGACY    ${shortPath(join(r.level, OATS_LOCK_FILE))}: ${r.reason}`);
-    else if (r.status === "retired") { failed++; note(`RETIRED   ${what}  ${r.reason}`); }
-    else { failed++; note(`FAILED    ${what}  ${r.reason}`); }
-  }
-  return { report, failed };
-}
-
-/** Unsuccessful restore statuses and their frozen taxonomy codes (reviewer-6f0a3bd:
- * "unrestorable" and "retired" must not report ok). */
-const UNSUCCESSFUL_RESTORE = { failed: undefined, unrestorable: "invalid-source", retired: "retired-capability" };
-
-/** One artifact report item → the machine shape (kind capability|package). */
-const artifactJson = (r) => ({
-  id: r.id, kind: r.package ? "package" : "capability", level: r.level,
-  status: r.status, ...(r.dir ? { dir: r.dir } : {}), ...(r.reason ? { reason: r.reason } : {}),
-  ...(Object.hasOwn(UNSUCCESSFUL_RESTORE, r.status) ? { code: r.code || UNSUCCESSFUL_RESTORE[r.status] || "integrity-drift" } : {}),
-});
-
-/** Emit the reconcile/restore result: human exit or the single-envelope JSON contract.
- * Full success → { ok: true, result }. ANY artifact or consented-install failure →
- * nonzero with error.code E_RECONCILE_FAILED and the SAME complete report under
- * error.details — partial outcomes are never lost. */
-function emitReconcileResult({ boundary, boundaryKind, scopes, requirements, failures }) {
-  const result = { boundary, boundaryKind, scopes, requirements, failures };
-  if (JSON_MODE) {
-    if (failures.length) {
-      console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_RECONCILE_FAILED", message: `${failures.length} failure${failures.length > 1 ? "s" : ""} during restore/reconciliation`, details: result } }));
-      process.exit(1);
-    }
-    jsonOk(result);
-    return;
-  }
-  if (failures.length) {
-    console.log("\nFailures by scope:");
-    for (const f of failures) console.log(`  ${shortPath(f.scope)}: ${f.id} — ${f.reason}`);
-    die(`${failures.length} failure${failures.length > 1 ? "s" : ""} during restore/reconciliation`);
-  }
-}
-
-/** Bare `oats install` at a team boundary: reconcile the whole workspace — restore the
- * boundary scope's graph (its ancestor chain), then every descendant scope's own
- * lock graph EXACTLY ONCE, in deterministic path order, with pruned discovery;
- * verify v2 package locks against the installed package store; validate
- * config-referenced capabilities against visible locked packages; aggregate
- * missing requirements and failures by scope.
- * Non-team scopes keep current-chain behavior unless --recursive names a boundary. */
-/** Bare `oats install` (no source): current-chain restore or team-boundary
- * reconciliation. JSON-mode boundary: ANY throw before emitReconcileResult
- * (malformed lock/config, discovery failures) must still yield the single
- * envelope — never empty stdout with a stack trace. */
-function reconcile(dir) {
-  try { reconcileInner(dir); }
-  catch (e) {
-    if (JSON_MODE) {
-      console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: e.code || "E_RECONCILE_FAILED", message: String(e.message || e) } }));
-      process.exit(1);
-    }
-    die(e.message || e);
-  }
-}
-
-function reconcileInner(dir) {
-  const cfgFile = join(dir, "oats-config.yaml");
-  const declaresTeamHere = existsSync(cfgFile) && !!withConfigFile(cfgFile, () => parseYamlNested(readFileSync(cfgFile, "utf8"))).team;
-  const recursive = args.includes("--recursive");
-  if (!declaresTeamHere && !recursive) {
-    // Current-chain behavior, plus the requirements gate for this chain's active capabilities.
-    const { report, failed } = restore(dir);
-    const requirements = requirementsGate([dir]);
-    const failures = [
-      // "legacy" is informational (v1 locks restore via the capability path);
-      // every other unsuccessful status is a failure (incl. retired/unrestorable
-      // per reviewer-6f0a3bd — they must not report ok).
-      ...report.filter((r) => Object.hasOwn(UNSUCCESSFUL_RESTORE, r.status)).map((r) => ({ scope: r.level, id: r.package ? `package ${r.id}` : r.id, reason: r.reason, code: r.code || UNSUCCESSFUL_RESTORE[r.status] })),
-      ...requirements.filter((q) => q.outcome === "failed").map((q) => ({ scope: dir, id: `requirement ${q.command}`, reason: q.reason || "consented install failed" })),
-    ];
-    void failed;
-    emitReconcileResult({
-      boundary: dir, boundaryKind: "chain",
-      scopes: [{ scope: dir, artifacts: report.map(artifactJson) }],
-      requirements, failures,
-    });
-    return;
-  }
-  const boundary = dir;
-  const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  // The chosen boundary is printed BEFORE any network or host work — always.
-  note(`Workspace reconciliation boundary: ${shortPath(boundary)}${declaresTeamHere ? " (team scope)" : " (--recursive)"}`);
-  const scopes = [boundary, ...discoverWorkspaceScopes(boundary)];
-  const failures = [];
-  const scopeReports = [];
-  let reportedAny = false;
-  const restoredLevels = new Set(); // each lock level's graph restores exactly once
-  const packageCheckedLevels = new Set(); // each level's package-lock rows consumed exactly once
-  // reviewer-455ba15 fix 1 — partition-not-rerun: run the engine's chain-walking
-  // package restore as FEW times as the API allows and hand out each level's
-  // rows exactly once. One invocation covers a scope's entire ancestor chain;
-  // rows are stashed so no level is ever REPORTED twice and no already-walked
-  // level triggers a re-invocation. RESIDUAL (pending WS1's exact-levels API,
-  // relayed as a want): a descendant owning its own lock necessarily re-walks
-  // its ancestors inside the engine — present/valid ancestor artifacts re-verify
-  // with local reads only, but a FAILED ancestor fetch may retry once per
-  // lock-owning descendant. The exact-once reporting contract holds.
-  const pendingPkgRows = new Map(); // level(resolved) → rows not yet consumed
-  const packageRowsFor = (scope, levels) => {
-    const wanted = levels.map((l) => resolve(l)).filter((l) => !packageCheckedLevels.has(l));
-    if (!wanted.length) return [];
-    if (wanted.some((l) => !pendingPkgRows.has(l))) {
-      // One restore invocation covers scope's whole chain; stash every level's
-      // rows so later scopes never re-invoke for already-walked levels.
-      for (const [lvl, rows] of partitionedPackageRestore(scope)) {
-        if (!pendingPkgRows.has(lvl)) pendingPkgRows.set(lvl, rows);
-      }
-    }
-    const out = [];
-    for (const l of wanted) {
-      packageCheckedLevels.add(l);
-      out.push(...(pendingPkgRows.get(l) || []));
-    }
-    return out;
-  };
-  for (const scope of scopes) {
-    // Boundary: full ancestor chain (current-chain semantics). Descendants: their
-    // own level only — every level between boundary and descendant is either the
-    // boundary chain or an earlier discovered scope, so no level repeats and no
-    // failed ancestor restore is retried (or hidden) per descendant.
-    const chainLevels = scope === boundary ? undefined : [scope];
-    const report = restoreCapabilities(scope, chainLevels ? { levels: chainLevels.filter((l) => !restoredLevels.has(resolve(l))) } : undefined)
-      .filter((r) => !restoredLevels.has(resolve(r.level)));
-    // v2 package locks: every lock level this scope covers (the boundary covers
-    // its whole ancestor chain), each restored/verified exactly once.
-    report.push(...packageRowsFor(scope, scope === boundary ? lockLevelsUp(boundary) : [scope]));
-    for (const r of report) {
-      reportedAny = true;
-      const what = r.package ? `package ${r.id ?? "(lock)"}` : r.id;
-      if (r.status === "present") note(`ok        ${what}  [${shortPath(r.level)}]`);
-      else if (r.status === "restored") note(`restored  ${what} → ${shortPath(r.dir)}  [${shortPath(r.level)}]`);
-      else if (r.status === "legacy") note(`LEGACY    ${shortPath(join(r.level, OATS_LOCK_FILE))}: ${r.reason}`);
-      else if (r.status === "retired") { failures.push({ scope: r.level, id: what, reason: r.reason, code: "retired-capability" }); note(`RETIRED   ${what}  ${r.reason}  [${shortPath(r.level)}]`); }
-      else { failures.push({ scope: r.level, id: what, reason: r.reason, code: r.code }); note(`FAILED    ${what}  ${r.reason}  [${shortPath(r.level)}]`); }
-    }
-    if (scope === boundary) for (const cfg of configChain(boundary)) restoredLevels.add(resolve(cfg._level));
-    for (const r of report) restoredLevels.add(resolve(r.level));
-    restoredLevels.add(resolve(scope));
-    // Validate: every config-referenced installed capability supplied by a visible locked package/capability lock.
-    if (existsSync(join(scope, "oats-config.yaml"))) {
-      try {
-        const supplied = lockedPackageCapabilities(scope);
-        const capLocks = readCapabilityLocks(scope);
-        for (const cfg of configChain(scope)) {
-          if (resolve(cfg._level) !== resolve(scope)) continue;
-          for (const [slot, entry] of Object.entries(cfg.capabilities?.layers || {})) {
-            if (entry && typeof entry === "object" && entry.from === "installed" && !supplied.has(entry.capability) && !capLocks[entry.capability]) {
-              failures.push({ scope, id: entry.capability, reason: `referenced by capabilities.layers.${slot} but supplied by no visible locked package` });
-            }
-          }
-          for (const [id, entry] of Object.entries(cfg.capabilities?.additive || {})) {
-            if (entry && typeof entry === "object" && entry.from === "installed" && !supplied.has(id) && !capLocks[id]) {
-              failures.push({ scope, id, reason: "referenced in config but supplied by no visible locked package" });
-            }
-          }
-        }
-      } catch (e) { failures.push({ scope, id: "(config)", reason: e.message }); }
-    }
-    scopeReports.push({ scope, artifacts: report.map(artifactJson) });
-  }
-  if (!reportedAny && scopes.length === 1) note("Nothing to restore — no locked capabilities or packages found in the boundary.");
-  const requirements = requirementsGate(scopes);
-  for (const q of requirements) {
-    if (q.outcome === "failed") failures.push({ scope: boundary, id: `requirement ${q.command}`, reason: q.reason || "consented install failed" });
-  }
-  emitReconcileResult({
-    boundary, boundaryKind: declaresTeamHere ? "team" : "recursive",
-    scopes: scopeReports, requirements, failures,
-  });
-}
-
-/** Host-requirement consent gate. Requirements are considered only for capabilities
- * activated somewhere in the reconciled scopes, deduplicated by command. Interactive
- * runs prompt per requirement with the exact command/source/version and state scope;
- * non-interactive runs NEVER install by default — automation names each accepted
- * requirement via --accept-requirement <command>; --no-requirements skips entirely.
- * Skipping leaves an actionable doctor warning (doctor recomputes missing commands).
- * Returns structured entries with a stable outcome enum:
- *   "installed"        consented install ran and the command verified on PATH
- *   "failed"           consented install errored or PATH verification missed (→ reconcile failure)
- *   "consent-required" not explicitly accepted — nothing installed
- *   "skipped"          --no-requirements, or no safe installer for this host
- * JSON plan data equals the human prompt plan (argv/source/version/scope/requestedBy;
- * never shell text). In JSON mode all prose goes to stderr. */
-function requirementsGate(scopes) {
-  // Malformed repeatable flags are usage errors regardless of which branch
-  // runs — validate up front so --no-requirements cannot mask them.
-  const accepted = new Set(flagAll("accept-requirement"));
-  // Explicitly named requirements bypass runtime scoping, so the remediation
-  // command a failed spawn prints actually installs something.
-  const missing = aggregateMissingRequirements(scopes, { accepted });
-  if (!missing.length) return [];
-  const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  const entryOf = (req, outcome, extra = {}) => ({
-    command: req.command, kind: req.kind || "host-command",
-    runtime: req.runtime || null, package: req.package || null, why: req.why || null,
-    // `steps` is the ORDERED sequence runRequirementInstall actually executes;
-    // `argv` is only its last command. Serializing argv alone hid a
-    // `claude plugin marketplace add <source>` — a lower-trust source
-    // registration — from every client consenting through the JSON API
-    // (reviewer-final0130bc8). Always present, exactly as doctor renders it, so
-    // single- and multi-step plans have one shape.
-    plan: req.plan && !req.plan.unavailable
-      ? { manager: req.plan.manager, argv: req.plan.argv, steps: req.plan.steps || [req.plan.argv], source: req.plan.source, version: req.plan.version || null, scope: req.plan.scope }
-      : null,
-    requestedBy: req.requestedBy, docs: req.docs || null, outcome, ...extra,
-  });
-  // Fail-closed identity/conflict policy (E_REQUIREMENT_POLICY): invalid command
-  // tokens and same-command conflicting plans are NEVER consentable or installable
-  // — they fail reconciliation deterministically with provenance, even under
-  // --no-requirements (skipping consent does not skip safety validation).
-  const policyEntries = [];
-  for (const req of missing) {
-    if (req.invalid) {
-      note(`  INVALID requirement command ${JSON.stringify(req.command)} — ${req.invalid} (requested by: ${req.requestedBy.map((r) => `${r.capability} [${shortPath(r.scope)}]`).join(", ")})`);
-      policyEntries.push(entryOf(req, "failed", { reason: req.invalid, code: "E_REQUIREMENT_POLICY" }));
-    } else if (req.conflict) {
-      note(`  CONFLICT for command "${req.command}": capabilities request non-identical install plans — no install is offered`);
-      // Show the FULL sequence: two capabilities can agree on the final install
-      // command while registering different third-party sources before it.
-      for (const p of req.conflict.plans) {
-        const shown = p.steps?.length ? p.steps.map((a) => a.join(" ")).join("  &&  ") : (p.argv ? p.argv.join(" ") : p.unavailable || "no plan");
-        note(`      ${p.capability} [${shortPath(p.scope)}]: ${shown}`);
-      }
-      policyEntries.push(entryOf(req, "failed", { reason: "conflicting install plans for the same command", code: "E_REQUIREMENT_POLICY", conflict: req.conflict }));
-    }
-  }
-  const consentable = missing.filter((req) => !req.invalid && !req.conflict);
-  if (args.includes("--no-requirements")) return [...policyEntries, ...consentable.map((req) => entryOf(req, "skipped", { reason: "--no-requirements" }))];
-  const interactive = !JSON_MODE && process.stdin.isTTY && process.stdout.isTTY;
-  const out = [...policyEntries];
-  if (consentable.length) note(`\nMissing requirements for active capabilities (${consentable.length}):`);
-  for (const req of consentable) {
-    const requesters = req.requestedBy.map((r) => `${r.capability} [${shortPath(r.scope)}]`).join(", ");
-    note(`  ${req.command} — ${req.why || "required"} (requested by: ${requesters})`);
-    const plan = req.plan;
-    if (!plan || plan.unavailable) {
-      note(`    no safe installer: ${plan?.unavailable || "no recipe"}${req.docs ? ` — install docs: ${req.docs}` : ""}`);
-      out.push(entryOf(req, "skipped", { reason: plan?.unavailable || "no safe installer" }));
-      continue;
-    }
-    // Show EVERY step: installing a Claude plugin also registers a third-party
-    // marketplace, and consent to that must be visible, not implied.
-    const shown = (plan.steps?.length ? plan.steps : [plan.argv]).map((a) => a.join(" ")).join("  &&  ");
-    note(`    installer: ${shown}  (source: ${plan.source}${plan.version ? `, version ${plan.version}` : ""}; ${plan.scope})`);
-    let consent = accepted.has(req.command);
-    if (!consent && interactive) {
-      process.stdout.write(`    Run this install now? [y/N] `);
-      const buf = Buffer.alloc(64);
-      let answer = "";
-      try { answer = buf.toString("utf8", 0, readSync(process.stdin.fd, buf, 0, 64)).trim().toLowerCase(); } catch { /* EOF */ }
-      consent = answer === "y" || answer === "yes";
-    }
-    if (!consent) {
-      note(`    skipped — ${interactive ? "not consented" : "non-interactive; pass --accept-requirement " + req.command + " to install"}; \`oats doctor\` will keep warning until ${req.command} is ${req.kind === "runtime-package" ? `installed for ${req.runtime}` : "on PATH"}`);
-      out.push(entryOf(req, "consent-required"));
-      continue;
-    }
-    try {
-      const r = runRequirementInstall(plan, JSON_MODE ? { stdio: ["ignore", 2, 2] } : {});
-      // A runtime package is verified in its runtime's package list, never on
-      // PATH — saying "on PATH" for one would be false either way it lands.
-      const where = req.kind === "runtime-package" ? `installed for ${req.runtime}` : "on PATH";
-      if (r.onPath) { note(`    installed — ${req.command} verified ${where}`); out.push(entryOf(req, "installed", { onPath: true })); }
-      else { note(`    FAILED: install ran but ${req.command} is still not ${where}${req.kind === "runtime-package" ? "" : " — check your shell PATH/prefix"}`); out.push(entryOf(req, "failed", { onPath: false, reason: `install ran but the requirement is still not ${where}` })); }
-    } catch (e) {
-      note(`    FAILED: ${e.message}`);
-      out.push(entryOf(req, "failed", { onPath: false, reason: e.message }));
-    }
-  }
-  note("Requirement consent is separate from capability trust — installing a binary does not activate or approve any capability.");
-  return out;
-}
-
-/** oats trust <capability> | oats trust <package> --all-capabilities */
-function trust() {
-  const id = args[1];
-  if (!id || id.startsWith("--")) { cmdFail("E_USAGE", "usage: oats trust <capability> [--dir <dir>] | oats trust <package> --all-capabilities [--dir <dir>]"); return; }
-  const dir = dirFlag();
-  const all = args.includes("--all-capabilities");
-  // A v3 deployment needs an EXPLICIT immutable artifact-set selection. Never
-  // guess one or reinterpret its lock through the classic approval engine.
-  try {
-    for (const scope of lockLevelsUp(dir).reverse()) {
-      // Discriminate with the shared bounded decoder only. Classic readers
-      // retain all v1/v2 validation, including implicit (versionless) v1 locks.
-      let version;
-      try { version = parseStrictJson(readPortableBytes(join(scope, OATS_LOCK_FILE)))?.lockfileVersion; }
-      catch { continue; } // Let the existing classic reader diagnose its input.
-      if (version !== 3) continue;
-      const portable = readLock3(scope).lock;
-      if (!portable) throw oatsError("selection-changed", "selection lock disappeared; repeat explicit trust selection");
-      const sets = [...new Set(Object.values(portable.selections).map(row => row.available).filter(key => key && Object.hasOwn(portable.artifactSets[key].capabilities, id)))].sort();
-      const commands = sets.map(artifactSet => ({ artifactSet,
-        command: `oats trust ${shellQuote(id)} --deployment ${shellQuote(scope)} --artifact-set ${shellQuote(artifactSet)}` }));
-      const message = commands.length && !all
-        ? `lock v3 requires exact artifact-set approval; run ${commands.map(item => item.command).join(" or ")}`
-        : `lock v3 approvals are per capability; use prepare's selections[].artifactSet for each capability in approvalRequired[]: oats trust <capability> --deployment ${shellQuote(scope)} --artifact-set <sha256-artifact-set>`;
-      if (JSON_MODE) jsonFail("needs-configuration", message, { deployment: scope, commands });
-      die(message);
-    }
-  } catch (error) { cmdFail(error.code || "invalid-lock", error.message); return; }
-  // Package-backed approval path (per-capability, or explicit bulk on a package id).
-  let pkgs, locks;
-  try { pkgs = listInstalledPackages(dir); locks = readPackageLocks(dir); } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
-  // findLast: the listing runs outermost → innermost, and an identity resolves
-  // to the CLOSEST scope that locks it — the same rule the merged lock maps use.
-  const backing = all ? pkgs.findLast((p) => p.package === id) : pkgs.findLast((p) => p.capabilities.some((c) => c.id === id));
-  if (backing) {
-    // Approval is per capability unless --all-capabilities is explicit. Print
-    // exactly the authority this invocation will persist, before persisting it;
-    // JSON mode uses stderr so stdout remains one machine envelope.
-    const requested = all ? backing.capabilities : backing.capabilities.filter((c) => c.id === id);
-    const out = JSON_MODE ? console.error : console.log;
-    out(`Package ${backing.package}@${backing.version} ${all ? "full" : "requested"} executable surface:`);
-    for (const c of requested) {
-      const cmds = Object.keys(c.manifest.commands || {});
-      const hooks = Object.keys(c.manifest.hooks || {});
-      const environment = c.manifest.environment || [];
-      out(`  ${c.id}: commands [${cmds.join(", ") || "none"}], hooks [${hooks.join(", ") || "none"}], launch environment [${environment.join(", ") || "none"}]`);
-    }
-    // FAIL CLOSED BEFORE APPROVING. The engine binds approval to the artifact's
-    // integrity, but integrity alone cannot see a `.oats-installation.json` that
-    // claims a different origin than the lock — and approving a capability whose
-    // own provenance is disputed is exactly the thing trust must not do.
-    const trustRows = levelRows(locks, backing.level);
-    const disputed = backing.capabilities
-      .filter((c) => all || c.id === id)
-      .map((c) => capabilityHealth(backing.level, c, trustRows.capabilities[c.id], trustRows.packages[backing.package]))
-      .filter((h) => h.status !== "ok" && h.status !== "untrusted");
-    if (disputed.length) { cmdFail(disputed[0].code || "invalid-lock", `refusing to trust: ${disputed.map((h) => h.detail).join("; ")}`); return; }
-    let r;
-    try { r = approveCapability(dir, id, { allCapabilities: all }); } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
-    // Approval binds to each capability's exact MATERIALIZED ARTIFACT, so the
-    // integrity reported is per capability — there is no package-level digest
-    // to approve against and none to print.
-    const approvedIntegrity = {};
-    for (const c of backing.capabilities) if (r.approved.includes(c.id)) approvedIntegrity[c.id] = c.integrity || null;
-    if (JSON_MODE) {
-      // The engine's own surface, not a re-derivation: what it approved and what
-      // it saw must be the same object.
-      jsonOk({ package: r.package, level: r.level, approved: r.approved, skipped: r.skipped, approvedIntegrity, executableSurface: r.executableSurface, file: r.file });
-      return;
-    }
-    for (const c of r.approved) console.log(`Trusted executable surface for ${c} (from package ${r.package}, artifact ${approvedIntegrity[c] || "?"}).`);
-    if (r.skipped.length) console.log(`No executable surface (artifact integrity suffices, no approval needed): ${r.skipped.join(", ")}`);
-    return;
-  }
-  if (all) { cmdFail("unknown-capability", `no installed package "${id}" — --all-capabilities takes a package identity`); return; }
-  // Legacy standalone capability path.
-  const manifest = capabilityManifest(id, dir);
-  if (!manifest) { cmdFail("unknown-capability", `unknown capability "${id}"`); return; }
-  const lock = readCapabilityLocks(dir)[manifest.capability];
-  if (!lock) { cmdFail("invalid-lock", `${manifest.capability} is not locked in ${OATS_LOCK_FILE}`); return; }
-  const integrity = capabilityIntegrity(manifest._dir);
-  if (integrity !== lock.integrity) { cmdFail("integrity-drift", `integrity changed (${lock.integrity} → ${integrity}); reacquire explicitly before trusting`); return; }
-  const { _file, ...clean } = lock;
-  if (manifest.environment?.length) (JSON_MODE ? console.error : console.log)(`Requested launch environment: ${manifest.environment.join(", ")}`);
-  try { writeCapabilityLock(dirname(_file), manifest.capability, { ...clean, trustedExecutables: true }); }
-  catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
-  if (JSON_MODE) { jsonOk({ capability: manifest.capability, integrity, legacy: true, environment: [...(manifest.environment || [])] }); return; }
-  console.log(`Trusted executable surface for ${manifest.capability} at ${integrity}.`);
-}
-
-// ---------- package config profiles (oats init --package / oats config diff) ----------
-/** Collect every value of a repeatable flag (e.g. --accept-requirement a --accept-requirement b).
- * A missing or flag-shaped value is a usage error — one E_USAGE envelope in JSON mode. */
-function flagAll(name) {
-  const out = [];
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] !== `--${name}`) continue;
-    if (args[i + 1] && !args[i + 1].startsWith("--")) out.push(args[i + 1]);
-    else (JSON_MODE ? jsonFail("E_USAGE", `--${name} needs a value`) : die(`--${name} needs a value`));
-  }
-  return out;
-}
-
-/** Dependency-closure PROVIDER RECORDS for config-template validation.
- *
- * The flat model made this much smaller than its package-root ancestor: the
- * engine's lock reader walks raw lock-owning scopes rather than the config
- * chain, so a configless scope being initialized now sees its OWN lock without
- * the manual merge this used to need, and capability rows carry the provider
- * back-reference directly instead of package rows carrying capability lists.
- *
- * `staged` supplies the capabilities projected by THIS run's acquisition, which
- * are not locked yet when the pre-commit gate validates the template.
- * Returns { capabilities: Map<capabilityId, capabilityManifest|null> } — null
- * means lock-visible but not materialized, so layer agreement is unverifiable.
- */
-function dependencyClosureProviders(rootId, dir, staged = []) {
-  const capabilities = new Map();
-  let locks = { packages: {}, capabilities: {} };
-  try { locks = readPackageLocks(dir); } catch { /* invalid lock surfaces at acquire */ }
-
-  const closure = new Set();
-  const visit = (pkgId) => {
-    if (!pkgId || closure.has(pkgId) || !Object.hasOwn(locks.packages, pkgId)) return;
-    closure.add(pkgId);
-    for (const dep of locks.packages[pkgId].dependencies || []) visit(dep);
-  };
-  visit(rootId);
-
-  for (const [capId, row] of Object.entries(locks.capabilities)) {
-    if (!closure.has(row.package)) continue;
-    let manifest = null;
-    try {
-      const artifact = installedCapabilityDir(row._level, capId);
-      if (existsSync(join(artifact, "oats.json"))) manifest = JSON.parse(readFileSync(join(artifact, "oats.json"), "utf8"));
-    } catch { /* unreadable artifact is a doctor problem, not a validation input */ }
-    capabilities.set(capId, manifest);
-  }
-  // Same-run acquisition visibility: the root's own exports exist only in
-  // staging while the gate runs, and a template that binds them must validate.
-  // Preview rows carry the declared `layer` (null when none) — the minimum the
-  // layer-agreement check needs — so a staged capability is represented by that
-  // one field rather than a manifest the engine deliberately does not expose.
-  for (const c of staged) capabilities.set(c.capability, c.manifest ?? { layer: c.layer ?? null });
-  return { capabilities };
-}
-
-/** Adopt a template from a package ALREADY locked at this scope: read its exact
- * locked templates, validate, then write config + base + metadata under the run
- * journal. Nothing is fetched beyond the locked source, and nothing is
- * re-acquired — the lock is already the truth about what is installed here. */
-function initPackageFromLock(packageId, dir, file, lockedRoot, configFlag, bail, note) {
-  let locked, chosen;
-  try { locked = readLockedConfigTemplates(dir, packageId); }
-  catch (e) { bail(e.code || "E_TEMPLATE_READ_FAILED", e.message); return; }
-  try { chosen = selectConfigTemplate(locked.templates, configFlag, packageId); }
-  catch (e) { bail(e.code || "E_TEMPLATE_AMBIGUOUS", e.message); return; }
-
-  const errors = validateConfigTemplate(chosen, packageId, {
-    dependencyProviders: dependencyClosureProviders(packageId, dir).capabilities,
-  });
-  if (errors.length) bail("E_TEMPLATE_INVALID", `config template "${chosen.template}" of package ${packageId} failed validation:\n  - ${errors.join("\n  - ")}`);
-
-  note(`Package ${packageId}${locked.version ? `@${locked.version}` : ""} is already locked here — adopting its config template "${chosen.template}" without re-acquiring.`);
-
-  let journal;
-  try { journal = beginRunJournal(dir); }
-  catch (e) { bail(e.code || "E_JOURNAL_FAILED", e.message); return; }
-  let adoption;
-  try {
-    adoption = writeAdoptedTemplate(dir, file, {
-      package: packageId, template: chosen,
-      root: { source: locked.source, version: locked.version, commit: locked.commit, path: locked.path },
-    });
-    journal.finalize();
-  } catch (e) {
-    const report = journal.rollback();
-    bail("E_ADOPT_FAILED", report.complete ? e.message : `${e.message} — ${report.summary}`);
-    return;
-  }
-
-  const locks = readPackageLocks(dir);
-  const capabilities = Object.entries(locks.capabilities).filter(([, c]) => c.package === packageId).map(([id]) => id);
-  note(`Created ${shortPath(file)} (${levelOf(dir)} level) from config template ${packageId}:${chosen.template}`);
-  if (JSON_MODE) {
-    jsonOk({
-      package: packageId, version: locked.version || null, commit: locked.commit || null,
-      template: chosen.template, adopted: true, file, capabilities,
-      adoptedBase: adoption.baseFile, adoptionMetadata: adoption.metadataFile,
-      contentIntegrity: chosen.contentIntegrity,
-      lockFile: lockedRoot._file || join(dir, OATS_LOCK_FILE), lockedPackages: Object.keys(locks.packages),
-    });
-    return;
-  }
-  offerTmuxMouseScrolling();
-}
-
-/** oats init --package <source> [--config <name>]: acquire a package AND adopt
- * one of its config templates as this scope's local config.
- *
- * This command is adoption, not an install alias: `oats install <package>`
- * installs capabilities and applies no template, while this one always adopts
- * exactly one — the named template, else the single marked default, else the
- * only one. Several unmarked templates are E_TEMPLATE_AMBIGUOUS and a package
- * with none is E_NO_TEMPLATES; both refuse inside the pre-commit gate, so the
- * scope is never touched.
- *
- * Transaction shape: the outer journal opens BEFORE acquisition, so its
- * snapshot is the pre-command state. A gate refusal or acquire failure rolls it
- * back (the engine is zero-mutation there, so this mainly closes the backup); a
- * failure while writing the adoption files rolls back the lock, the capability
- * store, the ignore file, the config and the adopted base together — the
- * newly acquired state disappears and every pre-existing byte returns.
- * finalize() runs only after every adoption write has succeeded.
- *
- * JSON mode: one compact envelope. CLI codes E_TEMPLATE_INVALID /
- * E_TEMPLATE_AMBIGUOUS / E_TEMPLATE_NOT_FOUND / E_NO_TEMPLATES; engine codes
- * pass through verbatim. Fully noninteractive. */
-function initPackage(src, dir, file) {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
-  const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  const configFlag = flag("config");
-  if (configFlag === true) bail("E_USAGE", "--config needs a template name");
-
-  let chosen = null;      // the selected+validated template descriptor
-  let rootRecord = null;  // the acquired root package row
-  let projected = [];     // projected capability rows
-
-  /** The pre-commit gate. Everything that can refuse refuses HERE, while the
-   * scope is still untouched. It THROWS rather than exiting: the process-exit
-   * path would strand the journal's backup, and the engine propagates a gate
-   * throw unchanged with nothing mutated. */
-  const assertCommittable = (preview) => {
-    rootRecord = preview.packages.find((p) => p.package === preview.root) || null;
-    projected = preview.capabilities || [];
-    const templates = (preview.configTemplates || []).filter((t) => t.package === preview.root);
-
-    note(`Package ${preview.root}${rootRecord?.version ? `@${rootRecord.version}` : ""} — installs ${projected.length} capability(ies): ${projected.map((c) => c.capability).join(", ") || "(none)"}`);
-    const executable = projected.filter((c) => c.executableSurface?.commands?.length || c.executableSurface?.hooks?.length || c.executableSurface?.environment?.length);
-    if (executable.length) note(`  executable surfaces needing separate approval: ${executable.map((c) => c.capability).join(", ")} (\`oats trust <id>\`)`);
-
-    chosen = selectConfigTemplate(templates, configFlag, preview.root); // throws typed codes
-    // Every check now refuses PRE-COMMIT, layer agreement included: preview
-    // capability rows carry the declared layer, so a template binding a slot to
-    // one of the package's own staged capabilities is validated here, with the
-    // scope untouched and no rollback needed.
-    const errors = validateConfigTemplate(chosen, preview.root, {
-      dependencyProviders: dependencyClosureProviders(preview.root, dir, projected).capabilities,
-    });
-    if (errors.length) {
-      const e = new Error(`config template "${chosen.template}" of package ${preview.root} failed validation:\n  - ${errors.join("\n  - ")}`);
-      e.code = "E_TEMPLATE_INVALID";
-      throw e;
-    }
-    note(`Config template "${chosen.template}"${chosen.description ? `: ${chosen.description}` : ""} — validated (${chosen.contentIntegrity})`);
-    note(`  it becomes YOUR local ${shortPath(file)}: every copied setting is editable, and package updates never rewrite it.`);
-  };
-
-  // Opened BEFORE acquisition: a snapshot taken afterwards would record the new
-  // lock, artifacts and ignore bytes as the "pre-existing" state and could
-  // never undo them.
-  // An id already locked at this scope is adopted from the LOCK, not
-  // re-acquired: its exact source/commit is already pinned, the capabilities are
-  // already materialized, and going to the network (or the catalog) to re-fetch
-  // what the lock already names would be a different package than the one
-  // installed here. This is the `oats init --package <id>` half of the documented
-  // <id|path|git-url> form.
-  let lockedRoot = null;
-  try { lockedRoot = readPackageLocks(dir).packages[src] || null; }
-  catch { /* an invalid lock surfaces with its own typed code below */ }
-  if (lockedRoot) { initPackageFromLock(src, dir, file, lockedRoot, configFlag, bail, note); return; }
-
-  // Constructed inside its own guard: a journal that cannot be built (a symlink
-  // component, an unreadable snapshot, a backup that would land inside the
-  // scope) must still leave the command with exactly one JSON envelope. There
-  // is nothing to roll back yet, so its typed code goes straight to bail.
-  let journal;
-  try { journal = beginRunJournal(dir); }
-  catch (e) { bail(e.code || "E_JOURNAL_FAILED", e.message); return; }
-
-  /** Undo the run, then report. `code` is the engine's verbatim code for
-   * acquisition failures and a stable CLI code for our own write failures — a
-   * raw errno like ENOTDIR is not a contract automation can branch on. */
-  const abort = (e, code) => {
-    const report = journal.rollback();
-    const detail = code === "E_ADOPT_FAILED" ? `adopting the config template failed after the package was installed: ${e.message}` : e.message;
-    bail(code || e.code || "E_INIT_FAILED", report.complete ? detail : `${detail} — ${report.summary}`);
-  };
-
-  let acq;
-  try { acq = acquirePackage(dir, src, { assertCommittable }); }
-  catch (e) { abort(e); return; }
-
-  note(`Acquired + locked: ${acq.installed.map((p) => `${p.package}@${p.version}`).join(", ")} → ${shortPath(acq.lockFile)}`);
-  const capabilities = acq.capabilities.map((c) => c.capability);
-
-  // DEFENCE IN DEPTH, not the primary check. The gate above already validated
-  // every binding against the preview's declared layers; this re-checks them
-  // against the manifests actually written to disk, so a projection that
-  // disagreed with its own preview cannot leave a broken config behind. It
-  // should never fire — and if it does, the journal restores the scope
-  // completely, so nothing of the run survives.
-  const materialized = new Map();
-  for (const c of acq.capabilities) {
-    let manifest = null;
-    try { manifest = JSON.parse(readFileSync(join(installedCapabilityDir(dir, c.capability), "oats.json"), "utf8")); }
-    catch { /* unreadable artifact is reported by doctor; leave it unverifiable */ }
-    materialized.set(c.capability, manifest);
-  }
-  for (const [id, m] of dependencyClosureProviders(acq.root, dir).capabilities) if (!materialized.has(id)) materialized.set(id, m);
-  const lateErrors = validateConfigTemplate(chosen, acq.root, { dependencyProviders: materialized });
-  if (lateErrors.length) {
-    const e = new Error(`config template "${chosen.template}" of package ${acq.root} failed validation:\n  - ${lateErrors.join("\n  - ")}`);
-    e.code = "E_TEMPLATE_INVALID";
-    abort(e);
-    return;
-  }
-
-  let adoption;
-  try {
-    adoption = writeAdoptedTemplate(dir, file, { package: acq.root, template: chosen, root: rootRecord });
-    journal.finalize();
-  } catch (e) { abort(e, "E_ADOPT_FAILED"); return; }
-
-  note(`Created ${shortPath(file)} (${levelOf(dir)} level) from config template ${acq.root}:${chosen.template}`);
-  note(`Recorded the adopted base at ${shortPath(adoption.baseFile)} — commit it; \`oats config diff\` and \`oats config sync\` compare against it.`);
-  if (JSON_MODE) {
-    jsonOk({
-      package: acq.root, version: rootRecord?.version || null, commit: rootRecord?.commit || null,
-      template: chosen.template, adopted: true, file, capabilities,
-      adoptedBase: adoption.baseFile, adoptionMetadata: adoption.metadataFile,
-      contentIntegrity: chosen.contentIntegrity,
-      lockFile: acq.lockFile, lockedPackages: acq.installed.map((p) => p.package),
-    });
-    return;
-  }
-  offerTmuxMouseScrolling();
-}
-
-/** `oats config <diff|sync|adopt>` — the guided three-way template lane.
- *
- * All three share one comparison: the recorded adopted base, the current local
- * oats-config.yaml, and the selected template read from the CURRENT EXACT LOCK.
- * Only `sync` and `adopt` mutate, and both present the complete plan first.
- */
-function configCmd() {
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
-  const sub = args[1];
-  if (!["diff", "sync", "adopt"].includes(sub)) {
-    bail("E_USAGE", "usage: oats config <diff|sync|adopt> [--config <template>] [--dir <dir>] [--json]");
-  }
-  const dir = resolve(flag("dir") || process.cwd());
-  const file = join(dir, "oats-config.yaml");
-  if (!existsSync(file)) bail("E_NO_CONFIG", `no oats-config.yaml at ${shortPath(dir)} — adopt one with \`oats init --package <source> --config <name>\``);
-  const localText = readFileSync(file, "utf8");
-
-  let adopted;
-  try { adopted = readAdoptedTemplate(dir); }
-  catch (e) { bail(e.code || "E_ADOPTION_INVALID", e.message); }
-
-  // `adopt` switches base; the others need an existing one.
-  const adoptTarget = sub === "adopt" ? args[2] : undefined;
-  if (sub === "adopt" && (!adoptTarget || adoptTarget.startsWith("--"))) {
-    bail("E_USAGE", "usage: oats config adopt <package> [--config <template>] — the package must already be installed at this scope");
-  }
-  if (sub !== "adopt" && !adopted) {
-    bail("E_NO_ADOPTED_BASE", `${shortPath(file)} was not adopted from a config template, so there is no recorded base to compare against — adopt one with \`oats config adopt <package> --config <name>\``);
-  }
-
-  const packageId = sub === "adopt" ? adoptTarget : adopted.package;
-  const templateFlag = flag("config");
-  if (templateFlag === true) bail("E_USAGE", "--config needs a template name");
-  const wanted = templateFlag || (sub === "adopt" ? undefined : adopted.template);
-
-  // Exact locked read — never the network-free guess, never a package root.
-  let locked;
-  try { locked = readLockedConfigTemplates(dir, packageId); }
-  catch (e) { bail(e.code || "E_TEMPLATE_READ_FAILED", e.message); }
-  let chosen;
-  try { chosen = selectConfigTemplate(locked.templates, wanted, packageId); }
-  catch (e) { bail(e.code || "E_TEMPLATE_AMBIGUOUS", e.message); }
-
-  // Switching base rebases the ONE local config against the new template.
-  //
-  // With no adopted base there is NO common ancestor, and pretending the local
-  // file is one is the dangerous answer: a three-way merge whose base equals
-  // local classifies every difference as upstream-only, so a first adopt would
-  // silently replace a handcrafted config wholesale — no conflicts, no consent,
-  // no preview of what was lost. An EMPTY base states the truth instead: every
-  // existing local byte is local work, and anything the template also wants to
-  // put there is a conflict the operator must resolve explicitly.
-  const baseText = adopted ? adopted.baseText : "";
-  const plan = planConfigMerge(baseText, localText, chosen.content);
-
-  const describe = (r) => ({
-    id: r.id, kind: r.kind, recommended: r.recommended, digest: r.digest,
-    startLine: r.local.start + 1, lines: r.local.end - r.local.start,
-    base: r.base.text, local: r.local.text, package: r.template.text,
-  });
-
-  if (sub === "diff") {
-    if (JSON_MODE) {
-      jsonOk({
-        package: packageId, template: chosen.template, version: locked.version || null, commit: locked.commit || null,
-        file, adoptedBase: adopted?.baseFile || null, contentIntegrity: chosen.contentIntegrity,
-        clean: plan.clean, counts: plan.counts, conflicts: plan.conflicts,
-        regions: plan.regions.map(describe), planDigest: plan.planDigest,
-      });
-      return;
-    }
-    console.log(`oats config diff — ${shortPath(file)} vs ${packageId}:${chosen.template}${locked.version ? `@${locked.version}` : ""} (report only; nothing is written)\n`);
-    if (!plan.regions.length) { console.log("No differences: your config, the adopted base, and the package template agree."); return; }
-    for (const r of plan.regions) renderMergeRegion(r);
-    console.log(`\n${plan.counts.upstream} upstream-only, ${plan.counts.local} local-only, ${plan.counts.conflict} conflict(s), ${plan.counts.agreed} already agreed.`);
-    console.log(plan.clean
-      ? "Apply the upstream changes with `oats config sync` (local-only edits are kept)."
-      : "`oats config sync` needs an explicit choice for each conflict — it will never pick one for you.");
-    return;
-  }
-
-  // ---- sync / reset / adopt: everything below MUTATES, so plan first ----
-
-  const decisions = {};
-  for (const spec of flagAll("accept")) {
-    const m = /^([^=]+)=(local|package)$/.exec(spec);
-    if (!m) bail("E_USAGE", `--accept takes <regionId>=<local|package>, got "${spec}"`);
-    decisions[m[1]] = m[2];
-  }
-  const assumeYes = args.includes("--yes");
-  const isReset = args.includes("--reset");
-
-  // The recoverable backup survives a SUCCESSFUL run: the run journal is for
-  // undoing failures, this is for the adopter who changes their mind.
-  const backupFile = `${file}.bak`;
-
-  if (isReset) {
-    // Reset previews everything it will destroy, then demands explicit consent.
-    const lost = plan.regions.filter((r) => r.kind === "local" || r.kind === "conflict");
-    if (JSON_MODE || !process.stdin.isTTY) {
-      if (!assumeYes) {
-        bail("E_RESET_NOT_CONFIRMED", `oats config sync --reset would discard ${lost.length} local change region(s) in ${shortPath(file)} and replace it with ${packageId}:${chosen.template} verbatim — pass --yes to accept that noninteractively`);
-      }
-    } else if (!assumeYes) {
-      console.log(`This DISCARDS ${lost.length} local change region(s) in ${shortPath(file)}:\n`);
-      for (const r of lost) renderMergeRegion(r);
-      const answer = promptLine(`Type the word "discard" to replace it with ${packageId}:${chosen.template}: `);
-      if (answer.trim() !== "discard") bail("E_RESET_NOT_CONFIRMED", "reset cancelled — nothing was changed");
-    }
-    const journal = openJournal(dir, bail);
-    try {
-      // NEVER copyFileSync onto a fixed backup path: it opens the destination
-      // for write and therefore FOLLOWS it, so a pre-planted
-      // `oats-config.yaml.bak` symlink would redirect this copy onto whatever it
-      // points at. The atomic form replaces the entry itself.
-      if (existsSync(file)) copyFileAtomic(file, backupFile);
-      writeFileAtomic(file, chosen.content);
-      recordAdoption(dir, file, packageId, chosen, locked, adopted);
-      journal.finalize();
-    } catch (e) { abortRun(journal, e, bail); return; }
-    if (JSON_MODE) { jsonOk({ action: "reset", package: packageId, template: chosen.template, file, backup: backupFile, discardedRegions: lost.length, contentIntegrity: chosen.contentIntegrity }); return; }
-    console.log(`Reset ${shortPath(file)} to ${packageId}:${chosen.template} verbatim. Previous contents saved at ${shortPath(backupFile)}.`);
-    return;
-  }
-
-  // sync / adopt share the three-way apply.
-  const unresolved = plan.conflicts.filter((id) => !Object.hasOwn(decisions, id));
-  if (unresolved.length) {
-    if (JSON_MODE || !process.stdin.isTTY) {
-      bail("E_SYNC_AMBIGUOUS", `${unresolved.length} conflict(s) need an explicit choice (${unresolved.join(", ")}) — pass --accept <id>=<local|package> for each; this command will never choose for you`);
-    }
-    for (const id of unresolved) {
-      const region = plan.regions.find((r) => r.id === id);
-      renderMergeRegion(region);
-      const answer = promptLine(`[${id}] keep (l)ocal or take (p)ackage? `).trim().toLowerCase();
-      if (answer === "l" || answer === "local") decisions[id] = "local";
-      else if (answer === "p" || answer === "package") decisions[id] = "package";
-      else bail("E_SYNC_AMBIGUOUS", `no choice made for ${id} — nothing was changed`);
-    }
-  }
-
-  let merged;
-  try { merged = applyConfigMerge(localText, plan, decisions); }
-  catch (e) { bail(e.code || "E_SYNC_FAILED", e.message); return; }
-
-  // Advancing the recorded base is the POINT of a sync, not a side effect of
-  // changing bytes. Deciding "keep local" on every conflict changes nothing on
-  // disk, but the decision must still be recorded — otherwise the base stays
-  // behind and the identical conflict is re-presented on every future sync,
-  // forever. So "nothing to do" means nothing applied AND the base already at
-  // this exact template.
-  const baseIsCurrent = adopted?.package === packageId
-    && adopted?.template === chosen.template
-    && adopted?.baseText === chosen.content;
-  if (!merged.applied.length && baseIsCurrent) {
-    if (JSON_MODE) { jsonOk({ action: sub, package: packageId, template: chosen.template, file, changed: false, baseAdvanced: false, applied: [], backup: null }); return; }
-    console.log(`Nothing to do: ${shortPath(file)} and the recorded base are already at ${packageId}:${chosen.template}.`);
-    return;
-  }
-
-  if (!JSON_MODE) {
-    console.log(`Plan for ${shortPath(file)} vs ${packageId}:${chosen.template}:`);
-    for (const a of merged.applied) console.log(`  [${a.id}] ${a.kind} → ${a.choice}`);
-    console.log("");
-  }
-
-  const changed = merged.text !== localText;
-  const journal = openJournal(dir, bail);
-  try {
-    // Back up only when bytes actually change — a backup identical to the file
-    // it shadows is noise the adopter has to reason about later.
-    if (changed) copyFileAtomic(file, backupFile);
-    if (changed) writeFileAtomic(file, merged.text);
-    recordAdoption(dir, file, packageId, chosen, locked, adopted);
-    journal.finalize();
-  } catch (e) { abortRun(journal, e, bail); return; }
-
-  if (JSON_MODE) {
-    jsonOk({
-      action: sub, package: packageId, template: chosen.template, file, changed,
-      baseAdvanced: true, applied: merged.applied, backup: changed ? backupFile : null,
-      adoptedBase: join(adoptedTemplateDir(dir, packageId, chosen.template), "oats-config.yaml"),
-      contentIntegrity: chosen.contentIntegrity,
-    });
-    return;
-  }
-  if (changed) console.log(`Applied ${merged.applied.length} change region(s) to ${shortPath(file)}; previous contents saved at ${shortPath(backupFile)}.`);
-  else console.log(`No bytes changed in ${shortPath(file)} — you kept every local choice.`);
-  console.log(`Adopted base advanced to ${packageId}:${chosen.template}, so these decisions will not be asked again. Local edits outside the applied regions are untouched.`);
-}
-
-/** Open the run journal with the command's one-envelope guarantee intact. */
-function openJournal(dir, bail) {
-  try { return beginRunJournal(dir); }
-  catch (e) { bail(e.code || "E_JOURNAL_FAILED", e.message); throw e; }
-}
-
-/** Undo a failed config mutation and report truthfully. */
-function abortRun(journal, e, bail) {
-  const report = journal.rollback();
-  bail(e.code || "E_CONFIG_WRITE_FAILED", report.complete ? e.message : `${e.message} — ${report.summary}`);
-}
-
-/** Write the adopted base + metadata for the template just synced against, and
- * retire any previously adopted base so exactly one survives. */
-function recordAdoption(dir, file, packageId, chosen, locked, previous) {
-  const written = writeAdoptedTemplate(dir, file, {
-    package: packageId, template: chosen,
-    root: { source: locked.source, version: locked.version, commit: locked.commit, path: locked.path },
-  }, { writeConfig: false });
-  if (previous && (previous.package !== packageId || previous.template !== chosen.template)) {
-    rmSync(previous.dir, { recursive: true, force: true });
-    const parent = dirname(previous.dir);
-    try { if (!readdirSync(parent).length) rmSync(parent, { recursive: true, force: true }); } catch { /* sibling templates remain */ }
-  }
-  return written;
-}
-
-/** Read one line from the terminal (human confirmation paths only). */
-function promptLine(question) {
-  process.stdout.write(question);
-  const buf = Buffer.alloc(1024);
-  let read = 0;
-  try { read = readSync(0, buf, 0, buf.length, null); } catch { return ""; }
-  return buf.subarray(0, read).toString("utf8").replace(/\n.*$/s, "");
-}
-
-/** One merge region, rendered for a human deciding what to do about it. */
-function renderMergeRegion(r) {
-  const label = {
-    upstream: "UPSTREAM ONLY  — the package template changed this; your config did not",
-    local: "LOCAL ONLY     — you changed this; the package template did not (it stays)",
-    conflict: "CONFLICT       — both changed this; an explicit choice is required",
-    agreed: "ALREADY AGREED — you and the package made the same change",
-  }[r.kind];
-  console.log(`[${r.id}] line ${r.local.start + 1}: ${label}`);
-  const block = (title, text) => {
-    if (!text) { console.log(`    ${title}: (nothing)`); return; }
-    for (const line of text.replace(/\n$/, "").split("\n")) console.log(`    ${title}: ${line}`);
-  };
-  if (r.kind !== "local") block("package", r.template.text);
-  if (r.kind !== "upstream") block("yours  ", r.local.text);
-  console.log("");
-}
-
-/** oats list — installed packages, exported capabilities, scopes. */
-/** `oats catalog [--json]` — the effective official package catalog, read-only.
- *  Identity/discovery for consumers that cannot import the kernel (Desktop):
- *  never acquires, never trusts, never fetches. */
 /** `oats instance <git|diff> <instance>` — K1: read-only Git observation of one
  *  instance's work tree. The instance is addressed qualified: an explicit
  *  --home, or a name under the --dir scope (team roots included) that resolves
@@ -3263,858 +1880,295 @@ function readinessCmd() {
   if (readiness.policy) console.log(`  policy: child spawns ${readiness.policy.childSpawns.allowed ? "allowed" : "disabled"} (${readiness.policy.childSpawns.origin.kind}${readiness.policy.childSpawns.enforced ? ", enforced" : ""}); worktrees ${readiness.policy.worktrees.allowed === null ? "unknown" : readiness.policy.worktrees.allowed ? "allowed" : "not in this work mode"}`);
   for (const n of readiness.notes) console.log(`  note: ${n}`);
 }
-function catalogCmd() {
-  const described = describeOfficialCatalog();
-  if (JSON_MODE) { jsonOk(described); return; }
-  console.log(`Official package catalog (${described.catalog.origin}: ${shortPath(described.catalog.file)})`);
-  for (const p of described.packages) console.log(`  ${p.package}  ${p.url ?? "?"}@${p.ref ?? "?"}  path: ${p.path}`);
-  if (described.capabilityAliases.length) {
-    console.log("Capability aliases:");
-    for (const a of described.capabilityAliases) console.log(`  ${a.capability} -> ${a.package}${a.capabilityInPackage !== a.capability ? ` (exports ${a.capabilityInPackage})` : ""}${a.available ? "" : "  [package not in catalog]"}`);
-  }
-  console.log("Catalog identity grants no executable trust; acquire with `oats install <package>` and approve separately.");
+// ---------- workspace model v2: sync / package / workspace status / capabilities / souls ----------
+// Contract: docs/design/2026-09-23-workspace-module-contracts.md §6. Nothing is
+// installed: `oats-local.yaml` names the workspace, discovery runs over the Git
+// remotes (lib/workspace.mjs), packages resolve to exact commits (lib/packages.mjs,
+// lock v3) and the only persisted state is `oats-lock.json` beside oats-local.yaml.
+
+/** Remote options threaded into every remote call. OATS_REMOTE_CACHE relocates
+ * the content-addressed fetch cache (tests never touch ~/.cache). */
+function remoteOptionsFromEnv() {
+  const cacheDir = process.env.OATS_REMOTE_CACHE;
+  return cacheDir ? { cacheDir: resolve(cacheDir) } : {};
 }
-function listCmd() {
+
+/** The v2 deployment context at --dir: { dir, localPath, local, deploymentDir, remoteOptions }. */
+function workspaceContext(bail) {
   const dir = dirFlag();
-  // FAIL-CLOSED (maintainer finding 3): list RAISES on invalid locks — an
-  // invalid lock must never render as usable/absent data.
-  let pkgs, locks;
-  try { pkgs = listInstalledPackages(dir); locks = readPackageLocks(dir); }
-  catch (e) { JSON_MODE ? jsonFail(e.code || "invalid-lock", e.message || e) : die(e.message); return; }
-  // Packages are TRANSPORT; capabilities are what is installed. So the listing
-  // is capability-first: every row names its own provider, artifact, integrity,
-  // trust and health, and the package rows keep only what the transport itself
-  // pins. Trust is per capability — there is no package-level approval to list.
-  const capabilities = [];
-  for (const p of pkgs) {
-    const rows = levelRows(locks, p.level);
-    for (const c of p.capabilities) {
-      const h = capabilityHealth(p.level, c, rows.capabilities[c.id], rows.packages[p.package]);
-      capabilities.push({
-        capability: c.id, version: c.version || null, package: p.package, level: p.level,
-        path: c.path || null, dir: h.dir, integrity: c.integrity || null,
-        installedIntegrity: h.integrity ?? null,
-        layer: c.manifest?.layer || null, trusted: c.trusted === true, installed: c.installed,
-        executableSurface: {
-          commands: Object.keys(c.manifest?.commands || {}),
-          hooks: Object.keys(c.manifest?.hooks || {}),
-          environment: [...(c.manifest?.environment || [])],
-        },
-        status: h.status, code: h.code, detail: h.detail,
-      });
-    }
-  }
-  if (JSON_MODE) {
-    jsonOk({
-      packages: pkgs.map((p) => ({ package: p.package, version: p.version, level: p.level, source: p.source || null, path: p.path || null, commit: p.commit || null, integrity: p.integrity || null, locked: p.locked, dependencies: p.dependencies, capabilities: p.capabilities.map((c) => c.id) })),
-      capabilities,
-      legacy: locks.legacy.map((l) => ({ file: l.file, level: l.level, lockfileVersion: l.lockfileVersion, capabilities: Object.keys(l.capabilities) })),
-    });
-    return;
-  }
-  if (!pkgs.length) console.log("No installed packages in this config chain.");
-  const byPackage = new Map();
-  for (const c of capabilities) {
-    if (!byPackage.has(c.package)) byPackage.set(c.package, []);
-    byPackage.get(c.package).push(c);
-  }
-  for (const p of pkgs) {
-    console.log(`${p.package}@${p.version}  [${levelOf(p.level)} ${shortPath(p.level)}]${p.locked ? "" : "  UNLOCKED (no lock entry — reacquire)"}`);
-    if (p.source) console.log(`  source: ${p.source}  path: ${p.path || "?"}  commit: ${p.commit || "?"}`);
-    for (const c of byPackage.get(p.package) || []) {
-      const executable = c.executableSurface.commands.length || c.executableSurface.hooks.length || c.executableSurface.environment.length;
-      const trust = executable ? (c.trusted ? "  [trusted]" : "  [executable — needs oats trust]") : "";
-      console.log(`  capability ${c.capability}${c.layer ? `  layer: ${c.layer}` : ""}${trust}`);
-      // A capability whose bytes or provenance disagree with the lock is named
-      // as broken HERE — never rendered as an ordinary usable row.
-      if (c.status !== "ok" && c.status !== "untrusted") console.log(`    ${c.status.toUpperCase()}: ${c.detail}`);
-    }
-    if (p.dependencies.length) console.log(`  depends on: ${p.dependencies.join(", ")}`);
-  }
-  for (const l of locks.legacy) console.log(`Legacy capability locks (lockfileVersion ${l.lockfileVersion ?? 1}) in ${shortPath(l.file)}: ${Object.keys(l.capabilities).join(", ")} — \`oats migrate\` maps them to packages`);
+  let found;
+  try { found = loadLocal(dir); }
+  catch (e) { return bail(e.code || "E_LOCAL_MISSING", e.message, e.details); }
+  return { dir, localPath: found.path, local: found.local, deploymentDir: dirname(found.path), remoteOptions: remoteOptionsFromEnv() };
 }
 
-/** oats remove <package> — refuses while config or dependent packages reference it. */
-function removeCmd() {
-  const id = args[1];
-  if (!id || id.startsWith("--")) JSON_MODE ? jsonFail("E_USAGE", "usage: oats remove <package> [--dir <dir>]") : die("usage: oats remove <package> [--dir <dir>]");
-  const dir = dirFlag();
-  let r;
-  try { r = removePackage(dir, id); } catch (e) { cmdFail(e.code || "remove-blocked", e.message || e); return; }
-  if (JSON_MODE) { jsonOk(r); return; }
-  // There is no package directory to name — a package is transport, and what
-  // actually leaves the disk is its materialized capability artifacts.
-  console.log(`Removed package ${r.package} from ${shortPath(r.lockFile)}.`);
-  console.log(r.capabilities.length
-    ? `  capabilities de-materialized: ${r.capabilities.join(", ")}`
-    : "  it supplied no capabilities at this scope.");
+/** The official catalog's package map (package-catalog.json; OATS_PACKAGE_CATALOG overrides). */
+function catalogForSync(bail) {
+  try { return officialPackageCatalog(); }
+  catch (e) { return bail(e.code || "E_PACKAGE_MISSING", e.message); }
 }
 
-/** The team boundary a guided migration walks, when the scope declares one.
- * A config the kernel refuses to resolve is not a reason to abort a migration
- * that only reads locks — discovery falls back to the explicit scope and says so. */
-function migrationTeamScope(dir, warnings) {
-  try { return resolveOatsConfig(dir)?.team?.scope || undefined; }
-  catch (e) { warnings.push(`team boundary not resolved from ${shortPath(dir)} (${e.message}) — discovery covers this scope and its lock-owning ancestors only`); return undefined; }
-}
-
-const migratePlanRow = (s) => ({
-  capability: s.capabilityId, action: s.action,
-  package: s.package?.id || null, spec: s.package?.spec || null, via: s.package?.via || null,
-  migratesTo: s.migratesTo || null,
-  source: s.v1?.source || null, reason: s.reason || null, note: s.note || null,
-});
-
-/** `oats migrate --official` / `--recursive` — the guided existing-user upgrade.
- *
- * Plans EVERY visible lock-owning scope first (deterministic, side-effect
- * free), prints the complete per-scope plan, then applies scope by scope. Each
- * scope keeps the engine's transactional guarantee on its own: one scope's
- * failure leaves that scope byte-identical, never stops the others from being
- * reported truthfully, and makes the aggregate result nonzero. */
-function guidedMigrateCmd({ dir, dryRun, official, recursive }) {
-  const out = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  const opts = official ? { official: true } : {};
-  const warnings = [];
-  const teamScope = recursive ? migrationTeamScope(dir, warnings) : undefined;
-  let scopes;
-  try {
-    scopes = recursive
-      ? discoverMigrationScopes(dir, { teamScope })
-      : (existsSync(join(dir, OATS_LOCK_FILE)) ? [resolve(dir)] : []);
-  } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
-  // Un-migrated OAS scopes are invisible to lock discovery (they own no
-  // oats-lock.json), and silence would read as "nothing to migrate" — the
-  // exact false success this probe exists to prevent (aweb-abfy.1).
-  const oasScopes = recursive ? discoverOasScopes(dir, { teamScope }) : detectOasScopes(dir);
-
-  // ---- plan every scope BEFORE touching any of them ----
-  const planned = [];
-  for (const scope of scopes) {
-    const file = join(scope, OATS_LOCK_FILE);
-    try {
-      const { plan, warnings: w } = migrateLegacyLock(scope, opts);
-      const held = plan.filter((s) => s.action === "hold");
-      const acquire = plan.filter((s) => s.action === "acquire");
-      const formatOnly = plan.some((s) => s.action === "convert-format");
-      const keep = plan.filter((s) => s.action === "retain" || s.action === "manual");
-      // Both modes are ALL-OR-NOTHING: a v2 lock has no residue container, so a
-      // scope converts completely or stays v1 in full. `keep` entries therefore
-      // make a scope unconvertible rather than partially convertible — apply
-      // refuses it, and the plan says so rather than promising "ready".
-      // Official mode also never rewrites a scope it has no official work in.
-      const convertible = acquire.length || formatOnly || (!official && plan.length);
-      const status = held.length ? "held"
-        : (convertible && !keep.length) ? "ready"
-        : convertible ? "blocked"
-        : "nothing";
-      planned.push({ scope, file, status, plan, acquire, keep, held, warnings: w });
-    } catch (e) {
-      planned.push({ scope, file, status: "failed", plan: [], acquire: [], keep: [], held: [], warnings: [], error: { code: e.code || "invalid-lock", message: String(e.message || e) } });
-    }
-  }
-  const planRows = planned.map((p) => ({
-    level: p.scope, levelKind: levelOf(p.scope), file: p.file, status: p.status,
-    plan: p.plan.map(migratePlanRow), warnings: p.warnings, error: p.error || null,
-  }));
-
-  const actionable = planned.filter((p) => p.status === "ready" || p.status === "format-only");
-  out(`oats migrate${official ? " --official" : ""}${recursive ? " --recursive" : ""} — ${scopes.length} lock-owning scope${scopes.length === 1 ? "" : "s"} from ${shortPath(dir)}`);
-  for (const w of warnings) out(`WARNING: ${w}`);
-  if (!scopes.length) out(oasScopes.length
-    ? "  (no oats-lock.json found — but this is NOT an empty scope: un-migrated OAS files are present, see below)"
-    : "  (no oats-lock.json found — nothing to migrate)");
-  for (const f of oasScopes) {
-    out(`\n  ${shortPath(f.dir)}  UN-MIGRATED OAS SCOPE  (${f.files.join(", ")})`);
-    out(`    HELD       ${OAS_SCOPE_REMEDY}`);
-  }
-  for (const p of planned) {
-    out(`\n  ${shortPath(p.scope)}  [${levelOf(p.scope)}]  ${shortPath(p.file)}`);
-    if (p.status === "failed") { out(`    ERROR      ${p.error.message} [${p.error.code}]`); continue; }
-    for (const s of p.plan) {
-      if (s.action === "convert-format") out(`    format     ${s.note}`);
-      else if (s.action === "acquire") out(`    migrate    ${s.capabilityId} → package ${s.package.id || s.package.spec}${s.migratesTo ? `  (catalog alias: package ${s.package.id} exports ${s.migratesTo}, replacing ${s.capabilityId})` : s.package.via === "alias" ? `  (catalog alias: package ${s.package.id} exports ${s.capabilityId})` : s.package.via === "identity" ? "  (official catalog)" : ""}`);
-      else if (s.action === "hold") out(`    HELD       ${s.capabilityId} — ${s.reason}`);
-      else out(`    keep       ${s.capabilityId}${s.v1?.source ? `  (${s.v1.source})` : ""} — not converted, entry kept unchanged`);
-    }
-    if (p.status === "nothing") out("    (nothing to migrate at this scope)");
-    if (p.status === "blocked") {
-      out(`    BLOCKED    this scope mixes convertible work with ${p.keep.length} entr${p.keep.length === 1 ? "y" : "ies"} that must stay lockfileVersion 1`);
-      out("               a capability-materialization lock has no place for them, so converting the rest would drop them — the WHOLE scope stays v1 and keeps working");
-    }
-    if (p.status === "ready") {
-      const renames = p.plan.filter((s) => s.migratesTo);
-      if (renames.length) out(`    config     ${shortPath(join(p.scope, "oats-config.yaml"))} is NOT rewritten — but renamed ids must be updated by hand after applying: ${renames.map((s) => `${s.capabilityId} → ${s.migratesTo}`).join(", ")}`);
-      else out(`    config     ${shortPath(join(p.scope, "oats-config.yaml"))} is NOT rewritten — capability ids, layers, targets, settings, exclusions and overrides stay valid (packages export the same ids)`);
-      out("    trust      executable approvals are NOT carried over — they are re-earned after migrating (exact commands below)");
-    }
-    for (const w of p.warnings) out(`    WARNING: ${w}`);
-  }
-
-  const result = {
-    mode: official ? "official" : "generic", recursive, dryRun,
-    boundary: resolve(dir), scopes: planRows, oasScopes, oasRemedy: oasScopes.length ? OAS_SCOPE_REMEDY : null,
-    trust: [], requirements: [], nextCommands: [], warnings,
-  };
-  if (dryRun) {
-    const failed = planned.filter((p) => p.status === "failed");
-    const held = planned.filter((p) => p.status === "held");
-    result.nextCommands = actionable.length ? [`oats migrate${official ? " --official" : ""}${recursive ? " --recursive" : ""} --dir ${shellQuote(dir)}`] : [];
-    // A held or unplannable scope is NOT a ready migration: the dry run says so
-    // with a nonzero result in both modes, so automation can never read
-    // "planned successfully" as "this deployment can migrate now"
-    // (reviewer-90dbb36). The complete plan travels under error.details.
-    const mixed = planned.filter((p) => p.status === "blocked");
-    const blocked = [
-      ...(held.length ? [`${held.length} scope${held.length > 1 ? "s" : ""} held (no official package mapping yet)`] : []),
-      ...(mixed.length ? [`${mixed.length} scope${mixed.length > 1 ? "s" : ""} blocked (entries that must stay lockfileVersion 1)`] : []),
-      ...(failed.length ? [`${failed.length} scope${failed.length > 1 ? "s" : ""} could not be planned`] : []),
-      ...(oasScopes.length ? [`${oasScopes.length} un-migrated OAS scope${oasScopes.length > 1 ? "s" : ""} detected (${oasScopes.map((f) => shortPath(f.dir)).join(", ")}) — no oas-* name is recognized and there is no automatic path yet; see docs/migration-from-oas.md`] : []),
-    ];
-    if (JSON_MODE) {
-      if (blocked.length) { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_MIGRATE_FAILED", message: `${blocked.join("; ")} (${actionable.length} ready)`, details: result } })); process.exit(1); }
-      jsonOk(result);
-      return;
-    }
-    out(`\nDry run — nothing was changed. ${actionable.length} scope${actionable.length === 1 ? "" : "s"} ready${held.length ? `, ${held.length} held` : ""}${mixed.length ? `, ${mixed.length} blocked` : ""}${failed.length ? `, ${failed.length} failed` : ""}.`);
-    if (actionable.length) out(`Apply with: oats migrate${official ? " --official" : ""}${recursive ? " --recursive" : ""} --dir ${shellQuote(dir)}`);
-    if (held.length) out("Held scopes stay on their v1 locks and their legacy capabilities keep working — re-run when the catalog publishes their packages.");
-    if (mixed.length) out("Blocked scopes stay on their v1 locks IN FULL and keep working — migration is all-or-nothing because a v2 lock has no place for an unconverted entry.");
-    if (blocked.length) die(`${blocked.join("; ")} (${actionable.length} ready)`);
-    return;
-  }
-
-  // ---- apply, scope by scope (each independently transactional) ----
-  const failures = [];
-  // An un-migrated OAS scope is a failure, not an absence: apply must never
-  // report overall success while one sits in the migrated universe.
-  for (const f of oasScopes) {
-    failures.push({ scope: f.dir, code: "oas-scope-unmigrated", message: `un-migrated OAS scope (${f.files.join(", ")}) — ${OAS_SCOPE_REMEDY}` });
-  }
-  for (const [i, p] of planned.entries()) {
-    const row = planRows[i]; // planRows is built from planned, in order
-    if (p.status === "failed") { row.status = "failed"; failures.push({ scope: p.scope, code: p.error.code, message: p.error.message }); continue; }
-    if (p.status === "held") {
-      row.status = "held";
-      failures.push({ scope: p.scope, code: "official-mapping-unavailable", message: `held: ${p.held.map((s) => `${s.capabilityId} (${s.reason})`).join("; ")}` });
-      out(`\nHELD      ${shortPath(p.scope)} — left unchanged; its legacy capabilities keep working`);
-      continue;
-    }
-    if (p.status === "nothing") {
-      // No official work here, so nothing is applied and nothing is rewritten.
-      // Say what the scope KEPT — `retained`, never `residue`: these entries
-      // were not left beside a conversion, there simply was no conversion.
-      row.status = "skipped";
-      if (p.keep.length) row.retained = p.keep.map((k) => k.capabilityId).filter(Boolean);
-      continue;
-    }
-    let r;
-    try { r = applyLegacyLockMigration(p.scope, opts); }
-    catch (e) {
-      row.status = "failed";
-      row.error = { code: e.code || "legacy-lock", message: String(e.message || e) };
-      failures.push({ scope: p.scope, code: row.error.code, message: row.error.message });
-      out(`\nFAILED    ${shortPath(p.scope)} — ${row.error.message}`);
-      continue;
-    }
-    row.status = r.skipped ? "skipped" : r.formatConverted ? "format-converted" : "migrated";
-    row.migrated = r.migrated;
-    // `retained` exists only for a SKIPPED scope left entirely on v1; a scope
-    // that converts leaves nothing behind, and a mixed one is refused above.
-    if (r.retained) row.retained = r.retained;
-    row.warnings = r.warnings;
-    for (const t of r.trust || []) result.trust.push({ ...t, command: `oats trust ${t.capability} --dir ${shellQuote(p.scope)}` });
-    out(`\n  ${shortPath(p.scope)}:`);
-    for (const m of r.migrated) out(`    migrated   ${m.capability} → package ${m.package}@${m.version}${m.migratedTo ? `  (as ${m.migratedTo})` : ""}`);
-    for (const c of r.retained || []) out(`    retained   ${c}  (this scope stays lockfileVersion 1, unchanged)`);
-    for (const w of r.warnings) out(`    WARNING: ${w}`);
-    if (r.formatConverted) out(`    format     empty lockfileVersion 1 file → canonical v2`);
-    else if (!r.skipped) out(`    ${shortPath(r.file)} is now lockfileVersion 2 — config activation (from: installed) is unchanged`);
-  }
-
-  // ---- exact next commands: trust first, then the requirement/install pass ----
-  const migratedScopes = planRows.filter((r) => r.status === "migrated").map((r) => r.level);
-  let requirements = [];
-  try { requirements = migratedScopes.length ? aggregateMissingRequirements(migratedScopes) : []; }
-  catch (e) { result.warnings.push(`host requirements not aggregated: ${e.message}`); }
-  result.requirements = requirements.map((req) => ({
-    command: req.command, requestedBy: req.requestedBy,
-    consentCommand: req.plan && !req.plan.unavailable && !req.invalid && !req.conflict
-      ? `oats install --accept-requirement ${req.command} --dir ${shellQuote(dir)}` : null,
-  }));
-  result.nextCommands = [
-    ...result.trust.map((t) => t.command),
-    ...result.requirements.filter((q) => q.consentCommand).map((q) => q.consentCommand),
-    `oats install --dir ${shellQuote(dir)}`,
-  ];
-
-  if (JSON_MODE) {
-    if (failures.length) { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_MIGRATE_FAILED", message: `${failures.length} scope${failures.length > 1 ? "s" : ""} not migrated (${planRows.filter((r) => r.status === "migrated").length} migrated)`, details: result } })); process.exit(1); }
-    jsonOk(result);
-    return;
-  }
-  out("\nNext steps:");
-  if (result.trust.length) {
-    out("  1. Review and approve the executable surfaces (approvals are never carried over):");
-    for (const t of result.trust) out(`       ${t.command}`);
-  } else out("  1. No executable surfaces to approve.");
-  for (const q of result.requirements) {
-    if (q.consentCommand) out(`  *  Missing host command ${q.command}: ${q.consentCommand}`);
-  }
-  out(`  2. Verify the runtime closure and host requirements (already-installed requirements are not reinstalled):`);
-  out(`       oats install --dir ${shellQuote(dir)}`);
-  if (failures.length) {
-    out("\nFailures by scope:");
-    for (const f of failures) out(`  ${shortPath(f.scope)}: ${f.message} [${f.code}]`);
-    die(`${failures.length} scope${failures.length > 1 ? "s" : ""} not migrated (${planRows.filter((r) => r.status === "migrated").length} migrated)`);
-  }
-}
-
-/** `oats migrate --from-oas` — one transactional conversion per scope: rename
- * the OAS-named artifacts (breaks 1-3 of docs/migration-from-oas.md), then
- * chain the guided v1→v2 lock conversion under the SAME journal, so a failure
- * in either phase restores the original OAS bytes. Break 4 (stale v1
- * integrity) is resolved by re-acquisition, never by recomputing integrity. */
-function fromOasCmd({ dir, dryRun, recursive }) {
-  const out = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  const warnings = [];
-  const teamScope = recursive ? migrationTeamScope(dir, warnings) : undefined;
-  let scopes;
-  if (recursive) scopes = discoverOasScopes(dir, { teamScope }).map((f) => f.dir);
-  else {
-    const chain = detectOasScopes(dir);
-    scopes = chain.filter((f) => f.dir === resolve(dir)).map((f) => f.dir);
-    if (!scopes.length && chain.length) {
-      cmdFail("E_BAD_ARGS", `no OAS scope files at ${resolve(dir)}, but an ancestor has them (${chain.map((f) => shortPath(f.dir)).join(", ")}) — run with --dir <that scope>, or --recursive to convert every visible OAS scope`);
-      return;
-    }
-  }
-  if (!scopes.length) {
-    // Idempotency contract: a second run finds nothing and says so, exit 0.
-    if (JSON_MODE) { jsonOk({ mode: "from-oas", recursive, dryRun, boundary: resolve(dir), scopes: [], trust: [], nextCommands: [], warnings }); return; }
-    console.log("no oas-config.yaml / oas-lock.json found — nothing to migrate from OAS");
-    return;
-  }
-
-  const results = [];
-  const trust = [];
-  let failures = 0;
-  for (const scope of scopes) {
-    const plan = planFromOasScope(scope);
-    const row = { scope, status: null, steps: plan.steps.map((s) => ({ kind: s.kind, from: s.from, to: s.to, note: s.note })), errors: plan.errors, plan: [], migrated: [], warnings: [] };
-    results.push(row);
-    if (plan.errors.length) { row.status = "failed"; failures++; continue; }
-    if (dryRun) {
-      // Phase-2 preview against a temp mirror of the lock alone — guided
-      // planning reads nothing else, so the preview is exact and touch-free.
-      const lockStep = plan.steps.find((s) => s.to.endsWith(OATS_LOCK_FILE));
-      if (lockStep) {
-        const mirror = mkdtempSync(join(tmpdir(), "oats-from-oas-plan-"));
-        try {
-          copyFileSync(lockStep.from, join(mirror, OATS_LOCK_FILE));
-          const { plan: mplan, warnings: mw } = migrateLegacyLock(mirror, { official: true });
-          row.plan = mplan.map(migratePlanRow);
-          row.warnings = mw;
-          row.status = mplan.some((s) => s.action === "hold" || s.action === "manual") ? "held" : "ready";
-          if (row.status === "held") failures++;
-        } catch (e) { row.status = "failed"; row.errors.push(String(e.message || e)); failures++; }
-        finally { rmSync(mirror, { recursive: true, force: true }); }
-      } else row.status = "ready";
-      continue;
-    }
-    let journal;
-    try { journal = applyFromOasScope(scope, plan); }
-    catch (e) { row.status = "failed"; row.errors.push(String(e.message || e)); failures++; continue; }
-    try {
-      const r = applyLegacyLockMigration(scope, { official: true });
-      journal.finalize();
-      row.status = "migrated";
-      row.migrated = r.migrated;
-      // Phase 1 already rewrote the config's capability ids, so the guided
-      // "update references in oats-config.yaml" warnings are satisfied here.
-      row.warnings = r.warnings.filter((w) => !/update references in oats-config\.yaml/.test(w));
-      for (const t of r.trust || []) trust.push({ ...t, command: `oats trust ${t.capability} --dir ${shellQuote(scope)}` });
-    } catch (e) {
-      journal.rollback();
-      row.status = "failed";
-      row.errors.push(`${String(e.message || e)} — scope restored to its original OAS state`);
-      failures++;
-    }
-  }
-
-  out(`oats migrate --from-oas${recursive ? " --recursive" : ""}${dryRun ? " --dry-run" : ""} — ${scopes.length} OAS scope${scopes.length === 1 ? "" : "s"} from ${shortPath(dir)}`);
-  for (const w of warnings) out(`WARNING: ${w}`);
-  for (const row of results) {
-    out(`\n  ${shortPath(row.scope)}  [${row.status}]`);
-    for (const s of row.steps) out(`    ${s.kind === "rewrite" ? "rewrite " : "rename  "}  ${shortPath(s.from)} → ${shortPath(s.to)}  (${s.note})`);
-    for (const p of row.plan) out(`    migrate    ${p.capability} → package ${p.package}${p.migratesTo ? ` (as ${p.migratesTo})` : ""}  [${p.action}]`);
-    for (const m of row.migrated) out(`    migrated   ${m.capability} → package ${m.package}@${m.version}${m.migratedTo ? `  (as ${m.migratedTo})` : ""}`);
-    for (const e of row.errors) out(`    ERROR      ${e}`);
-    for (const w of row.warnings) out(`    WARNING: ${w}`);
-  }
-  const nextCommands = [...trust.map((t) => t.command), ...(results.some((r) => r.status === "migrated") ? [`oats install --dir ${shellQuote(dir)}`] : [])];
-  const result = { mode: "from-oas", recursive, dryRun, boundary: resolve(dir), scopes: results, trust, nextCommands, warnings };
-  if (JSON_MODE) {
-    if (failures) { console.log(JSON.stringify({ schemaVersion: 1, ok: false, error: { code: "E_FROM_OAS_FAILED", message: `${failures} scope${failures > 1 ? "s" : ""} not converted (${results.filter((r) => r.status === "migrated" || r.status === "ready").length} ${dryRun ? "ready" : "converted"})`, details: result } })); process.exit(1); }
-    jsonOk(result);
-    return;
-  }
-  if (!dryRun && nextCommands.length) {
-    out("\nNext steps:");
-    for (const c of nextCommands) out(`  ${c}`);
-  }
-  if (dryRun) out(`\nDry run — nothing was changed. Apply with: oats migrate --from-oas${recursive ? " --recursive" : ""} --dir ${shellQuote(dir)}`);
-  if (failures) die(`${failures} scope${failures > 1 ? "s" : ""} not converted`);
-}
-
-/** oats migrate — map this scope's v1 marketplace capability locks to package locks. */
-function migrateCmd() {
-  const dir = dirFlag();
-  const dryRun = args.includes("--dry-run");
-  if (args.includes("--from-oas")) { fromOasCmd({ dir, dryRun, recursive: args.includes("--recursive") }); return; }
-  if (args.includes("--official") || args.includes("--recursive")) {
-    guidedMigrateCmd({ dir, dryRun, official: args.includes("--official"), recursive: args.includes("--recursive") });
-    return;
-  }
-  if (dryRun) {
-    let plan, warnings;
-    try { ({ plan, warnings } = migrateLegacyLock(dir)); }
-    catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
-    if (!plan.length) {
-      // "Nothing to migrate" on an OAS scope is a false success: the scope is
-      // not empty, it is pre-rename, and this kernel cannot read it (aweb-abfy.1).
-      const oas = detectOasScopes(dir);
-      if (oas.length) { cmdFail("oas-scope-unmigrated", `nothing this command can migrate here, but un-migrated OAS scope files exist (${oas.map((f) => `${shortPath(f.dir)}: ${f.files.join(", ")}`).join("; ")}) — ${OAS_SCOPE_REMEDY}`); return; }
-    }
-    if (JSON_MODE) { jsonOk({ dryRun: true, plan, warnings }); return; }
-    if (!plan.length) { console.log("Nothing to migrate at this scope."); return; }
-    for (const s of plan) console.log(s.action === "convert-format" ? `${s.action.padEnd(14)} ${s.note}` : `${s.action.padEnd(10)} ${s.capabilityId}${s.package ? `  → ${s.package.spec}` : ""}`);
-    for (const w of warnings) console.log(`WARNING: ${w}`);
-    return;
-  }
-  let r;
-  try { r = applyLegacyLockMigration(dir); }
+/** Discover the workspace named by oats-local.yaml over the real remote. */
+async function discoverForCli(ctx, bail) {
+  try { return await discoverWorkspace(ctx.local.workspace, { local: ctx.local, remoteOptions: ctx.remoteOptions }); }
   catch (e) {
-    const oas = detectOasScopes(dir);
-    const oasNote = oas.length ? ` NOTE: un-migrated OAS scope files exist (${oas.map((f) => `${shortPath(f.dir)}: ${f.files.join(", ")}`).join("; ")}) — ${OAS_SCOPE_REMEDY}` : "";
-    cmdFail(e.code || "legacy-lock", `${e.message || e}${oasNote}`); return;
+    if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
+    throw e;
   }
-  if (JSON_MODE) { jsonOk(r); return; }
-  for (const m of r.migrated) console.log(`migrated  ${m.capability} → package ${m.package}@${m.version}`);
-  for (const w of r.warnings) console.log(`WARNING: ${w}`);
-  if (r.formatConverted) { console.log(`${shortPath(r.file)} was an empty lockfileVersion 1 file — converted to canonical v2.`); return; }
-  if (r.file) console.log(`${shortPath(r.file)} is now lockfileVersion 2. Config activation (from: installed) is unchanged; re-run \`oats trust\` for executable capabilities — package integrity approvals are not carried over.`);
 }
 
-/** oats update <package> — transactional package update with diff + trust reset. */
-function updatePackageCmd(id) {
-  const dir = dirFlag();
-  // --to <selector>: move a catalog-sourced lock to another catalog ref
-  // (tag) through the same transactional update. A lock with an explicit
-  // selector keeps it on a plain update by design; this is the operator's
-  // way to advance it without remove + reinstall.
-  // Two spellings: `oats update <id> <id>@<selector>` (the engine's own spec
-  // form) or `oats update <id> --to <selector>`.
-  const to = flag("to");
-  if (to === true) { cmdFail("E_BAD_ARGS", "--to needs a catalog selector, e.g. --to v1.10.1"); return; }
-  if (to !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(to)) { cmdFail("E_BAD_ARGS", `--to selector ${JSON.stringify(to)} is not a catalog ref`); return; }
-  const positional = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
-  if (positional && to !== undefined) { cmdFail("E_BAD_ARGS", "give either <id>@<selector> or --to <selector>, not both"); return; }
-  const spec = positional || (to !== undefined ? `${id}@${to}` : undefined);
-  let r;
-  try { r = updatePackage(dir, id, spec ? { spec } : {}); } catch (e) { cmdFail(e.code || "invalid-lock", e.message || e); return; }
-  if (JSON_MODE) { jsonOk(r); return; }
-  // A moved package root is reported even when the bytes are identical: the
-  // lock now points somewhere else in the repository, and that is exactly the
-  // change an operator must see (contract §7).
-  const pathLine = () => console.log(`  package path ${r.before.path} → ${r.after.path} (the selected package root MOVED in the source)`);
-  if (!r.changed) {
-    console.log(`${r.package} is already up to date (${r.after.version}, ${r.after.integrity}).`);
-    if (r.pathChanged) pathLine();
-    return;
+const short = (oid) => (typeof oid === "string" ? oid.slice(0, 8) : "?");
+const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || String(key);
+const teamLabel = (team) => team ?? "unassigned";
+const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
+
+/** Rows of every non-private soul/capability of confirmed members + locked package capabilities. */
+function workspaceItems(discovery, lock, { includePrivate = false } = {}) {
+  const souls = [];
+  const capabilities = [];
+  for (const m of discovery.members) {
+    if (!m.confirmed) continue;
+    for (const s of m.souls) if (includePrivate || !s.private) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+    for (const c of m.capabilities) if (includePrivate || !c.private) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
-  console.log(`Updated ${r.package}: ${r.before.version} (${r.before.commit}) → ${r.after.version} (${r.after.commit})`);
-  console.log(`  integrity ${r.before.integrity} → ${r.after.integrity}`);
-  if (r.pathChanged) pathLine();
-  if (r.addedCapabilities.length) console.log(`  + capabilities: ${r.addedCapabilities.join(", ")}`);
-  if (r.removedCapabilities.length) console.log(`  - capabilities: ${r.removedCapabilities.join(", ")}`);
-  for (const w of r.depWarnings || []) console.log(`WARNING: ${w}`);
-  if (r.invalidatedApprovals.length) console.log(`  APPROVALS INVALIDATED (integrity changed): ${r.invalidatedApprovals.join(", ")} — re-approve with \`oats trust\` after review.`);
+  for (const ext of discovery.external || []) {
+    const s = ext.soul;
+    if (includePrivate || !s.private) souls.push({ name: s.name, origin: `external ${s.repoKey} @ ${short(s.commit)}`, kind: "external", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
+  }
+  for (const [id, entry] of Object.entries(lock?.packages || {})) {
+    for (const name of entry.capabilities) capabilities.push({ name, origin: originOf({ package: id, version: entry.version }), kind: "package", package: id, version: entry.version, commit: entry.commit, team: teamLabel(null), private: false, approved: !!entry.approved });
+  }
+  const byName = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : 0);
+  souls.sort(byName);
+  capabilities.sort(byName);
+  return { souls, capabilities };
 }
 
-// ---------- init ----------
-/**
- * oats init [--raw] [--dir <dir>] [--knowledge <id>] [--messaging <id>] [--tasks <id>]
- *
- * Per-layer flags name a canonical capability ID or "none". A layer is filled by
- * a capability already at this scope (own store first — no config exists yet, so
- * the config-chain walk cannot see it), otherwise by acquiring the official
- * PACKAGE that supplies it through the materialization engine. Acquisition is
- * not activation, not executable trust and not requirement consent, and the
- * whole run is one transaction that rolls back on any failure.
- */
-/** Resolve a template (name via outer-config `templates:` maps, local path, or git URL's
- * main-branch oats-config.yaml) into snapshot text with a provenance comment. */
-function loadTemplateConfig(spec, dir) {
-  // THROWS typed errors rather than exiting: `oats init --template` reports
-  // through the same single JSON envelope as every other init form.
-  const fail = (code, message) => { const e = new Error(message); e.code = code; throw e; };
-  let source = spec;
-  const isDirect = /^(https?:\/\/|git@|ssh:\/\/)/.test(spec) || spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("~");
-  if (!isDirect) {
-    let named;
-    for (const cfg of configChain(dir)) {
-      if (cfg.templates?.[spec]) { named = { value: cfg.templates[spec], level: cfg._level }; break; }
-    }
-    if (!named) fail("E_UNKNOWN_TEMPLATE", `unknown template "${spec}" — declare it under templates: in an outer oats-config.yaml, or pass a path/git URL`);
-    source = /^(https?:\/\/|git@|ssh:\/\/)/.test(named.value) || named.value.startsWith("/") || named.value.startsWith("~")
-      ? named.value : resolve(named.level, named.value);
-  }
-  let body, provenance;
-  if (/^(https?:\/\/|git@|ssh:\/\/)/.test(source)) {
-    const tmp = mkdtempSync(join(tmpdir(), "oats-template-"));
-    try {
-      execFileSync("git", ["clone", "-q", "--depth", "1", source, tmp], { stdio: "inherit" });
-      const cfgFile = join(tmp, "oats-config.yaml");
-      if (!existsSync(cfgFile)) fail("E_TEMPLATE_SOURCE", `template repo has no oats-config.yaml on its default branch: ${source}`);
-      body = readFileSync(cfgFile, "utf8");
-      const commit = execFileSync("git", ["-C", tmp, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-      provenance = `${source}@${commit.slice(0, 12)}`;
-    } finally { rmSync(tmp, { recursive: true, force: true }); }
-  } else {
-    // Replacer FUNCTION, not a replacement string: `$&`, `$'`, `` $` `` and
-    // `$1` are substitution syntax in String.replace, and a home directory may
-    // legally contain them.
-    const path = resolve(source.replace(/^~\//, () => `${homedir()}/`));
-    if (!existsSync(path)) fail("E_TEMPLATE_SOURCE", `template config not found: ${path}`);
-    body = readFileSync(path, "utf8");
-    provenance = path;
-  }
-  // Snapshot: strip template-registry keys that make no sense in the seeded config.
-  const lines = body.replace(/\n*$/, "\n").split("\n");
-  const scaffoldName = scaffoldConfigName(dir);
-  const out = []; let skipping = false;
-  for (const line of lines) {
-    if (/^templates:\s*$/.test(line)) { skipping = true; continue; }
-    if (skipping) { if (/^\S/.test(line) && line.trim()) skipping = false; else continue; }
-    // Replacer FUNCTION, not a replacement string — this is a WRITE, so a
-    // directory named `x$&y` would otherwise persist a corrupted `name:` line
-    // (`name: xname: template-namey`).
-    out.push(line.replace(/^name:.*$/, () => `name: ${scaffoldName}`));
-  }
-  return `# template: ${provenance} (snapshot — later template edits do not propagate)\n${out.join("\n").replace(/\n*$/, "\n")}`;
+/** Membership rows for `sync` / `workspace status`. */
+function memberRows(discovery) {
+  return discovery.members.map((m) => ({
+    key: m.key, name: memberLabel(m.key), commit: m.commit ?? null, confirmed: m.confirmed, status: m.confirmed ? "confirmed" : m.reason, detail: m.detail ?? null, team: m.team ?? null,
+    souls: m.souls.map((s) => s.name), capabilities: m.capabilities.map((c) => c.name), publishes: m.publishes ?? null,
+  }));
 }
 
-function init() {
-  const raw = args.includes("--raw");
-  const dir = dirFlag();
-  const file = join(dir, "oats-config.yaml");
-  const pkgSrc = flag("package");
-  // Every init form — classic, --template and --package — reports through the
-  // SAME one-envelope JSON boundary; nothing here may print two documents.
-  const bail = (code, msg) => (JSON_MODE ? jsonFail(code, msg) : die(msg));
-  const note = (msg) => (JSON_MODE ? console.error(msg) : console.log(msg));
-  if (existsSync(file)) bail("E_CONFIG_EXISTS", `${shortPath(file)} already exists — edit it or use \`oats use\``);
-  // The scaffolded `name:` value is FILESYSTEM input. Refuse it up front, before
-  // any init form mutates anything — a basename that cannot stay one YAML scalar
-  // must abort the run, not be discovered halfway through a transaction.
-  try { scaffoldConfigName(dir); }
-  catch (e) { bail(e.code, e.message); return; }
+/** Package rows for `sync` / `workspace status` from the lock. */
+function packageRows(lock) {
+  return Object.entries(lock.packages).map(([id, p]) => ({ id, version: p.version, source: p.source, commit: p.commit, integrity: p.integrity, capabilities: p.capabilities, approved: p.approved }));
+}
 
-  if (pkgSrc && pkgSrc !== true) { initPackage(pkgSrc, dir, file); return; }
-  if (pkgSrc === true) { bail("E_USAGE", "--package needs a package id, local path, or git URL"); return; }
+/** Print a padded table: rows are arrays of strings. */
+function printTable(header, rows) {
+  const all = [header, ...rows];
+  const widths = header.map((_, i) => Math.max(...all.map((r) => String(r[i] ?? "").length)));
+  for (const r of all) console.log("  " + r.map((c, i) => String(c ?? "").padEnd(widths[i])).join("  ").trimEnd());
+}
 
-  const template = flag("template");
-  if (template && template !== true) {
-    let text;
-    try { text = loadTemplateConfig(template, dir); }
-    catch (e) { bail(e.code || "E_TEMPLATE_SOURCE", e.message); return; }
-    // Seeding is a transaction too. A template can carry keys this kernel
-    // refuses, or lock entries that will not restore; either way the config this
-    // run wrote must not be left behind for the next command to trip over, and
-    // the failure must be a typed error rather than an uncaught stack.
-    let journal;
-    try { journal = beginRunJournal(dir); }
-    catch (e) { bail(e.code || "E_JOURNAL_FAILED", e.message); return; }
-    let activated = [];
-    try {
-      writeFileSync(file, text);
-      note(`Created ${shortPath(file)} (${levelOf(dir)} level) from template ${template}`);
-      // The GATE is that the kernel can read this config: a template carrying a
-      // retired key or a broken shape is a broken template, and leaving it
-      // behind would break every later command at this scope.
-      configChain(dir);
-      restore(dir);
-      // Activation is NOT a gate. A template's whole point is to seed policy you
-      // then acquire — a capability it activates but nothing supplies yet is the
-      // expected state right after seeding, not a reason to refuse the config.
-      try { activated = resolveOatsConfig(dir).capabilities.map((c) => ({ capability: c.id, layer: c.layer || null })); }
-      catch (e) { note(`NOTE: ${shortPath(file)} does not resolve yet — ${e.message}. Acquire what it activates (\`oats install <source>\`), then re-check with \`oats doctor\`.`); }
-      journal.finalize();
-    } catch (e) {
-      const report = journal.rollback();
-      const detail = `${shortPath(file)} could not be seeded from template ${template}: ${e.message}`;
-      bail(e.code || "E_TEMPLATE_UNUSABLE", report.complete ? detail : `${detail} — ${report.summary}`);
-      return;
-    }
-    if (JSON_MODE) { jsonOk({ file, level: levelOf(dir), raw, adopted: false, template, acquired: [], activated, requirements: [] }); return; }
-    offerTmuxMouseScrolling();
-    return;
-  }
-  if (template === true) { bail("E_USAGE", "--template needs a name, local config path, or git URL"); return; }
+/** Executables digest of a locked package, read over the remote at its locked commit. */
+async function lockedExecutablesDigest(id, entry, workspace, catalog, remoteOptions) {
+  const req = parsePackageRequest(id, workspace.packages[id], catalog);
+  const tree = await readPackageTree(remoteModule, req.remoteRef, entry.commit, entry.path, { remoteOptions });
+  const targets = tree.manifests.flatMap((m) => manifestExecutables(m.manifest).map((x) => `${m.name}: ${x.kind} ${x.name} → ${x.target}`));
+  return { digest: executablesDigest(tree), targets };
+}
 
-  // Per-layer overrides: --knowledge oats.okf, --messaging none, --tasks oats.jira …
-  const overrides = {};
-  const market = marketplaceCapabilities();
-  // Own-scope manifests are read DIRECTLY: no oats-config.yaml exists here yet,
-  // so the config-chain walk cannot see this scope's own store, and a
-  // capability already installed here would look unknown.
-  // Object.assign onto a null prototype, never an object spread: `{ ...map }`
-  // re-plainifies the null-prototype sources, and `mans[v]` is then indexed with
-  // a `--<layer>` value the operator typed — `--knowledge constructor` would
-  // read Object.prototype.constructor as a manifest and report a layer mismatch
-  // for a capability that does not exist.
-  const mans = Object.assign(Object.create(null), market, capabilityManifests(dir), ownScopeCapabilityManifests(dir));
-  for (const layer of LAYERS) {
-    const v = flag(layer);
-    if (v === undefined) continue;
-    if (v === true || String(v).startsWith("--")) bail("E_USAGE", `--${layer} needs a canonical capability ID or "none"`);
-    if (v !== "none") {
-      // Known locally: its declared layer is checkable right now, before any
-      // mutation. Otherwise the official catalog may still supply it, and the
-      // layer is verified against the MATERIALIZED manifest after acquisition —
-      // inside the run transaction, so a disagreement rolls the whole run back.
-      if (mans[v]) {
-        if (mans[v].layer !== layer) bail("E_LAYER_MISMATCH", `capability "${v}" declares layer "${mans[v].layer || "none"}", not "${layer}"`);
-      } else if (!officialCapabilityPackage(v).available) {
-        bail("E_UNKNOWN_CAPABILITY", `unknown capability "${v}" for --${layer} — it is not acquired at ${shortPath(dir)}, not in the marketplace (${Object.keys(market).join(", ") || "empty"}), and no official package supplies it (catalog: ${Object.keys(officialPackageCatalog()).join(", ") || "empty"})`);
-      }
-    }
-    overrides[layer] = v;
-  }
+/** One yes/no question on the terminal (TTY only; the caller checks). */
+async function askYesNo(question) {
+  const rl = createInterface({ input: process.stdin, output: process.stderr });
+  try {
+    const answer = (await rl.question(question)).trim().toLowerCase();
+    return answer === "y" || answer === "yes";
+  } finally { rl.close(); }
+}
 
-  const defaults = raw
-    ? { knowledge: "none", messaging: "none", tasks: "none" }
-    : { knowledge: "oats.okf", messaging: "oats.aweb", tasks: undefined };
-  let layers = { ...defaults, ...overrides };
-
-  // Interactive TTY with no explicit layer flags: present each default and ask.
-  // Non-interactive contexts (agents, CI) keep flags-or-silent-defaults — never hang.
-  if (!raw && !JSON_MODE && process.stdin.isTTY && process.stdout.isTTY && !Object.keys(overrides).length) {
-    const byLayer = (l) => Object.values(mans).filter((m) => m.layer === l).map((m) => m.capability);
-    console.log("Fundamental layers for this scope — Enter keeps the default, or type a capability id / \"none\":");
-    const ask = (prompt) => {
-      process.stdout.write(prompt);
-      const buffer = Buffer.alloc(256);
-      let length = 0;
-      try { length = readSync(process.stdin.fd, buffer, 0, buffer.length); } catch { /* EOF */ }
-      return buffer.subarray(0, length).toString("utf8").trim();
-    };
-    for (const layer of LAYERS) {
-      const options = byLayer(layer);
-      const def = layers[layer] || "none";
-      while (true) {
-        const answer = ask(`  ${layer.padEnd(10)} [${def}]  (options: ${[...options, "none"].join(", ")}): `);
-        if (!answer) break;
-        if (answer === "none" || options.includes(answer)) { layers[layer] = answer; break; }
-        console.log(`    unknown "${answer}" — pick one of: ${[...options, "none"].join(", ")}`);
-      }
-    }
-    if ((layers.messaging || "none") !== "none") console.log("  (messaging via aweb: after init, run `oats aweb setup` for guided onboarding)");
-  }
-  // ---- Everything below MUTATES. It is ONE run-level transaction: the config
-  // file, the lock, the flat capability artifacts, the capability .gitignore
-  // and any `.agents` anchor this run creates roll back together. A capability
-  // that was already installed at this scope before the run is restored
-  // byte-identically — this run only ever undoes its own changes. ----
-  let journal;
-  try { journal = beginRunJournal(dir); }
-  catch (e) { bail(e.code || "E_JOURNAL_FAILED", e.message); return; }
-  const abort = (e, code) => {
-    const report = journal.rollback();
-    bail(code || e.code || "E_INIT_FAILED", report.complete ? e.message : `${e.message} — ${report.summary}`);
-  };
-
-  const acquisitions = [];
+/** `oats sync [--dir] [--json]` — contract §6. */
+async function syncCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const ctx = workspaceContext(bail);
+  const catalog = catalogForSync(bail);
+  const discovery = await discoverForCli(ctx, bail);
+  let previous;
+  try { previous = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   let resolved;
-  const lines = [
-    `name: ${scaffoldConfigName(dir)}`,
-    "",
-    "# ── Agent types (families) — declared here by name (or via `oats type add`);",
-    "# each soul opts in via `type: <name>` in its soul.yaml. Capability entries can target them.",
-    "# agent-types:",
-    "#   reviewers:",
-    "#     description: Agents that review changes",
-    "",
-    "capabilities:",
-    "  # Fundamental layers — exclusive slots; a capability entry or an explicit none.",
-    "  layers:",
-  ];
-  try {
-    for (const layer of LAYERS) {
-      const selected = layers[layer];
-      if (!selected) { lines.push(`    # ${layer}: (unset — inherits from outer config scopes; set an entry or "none")`); continue; }
-      if (selected === "none") { lines.push(`    ${layer}: none`); continue; }
-      // Already here (own scope first — see above), or acquired now.
-      const manifest = ownScopeCapabilityManifest(dir, selected)
-        || capabilityManifest(selected, dir)
-        || acquireLayerCapability(dir, selected, layer, acquisitions, note);
-      lines.push(`    ${layer}:`);
-      lines.push(`      capability: ${manifest.capability}`);
-      if (String(manifest._origin).startsWith("installed:")) { lines.push("      from: installed"); lines.push(`      # injection-override: .agents/injections/capabilities/${manifest.capability}.md`); }
-      else if (String(manifest._origin).startsWith("owned:")) { lines.push("      from: owned"); lines.push(`      # injection edited at source: .agents/capabilities/owned/${manifest.capability}/injects/`); }
+  try { resolved = await resolvePackages(discovery.workspace, { catalog, lock: previous, remoteOptions: ctx.remoteOptions }); }
+  catch (e) {
+    if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
+    throw e;
+  }
+  let lock = resolved.lock;
+  const approvalNeeded = [];
+  const interactive = !JSON_MODE && process.stdin.isTTY && process.stdout.isTTY;
+  for (const id of Object.keys(lock.packages)) {
+    const entry = lock.packages[id];
+    if (entry.approved) continue;
+    let digest, targets;
+    try { ({ digest, targets } = await lockedExecutablesDigest(id, entry, discovery.workspace, catalog, ctx.remoteOptions)); }
+    catch (e) {
+      if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
+      throw e;
     }
-    lines.push(
-      "  # Additive capabilities — non-exclusive; target global, agent-types, or souls.",
-      "  # additive:",
-      "  #   <capability-id>:",
-      "  #     from: installed",
-      "  #     global: true",
-      "  #     # injection-override: .agents/injections/capabilities/<capability-id>.md",
-      "",
-      "# ── Work modes — optional per-mode env bootstrap.",
-      "# `setup:` runs inside each NEW worktree right after `git worktree add` — use it",
-      "# for env setup scripts (installs, .env copying, direnv, mise, etc.).",
-      "# The path is relative to this config's directory.",
-      "work-modes:",
-      "  worktree:",
-      "    # setup: scripts/setup-worktree.sh",
-      "",
-      "# ── OATS defaults — the framework's baseline instruction block.",
-      "oats:",
-      "  # injection-override: .agents/injections/oats-defaults/oats.md",
-    );
-    writeFileSync(file, lines.join("\n") + "\n");
-    // Resolve INSIDE the transaction: a config this run wrote that cannot
-    // resolve is a broken scope, so it fails the init and rolls back rather
-    // than being left behind for the next command to trip over.
-    resolved = resolveOatsConfig(dir);
-    journal.finalize();
-  } catch (e) { abort(e); return; }
-
-  note(`Created ${shortPath(file)} (${levelOf(dir)} level${raw ? ", raw" : ""})`);
-  // Acquisition is not activation, not executable trust, and not requirement
-  // consent — say so per acquisition rather than implying the layer is ready.
-  for (const a of acquisitions) {
-    if (!a.executableSurface.length) continue;
-    note(`Executable surfaces from ${a.package || "the marketplace"} are blocked until trusted: ${a.executableSurface.map((c) => `oats trust ${c}`).join("; ")}`);
+    if (interactive) {
+      console.error(`\n${id} ${entry.version} @ ${short(entry.commit)} needs executable approval (${targets.length} executable${targets.length === 1 ? "" : "s"}, digest ${digest}):`);
+      for (const t of targets) console.error(`  ${t}`);
+      if (targets.length === 0) console.error("  (no commands or hooks — nothing runs unattended)");
+      if (await askYesNo(`approve ${id} ${entry.version}? [y/N] `)) { lock = approvePackage(lock, id, digest); continue; }
+    }
+    approvalNeeded.push({ id, version: entry.version, commit: entry.commit, executables: digest, targets });
   }
-
-  const r = resolved;
-  const activated = [];
-  for (const cap of r.capabilities) {
-    activated.push({ capability: cap.id, layer: cap.layer || null });
-    note(`Activated: ${cap.id}${cap.layer ? ` → ${cap.layer}` : ""}`);
-    for (const miss of cap.missingRequires) note(`WARNING: required command "${miss.command}" not on PATH — ${miss.why || ""}${miss.install ? ` (install: ${miss.install})` : ""}`);
-  }
+  let lockFile;
+  try { lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  const members = memberRows(discovery);
+  const packages = packageRows(lock);
+  const changes = resolved.changes;
+  const items = workspaceItems(discovery, lock, { includePrivate: true });
+  const report = { syncApi: 1, workspace: { name: discovery.workspace.name, key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, problems: discovery.problems };
   if (JSON_MODE) {
-    jsonOk({
-      file, level: levelOf(dir), raw, adopted: false,
-      layers: Object.fromEntries(LAYERS.map((l) => [l, layers[l] ?? null])),
-      acquired: acquisitions, activated,
-      // Same facts the human run prints, in the same run: who asked, why, and
-      // the ONE copyable command that consents to installing it. Init never
-      // runs it — reporting a requirement and acting on it are separate steps,
-      // and an agent reading this envelope must be able to tell them apart.
-      requirements: r.capabilities.flatMap((c) => c.missingRequires.map((m) => ({
-        capability: c.id, command: m.command, why: m.why || null, install: m.install || null,
-        consentCommand: `oats install --accept-requirement ${m.command} --dir ${shellQuote(dir)}`,
-      }))),
-    });
+    // One envelope, then the exit status: 2 = the lock is written but approvals are pending.
+    // exitCode (not process.exit) lets stdout drain when it is a pipe.
+    jsonOk(report); process.exitCode = approvalNeeded.length ? 2 : 0; return;
+  }
+
+  // The §8 report.
+  const disabled = new Set(ctx.local.souls?.disabled || []);
+  console.log(`workspace  ${discovery.workspace.name}  (${discovery.key} @ ${short(discovery.commit)})`);
+  console.log(`members    ${members.map((m) => m.confirmed ? `${m.name} ✓↔ (@ ${short(m.commit)})` : `${m.name} ✗ (${m.status})`).join("   ") || "(none)"}`);
+  console.log(`packages   ${packages.map((p) => {
+    const need = approvalNeeded.find((a) => a.id === p.id);
+    return `${p.id} ${p.version} ✓ (${p.approved ? "approved" : need ? "approval needed" : "unapproved"})`;
+  }).join("   ") || "(none)"}`);
+  const changed = changes.filter((c) => c.to !== null && c.from !== c.to).map((c) => `${c.id}  ${c.from ?? "—"} → ${c.to} (@ ${short(c.commit)})`);
+  const removed = changes.filter((c) => c.to === null).map((c) => `${c.id}  ${c.from} → removed`);
+  console.log(`changed    ${[...changed, ...removed].join("   ") || "(nothing — the lock already described this workspace)"}`);
+  const memberSouls = items.souls.filter((s) => s.kind === "member");
+  const externalSouls = items.souls.filter((s) => s.kind === "external");
+  const privateSouls = memberSouls.filter((s) => s.private);
+  const disabledHere = items.souls.filter((s) => disabled.has(s.name));
+  console.log(`souls      ${items.souls.length} discovered (${memberSouls.length} members, ${externalSouls.length} external, ${disabledHere.length} disabled here) · ${privateSouls.length} private${privateSouls.length ? ` (${privateSouls.map((s) => `${s.name}, ${memberLabel(s.repoKey)} only`).join("; ")})` : ""}`);
+  const teams = new Map();
+  for (const s of items.souls) { const t = teams.get(s.team) || { souls: 0, capabilities: 0 }; t.souls++; teams.set(s.team, t); }
+  for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
+  console.log(`teams      ${[...teams.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([team, n]) => `${team} ${n.souls} soul${n.souls === 1 ? "" : "s"}${n.capabilities ? `, ${n.capabilities} capabilit${n.capabilities === 1 ? "y" : "ies"}` : ""}`).join(" · ") || "(none)"}`);
+  for (const p of discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
+  if (approvalNeeded.length) {
+    console.log(`\nApproval needed for ${approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")} — ${interactive ? "declined; " : "not a terminal; "}the lock records them unapproved. Run \`oats sync\` in a terminal to approve their executables (spawns of souls using them are refused until then).`);
+    process.exit(2);
+  }
+  console.log(`\nlock       ${shortPath(lockFile)}`);
+}
+
+/** Walk up from dir for oats-workspace.yaml INSIDE a Git checkout → { file, root } | null. */
+function workspaceCheckoutFrom(dir) {
+  let current = resolve(dir);
+  for (;;) {
+    const candidate = join(current, "oats-workspace.yaml");
+    if (existsSync(candidate)) {
+      // The file is edited in place only when it is tracked by the checkout it sits in.
+      let inCheckout = false;
+      for (let d = current; ; d = dirname(d)) { if (existsSync(join(d, ".git"))) { inCheckout = true; break; } if (dirname(d) === d) break; }
+      return inCheckout ? { file: candidate, root: current } : null;
+    }
+    const parent = dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+/** `oats package add <id> <version|git:<repo>@<ref>> | remove <id> [--dir]` — contract §6. */
+async function packageCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const sub = args[1];
+  const id = args[2];
+  const value = args[3];
+  const usage = "usage: oats package add <id> <version|git:<repo>@<ref>> [--dir <d>] | oats package remove <id> [--dir <d>]";
+  if (!["add", "remove"].includes(sub) || !id || id.startsWith("--")) return bail("E_USAGE", usage);
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) return bail("E_WORKSPACE_SCHEMA", `package id ${JSON.stringify(id)} must match ^[a-z0-9][a-z0-9._-]*$`, { id });
+  if (sub === "add") {
+    if (!value || value.startsWith("--")) return bail("E_USAGE", usage);
+    const c = classifyPackageValue(value);
+    if (c.problem) return bail("E_WORKSPACE_SCHEMA", `packages.${id}: ${c.problem} (a package is a bare version like v2.1.3 or git:<repo>@<ref>)`, { id, value });
+    if (c.kind === "git") { try { remoteModule.parseRepoRef(c.repo); } catch (e) { return bail(e.code || "E_REPO_REF", e.message, e.details ?? e.provenance); } }
+  }
+  const line = sub === "add" ? `  ${id}: ${YAML.stringify(value).trim()}` : null;
+  const checkout = workspaceCheckoutFrom(dirFlag());
+  if (!checkout) {
+    if (JSON_MODE) { jsonOk({ action: sub, id, value: value ?? null, edited: false, file: null, line: sub === "add" ? `packages:\n${line}` : null, hint: "oats-workspace.yaml is not in this checkout; commit the change in the workspace repo, then `oats sync`" }); return; }
+    if (sub === "add") console.log(`oats-workspace.yaml is not in this checkout. Add under packages: in the workspace repo, then \`oats sync\`:\n\npackages:\n${line}`);
+    else console.log(`oats-workspace.yaml is not in this checkout. Remove \`${id}\` from packages: in the workspace repo, then \`oats sync\`.`);
     return;
   }
-  offerTmuxMouseScrolling();
+  const text = readFileSync(checkout.file, "utf8");
+  let doc;
+  try { doc = YAML.parseDocument(text, { keepSourceTokens: true }); } catch (e) { return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: ${e.message}`, { path: checkout.file }); }
+  if (doc.errors?.length) return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: ${doc.errors.map((e) => e.message).join("; ")}`, { path: checkout.file });
+  const root = doc.contents;
+  if (!root || typeof root.get !== "function") return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: top level must be a mapping`, { path: checkout.file });
+  const previous = root.get("packages")?.toJSON?.() ?? null;
+  const had = previous && Object.hasOwn(previous, id) ? previous[id] : undefined;
+  if (sub === "add") {
+    if (!root.has("packages") || root.get("packages") === null) root.set("packages", doc.createNode({ [id]: value }));
+    else root.get("packages").set(id, value);
+  } else {
+    if (had === undefined) return bail("E_PACKAGE_MISSING", `packages.${id} is not in ${shortPath(checkout.file)}`, { id, path: checkout.file });
+    root.get("packages").delete(id);
+    if (root.get("packages")?.items?.length === 0) root.delete("packages");
+  }
+  const next = doc.toString();
+  const problems = validateWorkspace(YAML.parse(next), { remote: remoteModule });
+  if (problems.length) return bail("E_WORKSPACE_SCHEMA", `${shortPath(checkout.file)} would be invalid: ${problems.map((p) => `${p.path || "/"}: ${p.message}`).join("; ")}`, { path: checkout.file, problems });
+  writeFileAtomic(checkout.file, next);
+  const receipt = { action: sub, id, value: value ?? null, previous: had ?? null, edited: true, file: checkout.file };
+  if (JSON_MODE) { jsonOk(receipt); return; }
+  console.log(sub === "add"
+    ? `${had === undefined ? "Added" : `Changed (${had} →)`} packages.${id}: ${value} in ${shortPath(checkout.file)}. Commit it, then \`oats sync\` (the lock resolves the version to a commit and asks approval once).`
+    : `Removed packages.${id} (${had}) from ${shortPath(checkout.file)}. Commit it, then \`oats sync\`.`);
 }
 
-/** Acquire the capability backing one fundamental layer at classic-init time.
- *
- * Catalog-first: when an official package supplies the capability it comes
- * through the package engine — flat materialization, a capability-materialization
- * lock, and NO implicit executable trust. The legacy standalone-capability route
- * survives only for marketplace capabilities the official catalog cannot supply
- * today, and it is the only branch that still writes a v1 lock.
- *
- * Throws on every failure: the caller holds the run journal, and exiting here
- * would strand its backup. */
-function acquireLayerCapability(dir, capId, layer, acquired, note) {
-  const fail = (code, message) => { const e = new Error(message); e.code = code; throw e; };
-  const official = officialCapabilityPackage(capId);
-  if (official.available) {
-    const acq = acquirePackage(dir, official.package);
-    if (!acq.capabilities.some((c) => c.capability === capId)) {
-      fail("E_LAYER_NOT_EXPORTED", `package ${official.package} does not export capability "${capId}" — it exports ${acq.capabilities.map((c) => c.capability).join(", ") || "nothing"}`);
-    }
-    // The layer is verified against the manifest actually WRITTEN TO DISK, never
-    // against the marketplace copy or the catalog's word for it.
-    const manifest = ownScopeCapabilityManifest(dir, capId);
-    if (!manifest) fail("E_LAYER_UNREADABLE", `capability "${capId}" was materialized but its manifest under ${shortPath(installedCapabilityDir(dir, capId))} is unreadable`);
-    if (manifest.layer !== layer) fail("E_LAYER_MISMATCH", `capability "${capId}" declares layer "${manifest.layer || "none"}", not "${layer}"`);
-    const executableSurface = acq.capabilities
-      .filter((c) => c.executableSurface?.commands?.length || c.executableSurface?.hooks?.length || c.executableSurface?.environment?.length)
-      .map((c) => c.capability);
-    acquired.push({
-      layer, capability: capId, route: "package", package: official.package, via: official.via,
-      packages: acq.installed.map((p) => ({ package: p.package, version: p.version || null, commit: p.commit || null })),
-      lockFile: acq.lockFile, trusted: false, executableSurface,
-    });
-    note(`Acquired package ${official.package} for the ${layer} layer → ${capId} (${acq.installed.map((p) => `${p.package}@${p.version}`).join(", ")}) → ${shortPath(acq.lockFile)}`);
-    return { ...manifest, _origin: `installed:${dir}` };
-  }
-  const market = marketplaceCapabilities();
-  if (!market[capId]) {
-    fail("E_UNKNOWN_CAPABILITY", `capability "${capId}" is not acquired at ${shortPath(dir)}, is not in the marketplace (${Object.keys(market).join(", ") || "empty"}), and no official package supplies it`);
-  }
-  // Legacy route: kernel-bundled marketplace capabilities predate the official
-  // packages, ship with the kernel already installed, and keep their v1 lock and
-  // acquisition-time trust until the catalog covers them.
-  const r = acquireCapability(dir, capId);
-  try {
-    writeCapabilityLock(dir, r.manifest.capability, {
-      source: r.source, version: r.manifest.version || null, integrity: r.integrity, trustedExecutables: true,
-    });
-  } catch (e) { rmSync(r.dest, { recursive: true, force: true }); throw e; }
-  if (r.manifest.layer !== layer) fail("E_LAYER_MISMATCH", `capability "${capId}" declares layer "${r.manifest.layer || "none"}", not "${layer}"`);
-  acquired.push({ layer, capability: capId, route: "marketplace", package: null, via: "marketplace", packages: [], lockFile: join(dir, OATS_LOCK_FILE), trusted: true, executableSurface: [] });
-  note(`Acquired ${r.manifest.capability}@${r.manifest.version} from the marketplace → ${shortPath(r.dest)}`);
-  return { ...r.manifest, _origin: `installed:${dir}` };
+/** `oats workspace status [--dir] [--json]` — contract §6. */
+async function workspaceCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  if (args[1] !== "status") return bail("E_USAGE", "usage: oats workspace status [--dir <d>] [--json]");
+  const ctx = workspaceContext(bail);
+  const discovery = await discoverForCli(ctx, bail);
+  let lock;
+  try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  const members = memberRows(discovery);
+  const packages = packageRows(lock);
+  const declared = Object.keys(discovery.workspace.packages || {}).sort();
+  const locked = new Set(packages.map((p) => p.id));
+  const unsynced = declared.filter((id) => !locked.has(id));
+  const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
+  const approval = { approved: packages.filter((p) => p.approved).map((p) => p.id), needed: packages.filter((p) => !p.approved).map((p) => p.id) };
+  const result = { workspaceStatusApi: 1, workspace: { name: discovery.workspace.name, key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, approval, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
+  if (JSON_MODE) { jsonOk(result); return; }
+  console.log(`workspace ${discovery.workspace.name}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
+  console.log("Members:");
+  printTable(["member", "status", "commit", "team", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.team ?? "—", m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
+  for (const m of members.filter((m) => !m.confirmed)) console.log(`    ${m.name}: ${m.detail}`);
+  console.log("\nPackages:");
+  if (!packages.length) console.log(unsynced.length ? `  (none locked yet — \`oats sync\` resolves ${unsynced.join(", ")})` : "  (none)");
+  else printTable(["package", "version", "source", "commit", "approval", "capabilities"], packages.map((p) => [p.id, p.version, p.source, short(p.commit), p.approved ? `approved ${p.approved.at.slice(0, 10)}` : "NEEDED", p.capabilities.join(",")]));
+  if (packages.length && unsynced.length) console.log(`  declared but not locked (run \`oats sync\`): ${unsynced.join(", ")}`);
+  if (stale.length) console.log(`  locked but no longer declared (run \`oats sync\`): ${stale.join(", ")}`);
+  if (result.external.length) console.log(`\nExternal: ${result.external.map((e) => `${e.soul} (${e.source.replace(/@([0-9a-f]{40})$/, (_, o) => `@${short(o)}`)}, ${e.team})`).join("   ")}`);
+  if (discovery.problems.length) { console.log("\nProblems:"); for (const p of discovery.problems) console.log(`  ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`); }
 }
 
-/** Capability manifests physically present at THIS scope's own store.
- *
- * `capabilityManifests` walks the config chain, so during `oats init` — when no
- * oats-config.yaml exists at the target scope yet — this scope is not a level and
- * its own installed/ and owned/ capabilities are invisible. Init reads them
- * directly instead, which is also what makes a same-run acquisition visible to
- * the rest of the run. */
-function ownScopeCapabilityManifests(dir) {
-  // Capability-id keyed — never answer for `constructor`/`toString`. Belt and
-  // braces on the write side (store directory names are identity-validated at
-  // acquisition); it matters on the read side, where `oats init` indexes this
-  // map with a `--<layer>` flag value the operator typed.
-  const out = Object.create(null);
-  for (const [sub, origin] of [[installedCapabilitiesDir(dir), "installed"], [ownedCapabilitiesDir(dir), "owned"]]) {
-    if (!existsSync(sub)) continue;
-    let entries;
-    try { entries = readdirSync(sub, { withFileTypes: true }); } catch { continue; }
-    for (const e of entries) {
-      // Dot-prefixed entries are transaction staging, never installed content.
-      if (!e.isDirectory() || e.name.startsWith(".")) continue;
-      let raw;
-      try { raw = JSON.parse(readFileSync(join(sub, e.name, "oats.json"), "utf8")); } catch { continue; }
-      if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-      // Strip BEFORE the spread. `_dir` and `_origin` are reassigned just after
-      // it, but every OTHER annotation in the namespace — `_capabilityLock`,
-      // `_package`, `_soulDir` … — would flow straight out of an
-      // artifact-controlled document. That is the exact shape the kernel's own
-      // manifest reader was fixed for, and this map is merged OVER that
-      // stripped one, so leaving it raw kept the forgery carrier alive.
-      const m = stripInternalAnnotations(raw);
-      if (typeof m.capability === "string") out[m.capability] = { ...m, _dir: join(sub, e.name), _origin: `${origin}:${dir}` };
-    }
-  }
-  return out;
+/** `oats capabilities` / `oats souls` [--dir] [--json] — contract §6. */
+async function itemsCmd(kind) {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const ctx = workspaceContext(bail);
+  const discovery = await discoverForCli(ctx, bail);
+  let lock;
+  try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  const items = workspaceItems(discovery, lock)[kind];
+  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, workspace: { name: discovery.workspace.name, key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
+  console.log(`${kind} of workspace ${discovery.workspace.name} (${discovery.key} @ ${short(discovery.commit)})\n`);
+  if (!items.length) console.log("  (none)");
+  else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.team, s.work ?? "—"]));
+  else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.name, c.origin, c.team, c.layer ?? "—"]));
+  const unsynced = Object.keys(discovery.workspace.packages || {}).filter((id) => !lock.packages[id]);
+  if (kind === "capabilities" && unsynced.length) console.log(`\n  package capabilities of ${unsynced.join(", ")} appear after \`oats sync\``);
 }
-const ownScopeCapabilityManifest = (dir, capId) => ownScopeCapabilityManifests(dir)[capId];
 
 // ---------- roster: status / spawn / retire / create ----------
 function status() {
@@ -5038,7 +3092,7 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2"], instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -5176,7 +3230,7 @@ async function serverRouteCmd() {
   // The operations contract addresses an exact member context on the host,
   // so its explicit --dir travels; every other routed command takes its
   // scope from the registration.
-  const explicitScopeOk = ["inspect", "operation", "use", "soul", "launch-config"].includes(cmd);
+  const explicitScopeOk = ["inspect", "operation", "soul", "launch-config"].includes(cmd);
   if (!explicitScopeOk && (flag("dir") !== undefined || args.some((a) => a.startsWith("--dir=")))) bail("E_BAD_ARGS", "--dir cannot be combined with --server: the remote workspace comes from the server registration");
   if (cmd === "launch-config") {
     const action = args[1];
@@ -5455,7 +3509,7 @@ if (captured) {
 // `okf harvest --help` spawned a harvester (BeadHub, 2026-09-05).
 const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
-if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "use", "soul", "launch-config"].includes(cmd)) await serverRouteCmd();
+if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "soul", "launch-config"].includes(cmd)) await serverRouteCmd();
 else if (cmd === "server") serverCmd();
 else if (cmd === "inspect") inspectCmd();
 else if (cmd === "operation") operationCmd();
@@ -5465,27 +3519,22 @@ else if (cmd === "doctor") {
   const doctorDir = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
   args.includes("--json") ? doctorJson(doctorDir) : doctor(doctorDir);
 }
-else if (cmd === "use") use();
 else if (cmd === "update") {
+  // `oats update <package>` left with the installed tier (packages are pinned in
+  // the workspace file: `oats package add`); only the kernel self-update remains.
   const t = args[1] && !args[1].startsWith("--") ? args[1] : undefined;
-  // A selector without a package must never fall through to the kernel
-  // self-update (a different product) with the flag silently ignored.
-  if (!t && flag("to") !== undefined) { cmdFail("E_BAD_ARGS", "oats update --to needs a package: oats update <package> --to <ref> (or <package> <package>@<ref>)"); process.exit(1); }
-  t ? updatePackageCmd(t) : updateCmd();
+  if (t || flag("to") !== undefined) { cmdFail("E_BAD_ARGS", "oats update takes no package: pin package versions in oats-workspace.yaml (`oats package add <id> <version>`), then `oats sync`; bare `oats update [--check] [--yes]` updates the kernel"); process.exit(1); }
+  updateCmd();
 }
 else if (cmd === "type") typeCmd();
 else if (cmd === "inject") injectCmd();
-else if (cmd === "install") install();
-else if (cmd === "config") configCmd();
-else if (cmd === "trust") trust();
-else if (cmd === "list") listCmd();
-else if (cmd === "catalog") catalogCmd();
 else if (cmd === "readiness") readinessCmd();
 else if (cmd === "instance") instanceCmd();
-else if (cmd === "remove") removeCmd();
-else if (cmd === "migrate") migrateCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
-else if (cmd === "init") init();
+else if (cmd === "sync") await syncCmd();
+else if (cmd === "package") await packageCmd();
+else if (cmd === "workspace") await workspaceCmd();
+else if (cmd === "capabilities" || cmd === "souls") await itemsCmd(cmd);
 else if (cmd === "status") status();
 else if (cmd === "pane") await paneCmd();
 else if (cmd === "version" || cmd === "--version" || cmd === "-v") versionCmd();
@@ -5507,6 +3556,9 @@ else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && capabilityComma
 // text must NOT contaminate stdout — still one envelope object, nonzero exit.
 else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", `unknown command "${cmd}" — no kernel subcommand or active capability namespace matches`);
 else {
+  // A removed 0.24 verb names its v2 replacement before the usage (workspace model v2, decision 5).
+  const REPLACED = { install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "oats sync (approval is asked once per package version)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)" };
+  if (cmd && !HELP_WORDS.has(cmd) && !cmd.startsWith("--")) console.error(`oats: unknown command "${cmd}"${Object.hasOwn(REPLACED, cmd) ? ` — removed by the workspace model v2; use ${REPLACED[cmd]}` : " — no kernel subcommand or active capability namespace matches"}\n`);
   console.log(usageText());
   process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
 }
@@ -5559,7 +3611,7 @@ Usage:
   oats session start --server <id>           start a stopped remote instance in its existing home
       --instance <name> | --home <abs>       over its saved route; the server must advertise
       [--model <m>] [--json]                 session-start (oats 0.22.9 or later)
-  oats inspect|operation|use|soul --server <id>   the same commands on a registered server over its
+  oats inspect|operation|soul --server <id>   the same commands on a registered server over its
       ... [--dir <remote member>] [--home <abs>]  saved route (an explicit --dir travels as is; a --home
                                             is its own context; else the registered workspace);
                                             soul set --instructions-file streams the bytes; the
@@ -5654,28 +3706,21 @@ Usage:
                                             --soul shows final composed AGENTS.md
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
                                             optionally run the update; then run oats doctor
-  oats install [<source>] [--dir <d>]        acquire + exact-lock a package closure
-                                            (git:host/org/repo@ref[#<path>], git URL,
-                                            local path, official catalog id) or a legacy
-                                            marketplace capability; never activates
-                                            #<path> selects the contained package root
-                                            (default oats-package; #. = repository root;
-                                            local paths are always exact directories)
-      [--recursive] [--no-requirements]     bare \`oats install\` exactly restores this
-      [--accept-requirement <cmd> ...]      chain's locked packages + capabilities; at a
-      [--json]                              team: scope (or with --recursive) it reconciles
-                                            the whole workspace — descendant scopes restore
-                                            once in path order (pruned discovery), then the
-                                            host-requirement consent gate runs;
-                                            --no-requirements = package-only (CI);
-                                            non-interactive runs never install host tools
-                                            unless each requirement is named explicitly;
-                                            --json = one envelope (failures carry the full
-                                            report under error.details)
-  oats list [--dir <d>] [--json]             installed packages, exported capabilities,
-                                            scopes, trust state
-  oats catalog [--json]                      the effective official package catalog (read-only:
-                                               identity/discovery, no acquisition or trust)
+  oats sync [--dir <d>] [--json]             workspace model v2: observe the workspace named by
+                                            oats-local.yaml over its Git remote, confirm every
+                                            member (reciprocal oats-membership.yaml), resolve
+                                            packages: to exact commits, ask executable approval
+                                            once per package version (TTY; otherwise list what
+                                            needs it and exit 2), write oats-lock.json (v3) and
+                                            report the diff
+  oats package add <id> <version|git:<repo>@<ref>>  edit packages: in oats-workspace.yaml when the
+      | remove <id>  [--dir <d>]            workspace repo is the current checkout; otherwise
+                                            print the line to add (the file travels through Git)
+  oats workspace status [--dir <d>] [--json] membership table (confirmed / no-backlink /
+                                            cannot-read / backlink-elsewhere), packages, approval
+  oats capabilities [--dir <d>] [--json]     every non-private capability of every confirmed
+  oats souls [--dir <d>] [--json]            member + the locked packages, with origin
+                                            (member <key> @ <commit> | package <id> v<ver>) and team
   oats instance git <instance> [--home <abs>] [--dir <d>] [--json]
                                              read-only Git observation of the instance's work
                                              tree: branch, status (renames kept), ahead/behind
@@ -5713,68 +3758,10 @@ Usage:
                                              <workspace>/.agents/worktrees/<repo>/<branch>)
                                              unless discarded; --delete-branch deletes the
                                              worktree's verified branch and implies discard
-  oats update <package> [<package>@<ref>]    transactional package update: temp fetch,
-      [--to <ref>] [--dir <d>]              closure validation, diff, lock replace,
-                                            all capability approvals invalidated; a
-                                            spec or --to moves a catalog lock to <ref>
-  oats remove <package> [--dir <d>]          remove a package (refuses while config or
-                                            dependent packages reference it)
-  oats migrate [--dry-run] [--dir <d>]       map this scope's v1 capability locks to
-                                            package locks (preserves config activation)
-  oats migrate --official [--recursive]      guided upgrade of 0.18 bundled official
-      [--dry-run] [--dir <d>] [--json]      capabilities to official packages: plans every
-                                            visible lock-owning scope first, applies each
-                                            transactionally, keeps custom/owned entries
-                                            untouched, and prints the exact trust/install
-                                            follow-up (held when the catalog cannot map yet)
-  oats migrate --from-oas [--recursive]      convert a pre-rename OAS deployment in place:
-      [--dry-run] [--dir <d>] [--json]      renames oas-* files, the oas: config key and
-                                            capability ids, then chains the guided package
-                                            conversion — one transaction per scope, any
-                                            failure restores the original OAS bytes
-  oats config diff [--config <template>]     three-way report: your config vs the recorded
-      [--dir <d>] [--json]                  adopted base vs the template in the current exact
-                                            lock — reports only, never writes; the adopted
-                                            base supplies the package/template defaults
-  oats config sync [--accept <r>=local|package] apply the template's changes to your config,
-      [--dir <d>] [--json]                  region by region, preserving every untouched local
-                                            byte, comment and ordering; local-only edits stay;
-                                            conflicts need an explicit --accept and are never
-                                            chosen for you; advances the recorded base
-  oats config sync --reset --yes             replace your config with the template verbatim;
-      [--config <template>] [--dir <d>]     previews every local change it discards, refuses
-      [--json]                              without --yes, and keeps a recoverable .bak
-  oats config adopt <package>                switch to another installed package's template,
-      [--config <template>] [--accept ...]  rebasing your one local config; exactly one adopted
-      [--dir <d>] [--json]                  base survives, and a failed switch changes nothing
-  oats trust <capability> [--dir <dir>]      approve that capability's commands, hooks, and
-                                            launch-environment authority at
-                                            the provider package's exact integrity
-  oats trust <package> --all-capabilities    explicit bulk approval with a full
-                                            executable-surface summary
-  oats use <capability>                      activate for one config-owned target
-      [--global|--type <t>|--soul <s>]      (--global is default); --disable excludes
-      [--disable] [--settings k=v [k2=v2 ...]] [--dir <d>]
-  oats use none --layer <layer>              explicitly disable a fundamental layer
   oats type add <name> [--description <d>]   declare an agent type (family) in config;
   oats type list                             souls join via create --type / soul.yaml
   oats inject eject <cap|work-mode|oats>      copy a packaged injection to the conventional
       [--dir <d>]                           .agents/injections/ path and set injection-override
-  oats init [--raw] [--dir <dir>] [--json]   create an oats-config.yaml here. Fundamental
-      [--knowledge <id|none>]               layers are filled from what is already at this
-      [--messaging <id|none>]               scope, else acquired from the official package
-      [--tasks <id|none>]                   that supplies them — capabilities materialize
-      [--tmux-mouse|--no-tmux-mouse]        flat, executable surfaces stay untrusted, and
-                                            the whole run rolls back on any failure.
-      [--package <id|path|git-url>]         instead: adopt one config TEMPLATE from a package
-      [--config <template>]                 as your own local config and record the exact
-                                            adopted base (named template, else the marked
-                                            default, else the only one).
-      [--template <name|path|git-url>]      instead: seed from a template config (named via an
-                                            outer templates: map, a local file, or a git repo's
-                                            default-branch oats-config.yaml).
-                                            Every form refuses to overwrite an existing config;
-                                            --json = exactly one result envelope, noninteractive.
   oats root                                  print this package's install root
                                             (adapters resolve the kernel from it)
 
@@ -5832,7 +3819,7 @@ The turn record (core — every conversation captured, searchable, replicated):
   oats <namespace> <command> [args…]         run an operational command only when its
                                             capability is active (e.g. oats okf harvest)
 
-Layers: ${LAYERS.join(", ")}. Level detection: ~ → laptop, .git → repo, else workspace.`;
+Layers: ${LAYERS.join(", ")}. Workspace model v2: docs/design/2026-09-23-workspace-module-contracts.md.`;
 }
 } catch (e) {
   if (!TYPED_CLI_FAILURES.has(e?.code)) throw e;
