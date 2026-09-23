@@ -564,3 +564,23 @@ in `next.clone` like any member that lacks a clone at the convention (the host
 is a member; a soul that lives in it may need a work clone). Under an explicit
 `oats-local.yaml` `standalone:` header the next steps say the view is standalone
 and list only that repo.
+
+### 0.25.3 — `OATS_SOUL_ID` (stable soul identity for providers)
+
+The per-commit soul cache (0.25.1, M1) made `realpath(<home>/soul)` change with every
+member commit; a provider that keyed durable state on that path (OKF 2.1.3 `owners.json`)
+refused the next spawn (`E_OWNER`). "Members are latest" and "the owner is a path" cannot
+both hold, so the kernel now hands hooks a **stable identity**:
+
+- `OATS_SOUL_ID` in the `spawn` / `retire` / `launch` hook environment: for a workspace soul
+  `<repo key>#<soul name>` exactly as the canonical key is spelled (e.g.
+  `github.com/awebai/aweb#aweb-protocol-expert`, local fixtures `local//abs/path.git#name`);
+  for a classic soul the realpath of `agents/<name>/soul` (today's value — 0.24 deployments
+  unchanged). Also recorded as `instance.json.workspace.soul.id`.
+- `OATS_SOUL` is the **content** the home links — for a workspace soul the per-commit
+  directory `agents/<name>/souls/<commit12>/`, never the swappable `agents/<name>/soul`
+  pointer. Providers read content from `OATS_SOUL` and key state on `OATS_SOUL_ID`.
+- Provider contract (OKF 2.1.4): `owners[owner] = OATS_SOUL_ID ?? realpath(OATS_SOUL ?? home/soul)`;
+  a prior row whose value is a path under `agents/<same soul name>/(soul|souls/<commit>)` is
+  migrated to the id once, not refused; any other mismatch stays `E_OWNER`.
+

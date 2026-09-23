@@ -615,3 +615,44 @@ test("0.25.2 R4: status shows the soul source per instance (moved / no longer pr
     assert.equal(instRow().soul.status, "missing"); assert.equal(instRow().soul.reason, "soul-absent");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+// ---- 0.25.3: OATS_SOUL_ID — a soul's stable identity for provider state ----
+test("0.25.3 OATS_SOUL_ID: hooks of a workspace spawn receive `<repo key>#<soul>` (stable across member commits) while OATS_SOUL is the per-commit directory; instance.json records workspace.soul.id", { timeout: 240_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    const dep = join(base, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 2, r.stderr);
+    const approvalNeeded = envelope(r).result.approvalNeeded;
+    const lockFile = join(dep, "oats-lock.json");
+    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    const spawn = (purpose) => oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", purpose, "--work", "directory", "--no-launch", "--json"], { cwd: dep, env, base });
+    r = spawn("a"); assert.equal(r.status, 0, r.stdout + r.stderr);
+    const homeA = envelope(r).result.home;
+    const envA = JSON.parse(readFileSync(join(homeA, ".okf-hook-env.json"), "utf8"));
+    const expectedId = `${fx.keys.agents}#release-manager`;
+    assert.equal(envA.OATS_SOUL_ID, expectedId, "stable id = <repo key>#<soul name>");
+    assert.match(envA.OATS_SOUL, /\/souls\/[0-9a-f]{12}$/, "OATS_SOUL is the per-commit content directory");
+    const metaA = JSON.parse(readFileSync(join(homeA, "instance.json"), "utf8"));
+    assert.equal(metaA.workspace.soul.id, expectedId);
+    // the member commits → a different per-commit directory, the SAME identity
+    const moved = await moveMember(fx, "agents", async (work, { fs, path }) => { await fs.appendFile(path.join(work, "souls/release-manager/AGENTS.md"), "\n## moved\n"); });
+    r = spawn("b"); assert.equal(r.status, 0, r.stdout + r.stderr);
+    const homeB = envelope(r).result.home;
+    const envB = JSON.parse(readFileSync(join(homeB, ".okf-hook-env.json"), "utf8"));
+    assert.equal(envB.OATS_SOUL_ID, expectedId, "identity unchanged across the member commit");
+    assert.notEqual(envB.OATS_SOUL, envA.OATS_SOUL, "content directory differs per commit");
+    assert.equal(JSON.parse(readFileSync(join(homeB, "instance.json"), "utf8")).workspace.soul.commit, moved.commit);
+    // a classic (non-workspace) soul keeps today's value: the realpath of agents/<name>/soul
+    const { stableSoulId } = await import("../lib/core.mjs");
+    const classicDir = join(base, "classic-soul"); mkdirSync(classicDir, { recursive: true });
+    assert.equal(stableSoulId({ soulDir: classicDir }), realpathSync(classicDir));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
