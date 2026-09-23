@@ -23,6 +23,19 @@ One workspace per organisation. Pick the repo that **hosts**
 it). Decide the team labels you want (`global`, `engineering`, …) — labels
 organise and may add defaults; they never gate anything.
 
+**If any member is private, host the workspace file in a private repo that is
+not a public member.** The workspace file names every member, so whoever can
+read it sees the member list: a public host would publish the private repo's
+name; hosting inside the private member hides the workspace from public
+contributors entirely. A dedicated private repo (`<org>/workspace`) is the
+honest shape. Public contributors who can read a public member but not the
+host still get that member's souls through the standalone case (`from: here`
+capabilities plus `oats.core`), so a public soul stays usable.
+
+Two teams that need two different messaging identities (an open-source team
+and a hosted-operations team, say) stay in ONE workspace: `team:` is a label,
+and the provider payload is addressed by label under `messaging.byTeam` (§2).
+
 ## 2. Write `oats-workspace.yaml` v2 in the host repo
 
 Start from the 0.24 file and rewrite it:

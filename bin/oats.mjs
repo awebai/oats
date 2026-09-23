@@ -1908,9 +1908,21 @@ function catalogForSync(bail) {
   catch (e) { return bail(e.code || "E_PACKAGE_MISSING", e.message); }
 }
 
+/** The package requests of a standalone view: the catalog's own pin of the package
+ *  providing oats.core (decision 25) — nothing else, since the version list lives in
+ *  the workspace file we cannot read. */
+function standalonePackages(catalog) {
+  const alias = describeOfficialCatalog().capabilityAliases.find((a) => a.capability === "oats.core");
+  const id = alias?.package ?? "oats.framework";
+  const version = catalog[id]?.ref;
+  return version ? { [id]: version } : {};
+}
+
 /** Discover the workspace named by oats-local.yaml over the real remote. */
 async function discoverForCli(ctx, bail) {
-  try { return await discoverWorkspace(ctx.local.workspace, { local: ctx.local, remoteOptions: ctx.remoteOptions }); }
+  // The standalone case (decisions 10/25) is a discovery too: the repo's own view
+  // plus the kernel's oats.core default — discoverOrStandalone decides.
+  try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); return await discoverOrStandalone(ctx.local, { remoteOptions: ctx.remoteOptions }); }
   catch (e) {
     if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
     throw e;
@@ -1918,6 +1930,8 @@ async function discoverForCli(ctx, bail) {
 }
 
 const short = (oid) => (typeof oid === "string" ? oid.slice(0, 8) : "?");
+/** Display name of a discovery: the workspace's name, or the standalone label (decision 10). */
+const workspaceName = (discovery) => discovery.workspace?.name ?? `standalone:${memberLabel(discovery.key)}`;
 const memberLabel = (key) => String(key).split("/").filter(Boolean).pop()?.replace(/\.git$/, "") || String(key);
 const teamLabel = (team) => team ?? "unassigned";
 const originOf = (item) => (item.package ? `package ${item.package} v${item.version}` : `member ${item.repoKey} @ ${short(item.commit)}`);
@@ -1927,7 +1941,7 @@ function workspaceItems(discovery, lock, { includePrivate = false } = {}) {
   const souls = [];
   const capabilities = [];
   for (const m of discovery.members) {
-    if (!m.confirmed) continue;
+    if (!m.confirmed && !(discovery.standalone === true && m.key === discovery.key)) continue;
     for (const s of m.souls) if (includePrivate || !s.private) souls.push({ name: s.name, origin: originOf(s), kind: "member", repoKey: s.repoKey, commit: s.commit, team: teamLabel(s.team), private: s.private, path: s.path, work: s.definition.work ?? null, description: s.definition.description ?? null });
     for (const c of m.capabilities) if (includePrivate || !c.private) capabilities.push({ name: c.name, origin: originOf(c), kind: "member", repoKey: c.repoKey, commit: c.commit, team: teamLabel(c.team), private: c.private, path: c.path, layer: c.manifest.layer ?? null, version: c.manifest.version ?? null });
   }
@@ -1993,7 +2007,10 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   let previous;
   try { previous = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   let resolved;
-  try { resolved = await resolvePackages(discovery.workspace, { catalog, lock: previous, remoteOptions: ctx.remoteOptions }); }
+  // Standalone: no workspace file → the only package request is the kernel's
+  // default, at the catalog's pinned version (decision 25).
+  const packageSource = discovery.standalone === true ? { packages: standalonePackages(catalog) } : discovery.workspace;
+  try { resolved = await resolvePackages(packageSource, { catalog, lock: previous, remoteOptions: ctx.remoteOptions }); }
   catch (e) {
     if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
     throw e;
@@ -2005,7 +2022,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
     const entry = lock.packages[id];
     if (entry.approved) continue;
     let digest, targets;
-    try { ({ digest, targets } = await lockedExecutablesDigest(id, entry, discovery.workspace, catalog, ctx.remoteOptions)); }
+    try { ({ digest, targets } = await lockedExecutablesDigest(id, entry, packageSource, catalog, ctx.remoteOptions)); }
     catch (e) {
       if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
       throw e;
@@ -2024,7 +2041,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock, { includePrivate: true });
-  const report = { syncApi: 1, workspace: { name: discovery.workspace.name, key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, problems: discovery.problems };
+  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, problems: discovery.problems };
   return { report, lock, discovery, approvalNeeded, interactive, items, lockFile };
 }
 
@@ -2033,7 +2050,7 @@ function printSyncReport(ctx, synced) {
   const { report, discovery, approvalNeeded, interactive, items, lockFile } = synced;
   const { members, packages, changes } = report;
   const disabled = new Set(ctx.local.souls?.disabled || []);
-  console.log(`workspace  ${discovery.workspace.name}  (${discovery.key} @ ${short(discovery.commit)})`);
+  console.log(`workspace  ${discovery.workspace?.name ?? `(standalone — the workspace of ${memberLabel(discovery.key)} cannot be read; its own souls + oats.core)`}  (${discovery.key} @ ${short(discovery.commit)})`);
   console.log(`members    ${members.map((m) => m.confirmed ? `${m.name} ✓↔ (@ ${short(m.commit)})` : `${m.name} ✗ (${m.status})`).join("   ") || "(none)"}`);
   console.log(`packages   ${packages.map((p) => {
     const need = approvalNeeded.find((a) => a.id === p.id);
@@ -2157,9 +2174,9 @@ async function workspaceCmd() {
   const unsynced = declared.filter((id) => !locked.has(id));
   const stale = packages.filter((p) => !declared.includes(p.id)).map((p) => p.id);
   const approval = { approved: packages.filter((p) => p.approved).map((p) => p.id), needed: packages.filter((p) => !p.approved).map((p) => p.id) };
-  const result = { workspaceStatusApi: 1, workspace: { name: discovery.workspace.name, key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, approval, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
+  const result = { workspaceStatusApi: 1, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, approval, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
   if (JSON_MODE) { jsonOk(result); return; }
-  console.log(`workspace ${discovery.workspace.name}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
+  console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
   console.log("Members:");
   printTable(["member", "status", "commit", "team", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.team ?? "—", m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
   for (const m of members.filter((m) => !m.confirmed)) console.log(`    ${m.name}: ${m.detail}`);
@@ -2180,8 +2197,8 @@ async function itemsCmd(kind) {
   let lock;
   try { lock = readLock(ctx.deploymentDir); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
   const items = workspaceItems(discovery, lock)[kind];
-  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, workspace: { name: discovery.workspace.name, key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
-  console.log(`${kind} of workspace ${discovery.workspace.name} (${discovery.key} @ ${short(discovery.commit)})\n`);
+  if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
+  console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.team, s.work ?? "—"]));
   else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.name, c.origin, c.team, c.layer ?? "—"]));
@@ -2854,7 +2871,13 @@ async function onboardCmd() {
   // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4).
   const cloneDirOf = (m) => join(dir, m.name === "agents" ? "agents-repo" : m.name);
   const clones = members.filter((m) => m.confirmed).map((m) => ({ key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: cloneDirOf(m) }));
-  const result = { onboardApi: 2, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, next: { clone: clones, spawn: spawnHint } };
+  // Decision 26: the host publishes the member list to whoever can read it. When the host is
+  // itself a member (the common `agents` shape) that is fine for an all-private or all-public
+  // organisation; a mixed one needs a private host that is NOT a public member. The kernel
+  // cannot see forge visibility, so it states the rule rather than judging.
+  const hostIsMember = members.some((m) => m.key === synced.discovery.key);
+  const hosting = { host: synced.discovery.key, hostIsMember, rule: "If any member is private, host oats-workspace.yaml in a private repo that is not a public member (a dedicated <org>/workspace repo); public contributors then use the standalone case (from: here capabilities + oats.core)." };
+  const result = { onboardApi: 2, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, hosting, next: { clone: clones, spawn: spawnHint } };
   if (JSON_MODE) { jsonOk(result); process.exitCode = synced.approvalNeeded.length ? 2 : 0; return; }
 
   console.log(`Onboarded ${shortPath(dir)} into workspace ${ws.name} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).\n`);
@@ -2871,7 +2894,10 @@ Next:
   1. Clone the members you will work IN beside oats-local.yaml (discovery and resolution run over the
      remotes; only a soul's work target needs a clone):${clones.map((c) => `\n       git clone ${c.url ?? c.key} ${shortPath(c.dir)}`).join("") || "\n       (no confirmed members yet — see the membership rows above)"}
      A clone elsewhere is fine: point at it in oats-local.yaml under clones: { <repo key>: <abs path> }.
-  2. Spawn the setup expert to guide the rest (souls, teams, provider settings, approvals):
+  2. Check who may read the host: ${synced.discovery.key}${hostIsMember ? " is itself a member" : " is a dedicated host"}. The workspace file
+     names every member, so if any member is private the host must be a private repo that is not
+     a public member; public contributors then get the standalone case (from: here + oats.core).
+  3. Spawn the setup expert to guide the rest (souls, teams, provider settings, approvals):
        ${spawnHint}${synced.approvalNeeded.length ? `\n  (first: \`oats sync --dir ${shortPath(dir)}\` in a terminal to approve ${synced.approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")})` : ""}`);
   process.exitCode = synced.approvalNeeded.length ? 2 : 0;
 }

@@ -14,6 +14,12 @@
       "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
       "description": "Repo ref of the workspace host; observed over the remote, need not be cloned."
     },
+    "standalone": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?:git@[^@\\s]+|[^@\\s]+)$",
+      "description": "Repo ref to realize in the STANDALONE view (decision 10): its own souls and from: here capabilities plus oats.core (decision 25), no workspace lookup. Use when the repo's workspace cannot be read; `workspace:` still names the repo you point the kernel at."
+    },
     "clones": {
       "type": "object",
       "propertyNames": { "type": "string", "pattern": "^[^\\s@/][^\\s@]*/[^\\s@]+$" },

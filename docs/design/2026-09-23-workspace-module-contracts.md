@@ -76,12 +76,14 @@ defaults:
   messaging: … | none
   tasks: … | none
   byTeam: { <label>: { capabilities: { <cap>: { from } | off } } }
-stores: { <name>: <repo ref> }
-messaging: <opaque provider payload>
+stores: { <name>: <repo ref> }                # a REPOSITORY; the root inside it is the provider's (OKF `root`) — no `#path`
+messaging: <opaque provider payload>         # may carry byTeam: { <label>: <payload> } — merged base ⊕ byTeam[soul.team], stripped
 external: [ { source: <repo ref>@<full OID>, soul: <path> } ]   # revision REQUIRED
 ```
 Schema refuses: absolute paths anywhere; `@revision` on members; unknown top-level keys.
 *(clarified Phase B)* "Absolute paths" means bare filesystem paths as VALUES (`/Users/x/store`, `C:\…`) — host state that belongs in `oats-local.yaml`. A repo ref in `file:///…` or `git:/abs/bare.git@<ref>` form is a **repo ref** (§1 accepts it; it is how tests build remotes), not an absolute path, and is accepted wherever a repo ref is. The JSON schemas encode only what a JSON schema can (shapes, grammars); domain rules — declared teams, duplicate members, canonical `from:` keys, one form per `packages:` value — live in `validateWorkspace`/`validateSoul`, which are the authority; a consumer validating against the schema alone accepts a superset.
+*(refined Phase C, decisions 23–25)* `messaging.byTeam.<label>` must name a label in `teams:` (`E_WORKSPACE_SCHEMA`). Standalone resolution (`standaloneRepo`) adds `oats.core: { from: package }` unless the soul says `off`; the package resolves through the operator's lock exactly as in a workspace (`E_PACKAGE_UNAPPROVED` until approved). `stores` values are repo refs only.
+
 *(clarified Phase B)* A `from:` value is `package`, `here` (souls only — a workspace default has no referent for `here` → `E_WORKSPACE_SCHEMA`), or a **canonical** repo key exactly as `parseRepoRef(ref).key` spells it (lowercase host, no scheme, no `git:`, no `.git`; `local/<abs-path>` for file remotes). Any other spelling is a schema problem at validation, never a late `E_NOT_A_MEMBER`. `soul.yaml` requires `name`, `description` and `work`.
 
 `oats-membership.yaml`: `{ schemaVersion: 2, workspace: <repo ref>, team?: <label> }` — nothing else.

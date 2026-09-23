@@ -348,10 +348,27 @@ store** — it organises and can supply defaults. The messaging provider's paylo
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
 | A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=retained:release-seat` |
 
-The merged payload is `workspace.messaging` (messaging slot only) ⊕ soul slot
+The merged payload is `workspace.messaging` (messaging slot only; its base
+keys ⊕ `byTeam[<soul's team>]`, with `byTeam` itself stripped) ⊕ soul slot
 payload ⊕ `local.settings[cap]` ⊕ `spawn.providers[cap]` — objects deep-merge,
 later wins on scalars and arrays. The provider's own `binding` contract
 (`normalize → bind → check`) runs over the merged payload exactly as before.
+Two teams, two messaging identities, one workspace:
+
+```yaml
+teams: { oss: { description: Open protocol }, cloud: { description: Hosted application } }
+messaging:
+  byTeam:
+    oss:   { team: aweb:example.oss }
+    cloud: { team: aweb:example.cloud }
+```
+
+A soul with `team: cloud` hands its messaging provider `{ team: aweb:example.cloud, … }`;
+a label under `byTeam` that is not declared in `teams:` is `E_WORKSPACE_SCHEMA`.
+A store (`stores: { <name>: <repo ref> }`) names a repository; where the base
+lives inside it is the knowledge provider's own binding key (`root` for OKF),
+given in the payload — a repo ref never carries a `#path`.
+
 `--provider` for a capability the soul does not resolve is `E_CAPABILITY_MISSING`;
 `__proto__`/`constructor`/`prototype` as a key at any depth is refused.
 
@@ -394,6 +411,23 @@ souls: their `from: here` capabilities resolve; `from: <other member>` and
 file); workspace defaults do not apply because they cannot be seen. This is the
 workspace's access control working, not a degraded mode to paper over: make
 the host repo readable (it holds declarations, no secrets) or grant access.
+
+Two things keep the standalone spawn useful rather than hollow: `oats.core`
+(the framework's own operational package) is the kernel's default here as
+well, resolved from the official catalog through the operator's own lock and
+approved like any package (a soul may say `oats.core: off`); and the
+operator's `oats-local.yaml` may name the repo directly (`workspace: <member
+ref>` — the kernel notices it is a member whose workspace it cannot read and
+falls back to the standalone view — or `standalone: <repo ref>` to ask for
+that view explicitly).
+
+**Hosting the workspace file when some members are private.** Everyone who
+can read the workspace file sees the member list. So: a public member never
+hosts it when any member is private (it would publish the private repo's
+name); the private member hosting it hides the workspace from public
+contributors, who then live in the standalone case above. A dedicated private
+repo (`<org>/workspace`) is the honest shape for a mixed organisation; the
+onboarding skill asks this question first.
 
 ## What is deliberately not versioned
 

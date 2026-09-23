@@ -170,6 +170,34 @@ a version**. The workspace's `packages:` says which version; materialization
     versioned. Skills are snapshot-tested against the shipped CLI so they
     cannot drift from the commands.
 
+23. **Per-team provider payload is kernel semantics** (2026-09-23, from a
+    review of a mixed public/private deployment with two messaging teams).
+    `workspace.messaging` may carry `byTeam: { <label>: <payload> }`; the
+    kernel merges `base ⊕ byTeam[soul.team]` before the soul/machine/spawn
+    layers and strips `byTeam` so the provider never sees a key it must
+    interpret. A `byTeam` label absent from `teams:` is `E_WORKSPACE_SCHEMA`.
+    `team:` stays a label (decision 12); what a team means to a provider is
+    payload addressed by that label.
+24. **A store names a repository; the root inside it is the provider's.**
+    `stores: { <name>: <repo ref> }` never grows a `#path` — a repo ref names
+    one thing (a repo) everywhere in the model. Where the base lives inside
+    the repo is a provider binding key (`root` for OKF), given in the soul's
+    or the default's payload. Two bases in two repos stay apart because no
+    soul names the other store.
+25. **`oats.core` is the kernel's default in the standalone case too.** A
+    soul spawned from a repo whose workspace cannot be read gets its
+    `from: here` capabilities PLUS `oats.core` from the official catalog,
+    approved through the operator's lock like any package. The framework's
+    own package is not a workspace choice; without it the standalone spawn is
+    the hollow agent the framework already refuses. A soul may still say
+    `oats.core: off`.
+26. **Mixed public/private organisations host the workspace file in a
+    private repo that is not a public member.** The workspace file is
+    readable by everyone who may see the member LIST; a public member never
+    hosts it when any member is private; the private member hosting it hides
+    the workspace from public contributors, who then get the standalone case
+    (hence 25). The onboarding skill states this rule.
+
 # What is removed
 
 Per-soul `source: git:…@v#…` lines and the `git:`/`repo:`/`path:` grammar in

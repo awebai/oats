@@ -72,7 +72,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(res.dir, dep);
     assert.equal(res.agents, join(dep, "agents"));
     assert.equal(res.lock, join(dep, "oats-lock.json"));
-    assert.deepEqual(Object.keys(res).sort(), ["agents", "dir", "local", "lock", "next", "onboardApi", "sync"]);
+    assert.deepEqual(Object.keys(res).sort(), ["agents", "dir", "hosting", "local", "lock", "next", "onboardApi", "sync"]);
 
     // The embedded sync result IS the `oats sync --json` result (same code path).
     const sync = res.sync;

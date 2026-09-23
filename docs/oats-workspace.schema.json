@@ -36,7 +36,14 @@
     },
     "messaging": {
       "type": "object",
-      "description": "Opaque provider payload consumed by the messaging-slot capability."
+      "description": "Opaque provider payload consumed by the messaging-slot capability. May carry byTeam: { <team label>: <payload> } — the kernel merges base ⊕ byTeam[soul.team] and strips byTeam before the provider sees it (decision 23).",
+      "properties": {
+        "byTeam": {
+          "type": "object",
+          "propertyNames": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "additionalProperties": { "type": "object" }
+        }
+      }
     },
     "external": {
       "type": "array",

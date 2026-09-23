@@ -211,6 +211,10 @@ test("workspace schema refusals each name the offending path", () => {
   refuse({ defaults: { capabilities: { x: { from: "/abs/path" } } } }, "/defaults/capabilities/x/from");
   refuse({ defaults: { capabilities: { x: "maybe" } } }, "/defaults/capabilities/x");
   refuse({ defaults: { byTeam: { sales: { capabilities: {} } } } }, "/defaults/byTeam/sales", /not declared/);
+  // decision 23: messaging.byTeam labels must be declared teams and hold payload objects
+  refuse({ messaging: { byTeam: { sales: { team: "x" } } } }, "/messaging/byTeam/sales", /not declared/);
+  refuse({ messaging: { byTeam: { engineering: "aweb:x" } } }, "/messaging/byTeam/engineering", /object/);
+  refuse({ messaging: { byTeam: [] } }, "/messaging/byTeam", /object/);
   refuse({ teams: { "Eng Team": {} } }, "/teams/Eng Team", /invalid key/);
   refuse({ members: [R.agents, "nonsense:not-a-ref"] }, "/members/1", /not a repo ref/);
   refuse({ members: [R.agents, "https://github.com/northwind/agents.git"] }, "/members/1", /duplicates member 0/);
@@ -422,11 +426,16 @@ test("standaloneRepo: from:here only; other froms become problems; workspace def
   const row = s.members[0];
   assert.equal(row.key, K.data); assert.equal(row.confirmed, false); assert.equal(row.reason, "cannot-read"); assert.equal(row.team, "engineering");
   const analyst = row.souls.find((x) => x.name === "data-analyst");
-  assert.deepEqual(analyst.capabilities, { "nw-warehouse-access": { from: "here" } });
+  // decision 25: the soul's own `oats.core: {from: package}` is honoured standalone (it is the kernel's default anyway)
+  assert.deepEqual(analyst.capabilities, { "oats.core": { from: "package" }, "nw-warehouse-access": { from: "here" } });
   assert.ok(row.capabilities.some((c) => c.name === "nw-warehouse-access"));
   const codes = s.problems.map((p) => [p.code, p.path]);
   assert.ok(codes.some(([c, p]) => c === "E_NOT_A_MEMBER" && p === "souls/data-analyst/soul.yaml#/capabilities/nw-house-style"), JSON.stringify(codes));
-  assert.ok(codes.some(([c, p]) => c === "E_PACKAGE_MISSING" && p === "souls/data-analyst/soul.yaml#/capabilities/oats.core"));
+  assert.ok(!codes.some(([c, p]) => c === "E_PACKAGE_MISSING" && p === "souls/data-analyst/soul.yaml#/capabilities/oats.core"), "oats.core is never a missing package standalone");
+  // any OTHER package capability is still unresolvable standalone (no version list without the workspace)
+  const other = standaloneRepo(R.data, C.data, { ...repo, souls: [{ ...analyst, definition: { ...analyst.definition, capabilities: { "nw-lint": { from: "package" } } } }] }, { remote });
+  assert.ok(other.problems.some((p) => p.code === "E_PACKAGE_MISSING" && p.path.endsWith("/capabilities/nw-lint")));
+  assert.deepEqual(other.members[0].souls[0].capabilities, { "oats.core": { from: "package" } }, "the kernel default is added when the soul does not mention oats.core");
   // no workspace teams to check against standalone → the unknown label is not a problem here
   assert.ok(!s.problems.some((p) => p.code === "E_TEAM_UNKNOWN"));
   // also accepts a full discovery as input, and refuses a mismatched commit

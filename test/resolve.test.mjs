@@ -97,6 +97,7 @@ const M = {
   brandVoice: manifest("nw-brand-voice", { team: "marketing", inject: "injects/brand-voice.md", skills: ["skills/tone-check"] }),
   toolsDev: manifest("nw-tools-dev", { team: "engineering", skills: ["skills/package-conventions"], inject: "injects/nw-tools-dev.md" }),
   altOkf: manifest("nw-notes", { layer: "knowledge", skills: ["skills/notes"] }),
+  chat: manifest("nw-chat", { layer: "messaging", skills: ["skills/chat"] }),
   // Package-tier manifests (read over the remote from oats-package/)
   core: manifest("oats.core", { version: "1.1.3", skills: ["skills/oats-operate"], inject: "injects/oats.md" }),
   okf: manifest("oats.okf", { version: "2.1.3", layer: "knowledge", skills: ["skills/okf"], inject: "injects/okf.md", commands: { validate: "bin/okf.mjs validate" } }),
@@ -108,6 +109,8 @@ const M = {
 function remoteRepos() {
   return {
     [K.agents]: { [C.agents]: {
+      "capabilities/nw-chat/oats.json": M.chat,
+      "capabilities/nw-chat/skills/chat/SKILL.md": skillDoc("chat"),
       "capabilities/nw-release-tooling/oats.json": M.releaseTooling,
       "capabilities/nw-release-tooling/skills/cut-release/SKILL.md": skillDoc("cut-release"),
       "capabilities/nw-release-tooling/injects/release-policy.md": "## Release policy\n",
@@ -218,7 +221,7 @@ function discovery({ workspace = workspaceFile(), souls = {}, agentsCaps = null 
     members: [
       row(K.agents, C.agents, "global",
         Object.values(agentsSouls).map((d) => soulEntry(K.agents, C.agents, d.team ?? "global", d)),
-        agentsCaps ?? [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, M.secrets, "global"), capEntry(K.agents, C.agents, M.altOkf, "global")]),
+        agentsCaps ?? [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, M.secrets, "global"), capEntry(K.agents, C.agents, M.chat, "global"), capEntry(K.agents, C.agents, M.altOkf, "global")]),
       row(K.platform, C.platform, "engineering", [soulEntry(K.platform, C.platform, "engineering", soulDef("platform-engineer", { team: "engineering" }))], []),
       row(K.data, C.data, "engineering", [soulEntry(K.data, C.data, "engineering", soulDef("data-analyst", { capabilities: { "nw-warehouse-access": { from: "here" } } }))], [capEntry(K.data, C.data, M.warehouse)]),
       row(K.marketing, C.marketing, "marketing", [soulEntry(K.marketing, C.marketing, "marketing", soulDef("campaign-writer", { capabilities: { "nw-brand-voice": { from: "here" } } }))], [capEntry(K.marketing, C.marketing, M.brandVoice)]),
@@ -644,8 +647,36 @@ test("standalone discovery: from:here resolves against the soul's own repo; defa
   const sd = standaloneRepo(R.data, C.data, enumeration);
   assert.equal(sd.standalone, true);
   const r = await resolveSoul(sd, sd.members[0].souls[0], opts());
-  assert.deepEqual(r.modules.map((m) => m.name), ["nw-warehouse-access"], "no workspace defaults; the unresolvable from:<other> is dropped by standaloneRepo as a problem");
+  assert.deepEqual(r.modules.map((m) => m.name), ["nw-warehouse-access", "oats.core"], "no workspace defaults except the kernel's own (decision 25); the unresolvable from:<other> is dropped by standaloneRepo as a problem");
+  assert.equal(r.modules.find((m) => m.name === "oats.core").from.kind, "package", "oats.core comes from the operator's lock, standalone too");
   assert.equal(r.slots.knowledge, null);
+});
+
+test("decision 25: standalone `oats.core: off` opts out; standalone without a lock is E_PACKAGE_UNLOCKED, not a silent hollow spawn", async () => {
+  const off = { key: K.data, commit: C.data, membership: null, souls: [soulEntry(K.data, C.data, null, soulDef("lone", { capabilities: { "oats.core": "off", "nw-warehouse-access": { from: "here" } } }))], capabilities: [capEntry(K.data, C.data, M.warehouse)], problems: [] };
+  const sd = standaloneRepo(R.data, C.data, off);
+  const r = await resolveSoul(sd, sd.members[0].souls[0], opts());
+  assert.deepEqual(r.modules.map((m) => m.name), ["nw-warehouse-access"]);
+  const on = { ...off, souls: [soulEntry(K.data, C.data, null, soulDef("lone", { capabilities: { "nw-warehouse-access": { from: "here" } } }))] };
+  const sd2 = standaloneRepo(R.data, C.data, on);
+  const err = await resolveSoul(sd2, sd2.members[0].souls[0], opts({ lock: null })).then(() => null, (e) => e);
+  assert.ok(err && /^E_PACKAGE_/.test(err.code), `a missing lock refuses with a package error, got ${err?.code}`);
+});
+
+test("decision 23: workspace.messaging.byTeam[soul.team] merges over the base and is stripped before the provider; other teams do not leak", async () => {
+  const ws = workspaceFile();
+  ws.teams = { ...ws.teams, cloud: { description: "hosted" } };
+  ws.defaults = { ...ws.defaults, messaging: { "nw-chat": { from: K.agents } } };
+  ws.messaging = { private: "per-human", byTeam: { engineering: { team: "aweb:example.oss", channels: ["eng"] }, cloud: { team: "aweb:example.cloud" } } };
+  const d = discovery({ workspace: ws, souls: { hosted: soulDef("hosted", { team: "cloud" }), untagged: soulDef("untagged", {}) } });
+  const rm = await resolveSoul(d, findSoul(d, "release-manager"), opts());
+  // base ⊕ byTeam.engineering ⊕ the soul's own messaging payload (soul wins on the array — decision 14 order)
+  assert.deepEqual(rm.payloads["nw-chat"], { private: "per-human", team: "aweb:example.oss", channels: ["northwind-eng"] });
+  const hosted = await resolveSoul(d, findSoul(d, "hosted"), opts());
+  assert.deepEqual(hosted.payloads["nw-chat"], { private: "per-human", team: "aweb:example.cloud" });
+  const plain = await resolveSoul(d, findSoul(d, "untagged"), opts());
+  assert.deepEqual(plain.payloads["nw-chat"], { private: "per-human" }, "no team → base only; byTeam never reaches the provider");
+  for (const r of [rm, hosted, plain]) assert.equal("byTeam" in r.payloads["nw-chat"], false);
 });
 
 test("refForKey round-trips hosted and local keys through parseRepoRef", () => {

@@ -60,6 +60,19 @@ Two operators realize this workspace on their machines: **Ana** (macOS, works mo
 
 ### 3.1 `northwind/agents` — the workspace host
 
+> **Who may read the host** (team review, decision 26). Everyone who can read
+> `oats-workspace.yaml` sees the member list. Northwind is all-private, so a
+> member (`agents`) hosting it is fine. A mixed organisation — a public
+> `awebai/aweb` and a private `awebai/ac`, say — hosts the file in a private
+> repo that is **not** a public member (`awebai/workspace`): a public host
+> would publish the private repo's name, and hosting inside the private
+> member hides the workspace from public contributors. Those contributors get
+> the public member's souls through the standalone case (§6): `from: here`
+> capabilities plus `oats.core` (decision 25). Two teams with two messaging
+> identities stay in the one workspace via `messaging.byTeam.<label>`
+> (decision 23); a store names a repo, the root inside it is the provider's
+> (`root`, decision 24).
+
 ```
 agents/
 ├── oats-workspace.yaml              ← THE shared declaration (only one in the whole company)
