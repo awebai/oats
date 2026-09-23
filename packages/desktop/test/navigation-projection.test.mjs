@@ -40,7 +40,7 @@ function shell(t, shellSource = source) {
   }
   const c = {
     document, console, navigator: { platform: "MacIntel" }, NAV, stageSidebarMode,
-    workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
+    workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", activeInstanceMenu: null,
     stage: null, stageOp: 0, stageHost: document.getElementById("stagehost"), navEl,
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "overview", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextRosterEl: null,

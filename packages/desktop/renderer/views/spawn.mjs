@@ -941,9 +941,12 @@ function openSpawnModal(s, a, draft = {}) {
       if (!receipt.launched) { status.textContent = `Created ${receipt.instance} — not launched. Inspect its session from the roster.`; return; }
       const ref = { instance: receipt.instance, home: receipt.home, agentsRoot: receipt.agentsRoot };
       status.textContent = `Created ${receipt.instance}. Waiting for its exact roster entry…`;
-      const visible = await waitForInstanceInPanel(s, { ...ref, agent: receipt.agent }, isCurrent, { ...s.waitOpts, strict: true });
+      const connection = s.ctx.connectionGeneration?.() ?? 0, workspace = s.workspace?.id; let admitted;
+      const visible = await waitForInstanceInPanel(s, { ...ref, agent: receipt.agent }, isCurrent,
+        { ...s.waitOpts, strict: true, onAdmitted: row => { admitted = row; } });
       if (!isCurrent()) return;
       if (!visible) { status.textContent = `Created ${receipt.instance} — not yet visible as a running session. Open it from the roster when available.`; return; }
+      if (admitted) s.ctx.notifySpawn?.(admitted, workspace, connection);
       closeSpawnModal(s); s.ctx.openTerminal(ref, { quiet: true });
     },
   });
@@ -1036,7 +1039,7 @@ function openSpawnModal(s, a, draft = {}) {
    session typically follows a couple of seconds later. Exported for the
    stale-snapshot regression. delayMs is injectable so tests run without
    real waits. */
-export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, delayMs = 700, sleep, strict = false } = {}) {
+export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, delayMs = 700, sleep, strict = false, onAdmitted } = {}) {
   const wait = sleep || ((ms) => new Promise((ok) => setTimeout(ok, ms)));
   // ref: { instance, home?, agentsRoot? }. Match the COMPOSITE identity when
   // the spawn result provides it — with a same-named twin already in the
@@ -1055,7 +1058,11 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
     try {
       const panel = await apiJson(s.ctx, `/api/panel${wsQuery()}`);
       if (!isCurrent()) return false;
-      if ((panel.instances || []).some(matches)) return true;
+      const matched = (panel.instances || []).filter(matches);
+      if (strict ? matched.length === 1 : matched.length > 0) {
+        if (matched.length === 1) onAdmitted?.({ ...matched[0] });
+        return true;
+      }
     } catch { /* transient — keep polling */ }
     await wait(delayMs);
   }
@@ -1086,8 +1093,9 @@ export async function doSpawn(s, ui) {
     };
   }
   const myGen = workspaceGeneration();       // capture at dispatch
+  const connection = s.ctx.connectionGeneration?.() ?? 0;
   const myOp = ++s.spawnOp;                  // this spawn owns the form until superseded
-  const owns = () => myOp === s.spawnOp && s.alive !== false && myGen === workspaceGeneration();
+  const owns = () => myOp === s.spawnOp && s.alive !== false && myGen === workspaceGeneration() && connection === (s.ctx.connectionGeneration?.() ?? 0);
   const relation = ui.relation ? String(ui.relation() || "unrelated") : "unrelated";
   const relativeTo = ui.relativeTo ? String(ui.relativeTo() || "") : "";
   if (relation !== "unrelated" && ui.server?.() && !a.server) {
@@ -1165,9 +1173,13 @@ export async function doSpawn(s, ui) {
       closeSpawnModal(s);
       setWorkspace(d.workspaceId);
       const remoteGen = workspaceGeneration();
-      const stillThere = () => remoteGen === workspaceGeneration() && currentWorkspace() === d.workspaceId;
-      const visible = await waitForInstanceInPanel(s, ref, stillThere, s.waitOpts);
-      if (visible && stillThere()) s.ctx.openTerminal(ref, { quiet: true });
+      const stillThere = () => remoteGen === workspaceGeneration() && currentWorkspace() === d.workspaceId && connection === (s.ctx.connectionGeneration?.() ?? 0);
+      let admitted;
+      const visible = await waitForInstanceInPanel(s, ref, stillThere, { ...s.waitOpts, onAdmitted: row => { admitted = row; } });
+      if (visible && stillThere()) {
+        if (typeof d.home === 'string' && admitted?.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, d.workspaceId, connection);
+        s.ctx.openTerminal(ref, { quiet: true });
+      }
       else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; its runtime is not visible yet. Check the server roster to open it.`);
       return;
     }
@@ -1183,7 +1195,8 @@ export async function doSpawn(s, ui) {
     // Poll and open by COMPOSITE identity — the spawn result's home plus the
     // selected agent's root disambiguate a same-named twin (review @7dd1e7b).
     const spawnedRef = { instance: d.instance, ...(d.home ? { home: d.home } : {}), ...(a.agentsRoot ? { agentsRoot: a.agentsRoot } : {}), ...(d.server ? { server: d.server } : {}) };
-    const visible = await waitForInstanceInPanel(s, spawnedRef, current, s.waitOpts);
+    let admitted;
+    const visible = await waitForInstanceInPanel(s, spawnedRef, current, { ...s.waitOpts, onAdmitted: row => { admitted = row; } });
     if (!current()) return;
     if (!visible) { ui.status.textContent = `Spawned ${d.instance} — roster is catching up; open it from the sidebar instance roster.`; return; }
     // Success is a HANDOFF, not a status line: close the modal (the spawn
@@ -1192,6 +1205,9 @@ export async function doSpawn(s, ui) {
     // auto-open must never block with an alert() — if the instance vanished
     // between the readiness poll and the open, the sidebar roster is the
     // recovery path, same as the timeout degradation above.
+    if (typeof d.home === 'string' && admitted?.home === d.home && admitted.agent === a.name && admitted.agentsRoot === a.agentsRoot) {
+      s.ctx.notifySpawn?.(admitted, currentWorkspace(), connection);
+    }
     closeSpawnModal(s);
     s.ctx.openTerminal(spawnedRef, { quiet: true });
   } catch (e) {

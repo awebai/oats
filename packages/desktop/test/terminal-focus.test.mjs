@@ -34,14 +34,14 @@ test("existing-terminal jumps focus input, fill an empty split without another a
   const src = read("renderer/shell.mjs");
   // Exercise the actual shell flow without booting Electron. Do not pin its
   // formatting: adding the split transition must preserve the focus contract.
-  const flow = src.match(/async function openTerminalTabFlow\(ref, notify\) \{[\s\S]*?\n\}/)?.[0];
+  const flow = src.match(/async function openTerminalTabFlow\(ref, notify, options = \{\}\) \{[\s\S]*?\n\}/)?.[0];
   assert.ok(flow, "terminal open flow exists");
   for (const scenario of ["flat", "empty-split", "workspace-changed"]) {
     const initial = scenario === "flat" ? null : requestSplit(null, "row", [1, 2], 2).split;
     const activated = [];
     let workspace = "workspace-a";
     const context = {
-      split: initial, tabs: new Map([[1, { key: "other" }], [2, { key: "selected" }]]),
+      split: initial, connectionGeneration: 0, tabs: new Map([[1, { key: "other" }], [2, { key: "selected" }]]),
       setSidebarMode() {}, setNavActive() {}, refreshContextRoster() {},
       currentWorkspace: () => workspace, workspaceGeneration: () => 0,
       fillEmptyGroup,
@@ -83,14 +83,14 @@ test("terminal.focusActive is a registered rebindable action with NO default cho
 test("post-spawn auto-open is QUIET: openTerminalTab failures route through notify, never a bare alert (spawn-modal fix)", () => {
   const src = read("renderer/shell.mjs");
   // the quiet option exists and selects console.warn over alert()
-  assert.match(src, /async function openTerminalTab\(ref, \{ quiet = false \} = \{\}\)/,
+  assert.match(src, /async function openTerminalTab\(ref, \{ quiet = false,[^\n]*\} = \{\}\)/,
     "openTerminalTab accepts a quiet option");
-  assert.match(src, /const notify = quiet \? \(msg\) => console\.warn\(`\[terminal open\] \$\{msg\}`\) : \(msg\) => alert\(msg\);/,
+  assert.match(src, /const notify = onError \|\| \(quiet \? \(msg\) => console\.warn\(`\[terminal open\] \$\{msg\}`\) : \(msg\) => alert\(msg\)\);/,
     "quiet opens warn instead of blocking with alert");
   // the WHOLE open flow runs under runOpenFlow so quiet transport failures
   // (panel fetch, tab mount) can never escape as an unhandled rejection —
   // behavioral coverage lives in open-intent.test.mjs (review ff70e1c nit)
-  assert.match(src, /return runOpenFlow\(\(\) => openTerminalTabFlow\(ref, notify\), \{ quiet, notify \}\);/,
+  assert.match(src, /return runOpenFlow\(\(\) => openTerminalTabFlow\(ref, notify, \{ inSplit, expected, valid \}\), \{ quiet, notify \}\);/,
     "quiet rejection containment wraps the whole flow via the importable runOpenFlow");
   assert.match(src, /import \{ createIntentGate, prepareOwnedOpen, runOpenFlow \} from "\.\/open-intent\.mjs";/,
     "shell imports runOpenFlow from the tested module");

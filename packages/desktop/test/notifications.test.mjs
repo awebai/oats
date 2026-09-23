@@ -100,7 +100,8 @@ test('shipped shell uses the actual center, clears scope, and treats real notifi
   const dom = new JSDOM('<body><input id="terminal"><button id="focus-mode-toggle">Focus</button></body>'); t.after(() => dom.window.close());
   const doc = dom.window.document; let gen = 0, changed;
   const c = { document: doc, window: dom.window, createNotificationCenter, workspaceGeneration: () => gen,
-    onWorkspaceChange: fn => { changed = fn; return () => {}; } };
+    onWorkspaceChange: fn => { changed = fn; return () => {}; }, currentWorkspace: () => 'workspace',
+    connectionGeneration: 0, subscribeConnections: () => () => {} };
   c.tabOpenIntents = createSelectionOwnership({ currentWorkspace: () => 'workspace', workspaceGeneration: () => gen });
   const source = readFileSync(new URL('../renderer/shell.mjs', import.meta.url), 'utf8');
   const first = source.indexOf('const notifications = createNotificationCenter'), last = source.indexOf('// ── ctx', first);

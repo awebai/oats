@@ -38,7 +38,7 @@ export const instanceGitCSS = `
 `;
 const report = v => v === null || v === undefined ? 'Not reported' : String(v);
 export function createInstanceGitPanel(parent, { request, generation = () => 0, applyFocus = fn => fn(),
-  requestForge, connectionGeneration, subscribeConnections, connect, openExternal } = {}) {
+  requestForge, connectionGeneration = () => 0, subscribeConnections = () => () => {}, connect, openExternal, onObservation = () => {} } = {}) {
   const doc = parent.ownerDocument;
   const node = (tag, text, cls) => { const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el; };
   const root = node('div', undefined, 'instance-git'); parent.append(root);
@@ -53,7 +53,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   root.append(toolbar, status, facts, changesHeading, files, diffStatus, diffBody, github);
   const pullRequest = createForgePrPanel(github, { request: requestForge, generation, connectionGeneration, subscribeConnections, connect, openExternal });
   let alive = true, active = false, epoch = 0, observationTicket = 0, fileTicket = 0;
-  let target = null, identity = '', attempted = false, observation = null, selected = null, busy = false, remote = false;
+  let target = null, identity = '', summaryIdentity = '', attempted = false, observation = null, selected = null, busy = false, remote = false;
   const controls = new Map();
   function visible() {
     if (!root.isConnected) return false;
@@ -64,13 +64,13 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     }
     return true;
   }
-  const capture = () => ({ epoch, generation: generation(), identity, target });
-  const owns = ref => alive && active && ref.epoch === epoch && ref.identity === identity && ref.generation === generation();
+  const capture = () => ({ epoch, generation: generation(), connection: connectionGeneration(), identity, target, summaryIdentity });
+  const owns = ref => alive && active && ref.epoch === epoch && ref.identity === identity && ref.generation === generation() && ref.connection === connectionGeneration();
   const canPaint = ref => owns(ref) && visible();
   const message = (el, text = '', error = false) => { el.textContent = text; el.classList.toggle('error', error); };
   const unavailable = text => message(status, `${text}${facts.childElementCount ? ' Previous observation is stale; file actions are disabled.' : ''}`, true);
   const clearDiff = () => { selected = null; fileTicket++; diffBody.replaceChildren(); message(diffStatus); for (const b of controls.values()) b.setAttribute('aria-pressed', 'false'); };
-  const clear = () => { observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesHeading.textContent = 'Changes'; message(status); };
+  const clear = (summary = true) => { if (summary) onObservation(null); observation = null; pullRequest.update(); clearDiff(); controls.clear(); facts.replaceChildren(); files.replaceChildren(); changesHeading.textContent = 'Changes'; message(status); };
   const locks = () => { refreshButton.disabled = !alive || !active || !target || remote || busy; for (const b of controls.values()) b.disabled = !active || busy || !observation; };
   function send(ref, action, extra = {}) {
     const t = ref.target;
@@ -129,7 +129,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     // When an expired file triggers re-observation, keep keyboard focus in the
     // same owned panel rather than dropping it onto the terminal/body.
     if (files.contains(doc.activeElement)) applyFocus(() => refreshButton.focus({ preventScroll: true }));
-    observation = null; pullRequest.update(); clearDiff(); message(diffStatus, notice); locks();
+    observation = null; onObservation(null); pullRequest.update(); clearDiff(); message(diffStatus, notice); locks();
     message(status, facts.childElementCount ? 'Refreshing — previous observation is stale; file actions are disabled.' : 'Reading worktree…');
     try {
       const raw = await send(ref, 'git');
@@ -139,6 +139,7 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
       const data = gitState(result.data, ref.target);
       if (!data) throw new Error('Invalid Git observation');
       observation = data; clearDiff(); renderObservation(ref, result.observationKey); message(status); message(diffStatus, notice);
+      onObservation({ identity: ref.summaryIdentity, connection: ref.connection, changed: Object.values(data.summary).some(n => n > 0), at: data.observation.at });
     } catch {
       if (canPaint(ref) && ticket === observationTicket) unavailable('Git inspection unavailable or invalid. Refresh to retry; no current changes are established.');
     } finally {
@@ -183,11 +184,13 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
   function update({ active: nextActive = false, workspace, instance, key } = {}) {
     if (!alive) return;
     const next = gitTarget({ workspace, instance: instance?.instance, agent: instance?.agent, agentsRoot: instance?.agentsRoot, home: instance?.home, server: instance?.server || null });
-    const nextIdentity = JSON.stringify([generation(), key, next && gitTargetKey(next), !!instance?.remote]);
+    const nextIdentity = JSON.stringify([generation(), connectionGeneration(), key, next && gitTargetKey(next), instance?.createdAt ?? null, !!instance?.remote]);
+    summaryIdentity = JSON.stringify([workspace, key, instance?.home, instance?.agent, instance?.agentsRoot, instance?.server || null, instance?.createdAt ?? null]);
     remote = !!(next?.server || instance?.remote);
     if (nextIdentity !== identity || active !== !!nextActive) {
       epoch++; observationTicket++; fileTicket++; busy = false; attempted = false;
-      identity = nextIdentity; target = next; active = !!nextActive; clear();
+      const changed = identity !== nextIdentity;
+      identity = nextIdentity; target = next; active = !!nextActive; clear(changed);
     }
     if (!active) { locks(); return; }
     if (!target) { message(status, 'Select a current, fully qualified instance to inspect its worktree.'); locks(); return; }
@@ -198,9 +201,14 @@ export function createInstanceGitPanel(parent, { request, generation = () => 0, 
     locks();
     if (!attempted && visible()) return refresh();
   }
+  const offConnection = subscribeConnections(() => {
+    if (!alive) return;
+    epoch++; observationTicket++; fileTicket++; busy = false; attempted = true; clear();
+    message(status, 'Connection changed. Refresh Git for a current observation.'); locks();
+  });
   locks();
   return { update, refresh, dispose() {
     if (!alive) return; alive = false; active = false; epoch++; observationTicket++; fileTicket++;
-    clear(); pullRequest.dispose(); locks(); root.remove();
+    offConnection?.(); clear(); pullRequest.dispose(); locks(); root.remove();
   } };
 }

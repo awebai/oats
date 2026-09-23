@@ -19,6 +19,8 @@ import { createWorkspaceTabMemory } from "../renderer/workspace-tab-memory.mjs";
 import { splitControlsState } from "../renderer/split-controls.mjs";
 import { projectSplitDom } from "../renderer/split-dom.mjs";
 import { instanceActions, captureInstanceActionMenu } from "../renderer/instance-actions.mjs";
+import { instanceActionTarget, sameInstanceActionTarget } from '../renderer/instance-action-target.mjs';
+import { instanceSplitPlan, instanceSplitIdentity } from '../renderer/instance-split.mjs';
 import { runtimeState } from "../renderer/instance-presentation.mjs";
 import { createRuntimeBadge } from "../renderer/identity-marks.mjs";
 import { THEMES } from "../renderer/theme.mjs";
@@ -75,7 +77,8 @@ function shell(t, shellSource = source, platform = "MacIntel") {
   };
   const c = {
     document, window: dom.window, navigator, console, ...keys, THEMES,
-    workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A",
+    workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
+    instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
     contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), contextRosterEl: null,
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
@@ -83,7 +86,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     tabActionsEl: document.getElementById("tab-actions"),
     stageHost: document.getElementById("stagehost"), stage: { name: "spawn" }, navEl: document.getElementById("nav"),
     currentWorkspace: () => c.workspace, workspaceGeneration: () => c.generation,
-    updateActiveContexts: on => { c.tabLayerVisible = on; },
+    updateActiveContexts: (on = c.tabLayerVisible) => { c.tabLayerVisible = on; },
     // Inert presenter: this fixture owns file/chooser focus, not panel layout.
     syncContextPanel() {}, contextPanel: { setFocusMode() {} },
     updateSplitControls() {}, refreshContextRoster() {}, setNavActive() {}, setSidebarHidden() {}, stageSidebarMode: () => "souls",
@@ -127,7 +130,9 @@ function shell(t, shellSource = source, platform = "MacIntel") {
       onTermData: () => () => {}, onTermExit: () => () => {},
     },
   };
-  const names = ["setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups", "onTabKeydown",
+  c.splitOpenState = () => ({ split: c.split, activeId: c.activeTab, tabs: c.tabs, workspace: c.workspace, visible: c.tabLayerVisible });
+  c.ownsInstanceTarget = target => target?.workspace === c.workspace && c.contextInstances.filter(row => sameInstanceActionTarget(target, row, c.workspace)).length === 1;
+  const names = ["applyChordTitles", "setSidebarMode", "updateContextTabs", "showTabLayer", "renderSplit", "selectEmptyGroup", "splitPane", "closeSplit", "restoreTerminalGroups", "onTabKeydown",
     "addTab", "selectTab", "activateTab", "closeTab", "openViewTab", "renderWorkspaceContext", "restoreWorkspaceTabs", "showTerminalContext",
     "initContextRoster", "renderContextRoster", "onRosterRowKey", "setRovingRow", "focusRoster", "openTerminalTabFlow", "openTerminalTabInner"];
   const functions = names.map(name => fn(shellSource, name)).join("\n")

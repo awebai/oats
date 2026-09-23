@@ -83,13 +83,13 @@ export function createSpawnApply(modal, { ctx, soul, workspace, cli, instances, 
     let draft;
     try { if (!checking && !applying) draft = spawnPrepareInput(input()); } catch { /* invalid wake/form */ }
     if (!checking && !applying && !draft) { status.classList.add('err'); status.textContent = spawnApplyReason('E_BAD_ARGS').message; return; }
-    const ticket = ++serial, sig = signature(), token = {};
+    const ticket = ++serial, sig = signature(), token = {}, connection = ctx.connectionGeneration?.() ?? 0;
     touched = true; flight = token; setBusy(true);
     phase = applying || checking ? 'unknown' : 'preparing';
     if (applying) submitted = true;
     status.classList.remove('err'); status.textContent = applying ? 'Submitting the confirmed spawn…' : checking ? 'Checking the original submitted intent…' : 'Preparing a server-owned confirmation…';
     sync();
-    const valid = () => current() && active() && serial === ticket && signature() === sig;
+    const valid = () => current() && active() && serial === ticket && signature() === sig && connection === (ctx.connectionGeneration?.() ?? 0);
     const request = async body => {
       const raw = await postJson(ctx, `/api/spawn?ws=${encodeURIComponent(ws)}`, body);
       if (!valid()) return null;
