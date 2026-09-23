@@ -86,7 +86,7 @@ The app starts on the directory it was launched with (its own folder by
 default). To view a deployment, open the workspace switcher in the sidebar
 and choose **Add workspace → Browse**, then point it at an OATS deployment —
 a directory containing `agents/` (under the 0.25 workspace model that is the
-`<name>-workspace/` directory holding `oats-local.yaml` and `agents/`;
+deployment directory (the operator's choice) holding `oats-local.yaml` and `agents/`;
 under 0.24, an `agents/` root, a `local-agents/` root for machine-local souls,
 or a team scope whose `oats-config.yaml` declares `team:`). *The Desktop's own
 multi-repo roster ("team scopes show every member repo's agents under one

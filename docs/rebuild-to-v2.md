@@ -185,10 +185,10 @@ payload keys.
 ## 5. Write `oats-local.yaml` on each machine
 
 ```
-~/acme-workspace/                 # the taught convention: "<name>-workspace"
+~/acme/                           # the directory YOU choose — an existing folder with your clones is the usual case
 ├── oats-local.yaml
 ├── agents/                       # instance homes
-└── platform/                     # member clones, only where someone works IN them
+└── platform/                     # member clones, wherever you keep them (here, or named in clones:)
 ```
 
 ```yaml

@@ -71,9 +71,12 @@ a version**. The workspace's `packages:` says which version; materialization
    asks again.
 9. **Discovery and resolution work against Git remotes, never local
    clones.** The only thing that needs a clone is a soul's work target.
-   The deployment layout is the operator's; the taught convention
-   (onboarding skill) is `<name>-workspace/` with `oats-local.yaml`,
-   `oats-lock.json`, `agents/` and the member clones inside. Spawning a soul
+   The deployment layout is the operator's: onboarding ASKS for (or
+   accepts) the directory where the agents will live — usually an existing
+   folder that already holds the member clones — and adds what the kernel
+   needs there: `oats-local.yaml`, `oats-lock.json`, `agents/`. There is no
+   named folder convention (operator feedback, 2026-09-23: a taught
+   `<name>-workspace/` name worked against this very sentence). Spawning a soul
    from a repo not yet cloned is a guided clone-then-spawn.
 10. **The handshake is observed with the operator's own read access to both
     halves**, in one access context. An unreadable half is *unconfirmed*
@@ -180,7 +183,7 @@ a version**. The workspace's `packages:` says which version; materialization
     the whole architecture and its best practices: the handshake and why,
     every declaration file field by field, member-tier vs package-tier and
     the non-collapse rule, packages/lock/approval, catalog vs `git:` refs,
-    `sync`, the `<name>-workspace/` convention, private/external/standalone
+    `sync`, the deployment directory (the operator's; no naming convention), private/external/standalone
     cases, the three provider-payload homes, and what is deliberately not
     versioned. Skills are snapshot-tested against the shipped CLI so they
     cannot drift from the commands.
@@ -324,8 +327,8 @@ canonical-plus-alias instance construction.
 - Write the implementation plan (clean v2) and propose it to the human before
   touching `lib/` or `bin/`; the framework's own repos are the first real
   workspace.
-- The onboarding skill (`oats-setup-expert`) teaches the `<name>-workspace/`
-  convention and the clone-then-spawn flow.
+- The onboarding skill (`oats-setup-expert`) asks for the deployment directory (no named
+  convention) and teaches the clone-then-spawn flow.
 - Schemas: `oats-workspace.schema.json` v2, `oats-membership.schema.json`,
   `soul.schema.json` v2, `oats-local.schema.json`, lock v3.
 - Related: `git-workspace-versus-development-package.md` (the packaging split

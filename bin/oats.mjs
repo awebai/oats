@@ -2823,7 +2823,7 @@ async function paneCmd() {
 
 /** `oats onboard [<dir>] --workspace <repo ref> [--json]` — workspace model v2 (decision 9).
  *
- * Realizes a workspace on this machine in the taught `<name>-workspace/` layout
+ * Realizes a workspace on this machine in the directory the operator chooses (decision 9)
  * (docs/design/2026-09-23-simplified-workspace-model.md §4): writes
  * `<dir>/oats-local.yaml` naming the workspace, creates `<dir>/agents/` (the
  * instance homes), then runs exactly the `oats sync` path — discover over the
@@ -2929,17 +2929,15 @@ async function onboardCmd() {
   console.log(`Onboarded ${shortPath(dir)} into workspace ${workspaceName(synced.discovery)} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).${standalone ? `\n  (standalone — the workspace of ${memberLabel(synced.discovery.key)} cannot be read from here; you get its own souls + oats.core)` : ""}\n`);
   printSyncReport(ctx, synced);
   console.log(`
-Layout (the taught convention — the kernel finds clones through oats-local.yaml, so any layout works):
-  ${shortPath(dir)}/
+This directory (${shortPath(dir)}) is your deployment — any layout works; it now holds what the kernel needs:
   ├── oats-local.yaml     which workspace this machine realizes (+ host settings, disabled souls)
   ├── oats-lock.json      exact commit + integrity + per-version executable approval per package
-  ├── agents/             instance homes, each self-contained
-  └── <member>/           clones of the members you will work IN (only those)
+  └── agents/             instance homes, each self-contained
+Member clones live wherever you keep them (here, or anywhere named in oats-local.yaml clones:).
 
 Next:
-  1. Clone the members you will work IN beside oats-local.yaml (discovery and resolution run over the
-     remotes; only a soul's work target needs a clone):${clones.map((c) => `\n       git clone ${c.url ?? c.key} ${shortPath(c.dir)}`).join("") || "\n       (no confirmed members yet — see the membership rows above)"}
-     A clone elsewhere is fine: point at it in oats-local.yaml under clones: { <repo key>: <abs path> }.
+  1. Members you will work IN need a clone (discovery and resolution run over the remotes; only a
+     soul's work target does):${clones.map((c) => c.present ? `\n       ${shortPath(c.dir)}  ✓ already here` : `\n       git clone ${c.url ?? c.key} ${shortPath(c.dir)}   (or point oats-local.yaml clones: { ${c.key}: <abs path> } at an existing clone)`).join("") || "\n       (no confirmed members yet — see the membership rows above)"}
   2. Check who may read the host: ${synced.discovery.key}${hostIsMember ? " is itself a member" : " is a dedicated host"}. The workspace file
      names every member, so if any member is private the host must be a private repo that is not
      a public member; public contributors then get the standalone case (from: here + oats.core).

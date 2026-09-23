@@ -372,7 +372,7 @@ given in the payload — a repo ref never carries a `#path`.
 `--provider` for a capability the soul does not resolve is `E_CAPABILITY_MISSING`;
 `__proto__`/`constructor`/`prototype` as a key at any depth is refused.
 
-## Discovery over remotes and the `<name>-workspace/` convention
+## Discovery over remotes and the deployment directory
 
 Discovery and resolution work against **Git remotes, never local clones**. The
 kernel fetches `oats-workspace.yaml`, each member's `oats-membership.yaml`,
@@ -385,14 +385,14 @@ the repo that hosts the workspace needs to be cloned.
 worktree | checkout`). Spawning a soul whose repo is not yet cloned is a guided
 clone-then-spawn, a job for the onboarding skill, not the kernel.
 
-The taught default is one folder named after the workspace:
+The deployment directory is **yours to choose** (decision 9) — an existing folder that already holds your member clones is the usual case; `oats onboard <dir>` adds what the kernel needs and nothing else:
 
 ```
-~/acme-workspace/                 ← "<name>-workspace"
+~/acme/                           ← the directory you chose
 ├── oats-local.yaml               ← which workspace this machine realizes + host paths + disabled souls
 ├── oats-lock.json                ← exact commit + integrity + per-version approval per package
 ├── agents/                       ← instance homes (each self-contained) + fetched soul sources
-├── platform/                     ← clone of github.com/acme/platform (only if someone works IN it)
+├── platform/                     ← clone of github.com/acme/platform (only if someone works IN it; may live elsewhere — see clones:)
 └── tools/
 ```
 

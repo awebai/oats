@@ -328,8 +328,8 @@ chain); the interim is to run the module binary directly with `OATS_SETTINGS`
 and `OATS_CLI_BIN`, as the tarball smoke does.
 
 **`work: workspace` is kept.** A coordination soul's `./work` is the deployment
-boundary — the directory holding `oats-local.yaml` (the taught
-`<name>-workspace/`, with member clones beside it) — read-only across member
+boundary — the directory holding `oats-local.yaml` (whatever the operator
+named it, member clones beside it or named in `clones:`) — read-only across member
 clones, no branch recorded. The clone map in `oats-local.yaml` (`clones:`) is
 how such a soul finds a member whose clone is elsewhere. **Status: the
 directory link is the intent; 0.25.0's kernel still derives the boundary from

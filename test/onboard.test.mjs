@@ -89,7 +89,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.deepEqual(sync.approvalNeeded.map((a) => a.id), ["nw.tools", "oats.framework", "oats.okf"]);
     assert.deepEqual(sync.problems, []);
 
-    // Next steps: the §4 taught layout — clone members you work IN, then spawn. The setup-expert hint is
+    // Next steps: what the chosen directory now holds; clone members you work IN, then spawn. The setup-expert hint is
     // CONDITIONAL (Phase C, M14): Northwind lists no soul named oats-setup-expert, so next.spawn is null and
     // the first three listed souls are offered instead.
     assert.equal(res.next.spawn, null);
@@ -101,7 +101,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(res.next.clone.find((c) => c.name === "platform").dir, join(dep, "platform"));
 
     // ---- what is on disk: exactly oats-local.yaml, oats-lock.json, agents/ ----
-    assert.deepEqual(tree(dep), ["agents/", "oats-local.yaml", "oats-lock.json"], "onboard creates the taught layout and nothing else");
+    assert.deepEqual(tree(dep), ["agents/", "oats-local.yaml", "oats-lock.json"], "onboard creates what the kernel needs and nothing else (the layout is the operator's)");
     assert.ok(statSync(join(dep, "agents")).isDirectory());
     const local = YAML.parse(readFileSync(join(dep, "oats-local.yaml"), "utf8"));
     assert.deepEqual(local, { schemaVersion: 2, workspace: fx.refs.agents });
@@ -157,7 +157,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(approval needed\)/m);
     assert.match(r.stdout, /oats-local\.yaml {5}which workspace this machine realizes/);
     assert.match(r.stdout, /agents\/ {13}instance homes/);
-    assert.match(r.stdout, /Clone the members you will work IN beside oats-local\.yaml/);
+    assert.match(r.stdout, /Members you will work IN need a clone/);
     assert.match(r.stdout, new RegExp(`git clone \\S+platform\\.git \\S*nw2/platform`));
     assert.match(r.stdout, new RegExp(`git clone \\S+agents\\.git \\S*nw2/agents-repo`));
     assert.doesNotMatch(r.stdout, /oats spawn oats-setup-expert/, "no such soul in this workspace → no setup-expert hint");

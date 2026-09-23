@@ -56,15 +56,15 @@ one soul and, optionally, one capability. Every soul gets `oats.core` from the
 the resulting layout).
 
 ```bash
-oats onboard ~/acme-workspace --workspace git:github.com/acme/agents
+oats onboard ~/acme --workspace git:github.com/acme/agents     # any directory — an existing one with your clones is fine
 ```
 
 ```
-~/acme-workspace/                 # the taught "<name>-workspace" convention
+~/acme/                           # the directory you chose; these three entries are what the kernel needs
 ├── oats-local.yaml               # { schemaVersion: 2, workspace: git:github.com/acme/agents }
 ├── oats-lock.json                # lockfileVersion 3: commit + integrity + approval per package
 ├── agents/                       # instance homes
-└── <member>/                     # clones of the members you work IN (printed as next steps)
+└── <member>/                     # clones of the members you work IN — here or anywhere named in oats-local.yaml clones:
 ```
 
 Read the report it prints: every member row must be `✓↔` (confirmed) — fix

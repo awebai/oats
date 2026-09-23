@@ -382,7 +382,7 @@ exchanged for a symlink. Recovery does not replace the worker's delivery protoco
 
 ### `workspace` — cross-repo coordinator
 
-`work/` is a symlink to the **whole deployment** (the `<name>-workspace/`
+`work/` is a symlink to the **whole deployment** (the directory holding `oats-local.yaml`
 directory holding `oats-local.yaml` and the member clones) — not a repo. Every
 member repo is read-context; the instance's product is coordination:
 routing, analysis, task-writing, messaging, spawning specialists.

@@ -748,7 +748,7 @@ Every `commit` is a full 40-hex OID; every digest is `sha256-<hex>`; every
 `oats onboard [<dir>] --workspace <repo ref> [--json]`
 
 The **bootstrap** of a deployment (decision 9): realizes a workspace on this
-machine in the taught `<name>-workspace/` layout. It writes
+machine in the directory the operator chooses (any existing folder). It writes
 `<dir>/oats-local.yaml` (`{ schemaVersion: 2, workspace: <ref> }`), creates
 `<dir>/agents/` (the instance homes), then runs exactly the `oats sync` body
 over the directory just written — discover over the remotes, confirm

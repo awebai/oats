@@ -21,7 +21,7 @@ converted: [rebuild-to-v2.md](rebuild-to-v2.md).
 schemaVersion: 2
 workspace: git:github.com/acme/agents        # REQUIRED — the workspace host, observed over the remote
 
-clones:                                      # optional — member clones outside the <name>-workspace/ convention
+clones:                                      # optional — member clones that are not beside oats-local.yaml under their repo name
   github.com/acme/platform: /Users/ana/src/acme-platform
 
 settings:                                    # optional — host-owned values per capability
