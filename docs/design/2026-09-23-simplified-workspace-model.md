@@ -453,6 +453,16 @@ Today's `capabilities.layers.messaging.{capability, from, global, souls, setting
 
 ---
 
+### Provider payloads have three homes (team review, decided)
+
+| What it is | Where | Example |
+|---|---|---|
+| True of every instance of the soul | `soul.yaml` → `messaging:` / `knowledge:` | `messaging: { channels: [northwind-eng] }`, `knowledge: { owns: release-manager }` |
+| A fact about this machine | `oats-local.yaml` → `settings.<capability>.<key>` (absolute paths refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
+| A fact about **this spawn** | `oats spawn … --provider <cap> key=value` → `instance.json` `providers.<cap>` (the Desktop's confirmed apply carries the same map) | `--provider oats.aweb identity.source=retained:release-seat` — one instance takes the retained seat; other instances of the soul mint fresh |
+
+The provider's `binding` contract (`normalize → bind → check`) runs over the merged payload exactly as today; the provider still enforces its own rules (e.g. a state root outside the work tree).
+
 ## 5. Materialization — a full copy inside the instance (decided)
 
 At spawn, every capability a soul resolves to is **copied in full** — skills, injects, scripts, hooks — into the instance home. Nothing is symlinked; nothing is shared between instances; there is no deployment-level modules directory.
@@ -491,6 +501,8 @@ What this buys, and why it was chosen over "shared latest with per-instance skil
 
 Cost: disk, a few MB per instance. Accepted.
 
+**Drift is shown, not prevented** (team review): `oats status` and the Desktop roster show per instance `modules: nw-release-tooling from northwind/agents @ 3f2a9c1e` and, when the member has moved, `member moved since (now @ 9b0c…)` or `capability no longer present`. The preview already says "changed since release-manager-v2".
+
 ### The harness starts normally (decided)
 
 OATS is a **skill contributor, not a skill sandbox**. Today the harness is launched with ambient skill discovery suppressed and only the capability-injected skills visible. That defended against content we have just decided to trust (decision 2: a repo's committed `.agents/skills/` is exactly as trusted as its committed capabilities). So:
@@ -499,6 +511,7 @@ OATS is a **skill contributor, not a skill sandbox**. Today the harness is launc
 - Materialized capability skills are placed **where the harness already looks**: `<instance>/.agents/skills/<capability>/<skill>/SKILL.md` (copied from the capability's `skills/`). Precedence is the harness's own nearest-wins rule — no special profile, no exclusion list, no injected skill index.
 - An agent therefore sees, in this order of proximity: its capability skills (instance home), the repo's own `.agents/skills/` once it works in `work/`, and whatever the operator keeps at machine level. **All three are intended.**
 - What OATS still composes is **instructions** (`AGENTS.md` from the soul + every capability's inject) and the **model/provider settings** the deployment pins (e.g. a Pi profile). Neither touches skill discovery.
+- **Duplicate names** (team review): two *composed* capability skills with the same name are still a spawn error naming both (`skill-overrides` picks one). A composed skill and an ambient repo/machine skill with the same name is **not** an error — the harness's precedence decides; the preview lists composed names so a clash is visible.
 
 ```
 ~/northwind-workspace/agents/release-manager/instances/release-manager-v3/
@@ -633,9 +646,9 @@ teams      global 2 souls · engineering 4 souls, 3 capabilities · marketing 2 
 
 ---
 
-## 10. No migration — a clean break
+## 10. No migration — a clean break, and 0.24.x keeps working
 
-Decided (human, 2026-09-23): there is effectively one deployment today and its operator will rebuild it. So:
+Decided (human, 2026-09-23; refined with the team): "no migration" means no converter and no dual-schema reader — **not** that existing deployments stop. A 0.24.x kernel keeps spawning 0.24.x deployments indefinitely; v2 is the **0.25 line** and reads only v2 files; an operator installs 0.25 when ready to rebuild and not before. A written **rebuild guide** ships with the v2 schemas. So:
 
 - **v2 only.** The kernel reads `oats-workspace.yaml` v2, `oats-membership.yaml`, `soul.yaml` v2 and `oats-local.yaml`; it does not read v1 declaration files and does not carry an `oats migrate`. A v1 file at a v2 path is an error naming the schema, not a silent fallback.
 - **No dual-schema window**, no back-fill of `private: true`, no compatibility shims in the resolver.

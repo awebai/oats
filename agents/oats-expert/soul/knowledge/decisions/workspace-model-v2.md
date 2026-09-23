@@ -2,7 +2,7 @@
 type: Decision
 title: Workspace model v2 — one workspace per org, members are trust, nothing is installed, every capability is copied whole into the instance
 status: accepted
-description: ACCEPTED (human, 2026-09-23) after a full brainstorm. Thirteen decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
+description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Seventeen decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
 tags: [workspace, membership, capabilities, packages, provenance, materialization, teams, harness, v2]
 timestamp: 2026-09-23
 ---
@@ -100,13 +100,41 @@ a version**. The workspace's `packages:` says which version; materialization
     resolve exactly as without OATS. OATS keeps composing instructions
     (`AGENTS.md` = soul + injects) and pinning model/provider settings.
 
+# Refinements from the team review (2026-09-23, via the Juan-side relay)
+
+14. **Three homes for provider payloads, by what the thing is.** Soul-level
+    (`soul.yaml` `messaging:` / `knowledge:`) = true of every instance of the
+    soul. Operator-level (`oats-local.yaml` `settings.<capability>.<key>`) =
+    host-owned values (absolute paths, state roots); the workspace file's
+    schema refuses them. **Instance-level** = `oats spawn … --provider <cap>
+    key=value` (the Desktop's confirmed apply carries the same map in the
+    decision), recorded in `instance.json` under `providers.<cap>` — e.g. a
+    retained messaging seat taken by exactly one spawn while other instances
+    of the soul mint fresh identities. The `souls:` blocks of
+    `oats-config.yaml` disappear; their per-instance content moves to spawn
+    time. The `binding` contract runs unchanged over the merged payload.
+15. **0.24.x keeps working.** "No migration" means no converter and no
+    dual-schema reader; a 0.24.x kernel spawns 0.24.x deployments
+    indefinitely. v2 is the 0.25 line and reads only v2 files; an operator
+    rebuilds when ready. A written rebuild guide ships with the v2 schemas.
+16. **Duplicate skill names.** Within the OATS-composed set a duplicate is
+    still a spawn error naming both capabilities (`skill-overrides` picks
+    one). Between a composed skill and an ambient repo/machine skill the
+    harness's own precedence decides and OATS does not intervene; the spawn
+    preview lists composed skill names so a clash is visible.
+17. **Drift is shown, not prevented.** Status and the roster show per
+    instance `modules: <cap> from <member> @ <commit>` and, when the
+    member's current state differs, `member moved since (now @ <commit>)` /
+    `capability no longer present`. No revisions.
+
 # What is removed
 
 Per-soul `source: git:…@v#…` lines and the `git:`/`repo:`/`path:` grammar in
 souls; `imports:` of member souls; `exports:` lists; `oats.yaml`; the
-installed-capability tier and `oats-config.yaml`'s `capabilities.layers` /
-`additive` / `from:` / `global` / `souls:` blocks (activation is derived from
-workspace defaults + soul declarations); `oats init` / `use` / `install` /
+installed-capability tier and `oats-config.yaml` entirely — its
+`capabilities.layers` / `additive` / `from:` / `global` blocks (activation is
+derived from workspace defaults + soul declarations) and its `souls:` blocks
+(per-instance content moves to `spawn --provider`); `oats init` / `use` / `install` /
 `restore`; per-soul `stores.<x>.inherit` (stores are declared once in the
 workspace); ambient-skill exclusion at launch.
 
