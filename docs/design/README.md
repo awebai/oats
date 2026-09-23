@@ -5,7 +5,7 @@ Dated design documents record how decisions were reached and what each implement
 ## Current plan
 
 - [Redesign program board](2026-09-20-redesign-program-board.md) — live status of every work stream (knowledge contract, workspace adoption, messaging readiness, official capabilities, marketplace, five souls, centralised knowledge, Desktop), owners and blockers.
-- **[Simplified workspace model v2 (2026-09-23)](2026-09-23-simplified-workspace-model.md) — ACCEPTED direction: one workspace per org, membership = trust, `from:` as location, nothing installed, full per-instance copy, teams as labels, harnesses start normally; worked Northwind example. Supersedes the declaration model below for the next implementation.**
+- **[Simplified workspace model v2 (2026-09-23)](2026-09-23-simplified-workspace-model.md) — ACCEPTED direction: one workspace per org, membership = trust, `from:` as location, nothing installed, full per-instance copy, teams as labels, harnesses start normally; worked Northwind example. Supersedes the declaration model below for the next implementation.** → [Phase 4 implementation plan (PROPOSED)](2026-09-23-workspace-v2-implementation-plan.md)
 - [Workspace-first adoption plan (2026-09-20)](2026-09-20-workspace-and-portable-adoption-plan.md) — phase order, lane ownership, distribution work packages (`oats.core`, `oats.setup`, official marketplace), exit gates.
 
 ## Portable Souls and Git workspaces — the architecture
