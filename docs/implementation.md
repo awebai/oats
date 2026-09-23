@@ -26,10 +26,12 @@ own Claude configuration is deliberately left enabled.
 | `test/` | Capability resolver/composition/security lifecycle tests. |
 | `agents/` | The framework's own portable expert souls. |
 
-Capability discovery has one layout: each config scope's `.agents/capabilities/` split into
-`installed/` (acquired, locked, gitignored, restorable via bare `oats install`)
-and `owned/` (authored at that scope, config-owned trusted; committed where
-the scope is a git repo, plain scope-durable files elsewhere).
+Capabilities have two sources and one destination: a member repo's
+`capabilities/<name>/` (latest state, trusted by membership) or a package pinned
+in the workspace's `packages:` and locked in `oats-lock.json` (v3); at spawn each
+is copied whole into the instance's `.oats/modules/<name>/`. Nothing is
+installed at a deployment (`lib/remote.mjs`, `lib/workspace.mjs`,
+`lib/resolve.mjs`, `lib/packages.mjs`, `lib/materialize.mjs`).
 
 The live control panel is the OATS Desktop app (`packages/desktop/`): an
 Electron shell over a bundled zero-dependency localhost server that uses

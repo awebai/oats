@@ -1,5 +1,7 @@
 # Run your first OATS team
 
+> **0.24 guide.** This page describes the 0.24.x surface (`oats-config.yaml`, `oats init`/`install`/`use`/`trust`). Under the workspace model (0.25) that surface no longer exists: read [workspaces.md](workspaces.md), [packages.md](packages.md) and the [rebuild guide](rebuild-to-v2.md) first; the commands below are kept for 0.24 deployments only.
+
 Start with one repository and one small, real task. A soul keeps the role and
 curated skills; an instance gets a working session and repository view. With OKF
 v2, expertise lives in external owned nodes, not the soul or task branch.

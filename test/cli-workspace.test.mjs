@@ -280,8 +280,8 @@ test("oats version --json advertises workspaceApi 2 and only the wired v2 featur
     const doc = JSON.parse(r.stdout);
     assert.equal(doc.workspaceApi, 2);
     assert.ok(doc.features.includes("workspace-v2"));
-    // Phase B: not advertised until spawn runs on resolve/materialize (an unimplemented feature is never listed).
-    for (const f of ["instance-modules", "spawn-provider-payload"]) assert.ok(!doc.features.includes(f), `${f} is not yet wired`);
+    // Phase C: spawn runs on resolve/materialize, so both features are now advertised (a feature is listed only once wired).
+    for (const f of ["instance-modules", "spawn-provider-payload"]) assert.ok(doc.features.includes(f), `${f} is wired in Phase C`);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

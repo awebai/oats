@@ -1,33 +1,34 @@
 # Capability packages
 
-A **capability package** is OATS's reusable distribution unit. It can contribute
+A **capability** is OATS's reusable unit of behaviour. It can contribute
 skills, instance instructions, requirements, namespaced commands, and approved
-lifecycle hooks. Configuration—not the package—decides which souls receive it.
+lifecycle hooks. A soul — not the capability — decides which souls receive it,
+by naming it with where it comes from (`from:`; see [workspaces](workspaces.md)).
 
 The [official marketplace policy](official-marketplace.md) defines the reviewed
-package list and its acceptance criteria. Finding an official capability does not
-install, activate or approve it; those remain explicit, separate choices.
+package list and its acceptance criteria. Finding an official package does not
+pin, approve or give it to any soul; those remain explicit, separate choices.
 
-An **integration** is a capability package that implements one exclusive
-fundamental layer: `knowledge`, `messaging`, or `tasks`. General capabilities
-claim no layer and compose additively.
+An **integration** is a capability that implements one exclusive fundamental
+layer: `knowledge`, `messaging`, or `tasks`. General capabilities claim no
+layer and compose additively.
 
 ## Mental model
 
-This is OATS's first public capability-package contract. The unpublished,
-pre-release integration prototype has no compatibility promise: its manifest,
-config, discovery, and command aliases are intentionally not accepted.
+A capability lives in one of two kinds of source:
 
-The contract is:
+1. a **member repo** of the workspace, at `capabilities/<name>/oats.json` —
+   unversioned, always the member's latest state, trusted by membership;
+2. a **package** (`oats-package/` in a repo, pinned by version in the
+   workspace's `packages:`, locked and approved once per version —
+   [packages.md](packages.md)).
 
-1. **Acquire** a package. External artifacts are pinned in `oats-lock.json`.
-2. **Activate** it for global scope, a config-owned soul group, or one soul.
-3. **Spawn** a soul. OATS resolves the target, creates the exact
-   `.agents/skills/`, and generates that instance's `AGENTS.md` without
-   changing the canonical soul.
-
-Acquired does not mean active. `oats init` activates only the explicit defaults
-it writes; it never enables every package merely because it is available.
+A soul says `capabilities: { <name>: { from: here | <repo key> | package } }`
+(or `off`); the workspace supplies defaults. At spawn every resolved
+capability is **copied whole** into the instance (`<home>/.oats/modules/<name>/`,
+skills into `<home>/.agents/skills/<name>/`), and the instance's `AGENTS.md` is
+generated without changing the canonical soul. Nothing is installed or
+activated at a deployment.
 
 ## Manifest
 
@@ -83,10 +84,10 @@ A self-contained package has an `oats.json`:
   too. Without one, OATS has no way to undo what the spawn hook did and no way to
   know whether it did anything, so a failure quarantines the home rather than
   rolling it back — the operator cleans up by hand and removes it with `--force`.
-- A required hook must also be **able** to run: if its capability's executable
-  surface is not trusted, the spawn fails with the `oats trust` remedy rather
-  than starting without the setup. Advisory executable hooks stay
-  disabled-with-warning.
+- A required hook must also be **able** to run: a package capability whose
+  version is not approved in the lock is refused at resolution
+  (`E_PACKAGE_UNAPPROVED`, remedy `oats sync`), so a required hook never
+  silently fails to configure an instance.
 - When a required hook fails and its compensation cannot finish, the instance
   home is **retained**, not deleted — it holds the credentials and metadata a
   retry needs, and removing it would turn a transient cleanup failure into
@@ -133,310 +134,126 @@ A self-contained package has an `oats.json`:
   would mutate the operator's runtime configuration without asking, in the
   middle of a spawn. A missing, uninstalled or disabled package fails the spawn
   with the consent command that fixes it.
-- OATS never installs a requirement silently. `oats install` prompts per
-  requirement with the exact argv, source and scope; automation passes
-  `--accept-requirement <name>` (the name is the command, or
-  `<runtime>:<package>`), and `--no-requirements` skips the gate. When a plan
-  has several steps — registering a Claude marketplace before installing from
-  it — every step is shown, because agreeing to a plugin also means agreeing to
-  the source it comes from. Declining
-  leaves an actionable `oats doctor` warning. Consent to install is separate
-  from capability trust.
+- OATS never installs a host requirement silently. A missing host command is
+  the operator's to install; `oats doctor` reports it. Consent to install is
+  separate from package approval.
 - `environment` lists the exact launch variables executable trust approves;
   spawn hook output must be a subset and use the capability vendor prefix.
 - Target names never appear in a package manifest.
 
-`capability` is the only manifest identity field. The machine-readable
-contract is [`capability-manifest.schema.json`](capability-manifest.schema.json).
+`capability` is the only manifest identity field; it may also carry
+`private: true` (usable only by souls of its own repo) and `team: <label>`
+(a workspace team label). The machine-readable contract is
+[`capability-manifest.schema.json`](capability-manifest.schema.json).
 
-## Config and targets
+## Who gets a capability
 
 ```yaml
-agent-types:
-  developers:
-    description: Agents that build the service (souls declare `type: developers`)
-  reviewers:
-    description: Agents that review changes
+# oats-workspace.yaml — shared defaults
+defaults:
+  capabilities:
+    oats.core: { from: package }
+    acme-house-style: { from: github.com/acme/agents }
+  knowledge: { oats.okf: { from: package } }        # slot default: a layer capability
+  messaging: none
+  tasks: none
+  byTeam:
+    engineering:
+      capabilities: { acme-release-tooling: { from: github.com/acme/agents } }
 
+# souls/release-manager/soul.yaml — the soul's own choices
 capabilities:
-  layers:
-    knowledge:
-      capability: oats.okf
-      from: installed
-      settings:
-        bindings-file: /absolute/config/okf-bindings.json
-      # injection-override: .agents/injections/capabilities/oats.okf.md
-    messaging: none
-    tasks: none
-
-  additive:
-    example.code-review:
-      from: installed
-      agent-types:
-        developers:
-          enabled: true
-          settings:
-            depth: normal
-      souls:
-        security-reviewer:
-          enabled: true
-          settings:
-            depth: exhaustive
-
-    example.deploy:
-      from: installed
-      global: true
-      agent-types:
-        reviewers: false       # explicit exclusion
-      souls:
-        release-reviewer: true # more-specific re-enable
-
-skill-overrides:
-  review: example.code-review
+  acme-release-tooling: { from: here }
+  acme-deploy: { from: package }
+  acme-house-style: off
+knowledge:
+  owns: release-manager
 ```
 
-`global` means all souls governed by the config level declaring it—not every
-soul on the machine regardless of scope. Laptop, workspace, and repository
-configs each govern souls beneath that level.
-
-Composition is additive across matching global, agent-type, and soul
-bindings. Settings use `soul > agent-type > global`, then closer config scope.
-Conflicting values at equal specificity and scope are errors.
-`enabled: false` follows the same precedence. Agent types are declared by
-name in config; each soul opts in via `type:` in its soul.yaml. Tags and
-selectors are not implemented, and bindings do not target individual
-instances.
-
-`capabilities` is the only activation map: fundamental integrations live
-under `capabilities.layers.<layer>` (an entry or an explicit `none` that
-suppresses an inherited integration), everything else under
-`capabilities.additive`.
+Composition order: `defaults.<slot>` ⊕ `defaults.capabilities` ⊕
+`defaults.byTeam[<soul team>]` ⊕ `soul.capabilities` — later wins, `off`
+removes, a soul `<slot>: none` drops the workspace's slot default. A resolved
+capability whose manifest says `layer: X` fills slot X; two for one slot are
+`E_SLOT_CONFLICT`. Provider settings come from three homes — the soul's slot
+payload, `oats-local.yaml` `settings.<cap>`, and `oats spawn --provider` — and
+are deep-merged in that order. There are no agent types, no `global`, no
+per-deployment activation or exclusion maps.
 
 ## Exact runtime composition
 
 Every spawned instance receives:
 
 - canonical soul skills;
-- the kernel `oats` skill; and
-- skills from capabilities active for that soul.
+- a **full copy** of every capability the soul resolved to, under
+  `<instance>/.oats/modules/<capability>/` (manifest, `bin/`, injects, skills);
+- those capabilities' skills copied to `<instance>/.agents/skills/<capability>/<skill>/`.
 
-OATS copies only those skill trees into real directories under
-`<instance>/.agents/skills/` and records the names and source capability in
-`instance.json`. `.claude/skills` points to
-the same canonical directory. Pi launches with this directory as an explicit
-skill path; ambient skills (user-level, pi packages, the work tree) coexist
-with the OATS-composed set rather than being excluded — `instance.json`
-records exactly what OATS composed, not everything the harness may discover.
-`oats-getting-started` is the pi adapter's one ambient contribution before a workspace exists.
+`instance.json` records per module its source (`from`), commit and content
+digest, and the composed skill names with their source. `.claude/skills` points
+to the same canonical directory. **The harness starts normally**: pi, Claude
+Code and Codex run their own skill discovery with cwd = the instance home;
+ambient skills (user-level, the work tree's `.agents/skills/`) coexist with the
+OATS-composed set. `instance.json` records what OATS composed, not everything
+the harness may discover.
 
-Duplicate skill names fail spawn unless `skill-overrides` explicitly names the
-winning source. Pi and Claude therefore receive the same OATS-managed set rather
-than relying on different ancestor-discovery rules.
-
-For pi, exact isolation needs the capability-aware versions of both
-`@awebai/oats` and `@awebai/oats-pi`. The kernel disables normal skill
-discovery at launch. The changed adapter contributes only the instance-local
-set instead of the older workspace and package roots. Install matching package
-versions and upgrade them together.
+Duplicate skill names **within the composed set** fail the spawn naming both
+capabilities (`E_SKILL_DUPLICATE`). A composed skill and an ambient skill with
+one name is the harness's own precedence, not an error.
 
 The instance's `AGENTS.md` is a generated regular file containing:
 
 1. the canonical soul `AGENTS.md`;
 2. the kernel and work-mode blocks;
-3. active capability blocks in deterministic order; and
-4. unconditional config instruction blocks.
+3. each module's inject, in deterministic (name) order.
 
 Its `CLAUDE.md` symlinks to `AGENTS.md`. The committed soul remains unchanged.
-Edit the canonical soul, injection source, or config, then spawn a new
-instance; do not edit generated blocks as source-of-truth changes.
+Edit the canonical soul or the capability's inject in its repo, then spawn a
+new instance; do not edit generated blocks as source-of-truth changes.
 
-Inspect a final composition:
+Inspect a composition before it exists:
 
 ```bash
-oats doctor /path/to/repo --soul api-expert
-oats doctor /path/to/repo --soul api-expert --json
+oats spawn release-manager --preview          # modules (from / commit / changedSince), team, resolution revision
+oats spawn release-manager --preview --json
 ```
-
-Doctor reports active/acquired packages, target provenance, settings, skills,
-hooks, trust, instruction sources, and final composed text. It cannot infer
-semantic contradictions between two prose injections; review the output.
 
 ## Distribution packages
 
-A **distribution package** is the install/update/review unit above
-capabilities: a directory with an `oats-package.json` manifest that explicitly
-enumerates one or more capabilities and optional reference config templates
-(schema:
-`docs/oats-package.schema.json`; contract:
-`docs/design/package-engine-contract.md`). A capability remains the
-targeting/activation unit — every capability a package exports stays
-independently addressable by ID with `from: installed`.
+A **package** is the versioned tier: a directory with an `oats-package.json`
+that enumerates one or more capabilities (schema
+[`oats-package.schema.json`](oats-package.schema.json)). It is pinned once in
+the workspace's `packages:`, resolved to an exact commit + integrity by
+`oats sync` into `oats-lock.json` (lockfileVersion 3), and its executables are
+approved once per version. A soul names a package capability with
+`from: package`. Everything about declaring, syncing, locking, approving and
+publishing packages is in [packages.md](packages.md). There is no installed
+copy at a deployment and no `oats install`/`trust`/`update`/`remove`.
 
-A Git repository *contains* that directory; `#<path>` selects which one, and
-only the selected subtree is installed and hashed. Omitting it selects
-`oats-package/` (the convention for every official example and scaffold); `#.`
-selects the repository root. Local paths are always exact directories.
+## Member capabilities
 
-```bash
-oats install git:github.com/org/repo@v1.0.0 --dir /path/to/scope   # git shorthand → oats-package/
-oats install git:github.com/org/repo@v1.0.0#dist/oats                # a custom contained root
-oats install https://host/org/repo.git@v1.0.0#.                     # raw git URL, repository root
-oats install ../my-package                                          # local path (exact directory)
-oats install oats.okf                                                # official catalog id
-oats install                     # bare: exact restore of this chain's locks
-oats list                        # installed packages, exported capabilities, scopes
-oats catalog [--json]            # the effective official catalog: packages, refs, aliases, acquire argv (0.24.6+; read-only)
-oats update <package>            # transactional re-resolve + diff + trust reset
-oats remove <package>            # refuses while config/dependents reference it
-oats migrate [--dry-run]         # map v1 capability locks to package locks
-```
-
-Installing a package materializes each capability into the owning scope's
-`.agents/capabilities/installed/<id>/` (gitignored, like the capability store).
-There is no persistent package store. `oats-lock.json` uses `lockfileVersion: 2`
-with two maps: `packages` (exact source, commit, selected path, payload
-integrity, and dependencies) and `capabilities` (each artifact's version,
-provider package, path, integrity, and trust) — schema
-`docs/oats-lock.schema.json`. Dependencies are pinned (official selector,
-tag/commit, or local path — no semver solver). Cycles and two sources claiming
-one package identity at a scope are errors with provenance. Acquisition
-**activates nothing** and adopts no config template; an unpinned git source
-resolves once and never advances on restore.
-
-Trust binds to each materialized capability artifact at its exact integrity.
-`oats trust <capability>` approves only that capability's commands, hooks, and
-declared launch environment.
-`oats trust <package> --all-capabilities` is the explicit bulk path and prints
-the full executable surface first. Any artifact integrity change (including
-`oats update`) resets that capability's trust.
-Skill/instruction/config-only capabilities need lock integrity but no
-executable approval, and official-catalog identity grants **no** executable
-trust. A capability may carry a checked-in `package-lock.json` for JS runtime
-dependencies; OATS materializes it with `npm ci --ignore-scripts` only — npm
-lifecycle scripts never run at acquisition, and capability code/hook paths
-must resolve inside the materialized capability root.
-
-`oats migrate` converts a scope's v1 marketplace/git/path capability locks to
-the revised v2 lock, preserving `from: installed` activation. It is
-all-or-nothing per scope: a scope converts only when every entry maps to a
-package. If any entry is held, manual, or retained, the whole scope stays
-byte-identical v1 and keeps working. There is no residue container, and
-executable approvals are never carried over.
-
-All package operations are agent-callable: every command above supports
-`--json` (one stdout envelope; failures carry the contract's stable error
-codes) and noninteractive operation. Agents never hand-edit `oats-lock.json`
-or the stores — the kernel-owned **oats-packages** skill (composed into every
-instance) teaches the full lifecycle.
-
-## Acquisition, lock, restore, and trust (single capabilities)
-
-```bash
-oats install oats.jira --dir /path/to/repo             # official catalog id; approve executable surfaces with `oats trust`
-oats install https://example.invalid/team-chat.git --dir /path/to/repo
-oats install ../team-chat --dir /path/to/repo
-oats install                       # bare: restore locked-but-missing artifacts
-```
-
-Every acquired artifact lands in the owning scope's
-`.agents/capabilities/installed/`, beside the `oats-config.yaml` and
-`oats-lock.json` that govern it. Install maintains a one-line
-`.agents/capabilities/.gitignore` so acquired artifacts stay uncommitted, like
-`node_modules`. A fresh clone with a committed config and lock runs bare
-`oats install` to reacquire everything; each restored artifact must hash to the
-locked integrity or the restore fails and removes the fetched copy.
-
-Installation acquires and locks; it does **not** activate. `oats-lock.json`
-records:
-
-- source;
-- exact package version and git commit when available; and
-- SHA-256 integrity of the artifact.
-
-OATS never pulls an existing package silently. Changed integrity blocks use
-until the package is deliberately reacquired. For external packages containing
-commands, hooks, or launch-environment authority, approve that exact locked
-artifact:
-
-```bash
-oats trust example.team-chat --dir /path/to/repo
-```
-
-Changing integrity invalidates approval. Skill/instruction-only packages still
-require a valid lock but do not require executable approval. Manifest paths in
-external packages must remain inside the locked artifact (including after
-symlink resolution), so approved hooks and commands cannot execute unhashed
-files. The trust boundary is structural: anything under `installed/` must have
-a matching lock entry, so an installed artifact cannot masquerade as scope-owned
-by dropping its lock. A committed lock's approval survives restore when the
-restored artifact hashes to the locked integrity.
-
-One narrow exception exists for the kernel's own marketplace, kept only until
-official packages replace legacy `marketplace:` installs. A capability whose
-lock source is `marketplace:<id>@<version>` may declare resources that live
-outside its installed copy — `oats.authoring` selects framework skills with
-`../../skills/<name>` — and those declarations are resolved against the
-capability's directory in the kernel marketplace
-(`<kernel>/capabilities/<slug>`), located by capability id rather than by the
-lock selector's spelling. If that declared path names an npm dependency hoisted
-by npm, OATS also checks the equivalent path from the kernel root; this is the
-published `oats.aweb` layout (`node_modules/@awebai/pi/skills/...`). The shipped source must still have the same
-capability identity, while its version may advance with an explicitly installed
-kernel upgrade: framework-hoisted resources belong to that trusted kernel, and
-this preserves valid older v1 installs until official-package migration. The
-installed copy and its lock must still agree on version and integrity. If they
-do not, recovery is to delete the installed copy the error names and then run
-`oats install <id> --dir <scope>`, which re-acquires and rewrites the lock entry;
-run with the copy still in place, that command reports `Already acquired` and
-changes nothing, and legacy v1 capability entries are not removable with
-`oats remove`, which services packages. Such a tree may leave the
-installed copy but never the kernel package: `..` segments and symlinks that
-resolve outside it are rejected exactly like any other escape. Capabilities
-exported by packages, authored at a scope, or referenced by path never receive
-this resolution — they stay inside their own artifact.
-
-Bundled framework packages are trusted. Packages you author at a scope live in
-`.agents/capabilities/owned/` and are config-owned trusted — trusting the
-scope trusts them; review them like other repository instructions and code.
-In a git-managed scope they are committed; at a non-git scope (the laptop
-level, a plain workspace root) they are ordinary files whose durability is the
-scope's own — they have no lock and are not restorable by `oats install`, so
-back them up with whatever backs up that scope. Capabilities directly
-under `.agents/capabilities/` are rejected — move them into `installed/` or
-`owned/`.
-
-## Activation and exclusions
-
-```bash
-oats use oats.okf --global --settings bindings-file=/absolute/config/okf-bindings.json --dir /path/to/repo
-oats use example.code-review --type developers --dir /path/to/repo
-oats use example.deploy --type reviewers --disable --dir /path/to/repo
-oats use example.deploy --soul release-reviewer --dir /path/to/repo
-```
-
-`--global` is the default. Choose only one target. An integration's manifest
-declares its layer, so activation does not repeat it. Disable an inherited
-fundamental layer with `oats use none --layer <layer>`.
-
-OKF v2 also requires explicit soul owners and accepted external nodes before
-working-source spawn. Global activation is appropriate only when every source is
-ready; see [knowledge provisioning](knowledge.md#acquire-bind-and-provision-explicitly).
+A capability at `<member repo>/capabilities/<name>/oats.json` is discoverable
+by every soul in the workspace (`oats capabilities` lists it with origin
+`member <repo key> @ <commit>`) and is named with `from: <repo key>` — or
+`from: here` by souls of the same repo. It is trusted by **membership**: the
+repo's access control is the boundary and its latest default-branch state is
+what is copied. `private: true` in the manifest keeps it usable only from its
+own repo. A member's `oats-package/` is **not** a member capability: it is
+reported as `publishes` and consumed only as a package.
 
 ## Capability-defined agents
 
 A manifest may declare `agents: ["agents/<name>"]` — package-relative soul
-directories (`soul.yaml` + `AGENTS.md` directly inside). Wherever the
-capability is **declared** in the config chain, `oats spawn <name>` resolves
-these like local souls: the canonical soul stays read-only inside the package
-(a fresh identity every spawn — by design for service agents like reviewers),
-while instances home under the scope's `local-agents/`. Capability agents
-carry their own `model:`/`runtime:` defaults in soul.yaml.
+directories (`soul.yaml` + `AGENTS.md` directly inside). *(Open thread: under
+the workspace model these are re-based on member souls — a package repo's
+expert soul is an ordinary `souls/<name>-expert/` in the member; the classic
+lookup still exists for 0.24 layouts.)*
 
 ## Commands and hooks
 
-Operational commands resolve only when their package is active in the current
-instance or soul context. Package-management commands (`install`, `trust`,
-`use`, `doctor`) remain available globally.
+Operational commands resolve only when their capability is one of the current
+instance's modules (or the soul's resolved set). Workspace commands (`sync`,
+`package`, `workspace status`, `capabilities`, `souls`, `doctor`) are always
+available.
 
 Hooks receive `OATS_EVENT`, `OATS_CAPABILITY`, `OATS_LAYER`, `OATS_INSTANCE`,
 `OATS_HOME`, `OATS_AGENT`, `OATS_SOUL`, `OATS_CONTEXT`, `OATS_WORKSPACE`,
@@ -455,14 +272,11 @@ hyphen to `_` would let `aweb-evil.*` collide with names already inside
 `aweb.*`'s `AWEB_*` namespace.
 
 A hook may return only names in its manifest's exact `environment` declaration.
-For acquired packages that declaration is part of the integrity-locked artifact.
-Third-party install previews the future request, and `oats trust` prints the
-exact request before persisting executable authority. Marketplace automatic
-trust likewise prints it before writing the trusted lock. Undeclared output is
-fatal. Config-owned packages receive the same exact-subset enforcement under
-their existing config-owned trust. This positive authority is the contract
-boundary — adding a new launch variable requires a visible manifest/trust
-change.
+For package capabilities that declaration is part of the integrity-locked tree
+and of what the per-version approval showed; for member capabilities it is
+part of what membership trusts. Undeclared output is fatal. This positive
+authority is the contract boundary — adding a new launch variable requires a
+visible manifest change (and, for a package, a new approved version).
 
 `OATS_*`, `PI_AGENT_*`, kernel launch variables, and known shell/bootstrap/loader
 names are also rejected as defense in depth. The denylist includes current Node,
@@ -494,31 +308,30 @@ this mechanism must never copy or expose that global identity's root keys to the
 worker process. Session-scoped execution credentials need a separate lifecycle
 and must not be encoded into this persisted spawn command.
 
-Spawn/scaffold order is outer scope to inner scope, then capability ID;
-retirement reverses successful spawn order. Scaffold hooks cannot modify or
-delete canonical or another package's files. OATS records ownership, restores
-the pre-hook snapshot, and raises a conflict instead of accepting destructive
-or last-writer-wins behavior.
+Spawn/scaffold order is by capability name; retirement reverses successful
+spawn order. Hooks run from the instance's own copy
+(`<home>/.oats/modules/<cap>/`). Scaffold hooks cannot modify or delete
+canonical or another capability's files. OATS records ownership, restores the
+pre-hook snapshot, and raises a conflict instead of accepting destructive or
+last-writer-wins behavior.
 
-## Bundled packages
+## Official packages
 
-| Capability | Kind | Provides |
-|---|---|---|
-| `oats.okf` | knowledge integration | External owned OKF bases, durable notes/record custody, independent judgment and inspection |
-| `oats.aweb` | messaging integration | aweb identity lifecycle and messaging skills |
-| `oats.jira` | tasks integration | Jira task protocol via `acli` |
-| `oats.linear` | tasks integration | Linear GraphQL task commands and workflow |
-| `oats.authoring` | additive | capability, skill, and soul authoring guidance |
+| Capability | Kind | Provides | Package |
+|---|---|---|---|
+| `oats.core` | additive | day-to-day OATS operation for an instance | `oats.framework` |
+| `oats.setup` | additive | whole-architecture knowledge for an onboarding expert | `oats.framework` |
+| `oats.okf` | knowledge integration | External owned OKF bases, durable notes/record custody, independent judgment and inspection | `oats.okf` |
+| `oats.aweb` | messaging integration | aweb identity lifecycle and messaging skills | `oats.aweb` |
+| `oats.jira` | tasks integration | Jira task protocol via `acli` | `oats.jira` |
+| `oats.linear` | tasks integration | Linear GraphQL task commands and workflow | `oats.linear` |
+| `oats.authoring` | additive | capability, skill, and soul authoring guidance | `oats.authoring` |
 
-Bundled mirrors live under `capabilities/`. The prepared OKF v2 mirror follows
-the standalone package's sole export, `oats-package/capabilities/oats-okf/`.
-Acquire it through the catalog Git package: the npm mirror is **not** a
-self-contained distribution, because npm drops the source worker's canonical
-`CLAUDE.md` symlink. Do not manufacture aliases to bypass package integrity.
-See [prepared release gates](release-notes/v0.23.1.md). Acquired packages live under
-`<level>/.agents/capabilities/installed/` (gitignored, restorable); packages
-authored at a scope live under `<level>/.agents/capabilities/owned/`
-(committed where the scope is a git repo). Within one scope `owned/` overrides `installed/` on ID collision.
+Each is pinned by a bare version in `packages:` and resolved through the
+[official catalog](official-marketplace.md); each package repo is also a member
+of the OATS workspace carrying its expert soul (`okf-expert`, `aweb-expert`, …).
+The framework's own souls say `oats.okf: { from: package }` — membership never
+turns a package into a latest-state capability.
 
 ## Operations a capability declares
 

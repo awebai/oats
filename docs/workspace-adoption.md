@@ -1,5 +1,7 @@
 # Adopt the OATS development workspace
 
+> **0.24 guide.** This page describes the 0.24.x surface (`oats-config.yaml`, `oats init`/`install`/`use`/`trust`). Under the workspace model (0.25) that surface no longer exists: read [workspaces.md](workspaces.md), [packages.md](packages.md) and the [rebuild guide](rebuild-to-v2.md) first; the commands below are kept for 0.24 deployments only. The framework's own workspace is being converted to v2 (`oats-membership.yaml` in every repo, v2 souls, `packages:`); the `oats.yaml`/`imports:` steps here are history.
+
 OATS hosts the shared `oats-workspace.yaml`. Its separate `oats.yaml` advertises
 source-complete exports and declares its own reciprocal membership. `oats-dev`
 remains a development-capability repository, including `oats.review`; membership

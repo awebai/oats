@@ -1,6 +1,6 @@
 # Package engine contract (capability materialization, lock v2)
 
-Status: **FROZEN** for the capability-materialization delivery. This document is
+Status: **SUPERSEDED** by the workspace model v2 ([2026-09-23-workspace-module-contracts.md](2026-09-23-workspace-module-contracts.md) §4–5, [../packages.md](../packages.md)): the installed-capability tier, `oats install`/`restore`/`use`/`trust`, config templates and lock v2 described here were removed; the package tier is now `lib/packages.mjs` (lock v3) + `lib/materialize.mjs`. Kept as history. Original status: **FROZEN** for the capability-materialization delivery. This document is
 the resolver / projection / lock API that the config-and-CLI lane builds
 against. It implements the accepted Decision "Packages materialize capabilities
 while config templates remain explicitly adopted local policy" (2026-07-29) as

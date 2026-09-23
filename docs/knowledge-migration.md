@@ -25,10 +25,11 @@ knowledge layer. V2 uses external accepted bases and independent workers, not
   The required v2 spawn hook refuses a legacy `soul/knowledge/`; it never silently
   substitutes an empty bundle.
 
-After publication, explicitly acquire/update the catalog **Git** package and
-review/re-trust its executable surfaces. An existing exact lock does not advance
-on bare `oats install`. Do not install the npm bundled mirror as a self-contained
-package: npm drops the source worker's canonical `CLAUDE.md` symlink.
+After publication, bump `packages.oats.okf` in the workspace file and run
+`oats sync`: the new version resolves to a commit and its executables are
+approved once. An existing lock never advances by itself. Package content is
+read from the catalog **Git** repository, never from an npm mirror (npm drops
+the source worker's canonical `CLAUDE.md` symlink).
 
 ## 2. Bind and provision external destinations
 

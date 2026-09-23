@@ -1,478 +1,267 @@
-# Distribution packages — capabilities, config templates, and host requirements
+# Packages — the versioned tier
 
-An **OATS distribution package** is the acquire, update, and review unit above
-capabilities. It is *transport*, not the installed entity. A package is one
-`oats-package.json` at a package root that declares one or more **capabilities**
-and, optionally, one or more reference **config templates**.
+A **package** is a place to fetch capabilities from *with a version attached*.
+It is one of the two kinds of capability source in the
+[workspace model](workspaces.md); the other — a member repo — is never
+versioned. Nothing is installed: a package is resolved to an exact commit by
+`oats sync`, recorded in `oats-lock.json`, approved once per version, and
+**copied whole into each instance at spawn** (`<home>/.oats/modules/<cap>/`).
 
-The [official marketplace policy](official-marketplace.md) explains how packages
-join the reviewed catalog and how entries are updated or removed. Discoverable,
-installed and approved are separate states; a listing never grants executable trust.
+Ground truth: [`oats-package.schema.json`](oats-package.schema.json) (the
+package manifest), [`oats-lock-v3.schema.json`](oats-lock-v3.schema.json) (the
+lock), and the module contract
+[design/2026-09-23-workspace-module-contracts.md §4](design/2026-09-23-workspace-module-contracts.md).
 
-Acquisition stages the package in a temporary transaction directory, validates
-the whole selected payload, **materializes each declared capability** into
-`.agents/capabilities/installed/<id>/`, writes the exact lock, and discards the
-staging directory. There is no persistent package store. The engine side
-(acquisition, materialization, lock, per-capability trust) has its own contract
-in [`design/package-engine-contract.md`](design/package-engine-contract.md);
-this document covers the config side — adopting templates, whole-workspace
-reconciliation, and consented host-requirement installs.
+## What a package is
 
-A Git repository **contains** a package rather than being one. Which directory
-holds it is part of the source contract:
+A Git repository **contains** a package at `oats-package/`:
+
+```
+<repo>/
+└── oats-package/
+    ├── oats-package.json                # { "package": "acme.tools", "version": "0.4.0", "capabilities": ["capabilities/acme-lint", "capabilities/acme-deploy"] }
+    └── capabilities/
+        ├── acme-lint/oats.json          # ordinary capability manifests (docs/capabilities.md)
+        └── acme-deploy/
+            ├── oats.json
+            └── bin/acme-deploy.mjs      # an executable → approved once per version
+```
+
+`oats-package.json` must declare `package` and `capabilities` (a list of
+directories relative to the package root, each holding an `oats.json`). A
+directory entry need not equal the capability's name
+(`capabilities/oats-okf` → capability `oats.okf`). A package declaring one
+capability name twice, a listed directory without a manifest, or a manifest
+without `capability` is `E_PACKAGE_MANIFEST`. Catalog entries may name another
+`path` than `oats-package`; a `git:` ref always reads `oats-package/`.
+
+## Declaring packages — two forms, in one place
+
+The workspace file's `packages:` map is the **only** list of versions in the
+whole organisation:
+
+```yaml
+packages:
+  oats.framework: v1.1.3                              # bare version → the official catalog
+  oats.okf: v2.1.3
+  acme.tools: git:github.com/acme/tools@v0.4.0        # direct ref: git:<repo>@<tag or full OID>
+```
+
+- **Bare version** (`v2.1.3`, `2.1.3`, `1.0.0-rc.1`): the id is looked up in
+  the official catalog — `package-catalog.json` in the `oats` repo, or the file
+  named by `OATS_PACKAGE_CATALOG` — which supplies the repo url, the tag
+  convention (`v2.1.3` or `oats-framework/v1.1.3`) and the payload path. An id
+  the catalog does not know is `E_PACKAGE_MISSING` ("use `git:<repo>@<ref>` for
+  a package outside the catalog"). The catalog is the reviewed marketplace
+  ([official-marketplace.md](official-marketplace.md)) and the only way a
+  package becomes pinnable *by id*.
+- **`git:<repo>@<ref>`**: `<repo>` is any repo ref the kernel understands
+  (`github.com/org/repo`, `https://…`, `git@host:…`, `/abs/bare.git`,
+  `file:///…`); `<ref>` is a tag name or a full 40-hex commit. The package is
+  read at `oats-package/`.
+
+There is no third form; `lib/packages.mjs#classifyPackageValue` is the one
+grammar, used by workspace validation and by `sync`. A `<ref>` (or catalog ref)
+that resolves to a **branch** is refused: `E_PACKAGE_INTEGRITY { why: "branch" }`
+— versions are immutable.
+
+Souls never name versions. A soul says `acme-deploy: { from: package }`; which
+package provides `acme-deploy`, and at which version, is the workspace's
+decision recorded in the lock.
+
+## `oats sync` — the one command for the common path
+
+```
+$ oats sync
+workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
+members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   tools ✓↔ (@ 47f4b816)   billing ✗ (no-backlink)
+packages   acme.tools 0.4.0 ✓ (approval needed)   oats.framework 1.1.3 ✓ (approved)   oats.okf 2.1.3 ✓ (approved)
+changed    acme.tools  — → 0.4.0 (@ 47f4b816)
+souls      7 discovered (6 members, 1 external, 0 disabled here) · 1 private (platform-reviewer, platform only)
+teams      engineering 4 souls, 3 capabilities · global 2 souls, 2 capabilities · unassigned 1 soul
+
+acme.tools 0.4.0 @ 47f4b816 needs executable approval (2 executables, digest sha256-7923…):
+  acme-deploy: command apply → bin/acme-deploy.mjs
+  acme-deploy: command plan → bin/acme-deploy.mjs
+approve acme.tools 0.4.0? [y/N]
+```
+
+`sync` (run from the deployment — where `oats-local.yaml` is, or `--dir`):
+
+1. discovers the workspace over the remotes and confirms every member;
+2. resolves each `packages:` entry to a commit (`observeRemote`), reads its
+   manifests, computes the **integrity** (content digest of the package tree)
+   and records `url`, `path`, `version`, `commit`, `integrity`, `capabilities`;
+3. for an entry already locked at the same version/source/path: the commit must
+   be unchanged (else `E_PACKAGE_INTEGRITY` — "the tag moved; a version string
+   must change when its content does"), the integrity must match, and a
+   recorded approval must still describe the package's executables (else
+   `E_PACKAGE_UNAPPROVED` — approve again);
+4. for every unapproved entry, prints the exact executables (every `commands.*`
+   target and every `hooks.*.command` target of every capability manifest —
+   hooks run unattended at spawn/retire) and asks **once** on a terminal;
+5. writes `oats-lock.json` and reports the diff. Entries dropped from
+   `packages:` are dropped from the lock.
+
+Exit status `2` means the lock is written but approvals are pending
+(non-interactive, or declined). Spawns of souls using an unapproved package are
+refused (`E_PACKAGE_UNAPPROVED`) until `oats sync` is run in a terminal and the
+approval given. `--json` emits the `syncApi: 1` envelope documented in
+[desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
+
+## `oats package add | remove`
 
 ```bash
-oats install git:github.com/org/repo@v1.0.0            # → repo's oats-package/  (the DEFAULT)
-oats install git:github.com/org/repo@v1.0.0#dist/oats   # → repo's dist/oats/
-oats install git:github.com/org/repo@v1.0.0#.          # → the repository ROOT
-oats install /repo/custom-root                         # local: that EXACT directory
+oats package add oats.aweb v1.11.2                         # a catalog version
+oats package add acme.tools git:github.com/acme/tools@v0.4.0
+oats package remove acme.tools
 ```
 
-Official examples, scaffolds, and conventions use `oats-package/`. Catalog
-entries carry their own `path`. Local paths take no fragment and never apply the
-default. Only the selected subtree is installed and hashed, so repository docs,
-CI configuration, owner souls, and sibling packages stay outside the package's
-payload and integrity. One repository may ship several packages at different
-paths. The lock pins the selected root in its own `path` field, and only an
-explicit `oats update <package>` may move it. A catalog lock with an explicit
-selector (`catalog:oats.aweb@v1.8.0`) keeps that selector on a plain update;
-to advance it to another published ref, give the spec or `--to`:
-`oats update oats.aweb oats.aweb@v1.10.1` or `oats update oats.aweb --to v1.10.1`
-(same transactional path, approvals invalidated, then `oats trust`). See
-[`design/package-engine-contract.md` §1.1](design/package-engine-contract.md).
+Both edit `packages:` in `oats-workspace.yaml` **when the file is tracked by
+the Git checkout the command runs in** (the workspace host repo); the edit is
+validated against the full workspace schema before it is written, and the
+receipt tells you to commit and `oats sync`. Anywhere else — a deployment folder,
+a member clone — the command prints the line to add (`--json`: `edited: false`,
+`line`) because the workspace file is shared through Git, not through this
+machine. Nothing network-bound happens in `package add`; `sync` resolves.
 
-Ground truth for the contract: [`oats-package.schema.json`](oats-package.schema.json),
-[`oats-lock.schema.json`](oats-lock.schema.json), and
-[`design/package-engine-contract.md`](design/package-engine-contract.md).
+## Lock v3
 
-## Package is transport; capability is the installed entity
-
-Installing a package materializes **every** capability it exports. Each installed
-capability is a self-contained, independently hashable directory at
-`.agents/capabilities/installed/<capability-id>/`, containing that capability's
-own `oats.json`, skills, injections, commands, hooks, and any runtime closure.
-That directory is where you inspect installed behavior, and it is the only thing
-executable trust binds to.
-
-Every package must export at least one capability. Config-only and empty
-packages are rejected. A capability ID is unique at a scope, so two packages may
-not both supply the same capability there.
-
-```text
-<scope>/
-  oats-config.yaml                                # zero or one active config
-  oats-lock.json                                  # committed provenance
-  .agents/
-    capabilities/
-      owned/<capability-id>/                     # authored source; committed
-      installed/<capability-id>/                 # materialized artifact; gitignored
-    config-templates/
-      adopted/<package-id>/<template-name>/
-        oats-config.yaml                          # the exact adopted base; commit-safe
-        adoption.json                            # source/version/commit/path/hash
-```
-
-At a Git-backed scope, OATS keeps `.agents/capabilities/.gitignore` ignoring only
-`installed/`. Authored `owned/` capabilities and everything under
-`.agents/config-templates/adopted/` are meant to be reviewed and committed, so
-they are never ignored. Non-Git scopes use the same layout without pretending
-Git owns their durability.
-
-## Package config templates (`oats init --package`)
-
-A **config template** is a complete reference `oats-config.yaml` a package ships,
-named in `oats-package.json` under `configTemplates`. It is a recommended
-starting point, not installed policy. Adopting one is explicit and always
-separate from installing capabilities:
-
-```bash
-oats init --package example.engineering                 # official catalog id (latest)
-oats init --package example.engineering@1.2.0           # catalog id + pinned selector
-oats init --package ../engineering-oats --config minimal # local path + named template
-oats init --package https://example.invalid/pkg.git     # git URL (default branch)
-```
-
-`oats install <package>` never adopts a template — it materializes capabilities
-and reports available templates as optional follow-ups. Only `oats init --package`
-(and the guided `oats config adopt`) adopt one.
-
-New packages ship templates under a `config-templates/` directory and name them
-with the manifest's `configTemplates` map. Each package must also give every
-capability a dedicated self-contained root. The legacy `configs` manifest
-spelling and a `.` (package-root) capability root stay readable only so
-already-published tags remain consumable — new authoring never emits them.
-
-Behavior:
-
-- **Preview and validation first.** The template must be valid against the
-  config schema. Every `from: installed` capability it references must be
-  supplied by the package or its dependency closure. Layer bindings must agree
-  with the capability manifests. Agent types must be syntactically valid. No
-  path — injection overrides, work-mode setup scripts — may escape the target
-  scope. A failing template is never written, and the scope is left untouched.
-- **Default selection.** A template marked `"default": true` is chosen when
-  `--config` is omitted. A single template is chosen implicitly. Several
-  unmarked templates require `--config <name>`, and refusing to guess is the
-  point.
-- **Overwrite refusal.** `oats init --package` refuses when an `oats-config.yaml`
-  already exists at the scope. Use `oats config adopt` to switch an existing
-  scope to another template.
-- **The adopted base is recorded.** Adoption writes the exact template as a
-  commit-safe base under `.agents/config-templates/adopted/<package>/<template>/`,
-  alongside an `adoption.json` recording source, version, commit, path, and hash.
-  Commit it — `oats config diff` and `oats config sync` compare against it. For a
-  local `path:` source, `adoption.json` records `source: null` with
-  `localSource: true`, so no absolute machine path leaks into the committed
-  metadata; the exact source stays only in the authoritative lock.
-
-### Your config is yours (adopter sovereignty)
-
-The adopted config is an **ordinary scoped config**. It is not live inheritance
-and not ambient package policy. `oats use`, `oats type`, `oats inject eject`, and
-hand edits keep their meaning, and package updates never rewrite it or the
-adopted base. Every capability an installed package exports stays individually
-addressable, so you may
-
-- **retarget** a capability from global to an agent type or soul
-  (`oats use example.review --type reviewers`);
-- **disable** something the template enabled
-  (`oats use example.review --global --disable`, or `knowledge: none` for a
-  layer);
-- **re-set settings** per family (`oats use example.review --soul dev
-  --settings depth=high`);
-- **replace** an exclusive-layer provider with another capability; and
-- **override from a nested repository** — a closer repo's `oats-config.yaml`
-  wins per the normal cascade:
-
-  ```yaml
-  # member-repo/oats-config.yaml — this repo opts out of the workspace default
-  name: member
-  capabilities:
-    layers:
-      knowledge: none
-  ```
-
-Nothing a package ships is mandatory. Every copied setting is fully locally
-editable, and the resolved local config is always authoritative.
-
-### Guided template sync (`oats config diff | sync | adopt`)
-
-Your config and a package's template drift as you edit locally and as the
-package updates. Three commands manage that, and all three share one three-way
-comparison — the recorded **adopted base**, your current local
-`oats-config.yaml`, and the selected template read from the currently locked
-package.
-
-```bash
-oats config diff                          # report only; nothing is written
-oats config sync                          # apply upstream changes; keep local edits
-oats config sync --accept <id>=local      # resolve one conflict region in favor of local
-oats config sync --accept <id>=package    # resolve one conflict region in favor of the template
-oats config sync --reset --yes            # discard local changes; take the template verbatim
-oats config adopt other.package --config default   # switch to a different base
-```
-
-- **`oats config diff`** reports how your config, the adopted base, and the
-  package's current template differ. It classifies each region as
-  upstream-only, local-only, or a conflict, and writes nothing.
-- **`oats config sync`** applies upstream-only changes and keeps local-only
-  edits. It presents the complete plan before touching anything, preserves the
-  untouched bytes, comments, order, and formatting of your file, and advances
-  the adopted base only after a successful write. A recoverable `.bak` backup
-  survives the run.
-- **Conflicts require an explicit choice.** A region changed both locally and
-  upstream is a conflict. `oats config sync` never picks a side for you.
-  Interactively it prompts per region. Noninteractively (or with `--json`) it
-  fails with `E_SYNC_AMBIGUOUS` unless you pass `--accept <regionId>=local` or
-  `--accept <regionId>=package` for each one.
-- **`oats config sync --reset`** is the exact-template replacement path. It
-  previews every local change region it will discard, backs up the current
-  config, then replaces both the config and the adopted-base metadata. It
-  demands strong confirmation interactively, and `--yes` to accept the loss
-  noninteractively.
-- **`oats config adopt <package> --config <name>`** switches the one local config
-  to a different base. It rebases your config against the new template rather
-  than creating a second config, and exactly one adopted base remains afterward.
-
-## Workspace reconciliation (bare `oats install`)
-
-At a config scope that declares `team:`, bare `oats install` reconciles the whole
-workspace instead of only the ancestor chain:
-
-1. prints the chosen boundary **before any network or host work**;
-2. restores the boundary scope's locked graph;
-3. discovers descendant scopes containing `oats-config.yaml` or `oats-lock.json`,
-   in deterministic path order, pruning `.git`, generated stores (`.agents/`),
-   dependency/vendor directories (`node_modules`, `vendor`, virtualenvs), agent
-   instances/worktrees, `local-agents/`, **package payload** (below), and
-   **nested team boundaries** (each is its own reconciliation unit);
-4. restores each descendant scope once;
-5. validates that every config-referenced installed capability is supplied by a
-   visible locked package (or capability lock); and
-6. aggregates missing requirements and failures **by scope**.
-
-**Package payload is never a scope.** A directory holding an `oats-package.json`
-is a package root, and everything beneath it is content the package *exports* —
-including the `configTemplates` files under `config-templates/`. Those templates
-bind layers to capabilities the adopting deployment has not installed yet, so
-reconciling one as a live scope would report phantom "supplied by no visible
-locked package" failures for the whole team. Discovery therefore excludes any
-candidate whose containing **ancestor** directory carries an `oats-package.json`,
-whatever the payload root is named — templates are never reconciled, validated,
-or acquired. The rule is the manifest, not the path: a repository that ships a
-package *and* is itself a deployment scope (its own `oats-config.yaml` at the
-root, with the manifest in a subdirectory) stays a scope exactly as before.
-
-At a non-team scope, bare `oats install` keeps current-chain behavior. Pass
-`--recursive` to request descendant reconciliation outside a team boundary — the
-boundary is still printed first. OATS never scans downward from the laptop/home
-config by default.
-
-## Host requirements — a separate consent gate
-
-A capability `requires` entry may declare structured, platform-aware install
-methods (the legacy `install: "https://…"` docs URL still works):
+`oats-lock.json` lives beside `oats-local.yaml`. Two operators who synced the
+same workspace commit and approved the same versions hold identical locks.
 
 ```json
 {
-  "command": "example-cli",
-  "why": "send and receive team messages",
-  "install": {
-    "docs": "https://example.invalid/install",
-    "methods": [
-      { "platform": "darwin", "manager": "npm-global", "package": "@example/cli@1.2.3" }
-    ]
-  }
-}
-```
-
-Rules (all enforced):
-
-- **Allowlisted managers only**: `npm-global` and `brew`
-  (download-with-checksum is declared but not implemented yet). Recipes are
-  data — argv arrays, never shell snippets, no sudo, no shell metacharacters, no
-  authentication.
-- **Informed, per-requirement consent.** Interactive `oats install` shows the
-  exact command, source, version, and whether it changes user- or machine-level
-  state, then asks per requirement. A plan may take more than one command — a
-  runtime package can need its source registered first — so both the human and
-  `--json` renderings carry `steps`, the ordered argv sequence that will run,
-  alongside `argv` (its final command). What you consent to is the whole
-  sequence. Nothing runs that the plan did not show.
-- **Aggregation is scoped**: only capabilities *activated somewhere in the
-  reconciled scopes* are considered, deduplicated by required command, and the
-  report names which capabilities requested each command.
-- **Noninteractive runs never install by default.** Automation names each
-  accepted requirement: `oats install --accept-requirement example-cli`.
-  `--no-requirements` restores packages only (CI). A **consented** install that
-  fails (manager error, or the command still absent from PATH) makes
-  `oats install` exit nonzero so automation can detect it. Unaccepted or skipped
-  requirements stay non-fatal.
-- **PATH verification** runs after each install. A tool that does not land on
-  PATH is reported honestly.
-- **Skipping is safe**: `oats doctor` keeps an actionable warning (the consent
-  command to run) until the command is on PATH.
-- **Trust and requirement consent are distinct gates.** Installing a binary
-  neither activates nor approves any capability, and capability trust never
-  authorizes host installs.
-
-When no safe recipe matches the host, OATS prints the documented install URL.
-
-## Lock, trust, and restore
-
-The scope's `oats-lock.json` uses `lockfileVersion: 2` and records both levels of
-the model in separate top-level maps:
-
-```json
-{
-  "lockfileVersion": 2,
+  "lockfileVersion": 3,
   "packages": {
-    "example.engineering": {
-      "source": "git:https://example.invalid/engineering.git@v3.0.0",
-      "version": "3.0.0",
-      "commit": "0123456789abcdef0123456789abcdef01234567",
+    "oats.okf": {
+      "source": "catalog:oats.okf",
+      "url": "https://github.com/awebai/oats-okf.git",
       "path": "oats-package",
-      "integrity": "sha256-…",
-      "dependencies": []
-    }
-  },
-  "capabilities": {
-    "example.review": {
-      "version": "2.1.0",
-      "package": "example.engineering",
-      "path": "capabilities/example-review",
-      "integrity": "sha256-…",
-      "trusted": false
+      "version": "2.1.3",
+      "commit": "b2e16f2ea1555be519db76fda30cd0bea06f8609",
+      "integrity": "sha256-1c34dbe9c1cc3826dbe6ecbafbd9a1e189ed36a74bfb2ba8fb6f46a382e95c2d",
+      "capabilities": ["oats.okf"],
+      "approved": { "executables": "sha256-0d7615fa…", "at": "2026-09-24T09:02:11.000Z" }
+    },
+    "acme.tools": {
+      "source": "git:github.com/acme/tools@v0.4.0",
+      "url": "https://github.com/acme/tools.git",
+      "path": "oats-package",
+      "version": "0.4.0",
+      "commit": "47f4b81660e4cc9701d373088de52462762585a3",
+      "integrity": "sha256-4cd126a7…",
+      "capabilities": ["acme-deploy", "acme-lint"],
+      "approved": null
     }
   }
 }
 ```
 
-- The `packages` map proves **where the bytes came from** — exact source,
-  commit, selected root path, payload integrity, and package-identity
-  dependencies. It does not describe an installed directory, because there is no
-  persistent package store.
-- The `capabilities` map proves **each materialized artifact** — its version,
-  its provider package (a key of the `packages` map), its dedicated root path
-  inside that package, its artifact integrity, and its executable trust.
-- **Trust binds to the capability artifact integrity, never to package
-  identity.** `oats trust <capability>` approves that capability's commands and
-  hooks at exactly its current artifact integrity. Any integrity change,
-  including `oats update`, resets `trusted` to false and forces re-review.
-  Official catalog identity grants no executable trust, and there is no
-  package-level approval.
-- Bare `oats install` fetches the exact locked source, verifies package
-  integrity, re-materializes any missing capability artifact, verifies its
-  individual integrity, and never advances source, version, or commit.
+| field | meaning |
+|---|---|
+| `source` | `catalog:<id>` or `git:<repo key>@<ref>` — how the workspace asked for it |
+| `url` | the repo url the package was read from; travels in the lock so spawn needs no catalog |
+| `path` | the package root inside the repo |
+| `version` | the version string without a leading `v` (a `git:…@<OID>` pin records the OID) |
+| `commit` | full 40-hex OID the version resolved to |
+| `integrity` | `sha256-<hex>` content digest of the package tree at `path` |
+| `capabilities` | the capability names the package provides (sorted) — what `from: package` looks up |
+| `approved` | `{ executables: "sha256-<hex>", at }` — the digest of the approved executables — or `null` |
 
-## Upgrading a 0.18 deployment to the official packages
+A capability provided by **two** locked packages is ambiguous and fails
+closed (`E_PACKAGE_MISSING { ambiguous: [ids] }`): keep one of them in
+`packages:`. A lock that is not v3 (a 0.24 lock, an unreadable file) is
+`E_LOCK_SCHEMA`; it is never auto-repaired — delete it and `oats sync`. Agents
+never hand-edit the lock.
 
-Deployments created before official packages existed hold ordinary
-`oats-config.yaml` files, **v1** `oats-lock.json` files, and acquired capability
-artifacts under `.agents/capabilities/installed/`. Those keep working. A valid
-v1 lock still restores, activates, trusts, and spawns, and installing this
-release migrates nothing on its own.
+## Approval
 
-The upgrade is one explicit, guided command, and it lands directly in the
-revised `lockfileVersion: 2`:
+Member capabilities are trusted by membership; **package executables are
+approved once per version**, and every instance that materializes that version
+inherits the approval. What is approved is a digest over the bytes of every
+executable a manifest can make the kernel run — `commands.*` targets and
+`hooks.*.command` targets — in canonical order; a hook object without
+`command` is `E_PACKAGE_MANIFEST`, never an invisible no-op. Skills, injects
+and other files are covered by `integrity`, not by the approval.
 
-```bash
-oats migrate --official --recursive --dry-run --dir <team-root>   # plan first
-oats migrate --official --recursive --dir <team-root>             # apply
+The approval lives next to the commit it approved. A new version starts
+unapproved; a moved tag fails integrity and asks again; an approval whose digest
+no longer matches the tree is refused. `oats spawn` re-checks `approved` on the
+way to `from: package`: reaching materialization means approved.
+
+## Materialization from a package
+
+At spawn a `from: package` module is fetched at the lock's commit from the
+lock's `url`, at the manifest-listed directory (`oats-package.json#capabilities[]`
+entry), into `<home>/.oats/modules/<cap>/`; the copy's digest is verified
+against what the fetch reported; skills are copied to
+`<home>/.agents/skills/<cap>/<skill>/`. `instance.json.modules.<cap>.from` is
+`{ kind: "package", package, version, commit, integrity, repoKey }`. Bumping
+`packages:` and syncing affects **only new spawns**; `oats status` shows a
+running instance's package module as `moved` once the lock points elsewhere.
+
+## Compatibility floors
+
+A soul may state floors on package versions — constraints, not sources:
+
+```yaml
+compatibility:
+  oats.okf: ">=2.1"
 ```
 
-- **Scope discovery** is deterministic and covers every *visible* lock-owning
-  scope: the explicit scope's ancestor chain (so an outer repo/laptop lock the
-  deployment actually reads is migrated too), the team boundary, and descendant
-  config/lock scopes found with reconciliation's pruning (nested team boundaries
-  stay self-owned). Scopes are planned and applied in path order, ancestors
-  first. Without `--recursive` only the named scope is migrated.
-- **Plan first, always.** The complete per-scope plan is printed (and available
-  as stable JSON) before anything is applied. `--dry-run` stops after it.
-- **Which package supplies which capability is catalog data**, never code. The
-  catalog maps identity by default (capability `oats.okf` → package `oats.okf`)
-  and carries explicit aliases for capabilities a package exports under another
-  identity (`oats.review` → package `oats.dev`). See the catalog shape below.
-- **Config files are not rewritten.** Packages export the same capability IDs,
-  so activation, layer bindings, targets, settings, exclusions, and injection
-  overrides remain valid byte-for-byte.
-- **Held, never half-converted.** If any official capability cannot map, the
-  whole scope stays byte-identical v1 and the run is nonzero. A `--dry-run`
-  reports the same blocked status, so readiness cannot be mistaken for success.
-- **Custom entries block a mixed guided scope.** `git:`/`path:`/unknown v1
-  sources are never acquired by `--official`. A scope containing only those
-  entries is skipped and reports their IDs under `retained`; a scope mixing them
-  with official capabilities is refused before any write. Plain `oats migrate`
-  can convert custom sources only when every entry in the scope maps to a
-  package. There is no residue container.
-- **One package, several capabilities.** When catalog aliases map more than one
-  legacy capability onto the same package, all of them convert together and the
-  package is acquired once.
-- **Per scope transactional.** Each scope acquires its package closure, writes
-  a fresh revised v2 lock, and only then removes the superseded v1 artifacts. A
-  failing scope is rolled back byte-identically. Other scopes keep their
-  (truthfully reported) result, and the aggregate exit is nonzero.
-- **Trust is re-earned, never transferred.** A capability's materialized
-  integrity is not its v1 artifact's integrity, so approvals do not carry over.
-  The run prints the exact `oats trust <capability> --dir <scope>` commands, then
-  the bare `oats install --dir <scope>` pass (already-installed host requirements
-  verify and are not reinstalled; anything missing gets its
-  `oats install --accept-requirement <cmd>` consent command).
+Checked at resolution against the locked version (`E_COMPATIBILITY`,
+naming capability, package, version and range). A package pinned by OID has no
+version to check (`why: "unversioned"`): pin a tagged version.
 
-Rerunning the command after a successful migration changes nothing.
+## Publishing a package from a member repo
 
-### The transitional v2 lock is not migrated
+A repo can be a **member** of the workspace **and** publish a package; the two
+roles never collapse (see [workspaces.md](workspaces.md#member-tier-vs-package-tier--the-non-collapse-rule)):
 
-An earlier, unreleased shape of `lockfileVersion: 2` stored capability lists and
-trust on the package rows and used a persistent `.agents/packages/installed/`
-store. That transitional shape receives no product migration path. The reader
-rejects it centrally as `invalid-lock` with actionable guidance. It is recreated
-by a fresh acquisition, never converted or partially interpreted. There is no
-`lockfileVersion: 3`. Because the transitional contract had no external
-adoption, the founder chose to replace it in place rather than carry a migration
-for it.
+1. Put the package under `oats-package/` with its `oats-package.json` and
+   capability directories. Everything under `capabilities/` at the repo root
+   stays member-tier (latest state, for people working *on* the package —
+   typically a `<name>-dev` capability); everything under `oats-package/` is
+   package-tier.
+2. Add a member soul that is the expert in the package (`souls/<name>-expert/`),
+   ordinary and discoverable, the natural owner of the package's PRs. It eats
+   its own published food: `acme-lint: { from: package }` at the pinned version,
+   plus `acme-tools-dev: { from: here }`.
+3. Tag a release (`v0.4.0`). Tags are immutable: a new content needs a new tag.
+4. Consumers pin it: `oats package add acme.tools git:github.com/acme/tools@v0.4.0`
+   → commit → `oats sync` → approve once. Discovery shows the member row with
+   `publishes: { package: "acme.tools", version: "0.4.0" }`.
+5. To become pinnable by id, open a PR adding the package to
+   `package-catalog.json` in the `oats` repo ([official-marketplace.md](official-marketplace.md)).
 
-### Catalog shape
+A soul that names one of the package's capabilities with
+`from: github.com/acme/tools` fails: `E_CAPABILITY_MISSING` with the hint
+`provided by package acme.tools; use from: package`.
 
-The official catalog is data (`package-catalog.json`, or the file named by
-`OATS_PACKAGE_CATALOG`). The v0.23.1 integration selects these already-published
-sources; installing a kernel does not advance existing package locks:
+## Catalog shape
 
 ```json
 {
+  "policy": "docs/official-marketplace.md",
   "packages": {
-    "oats.okf": { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.0.0", "path": "oats-package" },
-    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.1.3", "path": "oats-package" },
-    "oats.dev": { "url": "https://github.com/awebai/oats-dev.git", "ref": "v1.0.0", "path": "oats-package" }
-  },
-  "capabilities": { "oats.review": "oats.dev" }
+    "oats.okf":       { "url": "https://github.com/awebai/oats-okf.git", "ref": "v2.1.3", "path": "oats-package" },
+    "oats.framework": { "url": "https://github.com/awebai/oats.git", "ref": "oats-framework/v1.1.3", "path": "oats-package" }
+  }
 }
 ```
 
-`packages` is identity and discovery only — resolving through it never advances
-a lock and never grants executable trust. The released kernel bundles the
-official awebai entries. Once a short id appears there, `oats install <id>`
-prefers the distribution package over the legacy bundled capability marketplace.
-Existing v1 locks and artifacts remain supported until you run guided migration.
-`capabilities` is the legacy-capability → package alias map the guided migration
-reads; identity mappings need no entry. An alias value may also be spelled
-`{ "package": "<id>" }`.
+`ref` carries the tag convention: a workspace's `oats.framework: v1.2.0`
+resolves to tag `oats-framework/v1.2.0`. Resolving through the catalog never
+grants approval and never advances a lock by itself — `oats sync` does, and
+says so.
 
-### OKF v2 and optional theory distribution
+## Removed verbs
 
-The standalone OKF package exports only `oats-package/capabilities/oats-okf/`.
-Use its catalog Git payload after [release gates](release-notes/v0.23.1.md) pass.
-The framework's bundled npm mirror is not a self-contained distribution:
-npm drops the source worker soul's `CLAUDE.md -> AGENTS.md`. It must not be
-advertised as a complete local package or repaired after acquisition to evade
-integrity checks. Git transport preserves the canonical source alias.
-
-The `oats.framework` distribution package is a separate Git payload in this
-repository's `oats-package/`, excluded from the kernel npm tarball. The catalog
-entry selects the published `oats-framework/v1.1.3` tag, which exports three
-capabilities: `oats.core` (day-to-day operation: `oats-operate`, `oats-souls`
-and the "you run on OATS" briefing — declared explicitly on every soul by
-default at creation and removable), `oats.setup` (OATS Soul Setup: `oats-config`,
-`oats-packages`, `oats-workspace-setup`) and the optional `oats.knowledge-theory`
-(authoring skill and `knowledge-theory-expert`). Acquire it with
-`oats install oats.framework`; the capability ids also resolve through the
-catalog aliases. Acquiring it does not activate anything, bind a knowledge
-layer or add a runtime judge.
-
-Updating OKF v1 to v2 is a breaking capability change. Preserve existing
-knowledge and source state/cursors, explicitly bind/provision external owners,
-accept provider delivery and perform deliberate cutover. Kernel package/lock
-migration does none of this. See [knowledge migration](knowledge-migration.md).
-
-## Doctor
-
-`oats doctor` reports, in addition to its capability diagnostics:
-
-- **Distribution packages** visible in the lock (`packages:` in
-  `oats-lock.json`), with source and the capabilities each supplies;
-- **adopted config templates** in the chain — the package and template each
-  scope adopted, its recorded base, and whether local changes have drifted from
-  it;
-- **available-but-unadopted templates** — a locked, installed package exporting
-  config templates that no scope has adopted;
-- **missing host commands** for active capabilities, with the exact consent
-  command when a safe installer exists;
-- **official capability migration** (`officialMigration` in `--json`) when the
-  chain still holds legacy `marketplace:` locks: each capability with the
-  package that supplies it, and either `ready` with the exact
-  `oats migrate --official --recursive --dir <boundary>` command, or `unavailable`
-  with the reason — the catalog has no mapping yet and the legacy capabilities
-  remain supported.
-
-## Engine integration
-
-The package engine (acquisition, capability materialization, revised v2 lock,
-exact restore, capability indexing, per-capability trust — see
-[`design/package-engine-contract.md`](design/package-engine-contract.md) and
-[`design/package-runtime-api.md`](design/package-runtime-api.md)) is merged.
-`oats init --package` acquires and exact-locks the full closure through the
-engine's `acquirePackage` for every source kind (git, catalog, local path), then
-adopts exactly one template. The team-boundary reconciliation above wraps the
-engine's exact-restore primitive (integrity, capability, and runtime-closure
-verification) per scope. Legacy v1 capability locks keep restoring via the
-capability path and are reported as LEGACY with the `oats migrate` pointer.
+`oats install`, `restore`, `init`, `use`, `trust`, `list`, `catalog`, `remove`,
+`migrate`, `config` are gone; each answers `E_UNKNOWN_COMMAND` naming its
+replacement (`details.removed` / `details.replacement` in `--json`). There is
+no installed-capability directory, no config template adoption, no host
+requirement installer. A manifest's `requires` still describes what must exist
+on the host (runtime packages are verified at spawn; host commands are the
+operator's to install). See [rebuild-to-v2.md](rebuild-to-v2.md).

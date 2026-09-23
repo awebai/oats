@@ -185,6 +185,11 @@ async function cliRead(bin, options, io, list) {
     const result = await runJson(bin, list ? ["list", "--dir", options.context, "--json"] : ["catalog", "--json"], {
       cwd: options.localCwd, exec: io.exec, timeout, strictExit: true,
     });
+    // A kernel that does not dispatch this verb answers E_UNKNOWN_COMMAND (the
+    // workspace model v2 removed `list` and `catalog`; older kernels answered the
+    // same for verbs they predate). That is the typed "unsupported read" the
+    // boundary already knows as E_USAGE — never the retry-shaped E_CLI_FAILED.
+    if (!result.ok && result.error?.code === "E_UNKNOWN_COMMAND") return readError("E_USAGE");
     return result.ok ? result : readError(result.error?.code);
   } catch { return readError("E_CLI_FAILED"); }
 }

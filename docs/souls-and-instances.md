@@ -10,127 +10,196 @@ many tasks. Lifetime does not itself change the soul's identity. See the
 [canonical knowledge and specialisation model](knowledge-theory.md) for how skills,
 shared knowledge, working context and state differ.
 
-This operational guide includes the configuration-based soul and lifecycle forms.
-Portable source definitions and captured lifecycle have their own versioned scope;
-see the [0.24 release notes](release-notes/v0.24.0.md) rather than assuming every
-legacy example below applies to a captured instance.
+Souls live in **member repos** of a [workspace](workspaces.md) and are
+discovered over Git; their capabilities are resolved by `from:` and copied whole
+into each instance. This page is the soul's and the instance's anatomy under
+that model.
 
 ## Soul anatomy
 
 A soul is durable and committed. It is the part you review, improve, and keep.
 
 ```text
-<agents-root>/<agent>/soul/
-  soul.yaml            # name, repo, work mode, runtime, model
+<member-repo>/souls/<name>/          # discoverable in the workspace by convention
+  soul.yaml            # schemaVersion 2: name, description, work, team, capabilities, provider payloads
   AGENTS.md            # canonical operating doc
   CLAUDE.md → AGENTS.md
   skills/              # skills specific to this expert
-  okf.json             # OKF v2 owner/owns/reads declaration, when selected
 ```
 
-`soul.yaml` keys:
+(A deployment's own `agents/<name>/soul/` has the same shape; a member soul is
+fetched there at its discovered commit before its first spawn.)
+
+### `soul.yaml` v2
+
+```yaml
+schemaVersion: 2
+name: release-manager                     # must equal the directory name
+description: Cuts, verifies and announces releases.
+work: worktree                            # worktree | checkout | directory | workspace
+team: engineering                         # optional label; else the repo's default (oats-membership.yaml); else unassigned
+private: true                             # optional: not discoverable; spawnable only from this repo
+
+capabilities:                             # WHERE each capability comes from — a location, never a version
+  acme-release-tooling: { from: here }    # here = this soul's own repo
+  acme-warehouse-access: { from: github.com/acme/data }   # a canonical repo key of a confirmed member
+  acme-deploy: { from: package }          # provided by a package pinned in the workspace's packages:
+  acme-house-style: off                   # removes a workspace/team default
+
+knowledge:                                # provider payloads — opaque to the kernel, consumed by the slot's capability
+  owns: release-manager
+  reads: [platform-engineer]
+messaging:
+  channels: [acme-eng]
+tasks: none                               # `none` empties the slot (drops the workspace default)
+
+compatibility:                            # optional floors on PACKAGE versions — constraints, not sources
+  oats.okf: ">=2.1"
+```
 
 | Key | Meaning |
 |---|---|
-| `name` | Agent name. |
-| `kind` | `persistent` for committed agents, `local` for full local souls under `local-agents/` (legacy `tmp` reads as `local`). |
-| `description` | Short role description. |
-| `repo` | Target repo, absolute or relative to the agents root's parent. |
-| `work` | `worktree`, `checkout`, `attached`, `workspace`, or `directory`. |
-| `runtime` | `pi` or `claude` — the harness new instances launch on; a spawn can override with `--runtime`. For `claude`, the binary is `claude` unless a local-only `oats-claude-config` file (closest one walking up from the repo; one line naming the binary, e.g. `claude-personal`) selects another — a personal machine preference for account selection, never committed. With the aweb messaging integration active, claude sessions get the `aweb-channel` plugin wired at spawn for real-time push events. |
-| `model` | Optional default model — a `provider/id[:thinking]` pattern or a comma-separated preference list (`github-copilot/x:high, anthropic/x:high`); at spawn the first entry whose provider/model is available wins (pi models probed via `pi --list-models`). For the `claude` runtime the value is translated to what the claude CLI accepts: `anthropic/<id>[:thinking]` becomes the bare `<id>`, aliases and bare `claude-*` ids pass through, other providers' entries are dropped, and nothing usable falls back to claude's own default. A spawn can override it. |
-| `launch-config` | Optional default launch configuration for new instances (a name declared under `launch-configs:` in the scope's config; see docs/design/launch-configurations.md). `oats spawn --launch-config <name|none>` overrides it; `oats soul set --launch-config <name>` / `--no-launch-config` edit it. |
+| `name`, `description`, `work` | Required. `work` is the work mode below. |
+| `team` | A label declared in the workspace's `teams:`; may add `defaults.byTeam` capabilities. Never gates or restricts. |
+| `private` | `true` keeps the soul out of workspace discovery; its own repo can still spawn it. |
+| `capabilities` | `<cap>: { from: here \| <repo key> \| package }` or `<cap>: off`. Composed over `defaults.<slot>` ⊕ `defaults.capabilities` ⊕ `defaults.byTeam[team]`; the soul wins. |
+| `knowledge` / `messaging` / `tasks` | The slot's provider payload (true of every instance of the soul), or `none`. Merged with `oats-local.yaml` `settings.<cap>` and `spawn --provider <cap>`; the provider's `binding` contract validates the result. |
+| `compatibility` | `<cap>: <semver range>` checked against the locked package version (`E_COMPATIBILITY`). |
 
-A soul is model-agnostic as an artifact. Its files are plain operating docs,
-skills and capability-owned declarations. `model` is only the default choice
-for new instances, not part of the expert's identity.
+Schema: [`soul.schema.json`](soul.schema.json). Not in v2: `kind`, `type`,
+`repo`, `runtime`, `model`, `requires`, `source:`, `stores.inherit`. Model and
+runtime are spawn-time / launch-configuration choices (`--runtime`, `--model`,
+`--launch-config`), not soul identity: a soul is model-agnostic as an artifact.
 
 A soul never runs by itself. It is incarnated as an instance. Editing a soul
-is a code change.
+is a code change, reviewed in its repo.
 
-Core soul artifacts are `AGENTS.md` and `skills/`, plus any declarations the
-selected knowledge integration needs. OKF v2 stores knowledge externally, not
-in a soul bundle; see [knowledge](knowledge.md) for its prepared version scope.
-Future integrations may add expert-specific artifacts such as rule files or
-runtime-specific guidance, while keeping `AGENTS.md` canonical.
+### OATS operational knowledge is a capability
 
-## OATS operational knowledge is a capability
-
-New souls declare `requires.capabilities.oats.core` with a Git source resolved
-from the official package catalog. `oats create` and new local-soul scaffolds
-write that requirement; `--no-oats-core` explicitly omits it. If the catalog has
-no published revision yet, creation reports `needs-configuration` (also in JSON
-`notes`) and leaves the requirement absent rather than inventing a source.
-Declaring a capability is not acquiring, activating or approving it: those remain
-normal deployment/preparation steps. The Desktop server currently has no
-soul-creation endpoint; `oats soul set` edits existing definitions only.
-
-The dependency is visible and removable in `soul.yaml`. Updating an existing
-local soul preserves its requirements—including a deliberate removal—rather
-than applying the creation default again. For the one-release transition,
-a declaration of **either `oats.core` or `oats.setup`** suppresses the entire
-legacy kernel operational skill list (`oats`, `oats-config`, `oats-packages`)
-and `kernel:oats` injection. This also prevents setup's moved skill names from
-colliding with the kernel copies; no skill override is needed for this case.
-Without either declaration, legacy composition is unchanged.
-`oats doctor --soul <name>` reports an absent `oats.core` as an informational
-deprecation notice, not an error. Instance-boundary, work-mode and
-configuration-declared briefings remain kernel-owned. Existing captured records
-keep their retained resources; this does not migrate them or retire the kernel
-skill files yet.
+An agent's knowledge of OATS itself — status, spawn, retire, finding other
+souls — is ordinary capability content: **`oats.core`** (package
+`oats.framework`). Workspaces give it to every soul through
+`defaults.capabilities: { oats.core: { from: package } }`; a soul may say
+`oats.core: off`. **`oats.setup`** (same package) carries the whole-architecture
+knowledge an onboarding expert needs. Neither is kernel magic; the kernel still
+composes its own instance-boundary and work-mode briefings.
 
 ## Instance anatomy
 
 An instance has a lifecycle, but need not be short-lived. It is the identity of
-one instantiated soul while its assignment is alive. Supported session continuations,
-compactions and restarts can preserve that continuity. Model or harness changes must
-follow the selected execution profile; they are not permission to reinterpret a
-captured recipe. Retirement should account for valuable context and unfinished work,
-not assume an experienced instance is cheap to replace.
+one instantiated soul while its assignment is alive. Supported session
+continuations, compactions and restarts can preserve that continuity.
+Retirement should account for valuable context and unfinished work, not assume
+an experienced instance is cheap to replace.
 
 An instance has a home directory, a task, and a worktree when the work mode
-needs one. Its runtime setup is composed from the canonical soul plus
-capabilities selected for that soul by the config scopes governing it.
-
-A soul can have as many instances as people need. Instances are transient and
-normally gitignored (`agents/*/instances/`). That matters for large or open
-source repos: the expert souls can travel with the repo, while different
-engineering teams instantiate those souls into their own local agent teams.
-Their instance homes, logs, notes, branches, and messaging identities do not
-collide because they are local runtime state, not shared soul state.
+needs one. Its runtime setup is composed from the canonical soul plus **its own
+full copy** of every capability the soul resolved to:
 
 ```text
-<agents-root>/<agent>/instances/<instance>/
-  soul → <agent>/soul/             # the agent setup for this instance
-  AGENTS.md                        # generated: canonical soul + selected blocks
+<agents-root>/<soul>/instances/<instance>/
+  soul → ../../soul                # the soul, for reference (read-only)
+  AGENTS.md                        # generated: soul AGENTS.md + kernel/work-mode blocks + each module's inject
   CLAUDE.md → AGENTS.md
-  .agents/skills/                  # exact soul + active capability set
+  .agents/skills/                  # canonical skill tree — soul skills + <capability>/<skill>/ full copies
+    <capability>/<skill>/SKILL.md
   .claude/skills → ../.agents/skills
-  work/                            # worktree, checkout symlink, or attached tree
+  .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
+  work/                            # worktree, checkout symlink, attached tree, or private directory
   TASK.md                          # briefing and task
-  instance.json                    # repo/branch, spawn lineage, capabilities, skills, instructions, trust
-  STATE.md, log.md, notes/         # optional, from the knowledge integration
+  instance.json                    # provenance (below)
+  STATE.md, log.md, notes/         # optional, from the knowledge capability
 ```
 
-Why durable expertise must be incarnation-invariant while task state is local
-to this branch and moment is covered in [knowledge theory](knowledge-theory.md).
-This distinction does not require knowledge bytes to live in the soul.
+Instances are transient and normally gitignored (`agents/*/instances/`). Expert
+souls travel with the repo; different teams instantiate them into their own
+local agent teams without collisions, because instance homes, logs, notes,
+branches and messaging identities are local runtime state.
 
-The kernel does not define memory files. With `oats.okf` selected under
-`capabilities.layers.knowledge`, v2 creates `STATE.md`, `log.md`, `notes/` and an
-immutable external-knowledge snapshot. `knowledge: none` creates none of these;
-it does not erase pre-existing memory.
+### `instance.json` — provenance is recorded, not declared
+
+Besides the classic fields (repo, branch, lineage, launch recipe, composed
+skills and instructions), a workspace spawn records:
+
+```json
+{
+  "modules": {
+    "acme-release-tooling": {
+      "from": { "kind": "member", "repoKey": "github.com/acme/agents", "commit": "3f2a9c1e…" },
+      "commit": "3f2a9c1e…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.118Z"
+    },
+    "oats.okf": {
+      "from": { "kind": "package", "package": "oats.okf", "version": "2.1.3", "commit": "b2e16f2e…", "integrity": "sha256-…", "repoKey": "github.com/awebai/oats-okf" },
+      "commit": "b2e16f2e…", "digest": "sha256-…", "materializedAt": "2026-09-24T10:12:44.201Z"
+    }
+  },
+  "providers": {
+    "oats.okf": { "owns": "release-manager", "reads": ["platform-engineer"], "state-dir": "/Users/ana/.oats/okf" },
+    "acme-release-tooling": {}
+  },
+  "workspace": {
+    "key": "github.com/acme/agents", "commit": "3f2a9c1e…", "resolution": "20ec8ec527311d71d0973086",
+    "soul": { "repoKey": "github.com/acme/agents", "commit": "3f2a9c1e…", "team": "engineering" }
+  }
+}
+```
+
+- `modules.<cap>` — where the copy came from, at which commit, and its content
+  digest. `oats status` compares these with the workspace's current state and
+  shows `moved` / `missing` per module (drift is shown, not prevented).
+- `providers.<cap>` — the merged provider payload the capability was bound with
+  (soul ⊕ machine settings ⊕ `--provider`), so a later inspection can tell
+  which instance holds a retained seat or a one-off state root.
+- `workspace` — the workspace commit observed at spawn, the soul's repo/commit/
+  team, and the **resolution revision** the spawn decision bound.
+
+A running instance never changes under itself: a member moving or a package
+bump affects only new spawns.
+
+### The harness starts normally
+
+OATS is a skill contributor, not a skill sandbox. The harness (pi, Claude Code,
+Codex) starts with cwd = the instance home and its **own** skill discovery
+intact: it sees, nearest first, the instance's `.agents/skills/` (soul skills
+and the copied capability skills), the repo's own `.agents/skills/` once it
+works in `work/`, and whatever the operator keeps at machine level. All three
+are intended. Two *composed* skills with one name is a spawn error naming both
+capabilities (`E_SKILL_DUPLICATE`); a composed skill versus an ambient one is
+the harness's own precedence. The `CLAUDE.md → AGENTS.md` and
+`.claude/skills → ../.agents/skills` aliases are kept. OATS composes
+instructions and pins model/provider settings; it excludes nothing.
 
 ## Lifecycle
 
 ### Spawn
 
-The kernel creates the home, links the soul for reference, resolves capability
-targets, generates instance instructions, materializes the exact local skill
-set, prepares `work/`, runs active capability hooks, writes `TASK.md`, and
-launches a full coding agent session in tmux. The committed soul is unchanged.
-This is not a Claude Code subagent call; it is a normal agent process with its
-own home and tools.
+```bash
+oats spawn release-manager --purpose cut-3.2 --task "…"            # a soul of a confirmed member
+oats spawn release-manager --preview --json                        # decide everything, create nothing
+oats spawn release-manager --provider oats.aweb identity.source=retained:release-seat   # instance-level payload
+```
+
+From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
+discovers the workspace over its remotes and confirms membership → finds the
+soul among the confirmed members (or `external:`; an ambiguous bare name is
+`E_SOUL_AMBIGUOUS` — say `<repo>/<soul>`) → fetches the soul's source into
+`<agents-root>/<soul>/soul/` at its commit → resolves every capability by
+`from:` (member = latest, package = locked + approved) → creates the home →
+**materializes each module whole** into `.oats/modules/` and copies its skills
+into `.agents/skills/` (a transaction: any failure leaves nothing behind) →
+composes `AGENTS.md` → records `modules`/`providers`/`workspace` in
+`instance.json` → prepares `work/` → runs the modules' spawn hooks (from their
+copies) → writes `TASK.md` → launches the harness in tmux. The committed soul is
+unchanged. This is a normal agent process with its own home and tools, not a
+subagent call.
+
+`--preview` reports `modules[]` (`from`, `layer`, `changedSince` the newest
+previous instance of the soul), `team`, the `resolution` revision and the
+decision it would bind; the apply refuses with `E_DECISION_STALE` if a member
+moved in between. `--provider <cap> key=value` (repeatable; dotted keys nest)
+must name a capability the soul resolves (`E_CAPABILITY_MISSING` otherwise) and
+needs a workspace deployment. The full DTOs are in
+[desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
 
 Examples of spawn hooks:
 
@@ -138,12 +207,14 @@ Examples of spawn hooks:
   accepted bases, creates episodic files and an immutable reader view, and
   registers a durable source plus its per-source schedule definition. Missing
   knowledge is an error, not permission to bootstrap an empty substitute.
-- `oats-aweb` mints a messaging identity.
+- `oats.aweb` mints a messaging identity — or, with
+  `--provider oats.aweb identity.source=retained:<seat>`, re-takes a retained
+  one for exactly this instance.
 
 ### Work
 
-The instance works in `./work`. With oats-okf it also keeps `STATE.md` current,
-appends milestones to `log.md`, and captures non-obvious insights in
+The instance works in `./work`. With `oats.okf` it also keeps `STATE.md`
+current, appends milestones to `log.md`, and captures non-obvious insights in
 `notes/`.
 
 It reads accepted external knowledge through `./knowledge/view.json` and
@@ -154,18 +225,13 @@ knowledge until their merge is visible; pending directory publication blocks
 fresh reads rather than exposing partial bytes.
 
 An independent worker judges durable **notes and full record windows**, not only
-notes or a watermark left in the live home. V2 working-agent instructions do not
-require after-commit harvesting. Each source has a command job rooted in durable
-deployment context; the operator may also request `oats okf harvest`. Timer
-installation is explicit, and no-launch sources cannot schedule model launches.
-
+notes or a watermark left in the live home. Each source has a command job rooted
+in durable deployment context; the operator may also request `oats okf harvest`.
 Workers use their own `work: directory`, never the source branch or an attached
 worktree. Validated Git output goes through real PR delivery; non-Git output
-uses recoverable directory publication. Workers leave live notes and soul skills
-untouched. Captured, processed, delivered and accepted are distinct receipts;
-spawning a worker is not successful learning. See [knowledge](knowledge.md) for
-inspection, completion and recovery, and [migration](knowledge-migration.md) for
-preserving v1 bundles and source cursors before owner/source cutover.
+uses recoverable directory publication. Captured, processed, delivered and
+accepted are distinct receipts; spawning a worker is not successful learning.
+See [knowledge](knowledge.md).
 
 ### Spawning and coordinating with other agents
 
@@ -303,10 +369,9 @@ an attached instance never removes the shared tree. The packaged
 
 `work/` is a new instance-owned directory, not a Git repo or a link to a source.
 Use it explicitly for capability workers that need private execution space
-without Git. `repo` (or `--repo`) supplies configuration context only and may be
-an ordinary directory; without it, the deployment scope is used. An
-`oats-config.yaml` below laptop scope supports package-only deployments before
-any local souls exist. No implicit fallback changes the other modes.
+without Git. `repo` (or `--repo`) supplies context only and may be an ordinary
+directory; without it, the deployment directory (where `oats-local.yaml` is) is
+used. No implicit fallback changes the other modes.
 
 `--work-dir` and `--branch` are rejected. Canonical instructions, skill
 composition, provider trust and runtime preflight still apply. No worktree setup
@@ -317,8 +382,8 @@ exchanged for a symlink. Recovery does not replace the worker's delivery protoco
 
 ### `workspace` — cross-repo coordinator
 
-`work/` is a symlink to the **whole workspace** (the team scope declared by
-`team:`, else the workspace-scope config directory) — not a repo. Every
+`work/` is a symlink to the **whole deployment** (the `<name>-workspace/`
+directory holding `oats-local.yaml` and the member clones) — not a repo. Every
 member repo is read-context; the instance's product is coordination:
 routing, analysis, task-writing, messaging, spawning specialists.
 
@@ -337,9 +402,11 @@ Rules:
   worker publishes external knowledge through PRs for every Git base,
   irrespective of the source's work mode or the soul's repository.
 
-Spawning workspace mode requires a declared boundary (a `team:` block or a
-workspace-scope config); the instance records no branch — the workspace is
-not a git tree.
+Spawning workspace mode requires a deployment boundary for `./work`; the
+instance records no branch — the workspace is not a git tree. *(Open thread:
+the kernel still derives this boundary from the classic `team:` scope; binding
+it to the `oats-local.yaml` directory is tracked in
+[design/README.md](design/README.md).)*
 
 ## Agents root
 
