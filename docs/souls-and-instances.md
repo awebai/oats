@@ -176,7 +176,7 @@ instructions and pins model/provider settings; it excludes nothing.
 ```bash
 oats spawn release-manager --purpose cut-3.2 --task "…"            # a soul of a confirmed member
 oats spawn release-manager --preview --json                        # decide everything, create nothing
-oats spawn release-manager --provider oats.aweb identity.source=retained:release-seat   # instance-level payload
+oats spawn release-manager --provider oats.aweb identity.source=/abs/path/to/retained/.aw   # instance-level payload
 ```
 
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
@@ -208,7 +208,7 @@ Examples of spawn hooks:
   registers a durable source plus its per-source schedule definition. Missing
   knowledge is an error, not permission to bootstrap an empty substitute.
 - `oats.aweb` mints a messaging identity — or, with
-  `--provider oats.aweb identity.source=retained:<seat>`, re-takes a retained
+  `--provider oats.aweb identity.source=/abs/path/of/the/.aw/to/retain`, re-takes a retained
   one for exactly this instance.
 
 ### Work

@@ -186,14 +186,22 @@ In 0.24, an instance-specific messaging identity (a retained seat) was pinned in
 **spawn**:
 
 ```bash
-oats spawn release-manager --purpose seat --provider oats.aweb identity.source=retained:release-seat
+oats spawn release-manager --purpose seat --provider oats.aweb identity.source=/abs/path/to/retained/.aw
 ```
 
 `--provider <cap> key=value` is repeatable; dotted keys nest. The payload is
 merged after the soul's `messaging:` and the machine's `settings.oats.aweb`, and
 recorded in `instance.json.providers.oats.aweb`, so exactly one instance holds
-the seat while other instances of the soul mint fresh identities. Consult your
-messaging capability's documentation for the exact key it reads. The Desktop's
+the seat while other instances of the soul mint fresh identities.
+
+**The value is the path itself.** `oats.aweb` reads `identity.source` as the
+absolute path of the `.aw` directory to retain (it must hold `signing.key`); the
+kernel does not resolve symbolic seat names. Because it is an absolute path it is
+a fact about ONE machine, so its other legal home is `oats-local.yaml`
+(`settings.oats.aweb.identity.source: /abs/path`) — never the workspace file
+(absolute paths are refused there, decision 14). Prefer the spawn form: a
+machine-level setting would give the seat to EVERY instance of every messaging
+soul on that machine, and a seat can be held once. The Desktop's
 confirmed apply carries the same map.
 
 ## 9. Spawn, and check drift

@@ -346,7 +346,7 @@ store** — it organises and can supply defaults. The messaging provider's paylo
 |---|---|---|
 | True of every instance of the soul | `soul.yaml` → `knowledge:` / `messaging:` / `tasks:` | `knowledge: { owns: release-manager }` |
 | A fact about this machine | `oats-local.yaml` → `settings.<cap>.<key>` (absolute paths are refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
-| A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=retained:release-seat` |
+| A fact about **this spawn** | `oats spawn … --provider <cap> key=value` (repeatable; dotted keys nest) → `instance.json.providers.<cap>` | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` |
 
 The merged payload is `workspace.messaging` (messaging slot only; its base
 keys ⊕ `byTeam[<soul's team>]`, with `byTeam` itself stripped) ⊕ soul slot
@@ -420,6 +420,13 @@ operator's `oats-local.yaml` may name the repo directly (`workspace: <member
 ref>` — the kernel notices it is a member whose workspace it cannot read and
 falls back to the standalone view — or `standalone: <repo ref>` to ask for
 that view explicitly).
+
+**Executables from public members.** Membership is the trust (decision 2): a
+member capability's hooks and command scripts run on every operator's machine at
+spawn, gated by nothing but the handshake. In a mixed public/private
+organisation keep **souls only** in public members and let executable
+capabilities come from packages (approved per version in the lock) or from
+private members.
 
 **Hosting the workspace file when some members are private.** Everyone who
 can read the workspace file sees the member list. So: a public member never

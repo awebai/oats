@@ -510,7 +510,7 @@ Today's `capabilities.layers.messaging.{capability, from, global, souls, setting
 |---|---|---|
 | True of every instance of the soul | `soul.yaml` → `messaging:` / `knowledge:` | `messaging: { channels: [northwind-eng] }`, `knowledge: { owns: release-manager }` |
 | A fact about this machine | `oats-local.yaml` → `settings.<capability>.<key>` (absolute paths refused in the workspace file) | `settings.oats.okf.state-dir: /Users/ana/.oats/okf` |
-| A fact about **this spawn** | `oats spawn … --provider <cap> key=value` → `instance.json` `providers.<cap>` (the Desktop's confirmed apply carries the same map) | `--provider oats.aweb identity.source=retained:release-seat` — one instance takes the retained seat; other instances of the soul mint fresh |
+| A fact about **this spawn** | `oats spawn … --provider <cap> key=value` → `instance.json` `providers.<cap>` (the Desktop's confirmed apply carries the same map) | `--provider oats.aweb identity.source=/abs/path/to/retained/.aw` — one instance takes the retained seat; other instances of the soul mint fresh |
 
 The provider's `binding` contract (`normalize → bind → check`) runs over the merged payload exactly as today; the provider still enforces its own rules (e.g. a state root outside the work tree).
 

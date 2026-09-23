@@ -307,3 +307,45 @@ Appended, not edited in place; each item names the section it refines. Decision 
 **§6 `oats package remove <id>` (M15).** BOTH branches — the file tracked by the checkout (edited) and untracked/absent (not edited) — answer `E_PACKAGE_MISSING { id, path? }` when `<id>` is not declared in `packages:`. The tracked receipt is `{ action: "remove", id, value: null, previous: <old value>, edited: true, file }`; the untracked receipt is `{ action: "remove", id, value: null, edited: false, file: null, line: null, hint }` — `previous` is absent and `line` is `null` (a removal has no line to add).
 
 **§6 features.** `catalog` is no longer advertised in `oats version --json` `features` (the verb is removed; the official catalog is reached through `packages:` + `sync`, not a command).
+
+## Post-0.25.0 clarifications (team review, 2026-09-23)
+
+**Capability commands outside an instance home (`oats <ns> <cmd>` from the
+deployment).** Inside an instance home the dispatcher resolves the namespace from
+the home's materialized modules (`instance.json.modules` → `<home>/.oats/modules`);
+that shipped in 0.25.0. Outside a home — the operator acts a knowledge layer needs
+before any instance exists (`oats okf init`, base migration) — the intended rule
+is: **resolve exactly as a spawn of `--soul <name>` would** (`prepareInstance` →
+the soul's Resolution), fetch the namespace's capability into the deployment's
+module store `<deployment>/.oats/modules/<cap>@<commit>/` (the same per-commit
+store capability-defined agents use), and dispatch to that copy with the soul's
+merged payload as `OATS_SETTINGS`. Never "the newest instance's copy" (an
+instance is not an authority for the deployment) and never an unlocked cache
+read (the lock's approval is the gate, as for spawn). `--soul` is required when
+the namespace's capability is not a workspace default. **Status: 0.25.x
+follow-up** — 0.25.0 still answers `E_CAPABILITY_INACTIVE` there (the pre-v2
+chain); the interim is to run the module binary directly with `OATS_SETTINGS`
+and `OATS_CLI_BIN`, as the tarball smoke does.
+
+**`work: workspace` is kept.** A coordination soul's `./work` is the deployment
+boundary — the directory holding `oats-local.yaml` (the taught
+`<name>-workspace/`, with member clones beside it) — read-only across member
+clones, no branch recorded. The clone map in `oats-local.yaml` (`clones:`) is
+how such a soul finds a member whose clone is elsewhere. **Status: the
+directory link is the intent; 0.25.0's kernel still derives the boundary from
+the classic `team:` scope (`docs/souls-and-instances.md` open thread) — 0.25.x
+follow-up binds it to the `oats-local.yaml` directory.**
+
+**`identity.source` (oats.aweb) is the absolute path of the `.aw` directory to
+retain**, given per spawn (`--provider oats.aweb identity.source=/abs/.aw`) or
+per machine (`oats-local.yaml settings.oats.aweb.identity.source`); the kernel
+resolves no symbolic seat names. Absolute paths never enter the workspace file
+(decision 14).
+
+**Member capabilities are a code-execution boundary** (decision 2: membership is
+the trust; hooks and scripts of every member's default branch run on every
+operator's machine at spawn). For a mixed public/private organisation the
+recommendation is: **souls only in public members; executable capabilities come
+from packages (approved per version) or from private members.** The onboarding
+skill (Phase E) states this beside the hosting rule (decision 26).
+
