@@ -57,7 +57,7 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     // Phase C (M12): discovery.workspace is null standalone — the text modes and `workspace status` must not crash on it.
     r = oats(["souls", "--dir", dep], { base, env });
     assert.equal(r.status, 0, r.stderr);
-    assert.match(r.stdout, /^souls of workspace standalone:data .*— standalone: the workspace of data cannot be read/m);
+    assert.match(r.stdout, /^souls of workspace standalone:data .*— standalone — the workspace of data cannot be read \(E_REMOTE_UNREADABLE: (auth|not-found)/m);
     assert.match(r.stdout, /data-analyst/);
     r = oats(["capabilities", "--dir", dep], { base, env });
     assert.equal(r.status, 0, r.stderr);

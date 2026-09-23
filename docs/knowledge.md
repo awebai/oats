@@ -66,9 +66,11 @@ packages:
 defaults:
   knowledge: { oats.okf: { from: package } }
 
-# souls/domain-expert/soul.yaml
+# souls/domain-expert/soul.yaml — nothing under knowledge: for oats.okf; the default fills the slot.
+# What the soul owns/reads is souls/domain-expert/okf.json (below), not a soul.yaml payload.
+# A soul-true binding setting is the one thing the payload may carry, e.g.:
 knowledge:
-  owns: domain-expert
+  harvest-runtime: claude
 
 # oats-local.yaml (this machine)
 settings:
@@ -79,11 +81,14 @@ settings:
 
 ```bash
 oats sync                                  # resolves v2.1.3 to a commit, asks executable approval once
-oats spawn domain-expert --preview --json  # the exact oats.okf module (package, version, commit)
+oats spawn domain-expert --preview --json  # the exact oats.okf module (package, version, commit) + settings.oats.okf (the merged payload)
 ```
 
-Pinning activates nothing by itself: the soul's `knowledge:` payload and the
-machine's `settings.oats.okf` must be bindable. The lock stays exact until the
+Pinning activates nothing by itself: the soul's `okf.json` must exist and the
+merged payload (soul `knowledge:` ⊕ `settings.oats.okf` ⊕ `--provider`) must be
+bindable — it may carry **only** the four settings below (`bindings-file`,
+`state-dir`, `harvest-runtime`, `harvest-model`); `owns`/`reads`/`root` on the
+soul payload are refused by 2.1.3, not read. The lock stays exact until the
 workspace bumps `packages.oats.okf`; v1 operators must plan migration before
 that bump. Executable changes come with a new version and a new approval. A
 service worker need not itself fill the knowledge slot (`knowledge: none`).
@@ -129,8 +134,10 @@ directory, not the current working directory:
   source homes/worktrees; keep the bindings file outside state and bases. Local
   Git locators must not be disposable linked worktrees. Directory lock/journal
   artifacts also must not overlap state, sources or another base.
-- Settings are `bindings-file`, `harvest-runtime` (`pi`, `claude`, `codex`,
-  default `pi`), and optional `harvest-model`. Choose an installed, authenticated
+- Settings are `bindings-file`, `state-dir` (both required, absolute host
+  paths), `harvest-runtime` (`pi`, `claude`, `codex`, default `pi`), and
+  optional `harvest-model` — the complete list a 2.1.3 payload may carry.
+  Choose an installed, authenticated
   worker runtime independently of the source; omitted models use that runtime's
   configured default. V1 record-window settings are not v2 settings.
 

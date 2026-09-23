@@ -1948,13 +1948,37 @@ async function lockedExecutablesDigest(id, entry, workspace, catalog, remoteOpti
   return { digest, targets };
 }
 
-/** One yes/no question on the terminal (TTY only; the caller checks). */
+/** One yes/no question on the terminal (TTY only; the caller checks). Ctrl+D / a closed
+ *  stdin at the prompt is "no" (readline rejects the question with AbortError, or simply
+ *  closes without an answer — neither is a crash; both are the operator declining). */
 async function askYesNo(question) {
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = (await rl.question(question)).trim().toLowerCase();
-    return answer === "y" || answer === "yes";
+    const closed = new Promise((resolveClosed) => rl.once("close", () => resolveClosed(null)));
+    const answer = await Promise.race([rl.question(question).catch((e) => { if (e?.code === "ABORT_ERR" || e?.name === "AbortError") return null; throw e; }), closed]);
+    if (answer === null) { process.stderr.write("\n"); return false; }
+    const a = String(answer).trim().toLowerCase();
+    return a === "y" || a === "yes";
   } finally { rl.close(); }
+}
+
+/** `--approve <id>@<version>` (repeatable) → Map<id, version>. Exactly one "@" splits the two;
+ *  the digest is never taken from the operator — it is computed over the locked tree. */
+function approveFlags(bail) {
+  const out = new Map();
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "--approve") continue;
+    const v = args[i + 1];
+    if (v === undefined || v.startsWith("--")) return bail("E_BAD_ARGS", "--approve needs <id>@<version> (the package id and the version exactly as `packages:` / the lock spell them)");
+    const at = v.indexOf("@");
+    const id = at > 0 ? v.slice(0, at) : "";
+    const version = at > 0 ? v.slice(at + 1) : "";
+    if (!id || !version || version.includes("@")) return bail("E_BAD_ARGS", `--approve ${JSON.stringify(v)}: expected <id>@<version>`, { value: v });
+    if (out.has(id) && out.get(id) !== version) return bail("E_BAD_ARGS", `--approve names ${id} twice with different versions (${out.get(id)}, ${version})`, { id, versions: [out.get(id), version] });
+    out.set(id, version);
+    i++;
+  }
+  return out;
 }
 
 /** The body of `oats sync` — shared by `sync` and `onboard` (which onboards, then syncs the same
@@ -1983,6 +2007,16 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   let lock = resolved.lock;
   const approvalNeeded = [];
   const interactive = !JSON_MODE && process.stdin.isTTY && process.stdout.isTTY;
+  // `--approve <id>@<version>`: approve what is THERE — every named pair must be a locked entry
+  // at exactly that version (E_BAD_ARGS otherwise); the digest recorded is the one computed over
+  // the locked tree, never anything the operator typed. Works without a terminal.
+  const approveWanted = approveFlags(bail);
+  for (const [id, version] of approveWanted) {
+    const entry = lock.packages[id];
+    if (!entry) return bail("E_BAD_ARGS", `--approve ${id}@${version}: ${id} is not a package of this ${discovery.standalone === true ? "standalone view" : "workspace"} (locked: ${Object.keys(lock.packages).sort().join(", ") || "none"})`, { id, version, locked: Object.keys(lock.packages).sort() });
+    if (entry.version !== version) return bail("E_BAD_ARGS", `--approve ${id}@${version}: the lock resolves ${id} to version ${entry.version} (@ ${short(entry.commit)}) — approve what is there: --approve ${id}@${entry.version}`, { id, version, locked: entry.version, commit: entry.commit });
+  }
+  const approvedNow = [];
   for (const id of Object.keys(lock.packages)) {
     const entry = lock.packages[id];
     if (entry.approved) continue;
@@ -1992,6 +2026,7 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
       if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details ?? e.provenance);
       throw e;
     }
+    if (approveWanted.has(id)) { lock = approvePackage(lock, id, digest); approvedNow.push({ id, version: entry.version, commit: entry.commit, executables: digest, targets }); continue; }
     if (interactive) {
       console.error(`\n${id} ${entry.version} @ ${short(entry.commit)} needs executable approval (${targets.length} executable${targets.length === 1 ? "" : "s"}, digest ${digest}):`);
       for (const t of targets) console.error(`  ${t}`);
@@ -2002,12 +2037,27 @@ async function performSync(ctx, bail, { onDiscovered } = {}) {
   }
   let lockFile;
   try { lockFile = writeLock(ctx.deploymentDir, lock); } catch (e) { return bail(e.code || "E_LOCK_SCHEMA", e.message, e.details); }
+  // The deployment's instance root: <deployment>/agents/ (findRoot's marker). A hand-written
+  // oats-local.yaml + sync is a complete deployment; spawn must not answer E_NO_DEPLOYMENT after it.
+  try { mkdirSync(join(ctx.deploymentDir, "agents"), { recursive: true }); } catch { /* reported by spawn's E_NO_DEPLOYMENT remedy if it matters */ }
   const members = memberRows(discovery);
   const packages = packageRows(lock);
   const changes = resolved.changes;
   const items = workspaceItems(discovery, lock, { includePrivate: true });
-  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, problems };
-  return { report, lock, discovery, approvalNeeded, interactive, items, lockFile, problems };
+  const report = { syncApi: 1, standalone: discovery.standalone === true || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, lock: lockFile }, members, packages, changes, approvalNeeded, ...(approvedNow.length ? { approved: approvedNow } : {}), problems };
+  return { report, lock, discovery, approvalNeeded, approvedNow, interactive, items, lockFile, problems };
+}
+
+/** The one-line standalone explanation (decision 10). `standaloneReason` says WHY the view is
+ *  standalone: asked for (`standalone:` in oats-local.yaml) or forced (the host is unreadable —
+ *  then the access failure is named). Never "cannot be read" when nothing was refused. */
+function standaloneNote(discovery, { from = "" } = {}) {
+  if (discovery?.standalone !== true) return null;
+  const who = memberLabel(discovery.key);
+  if (discovery.standaloneReason === "explicit") return `standalone view of ${who} (explicit in oats-local.yaml): its own souls + oats.core`;
+  const hf = discovery.hostFailure;
+  const why = hf ? ` (${hf.code ?? "E_REMOTE_UNREADABLE"}${hf.reason ? `: ${hf.reason}` : ""}${hf.url ? ` — ${hf.url}` : ""})` : "";
+  return `standalone — the workspace of ${who} cannot be read${from}${why}; its own souls + oats.core`;
 }
 
 /** The human §8 report of a sync (text mode). */
@@ -2015,7 +2065,7 @@ function printSyncReport(ctx, synced) {
   const { report, discovery, approvalNeeded, interactive, items, lockFile } = synced;
   const { members, packages, changes } = report;
   const disabled = new Set(ctx.local.souls?.disabled || []);
-  console.log(`workspace  ${discovery.workspace?.name ?? `(standalone — the workspace of ${memberLabel(discovery.key)} cannot be read; its own souls + oats.core)`}  (${discovery.key} @ ${short(discovery.commit)})`);
+  console.log(`workspace  ${discovery.workspace?.name ?? `(${standaloneNote(discovery)})`}  (${discovery.key} @ ${short(discovery.commit)})`);
   console.log(`members    ${members.map((m) => m.confirmed ? `${m.name} ✓↔ (@ ${short(m.commit)})` : `${m.name} ✗ (${m.status})`).join("   ") || "(none)"}`);
   console.log(`packages   ${packages.map((p) => {
     const need = approvalNeeded.find((a) => a.id === p.id);
@@ -2034,6 +2084,7 @@ function printSyncReport(ctx, synced) {
   for (const c of items.capabilities.filter((c) => c.kind === "member")) { const t = teams.get(c.team) || { souls: 0, capabilities: 0 }; t.capabilities++; teams.set(c.team, t); }
   console.log(`teams      ${[...teams.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([team, n]) => `${team} ${n.souls} soul${n.souls === 1 ? "" : "s"}${n.capabilities ? `, ${n.capabilities} capabilit${n.capabilities === 1 ? "y" : "ies"}` : ""}`).join(" · ") || "(none)"}`);
   for (const p of synced.problems ?? discovery.problems) console.log(`problem    ${p.code}  ${p.repoKey ? `${memberLabel(p.repoKey)}:` : ""}${p.path}  ${p.message}`);
+  for (const a of synced.approvedNow ?? []) console.log(`approved   ${a.id} ${a.version} @ ${short(a.commit)}  (--approve; ${a.targets.length} executable${a.targets.length === 1 ? "" : "s"}, digest ${a.executables})`);
   if (approvalNeeded.length) {
     console.log(`\nApproval needed for ${approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")} — ${interactive ? "declined; " : "not a terminal; "}the lock records them unapproved. Run \`oats sync\` in a terminal to approve their executables (spawns of souls using them are refused until then).`);
   } else console.log(`\nlock       ${shortPath(lockFile)}`);
@@ -2157,7 +2208,7 @@ async function workspaceCmd() {
   const result = { workspaceStatusApi: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, url: discovery.url, commit: discovery.commit, observedAt: discovery.observedAt, local: ctx.localPath, teams: Object.keys(discovery.workspace?.teams || {}) }, members, packages, declaredPackages: declared, unsynced, stale, approval, external: (discovery.external || []).map((e) => ({ source: e.source, soul: e.soul.name, team: teamLabel(e.soul.team) })), problems: discovery.problems };
   if (JSON_MODE) { jsonOk(result); return; }
   console.log(`workspace ${workspaceName(discovery)}  (${discovery.key} @ ${short(discovery.commit)})  local ${shortPath(ctx.localPath)}\n`);
-  if (standalone) console.log(`  (standalone — the workspace of ${memberLabel(discovery.key)} cannot be read; its own souls + oats.core)\n`);
+  if (standalone) console.log(`  (${standaloneNote(discovery)})\n`);
   console.log("Members:");
   printTable(["member", "status", "commit", "team", "souls", "capabilities", "publishes"], members.map((m) => [m.name, m.status, short(m.commit), m.team ?? "—", m.souls.join(",") || "—", m.capabilities.join(",") || "—", m.publishes ? `${m.publishes.package} v${m.publishes.version ?? "?"}` : "—"]));
   for (const m of members.filter((m) => !m.confirmed)) console.log(`    ${m.name}: ${m.detail}`);
@@ -2180,7 +2231,7 @@ async function itemsCmd(kind) {
   const items = workspaceItems(discovery, lock)[kind];
   const standalone = discovery.standalone === true;
   if (JSON_MODE) { jsonOk({ [`${kind}Api`]: 1, standalone: standalone || undefined, workspace: { name: workspaceName(discovery), key: discovery.key, commit: discovery.commit }, [kind]: items, problems: discovery.problems }); return; }
-  console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — standalone: the workspace of ${memberLabel(discovery.key)} cannot be read` : ""}\n`);
+  console.log(`${kind} of workspace ${workspaceName(discovery)} (${discovery.key} @ ${short(discovery.commit)})${standalone ? `  — ${standaloneNote(discovery)}` : ""}\n`);
   if (!items.length) console.log("  (none)");
   else if (kind === "souls") printTable(["name", "origin", "team", "work"], items.map((s) => [s.name, s.origin, s.team, s.work ?? "—"]));
   else printTable(["name", "origin", "team", "layer"], items.map((c) => [c.name, c.origin, c.team, c.layer ?? "—"]));
@@ -2191,13 +2242,25 @@ async function itemsCmd(kind) {
 // ---------- roster: status / spawn / retire / create ----------
 /** Workspace drift for `oats status` (decision 17: shown, not prevented). ONE discovery over
  *  the remotes serves every instance; `driftOf` compares each instance's recorded modules to
- *  the members' current state (and package modules to the lock). Offline → { unreachable }.
- *  Returns null when the deployment is not a workspace deployment (no oats-local.yaml). */
+ *  the members' current state (and package modules to the lock), `soulDriftOf` the instance's
+ *  recorded SOUL SOURCE (instance.json.workspace.soul) to its member's current commit. Offline →
+ *  { unreachable }. Returns null when the deployment is not a workspace deployment (no
+ *  oats-local.yaml). `souls` maps each workspace soul NAME (agents/<name>/.oats-soul-source.json
+ *  present) to its stamp — the roster's `repo:` column for a workspace soul. */
 async function statusDrift(data) {
   let ctx;
   try { ctx = loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") return null; throw e; }
-  const hasModules = data.some((a) => (a.instances || []).some((i) => i.modules && typeof i.modules === "object" && Object.keys(i.modules).length));
-  if (!hasModules) return { drift: new Map(), unreachable: null };
+  const hasModules = (i) => i.modules && typeof i.modules === "object" && Object.keys(i.modules).length > 0;
+  const hasSoul = (i) => i.workspace && typeof i.workspace === "object" && i.workspace.soul && typeof i.workspace.soul === "object" && typeof i.workspace.soul.repoKey === "string";
+  // Workspace souls of this roster: the stamp ensureWorkspaceSoul leaves beside the soul pointer.
+  const souls = new Map();
+  for (const a of data) {
+    if (!a.dir) continue;
+    try { const stamp = JSON.parse(readFileSync(join(a.dir, ".oats-soul-source.json"), "utf8")); if (stamp && typeof stamp.repoKey === "string") souls.set(a.name, { repoKey: stamp.repoKey, commit: typeof stamp.commit === "string" ? stamp.commit : null, path: stamp.path ?? null }); }
+    catch { /* not a workspace soul (classic, capability agent, or unreadable stamp) */ }
+  }
+  const anything = data.some((a) => (a.instances || []).some((i) => hasModules(i) || hasSoul(i)));
+  if (!anything) return { drift: new Map(), soul: new Map(), souls, unreachable: null };
   const deploymentDir = dirname(ctx.path);
   let lock = null;
   try { if (existsSync(join(deploymentDir, LOCK_FILE))) lock = readLock(deploymentDir); } catch { lock = null; }
@@ -2207,15 +2270,22 @@ async function statusDrift(data) {
   try { const { discoverOrStandalone } = await import("../lib/instance-resolution.mjs"); discovery = await discoverOrStandalone(ctx.local, { remoteOptions: remoteOptionsFromEnv() }); }
   catch (e) {
     const reason = e?.details?.reason ? `${e.code}: ${e.details.reason}` : (e?.code || e?.message || "unknown");
-    return { drift: new Map(), unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) } };
+    return { drift: new Map(), soul: new Map(), souls, unreachable: { code: e?.code ?? null, reason, message: e?.message ?? String(e) } };
   }
-  const { driftOf } = await import("../lib/materialize.mjs");
+  const { driftOf, soulDriftOf } = await import("../lib/materialize.mjs");
   const drift = new Map();
+  const soul = new Map();
   for (const a of data) for (const i of a.instances || []) {
-    if (!i.modules || typeof i.modules !== "object" || !Object.keys(i.modules).length) continue;
-    try { drift.set(i.home ?? `${a.name}/${i.instance}`, driftOf(i, discovery, { lock })); } catch { /* an unreadable module record shows as no drift rows */ }
+    const key = i.home ?? `${a.name}/${i.instance}`;
+    if (hasModules(i)) { try { drift.set(key, driftOf(i, discovery, { lock })); } catch { /* an unreadable module record shows as no drift rows */ } }
+    if (hasSoul(i)) { try { const row = soulDriftOf(i, discovery); if (row) soul.set(key, row); } catch { /* an unreadable soul record shows as no soul row */ } }
   }
-  return { drift, unreachable: null };
+  // The roster's soul row reflects the CURRENT member commit too (the pointer may lag a moved member).
+  for (const [, stamp] of souls) {
+    const member = discovery.members.find((m) => m && m.key === stamp.repoKey);
+    if (member && typeof member.commit === "string" && (member.confirmed || (discovery.standalone === true && member.key === discovery.key))) stamp.current = member.commit;
+  }
+  return { drift, soul, souls, unreachable: null };
 }
 /** One `modules:` line per module. */
 function driftLine(row) {
@@ -2225,6 +2295,20 @@ function driftLine(row) {
   if (row.status === "moved") return `${base}  [${from.kind === "package" ? "package" : "member"} moved since (now @ ${short7(row.current?.commit)})]`;
   if (row.status === "missing") return `${base}  [${row.reason === "capability-absent" ? "capability no longer present" : row.reason === "package-absent" ? "package no longer locked" : `member ${row.reason || "unconfirmed"}`}]`;
   return base;
+}
+/** The `soul:` line of an instance — decision 17 for the soul source. */
+function soulDriftLine(row, agentName) {
+  const base = `soul: ${row.name ?? agentName} from ${memberLabel(row.repoKey)} @ ${short7(row.commit)}`;
+  if (row.status === "moved") return `${base}  [member moved since (now @ ${short7(row.current?.commit)})]`;
+  if (row.status === "missing") return `${base}  [${row.reason === "soul-absent" ? "soul no longer present" : `member ${row.reason || "unconfirmed"}`}]`;
+  return base;
+}
+/** The roster's `[work: …, repo: …]` for a soul: a workspace soul names its member and commit. */
+function soulRepoLabel(a, ws) {
+  const stamp = ws?.souls?.get(a.name);
+  if (!stamp) return a.repo || "?";
+  const moved = stamp.current && stamp.commit && stamp.current !== stamp.commit ? ` (member now @ ${short7(stamp.current)})` : "";
+  return `${memberLabel(stamp.repoKey)} @ ${short7(stamp.commit)}${moved}`;
 }
 const short7 = (oid) => (typeof oid === "string" ? oid.slice(0, 7) : "?");
 
@@ -2237,18 +2321,31 @@ async function status() {
   const ws = await statusDrift(data);
   const verbose = args.includes("--verbose");
   if (args.includes("--json")) {
-    if (ws) for (const a of data) for (const i of a.instances || []) { const rows = ws.drift.get(i.home ?? `${a.name}/${i.instance}`); if (rows) i.modules = rows.map((r) => ({ name: r.module, from: r.from, commit: r.recorded?.commit ?? null, current: r.current, status: r.status, ...(r.reason ? { reason: r.reason } : {}) })); }
+    if (ws) for (const a of data) {
+      const stamp = ws.souls.get(a.name);
+      if (stamp) a.soulSource = { repoKey: stamp.repoKey, commit: stamp.commit, path: stamp.path, ...(stamp.current ? { current: stamp.current, status: stamp.current === stamp.commit ? "current" : "moved" } : {}) };
+      for (const i of a.instances || []) {
+        const key = i.home ?? `${a.name}/${i.instance}`;
+        const rows = ws.drift.get(key);
+        if (rows) i.modules = rows.map((r) => ({ name: r.module, from: r.from, commit: r.recorded?.commit ?? null, current: r.current, status: r.status, ...(r.reason ? { reason: r.reason } : {}) }));
+        const s = ws.soul.get(key);
+        if (s) i.soul = { repoKey: s.repoKey, commit: s.commit, current: s.current?.commit ?? null, status: s.status, ...(s.reason ? { reason: s.reason } : {}) };
+      }
+    }
     console.log(JSON.stringify({ root, agents: data, ...(ws ? { workspace: ws.unreachable ? { reachable: false, ...ws.unreachable } : { reachable: true } } : {}) }, null, 2)); return;
   }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
   if (ws?.unreachable) console.log(`  workspace: unreachable (${ws.unreachable.reason}) — drift unknown\n`);
   if (data.length === 0) { console.log("  (no agents — create one with `oats create <name>`)"); return; }
   for (const a of data) {
-    console.log(`  ${a.name}${a.kind === "local" ? " (local)" : ""}  [work: ${a.work || "checkout"}, repo: ${a.repo || "?"}]`);
+    console.log(`  ${a.name}${a.kind === "local" ? " (local)" : ""}  [work: ${a.work || "checkout"}, repo: ${soulRepoLabel(a, ws)}]`);
     if (a.description) console.log(`      ${a.description}`);
     for (const i of a.instances) {
       console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
-      const rows = ws?.drift.get(i.home ?? `${a.name}/${i.instance}`) || [];
+      const key = i.home ?? `${a.name}/${i.instance}`;
+      const s = ws?.soul.get(key);
+      if (s && (verbose || s.status !== "current")) console.log(`          ${soulDriftLine(s, a.name)}`);
+      const rows = ws?.drift.get(key) || [];
       for (const r of rows) if (verbose || r.status !== "current") console.log(`          ${driftLine(r)}`);
     }
     for (const f of a.retireFailures || []) {
@@ -2502,13 +2599,20 @@ async function spawnCmd() {
   // package = locked+approved) and copied whole into the new home. Without one
   // (a bare agents root, tests) the classic soul-directory spawn proceeds.
   let prepared;
+  // Workspace model: a `work: worktree|checkout` soul works IN its member's clone on
+  // this machine (design doc §4): --repo, else oats-local.yaml `clones:`, else the
+  // convention <deployment>/<member name>. Never an ambient Git checkout around the
+  // deployment. Resolved once here so a preview sees exactly what the apply would.
+  let preparedRepo;
   if (wsPrepared) {
     try {
-      const { toCapabilityRows, modulesPreview } = await import("../lib/instance-resolution.mjs");
+      const { toCapabilityRows, modulesPreview, requireMemberClone } = await import("../lib/instance-resolution.mjs");
       prepared = wsPrepared;
       prepared.capabilityRows = []; // filled after materialization (paths live in the home); preview uses modulesPreview
       prepared.preview = modulesPreview(prepared.resolution, root, agent.name);
       prepared.toCapabilityRows = toCapabilityRows;
+      const effectiveWork = requestedWork || agent.work || "checkout";
+      if (effectiveWork === "worktree" || effectiveWork === "checkout") preparedRepo = requireMemberClone(prepared, { explicit: repo });
     } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message, e.details); throw e; }
   }
   let r;
@@ -2521,7 +2625,7 @@ async function spawnCmd() {
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
-      repo: (requestedWork || agent.work) === "directory"
+      repo: preparedRepo !== undefined ? preparedRepo : (requestedWork || agent.work) === "directory"
         ? (repo ?? agent.repo) : repo || agent.repo || defaultRepo(workspaceOf(root)) || defaultRepo(process.cwd()),
       work: requestedWork, workDir, runtime: flag("runtime"), backend, herdrSocket, yolo, model: flag("model"), branch,
       launchConfig: valueFlag("launch-config"),
@@ -2914,9 +3018,20 @@ async function onboardCmd() {
   const spawnHint = setupExpert ? `oats spawn oats-setup-expert --dir ${shortPath(dir)}` : null;
   const anySoulHint = `spawn any listed soul: oats spawn <soul> --dir ${shortPath(dir)}${soulNames.length ? ` (e.g. ${soulNames.slice(0, 3).join(", ")})` : ""}`;
   // A member's clone goes beside oats-local.yaml under its repo name; `agents/` is the instance
-  // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4).
+  // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4). The HOST is
+  // listed exactly like any other member when it is one: a clone of it is needed only if someone
+  // works IN it — there is no special "workspace clone" (discovery reads the host over the remote).
   const cloneDirOf = (m) => join(dir, m.name === "agents" ? "agents-repo" : m.name);
-  const clones = members.filter((m) => m.confirmed || (standalone && m.key === synced.discovery.key)).map((m) => ({ key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: cloneDirOf(m) }));
+  const clonePresent = (m, cloneDir) => {
+    const declared = ctx.local?.clones && typeof ctx.local.clones === "object" ? ctx.local.clones[m.key] : undefined;
+    const candidate = typeof declared === "string" && declared.trim() ? resolve(dir, declared) : cloneDir;
+    return existsSync(join(candidate, ".git")) ? candidate : null;
+  };
+  const clones = members.filter((m) => m.confirmed || (standalone && m.key === synced.discovery.key)).map((m) => {
+    const cloneDir = cloneDirOf(m);
+    const present = clonePresent(m, cloneDir);
+    return { key: m.key, name: m.name, url: memberUrlOf(synced.discovery, m.key), dir: present ?? cloneDir, present: present !== null, host: m.key === synced.discovery.key };
+  });
   // Decision 26: the host publishes the member list to whoever can read it. When the host is
   // itself a member (the common `agents` shape) that is fine for an all-private or all-public
   // organisation; a mixed one needs a private host that is NOT a public member. The kernel
@@ -2926,7 +3041,7 @@ async function onboardCmd() {
   const result = { onboardApi: 2, standalone: standalone || undefined, local: localFile, dir, agents: join(dir, "agents"), lock: synced.lockFile, sync: synced.report, hosting, next: { clone: clones, spawn: spawnHint, souls: soulNames.slice(0, 3) } };
   if (JSON_MODE) { jsonOk(result); process.exitCode = synced.approvalNeeded.length ? 2 : 0; return; }
 
-  console.log(`Onboarded ${shortPath(dir)} into workspace ${workspaceName(synced.discovery)} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).${standalone ? `\n  (standalone — the workspace of ${memberLabel(synced.discovery.key)} cannot be read from here; you get its own souls + oats.core)` : ""}\n`);
+  console.log(`Onboarded ${shortPath(dir)} into workspace ${workspaceName(synced.discovery)} (${synced.discovery.key} @ ${short(synced.discovery.commit)}).${standalone ? `\n  (${standaloneNote(synced.discovery, { from: " from here" })})` : ""}\n`);
   printSyncReport(ctx, synced);
   console.log(`
 This directory (${shortPath(dir)}) is your deployment — any layout works; it now holds what the kernel needs:
@@ -2937,7 +3052,7 @@ Member clones live wherever you keep them (here, or anywhere named in oats-local
 
 Next:
   1. Members you will work IN need a clone (discovery and resolution run over the remotes; only a
-     soul's work target does):${clones.map((c) => c.present ? `\n       ${shortPath(c.dir)}  ✓ already here` : `\n       git clone ${c.url ?? c.key} ${shortPath(c.dir)}   (or point oats-local.yaml clones: { ${c.key}: <abs path> } at an existing clone)`).join("") || "\n       (no confirmed members yet — see the membership rows above)"}
+     soul's work target does):${clones.map((c) => c.present ? `\n       ${shortPath(c.dir)}  ✓ already here${c.host ? "  (the host — a member like the others)" : ""}` : `\n       git clone ${c.url ?? c.key} ${shortPath(c.dir)}   (or point oats-local.yaml clones: { ${c.key}: <abs path> } at an existing clone)${c.host ? "\n         ↑ the host is a member like the others: clone it only if someone works IN it — the workspace file is read over the remote" : ""}`).join("") || "\n       (no confirmed members yet — see the membership rows above)"}${!hostIsMember ? `\n       (the host ${synced.discovery.key} is not a member: nothing to clone — the workspace file is read over the remote)` : ""}
   2. Check who may read the host: ${synced.discovery.key}${hostIsMember ? " is itself a member" : " is a dedicated host"}. The workspace file
      names every member, so if any member is private the host must be a private repo that is not
      a public member; public contributors then get the standalone case (from: here + oats.core).
@@ -3877,12 +3992,15 @@ Usage:
   oats update [--check] [--yes]              check npm for a newer kernel+pi bridge and
                                             optionally run the update; then run oats doctor
   oats sync [--dir <d>] [--json]             workspace model v2: observe the workspace named by
-                                            oats-local.yaml over its Git remote, confirm every
+      [--approve <id>@<version>]...         oats-local.yaml over its Git remote, confirm every
                                             member (reciprocal oats-membership.yaml), resolve
                                             packages: to exact commits, ask executable approval
                                             once per package version (TTY; otherwise list what
                                             needs it and exit 2), write oats-lock.json (v3) and
-                                            report the diff
+                                            report the diff. --approve approves exactly that
+                                            package at exactly that locked version without a
+                                            terminal (the digest is computed over the locked
+                                            tree; an id@version not in the lock is E_BAD_ARGS)
   oats package add <id> <version|git:<repo>@<ref>>  edit packages: in oats-workspace.yaml when the
       | remove <id>  [--dir <d>]            workspace repo is the current checkout; otherwise
                                             print the line to add (the file travels through Git)

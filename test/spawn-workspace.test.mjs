@@ -413,3 +413,205 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
     assert.ok(isDir(join(envelope(r).result.home, "work")), "directory mode still owns a real ./work");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+// ---- 0.25.2 R1/R2: member clones through oats-local.yaml + the convention path; sync creates agents/ ----
+// docs/workspaces.md, docs/rebuild-to-v2.md §5 and `oats onboard` all say "the kernel finds a member's clone
+// through oats-local.yaml (`clones:`) or at <deployment>/<member name>"; 0.25.0/1 never read either, so every
+// `work: worktree|checkout` spawn/preview of a workspace soul failed "has no repo configured" until --repo was
+// given. And a hand-written oats-local.yaml + `oats sync` left no agents/, so spawn answered E_NO_DEPLOYMENT with
+// a v1 remedy (`oats create --local`). Northwind's platform-engineer is `work: worktree` in the platform member.
+test("R1/R2: worktree soul finds its clone — convention <dep>/<member>, clones: entry, E_CLONE_MISMATCH, E_CLONE_MISSING (both remedies), --repo wins; sync creates agents/", { timeout: 600_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    mkdirSync(join(base, "home"));
+    // The operator's hand-written deployment: oats-local.yaml only — NO agents/ (rebuild-to-v2.md §3 literally).
+    const dep = join(base, "northwind-workspace");
+    mkdirSync(dep, { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    const agentsRoot = join(dep, "agents");
+    const spawnArgs = (purpose, ...extra) => ["spawn", "platform-engineer", "--dir", dep, "--purpose", purpose, "--no-launch", ...extra, "--json"];
+
+    // R2 (remedy): before any sync, spawn names the missing instance root and how to get it — not a v1 verb.
+    let r = oats(spawnArgs("pre"), { cwd: dep, env, base });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    let err = envelope(r).error;
+    assert.equal(err.code, "E_NO_DEPLOYMENT");
+    assert.match(err.message, new RegExp(`mkdir ${agentsRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\(or run \`oats sync`));
+    assert.doesNotMatch(err.message, /oats create/);
+
+    // R2 (sync): `oats sync` creates <deployment>/agents/ — the deployment is complete after the guide's §3–§4.
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 2, `sync\n${r.stdout}\n${r.stderr}`);
+    assert.ok(isDir(agentsRoot), "sync created <deployment>/agents/");
+    const needed = envelope(r).result.approvalNeeded;
+    const lockFile = join(dep, "oats-lock.json");
+    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: needed.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+
+    // R1 (nothing on this machine): preview AND apply refuse E_CLONE_MISSING, naming BOTH remedies and --repo.
+    const conventionDir = join(dep, "platform");
+    for (const extra of [["--preview"], []]) {
+      r = oats(spawnArgs("none", ...extra), { cwd: dep, env, base });
+      assert.equal(r.status, 1, `${extra.join(" ")}\n${r.stdout}\n${r.stderr}`);
+      err = envelope(r).error;
+      assert.equal(err.code, "E_CLONE_MISSING", `${extra.join(" ")}: ${err.message}`);
+      assert.match(err.message, new RegExp(`git clone ${fx.refs.platform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} ${conventionDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`), "remedy 1: git clone <url> <deployment>/<member name>");
+      assert.match(err.message, new RegExp(`clones: \\{ ${fx.keys.platform.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: <abs path> \\}`), "remedy 2: the oats-local.yaml clones: entry");
+      assert.match(err.message, /--repo <path>/, "…and --repo for a one-off");
+      assert.equal(err.details.repoKey, fx.keys.platform); assert.equal(err.details.convention, conventionDir); assert.equal(err.details.work, "worktree");
+    }
+    assert.ok(!existsSync(join(agentsRoot, "platform-engineer", "instances")), "a refused spawn leaves no instance");
+
+    // R1 (wrong repo at the convention path): E_CLONE_MISMATCH — never silently work in it.
+    spawnSync("git", ["clone", "-q", fx.refs.data, conventionDir], { encoding: "utf8" });
+    r = oats(spawnArgs("wrong", "--preview"), { cwd: dep, env, base });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    err = envelope(r).error;
+    assert.equal(err.code, "E_CLONE_MISMATCH");
+    assert.equal(err.details.path, conventionDir); assert.equal(err.details.expected, fx.keys.platform);
+    assert.deepEqual(err.details.found, [fx.keys.data]);
+    rmSync(conventionDir, { recursive: true, force: true });
+
+    // R1 (the convention): clone platform at <deployment>/platform → preview and apply succeed with no --repo.
+    spawnSync("git", ["clone", "-q", fx.refs.platform, conventionDir], { encoding: "utf8" });
+    r = oats(spawnArgs("conv", "--preview"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, `preview via convention\n${r.stdout}\n${r.stderr}`);
+    assert.equal(envelope(r).result.work, "worktree");
+    assert.equal(realpathSync(envelope(r).result.repo), realpathSync(conventionDir), "the preview resolves the same clone the apply will use");
+    r = oats(spawnArgs("conv"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn via convention\n${r.stdout}\n${r.stderr}`);
+    let spawned = envelope(r).result;
+    assert.equal(spawned.work, "worktree");
+    assert.equal(realpathSync(spawned.repo), realpathSync(conventionDir));
+    assert.equal(spawned.branch, "agents/platform-engineer-conv");
+    const wt = join(spawned.home, "work");
+    assert.equal(spawnSync("git", ["-C", wt, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8" }).stdout.trim(), "agents/platform-engineer-conv", "home/work is a worktree of the member clone");
+    assert.equal(realpathSync(spawnSync("git", ["-C", wt, "rev-parse", "--git-common-dir"], { encoding: "utf8" }).stdout.trim()), realpathSync(join(conventionDir, ".git")));
+    assert.ok(existsSync(join(wt, "souls", "platform-engineer", "soul.yaml")), "…and it is the platform member's tree");
+
+    // R1 (clones: entry): the clone lives elsewhere, named in oats-local.yaml → succeeds, no --repo.
+    rmSync(conventionDir, { recursive: true, force: true });
+    const elsewhere = join(base, "elsewhere", "plat");
+    spawnSync("git", ["clone", "-q", fx.refs.platform, elsewhere], { encoding: "utf8" });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\nclones:\n  "${fx.keys.platform}": ${elsewhere}\n`);
+    r = oats(spawnArgs("cl"), { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn via clones:\n${r.stdout}\n${r.stderr}`);
+    spawned = envelope(r).result;
+    assert.equal(realpathSync(spawned.repo), realpathSync(elsewhere));
+    assert.equal(realpathSync(spawnSync("git", ["-C", join(spawned.home, "work"), "rev-parse", "--git-common-dir"], { encoding: "utf8" }).stdout.trim()), realpathSync(join(elsewhere, ".git")));
+
+    // R1 (clones: entry pointing at the wrong repo): E_CLONE_MISMATCH names the entry.
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\nclones:\n  "${fx.keys.platform}": ${fx.refs.data}\n`);
+    r = oats(spawnArgs("clw", "--preview"), { cwd: dep, env, base });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    err = envelope(r).error;
+    assert.equal(err.code, "E_CLONE_MISMATCH"); assert.match(err.details.via, /clones:/);
+
+    // R1 (--repo wins): an explicit --repo overrides the (wrong) clones: entry.
+    r = oats(spawnArgs("flag", "--repo", elsewhere), { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn with --repo\n${r.stdout}\n${r.stderr}`);
+    assert.equal(realpathSync(envelope(r).result.repo), realpathSync(elsewhere));
+
+    // Other work modes are untouched: a directory-mode spawn needs no clone.
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    r = oats(["spawn", "release-manager", "--dir", dep, "--purpose", "d", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `directory spawn\n${r.stdout}\n${r.stderr}`);
+    assert.equal(envelope(r).result.work, "directory");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+// ---- lane 3 (0.25.2) ----
+// R4 (decision 17 for the SOUL SOURCE): `oats status` reports each instance's soul row — the member
+// and commit the soul was fetched from (instance.json.workspace.soul) against the member's CURRENT
+// commit — and the roster's `[work: …, repo: …]` names the member @ commit for a workspace soul
+// instead of `?`. The operator's shape: a soul whose modules are ALL package-tier (support-triager →
+// oats.core only). A soul-only member move changes no module row, so before this fix `oats status`
+// printed nothing at all for it; the soul row is the one signal.
+test("0.25.2 R4: status shows the soul source per instance (moved / no longer present), repo: <member> @ <c7> for workspace souls, --json instances[].soul", { timeout: 600_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    mkdirSync(join(base, "home"));
+    const dep = join(base, "dep");
+    const agentsRoot = join(dep, "agents");
+    mkdirSync(agentsRoot, { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 2, r.stdout + r.stderr);
+    const approvalNeeded = envelope(r).result.approvalNeeded;
+    const lockFile = join(dep, "oats-lock.json");
+    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+
+    // The operator's way: no --agents-root, cwd = the deployment (homes land under <dep>/agents).
+    r = oats(["spawn", "support-triager", "--purpose", "x", "--no-launch", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn support-triager\n${r.stdout}\n${r.stderr}`);
+    const home = envelope(r).result.home;
+    assert.equal(realpathSync(home), realpathSync(join(agentsRoot, "support-triager", "instances", "support-triager-x")), "the home lands under <dep>/agents (cwd = the deployment, no --agents-root)");
+    const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+    assert.deepEqual(Object.keys(meta.modules), ["oats.core"], "every module of this soul is package-tier: no member module can ever show drift");
+    assert.equal(meta.workspace.soul.commit, fx.commits.agents);
+    const c0 = fx.commits.agents;
+
+    // (c) the roster line: a workspace soul names its member @ commit, never `repo: ?`.
+    r = oats(["status", "--dir", dep], { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`^  support-triager  \\[work: directory, repo: agents @ ${c0.slice(0, 7)}\\]$`, "m"), `repo: names the member and commit\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /repo: \?/);
+    assert.doesNotMatch(r.stdout, /soul: /, "default view: a current soul prints no row");
+    // (a) --verbose lists the soul row even when current; --json carries it.
+    r = oats(["status", "--dir", dep, "--verbose"], { cwd: dep, env, base });
+    assert.match(r.stdout, new RegExp(`^ {10}soul: support-triager from agents @ ${c0.slice(0, 7)}$`, "m"), r.stdout);
+    assert.match(r.stdout, /^ {10}modules: oats\.core from package oats\.framework v1\.1\.3 @ [0-9a-f]{7}$/m);
+    r = oats(["status", "--dir", dep, "--json"], { cwd: dep, env, base });
+    let st = JSON.parse(r.stdout);
+    const agentRow = () => st.agents.find((a) => a.name === "support-triager");
+    const instRow = () => agentRow().instances.find((i) => i.instance === "support-triager-x");
+    assert.deepEqual(instRow().soul, { repoKey: meta.workspace.soul.repoKey, commit: c0, current: c0, status: "current" });
+    assert.equal(agentRow().soulSource.status, "current");
+
+    // (b) the SOUL SOURCE moves (only souls/support-triager/AGENTS.md changes): no module row can move —
+    // the soul row is what reports it, in the default view, and the roster line says the member moved on.
+    const move = await moveMember(fx, "agents", async (work, { fs, path }) => { await fs.appendFile(path.join(work, "souls", "support-triager", "AGENTS.md"), "\nMoved.\n"); });
+    assert.notEqual(move.commit, c0);
+    r = oats(["status", "--dir", dep], { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`^ {10}soul: support-triager from agents @ ${c0.slice(0, 7)} {2}\\[member moved since \\(now @ ${move.commit.slice(0, 7)}\\)\\]$`, "m"), `the moved soul row prints in the DEFAULT view\n${r.stdout}`);
+    assert.doesNotMatch(r.stdout, /modules: /, "no module moved (all package-tier) — the soul row is the only drift line");
+    assert.match(r.stdout, new RegExp(`repo: agents @ ${c0.slice(0, 7)} \\(member now @ ${move.commit.slice(0, 7)}\\)\\]`), "the roster's repo: column shows the pointer lagging the member");
+    r = oats(["status", "--dir", dep, "--json"], { cwd: dep, env, base });
+    st = JSON.parse(r.stdout);
+    assert.deepEqual(instRow().soul, { repoKey: meta.workspace.soul.repoKey, commit: c0, current: move.commit, status: "moved" });
+    assert.deepEqual(instRow().modules.map((m) => m.status), ["current"]);
+    assert.equal(agentRow().soulSource.status, "moved"); assert.equal(agentRow().soulSource.current, move.commit);
+
+    // (b') a member move that edits a MEMBER capability of a soul with member-tier modules: the module
+    // row prints too (the operator's "modules rows did not print" is the package-only shape, not a swallow).
+    r = oats(["spawn", "release-manager", "--purpose", "rm", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `spawn release-manager\n${r.stdout}\n${r.stderr}`);
+    const move2 = await moveMember(fx, "agents", async (work, { fs, path }) => { await fs.appendFile(path.join(work, "capabilities", "nw-release-tooling", "oats.json"), "\n"); });
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base }); // a re-sync changes nothing about drift: the lock pins packages only
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    r = oats(["status", "--dir", dep], { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`^ {10}modules: nw-release-tooling from agents @ ${move.commit.slice(0, 7)} {2}\\[member moved since \\(now @ ${move2.commit.slice(0, 7)}\\)\\]$`, "m"), `the moved module row prints\n${r.stdout}`);
+    assert.match(r.stdout, new RegExp(`^ {10}soul: release-manager from agents @ ${move.commit.slice(0, 7)} {2}\\[member moved since \\(now @ ${move2.commit.slice(0, 7)}\\)\\]$`, "m"));
+
+    // the soul removed from the member → 'soul no longer present'
+    await moveMember(fx, "agents", async (work, { fs, path }) => { await fs.rm(path.join(work, "souls", "support-triager"), { recursive: true }); });
+    r = oats(["status", "--dir", dep], { cwd: dep, env, base });
+    assert.match(r.stdout, new RegExp(`^ {10}soul: support-triager from agents @ ${c0.slice(0, 7)} {2}\\[soul no longer present\\]$`, "m"), r.stdout);
+    r = oats(["status", "--dir", dep, "--json"], { cwd: dep, env, base });
+    st = JSON.parse(r.stdout);
+    assert.equal(instRow().soul.status, "missing"); assert.equal(instRow().soul.reason, "soul-absent");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});

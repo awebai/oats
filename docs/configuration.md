@@ -41,7 +41,7 @@ refused (`E_WORKSPACE_SCHEMA`).
 | key | meaning |
 |---|---|
 | `workspace` | Repo ref of the workspace host (`git:host/org/repo`, `https://…`, `git@host:…`, `file:///…`, `/abs/bare.git`). Read with your own Git credentials; the repo need not be cloned. |
-| `clones` | `<canonical repo key>: <absolute path>` — where a member's clone lives when it is not at `<deployment>/<repo-name>/`. Only a soul's **work target** needs a clone. |
+| `clones` | `<canonical repo key>: <absolute path>` — where a member's clone lives when it is not at `<deployment>/<member name>/`. Only a soul's **work target** (`work: worktree \| checkout`) needs a clone. Lookup order: `spawn --repo`, then this map (keys normalised through `parseRepoRef`, so any ref spelling of the same repo matches), then `<deployment>/<member name>` (a member named `agents` → `<deployment>/agents-repo`, since `agents/` is the instance root); none → `E_CLONE_MISSING`; a directory whose `origin` is another repo → `E_CLONE_MISMATCH`. |
 | `settings.<cap>.<key>` | Host-owned provider values the capability's manifest asks for — absolute paths, state roots, delivery modes. The workspace file **refuses** absolute paths; this is where they go. Merged into the capability's provider payload after the soul's own payload and before any `--provider` flag (see [three homes](workspaces.md#provider-payloads-have-three-homes)). |
 | `souls.disabled` | Soul names not run on this machine; reported by `oats sync` ("disabled here"). |
 
@@ -56,7 +56,7 @@ deployment. Not found → `E_LOCAL_MISSING`. Beside it:
 ~/acme-workspace/
 ├── oats-local.yaml
 ├── oats-lock.json          # written by `oats sync` (lock v3; docs/packages.md)
-├── agents/                 # instance homes + fetched member-soul sources
+├── agents/                 # instance homes + fetched member-soul sources (created by `oats sync` / `oats onboard` if absent)
 └── <member clones>/        # only where someone works IN a repo
 ```
 

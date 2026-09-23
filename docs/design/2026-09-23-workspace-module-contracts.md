@@ -458,3 +458,109 @@ session recompose` refuses a **module home** (`instance.json.modules` present)
 with `E_UNSUPPORTED_MODE` ("re-spawn"); the `session-recompose` feature name
 stays advertised because the verb still serves classic homes
 (`docs/desktop-cli-api.md`).
+
+### 0.25.2 operator-rebuild round (2026-09-24) — appended, not edited in place
+
+Source: an operator's first rebuild of a real two-team deployment on 0.25.0,
+following `docs/rebuild-to-v2.md` literally. **The guide is a contract the
+kernel must honour**: where the guide claimed behaviour the kernel lacked, the
+kernel changes; where the guide described keys no provider consumes, the guide
+changes. Findings R1–R10; kernel side in 0.25.2 (`docs/release-notes/v0.25.2.md`).
+No API integer or feature name changes; the only surface additions are
+additive fields (`spawn --preview` `providers` / `settings`, `oats status
+--json instances[].soul`) and the `sync --approve` flag.
+
+**§2/§5 member clone lookup (R1).** For a `work: worktree | checkout` soul the
+kernel finds the member clone in this order, first hit wins: (1) `oats spawn
+--repo <abs path>`; (2) `oats-local.yaml` `clones: { <repo key>: <abs path> }`,
+keys normalised through `parseRepoRef(...).key` so any spelling of the same
+repo addresses one entry; (3) the convention `<deployment>/<member name>` where
+`<member name>` is the last segment of the repo key — **a member named `agents`
+is looked for at `<deployment>/agents-repo`** (`<deployment>/agents/` is the
+instance root); (4) none → `E_CLONE_MISSING { repoKey, tried: [...], remedies }`
+naming the three remedies. A directory found by (2) or (3) whose `origin` remote
+resolves to a different repo key → `E_CLONE_MISMATCH { repoKey, path, origin }`
+— the kernel never spawns into a clone that is not the member. This order was
+stated by the guide and `docs/workspaces.md` before 0.25.2 and not implemented;
+it is now normative.
+
+**§6 `oats sync` creates `agents/` (R2).** `sync` (and therefore `onboard`,
+which runs the sync body) creates `<deployment>/agents/` when absent. A
+hand-written `oats-local.yaml` needs no `mkdir`.
+
+**§5 one "You run on OATS" block (R3).** When `oats.core` resolves as a module
+the composer suppresses the kernel's legacy `oats:kernel:oats` block; the
+module's inject is the one such block. Without `oats.core` (a soul saying `off`)
+the legacy block is composed as before, so no instance is left without the
+briefing.
+
+**§5/§6 soul-source drift (R4).** `driftOf` covers `instance.json.workspace.soul`
+as well as `modules`: `oats status` prints `soul: <name> from <member> @ <c7>`
+with `[member moved since …]` when the member's default branch is past the
+recorded commit (`[member unconfirmed]` / `[soul no longer present]` for the
+missing cases); `--json` adds `instances[].soul = { repoKey, commit, current:
+<commit>|null, status: "current"|"moved"|"missing" }`. A moved soul is
+information (decision 17): the instance keeps its own commit directory (M1).
+
+**§6 preview payload visibility (R5).** `oats spawn --preview` (text and
+`--json`) reports `providers` — the `--provider <cap> k=v` map exactly as given,
+nested — and `settings.<cap>` — `resolution.payloads[cap]`, the merged payload
+the provider's binding receives (`workspace.messaging` base ⊕ `byTeam[team]` ⊕
+soul slot payload ⊕ `local.settings[cap]` ⊕ `providers[cap]`). Additive fields;
+both empty objects when nothing applies.
+
+**§5/§6 `work: workspace` (R6, closed in 0.25.1 as B2).** Documented in the
+guide's §9: a coordination soul's `./work` is the deployment directory.
+
+**Provider payload delivery vs provider consumption (R7 — oats.aweb 1.11.2).**
+Decision 23 (`messaging.byTeam`) is **kernel semantics**: the kernel merges and
+delivers; the provider consumes what its binding declares. oats.aweb 1.11.2's
+spawn hook (a) locates the aweb root among `OATS_TEAM_SCOPE`, the home, the
+home's git root, `OATS_CONTEXT` and its git root, and `OATS_WORKSPACE` (under
+v2: the deployment directory) — none of which is a 0.24 team root; and (b)
+resolves the target team from `OATS_TEAM_ID`/`OATS_TEAM_NAME` (the removed
+`oats-config.yaml` `team:` block; empty under v2), else the **active team at
+the root it found** — it does **not** read `team` from `OATS_SETTINGS`. So for
+1.11.2 `byTeam` is delivered and recorded but a no-op; per-label minting is
+obtained only by placing a per-team `.aw` inside each team's member clone
+(gitignored) so it is found through the work repo, or one `.aw` at the
+deployment directory for a single team. The guide states this (§8b) and
+`docs/workspaces.md` states the general rule ("kernel-merged; whether a
+provider honours it is the provider's"). **oats.aweb follow-up**: read `team`
+(and honour `byTeam`'s result) from the payload; accept the deployment
+directory as a first-class root. The kernel does not paper over this with a
+`team:` env shim — the env block is removed with `oats-config.yaml`, and a
+provider contract is the provider's to grow.
+
+**OKF 2.1.3 reads `okf.json`, not a soul payload (R8 — corrects §2's `stores`
+comment and decision 24's `root` example).** `oats.okf` 2.1.3's spawn hook
+reads the soul's knowledge declaration from `<soul>/okf.json` (`{ version: 1,
+owner, owns: ["<base>/<node>"], reads: [...] }`, `lib/config.mjs#validateDeclaration`)
+and its settings from `OATS_SETTINGS`, admitting **only** `bindings-file`,
+`state-dir`, `harvest-runtime`, `harvest-model` (`oats.json#settings`) — any
+other key is `E_CONFIG unknown OATS_SETTINGS property`. Where a base lives
+inside a store repository is the **bindings file's** `bases.<alias>.repository`
++ `root`, not a soul payload key. Therefore: a soul.yaml `knowledge:` payload for
+OKF carries binding settings only (usually nothing — the workspace default
+fills the slot; `none` opts out); `owns`/`reads`/`store`/`root` examples on
+`soul.yaml` are removed from the guide, `workspaces.md`, `souls-and-instances.md`
+and `knowledge.md`; `okf.json` stays in `souls/<name>/` and travels with the
+soul into the per-commit cache (M1). A soul-payload grammar for OKF is an OKF
+follow-up that lands with an `oats.okf` release declaring it in its binding.
+The kernel's part — opaque forwarding of the merged payload — is unchanged and
+correct. §7b's fresh `state-dir` rule is confirmed by the operator's run.
+
+**§6 non-interactive approval (R9).** `oats sync --approve <id>@<version>`
+(repeatable) approves exactly the entry the current resolution contains for
+that id and version: the executables digest is always computed by `sync` over
+the fetched tree (`executablesDigestAt`) and recorded — never typed. An
+`--approve` naming an id/version the resolution does not contain → `E_BAD_ARGS`
+(nothing approved); entries not covered stay unapproved (exit `2`). At the
+interactive prompt **Ctrl+D (EOF) is a decline**: exit `2`, entry unapproved —
+never treated as "yes", never a hang.
+
+**§6 onboard next steps (R10).** `oats onboard` lists the workspace **host**
+in `next.clone` like any member that lacks a clone at the convention (the host
+is a member; a soul that lives in it may need a work clone). Under an explicit
+`oats-local.yaml` `standalone:` header the next steps say the view is standalone
+and list only that repo.
