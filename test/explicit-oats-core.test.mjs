@@ -125,7 +125,8 @@ test('declared oats.core that is NOT active refuses spawn with the remedy (no ho
   const f = fixture(t), cli = f.run(['create', 'plain', '--work', 'directory', '--runtime', 'claude', '--json']);
   assert.equal(cli.status, 0, cli.stdout + cli.stderr); const created = JSON.parse(cli.stdout);
   assert.deepEqual(created.declaredCapabilities, ['oats.core']);
-  assert.ok(created.notes.some(n => n.code === 'next-step' && /oats use oats.core --soul plain/.test(n.message)), 'create names the activation step before spawn');
+  // Phase B (CLI L1): the remedy names the v2 path (packages: + soul.yaml capabilities: from), not the removed `oats use`.
+  assert.ok(created.notes.some(n => n.code === 'next-step' && /oats\.core/.test(n.message) && /workspace model v2/.test(n.message) && !/oats use/.test(n.message)), 'create names the activation step before spawn');
   const agent = findAgent(f.root, 'plain');
   assert.throws(() => planInstanceResources({ resolved: composeInstanceAgentsMd(created.soul, f.context, 'plain', 'directory', 'persistent').resolved, soulDir: created.soul, agent, contextDir: f.context }),
     e => e.code === 'E_REQUIREMENT_INACTIVE' && e.capabilities.join() === 'oats.core' && /oats use oats.core --soul plain/.test(e.remedy));

@@ -202,6 +202,27 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     assert.equal(readFileSync(join(clone, "oats-workspace.yaml"), "utf8"), before, "add + remove round-trips to the original bytes");
     r = oats(["package", "remove", "nope", "--json", "--dir", clone], { cwd: base, env, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_PACKAGE_MISSING");
+    // Phase B (CLI M4): `remove <id> --json` never reports "--json" as the value.
+    r = oats(["package", "add", "oats.aweb", "v1.11.2", "--json", "--dir", clone], { cwd: base, env, base });
+    r = oats(["package", "remove", "oats.aweb", "--json", "--dir", clone], { cwd: base, env, base });
+    assert.equal(r.status, 0, r.stderr); assert.equal(envelope(r).result.value, null);
+    // Phase B (CLI M3): an UNTRACKED copy of oats-workspace.yaml inside a checkout is not edited (prints the line).
+    mkdirSync(join(clone, "sub"));
+    writeFileSync(join(clone, "sub", "oats-workspace.yaml"), before);
+    r = oats(["package", "add", "p.z", "v9.9.9", "--json", "--dir", join(clone, "sub")], { cwd: base, env, base });
+    assert.equal(r.status, 0, r.stderr); assert.equal(envelope(r).result.edited, false);
+    assert.equal(readFileSync(join(clone, "sub", "oats-workspace.yaml"), "utf8"), before, "untracked copy untouched");
+    // Phase B (CLI H2): a malformed `packages:` node (scalar / sequence) or a non-mapping root is E_WORKSPACE_SCHEMA in one envelope, never a raw TypeError.
+    for (const text of ["schemaVersion: 2\nname: ws3\nmembers: []\npackages: 5\n", "schemaVersion: 2\nname: ws3\nmembers: []\npackages: [a, b]\n", "- a\n- b\n"]) {
+      const ws3 = mkdtempSync(join(base, "ws3-"));
+      execFileSync("git", ["-C", ws3, "init", "-q"]);
+      writeFileSync(join(ws3, "oats-workspace.yaml"), text);
+      execFileSync("git", ["-C", ws3, "add", "oats-workspace.yaml"]);
+      r = oats(["package", "add", "q.q", "v1.0.0", "--json", "--dir", ws3], { cwd: base, env, base });
+      assert.equal(r.status, 1, `${JSON.stringify(text)}: ${r.stdout} ${r.stderr}`);
+      assert.equal(envelope(r).error.code, "E_WORKSPACE_SCHEMA", JSON.stringify(text));
+      assert.equal(readFileSync(join(ws3, "oats-workspace.yaml"), "utf8"), text, "file untouched");
+    }
 
     // ---- no oats-local.yaml → E_LOCAL_MISSING, one envelope ----
     r = oats(["sync", "--json", "--dir", elsewhere], { cwd: base, env, base });
@@ -233,7 +254,8 @@ test("removed 0.24 verbs are unknown commands: install / use / init / trust / li
       assert.equal(r.status, 1, `${verb} --json`);
       const doc = envelope(r);
       assert.equal(doc.ok, false); assert.equal(doc.error.code, "E_UNKNOWN_COMMAND");
-      assert.match(doc.error.message, new RegExp(`unknown command "${verb}"`));
+      assert.match(doc.error.message, new RegExp(`unknown command "${verb}" — removed by the workspace model v2; use `), `${verb} --json carries the replacement`);
+      assert.equal(doc.error.details?.removed ?? doc.error.removed, verb);
     }
     // `oats install` with what used to be a source argument is equally gone.
     const r = oats(["install", "oats.okf", "--json"], { cwd: base, base });
@@ -250,13 +272,33 @@ test("removed 0.24 verbs are unknown commands: install / use / init / trust / li
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("oats version --json advertises workspaceApi 2 and the v2 features", () => {
+test("oats version --json advertises workspaceApi 2 and only the wired v2 features", () => {
   const base = fixtureBase();
   try {
     const r = oats(["version", "--json"], { cwd: base, base });
     assert.equal(r.status, 0);
     const doc = JSON.parse(r.stdout);
     assert.equal(doc.workspaceApi, 2);
-    for (const f of ["workspace-v2", "instance-modules", "spawn-provider-payload"]) assert.ok(doc.features.includes(f), f);
+    assert.ok(doc.features.includes("workspace-v2"));
+    // Phase B: not advertised until spawn runs on resolve/materialize (an unimplemented feature is never listed).
+    for (const f of ["instance-modules", "spawn-provider-payload"]) assert.ok(!doc.features.includes(f), `${f} is not yet wired`);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("Phase B (CLI M5): `oats status --json` on a v2 deployment without agents/ is one E_NO_DEPLOYMENT envelope, never a raw stack", () => {
+  const base = fixtureBase();
+  try {
+    const dep = join(base, "dep");
+    mkdirSync(dep);
+    writeFileSync(join(dep, "oats-local.yaml"), "schemaVersion: 2\nworkspace: git:github.com/northwind/agents\n");
+    let r = oats(["status", "--json"], { cwd: dep, base, env: { PI_AGENTS_ROOT: "" } });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    const doc = envelope(r);
+    assert.equal(doc.error.code, "E_NO_DEPLOYMENT");
+    assert.doesNotMatch(doc.error.message, /oats-config\.yaml/, "does not name the removed file");
+    assert.doesNotMatch(r.stderr, /at .*core\.mjs/, "no stack trace");
+    r = oats(["status"], { cwd: dep, base, env: { PI_AGENTS_ROOT: "" } });
+    assert.equal(r.status, 1);
+    assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace in text mode");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

@@ -11,7 +11,7 @@ import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
 import {
   approve, classifyPackageValue, executablesDigest, manifestExecutables, packageProviding, parsePackageRequest,
-  readLock, readPackageManifests, readPackageTree, resolvePackages, writeLock,
+  readLock, readPackageManifests, readPackageTree, resolvePackages, writeLock, canonicalLock, validateLock,
   LOCK_FILE, DEFAULT_PACKAGE_PATH,
 } from "../lib/packages.mjs";
 
@@ -161,7 +161,15 @@ test("first resolve creates v3 entries: approved null, approvalNeeded true, exac
     ["nw.tools", null, "0.3.0", true], ["oats.framework", null, "1.1.3", true], ["oats.okf", null, "2.1.3", true],
   ]);
   for (const c of changes) assert.match(c.commit, /^[0-9a-f]{40}$/);
-  for (const e of Object.values(lock.packages)) assert.deepEqual(Object.keys(e).sort(), ["approved", "capabilities", "commit", "integrity", "path", "source", "version"]);
+  for (const e of Object.values(lock.packages)) assert.deepEqual(Object.keys(e).sort(), ["approved", "capabilities", "commit", "integrity", "path", "source", "url", "version"]);
+  // Phase B (e2e MED): the lock records the repo url it read each package from, so resolve/materialize
+  // of a catalog-locked package need no catalog at spawn time.
+  assert.equal(okf.url, f.repos.okf.url);
+  assert.equal(nw.url, f.repos.nw.url);
+  const second = await resolvePackages(ws, { catalog: f.catalog, lock, remote: f.remote });
+  assert.equal(second.lock.packages["oats.okf"].url, f.repos.okf.url, "url survives an unchanged re-sync");
+  assert.equal(JSON.parse(JSON.stringify(canonicalLock(lock))).packages["oats.okf"].url, f.repos.okf.url, "canonical form keeps url");
+  assert.throws(() => validateLock({ lockfileVersion: 3, packages: { x: { ...okf, url: 7 } } }), (e) => e.code === "E_LOCK_SCHEMA" && e.details.path === "/packages/x/url");
 });
 
 test("second resolve with unchanged versions is a no-op and keeps approvals; input lock not mutated", async () => {
@@ -400,6 +408,10 @@ test("MED: hooks.*.command targets enter the executables digest; commands and ho
   assert.deepEqual(manifestExecutables(mk("x").manifests[0].manifest).map((e) => [e.kind, e.name, e.target]),
     [["command", "spawn", "bin/cmd.mjs"], ["hook", "retire", "bin/hook.mjs"], ["hook", "spawn", "bin/hook.mjs"]]);
   assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { hooks: { spawn: { command: "bin/nope.mjs" } } }, files: new Map() }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.kind === "hook");
+  // Phase B (CLI M2): a hook object WITHOUT `command` is malformed — E_PACKAGE_MANIFEST, never an invisible no-op.
+  assert.equal(manifestExecutables({ hooks: { spawn: { script: "bin/hidden.mjs", required: true } } }).length, 1, "the malformed hook is listed (spec undefined)");
+  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { hooks: { spawn: { script: "bin/hidden.mjs", required: true } } }, files: new Map([["bin/hidden.mjs", Buffer.from("x")]]) }] }),
+    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.kind === "hook" && e.details.command === "spawn");
 });
 
 test("MED: a recorded approval that does not match the tree's executables → E_PACKAGE_UNAPPROVED on the fast path", async () => {

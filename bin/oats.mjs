@@ -589,7 +589,7 @@ function hasExecutableSurface(manifest) {
 }
 function capabilityHealth(level, cap, capRow, pkgRow) {
   const dir = installedCapabilityDir(level, cap.id);
-  if (!cap.installed) return { status: "missing", code: "missing-capability-artifact", dir, detail: `capability ${cap.id} is locked but not materialized — run \`oats install\` to re-materialize it` };
+  if (!cap.installed) return { status: "missing", code: "missing-capability-artifact", dir, detail: `capability ${cap.id} is locked but not materialized — run \`oats sync\` to re-materialize it` };
   let integrity;
   try { integrity = capabilityArtifactIntegrity(dir); }
   catch (e) { return { status: "broken", code: e.code || "invalid-capability-artifact", dir, detail: `capability ${cap.id}: ${e.message}` }; }
@@ -603,7 +603,7 @@ function capabilityHealth(level, cap, capRow, pkgRow) {
     catch (e) { return { status: "provenance-mismatch", code: e.code || "invalid-lock", dir, integrity, detail: `capability ${cap.id}: ${e.message}` }; }
   }
   const executable = hasExecutableSurface(cap.manifest);
-  if (executable && !cap.trusted) return { status: "untrusted", code: "untrusted-surface", dir, integrity, detail: `capability ${cap.id}: executable surface UNTRUSTED — \`oats trust ${cap.id}\`` };
+  if (executable && !cap.trusted) return { status: "untrusted", code: "untrusted-surface", dir, integrity, detail: `capability ${cap.id}: executable surface UNTRUSTED — approve it in \`oats sync\`` };
   return { status: "ok", code: null, dir, integrity, detail: null };
 }
 
@@ -876,7 +876,7 @@ function computeInspect({ onFail } = {}) {
     const operations = manifestOperations(m).map((op) => {
       let reason = null;
       if (!active) reason = disabledLayer ? `layer ${entry.layer} is disabled${disabledLayer.level ? ` at ${disabledLayer.level}` : " for this home"}` : `${entry.id} is not activated for ${meta ? `home ${basename(home)}` : soulName ? `soul ${soulName}` : "this scope"}`;
-      else if (!entry.health.trusted) reason = `${entry.id} executable surface is not trusted (oats trust ${entry.id})`;
+      else if (!entry.health.trusted) reason = `${entry.id} executable surface is not trusted (approve it in oats sync)`;
       else if (entry.health.status !== "ok") reason = entry.health.detail || entry.health.status;
       else if (missingRequires.length) reason = `${entry.id} requires ${missingRequires.map((x) => `"${x.command}" on PATH${x.why ? ` (${x.why})` : ""}`).join(", ")}`;
       else if (op.context === "home" && !home) reason = "needs a running home (--home)";
@@ -1100,7 +1100,7 @@ function operationCmd() {
   const op = manifestOperations(provider).find((o) => o.name === opName);
   if (!op) bail("E_OPERATION_UNKNOWN", `${provider.capability} declares no operation ${JSON.stringify(opName)} (declared: ${manifestOperations(provider).map((o) => o.name).join(", ") || "none"})`);
   const trust = capabilityTrust(provider, ctx);
-  if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${provider.capability} executable surface is blocked: ${trust.reason || "not trusted"} (oats trust ${provider.capability})`);
+  if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${provider.capability} executable surface is blocked: ${trust.reason || "not trusted"} (approve it in oats sync)`);
   const missingReq = capabilityMissingRequires(provider.capability, ctx);
   if (missingReq.length) bail("E_CAPABILITY_REQUIRES", `${provider.capability} requires ${missingReq.map((m) => `"${m.command}" on PATH${m.why ? ` (${m.why})` : ""}${m.install ? ` [install: ${m.install}]` : ""}`).join(", ")}; ${address} was not run`);
   if (op.context === "home" && !meta) bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
@@ -1362,7 +1362,7 @@ function doctor(dir) {
   for (const [id, lock] of Object.entries(locks)) {
     const retiredReason = retiredCapabilityReason(id);
     if (retiredReason) { console.log(`  WARNING: ${id} is locked in ${shortPath(lock._file)} but ${retiredReason}`); continue; }
-    if (!mans[id]) console.log(`  WARNING: ${id} is locked in ${shortPath(lock._file)} but not acquired — run \`oats install\``);
+    if (!mans[id]) console.log(`  WARNING: ${id} is locked in ${shortPath(lock._file)} but not acquired — run \`oats sync\``);
   }
   for (const [id, m] of Object.entries(mans)) {
     if (!String(m._origin).startsWith("installed:")) continue;
@@ -2062,10 +2062,13 @@ function workspaceCheckoutFrom(dir) {
   for (;;) {
     const candidate = join(current, "oats-workspace.yaml");
     if (existsSync(candidate)) {
-      // The file is edited in place only when it is tracked by the checkout it sits in.
+      // The file is edited in place only when it is TRACKED by the checkout it sits in (an untracked
+      // copy inside some repository is not the shared workspace file).
       let inCheckout = false;
       for (let d = current; ; d = dirname(d)) { if (existsSync(join(d, ".git"))) { inCheckout = true; break; } if (dirname(d) === d) break; }
-      return inCheckout ? { file: candidate, root: current } : null;
+      if (!inCheckout) return null;
+      const tracked = spawnSync("git", ["-C", current, "ls-files", "--error-unmatch", "--", "oats-workspace.yaml"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 10000 });
+      return tracked.status === 0 ? { file: candidate, root: current } : null;
     }
     const parent = dirname(current);
     if (parent === current) return null;
@@ -2078,7 +2081,7 @@ async function packageCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   const sub = args[1];
   const id = args[2];
-  const value = args[3];
+  const value = sub === "add" && typeof args[3] === "string" && !args[3].startsWith("--") ? args[3] : undefined;
   const usage = "usage: oats package add <id> <version|git:<repo>@<ref>> [--dir <d>] | oats package remove <id> [--dir <d>]";
   if (!["add", "remove"].includes(sub) || !id || id.startsWith("--")) return bail("E_USAGE", usage);
   if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) return bail("E_WORKSPACE_SCHEMA", `package id ${JSON.stringify(id)} must match ^[a-z0-9][a-z0-9._-]*$`, { id });
@@ -2101,12 +2104,16 @@ async function packageCmd() {
   try { doc = YAML.parseDocument(text, { keepSourceTokens: true }); } catch (e) { return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: ${e.message}`, { path: checkout.file }); }
   if (doc.errors?.length) return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: ${doc.errors.map((e) => e.message).join("; ")}`, { path: checkout.file });
   const root = doc.contents;
-  if (!root || typeof root.get !== "function") return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: top level must be a mapping`, { path: checkout.file });
-  const previous = root.get("packages")?.toJSON?.() ?? null;
+  if (!YAML.isMap(root)) return bail("E_WORKSPACE_SCHEMA", `${checkout.file}: top level must be a mapping`, { path: checkout.file, problems: [{ path: "", message: "top level must be a mapping" }] });
+  const packagesNode = root.get("packages", true);
+  if (packagesNode !== undefined && packagesNode !== null && !(YAML.isScalar(packagesNode) && packagesNode.value === null) && !YAML.isMap(packagesNode)) {
+    return bail("E_WORKSPACE_SCHEMA", `${shortPath(checkout.file)}: packages: must be a mapping of <package-id>: <version>, found ${YAML.isSeq(packagesNode) ? "a sequence" : JSON.stringify(packagesNode.toJSON?.() ?? String(packagesNode))}`, { path: checkout.file, problems: [{ path: "/packages", message: "must be an object" }] });
+  }
+  const previous = YAML.isMap(packagesNode) ? packagesNode.toJSON() : null;
   const had = previous && Object.hasOwn(previous, id) ? previous[id] : undefined;
   if (sub === "add") {
-    if (!root.has("packages") || root.get("packages") === null) root.set("packages", doc.createNode({ [id]: value }));
-    else root.get("packages").set(id, value);
+    if (!YAML.isMap(packagesNode)) root.set("packages", doc.createNode({ [id]: value }));
+    else packagesNode.set(id, value);
   } else {
     if (had === undefined) return bail("E_PACKAGE_MISSING", `packages.${id} is not in ${shortPath(checkout.file)}`, { id, path: checkout.file });
     root.get("packages").delete(id);
@@ -2173,7 +2180,9 @@ async function itemsCmd(kind) {
 // ---------- roster: status / spawn / retire / create ----------
 function status() {
   if (args.includes("--team")) return statusTeam();
-  const root = ensureRoot(dirFlag());
+  let root;
+  try { root = ensureRoot(dirFlag()); }
+  catch (e) { if (e?.code === "E_NO_DEPLOYMENT") { if (JSON_MODE) jsonFail("E_NO_DEPLOYMENT", e.message, e.details ?? e.provenance); die(e.message); } throw e; }
   const data = listInstances(root);
   if (args.includes("--json")) { console.log(JSON.stringify({ root, agents: data }, null, 2)); return; }
   console.log(`oats status — agents root ${shortPath(root)}\n`);
@@ -2827,7 +2836,7 @@ function createCmd() {
   // step here, not only at the refusal.
   const declared = r.declaredCapabilities || [];
   const inactive = declared.filter((id) => !(resolveOatsConfig(workspaceOf(root), name).capabilities || []).some((c) => c.id === id));
-  const next = inactive.length ? [{ code: "next-step", message: `${name} declares ${inactive.join(", ")}; before spawning, acquire if needed (oats install oats.framework) and activate: ${inactive.map((id) => `oats use ${id} --soul ${name}`).join(" && ")}` }] : [];
+  const next = inactive.length ? [{ code: "next-step", message: `${name} declares ${inactive.join(", ")}; before spawning, pin their packages in oats-workspace.yaml packages: and declare them in soul.yaml capabilities: { <cap>: { from } } (workspace model v2)` }] : [];
   const notes = [...(r.notes || []), ...next];
   if (args.includes("--json")) { console.log(JSON.stringify({ ...r, ...(notes.length ? { notes } : {}), ...(bootstrapped ? { agentsRoot: root } : {}) }, null, 2)); return; }
   for (const information of notes) console.error(`[${information.code}] ${information.message}`);
@@ -3092,7 +3101,10 @@ function versionCmd() {
     // on it (an older CLI without the surface must fail closed with a
     // reason, not an argument error). `features`: kernel abilities a peer
     // must see before relying on them (retire-home: retire --home).
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
+    // runs on resolve/materialize (contract §6); a feature the binary does not implement is
+    // never listed.
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "catalog", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3456,6 +3468,8 @@ async function serverRouteCmd() {
 // added lines rather than ~150 lines of pure whitespace churn, and keeps `git
 // blame` pointing at the commit that last changed each command.
 const TYPED_CLI_FAILURES = new Set(["unsafe-config-key", "unsafe-config-value"]);
+/** Removed 0.24 verbs → their v2 replacement (workspace model v2, decision 5). Checked before capability dispatch. */
+const REMOVED_VERBS = { install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "oats sync (approval is asked once per package version)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)" };
 try {
 // Inspect explicit selectors with the existing parser before new-work routing,
 // including selectors before the command. Inherited captures are not prepare inputs.
@@ -3551,14 +3565,20 @@ else if (cmd === "experimental") await experimentalCmd();
 // word, so without this it reaches the capability dispatch, which resolves the
 // config chain and reads every lock in it — and a scope whose lock the kernel
 // refuses could then not print its own usage, which is exactly when you need it.
+// A removed 0.24 verb names its v2 replacement in BOTH modes, before any capability namespace could shadow it.
+else if (cmd && Object.hasOwn(REMOVED_VERBS, cmd)) {
+  const message = `unknown command "${cmd}" — removed by the workspace model v2; use ${REMOVED_VERBS[cmd]}`;
+  if (JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", message, { removed: cmd, replacement: REMOVED_VERBS[cmd] });
+  console.error(`oats: ${message}\n`);
+  console.log(usageText());
+  process.exit(1);
+}
 else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && capabilityCommand()) { /* dispatched */ }
 // No matching kernel command or capability namespace: in --json mode the help
 // text must NOT contaminate stdout — still one envelope object, nonzero exit.
 else if (cmd && !cmd.startsWith("--") && !HELP_WORDS.has(cmd) && JSON_MODE) jsonFail("E_UNKNOWN_COMMAND", `unknown command "${cmd}" — no kernel subcommand or active capability namespace matches`);
 else {
-  // A removed 0.24 verb names its v2 replacement before the usage (workspace model v2, decision 5).
-  const REPLACED = { install: "oats sync", restore: "oats sync", init: "oats-local.yaml + oats sync", use: "soul.yaml capabilities: { <cap>: { from } } + workspace defaults", trust: "oats sync (approval is asked once per package version)", list: "oats workspace status | oats capabilities", catalog: "oats package add <id> <version> (bare versions resolve through package-catalog.json)", remove: "oats package remove <id>", migrate: "a rebuild (no migration: docs/design/2026-09-23-workspace-module-contracts.md)", config: "oats-local.yaml (host settings) and oats-workspace.yaml (shared)" };
-  if (cmd && !HELP_WORDS.has(cmd) && !cmd.startsWith("--")) console.error(`oats: unknown command "${cmd}"${Object.hasOwn(REPLACED, cmd) ? ` — removed by the workspace model v2; use ${REPLACED[cmd]}` : " — no kernel subcommand or active capability namespace matches"}\n`);
+  if (cmd && !HELP_WORDS.has(cmd) && !cmd.startsWith("--")) console.error(`oats: unknown command "${cmd}" — no kernel subcommand or active capability namespace matches\n`);
   console.log(usageText());
   process.exit(cmd && !HELP_WORDS.has(cmd) ? 1 : 0);
 }

@@ -7,7 +7,7 @@
  * real lib/remote.mjs (parseRepoRef + contentDigest). No git, no network, no `oats setup`. */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentDigest } from "../lib/remote.mjs";
@@ -513,4 +513,116 @@ test("materialize: default fetch (remote.fetchRemoteTree) copies a member capabi
   assert.equal(statSync(join(home, ".agents", "skills", "nw-x", "do-x", "scripts", "x.sh")).mode & 0o111, 0o111);
   assert.ok(readFileSync(join(home, "AGENTS.md"), "utf8").includes("<!-- oats:capability:nw-x src="));
   assert.equal(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")).modules["nw-x"].from.repoKey, key);
+});
+
+/* ───────────────────────────── Phase B regressions (adversarial + e2e review) ── */
+
+// A fixture whose capability directory ≠ capability name (every real package: oats-okf → oats.okf).
+fixtures[`${PKG_KEY}@${COMMIT_P}:oats-package/capabilities/oats-okf-dir`] = fixtures[`${PKG_KEY}@${COMMIT_P}:oats-package/capabilities/oats.okf`];
+fixtures[`${AGENTS_KEY}@${COMMIT_A}:capabilities/release-tooling-dir`] = fixtures[`${AGENTS_KEY}@${COMMIT_A}:capabilities/nw-release-tooling`];
+
+test("e2e HIGH: a module is fetched from the resolver-recorded `dir` (manifest-listed), not from capabilities/<name>", async () => {
+  const base = scratch();
+  const home = makeHome(base);
+  const res = resolution();
+  res.modules = res.modules.map((m) => m.name === "oats.okf" ? { ...m, dir: "oats-package/capabilities/oats-okf-dir" } : m.name === "nw-release-tooling" ? { ...m, dir: "capabilities/release-tooling-dir" } : m);
+  const calls = [];
+  const out = await materialize(res, home, { fetch: memoryFetch({ calls }), lock: LOCK });
+  assert.deepEqual(calls.map((c) => c.dir).sort(), ["capabilities/nw-house-style", "capabilities/release-tooling-dir", "oats-package/capabilities/oats-okf-dir"]);
+  assert.ok(existsSync(join(home, ".oats", "modules", "oats.okf", "oats.json")), "placed under the capability NAME");
+  assert.equal(out.modules.length, 3);
+  // an escaping / absolute recorded dir is refused before any fetch
+  for (const dir of ["../x", "/abs/capabilities/x", "oats-package/capabilities/.git", "elsewhere/capabilities/oats.okf"]) {
+    const bad = resolution(); bad.modules = bad.modules.map((m) => m.name === "oats.okf" ? { ...m, dir } : m);
+    const e = await caughtAsync(materialize(bad, makeHome(scratch()), { fetch: memoryFetch(), lock: LOCK }));
+    assert.ok(["E_MATERIALIZE_RESOLUTION", "E_MATERIALIZE_SOURCE"].includes(e.code), `${dir} → ${e.code}`);
+  }
+});
+
+test("MED: two materializations of one home in one process — one wins, the other is E_MATERIALIZE_HOME; no raw ENOTEMPTY, home consistent", async () => {
+  const base = scratch();
+  const home = makeHome(base);
+  const results = await Promise.allSettled([
+    materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK }),
+    materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK }),
+  ]);
+  const codes = results.map((r) => r.status === "fulfilled" ? "ok" : r.reason.code);
+  assert.deepEqual(codes.filter((c) => c === "ok").length, 1, `exactly one wins: ${codes}`);
+  assert.equal(codes.find((c) => c !== "ok"), "E_MATERIALIZE_HOME");
+  assert.ok(!readdirSync(join(home, ".oats")).some((n) => n.startsWith(".staging-")), "no staging left behind");
+  assert.deepEqual(readdirSync(join(home, ".oats", "modules")).sort(), ["nw-house-style", "nw-release-tooling", "oats.okf"]);
+  assert.equal(contentDigest(join(home, ".oats", "modules", "oats.okf")), contentDigestOfFixture(`${PKG_KEY}@${COMMIT_P}:oats-package/capabilities/oats.okf`));
+});
+
+test("MED: a symlink planted at .agents/skills or .claude DURING the fetch is caught at commit — nothing written through, home rolled back", async () => {
+  for (const rel of [join(".agents", "skills"), ".claude", join(".oats", "modules")]) {
+    const base = scratch();
+    const home = makeHome(base);
+    const elsewhere = join(base, "elsewhere"); mkdirSync(elsewhere);
+    const inner = memoryFetch();
+    let planted = false;
+    const fetch = async (...a) => { const r = await inner(...a); if (!planted) { planted = true; mkdirSync(dirname(join(home, rel)), { recursive: true }); symlinkSync(elsewhere, join(home, rel)); } return r; };
+    const e = await caughtAsync(materialize(resolution(), home, { fetch, lock: LOCK }));
+    assert.equal(e.code, "E_MATERIALIZE_HOME", rel);
+    assert.deepEqual(readdirSync(elsewhere), [], `${rel}: nothing written through the symlink`);
+    assert.ok(!existsSync(join(home, "AGENTS.md")) && !existsSync(join(home, "CLAUDE.md")), `${rel}: no partial commit`);
+    assert.ok(!existsSync(join(home, ".oats", "modules")) || readdirSync(join(home, ".oats", "modules")).length === 0 || lstatSync(join(home, ".oats", "modules")).isSymbolicLink(), `${rel}: no modules placed`);
+  }
+});
+
+test("MED: an unwritable .claude (alias step) fails INSIDE the transaction — E_MATERIALIZE_HOME, modules/skills/AGENTS.md/instance.json all rolled back, previous instance.json restored", { skip: process.getuid?.() === 0 }, async () => {
+  const base = scratch();
+  const instance = { instance: "release-expert-1", createdAt: "2026-09-23T10:00:00.000Z" };
+  const home = makeHome(base, { instance });
+  mkdirSync(join(home, ".claude"), { mode: 0o555 });
+  const before = listAll(home);
+  try {
+    const e = await caughtAsync(materialize(resolution(), home, { fetch: memoryFetch(), lock: LOCK }));
+    assert.equal(e.code, "E_MATERIALIZE_HOME");
+    assert.equal(e.details.why, "unwritable");
+    assert.deepEqual(listAll(home), before, "home is exactly as it was");
+    assert.deepEqual(JSON.parse(readFileSync(join(home, "instance.json"), "utf8")), instance, "previous instance.json restored");
+  } finally { chmodSync(join(home, ".claude"), 0o755); }
+});
+
+test("LOW: discard() never masks the original error when staging cannot be removed", { skip: process.getuid?.() === 0 }, async () => {
+  const base = scratch();
+  const home = makeHome(base);
+  const inner = memoryFetch();
+  let locked = null;
+  const fetch = async (ref, commit, dir, dest) => { const r = await inner(ref, commit, dir, dest); locked = join(dest, "skills", "cut-release"); if (existsSync(locked)) chmodSync(locked, 0o555); return r; };
+  const res = resolution({ injects: [{ module: "nw-release-tooling", path: "injects/nope.md" }] });
+  try {
+    const e = await caughtAsync(materialize(res, home, { fetch, lock: LOCK }));
+    assert.equal(e.code, "E_MATERIALIZE_RESOLUTION", "the ORIGINAL error, not EACCES from rmSync");
+  } finally { if (locked && existsSync(locked)) chmodSync(locked, 0o755); }
+});
+
+test("LOW: a symlink inside a fetched module is refused even when a caller-injected `remote.contentDigest` would accept it", async () => {
+  const base = scratch();
+  const home = makeHome(base);
+  const inner = memoryFetch();
+  const fetch = async (ref, commit, dir, dest) => { const r = await inner(ref, commit, dir, dest); symlinkSync("/etc/passwd", join(dest, "bin-evil")); return r; };
+  const lenient = { parseRepoRef: (await import("../lib/remote.mjs")).parseRepoRef, contentDigest: () => `sha256-${"0".repeat(64)}` };
+  const res = resolution({ modules: [{ name: "nw-house-style", from: { kind: "member", repoKey: PLATFORM_KEY, commit: COMMIT_B }, manifest: { capability: "nw-house-style", version: "0.2.0", inject: "injects/house-style.md" } }], skills: [], injects: [{ module: "nw-house-style", path: "injects/house-style.md" }] });
+  const lying = async (...a) => { const r = await fetch(...a); return { ...r, digest: `sha256-${"0".repeat(64)}` }; };
+  const e = await caughtAsync(materialize(res, home, { fetch: lying, remote: lenient }));
+  assert.equal(e.code, "E_REMOTE_TREE_UNSAFE");
+  assert.equal(e.details.why, "symlink");
+  assert.ok(!existsSync(join(home, ".oats", "modules")));
+});
+
+test("LOW: lock must be v3 when given (E_LOCK_SCHEMA); `...` is not a skill name; lock url is a package repo source", async () => {
+  const e = await caughtAsync(materialize(resolution(), makeHome(scratch()), { fetch: memoryFetch(), lock: { lockfileVersion: 2, packages: {} } }));
+  assert.equal(e.code, "E_LOCK_SCHEMA");
+  const res = resolution({ skills: [{ module: "nw-release-tooling", name: "...", path: "skills/cut-release" }, { module: "oats.okf", name: "okf", path: "skills/okf" }] });
+  const e2 = await caughtAsync(materialize(res, makeHome(scratch()), { fetch: memoryFetch(), lock: LOCK }));
+  assert.equal(e2.code, "E_MATERIALIZE_RESOLUTION");
+  assert.equal(e2.details.skill, "...");
+  // lock entry `url` (Phase B: recorded by resolvePackages) identifies the package repo without a catalog
+  const lock = { lockfileVersion: 3, packages: { "oats.okf": { ...LOCK.packages["oats.okf"], source: "catalog:oats.okf", url: `https://${PKG_KEY}.git` } } };
+  const r = resolution(); r.modules = r.modules.map((m) => m.name === "oats.okf" ? { ...m, from: { ...m.from } } : m);
+  const calls = [];
+  await materialize(r, makeHome(scratch()), { fetch: memoryFetch({ calls }), lock });
+  assert.ok(calls.some((c) => c.ref === `git:${PKG_KEY}` && c.dir === "oats-package/capabilities/oats.okf"));
 });

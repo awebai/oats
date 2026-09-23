@@ -586,3 +586,37 @@ test("integration: real lib/remote.mjs over the Northwind fixture — nw-tools p
     assert.match(digest, /^sha256-/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+/* ───────────────────────────── Phase B regressions (deletion lane MED-4/MED-5) ── */
+
+test("MED-4: `from:` must be a canonical repo key (parseRepoRef(...).key) — git:/https:/uppercase spellings are schema problems at validation, not E_NOT_A_MEMBER at spawn", () => {
+  const remote = northwind();
+  const bad = (from) => validateSoul(soul("s", { capabilities: { x: { from } } }), { remote });
+  for (const from of ["git:github.com/northwind/data", "GitHub.com/northwind/data", "https://github.com/northwind/data.git", "local/Users/x/repo.git", "github.com/northwind/data.git"]) {
+    const problems = bad(from);
+    assert.equal(problems.length, 1, `${from}: ${JSON.stringify(problems)}`);
+    assert.equal(problems[0].path, "/capabilities/x/from");
+    assert.match(problems[0].message, /not a canonical repo key/);
+  }
+  for (const from of [K.data, "here", "package", parseRepoRef("/tmp/oats-fixture/remotes/agents.git").key]) assert.deepEqual(bad(from), [], from);
+  // the same rule on every workspace default tier; `here` has no referent there
+  const ws = (defaults) => validateWorkspace(workspaceFile({ defaults: { ...workspaceFile().defaults, ...defaults } }), { remote });
+  assert.equal(ws({ capabilities: { x: { from: "git:github.com/northwind/agents" } } })[0]?.path, "/defaults/capabilities/x/from");
+  assert.equal(ws({ knowledge: { x: { from: "here" } } })[0]?.path, "/defaults/knowledge/x/from");
+  assert.equal(ws({ byTeam: { engineering: { capabilities: { x: { from: "GITHUB.com/northwind/agents" } } } } })[0]?.path, "/defaults/byTeam/engineering/capabilities/x/from");
+  assert.deepEqual(ws({ byTeam: { engineering: { capabilities: { x: { from: K.agents } } } } }), []);
+});
+
+test("MED-5: soul schema requires name, description AND work (contract §2); packageVersion pattern mirrors classifyPackageValue", () => {
+  const p = validateSoul({ schemaVersion: 2, name: "x" });
+  assert.deepEqual(p.map((x) => x.message).sort(), ["missing required property \"description\"", "missing required property \"work\""].sort().map((m) => p.find((x) => x.message.includes(m.split('"')[1]))?.message));
+  assert.equal(p.length, 2);
+  const remote = northwind();
+  const ws = (v) => validateWorkspace(workspaceFile({ packages: { p: v } }), { remote });
+  // schema AND code refuse these (previously schema-accepted, code-refused)
+  for (const v of ["git:github.com/x/y@v1@v2", "git:github.com/x/y@-x", "git:github.com/x/y@v1.0^{}"]) {
+    const problems = ws(v);
+    assert.ok(problems.length >= 1 && problems.every((q) => q.path === "/packages/p"), `${v}: ${JSON.stringify(problems)}`);
+  }
+  for (const v of ["v2.1.3", "git:github.com/x/y@v1", "git:git@github.com:x/y.git@v1", `git:${parseRepoRef("/tmp/p.git").url}@v0.4.0`]) assert.deepEqual(ws(v), [], v);
+});

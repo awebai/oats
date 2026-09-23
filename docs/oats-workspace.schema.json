@@ -52,7 +52,7 @@
     "packageVersion": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?:v?\\d+(?:\\.\\d+)*(?:[-+][0-9A-Za-z.-]+)?|git:\\S+@\\S+)$",
+      "pattern": "^(?:v?\\d+(?:\\.\\d+)*(?:[-+][0-9A-Za-z.-]+)?|git:(?:git@[^@\\s/:]+:)?[^@\\s]+@(?:[0-9a-f]{40}|(?!-)(?!.*(?:\\.\\.|@\\{|\\^|~|:|\\?|\\*|\\[|\\\\|\\.lock$|\\.$|/$|^/))[!-?A-~]+))$",
       "description": "Exactly two forms: a bare version (v2.1.3) resolved through the catalog, or git:<repo>@<ref> (a direct package ref). lib/packages.mjs#classifyPackageValue is the full grammar."
     },
     "memberRef": {

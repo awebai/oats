@@ -81,6 +81,8 @@ messaging: <opaque provider payload>
 external: [ { source: <repo ref>@<full OID>, soul: <path> } ]   # revision REQUIRED
 ```
 Schema refuses: absolute paths anywhere; `@revision` on members; unknown top-level keys.
+*(clarified Phase B)* "Absolute paths" means bare filesystem paths as VALUES (`/Users/x/store`, `C:\…`) — host state that belongs in `oats-local.yaml`. A repo ref in `file:///…` or `git:/abs/bare.git@<ref>` form is a **repo ref** (§1 accepts it; it is how tests build remotes), not an absolute path, and is accepted wherever a repo ref is. The JSON schemas encode only what a JSON schema can (shapes, grammars); domain rules — declared teams, duplicate members, canonical `from:` keys, one form per `packages:` value — live in `validateWorkspace`/`validateSoul`, which are the authority; a consumer validating against the schema alone accepts a superset.
+*(clarified Phase B)* A `from:` value is `package`, `here` (souls only — a workspace default has no referent for `here` → `E_WORKSPACE_SCHEMA`), or a **canonical** repo key exactly as `parseRepoRef(ref).key` spells it (lowercase host, no scheme, no `git:`, no `.git`; `local/<abs-path>` for file remotes). Any other spelling is a schema problem at validation, never a late `E_NOT_A_MEMBER`. `soul.yaml` requires `name`, `description` and `work`.
 
 `oats-membership.yaml`: `{ schemaVersion: 2, workspace: <repo ref>, team?: <label> }` — nothing else.
 
@@ -173,6 +175,13 @@ export function resolveSoul(discovery, soulEntry, { local, lock, spawn = {} })
 // compatibility floors checked against package versions → E_COMPATIBILITY.
 ```
 
+*(clarified Phase B)*
+- **Membership gate.** `soulEntry` must be a soul discovery listed: a soul of a **confirmed** member row (same `repoKey`, `name`, `commit`), an `external[]` soul, or (standalone) the repo's own. A soul of an unconfirmed member → `E_MEMBERSHIP_UNCONFIRMED { repoKey, reason }`; a soul of a repo the workspace does not list → `E_NOT_A_MEMBER`; an entry the row does not carry (stale/fabricated) → `E_MEMBERSHIP_UNCONFIRMED { reason: "stale" }`. Resolve is the gate; it does not trust the caller.
+- **Slot defaults.** `defaults.<slot>` must name a capability whose manifest declares `layer: <slot>`; no layer or another layer → `E_SLOT_CONFLICT { reason: "layer-mismatch" }`. Soul `<slot>: none` drops the workspace's `defaults.<slot>` only; a layered capability still arriving through `defaults.capabilities`/`byTeam`/the soul is a loud `E_SLOT_CONFLICT { reason: "none" }` (spell `<cap>: off` to remove it) — never a silent empty slot.
+- **Payload keys.** A provider payload (soul, `workspace.messaging`, `local.settings`, `spawn.providers`) may not carry `__proto__`, `constructor` or `prototype` as a key at any depth → `E_WORKSPACE_SCHEMA { reason: "poison-key" }` (YAML/JSON produce them as own keys; merged, `__proto__` would set the prototype of the payload — invisible to the recorded JSON and the revision, visible to every reader).
+- **Compatibility floors** need a version: a package pinned by OID (`git:<repo>@<OID>` records the OID as its version) or any non-version string → `E_COMPATIBILITY { why: "unversioned", capability, package, version, range }`; every `E_COMPATIBILITY` names `capability` and `package`.
+- **Recorded for materialize** (extra fields, part of the revision): `module.dir` — the capability directory as the manifest lists it (repo-relative; a package's `oats-package.json#capabilities[]` entry, which need not equal the capability name), and `from.repoKey` on package modules. An in-memory `lock` is validated like one read from disk (`E_LOCK_SCHEMA`); `approved` must be a well-formed `{ executables: sha256-…, at }`, not merely truthy.
+
 ---
 
 ## 4. `lib/packages.mjs` — versions, lock v3, approval (rewritten in place)
@@ -181,8 +190,10 @@ Supersedes itself (v1: installed tier, `install/restore/use`, lock v2).
 
 ```js
 export function readLock(dir) / writeLock(dir, lock)      // oats-lock.json lockfileVersion 3
-// lock = { lockfileVersion: 3, packages: { <id>: { source: "catalog:<id>"|"git:<key>@<ref>", path, version, commit,
+// lock = { lockfileVersion: 3, packages: { <id>: { source: "catalog:<id>"|"git:<key>@<ref>", url, path, version, commit,
 //          integrity, capabilities: [<cap names>], approved: { executables: "sha256-…", at } | null } } }
+// (clarified Phase B) `url` is the repo url the package was read from (observeRemote's `url`): the package's repo
+// identity travels in the lock, so resolveSoul/materialize of a catalog-locked package need no catalog at spawn time.
 
 export async function resolvePackages(workspace, { catalog, lock })
 // For each workspace.packages entry: catalog lookup or git ref → observeRemote → commit; read oats-package.json at
@@ -196,6 +207,8 @@ export async function resolvePackages(workspace, { catalog, lock })
 export function executablesDigest(packageTree)             // sha256 over every manifest's `commands` targets' AND
                                                             // `hooks.*.command` targets' bytes (hooks run unattended at
                                                             // spawn/retire), codepoint order, locale-independent
+                                                            // (clarified Phase B) a hook object without `command` is
+                                                            // E_PACKAGE_MANIFEST — never an invisible no-op
 export function approve(lock, id, digest, at)              // records approval; returns new lock
 export function packageProviding(lock, capName)            // → { id, entry } | null; two providers → E_PACKAGE_MISSING { ambiguous }
                                                             // (a package declaring one capability twice → E_PACKAGE_MANIFEST)
@@ -211,13 +224,23 @@ Supersedes: the module/skill assembly in `core.mjs` spawn (`prepared` copies, sy
 
 ```js
 export async function materialize(resolution, home, { fetch = fetchRemoteTree } = {})
-// For each module: fetch its capability dir (member: <repo>@<commit>/capabilities/<name>; package: <pkg>@<commit>/<path>/capabilities/<name>)
+// For each module: fetch its capability dir — the resolver-recorded module.dir (the manifest-listed directory: member
+//   <repo>@<commit>/<dir>; package <pkg>@<commit>/<dir> where <dir> is the oats-package.json#capabilities[] entry, which
+//   need not equal <name>: capabilities/oats-okf → oats.okf) (clarified Phase B) —
 //   into <home>/.oats/modules/<name>/ ; verify contentDigest === module.digest (recorded); copy skills/* into
 //   <home>/.agents/skills/<name>/<skill>/ (full copy, not symlink).
 // Compose <home>/AGENTS.md = soul AGENTS.md + each module inject (existing kernel composer; marker comments unchanged).
 // Keep aliases: CLAUDE.md → AGENTS.md ; .claude/skills → ../.agents/skills (relative symlinks, as today).
 // Write instance.json.modules = { <name>: { from, commit, digest, materializedAt } } and instance.json.providers = resolution.payloads.
 // → { modules: […], skills: […], agentsMd: <path> }   Any failure → nothing left behind (staging dir + rename).
+// (clarified Phase B) The transaction includes the aliases and the AGENTS.md/instance.json swap: a failure at any
+//   commit step rolls back everything placed and restores the previous files (E_MATERIALIZE_HOME { why }); the home's
+//   shape (.oats, .agents, .claude and module targets: real directories or absent) is re-checked immediately before
+//   the renames; staging is unique per call; two materializations racing on one home → E_MATERIALIZE_HOME { why: "busy" }.
+// (clarified Phase B) The soul body is the LOCAL soul directory — options.soulAgentsMd / options.soulDir, else
+//   <home>/soul/AGENTS.md through the instance's `soul` link into the member clone (decision 9: the work target is
+//   the only thing that needs a clone). fetchRemoteTree is not a soul-copy primitive; a soul's CLAUDE.md → AGENTS.md
+//   alias never crosses the remote.
 
 export function driftOf(instanceJson, discovery)
 // → [{ module, recorded: { repoKey, commit }, current: { commit } | null, status: "current"|"moved"|"missing" }]
@@ -236,6 +259,8 @@ Launch (in `core.mjs`, edited): the harness is started with cwd = home and **no*
 - `oats workspace status` — membership table (`confirmed` / `no-backlink` / `cannot-read` …), packages, approval state.
 - `oats status` — per instance `modules` with `driftOf`.
 - `oats version --json` — `workspaceApi: 2`, features `+workspace-v2`, `+instance-modules`, `+spawn-provider-payload`. Removed: `init`, `use`, `install`, `restore`.
+  *(clarified Phase B)* A feature string is listed only once the binary implements it: `instance-modules` and `spawn-provider-payload` appear when `oats spawn` runs on resolve/materialize (Phase C), not before. A removed verb answers `E_UNKNOWN_COMMAND` naming its replacement in BOTH text and `--json` (`details.removed`/`replacement`), checked before capability dispatch. `oats status` without a deployment is `E_NO_DEPLOYMENT` in both modes.
+  *(clarified Phase B)* `oats package add|remove` edits the file only when it is **tracked** by the checkout it sits in (`git ls-files`); an untracked copy gets "the line to add".
 
 Errors introduced by this model (all `E_*`, all with `details`): `E_REPO_REF`, `E_REMOTE_UNREADABLE`, `E_REMOTE_PATH_MISSING`, `E_REMOTE_FILE_OVERSIZE`, `E_REMOTE_TREE_UNSAFE`, `E_WORKSPACE_SCHEMA`, `E_MEMBERSHIP_UNCONFIRMED`, `E_LOCAL_MISSING`, `E_TEAM_UNKNOWN`, `E_NOT_A_MEMBER`, `E_CAPABILITY_MISSING`, `E_CAPABILITY_PRIVATE`, `E_PACKAGE_MISSING`, `E_PACKAGE_MANIFEST` (a package's own files are malformed or missing), `E_PACKAGE_INTEGRITY`, `E_PACKAGE_UNAPPROVED`, `E_LOCK_SCHEMA` (oats-lock.json unreadable or not v3), `E_SLOT_CONFLICT`, `E_SKILL_DUPLICATE`, `E_COMPATIBILITY`; `E_REMOVED` is thrown by the phase-A shims for deleted v1 APIs.
 

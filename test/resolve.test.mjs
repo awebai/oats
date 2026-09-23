@@ -660,3 +660,91 @@ test("input validation: soulEntry shape and spawn type", async () => {
   await assert.rejects(resolveSoul(discovery(), findSoul(discovery(), "release-manager"), opts({ spawn: "nope" })), TypeError);
   await assert.rejects(resolveSoul(discovery(), findSoul(discovery(), "release-manager"), opts({ remote: {} })), TypeError);
 });
+
+/* ───────────────────────────── Phase B regressions (adversarial review) ── */
+
+test("HIGH: a `__proto__` payload key (yaml/JSON produce it as an own key) is refused at every payload source, not merged into the prototype", async () => {
+  const poison = (inner) => JSON.parse(`{"oats.okf":{"__proto__":${JSON.stringify(inner)}}}`);
+  const d = discovery();
+  // in-memory helper
+  assert.throws(() => mergePayload({ a: 1 }, JSON.parse('{"__proto__":{"evil":1}}')), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.reason === "poison-key");
+  assert.throws(() => mergePayload({ a: { b: 1 } }, JSON.parse('{"a":{"constructor":{"x":1}}}')), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.path === "/a/constructor");
+  // spawn --provider
+  await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), opts({ spawn: { providers: poison({ owns: "HIJACKED" }) } })), "E_WORKSPACE_SCHEMA", (e) => assert.equal(e.details.key, "__proto__"));
+  // oats-local.yaml settings
+  await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), opts({ local: { settings: poison({ storeRoot: "/evil" }) } })), "E_WORKSPACE_SCHEMA");
+  // soul-level slot payload
+  const d2 = discovery({ souls: { s: soulDef("s", { knowledge: JSON.parse('{"__proto__":{"owns":"x"}}') }) } });
+  await rejectsCode(resolveSoul(d2, findSoul(d2, "s"), opts()), "E_WORKSPACE_SCHEMA");
+  // a clean resolution's payload has the ordinary prototype and no hidden properties
+  const r = await resolveSoul(d, findSoul(d, "release-manager"), opts());
+  assert.equal(Object.getPrototypeOf(r.payloads["oats.okf"]), Object.prototype);
+  assert.equal(({}).polluted, undefined);
+});
+
+test("MED: the soul must be one discovery listed — unconfirmed member → E_MEMBERSHIP_UNCONFIRMED; unknown repo → E_NOT_A_MEMBER; stale entry → stale", async () => {
+  const d = discovery();
+  const rogue = soulEntry(K.billing, null, null, soulDef("rogue"));
+  await rejectsCode(resolveSoul(d, rogue, opts()), "E_MEMBERSHIP_UNCONFIRMED", (e) => { assert.equal(e.details.repoKey, K.billing); assert.equal(e.details.reason, "no-backlink"); });
+  const fabricated = soulEntry(K.stranger, OID("7"), "engineering", soulDef("ghost"));
+  await rejectsCode(resolveSoul(d, fabricated, opts()), "E_NOT_A_MEMBER", (e) => assert.equal(e.details.reason, "not-listed"));
+  // a confirmed member that does not carry this soul at this commit (fabricated name or another observation)
+  const stale = soulEntry(K.agents, OID("5"), "engineering", soulDef("release-manager"));
+  await rejectsCode(resolveSoul(d, stale, opts()), "E_MEMBERSHIP_UNCONFIRMED", (e) => assert.equal(e.details.reason, "stale"));
+  const notThere = soulEntry(K.agents, C.agents, "engineering", soulDef("invented"));
+  await rejectsCode(resolveSoul(d, notThere, opts()), "E_MEMBERSHIP_UNCONFIRMED", (e) => assert.equal(e.details.reason, "stale"));
+  // external souls and member souls pass the gate as before
+  assert.ok(await resolveSoul(d, findSoul(d, "security-reviewer"), opts()));
+  assert.ok(await resolveSoul(d, findSoul(d, "campaign-writer"), opts()));
+});
+
+test("MED: a slot default must be a capability of THAT layer — no layer / wrong layer → E_SLOT_CONFLICT layer-mismatch", async () => {
+  const noLayer = { ...M.altOkf }; delete noLayer.layer;
+  const caps = (notes) => [capEntry(K.agents, C.agents, M.releaseTooling), capEntry(K.agents, C.agents, M.houseStyle, "global"), capEntry(K.agents, C.agents, notes, "global")];
+  const ws = workspaceFile({ defaults: { ...workspaceFile().defaults, knowledge: { "nw-notes": { from: K.agents } } } });
+  const d1 = discovery({ workspace: ws, agentsCaps: caps(noLayer) });
+  await rejectsCode(resolveSoul(d1, findSoul(d1, "release-manager"), opts()), "E_SLOT_CONFLICT", (e) => { assert.equal(e.details.reason, "layer-mismatch"); assert.equal(e.details.slot, "knowledge"); assert.equal(e.details.layer, null); });
+  const d2 = discovery({ workspace: ws, agentsCaps: caps({ ...M.altOkf, layer: "messaging" }) });
+  await rejectsCode(resolveSoul(d2, findSoul(d2, "release-manager"), opts()), "E_SLOT_CONFLICT", (e) => { assert.equal(e.details.reason, "layer-mismatch"); assert.equal(e.details.layer, "messaging"); });
+  // the right layer fills the slot
+  const d3 = discovery({ workspace: ws, agentsCaps: caps(M.altOkf) });
+  assert.equal((await resolveSoul(d3, findSoul(d3, "release-manager"), opts())).slots.knowledge, "nw-notes");
+});
+
+test("MED: compatibility floors: an unversioned package (git:<repo>@<OID>, even all digits) is E_COMPATIBILITY why:unversioned; details always name capability + package", async () => {
+  const soul = soulDef("s", { capabilities: { "nw-deploy": { from: "package" } }, compatibility: { "nw-deploy": ">=0.4.0" } });
+  for (const version of ["3".repeat(40), "a1b2".repeat(10), "release-2026-q3"]) {
+    const lock = lockV3(); lock.packages["nw.tools"].version = version;
+    const d = discovery({ souls: { s: soul } });
+    await rejectsCode(resolveSoul(d, findSoul(d, "s"), opts({ lock })), "E_COMPATIBILITY", (e) => {
+      assert.equal(e.details.why, "unversioned"); assert.equal(e.details.capability, "nw-deploy"); assert.equal(e.details.package, "nw.tools"); assert.equal(e.details.version, version);
+    });
+  }
+  // an unparseable RANGE also names the capability and package
+  const d = discovery({ souls: { s: soulDef("s", { capabilities: { "nw-deploy": { from: "package" } }, compatibility: { "nw-deploy": ">=>x" } }) } });
+  await rejectsCode(resolveSoul(d, findSoul(d, "s"), opts()), "E_COMPATIBILITY", (e) => { assert.equal(e.details.why, "range"); assert.equal(e.details.package, "nw.tools"); });
+});
+
+test("LOW: `from: here` in a WORKSPACE default (any tier) is E_WORKSPACE_SCHEMA; in a soul it is fine", async () => {
+  assert.throws(() => composeCapabilities(workspaceFile({ defaults: { capabilities: { "nw-house-style": { from: "here" } } } }), {}), (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details.path === "/defaults/capabilities/nw-house-style/from");
+  assert.throws(() => composeCapabilities(workspaceFile({ defaults: { byTeam: { engineering: { capabilities: { x: { from: "here" } } } } } }), {}, { team: "engineering" }), (e) => e.code === "E_WORKSPACE_SCHEMA");
+  assert.equal(composeCapabilities(null, { capabilities: { x: { from: "here" } } })[0].from, "here");
+});
+
+test("LOW: lock shape is validated in memory (E_LOCK_SCHEMA); approval must be a real digest (E_PACKAGE_UNAPPROVED)", async () => {
+  const d = discovery();
+  const v2 = lockV3(); v2.lockfileVersion = 2;
+  await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), opts({ lock: v2 })), "E_LOCK_SCHEMA");
+  const lock = lockV3(); lock.packages["oats.okf"].approved = { executables: "sha256-000", at: "2026-09-23T00:00:00.000Z" };
+  await rejectsCode(resolveSoul(d, findSoul(d, "release-manager"), opts({ lock })), "E_LOCK_SCHEMA", (e) => assert.match(e.details.path, /approved/));
+});
+
+test("e2e MED: a catalog-locked package resolves from the lock's recorded url without a catalog", async () => {
+  const d = discovery();
+  const lock = lockV3();
+  lock.packages["oats.okf"].url = parseRepoRef(R.okf).url;
+  lock.packages["oats.framework"].url = parseRepoRef(R.framework).url;
+  const r = await resolveSoul(d, findSoul(d, "release-manager"), opts({ lock, catalog: null }));
+  assert.equal(r.modules.find((m) => m.name === "oats.okf").from.repoKey, K.okf);
+  assert.equal(r.modules.find((m) => m.name === "oats.okf").dir, "oats-package/capabilities/oats-okf", "module.dir is the manifest-listed directory (≠ the capability name)");
+});
