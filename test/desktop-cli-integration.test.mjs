@@ -125,7 +125,7 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     assert.equal(s.ok, true, JSON.stringify(s));
     assert.equal(s.version, "0.22.0");
     assert.equal(s.source, "env");
-    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.22.0 <0.25.0" });
+    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.22.0 <0.26.0" });
     // The recovery command is DERIVED from this app's own version, so it names
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
@@ -167,8 +167,8 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // release published, so it degraded to observation-only in the field while
 // every unit test passed. Preserve 0.23.x acceptance, accept the paired 0.24.x
 // kernel, and reject the next minor at the exclusive ceiling.
-test("desktop server: released 0.23.x and 0.24.x CLIs are ACCEPTED and 0.25.0 is REJECTED at the band ceiling", async () => {
-  for (const version of ["0.23.0", "0.24.0"]) {
+test("desktop server: released 0.23.x through 0.25.x CLIs are ACCEPTED and 0.26.0 is REJECTED at the band ceiling", async () => {
+  for (const version of ["0.23.0", "0.24.0", "0.25.0"]) {
     const okDir = mkdtempSync(join(tmpdir(), "oats-cli-compatible-"));
     const compatible = fakeCli(okDir, { version });
     const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -182,15 +182,15 @@ test("desktop server: released 0.23.x and 0.24.x CLIs are ACCEPTED and 0.25.0 is
   }
 
   const badDir = mkdtempSync(join(tmpdir(), "oats-cli-ceiling-"));
-  const next = fakeCli(badDir, { version: "0.25.0" });
+  const next = fakeCli(badDir, { version: "0.26.0" });
   const b = await startServer({ OATS_DESKTOP_OATS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
-    assert.equal(s.ok, false, "0.25.0 is past the exclusive ceiling and must not become the mutation binary");
+    assert.equal(s.ok, false, "0.26.0 is past the exclusive ceiling and must not become the mutation binary");
     const tried = s.tried.find((t) => t.path === next.real);
     assert.ok(tried, "the rejected candidate is in diagnostics");
-    assert.match(tried.reason, /outside >=0\.22\.0 <0\.25\.0/);
-    assert.equal(tried.version, "0.25.0");
+    assert.match(tried.reason, /outside >=0\.22\.0 <0\.26\.0/);
+    assert.equal(tried.version, "0.26.0");
   } finally { b.proc.kill(); }
 });
 
