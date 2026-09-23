@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-23 17:40Z · **Workspace model v2 phases A–C ON MAIN (`59ae22df`, PR99) → `v0.25.0` tagged (release run in flight)** · Phase D next (framework repos as the first workspace; six expert souls; `oats.core`/`oats.setup` rewrite) · ⏸ parity pipeline still paused except 10B-0 (→ 0.24.14 when the engineer hands off; note: 0.24.14 must be cut from the 0.24 line, not main).
+**Last update:** 2026-09-23 17:40Z · **Workspace model v2 phases A–C ON MAIN (`59ae22df`, PR99) → **`v0.25.0` PUBLISHED** (bump `dc333e4e`)** · Phase D next (framework repos as the first workspace; six expert souls; `oats.core`/`oats.setup` rewrite) · ⏸ parity pipeline still paused except 10B-0 (→ 0.24.14 when the engineer hands off; note: 0.24.14 must be cut from the 0.24 line, not main).
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 

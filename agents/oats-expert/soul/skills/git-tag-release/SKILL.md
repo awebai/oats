@@ -20,6 +20,19 @@ creates and merges a `release: vX.Y.Z` version-bump PR back to main.
 2. Land the change: commit (signed-off) and `git push origin main`. Bring
    instance memory up to date first (STATE.md, log.md, notes/) per the OKF
    protocol.
+2b. **A MINOR bump (0.X.0) must widen the Desktop band first.** The Desktop
+   CLI locator accepts kernels per minor (`packages/desktop/cli-locator.mjs`
+   `ACCEPT_RANGE`, exclusive ceiling) and the release workflow bumps
+   `packages/desktop` to the tag version BEFORE running the suite, so a band
+   that excludes its own kernel fails the release gate
+   ("Desktop X rejects the same-version oats CLI … widen ACCEPT_RANGE").
+   Widen `maxExclusive` to the NEXT minor, then update its three pins in the
+   same commit: `packages/desktop/test/cli-locator.test.mjs` (band edges +
+   matrix), `test/desktop-cli-integration.test.mjs` (`required.range`, the
+   ceiling version), `docs/desktop-cli-api.md` (the band sentence). Confirm the
+   Desktop v1 surface is unchanged (`test/cli-json-contract.test.mjs`) — that
+   is the condition for widening without a `DESKTOP_API` bump. (v0.25.0 cost
+   two tag re-cuts for this.)
 3. Pre-flight locally (cheap, catches most CI failures):
    ```bash
    find . -name "*.mjs" -not -path "./node_modules/*" -exec node --check {} \;
@@ -97,6 +110,11 @@ remove.
   tag is still safe; repo renames do not matter because npm authority is
   token/account/package-scoped. See
   `knowledge/lessons/npm-eotp-in-tag-release.md`.
+- **`npm view @awebai/oats@X.Y.Z` is 404 for minutes after the run printed
+  `+ @awebai/oats@X.Y.Z`**: registry propagation of the larger kernel tarball
+  (≈6 min observed at v0.25.0; the pi adapter appears first). The run log's
+  `+ <pkg>@<version>` line is the publish truth — never retag on that 404;
+  wait and re-probe.
 - **Version-bump PR creation fails with `GraphQL: Resource not accessible by
   integration (createPullRequest)`**: check `npm view @awebai/oats
   version` first. Publishing completed before this step, so do not retag for
