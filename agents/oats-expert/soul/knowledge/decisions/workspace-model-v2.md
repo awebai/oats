@@ -2,7 +2,7 @@
 type: Decision
 title: Workspace model v2 — one workspace per org, members are trust, nothing is installed, every capability is copied whole into the instance
 status: accepted
-description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Twenty-one decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
+description: ACCEPTED (human, 2026-09-23) after a full brainstorm; four refinements from the team review the same day. Twenty-two decisions that replace the per-soul `source:` provenance grammar, the installed-capability tier and the classic config surface with one rule — a soul says WHERE each capability comes from (a member repo or a package), never which version; membership (reciprocal handshake) is the trust; packages are the only versioned thing; every capability is copied whole into the instance at spawn; harnesses start normally.
 tags: [workspace, membership, capabilities, packages, provenance, materialization, teams, harness, v2]
 timestamp: 2026-09-23
 ---
@@ -156,6 +156,19 @@ a version**. The workspace's `packages:` says which version; materialization
     source of "discoverable is not installed" — under the new model it is
     the only way a package becomes *pinnable by id*; a package outside the
     catalog is written as `git:<repo>@<ref>`.
+
+22. **`oats.core` and `oats.setup` are rewritten, not patched, for this
+    architecture** (human, 2026-09-23). An agent with `oats.core` must be
+    able to work well inside an instance under the new model — its home
+    layout, the verbs it actually uses, what workspace/member/package/team
+    mean from its seat, drift. An agent with `oats.setup` must understand
+    the whole architecture and its best practices: the handshake and why,
+    every declaration file field by field, member-tier vs package-tier and
+    the non-collapse rule, packages/lock/approval, catalog vs `git:` refs,
+    `sync`, the `<name>-workspace/` convention, private/external/standalone
+    cases, the three provider-payload homes, and what is deliberately not
+    versioned. Skills are snapshot-tested against the shipped CLI so they
+    cannot drift from the commands.
 
 # What is removed
 
