@@ -149,7 +149,7 @@ async function installedFixture() {
       const instructions = readFileSync(join(instance.home, "AGENTS.md"), "utf8");
       assert.match(instructions, /knowledge-capability-authoring\/SKILL\.md/);
       assert.match(instructions, /oats:capability:oats\.core/);
-      assert.match(instructions, /Load the oats-operate skill/);
+      assert.match(instructions, /Load the \*\*oats-operate\*\* skill/);
       const expertInstructions = readFileSync(join(installed, EXPERT_PATH, "AGENTS.md"), "utf8");
       assert.ok(instructions.includes(expertInstructions.trim()), "canonical expert instructions were composed");
       assert.doesNotMatch(expertInstructions, /\.\/work\/docs|https?:\/\//, "expert curriculum does not reach into a checkout or mutable web docs");

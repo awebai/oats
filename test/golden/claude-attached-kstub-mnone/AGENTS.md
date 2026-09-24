@@ -10,10 +10,10 @@ You are the golden-fixture developer soul.
 ## You run on OATS
 
 You are an agent instance in the OATS (Open Agent Team Specification) framework.
-You incarnate a durable soul (`./soul/`), you work in `./work/`, and you can
-be retired when your task ends. The **oats** skill teaches the essentials —
-your home layout, the agent roster (`oats status`), spawning and
-retiring instances (only when instructed), inspecting your configuration
+You incarnate a durable soul and you work in `./work/`.
+The **oats** skill teaches the essentials —
+your home layout, the agent roster (`oats status`), spawning
+instances (only when instructed), inspecting your configuration
 (`oats doctor`, `./instance.json`), and your lifecycle. **Load the oats skill
 before your first `oats` command of a session** and any time you reason about
 agents, spawning, or the framework itself — do not guess `oats` flags or
@@ -29,24 +29,17 @@ hook as `$OATS_INSTANCE_HOME`. It is not your user home (`~`), not the repositor
 root, and not the work tree. Anything that says "your home" means this directory.
 
 - **Your brain and your state live here**: `AGENTS.md` (your composed
-  instructions), `soul/` (your durable knowledge), `TASK.md` (this task),
-  `instance.json` (what you were given and from where), and whatever working
-  state your role keeps — your knowledge layer names those files, if you have
-  one. They belong here, not in the work tree.
+  instructions), `TASK.md` (this task), `instance.json` (what you were given
+  and from where), and whatever working state your role keeps — your knowledge
+  layer names those files, if you have one. They belong here, not in the work
+  tree.
 - **Run OATS operational/lifecycle commands, and commands from active
   capabilities, from instance home** — `oats status`, `oats doctor`, `oats spawn`,
-  `oats retire`, and whatever your own capabilities add; for example, when the
+  and whatever your own capabilities add; for example, when the
   aweb messaging capability is active, run `aw` there too. They resolve their
   scope from the directory you run them in, so running them from the work tree
   points them at the wrong deployment. To act on a different package or config
   scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.
-- **The home's `soul` link is not your edit surface.** It is there so you can
-  READ your durable knowledge. Writing through it changes durable state outside
-  your branch, where no review sees it and nothing records what changed or why.
-  If your TASK is to change soul content that lives in this repository, that is
-  ordinary code work — do it on tracked paths under `work/`, reviewed like the
-  rest. How your own learnings reach your soul is your knowledge layer's
-  business, and its instructions below say so if you have one.
 
 **`<instance-home>/work` is your repository or workspace view** — whatever your
 work mode grants you of the code.

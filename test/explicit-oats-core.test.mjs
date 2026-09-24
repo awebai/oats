@@ -77,7 +77,7 @@ test('declared oats.core replaces legacy operational injection and skills throug
 
 for (const declared of [['oats.setup'], ['oats.core', 'oats.setup']]) {
   test(`declared ${declared.join(' + ')} suppresses ambient legacy skills without overrides or duplicate names`, t => {
-    const f = fixture(t), skillNames = { 'oats.core': ['oats-operate', 'oats-souls'], 'oats.setup': ['oats-config', 'oats-packages', 'oats-workspace-setup'] };
+    const f = fixture(t), skillNames = { 'oats.core': ['oats-operate', 'oats-souls'], 'oats.setup': ['oats-onboarding', 'oats-package-pins', 'oats-rebuild'] };
     for (const id of declared) {
       const cap = join(f.context, '.agents/capabilities/owned', id);
       f.write(join(cap, 'oats.json'), { capability: id, version: '1.0.0', description: 'Inert resource fixture', skills: ['skills'], ...(id === 'oats.core' ? { inject: 'inject.md' } : {}) });

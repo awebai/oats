@@ -131,7 +131,7 @@ export function syncKnowledgeTheoryReferences(repoRoot = REPO_ROOT) {
 export function checkOperationalCapabilities(packageRoot) {
   for (const [slug, names, injection] of [
     ["oats-core", ["oats-operate", "oats-souls"], "injects/oats.md"],
-    ["oats-setup", ["oats-config", "oats-packages", "oats-workspace-setup"], null],
+    ["oats-setup", ["oats-onboarding", "oats-package-pins", "oats-rebuild"], null],
   ]) {
     const root = join(packageRoot, "capabilities", slug);
     const cap = JSON.parse(readFileSync(join(root, "oats.json"), "utf8"));
@@ -142,7 +142,7 @@ export function checkOperationalCapabilities(packageRoot) {
     if (injection) assert.deepEqual(cap.helperInjection, { version: 1, mode: "inherit" }, `${slug}: helper instances are OATS instances too; the briefing is inherited`);
     assert.equal(cap.capability, slug.replace("oats-", "oats."));
     assert.match(cap.version, /^\d+\.\d+\.\d+$/);
-    assert.deepEqual(cap.compatibility, { oats: ">=0.24.0" });
+    assert.deepEqual(cap.compatibility, { oats: ">=0.25.5" }); // the workspace-model surface these skills teach
     assert.deepEqual(cap.requires, []);
     assert.deepEqual(cap.skills, names.map(name => `skills/${name}`));
     assert.deepEqual(treeFiles(root), ["oats.json", ...names.map(name => `skills/${name}/SKILL.md`), ...(injection ? [injection] : [])].sort());
