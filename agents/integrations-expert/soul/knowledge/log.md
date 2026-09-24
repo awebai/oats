@@ -1,5 +1,9 @@
 # Knowledge Log
 
+## 2026-09-24
+* **Harvest**: promoted [Fake aw tests must model real refusal paths](/lessons/fake-aw-must-model-real-refusals.md) as a Lesson about keeping fake `aw` behavior aligned with real refusal paths — harvested from integrations-expert-aweb-identity.
+* **Update**: skills/integration-craft — added fake external CLI refusal-path coverage to the verification checklist.
+
 ## 2026-07-28
 * **Harvest**: promoted [OATS payload-root repository layout (oats-package/) for official packages](/lessons/payload-root-repo-layout.md) as a Lesson about official package repo payload-root layout and path-resolution rules — harvested from integrations-expert-official-packages-payload-final.
 

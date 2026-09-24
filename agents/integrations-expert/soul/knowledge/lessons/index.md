@@ -1,5 +1,6 @@
 # Lessons
 
 * [Capability artifact paths must stay inside the integrity boundary](capability-artifact-paths-must-be-integrity-bounded.md) - Locked capability manifests must not resolve executable or instruction paths outside the artifact whose bytes were hashed.
+* [Fake aw tests must model real refusal paths](fake-aw-must-model-real-refusals.md) - A fake CLI that accepts flags or environment the real aw refuses can hide broken lifecycle hooks until live rehearsal.
 * [OATS payload-root repository layout (oats-package/) for official packages](payload-root-repo-layout.md) - How to split an official OATS package repo into a distributed oats-package/ payload root and repo-only dev tooling under the merged PR57 configurable-path kernel contract.
 * [Tracker integration docs need an explicit support matrix](tracker-integration-docs-support-matrix.md) - Task integrations that mention projects or documents must distinguish supported commands, UI-only operations, ownership boundaries, and relationships between project context and executable issues.
