@@ -9,8 +9,8 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "317315a2b888fe8fed086049cd1f77390aea0875",
-          "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+          "commit": "15f394e74cfbe4ce9018797a35e25b60972b30d5",
+          "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
         "layer": null,
@@ -22,7 +22,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+          "commit": "c3d27e3876efe34034db4d6e133c1ae819c08577"
         },
         "layer": null,
         "private": false,
@@ -33,7 +33,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+          "commit": "c3d27e3876efe34034db4d6e133c1ae819c08577"
         },
         "layer": null,
         "private": false,
@@ -45,8 +45,8 @@
           "kind": "package",
           "package": "nw.messaging",
           "version": "0.1.0",
-          "commit": "ed4ea6cadfa4b8c4d7cb533020d3afff6b67b126",
-          "integrity": "sha256-aec7b3c4d1eb5043072ab10bdef46a50653c249e32899b787b3bfb419bcfe247",
+          "commit": "cddc11a8655d1990201c5ab8d263fc61d40b7ae6",
+          "integrity": "sha256-c62e68b32b799b9050526fcf39c4ffaa9de5df986db0fb8e8e0faf12e2a6c23b",
           "repoKey": "local//fixture/base/fx/remotes/pkg-messaging.git"
         },
         "layer": "messaging",
@@ -73,8 +73,8 @@
           "kind": "package",
           "package": "oats.okf",
           "version": "2.1.3",
-          "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
-          "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
+          "commit": "6c9742aa531b9be30fcb5fe8753c456b5a64f910",
+          "integrity": "sha256-8df2d930614743f3b973e405461aa4d73fc40dc6a5887ff32a177f8d59e244cb",
           "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
         },
         "layer": "knowledge",
@@ -83,8 +83,8 @@
       }
     ],
     "team": "engineering",
-    "resolution": "3af5ef48b5084a01b4a93e24",
-    "declRevision": "373abed01e6492cd50ce33e9",
+    "resolution": "eb3a363a6bfc82f9de410481",
+    "declRevision": "a2619f48f98d0692cbe49599",
     "payloadRevision": "1720e2c283c6cc205821e55c",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
@@ -138,7 +138,7 @@
       "branch": "agents/release-manager-api-v2",
       "base": {
         "ref": "HEAD",
-        "oid": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+        "oid": "c3d27e3876efe34034db4d6e133c1ae819c08577"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -174,13 +174,13 @@
           }
         }
       },
-      "resolution": "3af5ef48b5084a01b4a93e24",
-      "revision": "b13e0bdda958d4af3f0a0a5a"
+      "resolution": "eb3a363a6bfc82f9de410481",
+      "revision": "1e606fdb2b5bf143afc37cff"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 56
+      "elapsedMs": 51
     },
     "backendStatus": {
       "name": "tmux",
@@ -195,7 +195,7 @@
     "branch": "agents/release-manager-api-v2",
     "base": {
       "ref": "HEAD",
-      "oid": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+      "oid": "c3d27e3876efe34034db4d6e133c1ae819c08577"
     },
     "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2/work",
     "relation": null,
@@ -217,11 +217,11 @@
       },
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@c3d27e3876efe34034db4d6e133c1ae819c08577"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@c3d27e3876efe34034db4d6e133c1ae819c08577"
       },
       {
         "name": "nw.messaging",
