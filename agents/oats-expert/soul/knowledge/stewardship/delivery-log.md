@@ -22,6 +22,21 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Batch — 2026-09-24 evening (PRs 145–150) → v0.25.9
+- **Merged:**
+  - PR145 oats.aweb 1.12.1 `6cbda9d0` (Antares' lane; I cross-reviewed; the pin landed on its branch).
+  - PR146 Desktop F3a `858223ae`. Native gate 8/8, including a real Desktop spawn end to end, the first on v2. It was returned once for 9 root-suite failures; the test-only fix `3861f78f` followed.
+  - PR148 oats.okf 2.1.5 pins `5ca52ce9`. Returned once for a tracked `node_modules` symlink, then rebased after PR145 on a shared doc line.
+  - PR150 bump.
+  - Separate repos: oats-okf #15 (2.1.5) and oats-aweb #10 (1.12.1 stage) were cross-reviewed and approved. Both payloads were checked byte-identical, independently (`diff -rq` against a fresh clone at the tag or the reviewed oats head).
+- **taught us:**
+  - (1) **A mirror PR's payload check is independent and structural.** Clone the tag fresh and `diff -rq` it, or compare tree OIDs across a rebase. Never take "byte-identical" from the author's report alone.
+  - (2) **Check the merge range for stray tracked files.** A `node_modules` symlink to an operator's machine path rode along in a pins PR.
+  - (3) **The Desktop suite isn't the gate for Desktop PRs.** Root suites (`test/desktop-*`, `tests/desktop-views`) drive the Desktop server and views too. PR CI caught 9 failures the engineer's local run missed, so the engineer now runs those suites before pushing.
+  - (4) **A tmux nudge to a busy Claude Code session can sit unsubmitted in its input box.** A developer idled for over an hour. Check the pane after nudging, and prefer instruction files.
+  - (5) **Check what exists before queuing kernel work.** `hostOnly` settings enforcement has been in the kernel since 0.25.6; the gap was a package that didn't mark its keys.
+  - (6) **Mail lag between agents produces repeated questions.** Answer once with message ids and ask for an explicit ack.
+
 ## Batch — 2026-09-24 afternoon (PRs 127–143) → v0.25.8
 - **Merged:**
   - PR127 D2 `43a9528b`, PR129 D3 `cc28a862`, PR133 D4(2) `e86d92b7`. These are the driver's; I reviewed them and Antares ACKed them.
