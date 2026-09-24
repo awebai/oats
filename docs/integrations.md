@@ -107,6 +107,10 @@ secrets never belong in OATS config. See
 
 ## Building an integration
 
+A slot provider that declares `binding` answers `oats readiness` through its
+`binding.check` command; the request, environment and answer are specified in
+[capabilities.md](capabilities.md#readiness-check-bindingcheck).
+
 Building an integration is implementing a contract. The checklist per slot:
 
 **Any slot.** A namespaced capability manifest with exactly one `layer`; an
