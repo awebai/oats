@@ -78,7 +78,7 @@ members:
 packages:
   oats.framework: v1.1.3
   oats.okf: v2.1.4
-  oats.aweb: v1.12.0
+  oats.aweb: v1.12.1
 teams:
   global: { description: Org-wide }
   engineering: { description: Platform }
@@ -328,7 +328,7 @@ Member capabilities need no approval: membership is the trust.
 **Non-interactive approval (CI, scripted rebuilds):**
 
 ```bash
-oats sync --approve oats.okf@v2.1.4 --approve oats.aweb@v1.12.0
+oats sync --approve oats.okf@v2.1.4 --approve oats.aweb@v1.12.1
 ```
 
 `--approve <id>@<version>` is repeatable and approves **exactly** the entry the
