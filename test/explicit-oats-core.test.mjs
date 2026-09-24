@@ -464,7 +464,7 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   // C. two concurrent applies of ONE fresh decision → exactly one home; the loser refuses E_PLACEMENT_TAKEN having touched nothing.
   const fresh = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision.revision;
   const { spawn } = await import('node:child_process');
-  const run = () => new Promise(res => { const p = spawn(process.execPath, [CLI, 'spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json'], { cwd: f.context, env: process.env }); let out = ''; p.stdout.on('data', d => out += d); p.on('close', code => res({ code, doc: JSON.parse(out.trim().split('\n').pop()) })); });
+  const run = () => new Promise(res => { const p = spawn(process.execPath, [CLI, 'spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json'], { cwd: f.context, env: process.env }); let out = '', err = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => err += d); p.on('close', code => { let doc; try { doc = JSON.parse(out.trim().split('\n').pop()); } catch { doc = { ok: false, error: { code: 'UNPARSEABLE', raw: (out + err).slice(0, 400) } }; } res({ code, doc }); }); });
   const results = await Promise.all([run(), run(), run()]);
   const wins = results.filter(r => r.doc.ok), losses = results.filter(r => !r.doc.ok);
   assert.equal(wins.length, 1, JSON.stringify(results.map(r => r.doc.ok ? 'ok' : r.doc.error.code)));
@@ -472,8 +472,13 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   // side effects landed: the exclusive mkdir (E_PLACEMENT_TAKEN), the bound decision
   // (E_DECISION_STALE), or — in worktree mode — the winner's freshly created branch
   // (E_BRANCH_EXISTS). All three are honest "nothing created" refusals.
-  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE', 'E_BRANCH_EXISTS'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error.code)));
+  // All three applies bind ONE decision, so they plan the same branch by design:
+  // the branch is not a per-run name to make unique, it is what they race for.
+  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE', 'E_BRANCH_EXISTS'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error)));
   assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'exactly one home');
+  const git = (...a) => spawnSync('git', ['-C', f.context, ...a], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(git('for-each-ref', '--format=%(refname:short)', 'refs/heads/agents/'), 'agents/wt-a', 'the losers created no branch');
+  assert.deepEqual(git('worktree', 'list', '--porcelain').split('\n').filter(l => l.startsWith('worktree ')).map(l => realpathSync(l.slice(9))), [f.context, join(f.root, 'wt', 'instances', 'wt-a', 'work')], 'and no worktree');
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-apply-2'));
 });
 
