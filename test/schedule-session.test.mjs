@@ -36,10 +36,14 @@ test("scheduled wakes deliver literal text once and give the next cold home the 
     for (const id of ["one", "two"]) {
       const instance = `dev-${id}`, home = join(ws, "agents", "dev", "instances", instance);
       mkdirSync(home, { recursive: true });
-      const harness = join(base, `fixture-${id}.mjs`), log = join(home, "received.jsonl");
-      writeFileSync(harness, `#!${process.execPath}\nimport {appendFileSync} from 'node:fs';
+      const harness = join(base, `fixture-${id}.mjs`), log = join(home, "received.jsonl"), ready = join(base, `fixture-${id}.ready`);
+      // The harness announces itself once it reads stdin. Session start runs
+      // other processes first (the native-start recorder, `cat TASK.md`), so a
+      // non-shell pane alone does not prove the harness is the one running.
+      writeFileSync(harness, `#!${process.execPath}\nimport {appendFileSync,writeFileSync} from 'node:fs';
 process.stdin.setEncoding('utf8'); let input='';
 process.stdin.on('data',data=>{appendFileSync(${JSON.stringify(log)},JSON.stringify(data)+'\\n');input+=data;if(input.includes('STOP-FIXTURE'))process.exit(0);});
+writeFileSync(${JSON.stringify(ready)},String(process.pid));
 setTimeout(()=>process.exit(0),30000);\n`);
       chmodSync(harness, 0o755);
       writeFileSync(join(home, "TASK.md"), "Fixture only\n");
@@ -53,16 +57,17 @@ setTimeout(()=>process.exit(0),30000);\n`);
       writeFileSync(baseline, JSON.stringify({ version: 2, home, runtime: { launched: false }, homeFingerprint: { files: 3, digest: "fixture" }, disposableReceipts: [], generatedWorkFingerprint: { digest: "fixture" } }));
       const message = `literal ${id}: $(touch NEVER) and \`echo no\``;
       addSchedule(ws, { id, cron: "* * * * *", tz: "UTC", kind: "wake", home, message });
-      homes.push({ home, log, message });
+      homes.push({ home, log, ready, message });
     }
     const tick = time => withHostLock(() => tickWorkspace(ws, { now: new Date(time), reg: { maxConcurrent: 1 }, wsList: [ws] }));
     let result = tick("2026-09-07T12:00:00Z");
     assert.equal(result.find(r => r.id === "one").action, "started");
     assert.equal(result.find(r => r.id === "two").action, "skipped", "two cold homes cannot both start under cap one");
     assert.equal(existsSync(homes[1].log), false);
-    await waitFor(() => inspectInstanceSession(homes[0].home).state === "unknown", "first dummy runtime becomes active");
+    await waitFor(() => existsSync(homes[0].ready) && inspectInstanceSession(homes[0].home).state === "unknown", "first dummy runtime becomes active");
     result = tick("2026-09-07T12:00:10Z");
-    assert.equal(result.find(r => r.id === "one").action, "delivered");
+    const delivered = result.find(r => r.id === "one");
+    assert.equal(delivered.action, "delivered", delivered.reason);
     await waitFor(() => received(homes[0]).includes("\n"), "wake reaches real stdin");
     const before = received(homes[0]);
     assert.equal(before, homes[0].message + "\n", "shell metacharacters arrive as literal text");
