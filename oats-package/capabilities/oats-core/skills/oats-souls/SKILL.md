@@ -90,9 +90,13 @@ unclear, ask your human.
 
 ## Name the instance
 
-`oats spawn <soul> --purpose <role>` names the instance `<soul>-<role>`. Use
-a short lowercase kebab-case role for what this incarnation does
-(`release-0-26`, `desktop-review`), not an opaque number. Never put secrets,
+By default `oats spawn <soul> --purpose <role>` names the instance
+`<soul>-<role>`. Use a short lowercase kebab-case role for what this
+incarnation does (`release-0-26`, `desktop-review`), not an opaque number.
+`--name <slug>` gives an exact, unprefixed name instead (not with
+`--purpose`); it must be a slug and not a soul name. Names are unique across
+the deployment: a derived name in use gets `-2`; an explicit `--name` in use is
+refused, never suffixed. Never put secrets,
 user data or volatile task detail in a name — with a messaging capability the
 instance name is also its address.
 

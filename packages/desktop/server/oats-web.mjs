@@ -197,7 +197,7 @@ function agentsData(wsId) {
         name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
         ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}),
         origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
-        soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null },
+        soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null },
         agentsRoot: root, workspace: context,
         repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.repoKey || ""),
       });

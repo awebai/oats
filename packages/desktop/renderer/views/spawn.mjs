@@ -209,7 +209,7 @@ ${spawnDialogCSS}</style>
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent), workspace: () => s.workspace,
     schedule: agent => { if (canLaunchSoul(s, agent)) { preselectSchedule(agent); ctx.openView?.("schedules"); } },
-    changed: () => refresh(s), closed: ({ restoreFocus } = {}) => {
+    closed: ({ restoreFocus } = {}) => {
       const ref = s.inspectRef; s.inspectRef = null;
       if (!s.alive) return;
       renderGrid(s, { restoreFocus: false });

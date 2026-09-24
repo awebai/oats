@@ -16,6 +16,7 @@ import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
 import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
+import { soulRepository } from '../renderer/soul-repository.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -24,7 +25,7 @@ const soul = root => ({ name: 'dev', agentsRoot: `/${root}/agents`, runtime: 'pi
 const selection = root => ({ agent: soul(root), selector: { soul: 'dev', agentsRoot: soul(root).agentsRoot } });
 const inspection = (root = 'a') => ({
   operationsApi: 1, scope: { context: `/${root}` }, selected: { source: 'config' },
-  souls: [{ ...soul(root), model: `${root}-model`, editable: { fields: ['model'], instructions: true }, instructions: { text: `${root}-instructions` } }],
+  souls: [{ ...soul(root), model: `${root}-model`, instructions: { text: `${root}-instructions` } }],
   layers: { knowledge: { id: 'fixture.notes' } },
   capabilities: [{ id: 'fixture.notes', layer: 'knowledge', activation: { enabled: true },
     operations: [{ name: 'inspect', kind: 'view', available: true, args: [] }] }],
@@ -103,13 +104,16 @@ async function workspace(t, { hosted = true, createHost = controlledHost, api = 
   };
 }
 
-async function editor(u) {
-  u.card().click(); await tick(); u.click('Edit instructions');
-  const field = u.get('.soul-inspector textarea'); field.value = 'Unsaved\nlocal instructions';
-  return field;
+// The inspector is read-only; its local UI state is the disclosed
+// instructions. Hosting must keep that exact node and its open state.
+const instructionsOf = u => [...u.get('.soul-inspector').querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'AGENTS.md / instructions');
+async function openInstructions(u) {
+  u.card().click(); await tick();
+  const details = instructionsOf(u); assert.ok(details, 'instructions disclosure'); details.open = true;
+  return details;
 }
 
-test('host moves the actual inspector; its stage stays one column and shared head/form styles survive', async t => {
+test('host moves the actual inspector; its stage stays one column and shared head/action styles survive', async t => {
   const u = await workspace(t), record = u.host.current, aside = record.element;
   assert.equal(record.originalParent, u.get('.souls-body'));
   assert.equal(aside.parentElement, record.slot);
@@ -118,7 +122,7 @@ test('host moves the actual inspector; its stage stays one column and shared hea
   assert.equal(aside.hidden, true); assert.equal(record.lease.isVisible(), false);
   assert.deepEqual([...u.get('.souls-body').children], [u.get('.workspace-main')]);
   assert.equal(u.card().getAttribute('aria-pressed'), 'false');
-  const field = await editor(u);
+  await openInstructions(u);
   assert.equal(record.lease.isVisible(), true); assert.equal(aside.hidden, false);
   assert.equal(u.card().getAttribute('aria-pressed'), 'true');
   assert.equal(u.card('b').getAttribute('aria-pressed'), 'false');
@@ -131,11 +135,10 @@ test('host moves the actual inspector; its stage stays one column and shared hea
   assert.equal(css(aside.querySelector('.inspector-head')).minHeight, '48px');
   assert.equal(css(aside.querySelector(':scope > .inspector-content')).padding, '0px 14px 16px');
   assert.equal(css(aside.querySelector('button.act')).borderRadius, '7px');
-  assert.equal(css(field).boxSizing, 'border-box');
 });
 
-test('hosted X, cover and polling preserve the selected soul and exact unsaved editor node/value', async t => {
-  const u = await workspace(t), field = await editor(u), aside = u.get('.soul-inspector'), lease = u.host.current.lease;
+test('hosted X, cover and polling preserve the selected soul and the exact disclosed instructions node', async t => {
+  const u = await workspace(t), field = await openInstructions(u), aside = u.get('.soul-inspector'), lease = u.host.current.lease;
   u.get('[aria-label="Close inspector"]').click();
   assert.equal(lease.isVisible(), false);
   assert.equal(aside.hidden, false, 'legacy hidden tracks presence, not host visibility');
@@ -144,42 +147,39 @@ test('hosted X, cover and polling preserve the selected soul and exact unsaved e
   await u.poll();
   u.host.expand();
   assert.equal(lease.isVisible(), true);
-  assert.equal(u.get('.soul-inspector textarea'), field);
+  assert.equal(instructionsOf(u), field);
   u.host.cover(); await u.poll();
   assert.equal(lease.isVisible(), false);
-  assert.equal(u.get('.soul-inspector textarea'), field);
+  assert.equal(instructionsOf(u), field);
   u.host.cover(false);
   assert.equal(lease.isVisible(), true);
-  assert.equal(field.value, 'Unsaved\nlocal instructions');
+  assert.equal(field.open, true, 'local disclosure state survives');
   assert.equal(u.calls.filter(call => call.body?.action === 'inspect').length, 1, 'presentation never re-inspects');
-  assert.equal(u.calls.some(call => call.body?.action === 'set'), false);
+  assert.ok(u.calls.every(call => !call.body?.action || ['inspect', 'run'].includes(call.body.action)), 'read-only inspector');
 });
 
-// Exercise every inspector await: initial read, write receipt, post-write read,
-// and provider operation. Hidden owners may paint themselves, never the host.
-for (const path of ['inspect', 'write', 'save refresh', 'operation']) {
+// Exercise every inspector await: initial read and provider operation.
+// Hidden owners may paint themselves, never the host.
+for (const path of ['inspect', 'operation']) {
   for (const visibility of ['collapsed', 'covered']) for (const outcome of ['success', 'rejection']) {
     test(`late ${path} ${outcome} cannot reveal the ${visibility} hosted slot`, async t => {
       const pending = deferred(); let reads = 0;
       const u = await workspace(t, { api: body => {
         if (body.action === 'inspect') {
           reads++;
-          if (path === 'inspect' || (path === 'save refresh' && reads === 2)) return pending.promise;
+          if (path === 'inspect') return pending.promise;
           return inspection();
         }
-        if (body.action === 'set') return path === 'write' ? pending.promise : { file: '/a/soul.yaml' };
         if (body.action === 'run') return pending.promise;
         throw new Error(`Unexpected action ${body.action}`);
       } });
       u.card().click(); await tick();
-      if (path === 'write' || path === 'save refresh') {
-        u.click('Edit instructions'); u.get('textarea').value = 'Saved value'; u.click('Save instructions'); await tick();
-      } else if (path === 'operation') u.get('[data-operation]').click();
+      if (path === 'operation') u.get('[data-operation]').click();
       const record = u.host.current;
       if (visibility === 'covered') u.host.cover(); else u.get('[aria-label="Close inspector"]').click();
       u.get('#outside').focus(); u.focuses.length = 0;
       const events = [...record.events];
-      const value = path === 'operation' ? { result: { summary: 'Owned hidden output' } } : path === 'write' ? { file: '/a/soul.yaml' } : inspection();
+      const value = path === 'operation' ? { result: { summary: 'Owned hidden output' } } : inspection();
       settle(pending, outcome, value); await tick(); await tick();
       assert.deepEqual(record.events, events, 'completion must not report presence or reclaim the host');
       assert.equal(record.lease.isVisible(), false); assert.equal(record.slot.hidden, true);
@@ -192,7 +192,6 @@ for (const path of ['inspect', 'write', 'save refresh', 'operation']) {
       const status = record.element.querySelector('.inspector-status').textContent;
       if (outcome === 'rejection') assert.match(status, /controlled late rejection/);
       else if (path === 'operation') assert.match(record.element.textContent, /Owned hidden output/);
-      else if (path !== 'inspect') assert.match(status, /Saved/);
     });
   }
 }
@@ -234,7 +233,7 @@ for (const boundary of ['workspace', 'subtab', 'unmount/remount']) for (const ou
 
 for (const hosted of [false, true]) for (const boundary of ['workspace', 'subtab', 'unmount', 'covered poll']) {
   test(`${hosted ? 'hosted' : 'standalone'} ${boundary} never focuses a hidden/obsolete card`, async t => {
-    const u = await workspace(t, { hosted }); await editor(u);
+    const u = await workspace(t, { hosted }); await openInstructions(u);
     u.card('b').focus(); u.focuses.length = 0;
     if (boundary === 'workspace') setWorkspace('/other');
     else if (boundary === 'subtab') u.get('#workspace-tab-capabilities').click();
@@ -247,7 +246,7 @@ for (const hosted of [false, true]) for (const boundary of ['workspace', 'subtab
 
 test('standalone X still deselects, removes the inline column and focuses only the matching current card', async t => {
   const u = await workspace(t, { hosted: false });
-  u.card('b').click(); await tick(); u.click('Edit instructions');
+  u.card('b').click(); await tick();
   assert.equal(u.get('.soul-inspector').parentElement, u.get('.souls-body'));
   assert.equal(u.get('.souls-body').classList.contains('inspecting'), true);
   assert.equal(u.card('b').hasAttribute('aria-pressed'), false);
@@ -300,7 +299,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus, iconElement });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus, iconElement, soulRepository });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 
@@ -309,25 +308,25 @@ test('real context-panel lease composes with Workspace without copying, reloadin
   const context = { workspace: '/team', owner: u.host.owner };
   const panel = u.host.panel, root = u.get('#panel');
   assert.equal(root.hidden, true, 'empty inspector explicitly reports no presence after attach');
-  const field = await editor(u), aside = u.get('.soul-inspector');
+  const field = await openInstructions(u), aside = u.get('.soul-inspector');
   assert.equal(root.hidden, false); assert.ok(aside.closest('.context-panel-stage.oats-view'));
   assert.equal(u.get('.souls-body').classList.contains('inspecting'), false);
   u.get('[aria-label="Close inspector"]').click();
   assert.equal(root.classList.contains('is-collapsed'), true); assert.equal(aside.hidden, false);
   await u.poll();
   assert.equal(root.classList.contains('is-collapsed'), true);
-  assert.equal(u.get('.soul-inspector textarea'), field);
-  const save = button(aside, 'Save instructions');
+  assert.equal(instructionsOf(u), field);
+  const refresh = button(aside, 'Refresh');
   panel.setCollapsed(false);
   panel.setContext({ workspace: '/team', key: 'file-tab' });
   assert.equal(aside.closest('.context-panel-stage').hidden, true);
   await u.poll();
-  assert.equal(u.get('.soul-inspector textarea'), field);
-  assert.equal(field.value, 'Unsaved\nlocal instructions');
-  assert.equal(button(aside, 'Save instructions'), save); assert.equal(save.disabled, false);
+  assert.equal(instructionsOf(u), field);
+  assert.equal(field.open, true);
+  assert.equal(button(aside, 'Refresh'), refresh); assert.equal(refresh.disabled, false);
   panel.setContext(context);
   assert.equal(aside.closest('.context-panel-stage').hidden, false);
-  assert.equal(u.get('.soul-inspector textarea'), field);
+  assert.equal(instructionsOf(u), field);
   assert.equal(u.calls.filter(call => call.body?.action === 'inspect').length, 1);
   spawn.unmount(); spawn.unmount();
   assert.equal(root.querySelector('.context-panel-stage'), null);
@@ -350,7 +349,7 @@ function realHost(doc) {
 
 test('Workspace keeps its actual panel facade across A→B→A resets and releases it on real unmount', async t => {
   const u = await workspace(t, { createHost: realHost });
-  await editor(u);
+  await openInstructions(u);
   const aside = u.get('.soul-inspector'), wrapper = aside.parentElement;
   u.host.visit('/other');
   assert.equal(u.get('#panel').hidden, true); assert.equal(aside.childElementCount, 0);
