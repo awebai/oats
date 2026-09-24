@@ -102,7 +102,7 @@ test("retire: workspace deleted is reported as retired with aliasReusable false 
     const r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify({ alias: "probe", team: "t:example.test" }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false });
-    assert.match(r.doc.warning, /certificate is not revoked \(aweb-abim\).*fresh --purpose/);
+    assert.match(r.doc.warning, /certificate is not revoked \(aweb-abim\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -144,7 +144,7 @@ test("retire on aw 1.36.1: aliasReusable follows aw workspace delete --json (rel
     assert.match(readFileSync(join(base, "aw.log"), "utf8"), /workspace delete probe --json/);
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.1", FAKE_ALIAS_RELEASED: "false" });
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false, aliasReason: "no_workspace_credential" });
-    assert.match(r.doc.warning, /not released \(no_workspace_credential\).*fresh --purpose/);
+    assert.match(r.doc.warning, /not released \(no_workspace_credential\).*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
     // Below the floor the pre-abim report stands, and --json is never sent.
     r = runHook(base, bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_META: JSON.stringify(meta), FAKE_AW_VERSION: "aw 1.36.0" });
     assert.deepEqual(r.doc.meta, { retired: true, aliasReusable: false });
@@ -153,14 +153,32 @@ test("retire on aw 1.36.1: aliasReusable follows aw workspace delete --json (rel
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("spawn: a join refused because the alias still holds a certificate is fatal with the retired-alias explanation and the fresh-purpose remedy", () => {
+test("spawn: a join refused because the alias still holds a certificate is fatal with the retired-alias explanation and the name-or-purpose remedy", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
   try {
     const bin = fakeAw(base, "conflict"); const { root, home } = deployment(base);
     const r = runHook(base, bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}" });
     assert.notEqual(r.status, 0);
-    assert.match(r.stdout, /already holds a certificate on t:example.test .*not reusable until aweb-abim.*fresh --purpose/);
+    assert.match(r.stdout, /already holds a certificate on t:example.test .*not reusable until aweb-abim.*different --name \(kernels 0\.26\.0\+\) or a different --purpose/);
     assert.equal(r.stdout.includes("TOK-secret"), false, "the invite token never reaches the log");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("spawn: local aliases accept 64 characters and reject 65 before aw is called", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-110-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base);
+    const alias64 = `a${"b".repeat(63)}`;
+    const ok = runHook(base, bin, "spawn", { OATS_INSTANCE: alias64, OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}" });
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+    assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`team join TOK-secret --name ${alias64} --json`));
+    const before = readFileSync(join(base, "aw.log"), "utf8");
+    const alias65 = `a${"b".repeat(64)}`;
+    const badHome = join(root, "agents", "dev", "instances", "too-long"); mkdirSync(badHome, { recursive: true });
+    const bad = runHook(base, bin, "spawn", { OATS_INSTANCE: alias65, OATS_HOME: badHome, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_RUNTIME: "pi", OATS_TEAM_ID: "t:example.test", OATS_SETTINGS: "{}" });
+    assert.notEqual(bad.status, 0);
+    assert.match(bad.doc.warning, /invalid alias/i);
+    assert.equal(readFileSync(join(base, "aw.log"), "utf8"), before, "invalid alias is rejected before any aw call");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
