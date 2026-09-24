@@ -231,21 +231,19 @@ and needs equivalent registration glue when switched to session delivery.
 
 ## Shared permission setting
 
-The opt-in is per launch or per soul: `oats spawn --yolo` / `--no-yolo`
-(`oats create` accepts the same flags), an optional `yolo` in `soul.yaml`
-(0.24 schema; the v2 `soul.yaml` schema does not carry it — use the spawn flag
-or a launch configuration), and the Desktop's per-launch choice. With no
-setting, native policy is retained.
+The opt-in is per launch: `oats spawn --yolo` / `--no-yolo`, the `yolo` of a
+named launch configuration (`oats launch-config set <name> --file <json>`),
+or the Desktop's per-launch choice. A soul does not carry it: `soul.yaml` has
+no `yolo`. With no setting, native policy is retained, and the spawn flag
+overrides any configured value.
 
-*0.24 classic deployments* may also set `yolo: true` in an `oats-config.yaml`
-to apply it to that scope; the closest scope wins, soul overrides scope, the
-spawn flag overrides both. *Under the workspace model* `oats-config.yaml` is
-not configuration ([configuration.md](configuration.md)); the kernel's
-`composeInstance` still consults the classic chain for the machine-level knobs
-`yolo` and `launch-configs` when such a file happens to sit above the
-deployment, but nothing writes one and the rebuild guide tells you to delete
-it — treat a scope-level `yolo` as a 0.24 feature and prefer the explicit
-spawn flag.
+Launch configurations are machine-level: `oats launch-config set` writes them
+to the `launch-configs:` block of a scope's `oats-config.yaml`, and the kernel
+still reads that block and a scope-level `yolo:` there (the closest scope
+wins). They are the only keys of that file it reads — nothing else in it is
+configuration under the workspace model ([configuration.md](configuration.md)).
+Prefer the explicit spawn flag or a named launch configuration to a
+scope-level `yolo:`.
 
 Autonomous or unattended execution is not permission to synthesize `yolo: true`.
 Explicit user CLI/UI input or a user-selected configuration is the opt-in; explicit

@@ -30,7 +30,7 @@ their `oats-package/` is consumed only as a package: `from: package`, pinned
 in the workspace's `packages:` (the declaration is the trust) and locked to a
 commit and integrity. The framework's
 own souls therefore say `oats.okf: { from: package }` even though `oats-okf` is
-a member. A bare version in `packages:` (`oats.okf: v2.1.4`) resolves through
+a member. A bare version in `packages:` (`oats.okf: v2.1.5`) resolves through
 the catalog; a package outside it is written `git:<repo>@<ref>`.
 
 ## Join it on your machine
