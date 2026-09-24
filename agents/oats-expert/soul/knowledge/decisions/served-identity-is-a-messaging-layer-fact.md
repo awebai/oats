@@ -128,8 +128,7 @@ cannot live in the hook — no provenance in the merged payload) and K3′
 (launch meta dropped). **Accepted 2026-09-24** under the human's delegated
 authority, after K3′ had already shipped as a defect fix (0.25.5) and the
 provider half (oats.aweb 1.12.0) had passed a live rehearsal and been
-published. Remaining implementation: K1′ (`decision.effective.providers`),
-K1″ (`settings.<key>.hostOnly` in the manifest schema + resolver refusal),
-K2 (roster/inspect `identity` from the messaging module's meta) — one kernel
-PR, then oats.aweb 1.12.1 declares `residents` `hostOnly`, then Desktop's
-Identity select as `--provider` pairs when its lane reaches Phase F.
+published. **Kernel half COMPLETE**: K1′/K1″/K2 shipped in oats PR #118 (`5d9eccd5`, 0.25.6;
+`features[] += served-identity`); K3′ in 0.25.5. Remaining: oats.aweb 1.12.1
+declares `residents` `hostOnly` (provider's PR); Desktop's Identity select as
+`--provider` pairs — Phase F slice F3 (`docs/design/2026-09-24-desktop-phase-f-boundary.md`).
