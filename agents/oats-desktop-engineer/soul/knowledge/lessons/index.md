@@ -1,5 +1,7 @@
 # lessons
 
+* [Test-name filters are selection, not native-effect isolation](test-name-filters-are-not-effect-isolation.md) - Node test-name filters match full names and can select unintended native cases, so effect isolation must precede execution and TAP must confirm the actual selection.
+
 * [Anchor every tmux target the desktop constructs](anchor-tmux-attach-targets.md) - tmux prefix-matches unanchored targets, so desktop code should build `=session:=window` through a validating helper for targets that accept anchors and fail loudly when the exact window is gone.
 * [Async resource lifecycles must handle close during pending acquisition](async-mount-close-race.md) - When a desktop owner can close during async mount or terminal open, lifecycle state must track closed/settled/fulfilled, release late materialized resources, reserve dedup keys until cleanup completes, and run setup inside `onReady` before settle.
 * [Bounded OS resources spawned per user action need a hard cap in the owning process](terminal-resource-cap-in-owning-process.md) - Renderer-side tab dedupe is best-effort UX, not a resource bound; pty and tmux-viewer ceilings must be deduped and capped in the Electron main process that owns them.
