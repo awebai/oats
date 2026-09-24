@@ -674,3 +674,63 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
     assert.ok(!existsSync(home), "quarantine cleared without --force");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("declaration is the trust decision: an edited lock capability list and a package no longer declared are refused at spawn, preview and sync — no home, no module store", { timeout: 600_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    mkdirSync(join(base, "home"));
+    const dep = join(base, "northwind-workspace");
+    const agentsRoot = join(dep, "agents");
+    mkdirSync(agentsRoot, { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    const spawnArgs = (...extra) => ["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "x", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", ...extra, "--json"];
+    const noSideEffects = (what) => {
+      assert.equal(existsSync(join(agentsRoot, "release-manager", "instances")), false, `${what}: no home`);
+      assert.equal(existsSync(join(dep, ".oats", "modules")), false, `${what}: no module store write`);
+    };
+    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `sync\n${r.stdout}\n${r.stderr}`);
+    const lockFile = join(dep, "oats-lock.json");
+    const good = readFileSync(lockFile, "utf8");
+
+    // ---- an edited capability list: refused at preview, apply and sync ----
+    const lock = JSON.parse(good);
+    // (a phantom name: every capability the soul draws still has its provider, so the refusal is the list check)
+    lock.packages["nw.tools"].capabilities = [...lock.packages["nw.tools"].capabilities, "nw-phantom"].sort();
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    for (const extra of [["--preview"], []]) {
+      r = oats(spawnArgs(...extra), { cwd: dep, env, base });
+      assert.equal(r.status, 1, `edited lock ${extra.join(" ")}\n${r.stdout}\n${r.stderr}`);
+      assert.equal(envelope(r).error.code, "E_PACKAGE_INTEGRITY");
+      noSideEffects(`edited lock ${extra.join(" ")}`);
+    }
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 1, `sync over an edited lock is refused, not kept\n${r.stdout}\n${r.stderr}`);
+    assert.equal(envelope(r).error.code, "E_PACKAGE_INTEGRITY");
+    assert.match(envelope(r).error.message, /capabilities/);
+    writeFileSync(lockFile, good);
+
+    // ---- a package the workspace no longer declares (stale lock, no sync since): refused ----
+    await moveMember(fx, "agents", async (work) => {
+      const file = join(work, "oats-workspace.yaml");
+      const text = readFileSync(file, "utf8");
+      const next = text.split("\n").filter((l) => !/nw\.tools/.test(l)).join("\n");
+      assert.notEqual(next, text, "fixture: the host declares nw.tools");
+      writeFileSync(file, next);
+    }, { message: "agents: drop nw.tools from packages:" });
+    for (const extra of [["--preview"], []]) {
+      r = oats(spawnArgs(...extra), { cwd: dep, env, base });
+      assert.equal(r.status, 1, `undeclared package ${extra.join(" ")}\n${r.stdout}\n${r.stderr}`);
+      assert.equal(envelope(r).error.code, "E_PACKAGE_MISSING");
+      assert.match(envelope(r).error.message, /no longer declared/);
+      noSideEffects(`undeclared package ${extra.join(" ")}`);
+    }
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `sync drops the undeclared package\n${r.stdout}\n${r.stderr}`);
+    assert.equal("nw.tools" in JSON.parse(readFileSync(lockFile, "utf8")).packages, false);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});

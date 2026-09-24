@@ -192,7 +192,10 @@ trust lists, no per-capability approval for members. Packages come from
 the trust decision** (human decision, 2026-09-24): people install a package only
 when they trust it, so there is no second, per-version approval step. The lock
 is reproducibility, not approval — it pins the exact commit and content
-integrity, and drift is refused.
+integrity, and `oats sync` refuses drift (a moved tag, changed content, an
+edited capability list). A spawn admits only a locked package the workspace
+**still declares**: one removed from `packages:` but left in a stale lock is
+`E_PACKAGE_MISSING { reason: "undeclared" }` until `oats sync` drops it.
 
 **The handshake is observed with the operator's own Git read access, in one
 access context.** The kernel reads both halves over the remotes

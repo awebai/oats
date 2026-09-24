@@ -163,8 +163,10 @@ closed (`E_PACKAGE_MISSING { ambiguous: [ids] }`): keep one of them in
 `packages:`. A lock that is not v3 (a 0.24 lock, an unreadable file) is
 `E_LOCK_SCHEMA`; it is never auto-repaired — delete it and `oats sync`. A v3
 lock written before 0.26.0 may carry an `approved` record per entry: it is read
-with the field ignored, and the next write drops it. Agents never hand-edit the
-lock.
+with the field ignored, and the next write drops it. The reverse does not hold:
+a kernel before 0.26.0 refuses a lock 0.26.0 wrote (`E_LOCK_SCHEMA "approved:
+must be null or { executables, at }"`) — keep every kernel that reads one
+deployment on 0.26.0 or later. Agents never hand-edit the lock.
 
 ## Trust
 

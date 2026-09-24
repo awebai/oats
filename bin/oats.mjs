@@ -2348,7 +2348,7 @@ async function spawnCmd() {
   // <agents-root>/<name>/soul/ is not an instance (reported as soulFetched).
   const providerPairs = [];
   for (let i = 0; i < args.length; i++) if (args[i] === "--provider") { if (!args[i + 1] || !args[i + 2]) bail("E_BAD_ARGS", "--provider needs <capability> <key>=<value>"); providerPairs.push([args[i + 1], args[i + 2]]); i += 2; }
-  let wsPrepared, soulFetched = false, wsSoulUnknown = null;
+  let wsPrepared, soulFetched = false, wsSoulUnknown = null, wsDiscovery;
   let hasLocal = true;
   {
     try { loadLocal(dirFlag()); } catch (e) { if (e?.code === "E_LOCAL_MISSING") hasLocal = false; else bail(e.code || "E_WORKSPACE_SCHEMA", e.message, e.details); }
@@ -2358,7 +2358,7 @@ async function spawnCmd() {
         const { prepareInstance, ensureWorkspaceSoul, parseProviderFlags, discoverOrStandalone } = await import("../lib/instance-resolution.mjs");
         const remoteOptions = remoteOptionsFromEnv();
         const { local } = loadLocal(dirFlag());
-        discovery = await discoverOrStandalone(local, { remoteOptions });
+        discovery = wsDiscovery = await discoverOrStandalone(local, { remoteOptions });
         wsPrepared = await prepareInstance(dirFlag(), name, { spawn: { providers: parseProviderFlags(providerPairs) }, remoteOptions, discovery });
         const soulName = wsPrepared.soulEntry.name;
         const stampFile = join(root, soulName, ".oats-soul-source.json");
@@ -2416,7 +2416,7 @@ async function spawnCmd() {
       // deployment's module store and read from there.
       try {
         const { resolvePackageCapabilityAgent } = await import("../lib/instance-resolution.mjs");
-        const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
+        const hit = await resolvePackageCapabilityAgent(dirFlag(), name, { remoteOptions: remoteOptionsFromEnv(), discovery: wsDiscovery, catalog: (() => { try { return officialPackageCatalog(); } catch { return null; } })() });
         if (hit) {
           agent = capabilityAgentFromDir(hit.dir, name, root, { module: { from: { kind: "package", package: hit.package, version: hit.version, commit: hit.commit } } });
           if (agent) note(`(capability agent: "${name}" from ${hit.capability} — package ${hit.package} v${hit.version}, fetched to ${shortPath(hit.dir)} — fresh soul, instances home locally)`);

@@ -824,7 +824,11 @@ writes `oats-lock.json` (lockfileVersion 3), reports; exit `0` on success.
 decision. The report has no `approvalNeeded`, package rows no `approved`,
 `changes[]` rows no `approvalNeeded`; there is no prompt and no exit `2`, and
 `--approve` is `E_BAD_ARGS`. A lock written by an earlier kernel keeps working
-(its `approved` records are ignored and dropped on the next write).
+(its `approved` records are ignored and dropped on the next write). The fields
+went away without an API-number bump — `syncApi`, `workspaceStatusApi` and
+`capabilitiesApi` stay `1`; the removal is signalled by the feature string
+alone — so a consumer reading `approvalNeeded`, `approval` or `approved` must
+gate that on the absence of `packages-no-approval`.
 
 ```json
 {"syncApi":1,
