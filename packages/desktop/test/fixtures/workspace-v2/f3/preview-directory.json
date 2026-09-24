@@ -19,8 +19,8 @@
       }
     ],
     "team": "global",
-    "resolution": "595f1541815cf5b1ce270cb0",
-    "declRevision": "3ebc8989bc2f99da64b260de",
+    "resolution": "e07c03b71d5ea5b9281ce544",
+    "declRevision": "ce5ccd540e3768924f54418c",
     "payloadRevision": "ea105450ea33576a6e786d69",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
@@ -60,13 +60,13 @@
           "oats.core": {}
         }
       },
-      "resolution": "595f1541815cf5b1ce270cb0",
-      "revision": "4c86f1c10bc21a4396a3f051"
+      "resolution": "e07c03b71d5ea5b9281ce544",
+      "revision": "65d31e8bd9c1979d4abf5678"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 62
+      "elapsedMs": 61
     },
     "backendStatus": {
       "name": "tmux",

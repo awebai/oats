@@ -37,3 +37,15 @@ test('the soul chooser explains a catalog problem without codes', () => {
   plain(catalogProblem({ reason: { code: 'E_WORKSPACE', message: '/abs/path failed' }, ambiguous: [] }));
   assert.match(catalogProblem({ reason: null, ambiguous: ['twin', 'other'] }), /twin, other\.$/);
 });
+
+test('there is no package approval: no sentence mentions it; integrity names the lock', () => {
+  for (const code of [...PREVIEW, ...APPLY]) for (const stage of ['preview', 'spawn']) {
+    assert.doesNotMatch(spawnProblem({ code, message: 'x' }, stage).text, /approv/i, code);
+  }
+  assert.equal(spawnProblem({ code: 'E_PACKAGE_INTEGRITY', message: 'x' }).text, 'A package this soul uses no longer matches the lock. Run Sync in the Workspace view.');
+});
+
+test('an invalid instance name says every rule, including the 64-character cap (#159)', () => {
+  const text = spawnProblem({ code: 'E_INSTANCE_NAME_INVALID', message: 'instance names are at most 64 characters; "a…" is 65 — pass a shorter --name' }).text;
+  assert.match(text, /at most 64 characters/); assert.match(text, /lowercase/); assert.match(text, /soul/);
+});

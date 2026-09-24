@@ -59,7 +59,7 @@ test('unknown can explicitly retry identical intent/key; result never invokes or
   const replay = await f.send({ action: 'apply', spawnRef: p.spawnRef }); assert.equal(replay.status, 'complete'); assert.equal(replay.receipt.replayed, true);
   assert.equal(f.ids(), 2); assert.deepEqual(f.calls[0].args, f.calls[1].args);
 });
-for (const code of ['E_DECISION_STALE', 'E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN']) test(`${code} consumes intent, no replacement ref/key/apply from advisory`, async () => {
+for (const code of ['E_DECISION_STALE', 'E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN', 'E_INSTANCE_NAME_TAKEN']) test(`${code} consumes intent, no replacement ref/key/apply from advisory`, async () => {
   const f = fixture({ invoke: () => ({ started: true, envelope: { schemaVersion: 1, ok: false, error: { code, details: { decision: applyPreview(target).decision, home: '/advisory' } } } }) });
   const p = await f.send(prepare()), r = await f.send({ action: 'apply', spawnRef: p.spawnRef });
   assert.equal(r.status, 'stale'); assert.equal(r.reason.code, code); assert.equal(r.receipt, null); assert.equal(r.spawnRef, p.spawnRef); assert.equal(f.ids(), 2);

@@ -98,7 +98,9 @@ export function createSpawnApplyBoundary({ read = spawnPreviewRequest, invoke = 
       if (d?.instance !== entry.preview.decision.instance || d?.home !== entry.preview.decision.home || ![false, 'unknown'].includes(d.launched)) return denied('E_OUTCOME_UNKNOWN', entry, 'unknown');
       return { ...denied(code, entry, 'incomplete'), incomplete: { instance: d.instance, home: d.home, launched: d.launched } };
     }
-    if (['E_DECISION_STALE', 'E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN'].includes(code)) return denied(code, entry, 'stale');
+    // A taken explicit name (spawn-name) refuses before any home is kept: the
+    // confirmation is consumed and a fresh preview reports the taken name.
+    if (['E_DECISION_STALE', 'E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN', 'E_INSTANCE_NAME_TAKEN'].includes(code)) return denied(code, entry, 'stale');
     // Do not infer rollback from arbitrary kernel/hook failures. Only the
     // explicit binding/reservation/incomplete contracts above establish scope.
     return denied('E_OUTCOME_UNKNOWN', entry, 'unknown');
