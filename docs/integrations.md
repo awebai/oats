@@ -216,17 +216,18 @@ warning naming the fresh-purpose remedy. On an older `aw` the pre-1.36.1
 report stands (`aliasReusable: false`, warning naming aweb-abim), because
 that CLI cannot revoke the certificate.
 
-## oats.aweb settings (1.12.1)
+## oats.aweb settings (1.12.2)
 
-Set in `oats-local.yaml` under `settings.oats.aweb.<key>` (host-owned), in the
-soul's `messaging:` payload (true of every instance), or per spawn with
-`oats spawn … --provider oats.aweb <key>=<value>`. The effective payload is
-merged in order: workspace messaging, `byTeam[team]`, soul messaging,
-`oats-local.yaml` `settings.oats.aweb`, then per-spawn `--provider` values.
-`root`, `roots`, and `residents` are host-file-only: put absolute root/custody
-paths only in `oats-local.yaml`, never in a committed workspace or soul file
-(current kernels document this rule but do not yet enforce provenance in the
-hook payload; the manifest schema does not yet carry a host-only marker).
+Set portable team policy in the workspace/soul `messaging:` payload; set host
+facts in `oats-local.yaml` under `settings.oats.aweb.<key>`. Per-spawn
+`oats spawn … --provider oats.aweb <key>=<value>` is for non-host settings only.
+The effective payload is merged in order: workspace messaging, `byTeam[team]`,
+soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
+`--provider` values. `root`, `roots`, and `residents` are manifest-declared
+`hostOnly: true`: absolute root/custody paths are accepted only from
+`oats-local.yaml`; kernels since 0.25.6 refuse those keys in the workspace file,
+`byTeam`, soul payloads and `--provider` flags with `E_WORKSPACE_SCHEMA` reason
+`host-only-key`.
 
 - `team: <team id>`. The payload team wins over `OATS_TEAM_ID`/
   `OATS_TEAM_NAME`; if both are set and differ, the hook warns and uses the
@@ -252,7 +253,18 @@ hook payload; the manifest schema does not yet carry a host-only marker).
   `ready` (subject to captured-session checks when an invocation is supplied).
   In classic deployments this readiness check approximates the full bounded
   spawn search by checking `OATS_TEAM_SCOPE` before `OATS_WORKSPACE`; the spawn
-  hook itself still keeps the exact 1.12.0 bounded candidate order.
+  hook itself still keeps the exact 1.12.0 bounded candidate order. With no
+  explicit team and no workspace team label, readiness follows spawn: an active
+  aweb team at the root is enough to answer ready; an unmapped workspace team
+  label still reports the team-setting remedy above.
+- `oats aweb setup` is idempotent and uses existing aw primitives. With
+  `--username <u>` it runs `aw init --username <u>` at the messaging root and
+  tells the operator to map the workspace team to `default:<u>.aweb.ai` when
+  that team is not already the configured target. With `AWEB_API_KEY` in the
+  environment it runs `aw init` at the root for the hosted team behind the key.
+  With `--invite <token>` it runs `aw team join <token>`. It never prints the
+  API key or invite token, re-reads `aw team list --json` after the action, and
+  prints the same ready/needs-configuration verdict as binding-check.
 - `identity.mode: local | global` (default `local`). Any other value is fatal.
   Local mode is the historical behavior: a spawned team identity is minted for
   the instance, or `identity.source` uses the existing retained-seat flow below.
