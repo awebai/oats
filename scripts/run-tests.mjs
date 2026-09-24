@@ -27,6 +27,10 @@ import {
   desktopTestDeps,
 } from "./desktop-test-deps.mjs";
 
+// Explicit globs, never a bare `node --test`: with no arguments node walks the
+// whole tree, and a checkout that hosts agents carries nested instance worktrees
+// (full copies of this repository) under agents/ and .agents/ — a bare run
+// executes every copy of the suite, against the wrong trees.
 const KERNEL_GLOBS = ["test/**/*.test.mjs", "tests/**/*.test.mjs", "capabilities/**/*.test.mjs"];
 
 const { ok: desktopReady, missing } = desktopTestDeps();
