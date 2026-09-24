@@ -1,6 +1,6 @@
 // Inspections on the workspace model (operationsApi 2) for inspector tests,
-// derived from the kernel capture (fixtures/workspace-v2/f3b2, kernel #162
-// f5ee0e26) and retargeted to a test's soul or home. oats.okf declares two home
+// derived from the kernel capture (fixtures/workspace-v2/f3b2, main c9dc6012
+// with #162 merged) and retargeted to a test's soul or home. oats.okf declares two home
 // operations: `status` (view) and `reindex` (action, optional --scope) —
 // unavailable on a soul ("needs a running home (--home)"), available on a home.
 import { readFileSync } from 'node:fs';

@@ -7,7 +7,7 @@
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "88e75d34e77b8e33d9930692db20add546967eb1",
+      "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d",
       "team": "engineering"
     },
     "selector": {
@@ -16,7 +16,7 @@
       "agentsRoot": "/fixture/base/northwind-workspace/agents",
       "dir": "/fixture/base/northwind-workspace"
     },
-    "at": "2026-09-24T21:24:13.157Z",
+    "at": "2026-09-24T21:46:32.739Z",
     "checks": {
       "installed": {
         "status": "pass",
@@ -32,7 +32,7 @@
                 "kind": "package",
                 "package": "nw.tools",
                 "version": "0.4.0",
-                "commit": "cf19e24b578748bfb115cb1f1420402705f20749",
+                "commit": "81908537c2abee23ed4b835ecbc4f83b4ccfd561",
                 "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
                 "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
               }
@@ -52,7 +52,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+                "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
               }
             },
             "remedy": null,
@@ -70,7 +70,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+                "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
               }
             },
             "remedy": null,
@@ -138,7 +138,7 @@
             "evidence": {
               "repoKey": "local//fixture/base/fx/remotes/agents.git",
               "workspace": "local//fixture/base/fx/remotes/agents.git",
-              "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+              "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
             },
             "remedy": null
           }

@@ -1,5 +1,5 @@
 {
-  "source": "oats-desktop-engineer F3b-2 final (#162 f5ee0e26); test/fixtures/northwind/build.mjs; capture-final.mjs",
+  "source": "oats-desktop-engineer F3b-2 final (main c9dc6012, #162 merged; tree = f5ee0e26); test/fixtures/northwind/build.mjs; capture-final.mjs",
   "kernel": "0.25.9",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
@@ -44,8 +44,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "a68272ffba8d1a7f19b88e7645874578216a3f8b3b58761c92301eb8dce4df6b",
-      "fixtureSha256": "0ae935e1aa266bbd940207a7ae8847d51409833fe32c75b10705d597c706d9f3"
+      "sourceSha256": "f91691dcf8a651d0e4cea1babd4b3b21a24084fdfba05dca9cacd203b7054644",
+      "fixtureSha256": "42f6db20fe65eb522dbd7ebcb10c035765097da363403c879331026c72378efe"
     },
     "inspect-home": {
       "argv": [
@@ -57,8 +57,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "5443085c601dafefa39568c9619bdce66caf3cbfc2c65d6f435e5925949f1e6a",
-      "fixtureSha256": "323d2b434acbebf622b0b434d59abb23ac4f2c1fdf6f0ab8352dedf85e8f8d0b"
+      "sourceSha256": "88dec44dea76a3a134a6f1a1c052bbeedeac5d9f2ad5e39d083617cd78ce04ae",
+      "fixtureSha256": "5f8f4fc01f32a44968c8f5e793cf7b065041f315994c84b87ba7cfe09181883a"
     },
     "inspect-home-operations": {
       "argv": [
@@ -70,8 +70,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "b3348eae73df8efdf4ef15e48903d1776240b82d1b074bd24efb580c595e6db2",
-      "fixtureSha256": "e018e4469bd06c632353bb551c5c667d1ebe397761ab5fb1f14494012b9bb8fe"
+      "sourceSha256": "0f83109b85a689f1f5b9eb47e17c0eefc95e42c0ee6ffec85c60355f58a33838",
+      "fixtureSha256": "f3112c3ea9d0da2785d9f65d727f4a5251ac940254b1403a9bc94ccb37281931"
     },
     "readiness-soul": {
       "argv": [
@@ -88,8 +88,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "5f8debadc29faaeb7eb095c0b78f8d1058507d710b44f44dd0b97dcef6dc9240",
-      "fixtureSha256": "9eacea8fa8e99d2d4d5793375631504e2ff4b2854563411cf9ae629b579d3545"
+      "sourceSha256": "ddac3a71945b4e77827fca8d80ecb0f82a4f258290c5cbdb68ff39fc9e4369f1",
+      "fixtureSha256": "2beb3fde692035321d9a6bf1b3832340c4b8826322a5ed49b179a2ac075f2710"
     },
     "readiness-instance": {
       "argv": [
@@ -106,8 +106,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "4ba39b09df28fe5d4fd2aedf05a6f726d9a4263daca73454042f4b7a4aa0ebe1",
-      "fixtureSha256": "62262fec34812b255bb9f17a7d53003495c28a748caf1f413b2a7a73e57e9724"
+      "sourceSha256": "ded24a12c33ead3e4ea759d752c87e7ed06d135fe7bcad5949ba18a30265f5f5",
+      "fixtureSha256": "c78632951b68f5264af49159ba097ba5b10275460ffbe5ed4f8beb8ca28c46d1"
     },
     "readiness-soul-provider-fail": {
       "argv": [
@@ -124,8 +124,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "9d431f71962f8a87050a1469f4329ef108bb0409399e87b8db35e876eba1c079",
-      "fixtureSha256": "aaee3f5bda46d33c0ce7eb6b72a4972d9df434a537dfb5f4e44d01cb7dbe5dd4"
+      "sourceSha256": "f5fee6b9f3c5c0546df67536dbda1d81ef03cba5e33c86ad171d5be1a24be854",
+      "fixtureSha256": "5c04f00d724f1f6027af04bf9a0ed46368f05d3602c16be55f7f0d8e057ba4e7"
     },
     "readiness-instance-provider-pass": {
       "argv": [
@@ -142,8 +142,8 @@
       ],
       "exit": 0,
       "kernel": "0.25.9",
-      "sourceSha256": "2f52783704be734c52841b099a8e78e9d050569be5a3a9079909baae3896a902",
-      "fixtureSha256": "9fa5f3d87534667094ca94b216d6f766277eca65348c0f59f3d3364751330483"
+      "sourceSha256": "987d40553057a73b9215b25e5c8a6b370d2d019f44654a167159c3b877b8e9e8",
+      "fixtureSha256": "fa6254fb97d88652505c5f42978bb1f055258d4ceb52a0cb795e062b04957727"
     },
     "operation-run-status": {
       "argv": [

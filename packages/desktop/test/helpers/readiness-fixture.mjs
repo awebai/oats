@@ -1,6 +1,6 @@
 // Readiness on the workspace model (readinessApi 2) for the boundary, HTTP,
 // proxy and view tests. `data()` is the kernel capture (fixtures/workspace-v2/
-// f3b2, kernel #162 f5ee0e26) retargeted to the test's soul or instance; the
+// f3b2, main c9dc6012 with #162 merged) retargeted to the test's soul or instance; the
 // subject is a soul or an instance, never a scope. The default captures carry
 // oats.okf's real `needs-configuration` answer (no state-dir); the
 // `readiness-instance-provider-pass` capture is a home spawned with one.

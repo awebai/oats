@@ -8,14 +8,14 @@
       "kind": "soul",
       "soul": "release-manager",
       "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "88e75d34e77b8e33d9930692db20add546967eb1",
+      "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d",
       "team": "engineering"
     },
     "workspace": {
       "key": "local//fixture/base/fx/remotes/agents.git",
       "name": "northwind",
       "deployment": "/fixture/base/northwind-workspace",
-      "commit": "88e75d34e77b8e33d9930692db20add546967eb1",
+      "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d",
       "standalone": false
     },
     "souls": [
@@ -23,7 +23,7 @@
         "soulsApi": 2,
         "name": "release-manager",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "88e75d34e77b8e33d9930692db20add546967eb1",
+        "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d",
         "team": "engineering",
         "kind": "member",
         "path": "souls/release-manager",
@@ -55,7 +55,7 @@
         },
         "declarationProblems": [],
         "instructions": {
-          "file": "/fixture/base/northwind-workspace/agents/release-manager/souls/88e75d34e77b/AGENTS.md",
+          "file": "/fixture/base/northwind-workspace/agents/release-manager/souls/489af27fc2f5/AGENTS.md",
           "text": "# release-manager\n\nYou cut, verify and announce platform releases for Northwind.\n",
           "truncated": false
         }
@@ -82,7 +82,7 @@
           "kind": "package",
           "package": "nw.tools",
           "version": "0.4.0",
-          "commit": "cf19e24b578748bfb115cb1f1420402705f20749",
+          "commit": "81908537c2abee23ed4b835ecbc4f83b4ccfd561",
           "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
           "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
         },
@@ -99,7 +99,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+          "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
         },
         "dir": null,
         "settings": {},
@@ -114,7 +114,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+          "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
         },
         "dir": null,
         "settings": {},

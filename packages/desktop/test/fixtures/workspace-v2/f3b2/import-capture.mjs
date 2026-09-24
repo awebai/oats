@@ -1,4 +1,4 @@
-// Import the F3b-2 kernel capture (kernel #162 final head f5ee0e26: inspect/readiness/
+// Import the F3b-2 kernel capture (main c9dc6012, #162 merged — tree = approved f5ee0e26: inspect/readiness/
 // operation run on the workspace model — operationsApi 2, soulsApi 2, readinessApi 2;
 // Northwind scratch, capture-final.mjs + provenance.json alongside it). NEVER runs a CLI, runtime or native probe.
 // <base>/<oats> placeholders become absolute fixture paths so projections'

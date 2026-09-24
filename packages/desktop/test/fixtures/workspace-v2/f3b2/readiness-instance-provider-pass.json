@@ -15,7 +15,7 @@
       "soul": "campaign-writer",
       "agentsRoot": "/fixture/base/northwind-workspace/agents"
     },
-    "at": "2026-09-24T21:24:18.794Z",
+    "at": "2026-09-24T21:46:39.525Z",
     "checks": {
       "installed": {
         "status": "pass",
@@ -30,7 +30,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-                "commit": "90bec5cc671f5c82f283008890360f140cc6381d"
+                "commit": "55ce0d91399e1113e3be0718d8304faf2b508970"
               }
             },
             "remedy": null,
@@ -48,7 +48,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-                "commit": "90bec5cc671f5c82f283008890360f140cc6381d"
+                "commit": "55ce0d91399e1113e3be0718d8304faf2b508970"
               }
             },
             "remedy": null,
@@ -66,7 +66,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+                "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
               }
             },
             "remedy": null,
@@ -84,7 +84,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+                "commit": "489af27fc2f59b1597891aa868f4c70331cd7b2d"
               }
             },
             "remedy": null,
@@ -152,7 +152,7 @@
             "evidence": {
               "repoKey": "local//fixture/base/fx/remotes/marketing.git",
               "workspace": "local//fixture/base/fx/remotes/agents.git",
-              "commit": "90bec5cc671f5c82f283008890360f140cc6381d"
+              "commit": "55ce0d91399e1113e3be0718d8304faf2b508970"
             },
             "remedy": null
           }
