@@ -27,7 +27,7 @@ trust.
 
 ```yaml
 packages:
-  oats.okf: v2.1.4                                    # bare version: resolved through the official catalog
+  oats.okf: v2.1.5                                    # bare version: resolved through the official catalog
   acme.tools: git:github.com/acme/tools@v0.4.0        # outside the catalog: git:<repo>@<tag or full commit>
 ```
 
