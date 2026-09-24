@@ -124,6 +124,11 @@ soul) use the host's own defaults and naming. The `spawn.submit` chord hint
 lives on `data-chord`, not `data-shortcut`, so the shell's shortcut titling
 never hides the Spawn button.
 
+Problems read as one plain sentence about what happened and what to do
+(`spawn-messages.mjs`, keyed by the contract's stable code). The code and the
+technical or kernel text — paths, hashes, the `git clone` remedy — stay
+behind a **Details** toggle and in `data-code`; no decision depends on wording.
+
 Model suggestions are advisory (`/api/models`), custom entries stay valid, and
 a remote target never borrows local model/configuration facts. No capability
 or readiness facts appear in this dialog; soul readiness belongs to the soul

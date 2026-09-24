@@ -8,6 +8,7 @@ import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../worksp
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
+import { spawnProblem, catalogProblem } from "../spawn-messages.mjs";
 import { createSoulMark, identityCSS } from "../identity-marks.mjs";
 import {
   apiJson, postJson, ensureTheme,
@@ -610,12 +611,7 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
  * opener. Choosing another soul in the dialog reopens it for that soul and
  * keeps the typed name and instruction. */
 function catalogNote(s) {
-  const catalog = s.souls?.catalog;
-  if (!catalog) return "";
-  const parts = [];
-  if (catalog.reason) parts.push(`The spawn catalog could not be read (${catalog.reason.code}${catalog.reason.message ? `: ${catalog.reason.message}` : ""}).`);
-  if (catalog.ambiguous?.length) parts.push(`Not offered — more than one member declares: ${catalog.ambiguous.join(", ")}.`);
-  return parts.join(" ");
+  return catalogProblem(s.souls?.catalog);
 }
 function openSpawnModal(s, a, draft = {}) {
   if (!canLaunchSoul(s, a)) return;
@@ -794,7 +790,8 @@ export async function doSpawn(s, fields) {
     });
     if (!owns()) return;
     if (d.wakeScheduleError) {
-      fields.status(`Created ${d.instance}, but its wake schedule was not saved: ${d.wakeScheduleError.message}. Add it from Schedules.`, true);
+      const problem = { code: d.wakeScheduleError.code || "E_SCHEDULE", detail: `${d.wakeScheduleError.code || "E_SCHEDULE"} · ${d.wakeScheduleError.message || ""}` };
+      fields.status(`Created ${d.instance}, but its wake schedule was not saved. Add it from Schedules.`, true, problem);
       return { created: true };
     }
     if (d.wakeSchedule) s.ctx.notify?.(`Wake schedule saved for ${d.instance}. Check Schedules to verify its host scheduler is enabled.`);
@@ -828,8 +825,7 @@ export async function doSpawn(s, fields) {
     return { created: true };
   } catch (e) {
     if (!owns()) return;
-    fields.status(e.code === "E_RELATIVE_AMBIGUOUS"
-      ? `${e.message} — instance names collide across agent roots; rename or retire the shadowing instance (or pick a different purpose) and retry.`
-      : `Spawn failed: ${e.message || e}`, true);
+    const problem = spawnProblem({ code: e?.code, message: String(e?.message || e || "") }, "spawn");
+    fields.status(problem.text, true, problem);
   }
 }

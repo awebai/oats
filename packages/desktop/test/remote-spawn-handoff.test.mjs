@@ -40,7 +40,7 @@ for (const outcome of ["visible", "switched", "missing", "routeConflict"]) test(
 test("an execution-server spawn whose wake schedule was not saved still reports created (the dialog then refuses a second spawn)", async () => {
   await refreshCli({ api: async () => ({ ok: true, version: "0.25.7", bin: "/oats", remote: ["spawn", "schedule"] }) });
   const previous = currentWorkspace(); setWorkspace("local");
-  let calls = 0, status = "", error = false;
+  let calls = 0, status = "", error = false, problem = null;
   const wake = { cron: "*/15 * * * *", tz: "UTC", message: "Check pending work", enabled: true };
   const s = { alive: true, spawnOp: 0, selAgent: { name: "dev", agentsRoot: "/local/agents" }, ctx: {
     api: async (path, opts) => {
@@ -50,9 +50,10 @@ test("an execution-server spawn whose wake schedule was not saved still reports 
     }, openTerminal: () => assert.fail("partial failure needs acknowledgement"),
   } };
   try {
-    const outcome = await doSpawn(s, { server: "host", task: "task", purpose: "one", wake, status: (text, err) => { status = text; error = !!err; } });
+    const outcome = await doSpawn(s, { server: "host", task: "task", purpose: "one", wake, status: (text, err, p) => { status = text; error = !!err; problem = p; } });
     assert.deepEqual(outcome, { created: true }); assert.equal(calls, 1); assert.equal(error, true);
-    assert.match(status, /Created dev-one.*not saved.*Disk full/);
+    assert.match(status, /^Created dev-one, but its wake schedule was not saved\. Add it from Schedules\.$/);
+    assert.equal(problem.detail, "E_DISK · Disk full", "the host's reason waits behind Details");
     assert.equal(await doSpawn(s, { task: "x", status: () => {} }), undefined, "no server: doSpawn never spawns locally");
     assert.equal(calls, 1);
   } finally { setWorkspace(previous); }

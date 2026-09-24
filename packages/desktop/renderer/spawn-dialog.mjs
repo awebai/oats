@@ -18,6 +18,7 @@ import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
 import { previewSupported, previewChoices, previewData, previewTarget, previewFailure } from './spawn-preview-contract.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
+import { spawnProblem } from './spawn-messages.mjs';
 import { wakeScheduleFields } from './wake-schedule-fields.mjs';
 import { iconElement } from './shell-icons.mjs';
 
@@ -32,11 +33,13 @@ export const spawnDialogCSS = `
 .spawn-context { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:12px; }
 .spawn-dialog .close-act { flex:none; margin-left:auto; display:grid; place-items:center; }
 .spawn-columns { display:grid; grid-template-columns:300px minmax(0,1fr); height:calc(100vh - 100px); max-height:700px; min-height:0; overflow:hidden; }
-.spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:12px 8px; }
-.spawn-search-label { display:flex; align-items:center; gap:6px; margin:0 4px 6px; }
+.spawn-chooser { border-right:1px solid var(--border); min-width:0; min-height:0; overflow:auto; padding:16px 10px 12px; }
+.spawn-chooser-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:0 6px 10px; }
+.spawn-chooser-title { margin:0; font-size:13px; font-weight:650; color:var(--fg); }
+.spawn-search-label { display:flex; align-items:center; gap:6px; margin:0 4px 10px; }
 .spawn-search-label input { min-width:0; flex:1; }
 .spawn-search-count { flex:none; color:var(--muted); font:10.5px var(--mono,monospace); }
-.spawn-chooser h3 { margin:8px 8px 3px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
+.spawn-chooser h3 { margin:14px 8px 6px; font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); overflow-wrap:anywhere; }
 .spawn-choice { width:100%; min-height:56px; display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid transparent; border-radius:8px; text-align:left; background:var(--surface); color:var(--fg); font:inherit; cursor:pointer; }
 .spawn-choice[aria-pressed=true] { background:var(--sel); border-color:var(--accent); }
 .spawn-choice .spawn-choice-check { flex:none; color:var(--accent); visibility:hidden; }
@@ -134,8 +137,14 @@ export const spawnDialogCSS = `
 .spawn-dialog .freldesc { font-size:11.5px; color:var(--muted); }
 .spawn-dialog .freldesc:empty { display:none; }
 .spawn-footer { flex:none; display:flex; align-items:center; gap:8px; flex-wrap:wrap; border-top:1px solid var(--border); padding:12px 24px; background:var(--surface); }
-.spawn-footer .fstatus { flex:1 1 240px; margin:0; min-width:0; font-size:12px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; white-space:pre-line; }
+.spawn-status { flex:1 1 240px; min-width:0; display:flex; align-items:baseline; flex-wrap:wrap; gap:2px 10px; }
+.spawn-footer .fstatus { flex:0 1 auto; margin:0; min-width:0; font-size:12.5px; line-height:1.5; color:var(--muted); overflow-wrap:break-word; white-space:pre-line; }
 .spawn-footer .fstatus.err { color:var(--danger); }
+.spawn-details-toggle { flex:none; border:0; background:none; padding:0; font:inherit; font-size:12px; color:var(--muted); text-decoration:underline; text-underline-offset:2px; cursor:pointer; }
+.spawn-details-toggle:hover { color:var(--fg); }
+.spawn-details-toggle:focus-visible { outline:2px solid var(--focus, var(--accent)); outline-offset:2px; border-radius:3px; }
+.spawn-details-toggle[hidden], .spawn-problem-detail[hidden] { display:none; }
+.spawn-problem-detail { order:9; flex:1 0 100%; margin:0; padding:8px 10px; border-radius:6px; background:var(--surface-2); color:var(--muted); font-size:11.5px; line-height:1.5; overflow-wrap:anywhere; max-height:96px; overflow:auto; }
 .spawn-footer .act { min-height:34px; padding:0 16px; border-radius:8px; font-weight:600; }
 /* data-chord, not data-shortcut: the shell rewrites [data-shortcut] elements as action-id hints. */
 .spawn-footer .fspawn::after { content:attr(data-chord); margin-left:8px; font:10.5px var(--mono,monospace); }
@@ -197,10 +206,12 @@ function composeChooser(doc, { soul, agents, canChoose, choose, query, note }) {
   const chooser = el('section', undefined, 'spawn-chooser'); chooser.setAttribute('aria-label', 'Choose a soul');
   const searchLabel = el('label', undefined, 'spawn-search-label'), search = el('input', undefined, 'field spawn-soul-search'), count = el('span', '', 'spawn-search-count');
   search.type = 'search'; search.autocomplete = 'off'; search.placeholder = 'Search souls…'; search.setAttribute('aria-label', 'Search souls to spawn'); search.value = query;
-  searchLabel.append(search, count);
+  searchLabel.append(search);
+  const head = el('div', undefined, 'spawn-chooser-head'), title = el('h2', 'Souls', 'spawn-chooser-title');
+  title.id = 'spawn-chooser-title'; chooser.setAttribute('aria-labelledby', title.id); head.append(title, count);
   const list = el('div', undefined, 'spawn-soul-choices'), empty = el('p', '', 'spawn-chooser-note spawn-chooser-empty'); empty.setAttribute('role', 'status');
   const catalogNote = el('p', note || '', 'spawn-chooser-note spawn-catalog-note');
-  chooser.append(searchLabel, list, empty, catalogNote);
+  chooser.append(head, searchLabel, list, empty, catalogNote);
   const rows = [], groups = new Map();
   for (const candidate of agents) {
     // Grouped by the repository that declares the soul (design frame 02).
@@ -368,10 +379,19 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   advancedBody.append(workField, permRow, hostRow, wake.el);
   // Footer
   const footer = el('div', undefined, 'spawn-footer');
+  const statusRow = el('div', undefined, 'spawn-status');
   const status = el('p', '', 'fstatus'); status.setAttribute('role', 'status');
+  const detailsToggle = el('button', 'Details', 'spawn-details-toggle'); detailsToggle.type = 'button'; detailsToggle.hidden = true;
+  const details = el('p', '', 'spawn-problem-detail'); details.id = 'spawn-problem-detail'; details.hidden = true;
+  detailsToggle.setAttribute('aria-controls', details.id); detailsToggle.setAttribute('aria-expanded', 'false');
+  detailsToggle.addEventListener('click', () => {
+    details.hidden = !details.hidden; detailsToggle.setAttribute('aria-expanded', String(!details.hidden));
+    detailsToggle.textContent = details.hidden ? 'Details' : 'Hide details';
+  });
+  statusRow.append(status, detailsToggle);
   const cancel = el('button', 'Cancel', 'act fcancel'); cancel.type = 'button';
   const spawn = el('button', 'Spawn', 'act fspawn primary'); spawn.type = 'button';
-  footer.append(status, cancel, spawn);
+  footer.append(statusRow, cancel, spawn, details);
   const body = el('div', undefined, 'spawn-form-body');
   body.append(selectionSummary, nameField, runField, relation, taskLabel, advanced);
   form.append(body, footer); // the footer stays in view while the body scrolls
@@ -454,7 +474,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     const nameRefusal = shown?.failure && shown.key === choiceKey(draftChoice.value) && ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'].includes(shown.failure.code) ? shown.failure : null;
     nameResult.classList.toggle('err', !!(draftChoice.error && draftChoice.field === 'name' || nameRefusal));
     if (draftChoice.error && draftChoice.field === 'name') nameResult.textContent = draftChoice.error;
-    else if (nameRefusal) nameResult.textContent = nameRefusal.message;
+    else if (nameRefusal) nameResult.textContent = spawnProblem(nameRefusal).text;
     else if (!local()) nameResult.textContent = `Named by ${remoteTarget()} when it spawns.`;
     else {
       nameResult.replaceChildren();
@@ -510,7 +530,18 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     spawn.disabled = !current() || busy() || ['complete', 'partial', 'incomplete'].includes(phase)
       || !recovering && (!!draftChoice.error || (local() ? !applicable() || !ready : false));
   }
-  function setStatus(text, error = false) { status.textContent = text; status.classList.toggle('err', error); }
+  /** A problem shows one plain sentence; its code and technical text wait behind Details. */
+  function setStatus(text, error = false, problem = null) {
+    status.textContent = text; status.classList.toggle('err', error);
+    status.dataset.code = problem?.code || '';
+    if (details.textContent !== (problem?.detail || '')) {
+      details.textContent = problem?.detail || ''; details.hidden = true;
+      detailsToggle.setAttribute('aria-expanded', 'false'); detailsToggle.textContent = 'Details';
+    }
+    detailsToggle.hidden = !problem;
+  }
+  const showProblem = (reason, stage) => { const problem = spawnProblem(reason, stage); setStatus(problem.text, true, problem); return problem; };
+  const NAME_REFUSALS = ['E_INSTANCE_NAME_INVALID', 'E_INSTANCE_NAME_TAKEN'];
 
   // ── background preview (latest intent wins)
   function schedule(delay = debounce) {
@@ -525,7 +556,8 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (!local()) { shown = null; setStatus(''); render(); return; }
     if (!previewable()) {
       shown = null;
-      setStatus(soul.work === 'attached' ? 'Attached souls are started by the instance they attach to.' : previewFailure('E_PREVIEW_UNAVAILABLE').reason.message, true);
+      if (soul.work === 'attached') setStatus('Attached souls are started by the instance they attach to.', true);
+      else showProblem(previewFailure('E_PREVIEW_UNAVAILABLE').reason, 'preview');
       render(); return;
     }
     const draftChoice = choices();
@@ -552,9 +584,10 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     shown = next;
     if (next.data) {
       if (phase === 'drifted') setStatus('These values changed since you last looked. Check them and press Spawn again.');
-      else if (notice) setStatus(notice, true); else setStatus('');
+      else if (notice) setStatus(notice.text, true, notice); else setStatus('');
     }
-    else setStatus(`${next.failure.code}: ${next.failure.message}`, true);
+    else if (NAME_REFUSALS.includes(next.failure.code)) setStatus(''); // said next to the name itself
+    else showProblem(next.failure, 'preview');
     if (phase === 'drifted' && next.data) phase = 'idle';
     render();
     // Suggestions follow the runtime the kernel resolved, once it is known.
@@ -575,7 +608,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
       let wakeValue;
       try { wakeValue = wake.read(); } catch (error) { setStatus(error.message, true); return; }
       prepareInput = spawnPrepareInput({ action: 'prepare', selector, choices: draftChoice.value, task: task.value, ...(wakeValue ? { wake: wakeValue } : {}) });
-      if (draftChoice.error || !prepareInput) { setStatus(spawnApplyReason('E_BAD_ARGS').message, true); return; }
+      if (draftChoice.error || !prepareInput) { showProblem(spawnApplyReason('E_BAD_ARGS'), 'spawn'); return; }
     }
     const ws = workspace().id, token = {}, connection = ctx.connectionGeneration?.() ?? 0, owner = mount;
     const valid = () => current() && owner === mount && flight === token && connection === (ctx.connectionGeneration?.() ?? 0);
@@ -599,7 +632,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         const prepared = await request(prepareInput);
         if (!prepared) return;
         if (prepared.status !== 'prepared') {
-          phase = 'idle'; notice = `${prepared.reason.code}: ${prepared.reason.message}`; setStatus(notice, true); schedule(0); return;
+          phase = 'idle'; notice = showProblem(prepared.reason, 'spawn'); schedule(0); return;
         }
         // The confirmation is re-read by the server; apply only what is on screen.
         if (!shown?.data || !sameSpawnDecision(prepared.preview.decision, shown.data.decision)) {
@@ -615,20 +648,23 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
         setStatus(view.reason?.message || `Created ${view.receipt.instance}${view.receipt.launched ? '' : ' — not launched'}.`, phase === 'partial');
         if (!delivered) { delivered = true; await onCreated(view, () => current() && owner === mount); }
       } else if (phase === 'incomplete') {
-        setStatus(`${view.reason.message} ${view.incomplete.instance} — inspect it from the roster.`, true);
+        const problem = spawnProblem(view.reason, 'spawn');
+        setStatus(`${view.incomplete.instance} was created but didn’t finish starting. Open it from the instance list instead of spawning again.`, true, problem);
       } else if (phase === 'pending') {
         setStatus('The spawn is still running. Check result again in a moment; nothing else was started.');
       } else if (phase === 'unknown') {
-        setStatus(spawnApplyReason('E_OUTCOME_UNKNOWN').message, true);
+        showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn');
       } else {
         // Refused or stale: nothing was created. Read the current values again.
         intent = null; submitted = false; phase = 'idle';
-        notice = `${view.reason.code}: ${view.reason.message} Nothing was created; the values below were read again.`; setStatus(notice, true); schedule(0);
+        const problem = spawnProblem(view.reason, 'spawn');
+        notice = /Nothing was created/.test(problem.text) ? problem : { ...problem, text: `${problem.text} Nothing was created.` };
+        setStatus(notice.text, true, notice); schedule(0);
       }
     } catch (error) {
       if (!valid()) return;
-      if (submitted) { phase = 'unknown'; setStatus(spawnApplyReason('E_OUTCOME_UNKNOWN').message, true); }
-      else { phase = 'idle'; setStatus(spawnApplyReason(error?.code).message, true); }
+      if (submitted) { phase = 'unknown'; showProblem(spawnApplyReason('E_OUTCOME_UNKNOWN'), 'spawn'); }
+      else { phase = 'idle'; showProblem(spawnApplyReason(error?.code), 'spawn'); }
     } finally {
       if (flight === token) { flight = null; if (alive) syncButton(); }
     }

@@ -94,11 +94,16 @@ test('a directory soul says where it works and offers no worktree', async t => {
   assert.equal(u.q('.spawn-use-worktree').hidden, true); assert.equal(u.q('.spawn-joined').hidden, true);
 });
 
-test('a kernel refusal is shown verbatim (the remedy included) and Spawn stays disabled', async t => {
+test('a kernel refusal is said plainly, its remedy is kept verbatim behind Details, and Spawn stays disabled', async t => {
   const refusal = kernel('preview-clone-missing');
   const u = await mountSpawn(t, { kernel: () => refusal });
   await u.open();
-  assert.equal(u.text('.fstatus'), `E_CLONE_MISSING: ${refusal.error.message}`); assert.match(u.text('.fstatus'), /git clone /);
+  assert.equal(u.text('.fstatus'), 'This soul’s repository isn’t cloned on this machine yet. Clone it, then try again — Details shows how.');
+  assert.equal(u.q('.fstatus').dataset.code, 'E_CLONE_MISSING'); assert.doesNotMatch(u.text('.fstatus'), /E_[A-Z]|`|\//, 'no codes, commands or paths in the sentence');
+  assert.equal(u.q('.spawn-problem-detail').hidden, true);
+  u.q('.spawn-details-toggle').click();
+  assert.equal(u.q('.spawn-problem-detail').hidden, false); assert.equal(u.q('.spawn-details-toggle').getAttribute('aria-expanded'), 'true');
+  assert.equal(u.text('.spawn-problem-detail'), `E_CLONE_MISSING · ${refusal.error.message}`, "the kernel's remedy is kept verbatim behind Details");
   assert.ok(u.q('.fstatus').classList.contains('err')); assert.equal(u.q('.fspawn').disabled, true);
 });
 
@@ -155,7 +160,8 @@ test('a stale apply (kernel E_DECISION_STALE) creates nothing, says so and reads
   const u = await mountSpawn(t, { apply: () => ({ started: true, envelope: kernel('apply-stale') }) });
   await u.open(); await u.type('.fpurpose', 'api-v2'); const before = u.previews().length;
   await u.spawn();
-  assert.match(u.text('.fstatus'), /^E_DECISION_STALE: /); assert.equal(u.opens.length, 0);
+  assert.equal(u.q('.fstatus').dataset.code, 'E_DECISION_STALE'); assert.match(u.text('.fstatus'), /Nothing was created/);
+  assert.doesNotMatch(u.text('.fstatus'), /E_[A-Z]|[0-9a-f]{24}/); assert.equal(u.opens.length, 0);
   assert.ok(u.previews().length > before, 're-read after a stale refusal'); assert.equal(u.q('.fspawn').textContent, 'Spawn');
 });
 
@@ -165,7 +171,7 @@ test('an unknown outcome offers Check result on the SAME intent; the retry reuse
     : applyThatRuns(u, { ...created(), })(args) });
   await u.open(); await u.type('.fpurpose', 'api-v2');
   await u.spawn();
-  assert.equal(u.q('.fspawn').textContent, 'Check result'); assert.match(u.text('.fstatus'), /outcome is unknown/);
+  assert.equal(u.q('.fspawn').textContent, 'Check result'); assert.match(u.text('.fstatus'), /couldn’t confirm whether the instance was created/); assert.equal(u.q('.fstatus').dataset.code, 'E_OUTCOME_UNKNOWN');
   assert.equal(u.q('.fspawn').disabled, false);
   await u.spawn();
   assert.deepEqual(u.spawns().map(b => b.action), ['prepare', 'apply', 'result', 'apply']);
@@ -298,7 +304,8 @@ test('the soul-name prefix toggle is offered only with spawn-name; off sends --n
   assert.match(u.text('.spawn-name-result'), /Type the instance name/);
   await u.type('.fpurpose', 'release-bot');
   assert.deepEqual(last(u), { name: 'release-bot', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
-  assert.equal(u.text('.spawn-name-result'), 'instance "release-bot" already exists in this deployment');
+  assert.equal(u.text('.spawn-name-result'), 'An instance with this name already exists. Choose another name.');
+  assert.equal(u.text('.fstatus'), '', 'said once, next to the name');
   assert.ok(u.q('.spawn-name-result').classList.contains('err')); assert.equal(u.q('.fspawn').disabled, true);
 });
 
@@ -380,9 +387,18 @@ test('a soul name with selector metacharacters opens as data, is refused by the 
   const dialog = await u.open(evil);
   assert.equal(u.q('.spawn-choice[aria-pressed=true]').dataset.agent, evil);
   assert.equal(u.previews().at(-1).selector.soul, evil, 'the exact name is sent as data');
-  assert.match(u.text('.fstatus'), /^E_BAD_ARGS:/, 'the boundary refuses a non-kernel soul name'); assert.equal(u.q('.fspawn').disabled, true);
+  assert.equal(u.q('.fstatus').dataset.code, 'E_BAD_ARGS', 'the boundary refuses a non-kernel soul name'); assert.doesNotMatch(u.text('.fstatus'), /E_[A-Z]/); assert.equal(u.q('.fspawn').disabled, true);
   await u.type('.ftask', 'typed'); for (const poll of u.polls) poll(); await settle(20);
   assert.equal(u.dialog(), dialog); assert.equal(u.q('.ftask').value, 'typed');
+});
+
+test('the soul chooser is titled Souls, with the count beside it and the search below', async t => {
+  const u = await mountSpawn(t); await u.open();
+  const chooser = u.q('.spawn-chooser'), head = chooser.firstElementChild;
+  assert.equal(head.className, 'spawn-chooser-head'); assert.equal(u.text('.spawn-chooser-title'), 'Souls');
+  assert.equal(chooser.getAttribute('aria-labelledby'), u.q('.spawn-chooser-title').id);
+  assert.match(head.querySelector('.spawn-search-count').textContent, /^\d+ of \d+$/);
+  assert.equal(head.nextElementSibling.className, 'spawn-search-label');
 });
 
 function luminance(hex) {
@@ -396,6 +412,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
   const style = u.doc.createElement('style'); style.textContent = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8'); u.doc.head.append(style);
   u.doc.documentElement.dataset.theme = theme;
   const dialog = await u.open(); await u.type('.fpurpose', 'api-v2'); u.q('.spawn-advanced').open = true;
+  // Show a problem so the status, Details toggle and detail box are all rendered.
+  u.q('.fstatus').textContent = 'x'; u.q('.fstatus').classList.add('err'); u.q('.spawn-details-toggle').hidden = false; u.q('.spawn-problem-detail').hidden = false;
   u.q('.spawn-run .spawn-choice-trigger').click(); await settle();
   const view = u.dom.window, root = view.getComputedStyle(u.doc.documentElement);
   for (const [selector, surfaceSelector, fg, bg] of [
@@ -415,6 +433,9 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
     ['.spawn-advanced > summary small', '.spawn-advanced', 'muted', 'surface-2'],
     ['.spawn-joined-from', '.spawn-joined-from', 'muted', 'surface-2'],
     ['.spawn-prefix-toggle', '.spawn-dialog', 'muted', 'surface'],
+    ['.spawn-chooser-title', '.spawn-dialog', 'fg', 'surface'], ['.spawn-search-count', '.spawn-dialog', 'muted', 'surface'],
+    ['.spawn-details-toggle', '.spawn-footer', 'muted', 'surface'], ['.spawn-problem-detail', '.spawn-problem-detail', 'muted', 'surface-2'],
+    ['.fstatus.err', '.spawn-footer', 'danger', 'surface'],
     ['.ftask', '.ftask', 'fg', 'surface'], ['.fspawn', '.fspawn', 'primary-fg', 'primary-bg'],
   ]) {
     const element = u.doc.querySelector(`.spawn-dialog ${selector}`) || u.doc.querySelector(selector), surface = u.doc.querySelector(`.spawn-dialog ${surfaceSelector}`) || u.doc.querySelector(surfaceSelector);
