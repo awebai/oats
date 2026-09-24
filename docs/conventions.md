@@ -6,8 +6,8 @@ instance-local views for deployment composition.
 ## Operating documents
 
 ```text
-soul/AGENTS.md                  # canonical role instructions
-soul/CLAUDE.md -> AGENTS.md
+souls/<name>/AGENTS.md          # canonical role instructions (in the member repo)
+souls/<name>/CLAUDE.md -> AGENTS.md
 instance/AGENTS.md              # generated regular file
 instance/CLAUDE.md -> AGENTS.md
 ```
@@ -66,35 +66,25 @@ where its owner keeps it and is copied whole into each instance at spawn:
 ```text
 <member repo>/capabilities/<name>/oats.json           # member-tier capability, latest state (membership is the trust)
 <package repo>/oats-package/oats-package.json         # package-tier: versioned via oats-workspace.yaml packages:
-<deployment>/oats-lock.json                           # lockfileVersion 3: package commit, integrity, per-version approval
+<deployment>/oats-lock.json                           # lockfileVersion 3: package commit and integrity
 <instance>/.oats/modules/<capability>/                # the copy this instance runs
-```
-
-**Classic 0.24 layout** (still launched by the 0.24 kernel; a 0.25 kernel
-reads none of it as configuration — see [rebuild-to-v2.md](rebuild-to-v2.md)):
-
-```text
-<package>/capabilities/<name>/oats.json                 # the official marketplace (install source, not ambient)
-<level>/.agents/capabilities/installed/<name>/oats.json # acquired (gitignored, restorable)
-<level>/.agents/capabilities/owned/<name>/oats.json     # authored at this scope (source; committed where the scope is a repo)
-<level>/oats-lock.json                                  # lockfileVersion 2: external source/integrity/trust
 ```
 
 ## Quick map
 
-| Thing | Canonical location (0.25 workspace model) | 0.24 classic |
-|---|---|---|
-| Shared declaration | `oats-workspace.yaml` in the host repo; `oats-membership.yaml` in every member | `oats-config.yaml` chain, `oats.yaml` |
-| Per-machine config | `<deployment>/oats-local.yaml` (uncommitted) | `oats-config.yaml` `settings:` |
-| Acquisition lock | `<deployment>/oats-lock.json` (v3) | `<level>/oats-lock.json` (v2) |
-| Soul source | `<member repo>/souls/<name>/` | `agents/<name>/soul/` |
-| Soul operating doc | `souls/<name>/AGENTS.md` | `soul/AGENTS.md` |
-| Soul Claude view | `souls/<name>/CLAUDE.md -> AGENTS.md` | `soul/CLAUDE.md -> AGENTS.md` |
-| Soul-private skills | `souls/<name>/skills/` | `soul/skills/` |
-| Instance operating doc | `instance/AGENTS.md` (generated) | same |
-| Instance skill set | `instance/.agents/skills/` | same |
-| Instance modules | `instance/.oats/modules/<capability>/` | `.agents/capabilities/installed/` (shared) |
-| Instance metadata | `instance/instance.json` (`modules{}`, `providers{}`, `workspace{}`) | `instance/instance.json` |
+| Thing | Canonical location |
+|---|---|
+| Shared declaration | `oats-workspace.yaml` in the host repo; `oats-membership.yaml` in every member |
+| Per-machine config | `<deployment>/oats-local.yaml` (uncommitted) |
+| Acquisition lock | `<deployment>/oats-lock.json` (v3) |
+| Soul source | `<member repo>/souls/<name>/` |
+| Soul operating doc | `souls/<name>/AGENTS.md` |
+| Soul Claude view | `souls/<name>/CLAUDE.md -> AGENTS.md` |
+| Soul-private skills | `souls/<name>/skills/` |
+| Instance operating doc | `instance/AGENTS.md` (generated) |
+| Instance skill set | `instance/.agents/skills/` |
+| Instance modules | `instance/.oats/modules/<capability>/` |
+| Instance metadata | `instance/instance.json` (`modules{}`, `providers{}`, `workspace{}`) |
 
 Symlinks prevent compatibility paths from drifting. Generated regular files
 separate canonical portable identity from scope-dependent runtime policy.

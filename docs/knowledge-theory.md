@@ -279,7 +279,7 @@ The kernel supplies the common boundary; it must not contain one mandatory knowl
 |---|---|
 | Source, soul and instance identity | Knowledge organisation and destination semantics |
 | Configuration resolution and declared requirements | Storage, retrieval and reading context |
-| Selected resources and exact executable approval | Capture conventions and evidence selection |
+| Selected resources, exactly locked | Capture conventions and evidence selection |
 | Lifecycle/invocation context and provenance | Judgment, harvesting and maintenance where used |
 | Safe helper/job execution when required | Proposals, delivery, acceptance and recovery policies |
 | Retained-artifact integrity and truthful outcomes | Its complete runtime instructions, skills and tools |

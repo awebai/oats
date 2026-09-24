@@ -11,7 +11,7 @@ OATS—**Open Agent Team Specification**—is a framework for building, running 
 
 **Capabilities are the building blocks of an OATS setup.** When you define an agent, you choose its capabilities. Each provides the know-how and tools for knowledge systems, messaging, task coordination or any other workflows, tools or ways of working. We provide defaults to get started, but you can adapt existing capabilities or create fully custom ones to shape how your agents work and which tools they use.
 
-The [official marketplace](docs/official-marketplace.md) is the reviewed list of official packages; listing is not executable approval.
+The [official marketplace](docs/official-marketplace.md) is the reviewed list of official packages; a workspace trusts a package by declaring it, and listing does not declare it for you.
 
 For example, a kernel expert, a UX expert and a customer-support expert can share capabilities for learning and coordination, while each has specific capabilities for its own area of expertise.
 
@@ -100,7 +100,7 @@ A **skill** teaches a way of working. A capability can supply that skill togethe
 
 ### Common contracts, different implementations
 
-The kernel supplies soul and instance identity, configuration, lifecycle, resource composition and execution approval. Models and harnesses remain user-selected execution choices; capabilities may declare requirements that a chosen setup must satisfy.
+The kernel supplies soul and instance identity, configuration, lifecycle, resource composition and exact, integrity-checked package locking. Models and harnesses remain user-selected execution choices; capabilities may declare requirements that a chosen setup must satisfy.
 
 Capabilities supply the behaviour behind their contracts:
 
@@ -109,7 +109,7 @@ Capabilities supply the behaviour behind their contracts:
 - A task capability can connect agents to the tracker or coordination model you prefer.
 - Additional capabilities can extend a team without becoming mandatory parts of OATS.
 
-A **package** distributes capabilities and their resources. Acquiring one does not automatically activate it or approve executable code. Provider independence does not mean every combination is compatible; missing requirements must be reported, not silently discarded.
+A **package** distributes capabilities and their resources. Declaring one in a workspace is the decision to trust it; its capabilities reach a soul only when the soul or a workspace default selects them. Provider independence does not mean every combination is compatible; missing requirements must be reported, not silently discarded.
 
 ## Our approach to knowledge and learning
 

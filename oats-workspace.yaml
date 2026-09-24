@@ -16,8 +16,8 @@ members:
   - git:github.com/awebai/oats-linear
 
 # The only versioned things. Bare versions resolve through the official catalog
-# (package-catalog.json in this repository); oats-lock.json records commit and
-# integrity, and executables are approved once per version.
+# (package-catalog.json in this repository). Declaring a package here is the
+# decision to trust it; oats-lock.json records its commit and integrity.
 packages:
   oats.framework: v1.1.3
   oats.okf: v2.1.4

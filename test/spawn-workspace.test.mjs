@@ -2,8 +2,7 @@
 // decisions 7, 13, 14, 17).
 //
 // Runs the REAL CLI as a child process over the Northwind fixture (real bare Git remotes,
-// real lib/remote.mjs): `oats sync` → approve (by editing the lock, what a TTY sync would
-// record) → `oats spawn <workspace soul> --no-launch --provider …` → the home on disk →
+// real lib/remote.mjs): `oats sync` → `oats spawn <workspace soul> --no-launch --provider …` → the home on disk →
 // `spawn --preview` (changedSince) → a member move → `oats status` drift → refusals.
 // Never invokes bare `oats setup`; never touches ~/.cache (OATS_REMOTE_CACHE) or the
 // operator's HOME; never creates a tmux session (--no-launch + a non-existent session name).
@@ -50,7 +49,7 @@ const isDir = (p) => existsSync(p) && statSync(p).isDirectory() && !lstatSync(p)
 const isRegular = (p) => existsSync(p) && lstatSync(p).isFile();
 const isRelativeLink = (p) => lstatSync(p).isSymbolicLink() && !readlinkSync(p).startsWith("/");
 
-test("workspace spawn chain over Northwind: sync → approve → spawn materializes whole modules, composes AGENTS.md, records provenance/providers; preview changedSince; status drift; refusals", { timeout: 600_000 }, async () => {
+test("workspace spawn chain over Northwind: sync → spawn materializes whole modules, composes AGENTS.md, records provenance/providers; preview changedSince; status drift; refusals", { timeout: 600_000 }, async () => {
   const base = fixtureBase();
   try {
     const fx = await buildNorthwind(join(base, "fx"));
@@ -65,32 +64,17 @@ test("workspace spawn chain over Northwind: sync → approve → spawn materiali
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
     const spawnArgs = (soul, ...extra) => ["spawn", soul, "--dir", dep, "--agents-root", agentsRoot, "--purpose", "x", "--work", "directory", "--no-launch", ...extra, "--json"];
 
-    // ---- sync (non-TTY → exit 2, lock written, nothing approved) ----
+    // ---- sync (exit 0, lock written; declaring a package in packages: is the trust decision) ----
     let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, `sync exits 2 with approvals pending\n${r.stdout}\n${r.stderr}`);
+    assert.equal(r.status, 0, `sync exits 0\n${r.stdout}\n${r.stderr}`);
     assert.equal(envelope(r).ok, true);
-    const approvalNeeded = envelope(r).result.approvalNeeded; // the REAL executables digests (M3: an approval must describe the tree)
+    assert.equal("approvalNeeded" in envelope(r).result, false, "the sync report carries no approval step");
     const lockFile = join(dep, "oats-lock.json");
     assert.ok(existsSync(lockFile), "the lock is written");
     const lock = JSON.parse(readFileSync(lockFile, "utf8"));
     assert.equal(lock.lockfileVersion, 3);
     assert.deepEqual(Object.keys(lock.packages), ["nw.tools", "oats.framework", "oats.okf"]);
-    assert.ok(Object.values(lock.packages).every((p) => p.approved === null), "no approval without a terminal");
-
-    // ---- an unapproved package refuses the spawn (nothing created) ----
-    r = oats(spawnArgs("release-manager"), { cwd: dep, env, base });
-    assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED");
-    assert.ok(!existsSync(join(agentsRoot, "release-manager", "instances", "release-manager-x")), "a refused spawn leaves no home");
-    // Phase C (H5): a PREVIEW of a soul never applied on this machine runs the same read-only discovery +
-    // resolution — it is refused for the same reason as the apply (not E_SOUL_UNKNOWN because no local soul copy exists yet).
-    r = oats(spawnArgs("release-manager", "--preview"), { cwd: dep, env, base });
-    assert.equal(r.status, 1, r.stdout + r.stderr);
-    assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED", "preview reaches resolution before any apply");
-
-    // ---- approve by editing the lock (what `sync` on a TTY records) ----
-    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
-    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    assert.ok(Object.values(lock.packages).every((p) => !("approved" in p)), "lock v3 entries carry no approval");
 
     // ---- Phase C (H5): preview BEFORE any apply of this soul: modules[] listed, soulFetched:true, no instance ----
     r = oats(spawnArgs("release-manager", "--preview", "--provider", "oats.okf", "state-dir=/tmp/x"), { cwd: dep, env, base });
@@ -374,15 +358,8 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
       await fs.writeFile(path.join(work, "souls", "coordinator", "AGENTS.md"), "# coordinator\n\nYou coordinate across member clones; ./work is the deployment boundary.\n");
     }, { message: "agents: add coordinator (work: workspace)" });
     assert.match(added.commit, HEX40);
-    // sync → approve with the digests the sync report computed (what a TTY sync records)
     let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, `sync\n${r.stdout}\n${r.stderr}`);
-    const syncDoc = envelope(r);
-    const needed = syncDoc.result?.approvalNeeded ?? [];
-    const lockFile = join(dep, "oats-lock.json");
-    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: needed.find((a) => a.id === id)?.executables ?? "sha256-" + "0".repeat(64), at: "2026-09-23T00:00:00.000Z" };
-    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    assert.equal(r.status, 0, `sync\n${r.stdout}\n${r.stderr}`);
     // spawn: no --work override, no --repo — the soul's `work: workspace` decides
     r = oats(["spawn", "coordinator", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "b2", "--no-launch", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, `spawn coordinator\n${r.stdout}\n${r.stderr}`);
@@ -446,13 +423,8 @@ test("R1/R2: worktree soul finds its clone — convention <dep>/<member>, clones
 
     // R2 (sync): `oats sync` creates <deployment>/agents/ — the deployment is complete after the guide's §3–§4.
     r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, `sync\n${r.stdout}\n${r.stderr}`);
+    assert.equal(r.status, 0, `sync\n${r.stdout}\n${r.stderr}`);
     assert.ok(isDir(agentsRoot), "sync created <deployment>/agents/");
-    const needed = envelope(r).result.approvalNeeded;
-    const lockFile = join(dep, "oats-lock.json");
-    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: needed.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
-    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
 
     // R1 (nothing on this machine): preview AND apply refuse E_CLONE_MISSING, naming BOTH remedies and --repo.
     const conventionDir = join(dep, "platform");
@@ -546,12 +518,7 @@ test("0.25.2 R4: status shows the soul source per instance (moved / no longer pr
     mkdirSync(agentsRoot, { recursive: true });
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
     let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
-    const approvalNeeded = envelope(r).result.approvalNeeded;
-    const lockFile = join(dep, "oats-lock.json");
-    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
-    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    assert.equal(r.status, 0, r.stdout + r.stderr);
 
     // The operator's way: no --agents-root, cwd = the deployment (homes land under <dep>/agents).
     r = oats(["spawn", "support-triager", "--purpose", "x", "--no-launch", "--json"], { cwd: dep, env, base });
@@ -628,12 +595,7 @@ test("0.25.3 OATS_SOUL_ID: hooks of a workspace spawn receive `<repo key>#<soul>
     const dep = join(base, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
     let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, r.stderr);
-    const approvalNeeded = envelope(r).result.approvalNeeded;
-    const lockFile = join(dep, "oats-lock.json");
-    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
-    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    assert.equal(r.status, 0, r.stderr);
     const spawn = (purpose) => oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", purpose, "--work", "directory", "--no-launch", "--json"], { cwd: dep, env, base });
     r = spawn("a"); assert.equal(r.status, 0, r.stdout + r.stderr);
     const homeA = envelope(r).result.home;
@@ -684,12 +646,7 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
     const dep = join(base, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
     let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, r.stderr);
-    const approvalNeeded = envelope(r).result.approvalNeeded;
-    const lockFile = join(dep, "oats-lock.json");
-    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
-    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    assert.equal(r.status, 0, r.stderr);
     // checkout mode: the member clone at <deployment>/agents-repo (R1 convention)
     spawnSync("git", ["clone", "-q", fx.refs.agents.replace(/^file:\/\//, ""), join(dep, "agents-repo")], { stdio: "ignore" });
     writeFileSync(join(dep, "FAIL"), "1");
@@ -715,5 +672,65 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
     r = oats(["retire", "release-manager-q", "--dir", dep, "--agents-root", join(dep, "agents"), "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.ok(!existsSync(home), "quarantine cleared without --force");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("declaration is the trust decision: an edited lock capability list and a package no longer declared are refused at spawn, preview and sync — no home, no module store", { timeout: 600_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }, null, 2));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    mkdirSync(join(base, "home"));
+    const dep = join(base, "northwind-workspace");
+    const agentsRoot = join(dep, "agents");
+    mkdirSync(agentsRoot, { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    const spawnArgs = (...extra) => ["spawn", "release-manager", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "x", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", ...extra, "--json"];
+    const noSideEffects = (what) => {
+      assert.equal(existsSync(join(agentsRoot, "release-manager", "instances")), false, `${what}: no home`);
+      assert.equal(existsSync(join(dep, ".oats", "modules")), false, `${what}: no module store write`);
+    };
+    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `sync\n${r.stdout}\n${r.stderr}`);
+    const lockFile = join(dep, "oats-lock.json");
+    const good = readFileSync(lockFile, "utf8");
+
+    // ---- an edited capability list: refused at preview, apply and sync ----
+    const lock = JSON.parse(good);
+    // (a phantom name: every capability the soul draws still has its provider, so the refusal is the list check)
+    lock.packages["nw.tools"].capabilities = [...lock.packages["nw.tools"].capabilities, "nw-phantom"].sort();
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    for (const extra of [["--preview"], []]) {
+      r = oats(spawnArgs(...extra), { cwd: dep, env, base });
+      assert.equal(r.status, 1, `edited lock ${extra.join(" ")}\n${r.stdout}\n${r.stderr}`);
+      assert.equal(envelope(r).error.code, "E_PACKAGE_INTEGRITY");
+      noSideEffects(`edited lock ${extra.join(" ")}`);
+    }
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 1, `sync over an edited lock is refused, not kept\n${r.stdout}\n${r.stderr}`);
+    assert.equal(envelope(r).error.code, "E_PACKAGE_INTEGRITY");
+    assert.match(envelope(r).error.message, /capabilities/);
+    writeFileSync(lockFile, good);
+
+    // ---- a package the workspace no longer declares (stale lock, no sync since): refused ----
+    await moveMember(fx, "agents", async (work) => {
+      const file = join(work, "oats-workspace.yaml");
+      const text = readFileSync(file, "utf8");
+      const next = text.split("\n").filter((l) => !/nw\.tools/.test(l)).join("\n");
+      assert.notEqual(next, text, "fixture: the host declares nw.tools");
+      writeFileSync(file, next);
+    }, { message: "agents: drop nw.tools from packages:" });
+    for (const extra of [["--preview"], []]) {
+      r = oats(spawnArgs(...extra), { cwd: dep, env, base });
+      assert.equal(r.status, 1, `undeclared package ${extra.join(" ")}\n${r.stdout}\n${r.stderr}`);
+      assert.equal(envelope(r).error.code, "E_PACKAGE_MISSING");
+      assert.match(envelope(r).error.message, /no longer declared/);
+      noSideEffects(`undeclared package ${extra.join(" ")}`);
+    }
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, `sync drops the undeclared package\n${r.stdout}\n${r.stderr}`);
+    assert.equal("nw.tools" in JSON.parse(readFileSync(lockFile, "utf8")).packages, false);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

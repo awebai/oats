@@ -14,8 +14,8 @@ Start with one workspace, one member repository and one small, real task. A
 soul keeps the role and its curated skills; an instance gets a working session
 and a repository view; every capability the instance runs is copied whole into
 its home at spawn from a **member** repository (latest state, trusted by
-membership) or from a **package** (a pinned version, executables approved once
-per version in the lock). Nothing is installed.
+membership) or from a **package** (a pinned version, trusted by its
+declaration and locked to a commit and integrity). Nothing is installed.
 
 ## 0. Prerequisites
 
@@ -62,16 +62,16 @@ oats onboard ~/acme --workspace git:github.com/acme/agents     # any directory �
 ```
 ~/acme/                           # the directory you chose; these three entries are what the kernel needs
 ├── oats-local.yaml               # { schemaVersion: 2, workspace: git:github.com/acme/agents }
-├── oats-lock.json                # lockfileVersion 3: commit + integrity + approval per package
+├── oats-lock.json                # lockfileVersion 3: commit + integrity per package
 ├── agents/                       # instance homes
 └── <member>/                     # clones of the members you work IN — here or anywhere named in oats-local.yaml clones:
 ```
 
 Read the report it prints: every member row must be `✓↔` (confirmed) — fix
-`no-backlink` / `backlink-elsewhere` / `cannot-read` before going on. If it
-exits `2`, a package needs executable approval: run `oats sync` in a terminal
-and answer `approve <id> <version>? [y/N]`. Approval is per package version,
-once, recorded in the lock; member capabilities need none. Then clone the
+`no-backlink` / `backlink-elsewhere` / `cannot-read` before going on. Every
+package in `packages:` is resolved, fetched, integrity-checked and locked; a
+package is trusted because the workspace declares it, so review what a package
+runs before adding its pin. Then clone the
 member you will work in beside `oats-local.yaml` (only a soul's work target
 needs a clone — discovery and resolution run over the remotes).
 
@@ -91,13 +91,13 @@ them. Do not commit `oats-local.yaml`.
 ```bash
 oats souls                    # every non-private soul of every confirmed member, with origin and team
 oats capabilities             # member (origin: member <key> @ <commit>) and package (package <id> v<ver>) capabilities
-oats workspace status         # membership table, packages, approval state
+oats workspace status         # membership table, locked packages
 oats spawn backend-expert --preview   # modules[] with from/commit/changedSince, composed skill names, team
 ```
 
 The preview is where a skill-name clash between two composed capabilities
-(`E_SKILL_DUPLICATE`) or an unapproved package (`E_PACKAGE_UNAPPROVED`) shows
-up, before anything is created.
+(`E_SKILL_DUPLICATE`) or a package missing from the lock (`E_PACKAGE_MISSING`)
+shows up, before anything is created.
 
 ## 4. Give an instance a real task
 

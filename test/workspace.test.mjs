@@ -561,7 +561,7 @@ test("LOW: confirmMembership never throws for an unparseable memberRef; a case-o
 
 test("integration: real lib/remote.mjs over the Northwind fixture — nw-tools publishes nw.tools, its package caps are not member caps, and packages resolve the git:<abs path>@v0.4.0 form", { timeout: 180_000 }, async () => {
   const { buildNorthwind } = await import("./fixtures/northwind/build.mjs");
-  const { resolvePackages, packageProviding, executablesDigest, readPackageTree } = await import("../lib/packages.mjs");
+  const { resolvePackages, packageProviding, readPackageManifests, bindRemote } = await import("../lib/packages.mjs");
   const remote = await import("../lib/remote.mjs");
   const base = mkdtempSync(join(tmpdir(), "oats-ws-int-"));
   try {
@@ -590,8 +590,9 @@ test("integration: real lib/remote.mjs over the Northwind fixture — nw-tools p
     assert.equal(changes.length, 3);
     assert.equal(packageProviding(lock, "nw-deploy").id, "nw.tools");
     assert.equal(packageProviding(lock, "nw-tools-dev"), null, "member capabilities are never provided by the lock");
-    const digest = executablesDigest(await readPackageTree(remote, fx.refs["nw-tools"], nw.commit, "oats-package", { remoteOptions }));
-    assert.match(digest, /^sha256-/);
+    for (const e of Object.values(lock.packages)) assert.ok(!("approved" in e), "lock v3 entries carry no approval record");
+    const { capabilities } = await readPackageManifests(bindRemote(remote, remoteOptions), fx.refs["nw-tools"], nw.commit, "oats-package");
+    assert.deepEqual(capabilities.map((c) => c.name).sort(), nw.capabilities, "the real remote reads the package manifests at the locked commit");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 

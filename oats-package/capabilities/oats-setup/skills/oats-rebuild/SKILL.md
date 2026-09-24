@@ -46,7 +46,7 @@ named at each step.
    provider state".
 5. Place the messaging root inside the deployment directory (oats-onboarding
    step 6). *Rationale:* lesson "messaging root placement decides the team".
-6. `oats sync`, approve packages (oats-package-pins), clone work targets.
+6. `oats sync` (oats-package-pins), clone work targets.
 
 ## Accept it
 

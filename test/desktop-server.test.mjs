@@ -140,7 +140,7 @@ test("desktop server: the roster, header and souls are the kernel's status/works
     assert.equal(panel.workspace.id, scope); assert.equal(panel.workspace.name, "northwind");
     assert.equal(panel.deployment.root, join(scope, "agents"));
     assert.equal(panel.deployment.workspaceStatus.workspaceStatusApi, 1);
-    assert.deepEqual(panel.deployment.workspaceStatus.approval, { approved: ["nw.tools", "oats.framework", "oats.okf"], needed: [] });
+    assert.deepEqual(panel.deployment.workspaceStatus.packages.map((p) => p.id), ["nw.tools", "oats.framework", "oats.okf"]);
     assert.equal(Object.hasOwn(panel.deployment, "souls"), false, "private soul rows stay server-side");
     assert.equal(panel.instances.length, 1);
     const i = panel.instances[0];

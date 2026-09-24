@@ -33,8 +33,8 @@ const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const HEX40 = /^[0-9a-f]{40}$/;
 const EXPECTED_MODULES = ["nw-deploy", "nw-house-style", "nw-release-tooling", "oats.core", "oats.okf"];
 
-/** Build the fixture + a deployment, run `oats sync` (child process, like an operator) and approve
- *  every package by editing the lock (what a TTY sync records). Returns everything a spawn needs. */
+/** Build the fixture + a deployment and run `oats sync` (child process, like an operator).
+ *  Returns everything a spawn needs. */
 async function deployment() {
   const base = mkdtempSync(join(tmpdir(), "oats-prepared-kernel-"));
   if (/[\s@]/.test(base)) { rmSync(base, { recursive: true, force: true }); throw new Error(`tmpdir ${base} contains whitespace or @`); }
@@ -48,12 +48,7 @@ async function deployment() {
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   const env = { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_PACKAGE_CATALOG: catalogFile, OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"), OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}` };
   const r = spawnSync(process.execPath, [CLI, "sync", "--dir", dep, "--json"], { cwd: dep, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
-  assert.equal(r.status, 2, `sync exits 2 with approvals pending\n${r.stdout}\n${r.stderr}`);
-  const lockFile = join(dep, "oats-lock.json");
-  const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-  const approvalNeeded = JSON.parse(r.stdout.trim().split("\n").pop()).result.approvalNeeded;
-  for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
-  writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+  assert.equal(r.status, 0, `sync exits 0\n${r.stdout}\n${r.stderr}`);
   return { base, fx, dep, root, env, remoteOptions: { cacheDir: join(base, "cache") } };
 }
 
