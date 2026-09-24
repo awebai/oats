@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_PLACEMENT_TAKEN",
+    "message": "release-manager-race already exists at /fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race (a concurrent spawn won the placement); nothing was created by this call",
+    "details": {
+      "instance": "release-manager-race",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race"
+    }
+  }
+}

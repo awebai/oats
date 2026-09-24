@@ -16,7 +16,8 @@ export function spawnApplyChoicesSupported(cli, choices, wakeRequested = false) 
     && (!choices.backend || has(cli?.sessionBackends, choices.backend))
     && (choices.yolo === undefined || has(cli?.launchOptions, 'yolo'))
     && (!choices.launchConfig || has(cli?.features, 'launch-config'))
-    && (!wakeRequested || has(cli?.features, 'schedule'));
+    && (!wakeRequested || has(cli?.features, 'schedule'))
+    && (choices.name === undefined || has(cli?.features, 'spawn-name'));
 }
 export function spawnWake(v) {
   if (!exact(v, ['cron', 'tz', 'message', 'enabled']) || !text(v.cron, 256) || !v.cron.trim()

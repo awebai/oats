@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { cliSpawnApply } from '../spawn-apply-cli.mjs';
-import { cli, target, anchor, data, tick } from './helpers/spawn-preview-fixture.mjs';
+import { spawnDecision } from '../renderer/spawn-decision.mjs';
+import { cli, target, anchor, data, tick, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 const capable = () => ({ ...structuredClone(cli), spawnApplyApi: 1, features: [...cli.features, 'spawn-apply-2', 'spawn-idempotency-2', 'schedule'] });
 function options(changes = {}) {
-  const v = data(), decision = { ...v.decision, effective: { repo: v.repo, work: v.work, runtime: v.runtime, model: null,
-    launchConfig: null, yolo: null, backend: v.backend, childSpawns: true, relation: null } };
+  const decision = data().decision; // the kernel's v2 decision, as the broker holds it
   return { target: structuredClone(target), choices: {}, decision, key: 'a'.repeat(64), task: 'PRIVATE task\n--force', ...changes };
 }
 const wake = { cron: '0 * * * *', tz: 'UTC', message: 'PRIVATE wake', enabled: false };
@@ -36,20 +36,25 @@ for (const alter of [c => delete c.spawnApplyApi, c => c.spawnApplyApi = '1', c 
 });
 test('apply fixed argv, exact roots, tagged choices and original key/revision; private bytes never argv', async () => {
   const f = fixture(), input = options({ choices: { purpose: 'review', branch: 'feat/review', base: 'release', runtime: 'codex', launchConfig: 'personal', backend: 'herdr',
-    model: { kind: 'native-default' }, yolo: false, allowChildSpawns: false, relation: { kind: 'child', anchor } }, wake });
+    model: { kind: 'native-default' }, yolo: false, relation: { kind: 'child', anchor } }, wake });
   const result = await cliSpawnApply(capable(), input, f.io);
   assert.equal(result.started, true); assert.deepEqual(result.envelope, ok);
   assert.equal(f.calls.length, 1);
-  assert.deepEqual(f.calls[0].argv, ['spawn', 'dev', '--dir', '/team', '--agents-root', '/team/agents', '--purpose', 'review', '--branch', 'feat/review', '--base', 'release',
-    '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'herdr', '--model', '@native-default', '--no-yolo', '--no-child-spawns', '--relation', 'child',
-    '--relative-to', 'boss-1', '--relative-root', '/team/agents', '--expect-decision', input.decision.revision, '--idempotency-key', input.key,
+  assert.deepEqual(f.calls[0].argv, ['spawn', 'release-manager', '--dir', DEPLOYMENT, '--agents-root', ROOT, '--purpose', 'review', '--branch', 'feat/review', '--base', 'release',
+    '--runtime', 'codex', '--launch-config', 'personal', '--backend', 'herdr', '--model', '@native-default', '--no-yolo', '--relation', 'child',
+    '--relative-to', 'release-manager-race', '--relative-root', ROOT, '--expect-decision', input.decision.revision, '--idempotency-key', input.key,
     '--task-file', f.files[0].file, '--wake-file', f.files[1].file, '--json']);
-  assert.deepEqual(f.calls[0].opts, { cwd: '/team', env: { PATH: '/inert/bin', HOME: '/inert/home' }, shell: false, encoding: 'utf8', timeout: 60000, maxBuffer: 4194304 });
+  assert.deepEqual(f.calls[0].opts, { cwd: DEPLOYMENT, env: { PATH: '/inert/bin', HOME: '/inert/home' }, shell: false, encoding: 'utf8', timeout: 60000, maxBuffer: 4194304 });
   assert.equal(f.files[0].text, input.task); assert.deepEqual(JSON.parse(f.files[1].text), wake);
   assert.ok(f.files.every(f => f.flags === 'wx' && f.mode === 0o600 && f.closed));
   assert.deepEqual([...f.removed].sort(), [...f.dirs].sort());
   assert.doesNotMatch(JSON.stringify({ result, calls: f.calls }), /PRIVATE/);
   for (const flag of ['--preview', '--no-launch', '--def-file', '--instructions-file', '--force', '--work', '--repo']) assert.equal(f.calls[0].argv.includes(flag), false);
+});
+test('a worktree for a checkout soul crosses as --work worktree, next to the purpose', async () => {
+  const f = fixture(); await cliSpawnApply(capable(), options({ choices: { purpose: 'review', work: 'worktree' } }), f.io);
+  const argv = f.calls[0].argv; assert.deepEqual(argv.slice(6, 10), ['--purpose', 'review', '--work', 'worktree']);
+  for (const flag of ['--allow-child-spawns', '--no-child-spawns']) assert.equal(argv.includes(flag), false);
 });
 test('replay transport keeps bytes/key/revision and regenerates only owned temp paths', async () => {
   const f = fixture(), input = options({ wake });
@@ -62,13 +67,14 @@ test('replay transport keeps bytes/key/revision and regenerates only owned temp 
 });
 test('inherit omits model; custom model is a single value; booleans stay explicit', async () => {
   for (const [model, expected] of [[{ kind: 'inherit' }, null], [{ kind: 'custom', value: 'provider/model-*' }, 'provider/model-*']]) {
-    const f = fixture(); await cliSpawnApply(capable(), options({ choices: { model, yolo: true, allowChildSpawns: true } }), f.io);
+    const f = fixture(); await cliSpawnApply(capable(), options({ choices: { model, yolo: true } }), f.io);
     const argv = f.calls[0].argv; assert.equal(argv.includes('--model'), expected !== null);
     if (expected) assert.equal(argv[argv.indexOf('--model') + 1], expected);
-    assert.ok(argv.includes('--yolo')); assert.ok(argv.includes('--allow-child-spawns'));
+    assert.ok(argv.includes('--yolo'));
   }
 });
-for (const changes of [{ key: 'caller key' }, { key: 'b'.repeat(63) }, { decision: data().decision }, { env: { KEY: 'PRIVATE' } }, { workDir: '/caller' },
+const withoutEffective = () => { const d = structuredClone(data().decision); delete d.effective; return d; };
+for (const changes of [{ key: 'caller key' }, { key: 'b'.repeat(63) }, { decision: withoutEffective() }, { env: { KEY: 'PRIVATE' } }, { workDir: '/caller' },
   { choices: { model: { kind: 'custom', value: '@native-default' } } }, { choices: { branch: '--no-launch' } }, { choices: { base: 'x\n--force' } }, { wake: null }]) test(`invalid apply input is zero-effect: ${JSON.stringify(changes)}`, async () => {
   const f = fixture(), result = await cliSpawnApply(capable(), options(changes), f.io);
   assert.equal(result.started, false); assert.equal(result.envelope.error.code, 'E_BAD_ARGS'); assert.equal(f.dirs.length, 0); assert.equal(f.calls.length, 0);
@@ -130,11 +136,14 @@ test('typed refusal projection keeps only bounded decision/identity, no raw erro
   ]) {
     const f = fixture({ exec: (_b, _a, _o, done) => done({ code: 1 }, JSON.stringify({ schemaVersion: 1, ok: false, error: { code, message: 'PRIVATE', details: { ...details, task: 'PRIVATE', env: { TOKEN: 'PRIVATE' } } } })) });
     const result = await cliSpawnApply(capable(), input, f.io);
-    assert.equal(result.started, true); assert.equal(result.envelope.error.code, code); assert.deepEqual(result.envelope.error.details, details); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
+    // A stale decision crosses as its bounded projection (provider payloads stay kernel-side).
+    const expected = code === 'E_DECISION_STALE' ? { decision: spawnDecision(input.decision, { effectiveRequired: true }) } : details;
+    assert.equal(result.started, true); assert.equal(result.envelope.error.code, code); assert.deepEqual(result.envelope.error.details, expected); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
   }
 });
 test('malformed typed refusals and non-string error codes resolve without a callback throw', async () => {
-  for (const error of [{ code: 'E_DECISION_STALE', details: { decision: data().decision } }, { code: 'E_IDEMPOTENCY_CONFLICT', details: {} },
+  const partial = structuredClone(data().decision); delete partial.effective; // a stale decision without its effective plan
+  for (const error of [{ code: 'E_DECISION_STALE', details: { decision: partial } }, { code: 'E_IDEMPOTENCY_CONFLICT', details: {} },
     { code: 'E_SPAWN_INCOMPLETE', details: { instance: 'dev-1', home: '/team/home', launched: true } }, { code: { toString: null } }]) {
     const f = fixture({ exec: (_b, _a, _o, done) => done({ code: 1 }, JSON.stringify({ schemaVersion: 1, ok: false, error })) });
     const result = await cliSpawnApply(capable(), options(), f.io);

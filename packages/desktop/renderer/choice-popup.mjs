@@ -59,6 +59,7 @@ export function createChoicePopup(doc, host, label, id, options, pick, {
         list.append(group);
       }
       const button = node('button', item.label); button.type = 'button'; button.disabled = !!item.disabled; button.dataset.choiceKey = key(item);
+      if (typeof item.mark === 'function') { const mark = item.mark(); mark.setAttribute('aria-hidden', 'true'); button.prepend(mark); button.classList.add('has-mark'); }
       button.setAttribute('role', 'option'); button.setAttribute('aria-selected', String(!!item.selected));
       if (item.detail) button.append(node('small', item.detail));
       button.addEventListener('click', () => {

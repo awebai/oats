@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { createChoicePopup } from '../renderer/choice-popup.mjs';
-import { composeSpawnDialog, spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
+import { spawnDialogCSS } from '../renderer/spawn-dialog.mjs';
 import { revealInScrollport } from '../renderer/reveal-in-scrollport.mjs';
 const defaults = { value: '', label: 'Use resolved defaults', group: 'Defaults', search: false, selected: true };
 const custom = { custom: true, label: 'Custom entry…', group: 'Custom', search: false };
@@ -119,14 +119,6 @@ for (const guard of ['scope', 'epoch']) for (const weakened of [false, true]) te
   if (weakened) assert.throws(refused); else refused();
 });
 
-test('soul chooser with no reported rows says so instead of claiming a filter mismatch', t => {
-  const dom = new JSDOM(`<div class="spawn-modal"><section class="spawn-dialog"><header class="spawn-dialog-head"><h2>Spawn</h2><button class="fcancel-x">Close</button></header><form class="soul-form"><label>Runtime<select class="fruntime"><option value="">Defaults</option></select></label><label>Model<input class="fmodel"><datalist id="spawn-model-options"></datalist></label><label>Task<textarea class="ftask"></textarea></label><div class="frow"><button class="fcancel">Cancel</button><button class="fspawn">Spawn</button><span class="fstatus"></span></div></form></section></div>`);
-  const doc = dom.window.document, layout = composeSpawnDialog(doc.querySelector('.spawn-modal'), { soul: { name: 'dev', agentsRoot: '/team/agents' }, agents: [], canChoose: () => true, choose: assert.fail });
-  t.after(() => { layout.dispose(); dom.window.close(); });
-  assert.equal(doc.querySelector('.spawn-chooser-empty').hidden, false);
-  assert.equal(doc.querySelector('.spawn-chooser-empty').textContent, 'No souls reported for this chooser.');
-  assert.equal(doc.querySelector('.spawn-choice'), null);
-});
 function luminance(hex) {
   assert.match(hex, /^#[0-9a-f]{6}$/i);
   const c = hex.slice(1).match(/../g).map(v => parseInt(v, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);

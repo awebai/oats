@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [
+      {
+        "name": "oats.core",
+        "from": {
+          "kind": "package",
+          "package": "oats.framework",
+          "version": "1.1.3",
+          "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+          "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      }
+    ],
+    "team": "global",
+    "resolution": "595f1541815cf5b1ce270cb0",
+    "declRevision": "3ebc8989bc2f99da64b260de",
+    "payloadRevision": "ea105450ea33576a6e786d69",
+    "workspace": "local//fixture/base/fx/remotes/agents.git",
+    "standalone": false,
+    "providers": {},
+    "settings": {
+      "oats.core": {}
+    },
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "support-triager",
+    "kind": "persistent",
+    "instance": "support-triager-inbox",
+    "home": "/fixture/base/northwind-workspace/agents/support-triager/instances/support-triager-inbox",
+    "repo": "/fixture/base/northwind-workspace",
+    "work": "directory",
+    "subject": {
+      "soul": "support-triager",
+      "agentsRoot": "/fixture/base/northwind-workspace/agents",
+      "dir": "/fixture/base/northwind-workspace"
+    },
+    "decision": {
+      "instance": "support-triager-inbox",
+      "home": "/fixture/base/northwind-workspace/agents/support-triager/instances/support-triager-inbox",
+      "branch": null,
+      "base": null,
+      "effective": {
+        "repo": "/fixture/base/northwind-workspace",
+        "work": "directory",
+        "runtime": "pi",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "oats.core": {}
+        }
+      },
+      "resolution": "595f1541815cf5b1ce270cb0",
+      "revision": "4c86f1c10bc21a4396a3f051"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 62
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": true,
+      "started": false
+    },
+    "runtime": "pi",
+    "model": null,
+    "modelSource": "native default",
+    "launchConfig": null,
+    "backend": "tmux",
+    "branch": null,
+    "base": null,
+    "worktree": null,
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no declaration: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/bin/pi",
+    "capabilities": [
+      {
+        "name": "oats.core",
+        "origin": "package:oats.framework@1.1.3"
+      }
+    ],
+    "skills": [
+      "triage-issue",
+      {
+        "name": "oats-operate",
+        "source": "module:oats.core"
+      }
+    ],
+    "task": null,
+    "soulFetched": true
+  }
+}

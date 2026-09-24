@@ -17,17 +17,23 @@ process owner. Existing optional advertisements remain required too: runtime and
 backend lists, yolo launch option, launch-config and schedule (for wake input).
 A version string or optimistic flag probe never enables a mode.
 API 1 preview is never invoked: older parsers can ignore unknown flags and spawn.
-Missing compatible CLI means observation-only. A fully capable **local** ordinary
-request cannot bypass confirmation (`E_PLAN_REQUIRED`). API2-only/older compatible
-CLI and remote ordinary spawn remain separate; advanced fields, native-default
-sentinel and caller key/ref/decision cannot enter that legacy path (`E_PREVIEW_ONLY`).
-There is no transaction-to-legacy downgrade or remote-to-local fallback.
+Missing compatible CLI means observation-only. Every **local** spawn goes through
+the confirmed transaction; an ordinary local `/api/spawn` body is refused
+(`E_PLAN_REQUIRED`) whatever the CLI advertises. The ordinary body is accepted
+only for an execution server (`serverId`), where the host decides defaults and
+naming; decision fields (key, ref, revision) cannot enter it
+(`E_UNSUPPORTED_OPTION`). There is no remote-to-local fallback.
+`--name` (feature `spawn-name`) is admitted only when advertised.
 
 ## Selector and choices
 
-A selector is `{soul,agentsRoot}`, matched to one current local roster soul.
-Choices include purpose, worktree-only branch/base, advertised runtime/backend,
-launchConfig, yolo, allowChildSpawns, model and relation. Models are
+A selector is `{soul,agentsRoot}`, matched to one soul of the deployment's spawn
+catalog (`oats souls --json`); a catalog that could not be read, or a name it
+reports twice, refuses rather than falling back to the roster.
+Choices include purpose **or** name (exclusive; the kernel owns naming rules and
+refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`), work
+(`worktree` for a checkout soul), worktree-only branch/base, advertised
+runtime/backend, launchConfig, yolo, model and relation. Models are
 `{kind:"inherit"}`, `{kind:"native-default"}` or `{kind:"custom",value}`; the native
 sentinel is reserved, not a custom model. Custom model text is advisory, not
 restricted to a catalog. Relations are `{kind:"unrelated"}` or
@@ -65,11 +71,12 @@ yolo,backend,childSpawns,relation}`. Child policy is boolean; relation is null o
 `{kind,anchor{instance,agentsRoot}}`; model/config/yolo can be null. Old API2 READ
 without effective remains an observation, never a synthesized executable plan.
 
-Projection preserves bounded work/runtime/model provenance, policy origin,
-capability/skill names, `backendStatus{name,installed,started:false}` and
+Projection preserves bounded work/runtime/model provenance, the `resolution`
+binding (top-level facts cross-checked against `decision.effective`),
+`backendStatus{name,installed,started:false}` and
 `preflight{status:complete|timeout,budgetMs,elapsedMs}`. Installation is not daemon
-reachability. Omitted yolo remains unknown. Task, environment, executable recipes
-and unknown trees are not exposed. Missing/mismatched data is not empty success.
+reachability. Omitted yolo remains unknown. Capabilities, skills, providers, task,
+environment, executable recipes and unknown trees are not exposed. Missing/mismatched data is not empty success.
 
 ## Confirmed HTTP transaction
 
@@ -143,8 +150,11 @@ rollback or stop an already launched agent.
 
 ## Recovery limits and modal ownership
 
-Review spawn → Confirm spawn is two explicit actions, including Mod+Enter. Fetching
-an unseen decision never continues directly into mutation. Any relevant draft,
+The dialog previews in the background, so the operator reviews the kernel's own
+values before pressing **Spawn** (or Mod+Enter) once. Spawn prepares, and the
+server applies only if the prepared decision equals the one on screen; if the
+kernel now decides differently, nothing is applied and the new values are shown
+for another explicit Spawn. An unseen decision never continues into mutation. Any relevant draft,
 selection, CLI/workspace or mount change revokes pending read/confirmation authority.
 Older completion cannot clear a new task, re-enable a successor operation, steal
 focus or navigate another workspace. Roster changes alone are not new user drafts.
@@ -168,11 +178,9 @@ Existing anchored targets, linked-window viewers, locked keys and detach-only
 closure remain unchanged. A changed submitted draft can check its original result
 but cannot turn that old completion into authority over the new draft.
 
-Preview/Suggest remain explicit and observational; Suggest does not edit purpose.
-API2-only advanced values still block ordinary Spawn/Mod+Enter, with a reachable
-reset preserving task text. A downgraded unsubmitted confirmation needs explicit
-reset/close to leave its guarded flow; submitted uncertainty does not fall back.
-K5 remains **Observed soul readiness — not the proposed launch’s readiness**.
+A CLI without the confirmed-apply fence can still preview but never spawn
+locally; submitted uncertainty does not fall back. Launch readiness is not shown
+in the dialog; soul readiness remains the soul inspector's (F3b).
 
 Knowledge attachment, ADE auto-PR, branch enumeration, K5 signature verification
 and K11 enrolment remain separate open contracts, not parity-complete. Qualification

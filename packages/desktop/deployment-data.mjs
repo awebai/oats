@@ -207,6 +207,29 @@ export function capabilitiesData(document) {
   return { capabilitiesApi: 1, workspace, capabilities, problems: problemRows(data.problems) };
 }
 
+/** `oats souls --json` (soulsApi 1): the deployment's spawn catalog — every
+ * non-private soul of a confirmed member, and external souls, with the work
+ * mode each declares. Names are unique per catalog (the kernel refuses an
+ * ambiguous bare name with E_SOUL_AMBIGUOUS; such a soul is not offered). */
+const SOUL_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
+export function soulsData(document) {
+  check(record(document) && document.schemaVersion === 1 && document.ok === true);
+  const data = document.result;
+  check(record(data) && data.soulsApi === 1);
+  const workspace = fields(data.workspace, ['name', 'key', 'commit']);
+  const seen = new Map();
+  for (const row of array(data.souls)) {
+    const out = fields(row, ['name', 'origin', 'kind', 'repoKey', 'commit', 'team', 'path', 'work', 'description']);
+    check(SOUL_NAME.test(out.name ?? '') && ['member', 'external'].includes(out.kind)
+      && ['worktree', 'checkout', 'directory', 'workspace', 'attached'].includes(out.work));
+    flags(row, ['private'], out);
+    seen.set(out.name, seen.has(out.name) ? null : out);
+  }
+  const souls = [...seen.values()].filter(Boolean);
+  const ambiguous = [...seen].filter(([, row]) => row === null).map(([name]) => name);
+  return { soulsApi: 1, workspace, souls, ambiguous, problems: problemRows(data.problems) };
+}
+
 /** `oats onboard --json` (onboardApi 2) for the directory the operator chose. */
 export function onboardData(document, dir) {
   check(absolute(dir), 'E_BAD_ARGS');

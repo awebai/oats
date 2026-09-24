@@ -23,34 +23,37 @@ for (const outcome of ["visible", "switched", "missing", "routeConflict"]) test(
       notify: (message) => notices.push(message),
     },
   };
-  const ui = { btn: {}, status: { classList: { add() {}, remove() {} } }, task: () => "task", purpose: () => "one", server: () => "host", clear() {} };
+  let status = "";
+  const fields = { server: "host", task: "task", purpose: "one", status: text => { status = text; } };
   try {
-    await doSpawn(s, ui);
+    const result = await doSpawn(s, fields);
+    assert.deepEqual(result, { created: true });
     assert.equal(submitted.serverId, "host");
     assert.deepEqual(opens, outcome === "visible" ? [ref] : []);
     if (outcome === "missing") assert.match(notices[0], /runtime is not visible/);
     else assert.deepEqual(notices, []);
     assert.equal(currentWorkspace(), switched ? "another" : outcome === "routeConflict" ? "local" : "remote:host-key");
-    if (outcome === "routeConflict") assert.match(ui.status.textContent, /already has a saved route.*\/remote\/home/);
+    if (outcome === "routeConflict") assert.match(status, /already has a saved route.*\/remote\/home/);
   } finally { setWorkspace(previous); }
 });
 
-test("a created agent with an unsaved wake schedule stays visible and cannot be spawned twice", async () => {
-  await refreshCli({ api: async () => ({ ok: true, version: "0.22.10", bin: "/oats" }) });
+test("an execution-server spawn whose wake schedule was not saved still reports created (the dialog then refuses a second spawn)", async () => {
+  await refreshCli({ api: async () => ({ ok: true, version: "0.25.7", bin: "/oats", remote: ["spawn", "schedule"] }) });
   const previous = currentWorkspace(); setWorkspace("local");
-  let calls = 0, partial;
+  let calls = 0, status = "", error = false;
   const wake = { cron: "*/15 * * * *", tz: "UTC", message: "Check pending work", enabled: true };
   const s = { alive: true, spawnOp: 0, selAgent: { name: "dev", agentsRoot: "/local/agents" }, ctx: {
     api: async (path, opts) => {
       assert.equal(path, "/api/spawn"); calls++;
-      assert.deepEqual(JSON.parse(opts.body).wake, wake);
-      return { instance: "dev-one", home: "/local/home", launched: true, wakeScheduleError: { code: "E_DISK", message: "Disk full" } };
+      const body = JSON.parse(opts.body); assert.deepEqual(body.wake, wake); assert.equal(body.serverId, "host");
+      return { instance: "dev-one", home: "/remote/home", launched: true, wakeScheduleError: { code: "E_DISK", message: "Disk full" } };
     }, openTerminal: () => assert.fail("partial failure needs acknowledgement"),
   } };
-  const ui = { btn: {}, status: { classList: { add() {}, remove() {} } }, task: () => "task", purpose: () => "one", wake: () => wake, clear() {}, partial: result => { partial = result; } };
   try {
-    await doSpawn(s, ui); await doSpawn(s, ui);
-    assert.equal(calls, 1); assert.equal(ui.btn.disabled, true); assert.equal(partial.home, "/local/home");
-    assert.match(ui.status.textContent, /Created dev-one.*not saved.*Disk full/);
+    const outcome = await doSpawn(s, { server: "host", task: "task", purpose: "one", wake, status: (text, err) => { status = text; error = !!err; } });
+    assert.deepEqual(outcome, { created: true }); assert.equal(calls, 1); assert.equal(error, true);
+    assert.match(status, /Created dev-one.*not saved.*Disk full/);
+    assert.equal(await doSpawn(s, { task: "x", status: () => {} }), undefined, "no server: doSpawn never spawns locally");
+    assert.equal(calls, 1);
   } finally { setWorkspace(previous); }
 });

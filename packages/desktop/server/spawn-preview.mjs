@@ -1,4 +1,5 @@
-/** Exact local soul/anchor admission and two-slot read-only K6 budget. */
+/** Exact local soul/anchor admission against the deployment's spawn catalog,
+ * and the two-slot read-only preview budget. */
 import { dirname } from 'node:path';
 import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
 import { admitInstance } from './instance-admission.mjs';
@@ -14,7 +15,12 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
   const soul = rows[0];
   if (soul.remote || soul.server) return fail('unsupported-remote-operation');
   if (soul.work === 'attached') return fail('E_UNSUPPORTED_MODE'); // no renderer workDir authority
-  if ((choices.base !== undefined || choices.branch !== undefined) && soul.work !== 'worktree') return fail('E_UNSUPPORTED_OPTION');
+  // An exact (unprefixed) name only where the CLI advertises it.
+  if (choices.name !== undefined && !cli.features.includes('spawn-name')) return fail('E_UNSUPPORTED_OPTION');
+  // The one work override offered: a checkout soul asked for a worktree.
+  if (choices.work !== undefined && soul.work !== 'checkout') return fail('E_UNSUPPORTED_OPTION');
+  const work = choices.work ?? soul.work;
+  if ((choices.base !== undefined || choices.branch !== undefined) && work !== 'worktree') return fail('E_UNSUPPORTED_OPTION');
   const supports = (values, value) => Array.isArray(values) && values.includes(value);
   if (choices.runtime && !supports(cli.runtimes, choices.runtime) || choices.backend && !supports(cli.sessionBackends, choices.backend)
     || choices.yolo !== undefined && !supports(cli.launchOptions, 'yolo') || choices.launchConfig && !cli.features.includes('launch-config')) return fail('E_UNSUPPORTED_OPTION');
@@ -47,7 +53,7 @@ export function createSpawnPreviewBoundary({ invoke = cliSpawnPreview } = {}) {
         if (flights.size >= 2) return previewFailure('E_BUSY', target);
         const slot = {}; flights.add(slot);
         const flight = Promise.resolve().then(() => invoke(cli, { target, choices })).then(envelope => {
-          if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target);
+          if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return previewFailure(envelope?.error?.code, target, envelope?.error?.message);
           const data = previewData(envelope.result, target);
           return data ? { spawnPreviewViewApi: 1, status: 'available', target, data, reason: null } : previewFailure('E_CLI_PROTOCOL', target);
         }).catch(() => previewFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(identity); });

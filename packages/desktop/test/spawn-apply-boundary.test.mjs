@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSpawnApplyBoundary } from '../server/spawn-apply.mjs';
 import { spawnCreationReceipt, spawnWakeOutcome, WAKE_OUTCOME_UNKNOWN } from '../renderer/spawn-apply-contract.mjs';
-import { selector, target, anchor, deferred, tick } from './helpers/spawn-preview-fixture.mjs';
+import { selector, target, anchor, deferred, tick, DEPLOYMENT } from './helpers/spawn-preview-fixture.mjs';
 import { applyContext, applyPreview, creation, envelope } from './helpers/spawn-apply-fixture.mjs';
 const wake = { cron: '0 * * * *', tz: 'UTC', message: 'PRIVATE wake' };
 const prepare = changes => ({ action: 'prepare', selector, choices: {}, task: 'PRIVATE task', ...changes });
@@ -45,9 +45,9 @@ test('one broker serializes mutation across admitted workspaces', async () => {
   const gate = deferred(), f = fixture({ invoke: () => gate.promise });
   const a = await f.send(prepare()); f.c.workspace.id = 'other';
   const b = await f.send(prepare()); assert.equal(b.target.workspace, 'other');
-  f.c.workspace.id = 'team'; const first = f.send({ action: 'apply', spawnRef: a.spawnRef }); await tick();
+  f.c.workspace.id = 'northwind'; const first = f.send({ action: 'apply', spawnRef: a.spawnRef }); await tick();
   f.c.workspace.id = 'other'; assert.equal((await f.send({ action: 'apply', spawnRef: b.spawnRef })).reason.code, 'E_BUSY');
-  assert.equal(f.calls.length, 1); f.c.workspace.id = 'team'; gate.resolve({ started: true, envelope: envelope(creation(applyPreview(target))) }); await first;
+  assert.equal(f.calls.length, 1); f.c.workspace.id = 'northwind'; gate.resolve({ started: true, envelope: envelope(creation(applyPreview(target))) }); await first;
 });
 test('unknown can explicitly retry identical intent/key; result never invokes or mints', async () => {
   let attempts = 0;
@@ -110,7 +110,7 @@ for (const reject of [false, true]) test(`late mutation ${reject ? 'rejection' :
   const pending = f.send({ action: 'apply', spawnRef: p.spawnRef }); await tick(); f.c.workspace.scope = '/other';
   if (reject) gate.reject(Error('PRIVATE')); else gate.resolve({ started: true, envelope: envelope(creation(applyPreview(target))) });
   assert.equal((await pending).status, 'unknown');
-  f.c.workspace.scope = '/team'; const r = await f.send({ action: 'result', spawnRef: p.spawnRef }); assert.equal(r.status, reject ? 'unknown' : 'complete'); assert.equal(f.calls.length, 1);
+  f.c.workspace.scope = DEPLOYMENT; const r = await f.send({ action: 'result', spawnRef: p.spawnRef }); assert.equal(r.status, reject ? 'unknown' : 'complete'); assert.equal(f.calls.length, 1);
 });
 test('downgrade before first apply and before unknown retry refuses without new dispatch/key', async () => {
   for (const afterUnknown of [false, true]) {
@@ -166,11 +166,11 @@ test('mint collision cannot alias another confirmation or dispatch with its ref 
   assert.equal((await f.send(prepare())).reason.code, 'E_BUSY');
   assert.equal((await f.send({ action: 'apply', spawnRef: first.spawnRef })).reason.code, 'E_BUSY'); assert.equal(f.calls.length, 0);
 });
-test('retained byte budget refuses large preview records before any apply', async () => {
-  const v = applyPreview(target); v.skills = Array(512).fill('界'.repeat(512)); v.capabilities = [...v.skills];
-  const f = fixture({ read: () => ({ status: 'available', data: v }) }); let accepted = 0;
-  for (let i = 0; i < 32; i++) { const r = await f.send(prepare()); if (r.status === 'prepared') accepted++; else { assert.equal(r.reason.code, 'E_BUSY'); break; } }
-  assert.ok(accepted > 0 && accepted < 32); assert.equal(f.calls.length, 0);
+test('bloated kernel payloads are not retained: 32 intents fit the byte budget, the 33rd is refused by count', async () => {
+  const v = applyPreview(target); v.skills = Array(512).fill('界'.repeat(512)); v.capabilities = [...v.skills]; v.modules = [...v.skills];
+  const f = fixture({ read: () => ({ status: 'available', data: v }) });
+  for (let i = 0; i < 32; i++) { const r = await f.send(prepare()); assert.equal(r.status, 'prepared'); assert.doesNotMatch(JSON.stringify(r), /界/); }
+  assert.equal((await f.send(prepare())).reason.code, 'E_BUSY'); assert.equal(f.calls.length, 0);
 });
 test('observed keyed home disappearance blocks further unknown retry; complete cache never dispatches after retire', async () => {
   const f = fixture({ invoke: () => { throw Error('unknown'); } }), p = await f.send(prepare());

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_CLONE_MISSING",
+    "message": "soul release-manager works in a worktree of local//fixture/base/fx/remotes/agents.git, and this machine has no clone of it — either `git clone /fixture/base/fx/remotes/agents.git /fixture/base/northwind-workspace/agents-repo` (the convention: <deployment>/<member name>) or point oats-local.yaml at an existing clone: `clones: { local//fixture/base/fx/remotes/agents.git: <abs path> }`; for a one-off pass --repo <path>",
+    "details": {
+      "soul": "release-manager",
+      "repoKey": "local//fixture/base/fx/remotes/agents.git",
+      "work": "worktree",
+      "deployment": "/fixture/base/northwind-workspace",
+      "convention": "/fixture/base/northwind-workspace/agents-repo",
+      "url": "/fixture/base/fx/remotes/agents.git",
+      "remedies": {
+        "clone": "git clone /fixture/base/fx/remotes/agents.git /fixture/base/northwind-workspace/agents-repo",
+        "local": {
+          "clones": {
+            "local//fixture/base/fx/remotes/agents.git": "<abs path>"
+          }
+        },
+        "flag": "--repo <path>"
+      }
+    }
+  }
+}

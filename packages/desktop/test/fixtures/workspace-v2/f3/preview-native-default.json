@@ -1,0 +1,216 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [
+      {
+        "name": "nw-deploy",
+        "from": {
+          "kind": "package",
+          "package": "nw.tools",
+          "version": "0.4.0",
+          "commit": "637e08164b3cdeeda468863aae766b7b58ba13b8",
+          "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+          "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "nw-house-style",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "nw-release-tooling",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "oats.core",
+        "from": {
+          "kind": "package",
+          "package": "oats.framework",
+          "version": "1.1.3",
+          "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+          "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "oats.okf",
+        "from": {
+          "kind": "package",
+          "package": "oats.okf",
+          "version": "2.1.3",
+          "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+          "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
+        },
+        "layer": "knowledge",
+        "private": false,
+        "changedSince": null
+      }
+    ],
+    "team": "engineering",
+    "resolution": "63d1ed0942af1a2910d1b280",
+    "declRevision": "05c20fad2100d47805c4908b",
+    "payloadRevision": "fa67da14675c42fcc0816426",
+    "workspace": "local//fixture/base/fx/remotes/agents.git",
+    "standalone": false,
+    "providers": {},
+    "settings": {
+      "nw-deploy": {},
+      "nw-house-style": {},
+      "nw-release-tooling": {},
+      "oats.core": {},
+      "oats.okf": {
+        "owns": "release-manager",
+        "reads": [
+          "platform-engineer",
+          "data-analyst"
+        ]
+      }
+    },
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "release-manager",
+    "kind": "persistent",
+    "instance": "release-manager-api-v2",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2",
+    "repo": "/fixture/base/northwind-workspace/agents-repo",
+    "work": "worktree",
+    "subject": {
+      "soul": "release-manager",
+      "agentsRoot": "/fixture/base/northwind-workspace/agents",
+      "dir": "/fixture/base/northwind-workspace"
+    },
+    "decision": {
+      "instance": "release-manager-api-v2",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2",
+      "branch": "agents/release-manager-api-v2",
+      "base": {
+        "ref": "HEAD",
+        "oid": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+      },
+      "effective": {
+        "repo": "/fixture/base/northwind-workspace/agents-repo",
+        "work": "worktree",
+        "runtime": "pi",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "nw-deploy": {},
+          "nw-house-style": {},
+          "nw-release-tooling": {},
+          "oats.core": {},
+          "oats.okf": {
+            "owns": "release-manager",
+            "reads": [
+              "platform-engineer",
+              "data-analyst"
+            ]
+          }
+        }
+      },
+      "resolution": "63d1ed0942af1a2910d1b280",
+      "revision": "1d2cb921550c142f516d8b6f"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 67
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": true,
+      "started": false
+    },
+    "runtime": "pi",
+    "model": null,
+    "modelSource": "native default (explicit)",
+    "launchConfig": null,
+    "backend": "tmux",
+    "branch": "agents/release-manager-api-v2",
+    "base": {
+      "ref": "HEAD",
+      "oid": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+    },
+    "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2/work",
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no declaration: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/bin/pi",
+    "capabilities": [
+      {
+        "name": "nw-deploy",
+        "origin": "package:nw.tools@0.4.0"
+      },
+      {
+        "name": "nw-house-style",
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+      },
+      {
+        "name": "nw-release-tooling",
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+      },
+      {
+        "name": "oats.core",
+        "origin": "package:oats.framework@1.1.3"
+      },
+      {
+        "name": "oats.okf",
+        "origin": "package:oats.okf@2.1.3"
+      }
+    ],
+    "skills": [
+      "release-checklist",
+      {
+        "name": "deploy",
+        "source": "module:nw-deploy"
+      },
+      {
+        "name": "cut-release",
+        "source": "module:nw-release-tooling"
+      },
+      {
+        "name": "oats-operate",
+        "source": "module:oats.core"
+      },
+      {
+        "name": "okf",
+        "source": "module:oats.okf"
+      }
+    ],
+    "task": null,
+    "soulFetched": false
+  }
+}

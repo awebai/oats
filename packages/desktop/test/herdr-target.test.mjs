@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { herdrTargetKey, readHerdrTarget, openHerdrTerm } from "../herdr-target.mjs";
-import { requireExecutionSupport } from "../cli-locator.mjs";
 const target = { backend: "herdr", socket: "/tmp/herdr.sock", paneId: "w1:p1", terminalId: "term_abc123", protocol: 20, binary: "/untrusted/workspace/program" };
 test("Desktop inspects Herdr with a host-owned executable and exact terminal identity", () => {
   const inspect = (terminal) => readHerdrTarget(target, (binary, argv, options) => {
@@ -22,19 +21,6 @@ test("Desktop viewer preflights the terminal and closing the viewer performs no 
   result.killViewer();
   assert.equal(spawnCount, 1);
 });
-test("old CLI cannot silently substitute an unsupported runtime or backend", () => {
-  const old = { version: "0.22.1" };
-  assert.doesNotThrow(() => requireExecutionSupport(old, "pi", "tmux"));
-  assert.throws(() => requireExecutionSupport(old, "codex", "tmux"), /does not support runtime codex/);
-  assert.throws(() => requireExecutionSupport(old, "claude", "herdr"), /does not support session backend herdr/);
-  assert.doesNotThrow(() => requireExecutionSupport({ ...old, runtimes: ["codex"], sessionBackends: ["herdr"] }, "codex", "herdr"));
-});
-
-test("old CLI cannot silently ignore explicit yolo overrides", () => {
-  assert.throws(() => requireExecutionSupport({ version: "old" }, "claude", "tmux", false), /yolo overrides/);
-  assert.doesNotThrow(() => requireExecutionSupport({ launchOptions: ["yolo"] }, "claude", "tmux", true));
-});
-
 test("Herdr workspace and pane public IDs remain usable after the ninth allocation", () => {
   for (const paneId of ["wB:p1", "w1:pA", "w11:pZ"]) {
     const selected = { ...target, paneId };

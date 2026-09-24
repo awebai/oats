@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_BASE_UNKNOWN",
+    "message": "base \"no-such-ref\" does not resolve to a commit in /fixture/base/northwind-workspace/agents-repo"
+  }
+}

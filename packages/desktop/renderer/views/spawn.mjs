@@ -1,39 +1,22 @@
 /* OATS Desktop — Workspace discovery (legacy stage id: spawn).
-   Souls remain durable definitions; Launch explicitly opens the Spawn modal.
-   Capabilities/Sources project only the current CLI inspection contract.
-   API2 observations stay read-only; advanced choices enter only server-owned
-   confirmed CLI intents, never legacy submission. Resolution stays CLI-owned.
+   Souls are the deployment's spawn catalog (`oats souls`); Launch explicitly
+   opens the Spawn dialog (renderer/spawn-dialog.mjs), whose defaults and
+   decisions are the kernel's spawn preview. Resolution stays CLI-owned.
    Contract: mount(el, ctx) / unmount(). Plain ES module + DOM. */
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
 import { deploymentUnavailableText } from "../deployment-header.mjs";
-import { composeSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
-import { createSpawnLaunch } from "../spawn-launch.mjs";
-import { createSpawnPreview } from '../spawn-preview-view.mjs';
-import { createSpawnApply } from '../spawn-apply-view.mjs';
-import { createSoulMark, createRuntimeBadge, identityCSS } from "../identity-marks.mjs";
+import { createSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
+import { createSoulMark, identityCSS } from "../identity-marks.mjs";
 import {
-  escapeHtml, apiJson, postJson, ensureTheme,
+  apiJson, postJson, ensureTheme,
   currentWorkspace, setWorkspace, onWorkspaceChange, wsQuery, workspaceGeneration,
 } from "./common.mjs";
 import { registerAction, getBinding, formatChord, onKeymapChange } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
-import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard, cliRelationsAvailable } from "./cli-status.mjs";
-import { distinguishingRootTags } from "../instance-tree.mjs";
+import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard } from "./cli-status.mjs";
 import { preselectSchedule } from "./schedules.mjs";
-import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
-import { icon } from "../shell-icons.mjs";
-
-/** Required-version label for the disabled relation note. The floor is the
- * LOCATOR's (RELATIONS_MIN, served as `relationsMin`); restating a number here
- * is the drift class that once had the CLI card advertising a version below
- * the floor it required. A backend that did not send one leaves us genuinely
- * not knowing it, and the note says so rather than naming a guess. */
-function relationsMinLabel() {
-  const min = cliStatus()?.relationsMin;
-  return typeof min === "string" && min ? min : null;
-}
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -63,7 +46,6 @@ const CSS = `
 .soul-card .sname { font-weight:650; font-size:13.5px; display:flex; align-items:flex-start; gap:10px; }
 .soul-card .sidentity { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1; }
 .soul-card .stitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.soul-card .sruntime { flex:none; width:18px; height:18px; border-radius:5px; display:grid; place-items:center; font-size:9px; font-weight:700; }
 .soul-card .scontext { color:var(--muted); font:11px var(--mono,monospace); }
 .soul-card .sname .glyph { width:36px; height:36px; flex:none; border-radius:9px; display:grid; place-items:center; font-size:15px; }
 .oats-view .souls button.spawn-act:not(:disabled), .oats-view .souls button.fspawn:not(:disabled) { background:var(--primary-bg); color:var(--primary-fg); border-color:var(--primary-bg); }
@@ -73,32 +55,12 @@ const CSS = `
 .soul-card .sactivity.running::before { background:var(--accent); }
 .souls-grid[hidden] { display:none; }
 .soul-card .sdesc { color:var(--muted); font-size:12px; line-height:1.5; text-wrap:pretty; flex:1; }
-.soul-form { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
-.soul-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
-.soul-form .frow { display: flex; gap: 8px; align-items: center; }
-.soul-form .fstatus { font-size: 12.5px; color: var(--muted); }
-.soul-form .fstatus.err { color: var(--danger); }
-.spawn-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px;
-               background: color-mix(in srgb, var(--bg) 60%, transparent); }
-.spawn-dialog { width: min(520px, 100%); max-height: min(680px, calc(100vh - 48px)); display: flex;
-                flex-direction: column; gap: 10px; overflow-y: auto; background: var(--surface);
-                border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
-                padding: 16px 18px; }
-.spawn-dialog-head { display: flex; align-items: flex-start; gap: 8px; }
-.spawn-dialog-head h2 { margin: 0; font-size: 16px; line-height: 1.3; flex: 1; }
-.spawn-dialog-head .sdesc { color: var(--muted); font-size: 12.5px; }
-.spawn-dialog .close-act { margin-left: auto; width: 28px; height: 28px; border: 0; border-radius: 6px;
-                           background: none; color: var(--muted); font-size: 16px; cursor: pointer; }
+.spawn-modal { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 24px; background: var(--scrim); }
+.spawn-dialog { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+.spawn-dialog-head { display: flex; }
+.spawn-dialog-head h2 { margin: 0; line-height: 1.3; }
+.spawn-dialog .close-act { width: 28px; height: 28px; border: 0; border-radius: 6px; background: none; color: var(--muted); cursor: pointer; }
 .spawn-dialog .close-act:hover { background: var(--surface-2); color: var(--fg); }
-.spawn-dialog .frelnote { font-size: 12px; color: var(--muted); }
-.spawn-dialog fieldset.frelgroup { border: 1px solid var(--border); border-radius: 8px; margin: 0;
-                                   padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 8px; }
-.spawn-dialog fieldset.frelgroup legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
-.spawn-dialog .frelrow { display: flex; gap: 8px; align-items: center; }
-.spawn-dialog .frelrow .frelation { flex: 0 1 auto; }
-.spawn-dialog .frelrow .frelto { flex: 1 1 auto; min-width: 0; }
-.spawn-dialog .freldesc { font-size: 12px; color: var(--muted); min-height: 0; }
-.spawn-dialog .freldesc:empty { display: none; }
 `;
 
 let state = null;
@@ -203,7 +165,9 @@ function applyPreselect(s) {
 
 export function mount(el, ctx) {
   ensureTheme(el.ownerDocument);
-  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null };
+  // ctx.spawnTiming (optional, harness only): { previewDelay, wait } — never set by the shell.
+  const s = state = { el, ctx, souls: { agents: [] }, panelInstances: [], filterText: "", sel: null, timers: [], unsubWs: null, alive: true, spawnOp: 0, rosterReq: 0, rosterGen: null,
+    waitOpts: ctx.spawnTiming?.wait };
   el.innerHTML = `
     <div class="oats-view" style="display:block">
       <style>${CSS}
@@ -442,8 +406,6 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   // repaint:false — this very renderGrid call is already painting the grid;
   // a nested repaint from the close would render twice for nothing.
   if (noCli && s.sel) closeSpawnModal(s, { repaint: false });
-  // (main's in-card soul-form early-return does not apply: the spawn form
-  // lives in the modal on this branch, so grid repaints never touch it)
   // capture the focused card's identity before the rebuild wipes the DOM
   const active = s.el?.ownerDocument?.activeElement;
   const focused = grid.contains?.(active) ? active?.closest?.(".soul-card") : null;
@@ -541,7 +503,7 @@ function brainOfFocusedCard(s) {
 
 function onGridKey(s, e) {
   // Keys inside the open form belong to the form (Esc handled above).
-  if (e.target.closest?.(".soul-form")) return;
+  if (e.target.closest?.(".spawn-modal")) return;
   const cards = gridCards(s);
   if (!cards.length) return;
   const cur = focusedCard(s);
@@ -607,8 +569,7 @@ function soulCard(s, a) {
   const title = doc.createElement("span"); title.className = "stitle"; title.textContent = a.name;
   const context = doc.createElement("span"); context.className = "scontext"; context.textContent = a.repoName || a.workspace || "Workspace soul";
   identity.append(title, context);
-  const runtime = createRuntimeBadge(doc, a.runtime); runtime.classList.add("sruntime");
-  name.append(avatar, identity, runtime);
+  name.append(avatar, identity);
   const description = doc.createElement("span"); description.className = "sdesc"; description.textContent = a.description || "";
   card.append(name, description);
   const instances = soulInstances(s, a);
@@ -644,380 +605,108 @@ function closeSpawnModal(s, { restoreFocus = false, repaint = true } = {}) {
   if (canFocusCard(s, card)) card.focus();
 }
 
-/** Spawn modal (human change request on the integrated feature branch):
- * ALL spawn options in one dialog — purpose, task, and the agent-relation
- * options (relation + reference instance) directly visible, following the
- * app's ws-dialog pattern: role=dialog + aria-modal, labelled controls,
- * Tab focus trap, Esc/backdrop/× close, focus restored to the opener. */
+/** The spawn dialog (renderer/spawn-dialog.mjs) hosted as a modal: role=dialog +
+ * aria-modal, Tab focus trap, Esc/backdrop/× close, focus restored to the
+ * opener. Choosing another soul in the dialog reopens it for that soul and
+ * keeps the typed name and instruction. */
+function catalogNote(s) {
+  const catalog = s.souls?.catalog;
+  if (!catalog) return "";
+  const parts = [];
+  if (catalog.reason) parts.push(`The spawn catalog could not be read (${catalog.reason.code}${catalog.reason.message ? `: ${catalog.reason.message}` : ""}).`);
+  if (catalog.ambiguous?.length) parts.push(`Not offered — more than one member declares: ${catalog.ambiguous.join(", ")}.`);
+  return parts.join(" ");
+}
 function openSpawnModal(s, a, draft = {}) {
   if (!canLaunchSoul(s, a)) return;
   nextSelectionIntent();
   closeSpawnModal(s); // one modal at a time; a new open supersedes the old
   s.sel = a.name; s.selAgent = a;
   renderGrid(s); // highlight the selected card under the backdrop
-
-  const doc = s.el.ownerDocument;
-  const modalGen = workspaceGeneration();
+  const doc = s.el.ownerDocument, modalGen = workspaceGeneration();
   const modal = doc.createElement("div");
   modal.className = "spawn-modal";
-  const titleId = "spawn-dialog-title";
-  // Picker options carry BOTH halves of the anchor identity: the visible
-  // value is the instance name (what the user reads), dataset.root is the
-  // agents root it homes in — always sent as --relative-root so cross-root
-  // name shadowing can never make the spawn ambiguous (kernel contract:
-  // E_RELATIVE_AMBIGUOUS). Duplicate names get a SHORTEST-UNIQUE root tag
-  // (naive one-segment tags collide: /a/project/agents vs /b/project/agents;
-  // review cbd5bb3). Options are built with createElement/textContent/
-  // dataset — roots are workspace paths and must never travel through
-  // innerHTML attribute interpolation (injection surface; review cbd5bb3).
-  const nameCounts = new Map();
-  for (const i of s.panelInstances || []) nameCounts.set(i.instance, (nameCounts.get(i.instance) || 0) + 1);
-  const dupRoots = (s.panelInstances || [])
-    .filter((i) => (nameCounts.get(i.instance) || 0) > 1)
-    .map((i) => i.agentsRoot);
-  const rootTags = distinguishingRootTags(dupRoots);
-  const buildRefOptions = (select) => {
-    for (const i of s.panelInstances || []) {
-      const opt = doc.createElement("option");
-      opt.value = i.instance;
-      opt.dataset.root = i.agentsRoot || "";
-      const dup = (nameCounts.get(i.instance) || 0) > 1 && i.agentsRoot;
-      const tag = dup ? ` [${rootTags.get(String(i.agentsRoot)) || i.agentsRoot}]` : "";
-      opt.textContent = `${i.instance}${tag}${i.running === true ? "" : ` (${runtimeState(i)})`}`;
-      select.append(opt);
-    }
-  };
-  // ALL options are ALWAYS VISIBLE (human requirement): purpose, task,
-  // relation + reference instance, runtime and model overrides. The CLI
-  // capability gate never HIDES the relation controls — on a pre-relations
-  // CLI the related choices (child/sibling/parent) and the reference picker
-  // gate disabled with the required version named, while the select itself
-  // and "unrelated" stay usable. The server still fails closed
-  // (cli-no-relations) — render state is UX, not the
-  // guard. Capability is NOT snapshotted: app focus re-probes the CLI, so
-  // an open modal resyncs on every CLI change (review 5526b70) via
-  // syncRelationControls below — typed fields are never touched.
-  modal.innerHTML = `
-    <section class="spawn-dialog" role="dialog" aria-modal="true" aria-labelledby="${titleId}">
-      <div class="spawn-dialog-head">
-        <div>
-          <h2 id="${titleId}">Spawn ${escapeHtml(a.name)}</h2>
-          ${a.description ? `<div class="sdesc">${escapeHtml(a.description)}</div>` : ""}
-          <div class="schips" style="margin-top:6px">
-            <span class="chip">${escapeHtml(a.work)}</span>
-            ${a.repo ? `<span class="chip">${escapeHtml(a.repoName)}</span>` : ""}
-          </div>
-        </div>
-        <button class="close-act fcancel-x" type="button" aria-label="Close spawn dialog">${icon("close", { size: 14 })}</button>
-      </div>
-      <div class="soul-form">
-        <label>Purpose (optional — becomes part of the instance name)
-          <input class="field fpurpose" placeholder="e.g. pr42" autocomplete="off"></label>
-        <label>Task (optional — empty spawns an instance awaiting your instructions)
-          <textarea class="field ftask" rows="4" placeholder="What should this instance do?"></textarea></label>
-        <fieldset class="frelgroup">
-          <legend>Relation to other agents</legend>
-          <div class="frelrow">
-            <select class="field frelation" aria-label="Relation">
-              <option value="unrelated" selected>Unrelated</option>
-              <option value="child">Child of…</option>
-              <option value="sibling">Sibling of…</option>
-              <option value="parent">Parent of…</option>
-            </select>
-            <select class="field frelto" disabled aria-label="Which instance">
-              <option value="">— which instance? —</option>
-            </select>
-          </div>
-          <div class="freldesc" aria-live="polite"></div>
-          <div class="frelnote" hidden></div>
-        </fieldset>
-        <label>Runtime (optional — uses soul defaults)
-          <select class="field fruntime">
-            <option value="" selected>Use soul defaults</option>
-            <option value="pi">pi</option>
-            <option value="claude">claude</option>
-            <option value="codex">codex</option>
-          </select></label>
-        <label>Session backend
-          <select class="field fbackend">
-            <option value="" selected>Use resolved defaults</option>
-            <option value="tmux">tmux</option>
-            <option value="herdr">Herdr</option>
-          </select></label>
-        <label>Permissions
-          <select class="field fyolo">
-            <option value="">Use soul / scope setting</option>
-            <option value="true">YOLO — skip permission prompts</option>
-            <option value="false">Use native permission policy</option>
-          </select></label>
-        <label>Model (optional — uses soul defaults; suggestions require an explicit runtime)
-          <input class="field fmodel" autocomplete="off" list="spawn-model-options" placeholder="Use soul defaults"></label>
-        <datalist id="spawn-model-options"></datalist>
-        <label>Run on
-          <select class="field fserver" aria-label="Execution server">
-            <option value="" selected>this machine</option>
-          </select></label>
-        <div class="fserverdesc" hidden>Runs in the selected server's workspace.</div>
-        <div class="frow">
-          <button class="act fspawn primary">Spawn</button>
-          <button class="act fcancel">Cancel</button>
-          <span class="fstatus" aria-live="polite"></span>
-        </div>
-      </div>
-    </section>`;
-  const dialog = modal.querySelector(".spawn-dialog");
-  let submitting = false, composing = false, legacyCreated = false, guardedApply = null;
   const ownsModal = () => s.alive && modalGen === workspaceGeneration() && s.modalEl === modal;
-  const layout = composeSpawnDialog(modal, { soul: a, agents: s.souls.agents, workspace: s.workspace, query: draft.query || '',
-    canChoose: candidate => canLaunchSoul(s, candidate),
-    choose: (candidate, query) => {
-      if (!ownsModal() || submitting || !canLaunchSoul(s, candidate)) return;
-      const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || '') === (candidate.server || ''));
-      openSpawnModal(s, fresh, { query, task: modal.querySelector('.ftask').value, purpose: modal.querySelector('.fpurpose').value });
+  const close = () => closeSpawnModal(s, { restoreFocus: true });
+  const ui = createSpawnDialog(modal, {
+    ctx: s.ctx, soul: a, agents: s.souls.agents, workspace: () => s.workspace, cli: cliStatus, instances: () => s.panelInstances,
+    owns: () => ownsModal() && canLaunchSoul(s, a), canChoose: candidate => canLaunchSoul(s, candidate), draft, catalogNote: catalogNote(s), close,
+    ...(Number.isInteger(s.ctx.spawnTiming?.previewDelay) ? { delay: s.ctx.spawnTiming.previewDelay } : {}),
+    choose: (candidate, next) => {
+      if (!ownsModal() || !canLaunchSoul(s, candidate)) return;
+      const fresh = s.souls.agents.find(current => current.name === candidate.name && current.agentsRoot === candidate.agentsRoot && (current.server || "") === (candidate.server || ""));
+      openSpawnModal(s, fresh, { ...next, focus: "soul" });
+    },
+    servers: a.server ? [] : () => apiJson(s.ctx, "/api/servers").then(d => Array.isArray(d?.servers) ? d.servers : []),
+    remoteSpawn: fields => doSpawn(s, fields),
+    onCreated: async (view, isCurrent) => {
+      if (!isCurrent()) return;
+      const receipt = view.receipt;
+      if (view.status === "partial") {
+        if (!ui.dialog.querySelector(".guarded-schedules")) {
+          const manage = doc.createElement("button"); manage.className = "act guarded-schedules"; manage.type = "button"; manage.textContent = "View schedules";
+          manage.addEventListener("click", () => { if (!ownsModal()) return; closeSpawnModal(s); s.ctx.openView?.("schedules"); });
+          ui.dialog.querySelector(".spawn-footer").insertBefore(manage, ui.spawn);
+        }
+        return; // creation succeeded; never retry spawn to repair a wake
+      }
+      if (!receipt.launched) { ui.status.textContent = `Created ${receipt.instance} — not launched. Open its session from the roster.`; return; }
+      const ref = { instance: receipt.instance, home: receipt.home, agentsRoot: receipt.agentsRoot };
+      ui.status.textContent = `Created ${receipt.instance}. Opening its terminal…`;
+      const connection = s.ctx.connectionGeneration?.() ?? 0, workspace = s.workspace?.id; let admitted;
+      const visible = await waitForInstanceInPanel(s, { ...ref, agent: receipt.agent }, isCurrent,
+        { ...s.waitOpts, strict: true, onAdmitted: row => { admitted = row; } });
+      if (!isCurrent()) return;
+      if (!visible) { ui.status.textContent = `Created ${receipt.instance} — not yet visible as a running session. Open it from the roster when it appears.`; return; }
+      if (admitted) s.ctx.notifySpawn?.(admitted, workspace, connection);
+      closeSpawnModal(s); s.ctx.openTerminal(ref, { quiet: true });
     },
   });
-  const wakeFields = wakeScheduleFields(doc);
-  layout.moreBody.append(wakeFields.el);
-  buildRefOptions(modal.querySelector(".frelto")); // safe DOM construction (never innerHTML)
-  // A remote soul belongs to its host even when server listing is unavailable.
-  const serverSelect = modal.querySelector(".fserver");
-  if (a.server) {
-    serverSelect.replaceChildren();
-    const option = document.createElement("option"); option.value = a.server; option.textContent = a.repoName || a.server;
-    serverSelect.append(option); serverSelect.value = a.server; serverSelect.disabled = true;
-    modal.querySelector(".fserverdesc").hidden = false;
-  }
-  // Local souls may also launch in a registered server's workspace.
-  if (!a.server) (async () => {
-    try {
-      const d = await apiJson(s.ctx, "/api/servers");
-      const sel = modal.querySelector(".fserver");
-      if (!sel || !s.alive || modalGen !== workspaceGeneration() || s.modalEl !== modal) return;
-      if (!d?.servers?.length) return;
-      for (const srv of d.servers) {
-        const o = document.createElement("option");
-        o.value = srv.id; o.textContent = `${srv.label} (ssh ${srv.sshHost})`;
-        sel.appendChild(o);
-      }
-      sel.addEventListener("change", () => { modal.querySelector(".fserverdesc").hidden = !sel.value; });
-    } catch { /* local only */ }
-  })();
-  const f = modal; // field lookups span the whole modal
-  // Model dropdown (datalist): advisory options only for an explicitly
-  // chosen runtime. The raw roster runtime/model do not resolve inherited
-  // soul launch configurations; defaults must remain the CLI's decision.
-  // POST, not GET: the endpoint runs a child process on cache miss and must
-  // sit behind the server's Origin guard (review 9b1e3ff).
-  // Free text stays valid — comma-separated preference lists and unknown
-  // models are the user's call; the list only shows what the runtime can
-  // actually run (pi: authenticated provider/model catalog; claude:
-  // anthropic aliases + claude-* ids). Options are built with
-  // createElement/textContent — catalog ids never travel through innerHTML
-  // (same injection posture as the reference picker). A PER-REQUEST
-  // generation guards the async fill: runtime flips inside one open modal
-  // race each other (review 9b1e3ff — a slow pi response must not overwrite
-  // a later claude list), and a response landing after close/reopen must
-  // not touch a list it no longer owns.
-  let modelReq = 0;
-  const fillModelOptions = async () => {
-    if (!ownsModal()) return;
-    const myReq = ++modelReq;
-    const dl = f.querySelector("#spawn-model-options");
-    if (!dl) return;
-    dl.textContent = "";
-    layout.refreshChoices();
-    const runtime = f.querySelector(".fruntime").value;
-    if (!canLaunchSoul(s, a) || serverSelect.value || !runtime || f.querySelector('.fruntime').selectedOptions[0]?.disabled) return; // No catalog for stale souls, remote, unsupported or unresolved defaults.
-    try {
-      const d = await postJson(s.ctx, "/api/models", { runtime });
-      if (!s.alive || modalGen !== workspaceGeneration() || myReq !== modelReq || s.modalEl !== modal) return; // superseded or modal replaced
-      for (const m of d.models || []) {
-        const opt = doc.createElement("option");
-        opt.value = m.id;
-        if (m.label && m.label !== m.id) opt.label = m.label;
-        dl.append(opt);
-      }
-      layout.refreshChoices();
-    } catch { /* advisory only — no suggestions reported; custom text still works */ }
-  };
-  fillModelOptions();
-  f.querySelector(".fruntime").addEventListener("change", fillModelOptions);
-  serverSelect.addEventListener("change", fillModelOptions);
-
-  // One source of truth for the relation controls' render state, applied at
-  // open AND on every CLI change while the modal is open (review 5526b70):
-  // capability can flip under an open dialog (app-focus re-probe after a
-  // CLI up/downgrade). Only disabled/note state changes — typed and chosen
-  // values are preserved (a selected relation stays visible after a
-  // downgrade; an upgrade re-enables everything with values intact).
-  // The SELECT itself stays enabled on an incapable CLI with only the
-  // RELATED options disabled (review 8b26317): "unrelated" must remain a
-  // reachable recovery so the typed task can still spawn on the old CLI.
-  const syncRelationControls = () => {
-    const relations = cliRelationsAvailable();
-    const rel = f.querySelector(".frelation"), ref = f.querySelector(".frelto");
-    const note = f.querySelector(".frelnote"), desc = f.querySelector(".freldesc");
-    rel.disabled = false; // the select stays usable — gating is per-OPTION
-    for (const opt of rel.querySelectorAll("option")) {
-      if (opt.value !== "unrelated") opt.disabled = !relations;
-    }
-    const related = rel.value !== "unrelated";
-    ref.disabled = !relations || !related;
-    // one coherent choice: the picker's accessible name follows the chosen
-    // relation ("Child of which instance?"), and a plain-language phrase
-    // spells the outcome once both halves are picked
-    ref.setAttribute("aria-label", related
-      ? `${rel.value[0].toUpperCase()}${rel.value.slice(1)} of which instance?` : "Which instance");
-    const phrase = { child: "child of", sibling: "sibling of", parent: "parent of" };
-    // The outcome sentence must never promise what submit will reject
-    // (review e9a9281): on a relations-incapable CLI the preserved related
-    // choice renders, but the phrase yields to an unavailable-state message
-    // consistent with the version note below it.
-    desc.textContent = !related ? ""
-      : !relations ? `Related spawn unavailable on the installed CLI — this would be a ${phrase[rel.value]} ${ref.value || "…"}.`
-      : ref.value ? `This instance will spawn as a ${phrase[rel.value]} ${ref.value}.`
-      : `Pick the instance this one is a ${phrase[rel.value]}.`;
-    note.hidden = relations;
-    const min = relationsMinLabel();
-    note.textContent = relations ? "" : `${min ? `Relations require oats >= ${min}` : "Relations require a newer oats than the one installed"} — the installed CLI spawns unrelated instances only. Set the relation to "Unrelated" to spawn now.`;
-  };
-  s.syncModalRelations = syncRelationControls;
-  syncRelationControls();
-
-  // both halves of the grouped choice re-derive the state and phrase
-  f.querySelector(".frelto").addEventListener("change", syncRelationControls);
-
-  // reference picker enables only when a real relation is chosen — kept
-  // VISIBLE (disabled) so the hierarchy options are always in sight
-  f.querySelector(".frelation").addEventListener("change", syncRelationControls);
-
-  const close = () => closeSpawnModal(s, { restoreFocus: true });
-  f.querySelector(".fcancel").addEventListener("click", close);
-  f.querySelector(".fcancel-x").addEventListener("click", close);
-  modal.addEventListener("mousedown", (e) => { if (e.target === modal) close(); }); // backdrop
-  dialog.addEventListener('compositionstart', () => { composing = true; });
-  dialog.addEventListener('compositionend', () => { composing = false; });
-  dialog.addEventListener("keydown", (e) => {
+  let composing = false;
+  modal.addEventListener("mousedown", (e) => { if (e.target === modal && !ui.busy()) close(); }); // backdrop
+  ui.dialog.addEventListener("compositionstart", () => { composing = true; });
+  ui.dialog.addEventListener("compositionend", () => { composing = false; });
+  ui.dialog.addEventListener("keydown", (e) => {
     if (!ownsModal()) return;
     if (e.defaultPrevented || composing || e.isComposing || e.keyCode === 229 || e.repeat) {
       // A button's native Enter click must not bypass the launch-key guard.
-      // Do not prevent the textarea's IME commit/newline.
-      if (e.key === 'Enter' && e.target.closest?.('.fspawn')) e.preventDefault();
+      if (e.key === "Enter" && e.target.closest?.(".fspawn")) e.preventDefault();
       if (composing || e.isComposing || e.keyCode === 229) e.stopPropagation();
       return;
     }
     if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); return; }
     const plain = !e.metaKey && !e.ctrlKey && !e.altKey; // Shift alone is still text input
-    const editable = ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName) || e.target.isContentEditable;
-    const hit = (plain && (editable || e.key === 'Enter')) ? null
-      : resolveViewKey(e, [{ id: 'spawn.submit' }], { isMac: /mac/i.test(doc.defaultView?.navigator?.platform || '') });
-    if (hit) { e.preventDefault(); e.stopPropagation(); if (!submitting) f.querySelector('.fspawn').click(); return; }
-    if (e.key === 'Enter' && e.target.closest?.('.fspawn')) { e.preventDefault(); return; }
+    const editable = ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
+    const hit = (plain && (editable || e.key === "Enter")) ? null
+      : resolveViewKey(e, [{ id: "spawn.submit" }], { isMac: /mac/i.test(doc.defaultView?.navigator?.platform || "") });
+    if (hit) { e.preventDefault(); e.stopPropagation(); ui.submit(); return; }
+    if (e.key === "Enter" && e.target.closest?.(".fspawn")) { e.preventDefault(); ui.submit(); return; }
     if (e.key !== "Tab") return; // focus trap includes disclosure controls
-    const focusable = [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary")]
+    const focusable = [...ui.dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), summary")]
       .filter((el) => !el.hidden && !el.closest("[hidden]") && el.tabIndex >= 0
-        && ![...dialog.querySelectorAll('details:not([open])')].some(details => details.contains(el) && el !== details.querySelector('summary')));
+        && ![...ui.dialog.querySelectorAll("details:not([open])")].some(details => details.contains(el) && el !== details.querySelector("summary")));
     if (!focusable.length) return;
     const first = focusable[0], last = focusable.at(-1);
     if (e.shiftKey && doc.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && doc.activeElement === last) { e.preventDefault(); first.focus(); }
   });
-
-  const previewRead = createSpawnPreview(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
-    instances: () => s.panelInstances, owns: () => ownsModal() && canLaunchSoul(s, a), submitting: () => submitting, layout,
-    guarded: () => guardedApply?.active() ?? false, draftChanged: () => guardedApply?.invalidate(), draftReset: () => guardedApply?.reset(),
-    needsReset: () => guardedApply?.needsReset() ?? false });
-  const launch = createSpawnLaunch(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
-    owns: () => ownsModal() && canLaunchSoul(s, a), layout, previewRead });
-  guardedApply = createSpawnApply(modal, { ctx: s.ctx, soul: a, workspace: () => s.workspace, cli: cliStatus,
-    instances: () => s.panelInstances, owns: () => ownsModal() && canLaunchSoul(s, a) && !legacyCreated,
-    previewRead, task: () => f.querySelector('.ftask').value, wake: () => wakeFields.read(), canSubmit: () => launch.canSubmit(),
-    busy: () => submitting, setBusy: value => { submitting = value; },
-    onCreated: async (view, isCurrent) => {
-      if (!isCurrent()) return;
-      const receipt = view.receipt, status = f.querySelector('.fstatus');
-      if (view.status === 'partial') {
-        if (!f.querySelector('.guarded-schedules')) {
-          const manage = doc.createElement('button'); manage.className = 'act guarded-schedules'; manage.type = 'button'; manage.textContent = 'View schedules';
-          manage.addEventListener('click', () => { if (!ownsModal()) return; closeSpawnModal(s); s.ctx.openView?.('schedules'); });
-          f.querySelector('.frow').append(manage);
-        }
-        return; // creation succeeded; never retry spawn to repair a wake
-      }
-      if (!receipt.launched) { status.textContent = `Created ${receipt.instance} — not launched. Inspect its session from the roster.`; return; }
-      const ref = { instance: receipt.instance, home: receipt.home, agentsRoot: receipt.agentsRoot };
-      status.textContent = `Created ${receipt.instance}. Waiting for its exact roster entry…`;
-      const connection = s.ctx.connectionGeneration?.() ?? 0, workspace = s.workspace?.id; let admitted;
-      const visible = await waitForInstanceInPanel(s, { ...ref, agent: receipt.agent }, isCurrent,
-        { ...s.waitOpts, strict: true, onAdmitted: row => { admitted = row; } });
-      if (!isCurrent()) return;
-      if (!visible) { status.textContent = `Created ${receipt.instance} — not yet visible as a running session. Open it from the roster when available.`; return; }
-      if (admitted) s.ctx.notifySpawn?.(admitted, workspace, connection);
-      closeSpawnModal(s); s.ctx.openTerminal(ref, { quiet: true });
-    },
-  });
-  f.querySelector(".fspawn").addEventListener("click", async () => {
-    if (!ownsModal() || submitting || legacyCreated || f.querySelector('.fspawn').disabled) return;
-    if (guardedApply.handles()) { await guardedApply.run(); return; }
-    const reason = !canLaunchSoul(s, a) ? 'This exact soul is no longer available in the current roster.' : launch.canSubmit();
-    if (reason) { f.querySelector('.fstatus').textContent = reason; return; }
-    submitting = true;
-    try { await doSpawn(s, {
-    btn: f.querySelector(".fspawn"),
-    status: f.querySelector(".fstatus"),
-    purpose: () => f.querySelector(".fpurpose").value,
-    task: () => f.querySelector(".ftask").value,
-    relation: () => f.querySelector(".frelation").value,
-    relativeTo: () => f.querySelector(".frelto").value,
-    relativeRoot: () => f.querySelector(".frelto").selectedOptions?.[0]?.dataset?.root || "",
-    yolo: () => { const value = f.querySelector(".fyolo").value; return value === "" ? undefined : value === "true"; },
-    backend: () => f.querySelector(".fbackend").value,
-    runtime: () => f.querySelector(".fruntime").value,
-    model: () => f.querySelector(".fmodel").value,
-    launchConfig: () => launch.value(),
-    server: () => f.querySelector(".fserver")?.value || "",
-    wake: () => wakeFields.read(),
-    partial: (result) => {
-      legacyCreated = true;
-      const manage = doc.createElement("button"); manage.className = "act"; manage.type = "button";
-      manage.textContent = "View schedules";
-      manage.addEventListener("click", () => {
-        closeSpawnModal(s);
-        if (result.workspaceId) setWorkspace(result.workspaceId);
-        s.ctx.openView?.("schedules");
-      });
-      f.querySelector(".frow").append(manage);
-    },
-    clear: () => {
-      f.querySelector(".fpurpose").value = ""; f.querySelector(".ftask").value = "";
-      f.querySelector(".frelation").value = "unrelated";
-      f.querySelector(".frelto").value = "";
-      syncRelationControls(); // re-disable the picker for "unrelated"
-      f.querySelector(".fruntime").value = "";
-      f.querySelector(".fbackend").value = "";
-      f.querySelector(".fmodel").value = "";
-      launch.clear(); layout.syncRuntime();
-      void fillModelOptions(); // restoring defaults also cancels any explicit-runtime catalog
-    },
-    }); } finally { submitting = false; previewRead.sync(); guardedApply.sync(); }
-  });
-
   s.modalEl = modal;
   s.el.querySelector(".souls").append(modal);
-  f.querySelector('.ftask').value = draft.task || '';
-  f.querySelector('.fpurpose').value = draft.purpose || '';
-  const releaseSubmit = registerAction({ id: 'spawn.submit', label: 'Spawn selected soul', context: 'spawn-dialog-local', defaultChord: 'Mod+Enter', run: () => {} });
+  const releaseSubmit = registerAction({ id: "spawn.submit", label: "Spawn selected soul", context: "spawn-dialog-local", defaultChord: "Mod+Enter", run: () => {} });
   const updateHint = () => {
-    const mac = /mac/i.test(doc.defaultView?.navigator?.platform || '');
-    const label = formatChord(getBinding('spawn.submit'), mac) || '';
-    f.querySelector('.fspawn').dataset.shortcut = mac ? label.replace(/Enter$/, '↵') : label;
+    const mac = /mac/i.test(doc.defaultView?.navigator?.platform || "");
+    const label = formatChord(getBinding("spawn.submit"), mac) || "";
+    ui.spawn.dataset.chord = mac ? label.replace(/Enter$/, "↵") : label;
   };
   const releaseHint = onKeymapChange(updateHint); updateHint();
-  s.modalCleanup = () => { guardedApply.dispose(); launch.dispose(); previewRead.dispose(); layout.dispose(); releaseHint(); releaseSubmit(); modelReq++; };
-  s.syncModalFacts = () => { if (!ownsModal()) return; if (launch.sync()) void fillModelOptions(); previewRead.sync(); guardedApply.sync(); };
-  s.syncModalRelations = () => { if (!ownsModal()) return; syncRelationControls(); s.syncModalFacts(); };
-  s.syncModalRelations();
-  if (ownsModal()) layout.search.focus({ preventScroll: true });
+  s.modalCleanup = () => { ui.dispose(); releaseHint(); releaseSubmit(); };
+  s.syncModalFacts = () => { if (ownsModal()) ui.sync(); };
+  s.syncModalRelations = s.syncModalFacts;
+  ui.start();
+  if (ownsModal()) {
+    const pressed = draft.focus === "soul" && ui.dialog.querySelector('.spawn-choice[aria-pressed="true"]');
+    (pressed || ui.purpose).focus({ preventScroll: true });
+  }
   return modal;
 }
 
@@ -1075,106 +764,45 @@ export async function waitForInstanceInPanel(s, ref, isCurrent, { tries = 20, de
   return false;                              // snapshot never caught up: no auto-open
 }
 
-export async function doSpawn(s, ui) {
-  if (ui?.spawned) return;
+/** Execution-server spawn (Developer settings › Run on, or a remote soul). The
+ * execution host decides every default and names the instance; nothing here
+ * previews or binds a decision for it. Local spawns never come here.
+ * Resolves { created: true } once the host created the instance (even if its
+ * wake schedule was not saved) — the dialog then never offers a second spawn. */
+export async function doSpawn(s, fields) {
   const a = s.selAgent;
-  if (!a) return;
-  // CLI gate at SUBMIT time (review d7becaf): a modal opened before a state
-  // flip must not dispatch — the render-time disable alone cannot cover a
-  // dialog that was already open. Mutations require a VERIFIED compatible CLI.
-  if (!cliAvailable()) {
-    closeSpawnModal(s); // also repaints the degradation card + disabled buttons
-    return;
-  }
-  // Legacy field interface (shared regression tests + old callers): adapt
-  // s.q("ftask"|"fpurpose"|"fspawn"|"fstatus") into the ui seam.
-  if (!ui) {
-    const btn = s.q("fspawn"), status = s.q("fstatus");
-    const taskEl = s.q("ftask"), purposeEl = s.q("fpurpose");
-    ui = {
-      btn, status,
-      task: () => taskEl.value,
-      purpose: () => purposeEl.value,
-      clear: () => { taskEl.value = ""; purposeEl.value = ""; },
-    };
-  }
-  const myGen = workspaceGeneration();       // capture at dispatch
+  if (!a || !fields?.server) return;
+  // Mutations require a VERIFIED compatible CLI, checked at submit time too.
+  if (!cliAvailable()) { closeSpawnModal(s); return; }
+  const myGen = workspaceGeneration();
   const connection = s.ctx.connectionGeneration?.() ?? 0;
-  const myOp = ++s.spawnOp;                  // this spawn owns the form until superseded
+  const myOp = ++s.spawnOp;
   const owns = () => myOp === s.spawnOp && s.alive !== false && myGen === workspaceGeneration() && connection === (s.ctx.connectionGeneration?.() ?? 0);
-  const relation = ui.relation ? String(ui.relation() || "unrelated") : "unrelated";
-  const relativeTo = ui.relativeTo ? String(ui.relativeTo() || "") : "";
-  if (relation !== "unrelated" && ui.server?.() && !a.server) {
-    ui.status.classList?.add("err");
-    ui.status.textContent = "Select the server workspace to choose a related remote agent, or spawn unrelated.";
-    return;
-  }
-  // Submit-time capability guard FIRST (reviews f35c1dc + 8b26317): a
-  // downgrade while the modal was open preserves the chosen relation, and
-  // doSpawn reads values programmatically — without this check the retained
-  // related spawn would dispatch into the server's cli-no-relations
-  // rejection. Capability precedes pairing so a no-reference downgrade
-  // never advises picking a DISABLED reference. Recovery is real: the
-  // relation select keeps "unrelated" enabled (related options disabled),
-  // so the typed task can still spawn on the old CLI.
-  if (relation !== "unrelated" && !cliRelationsAvailable()) {
-    ui.status.classList?.add("err");
-    ui.status.textContent = `Spawn failed: the installed oats CLI cannot spawn related instances — set the relation to "unrelated" to spawn now, or upgrade the CLI.`;
-    return;
-  }
-  // Relation pairing is validated BEFORE dispatch: a chosen relation needs a
-  // reference instance (the server would 409 anyway — fail it in the form).
-  if (relation !== "unrelated" && !relativeTo) {
-    ui.status.classList?.add("err");
-    ui.status.textContent = `Spawn failed: the "${relation}" relation needs a reference instance.`;
-    return;
-  }
-  ui.btn.disabled = true; ui.btn.textContent = "Spawning…";
-  ui.status.classList?.remove("err"); ui.status.textContent = "";
+  const relation = fields.relation || "unrelated";
+  if (relation !== "unrelated" && !a.server) { fields.status("Select the server workspace to choose a related remote agent, or spawn unrelated.", true); return; }
+  if (relation !== "unrelated" && !fields.relativeTo) { fields.status(`The "${relation}" relation needs a reference instance.`, true); return; }
+  fields.status(`Spawning on ${fields.server}…`);
   try {
     const d = await postJson(s.ctx, "/api/spawn", {
-      agent: a.name,
-      agentsRoot: a.agentsRoot,
-      task: ui.task(),                       // "" = awaiting instructions (panel default)
-      purpose: ui.purpose() || undefined,
-      serverId: a.server || ui.server?.() || undefined,
+      agent: a.name, agentsRoot: a.agentsRoot, serverId: fields.server, task: fields.task || "",
+      purpose: fields.purpose || undefined,
       relation: relation !== "unrelated" ? relation : undefined,
-      relativeTo: relation !== "unrelated" ? relativeTo : undefined,
-      // anchor root: ALWAYS sent with a related spawn when the picker knows
-      // it — disambiguates cross-root name shadowing (E_RELATIVE_AMBIGUOUS)
-      relativeRoot: relation !== "unrelated" ? ((ui.relativeRoot ? ui.relativeRoot() : "") || undefined) : undefined,
-      yolo: ui.yolo?.(),
-      backend: (ui.backend ? ui.backend() : "") || undefined,
-      runtime: (ui.runtime ? ui.runtime() : "") || undefined,
-      model: (ui.model ? ui.model() : "") || undefined,
-      launchConfig: ui.launchConfig?.() || undefined,
-      wake: ui.wake?.(),
+      relativeTo: relation !== "unrelated" ? fields.relativeTo : undefined,
+      relativeRoot: relation !== "unrelated" ? (fields.relativeRoot || undefined) : undefined,
+      yolo: fields.yolo, backend: fields.backend || undefined, runtime: fields.runtime || undefined,
+      model: fields.model || undefined, launchConfig: fields.launchConfig || undefined, wake: fields.wake,
     });
-    if (myGen !== workspaceGeneration()) {
-      // Workspace switched while the spawn was in flight: never auto-open.
-      if (owns()) ui.status.textContent = `Spawned ${d.instance} in the previous workspace — switch back to open its terminal.`;
-      return;
-    }
-    if (!owns()) return;                     // superseded — leave the form alone
-    ui.clear();
+    if (!owns()) return;
     if (d.wakeScheduleError) {
-      ui.spawned = d;
-      ui.status.classList?.add("err");
-      ui.status.textContent = `Created ${d.instance}, but its wake schedule was not saved: ${d.wakeScheduleError.message}. The agent is available in the sidebar. Add its wake schedule from Schedules.`;
-      ui.btn.textContent = "Agent created";
-      ui.partial?.(d);
-      return;
+      fields.status(`Created ${d.instance}, but its wake schedule was not saved: ${d.wakeScheduleError.message}. Add it from Schedules.`, true);
+      return { created: true };
     }
     if (d.wakeSchedule) s.ctx.notify?.(`Wake schedule saved for ${d.instance}. Check Schedules to verify its host scheduler is enabled.`);
     if (d.routeConflict) {
-      ui.status.textContent = `Spawned ${d.instance} on ${d.server}, but its name already has a saved route. Manage the new home ${d.home} from the execution host. ${(d.warnings || []).join(" ")}`;
-      return;
+      fields.status(`Spawned ${d.instance} on ${d.server}, but its name already has a saved route. Manage the new home ${d.home} from the execution host. ${(d.warnings || []).join(" ")}`);
+      return { created: true };
     }
-    ui.status.textContent = `Spawned ${d.instance}${d.launched ? " — session running" : ""}. Waiting for the roster…`;
-    // The panel snapshot lags spawns by up to a collector cycle; opening the
-    // terminal before the instance is in /api/panel makes the shell resolve
-    // "unknown instance". Wait for it, still gated by ownership + workspace.
-    if (d.server && d.workspaceId && d.workspaceId !== currentWorkspace()) {
+    if (d.workspaceId && d.workspaceId !== currentWorkspace()) {
       const ref = { instance: d.instance, home: d.home, server: d.server };
       closeSpawnModal(s);
       setWorkspace(d.workspaceId);
@@ -1183,55 +811,25 @@ export async function doSpawn(s, ui) {
       let admitted;
       const visible = await waitForInstanceInPanel(s, ref, stillThere, { ...s.waitOpts, onAdmitted: row => { admitted = row; } });
       if (visible && stillThere()) {
-        if (typeof d.home === 'string' && admitted?.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, d.workspaceId, connection);
+        if (typeof d.home === "string" && admitted?.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, d.workspaceId, connection);
         s.ctx.openTerminal(ref, { quiet: true });
-      }
-      else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; its runtime is not visible yet. Check the server roster to open it.`);
-      return;
+      } else if (stillThere()) s.ctx.notify?.(`Spawned ${d.instance} on ${d.server}; its runtime is not visible yet. Check the server roster to open it.`);
+      return { created: true };
     }
-    // Older CLIs can spawn remotely but do not yet expose a remote roster.
-    if (d.server && !d.workspaceId) {
-      if (!owns()) return;
-      ui.btn.disabled = false; ui.btn.textContent = "Spawn";
-      ui.status.classList?.remove("err");
-      ui.status.textContent = `Spawned ${d.instance} on ${d.server}. Attach with: oats session attach --server ${d.server} --instance ${d.instance}`;
-      return;
-    }
-    const current = () => owns() && myGen === workspaceGeneration();
-    // Poll and open by COMPOSITE identity — the spawn result's home plus the
-    // selected agent's root disambiguate a same-named twin (review @7dd1e7b).
-    const spawnedRef = { instance: d.instance, ...(d.home ? { home: d.home } : {}), ...(a.agentsRoot ? { agentsRoot: a.agentsRoot } : {}), ...(d.server ? { server: d.server } : {}) };
+    if (!d.workspaceId) { fields.status(`Spawned ${d.instance} on ${d.server}. Attach with: oats session attach --server ${d.server} --instance ${d.instance}`); return { created: true }; }
+    const ref = { instance: d.instance, home: d.home, server: d.server };
     let admitted;
-    const visible = await waitForInstanceInPanel(s, spawnedRef, current, { ...s.waitOpts, onAdmitted: row => { admitted = row; } });
-    if (!current()) return;
-    if (!visible) { ui.status.textContent = `Spawned ${d.instance} — roster is catching up; open it from the sidebar instance roster.`; return; }
-    // Success is a HANDOFF, not a status line: close the modal (the spawn
-    // form's job is done — leaving it up with "Opening terminal…" reads as
-    // stuck) and land the user in the new instance's terminal. quiet: the
-    // auto-open must never block with an alert() — if the instance vanished
-    // between the readiness poll and the open, the sidebar roster is the
-    // recovery path, same as the timeout degradation above.
-    if (typeof d.home === 'string' && admitted?.home === d.home && admitted.agent === a.name && admitted.agentsRoot === a.agentsRoot) {
-      s.ctx.notifySpawn?.(admitted, currentWorkspace(), connection);
-    }
+    const visible = await waitForInstanceInPanel(s, ref, owns, { ...s.waitOpts, onAdmitted: row => { admitted = row; } });
+    if (!owns()) return;
+    if (!visible) { fields.status(`Spawned ${d.instance} on ${d.server} — the roster is catching up; open it from the sidebar.`); return { created: true }; }
+    if (typeof d.home === "string" && admitted?.home === d.home && admitted.agent === a.name) s.ctx.notifySpawn?.(admitted, currentWorkspace(), connection);
     closeSpawnModal(s);
-    s.ctx.openTerminal(spawnedRef, { quiet: true });
+    s.ctx.openTerminal(ref, { quiet: true });
+    return { created: true };
   } catch (e) {
-    if (owns()) {
-      ui.status.classList?.add("err");
-      // Ambiguous relation identity (kernel E_RELATIVE_AMBIGUOUS). The
-      // picker ALWAYS sends the anchor's root, so this rarely means "pick
-      // better": the kernel also fires it when an already-qualified target
-      // cannot round-trip under shadowing, when a parent relation's
-      // generated name is shadowed, and on INHERITED bare-name edges copied
-      // from the anchor (case d) — names this form never sent. The kernel
-      // message names the conflicting instance and homes: surface it
-      // verbatim with the general remedy (reviews cbd5bb3 + f1e3211).
-      ui.status.textContent = e.code === "E_RELATIVE_AMBIGUOUS"
-        ? `Spawn failed: ${e.message} — instance names collide across agent roots; rename or retire the shadowing instance (or pick a different purpose) and retry.`
-        : `Spawn failed: ${e.message || e}`;
-    }
-  } finally {
-    if (owns() && !ui.spawned) { ui.btn.disabled = false; ui.btn.textContent = "Spawn"; }
+    if (!owns()) return;
+    fields.status(e.code === "E_RELATIVE_AMBIGUOUS"
+      ? `${e.message} — instance names collide across agent roots; rename or retire the shadowing instance (or pick a different purpose) and retry.`
+      : `Spawn failed: ${e.message || e}`, true);
   }
 }
