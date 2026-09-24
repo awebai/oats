@@ -32,8 +32,11 @@ export function spawnDecision(v, { effectiveRequired = false } = {}) {
   const effective = hasEffective ? spawnEffective(v.effective) : null;
   if (hasEffective && !effective || effectiveRequired && !effective) return null;
   if (effective && (effective.work === 'worktree' ? !v.branch || !base : v.branch !== null || base !== null)) return null;
+  // The workspace resolution the decision binds (a member that moved between
+  // preview and apply is E_DECISION_STALE); absent only before workspace v2.
+  if (Object.hasOwn(v, 'resolution') && (typeof v.resolution !== 'string' || !/^[a-f0-9]{24}$/.test(v.resolution))) return null;
   return { instance: v.instance, home: v.home, branch: v.branch, base,
-    ...(hasEffective ? { effective } : {}), revision: v.revision };
+    ...(hasEffective ? { effective } : {}), ...(Object.hasOwn(v, 'resolution') ? { resolution: v.resolution } : {}), revision: v.revision };
 }
 /** Equality of projected strong decisions, not an attempt to recompute their hash. */
 export function sameSpawnDecision(a, b) {

@@ -6,19 +6,19 @@ import { runInNewContext } from 'node:vm';
 import { classifyApiRoute } from '../api-url.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { proxySpawnPreview } from '../spawn-preview-proxy.mjs';
-import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
-import { spawnApplySupported, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
+import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
+import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
 import { context, request, target, data, envelope, view, deferred } from './helpers/spawn-preview-fixture.mjs';
 function http() {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type'), end = source.indexOf('\nserver.on("error",');
   const c = context(), calls = [];
-  const deps = { createServer: fn => fn, previewFailure, PREVIEW_ONLY, spawnAgent: assert.fail,
-    spawnApplySupported, spawnApplyFailure, spawnApplyRequest: assert.fail,
+  const deps = { createServer: fn => fn, previewFailure, spawnAgent: assert.fail,
+    spawnApplyFailure, spawnApplyRequest: assert.fail,
     spawnPreviewRequest: createSpawnPreviewBoundary({ invoke: async (cli, opts) => { calls.push(opts); return envelope(data(opts.target)); } }),
-    workspaces: () => [c.workspace], cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['team', { instances: c.instances }]]) } };
+    workspaces: () => [c.workspace], cliState: c.cli, agentsData: () => ({ agents: c.agents }), snapshot: { byWs: new Map([['northwind', { instances: c.instances }]]) } };
   const handler = new Function(...Object.keys(deps), `${source.slice(start, end)}\nreturn server;`)(...Object.values(deps));
-  return { c, calls, async request({ url = '/api/workspace-spawn-preview?ws=team', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
+  return { c, calls, async request({ url = '/api/workspace-spawn-preview?ws=northwind', method = 'POST', body = JSON.stringify(request()), headers = { host: 'localhost:4820', origin: 'http://localhost:4820' } } = {}) {
     const req = new EventEmitter(); Object.assign(req, { url, method, headers }); let result;
     const res = { writeHead(status, headers) { result = { status, headers }; }, end(text) { result.body = JSON.parse(text); } };
     const done = handler(req, res); req.emit('data', Buffer.from(body)); req.emit('end'); await done; return result;
@@ -28,7 +28,7 @@ test('shipped HTTP: Host/Origin, method, query and 16KiB body refuse before disp
   const h = http();
   for (const headers of [{}, { host: 'evil' }, { host: 'localhost', origin: 'https://evil' }, { host: 'localhost', origin: 'null' }]) assert.equal((await h.request({ headers })).status, 403);
   assert.equal((await h.request({ method: 'GET' })).status, 404);
-  for (const url of ['/api/workspace-spawn-preview', '/api/workspace-spawn-preview?ws=', '/api/workspace-spawn-preview?ws=team&ws=team', '/api/workspace-spawn-preview?ws=team&apply=true']) assert.equal((await h.request({ url })).status, 400);
+  for (const url of ['/api/workspace-spawn-preview', '/api/workspace-spawn-preview?ws=', '/api/workspace-spawn-preview?ws=northwind&ws=northwind', '/api/workspace-spawn-preview?ws=northwind&apply=true']) assert.equal((await h.request({ url })).status, 400);
   for (const body of ['{', 'null', '[]', ' '.repeat(16385)]) assert.equal((await h.request({ body })).status, 400);
   assert.equal(h.calls.length, 0);
   const result = await h.request(); assert.equal(result.body.status, 'available'); assert.equal(result.headers['cache-control'], 'no-store'); assert.equal(h.calls.length, 1);
@@ -42,17 +42,18 @@ test('shipped HTTP never dispatches API1, remote, task/file flags or an apply ac
   }
   assert.equal(h.calls.length, 0);
 });
-test('legacy spawn refuses preview-only choices instead of dropping them; no new mutation authority', async () => {
+test('the unguarded spawn route is execution-server only: a local body needs the prepare/apply plan; decision-bound keys are refused', async () => {
   const h = http();
-  for (const extra of [{ base: 'HEAD' }, { branch: 'branch' }, { allowChildSpawns: false }, { modelMode: 'native-default' }, { model: { kind: 'native-default' } }, { model: '@native-default' }, { expectDecision: 'revision' }, { choices: {} }]) {
-    const result = await h.request({ url: '/api/spawn', body: JSON.stringify({ agent: 'dev', agentsRoot: '/team/agents', ...extra }) });
-    assert.equal(result.status, 409); assert.equal(result.body.code, 'E_PREVIEW_ONLY');
+  assert.equal((await h.request({ url: '/api/spawn', body: JSON.stringify({ agent: 'release-manager', agentsRoot: '/fixture/base/northwind-workspace/agents' }) })).body.code, 'E_PLAN_REQUIRED');
+  for (const extra of [{ base: 'HEAD' }, { branch: 'branch' }, { work: 'worktree' }, { modelMode: 'native-default' }, { model: { kind: 'native-default' } }, { model: '@native-default' }, { expectDecision: 'revision' }, { choices: {} }]) {
+    const result = await h.request({ url: '/api/spawn', body: JSON.stringify({ agent: 'release-manager', agentsRoot: '/fixture/base/northwind-workspace/agents', serverId: 'remote-host', ...extra }) });
+    assert.equal(result.status, 409); assert.equal(result.body.code, 'E_UNSUPPORTED_OPTION');
   }
   assert.equal(h.calls.length, 0);
 });
 function proxy(fetch) {
   const renderer = 'file:///fixture/index.html', frame = { url: renderer }, event = { senderFrame: frame, sender: { mainFrame: frame, isDestroyed: () => false } };
-  const connection = { base: 'http://localhost:4820', wsId: 'team', allowedWs: new Set(['team']), epoch: 0, transition: false };
+  const connection = { base: 'http://localhost:4820', wsId: 'northwind', allowedWs: new Set(['northwind']), epoch: 0, transition: false };
   return { event, connection, deps: { rendererURL: renderer, connection: () => connection, fetch }, opts: { method: 'POST', body: request() } };
 }
 test('main normalizes every preview alias into the real specialized guard; same-URL subframes execute zero fetches', async () => {
@@ -60,7 +61,7 @@ test('main normalizes every preview alias into the real specialized guard; same-
   let handler, calls = 0; const f = proxy(async () => { calls++; return { ok: true, status: 200, text: async () => JSON.stringify(view()) }; });
   const deps = { ipcMain: { handle: (_n, fn) => handler = fn }, classifyApiRoute, RENDERER_URL: f.deps.rendererURL,
     proxySpawnPreview: (e, path, opts, d) => proxySpawnPreview(e, path, opts, { ...d, fetch: f.deps.fetch }), base: () => f.connection.base,
-    wsId: 'team', allowedWs: f.connection.allowedWs, serverEpoch: 0, serverHost: { inTransition: () => false },
+    wsId: 'northwind', allowedWs: f.connection.allowedWs, serverEpoch: 0, serverHost: { inTransition: () => false },
     forgeFailure: () => ({}), lifecycleFailure: () => ({}), guard: () => assert.fail('preview must use specialized frame guard') };
   runInNewContext(source.slice(start, end), deps);
   for (const path of ['/api/workspace-spawn-preview', '/api/./workspace-spawn-preview', '/api/x/../workspace-spawn-preview', '/api/%2e/workspace-spawn-preview', '/api' + String.fromCharCode(92) + 'workspace-spawn-preview', '/a\tpi/workspace-spawn-preview']) {

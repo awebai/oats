@@ -8,7 +8,8 @@
  * process; the desktop renderer is its only client):
  *   GET  /api/panel                 roster JSON (instances, task, tmux state; local Git unobserved)
  *   GET  /api/agents                available agents (souls) per workspace root
- *   POST /api/spawn                 { agent, agentsRoot, task?, purpose?, relation?, relativeTo? } → spawn an instance
+ *   POST /api/spawn?ws=<id>         { action: prepare|apply|result, … } → preview-bound spawn (server/spawn-apply.mjs);
+ *                                   { agent, agentsRoot, serverId, … } → execution-server spawn only
  *                                   (mutations require the installed `oats` CLI; see cliUnavailable)
  *   GET  /api/session/<instance>?lines=n   ANSI pane capture of the live session
  *   POST /api/keys/<instance>       { data } → raw key bytes into the session (no Enter)
@@ -40,6 +41,7 @@ import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver } from "./deployment-observer.mjs";
+import { createSoulCatalog } from "./soul-catalog.mjs";
 import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
@@ -51,8 +53,8 @@ import { eventsFailure } from '../renderer/instance-events-contract.mjs';
 import { scheduleReadRequestBoundary } from './schedule-read.mjs';
 import { scheduleReadAlias, scheduleReadFailure } from '../renderer/schedule-read-contract.mjs';
 import { spawnApplyRequest } from './spawn-apply.mjs';
-import { spawnApplySupported, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
-import { previewFailure, PREVIEW_ONLY } from '../renderer/spawn-preview-contract.mjs';
+import { spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
+import { previewFailure } from '../renderer/spawn-preview-contract.mjs';
 import { forgeBoundary, FORGE_EPOCH_HEADER, validForgeEpoch } from "./forge.mjs";
 import { launchConfigRequest } from "./launch-configs.mjs";
 import { normalizeSoulColor } from "../renderer/soul-colors.mjs";
@@ -174,28 +176,35 @@ function projectPanelInstance(i) {
 }
 /* OATSWEB_PANELPROJ_END */
 
-/** Spawnable souls of a deployment as the kernel's status roster reports
- * them (materialized souls). The workspace members' not-yet-materialized souls
- * are F3's v2 spawn catalog; no soul.yaml or manifest is read here. */
+/** Spawnable souls of a local v2 deployment: the kernel's spawn catalog
+ * (`oats souls --json` — non-private souls of confirmed members, and external
+ * souls, each with its declared work mode). Nothing is read from soul.yaml
+ * here, and a soul outside the catalog is not offered for spawning. */
 function agentsData(wsId) {
   const ws = wsId ? workspaceById(wsId) : workspaces()[0];
   if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group) };
   const deployment = ws ? snapshot.byWs.get(ws.id)?.deployment : null;
   const agents = [];
+  let catalog = null;
   if (deployment?.status === "observed") {
     const root = deployment.root, context = dirname(root);
-    for (const a of deployment.souls) agents.push({
-      name: a.name, description: a.description || "", kind: a.kind || "persistent",
-      ...(normalizeSoulColor(a.color) ? { color: normalizeSoulColor(a.color) } : {}),
-      work: a.work || "checkout", backend: a.backend || "tmux", yolo: a.yolo, runtime: a.runtime || "pi", model: a.model || null,
-      repo: a.repo || null, capability: a.capability || null, agentsRoot: root,
-      ...(a.soulSource !== undefined ? { soulSource: a.soulSource } : {}),
-      ...(a.team ? { team: a.team } : {}),
-      workspace: context, repoName: resolve(context, a.repo || ".").split("/").pop(),
-    });
+    const memberNames = new Map((deployment.workspaceStatus?.members || []).map((m) => [m.key, m.name]));
+    const roster = new Map(deployment.souls.map((soul) => [soul.name, soul]));
+    catalog = { reason: deployment.catalog?.reason ?? null, ambiguous: deployment.catalog?.ambiguous ?? [] };
+    for (const soul of deployment.catalog?.souls || []) {
+      const color = normalizeSoulColor(roster.get(soul.name)?.color);
+      agents.push({
+        name: soul.name, description: soul.description || "", kind: "persistent", work: soul.work,
+        ...(color ? { color } : {}), ...(soul.team ? { team: soul.team } : {}),
+        origin: soul.origin || "", soulKind: soul.kind, repo: soul.repoKey || null, capability: null,
+        soulSource: { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null },
+        agentsRoot: root, workspace: context,
+        repoName: memberNames.get(soul.repoKey) || (soul.kind === "external" ? "external" : soul.repoKey || ""),
+      });
+    }
   }
   agents.sort((a, b) => a.name.localeCompare(b.name));
-  return { workspace: ws ? { id: ws.id, name: ws.name } : null, agents };
+  return { workspace: ws ? { id: ws.id, name: ws.name } : null, agents, ...(catalog ? { catalog } : {}) };
 }
 
 /* ── Model catalog (spawn-modal dropdown) ──
@@ -303,28 +312,21 @@ function spawnErrorPayload(e) {
 }
 /* OATSWEB_SPAWNERR_END */
 
+/** Execution-server spawn only (`--server`). A local spawn is always the
+ * preview-bound prepare → apply of server/spawn-apply.mjs. */
 async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relativeTo, relativeRoot, runtime, backend, model, yolo, launchConfig, serverId, wake }) {
   const name = String(agent || "");
   const root = resolve(String(agentsRoot || ""));
-  const server = serverId ? String(serverId) : undefined;
+  const server = String(serverId);
   // agentsRoot must be one of the workspace roots this server was started for —
   // never spawn into an arbitrary caller-supplied directory.
   const known = workspaces().flatMap((w) => w.roots);
-  const remoteSoul = server && remoteGroups.some((g) => g.server === server
+  const remoteSoul = remoteGroups.some((g) => g.server === server
     && remote.remoteAgents(g).some((a) => a.name === name && a.agentsRoot === agentsRoot));
   if (!remoteSoul && !known.some((r) => resolve(r) === root)) throw new Error(`unknown agents root "${agentsRoot}"`);
-  // A remote route: the agent is validated by the REMOTE kernel against its
-  // own workspace (the same team repo on that host); the local roster only
-  // supplies the name the operator picked.
-  let def;
-  if (!server) {
-    // The soul must be one the kernel's current roster reports for this
-    // exact root; no filesystem soul lookup.
-    const deployment = workspaces().filter((w) => !w.remote).map((w) => snapshot.byWs.get(w.id)?.deployment)
-      .find((d) => d?.status === "observed" && resolve(d.root) === root);
-    def = deployment?.souls.find((s) => s.name === name);
-    if (!def) throw new Error(`unknown agent "${name}"`);
-  }
+  // The agent is validated by the REMOTE kernel against its own workspace
+  // (the same team repo on that host); the local roster only supplies the
+  // name the operator picked.
   // Mutation boundary: a compatible installed CLI is required — degradation,
   // not a bundled kernel.
   if (!cliState.ok) {
@@ -335,15 +337,14 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // Local execution support is proven here for a local spawn; a remote spawn
   // is held to what the REMOTE advertises by the router (checkRemoteSupport),
   // and the local guard only needs the remote surface itself.
-  if (server) locator.requireRemoteSupport(cliState, "spawn");
-  else if (!launchConfig && !def?.["launch-config"]) locator.requireExecutionSupport(cliState, runtime || def.runtime || "pi", backend || def.backend || "tmux", yolo);
-  if (launchConfig !== undefined || def?.["launch-config"]) {
+  locator.requireRemoteSupport(cliState, "spawn");
+  if (launchConfig !== undefined) {
     if (!cliState.features?.includes("launch-config")) throw Object.assign(new Error("Update OATS to choose a launch configuration"), { code: "cli-no-launch-config" });
-    if (server) locator.requireRemoteSupport(cliState, "launch-config");
+    locator.requireRemoteSupport(cliState, "launch-config");
   }
   if (wake !== undefined) {
     if (!cliState.features?.includes("schedule")) throw Object.assign(new Error("Update oats to configure recurring wake-ups"), { code: "cli-no-schedule" });
-    if (server) locator.requireRemoteSupport(cliState, "schedule");
+    locator.requireRemoteSupport(cliState, "schedule");
   }
   // Relation flags are a NEWER v1 surface: older v1 CLIs ignore unknown
   // spawn options and report success, silently creating an UNRELATED
@@ -355,7 +356,7 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // values resolve as stable E_BAD_ARGS envelopes, never reach the CLI.
   const env = await adapter.cliSpawn(cliState.bin, {
     agent: name,
-    workspaceDir: server ? ctxs[0] : dirname(root), // SSH routes choose their own remote cwd
+    workspaceDir: ctxs[0], // SSH routes choose their own remote cwd
     task: task ? String(task) : "",
     purpose: purpose ? String(purpose) : undefined,
     relation: relation ? String(relation) : undefined,
@@ -489,6 +490,7 @@ let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances,
 const DEPLOYMENT_REFRESH_MS = 5000;
 const LIVENESS = join(HERE, "liveness.mjs");
 const workspaceSyncRequest = createWorkspaceSyncBoundary();
+const soulCatalog = createSoulCatalog();
 const deploymentObserver = createDeploymentObserver({
   // Only a registered local deployment, with the CURRENT accepted CLI. The
   // probe generation is the revision: a reprobe revokes pending reads.
@@ -525,6 +527,8 @@ async function observeDeployment(id) {
     return { deployment: { status: "unavailable", reason: result.reason }, instances: [], generatedAt: new Date().toISOString() };
   }
   const { roster, workspaceStatus } = result;
+  // The spawn catalog is read only when the workspace moved (or the CLI changed).
+  const catalog = await soulCatalog.observe(id, cliState, workspaceStatus);
   const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
     ...instance, agent: instance.agent || agent.name, description: agent.description || "",
     team: agent.team || null, agentsRoot: roster.root,
@@ -535,7 +539,8 @@ async function observeDeployment(id) {
   return {
     deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
       reachable: roster.workspace ?? null, withheld: roster.withheld,
-      souls: roster.agents.map(({ instances: _instances, ...soul }) => soul) },
+      souls: roster.agents.map(({ instances: _instances, ...soul }) => soul),
+      catalog: { souls: catalog.souls, ambiguous: catalog.ambiguous, reason: catalog.reason } },
     instances, generatedAt: new Date().toISOString(),
   };
 }
@@ -1294,13 +1299,13 @@ const server = createServer(async (req, res) => {
       // Only an actual remote argv route exempts a fully capable CLI from the
       // local confirmation fence. Truthy arrays/objects must not bypass it.
       const remoteRequest = typeof body.serverId === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(body.serverId);
-      if (spawnApplySupported(cliState) && !remoteRequest) {
+      if (!remoteRequest) {
         const failure = spawnApplyFailure('E_PLAN_REQUIRED'); return send(res, 409, { ...failure, code: failure.reason.code, error: failure.reason.message });
       }
       // Ordinary older/remote spawn never gains the new options or a caller key.
-      if (body && (['base', 'branch', 'allowChildSpawns', 'modelMode', 'expectDecision', 'choices', 'spawnRef', 'idempotencyKey', 'decision'].some(k => Object.hasOwn(body, k))
+      if (body && (['base', 'branch', 'work', 'modelMode', 'expectDecision', 'choices', 'spawnRef', 'idempotencyKey', 'decision'].some(k => Object.hasOwn(body, k))
         || typeof body.model === 'object' && body.model !== null || body.model === '@native-default')) {
-        return send(res, 409, { code: 'E_PREVIEW_ONLY', error: PREVIEW_ONLY });
+        return send(res, 409, { code: 'E_UNSUPPORTED_OPTION', error: 'An execution-server spawn takes only the ordinary spawn options.' });
       }
       if (typeof body.agent !== "string" || !body.agent || typeof body.agentsRoot !== "string" || !body.agentsRoot)
         return send(res, 400, { error: "body needs { agent, agentsRoot }" });

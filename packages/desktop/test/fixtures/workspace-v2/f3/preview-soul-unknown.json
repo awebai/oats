@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_SOUL_UNKNOWN",
+    "message": "no soul \"no-such-soul\" among the confirmed members or external souls of this workspace",
+    "details": {
+      "name": "no-such-soul",
+      "members": [
+        "local//fixture/base/fx/remotes/agents.git",
+        "local//fixture/base/fx/remotes/platform.git",
+        "local//fixture/base/fx/remotes/data.git",
+        "local//fixture/base/fx/remotes/marketing.git",
+        "local//fixture/base/fx/remotes/nw-tools.git"
+      ]
+    }
+  }
+}

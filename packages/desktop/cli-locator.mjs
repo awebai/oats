@@ -205,17 +205,6 @@ export async function discover(io, probe) {
   return { ok: false, tried };
 }
 
-/** Old kernels silently treat unknown runtimes/backends as their defaults. */
-export function requireExecutionSupport(cli, runtime, backend, yolo) {
-  if (yolo !== undefined && !cli.launchOptions?.includes("yolo")) throw Object.assign(new Error(`installed oats ${cli.version} does not support yolo overrides; update the CLI`), { code: "unsupported-launch-option" });
-  if (!(cli.runtimes || ["pi", "claude"]).includes(runtime || "pi")) {
-    throw Object.assign(new Error(`installed oats ${cli.version} does not support runtime ${runtime}; update the CLI`), { code: "unsupported-runtime" });
-  }
-  if (!(cli.sessionBackends || ["tmux"]).includes(backend || "tmux")) {
-    throw Object.assign(new Error(`installed oats ${cli.version} does not support session backend ${backend}; update the CLI`), { code: "unsupported-backend" });
-  }
-}
-
 /** Remote routing arrived within API v1; older accepted CLIs lack it. */
 export function requireRemoteSupport(cli, operation) {
   // Array.isArray, not optional chaining alone: String.prototype.includes

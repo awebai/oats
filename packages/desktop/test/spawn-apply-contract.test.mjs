@@ -1,20 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { discover } from '../cli-locator.mjs';
 import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
 import { previewData } from '../renderer/spawn-preview-contract.mjs';
 import { spawnDecision, spawnEffective, sameSpawnDecision } from '../renderer/spawn-decision.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnRefInput, spawnPreparedData, spawnWake, spawnApplyFailure } from '../renderer/spawn-apply-contract.mjs';
-import { cli, selector, target, anchor, data } from './helpers/spawn-preview-fixture.mjs';
-const capable = () => ({ ...structuredClone(cli), spawnApplyApi: 1, features: [...cli.features, 'spawn-apply-2', 'spawn-idempotency-2'] });
-function strong() {
-  const v = data();
-  v.decision.effective = { repo: v.repo, work: v.work, runtime: v.runtime, model: v.model,
-    launchConfig: v.launchConfig, yolo: null, backend: v.backend, childSpawns: v.policy.childSpawns.allowed, relation: null };
-  return v;
-}
+import { cli, selector, target, anchor, data, kernel } from './helpers/spawn-preview-fixture.mjs';
+const capable = () => structuredClone(cli); // the captured CLI advertises the whole apply fence
+const strong = () => data(); // a v2 preview always carries its effective plan
 const prepare = (changes = {}) => ({ action: 'prepare', selector, choices: {}, task: '', ...changes });
 const ref = 'a'.repeat(64);
 for (const spawnApplyApi of [undefined, null, false, true, 0, '1', 2, 1]) test(`locator passes only exact apply API 1 (${JSON.stringify(spawnApplyApi)})`, async () => {
@@ -32,14 +26,19 @@ for (const [label, alter] of [
 ]) test(`confirmed apply refuses ${label} even with future version`, () => {
   const c = capable(); c.version = '9999.0.0'; alter(c); assert.equal(spawnApplySupported(c), false);
 });
-test('API2 READ stays observable but cannot prepare an effective confirmation', () => {
-  assert.ok(previewData(data(), target)); assert.equal(Object.hasOwn(previewData(data(), target).decision, 'effective'), false);
-  assert.equal(spawnApplySupported(cli), false); assert.equal(spawnPreparedData(data(), target), null);
-  assert.equal(sameSpawnDecision(data().decision, data().decision), false);
+test('a preview without its effective plan is refused; a preview-only CLI cannot confirm', () => {
+  const partial = data(); delete partial.decision.effective;
+  assert.equal(previewData(partial, target), null); assert.equal(spawnPreparedData(partial, target), null);
+  assert.equal(sameSpawnDecision(partial.decision, partial.decision), false);
+  const readOnly = { ...capable(), features: capable().features.filter(f => f !== 'spawn-apply-2') };
+  assert.equal(spawnApplySupported(readOnly), false); assert.ok(previewData(data(), target));
 });
 test('K6d projection preserves opaque full decision and refuses contradictory effective facts', () => {
-  const v = strong(); assert.deepEqual(previewData(v, target).decision, v.decision);
-  assert.deepEqual(spawnPreparedData(v, target).decision, v.decision);
+  // The projected decision is the kernel's minus provider payloads (they stay kernel-side; the revision binds them).
+  const v = strong(), projected = spawnDecision(v.decision, { effectiveRequired: true });
+  assert.deepEqual(previewData(v, target).decision, projected); assert.equal(projected.revision, v.decision.revision); assert.equal(projected.resolution, v.decision.resolution);
+  assert.equal(Object.hasOwn(projected.effective, 'providers'), false);
+  assert.deepEqual(spawnPreparedData(v, target).decision, projected);
   const fields = { repo: '/elsewhere', work: 'checkout', runtime: 'codex', model: 'other', launchConfig: 'other', yolo: true, backend: 'herdr', childSpawns: false,
     relation: { kind: 'child', anchor: { instance: 'boss-1', agentsRoot: '/team/agents' } } };
   for (const [k, value] of Object.entries(fields)) {
@@ -68,11 +67,11 @@ test('incomplete preflight remains a READ but not an executable confirmation', (
   const v = strong(); v.preflight.status = 'timeout'; assert.ok(previewData(v, target)); assert.equal(spawnPreparedData(v, target), null);
 });
 test('bounded prepare copies the whole draft including blank task and qualified options', () => {
-  const input = prepare({ choices: { model: { kind: 'native-default' }, allowChildSpawns: false, relation: { kind: 'child', anchor: { ...anchor } } },
+  const input = prepare({ choices: { model: { kind: 'native-default' }, work: 'worktree', relation: { kind: 'child', anchor: { ...anchor } } },
     task: 'private\nopening instruction', wake: { cron: '0 * * * *', tz: 'UTC', message: 'private wake\nmessage', enabled: false } });
   const parsed = spawnPrepareInput(input); assert.ok(parsed);
   input.choices.relation.anchor.instance = 'different'; input.wake.message = 'changed'; input.task = 'changed';
-  assert.equal(parsed.choices.relation.anchor.instance, 'boss-1'); assert.equal(parsed.task, 'private\nopening instruction'); assert.equal(parsed.wake.message, 'private wake\nmessage');
+  assert.equal(parsed.choices.relation.anchor.instance, anchor.instance); assert.equal(parsed.choices.work, 'worktree'); assert.equal(parsed.task, 'private\nopening instruction'); assert.equal(parsed.wake.message, 'private wake\nmessage');
   assert.equal(spawnPrepareInput(prepare({ task: undefined })).task, '');
   assert.equal(spawnPrepareInput(prepare()).task, '');
   assert.ok(spawnPrepareInput(prepare({ task: 'a'.repeat(32768) })));
@@ -111,18 +110,17 @@ test('safe failures cannot leak producer text, instructions or caller paths', ()
   const incomplete = spawnApplyFailure('E_SPAWN_INCOMPLETE', { status: 'incomplete', spawnRef: ref, target });
   assert.equal(incomplete.status, 'incomplete'); assert.equal(incomplete.receipt, null, 'incomplete is not a completed launch receipt');
 });
-test('real K6d preview bytes cross the injected argv/boundary with effective preserved', async () => {
-  const stored = JSON.parse(readFileSync(new URL('./fixtures/spawn-preview-k6d.json', import.meta.url)));
-  assert.equal(stored.producerMerge, 'd51e1011167e9b8f6fc157fb415898055cb9345d');
-  const raw = stored.envelope.result, selected = { soul: raw.subject.soul, agentsRoot: raw.subject.agentsRoot };
-  const c = { workspace: { id: 'k6d', scope: raw.subject.dir }, cli: capable(), agents: [{ name: selected.soul, agentsRoot: selected.agentsRoot, work: raw.work }] };
+test('kernel preview bytes cross the injected argv/boundary with the decision the apply binds', async () => {
+  const stored = kernel('preview-worktree-purpose'), raw = stored.result, selected = { soul: raw.subject.soul, agentsRoot: raw.subject.agentsRoot };
+  const c = { workspace: { id: 'northwind', scope: raw.subject.dir }, cli: capable(), agents: [{ name: selected.soul, agentsRoot: selected.agentsRoot, work: raw.work }] };
   let calls = 0;
   const read = createSpawnPreviewBoundary({ invoke: (cli, args) => cliSpawnPreview(cli, args, { env: {}, exec: (_bin, argv, _options, callback) => {
     calls++; assert.ok(argv.includes('--preview')); assert.equal(argv.includes('--idempotency-key'), false); assert.equal(argv.includes('--expect-decision'), false);
-    callback(null, JSON.stringify(stored.envelope));
+    callback(null, JSON.stringify(stored));
   } }) });
-  const response = await read({ action: 'preview', selector: selected, choices: { purpose: 'fix-login' } }, () => c);
+  const response = await read({ action: 'preview', selector: selected, choices: { purpose: 'api-v2' } }, () => c);
   assert.equal(calls, 1); assert.equal(response.status, 'available');
-  assert.deepEqual(response.data.decision, raw.decision);
-  assert.deepEqual(spawnPreparedData(response.data, response.target).decision, raw.decision);
+  assert.equal(response.data.decision.revision, raw.decision.revision);
+  assert.deepEqual(spawnPreparedData(response.data, response.target).decision, response.data.decision);
+  assert.equal(kernel('apply-bound').result.decision.revision, raw.decision.revision, 'the captured apply bound this very decision');
 });

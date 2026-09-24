@@ -3,6 +3,7 @@
  * refusal is its bounded error envelope (code + message, plus onboarding's
  * rolledBack flag), never stderr, argv, stacks or details objects.
  *   capabilities → `oats capabilities --dir D --json`        (capabilitiesApi 1)
+ *   souls        → `oats souls --dir D --json`               (soulsApi 1, the spawn catalog)
  *   sync         → `oats sync --dir D --json`                (syncApi 1)
  *   approve      → `oats sync --dir D --approve id@ver… --json`
  *   onboard      → `oats onboard DIR --workspace REF --json` (onboardApi 2)
@@ -13,7 +14,7 @@ import { isAbsolute, resolve } from 'node:path';
 export const WORKSPACE_READ_TIMEOUT = 60_000;
 export const WORKSPACE_WRITE_TIMEOUT = 300_000; // discovery reads every member remote
 export const WORKSPACE_MAX_BUFFER = 4 * 1024 * 1024;
-export const WORKSPACE_ACTIONS = Object.freeze(['capabilities', 'sync', 'approve', 'onboard']);
+export const WORKSPACE_ACTIONS = Object.freeze(['capabilities', 'souls', 'sync', 'approve', 'onboard']);
 const SCRUB = ['PI_AGENTS_ROOT', 'PI_AGENT_HOME', 'PI_AGENT_INSTANCE', 'OATS_HOME', 'OATS_INSTANCE_HOME', 'OATS_INSTANCE', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION'];
 const absolute = path => typeof path === 'string' && !path.includes('\0') && isAbsolute(path) && resolve(path) === path;
 const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -51,14 +52,14 @@ export function workspaceGate(cli) {
 export function workspaceArgv(options) {
   if (!record(options) || !WORKSPACE_ACTIONS.includes(options.action)) return null;
   const { action } = options;
-  const allowed = { capabilities: ['action', 'context'], sync: ['action', 'context'], approve: ['action', 'context', 'approvals'], onboard: ['action', 'dir', 'workspace'] }[action];
+  const allowed = { capabilities: ['action', 'context'], souls: ['action', 'context'], sync: ['action', 'context'], approve: ['action', 'context', 'approvals'], onboard: ['action', 'dir', 'workspace'] }[action];
   if (Object.keys(options).some(key => !allowed.includes(key))) return null;
   if (action === 'onboard') {
     if (!absolute(options.dir) || !validWorkspaceRef(options.workspace)) return null;
     return { argv: ['onboard', options.dir, '--workspace', options.workspace, '--json'], cwd: options.dir, timeout: WORKSPACE_WRITE_TIMEOUT };
   }
   if (!absolute(options.context)) return null;
-  if (action === 'capabilities') return { argv: ['capabilities', '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_READ_TIMEOUT };
+  if (action === 'capabilities' || action === 'souls') return { argv: [action, '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_READ_TIMEOUT };
   if (action === 'sync') return { argv: ['sync', '--dir', options.context, '--json'], cwd: options.context, timeout: WORKSPACE_WRITE_TIMEOUT };
   const approvals = options.approvals;
   if (!Array.isArray(approvals) || !approvals.length || approvals.length > 100) return null;
@@ -99,7 +100,7 @@ export function cliWorkspace(cli, options, io = {}) {
           return done({ ok: false, reason: out });
         }
         const exit = error ? error.code : 0;
-        const pendingAllowed = options.action !== 'capabilities';
+        const pendingAllowed = !['capabilities', 'souls'].includes(options.action);
         if (exit !== 0 && !(exit === 2 && pendingAllowed)) return fail('E_CLI_FAILED');
         done({ ok: true, pending: exit === 2, document });
       });

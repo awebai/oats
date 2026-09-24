@@ -188,166 +188,58 @@ test("ws generation: deferred roster/agents responses from workspace A never pai
   }
 });
 
-test("ws generation: a spawn begun in workspace A completing after a switch to B never auto-opens the terminal", async () => {
+// The legacy LOCAL doSpawn these tests drove (form clearing, button
+// re-enable, local roster wait) was deleted with the v2 spawn dialog — every
+// local spawn is the confirmed prepare → apply transaction (§3b: deleted, not
+// ported). Its ownership properties are covered where they now live:
+// packages/desktop/test/spawn-dialog.test.mjs (late results never touch a
+// newer dialog; closing in flight; roster wait before the terminal handoff)
+// and remote-spawn-handoff.test.mjs (a workspace switch never auto-opens).
+// The op-token rule still guards the execution-server doSpawn, ported here.
+async function remoteSpawnHarness() {
   const common = await import(new URL("../packages/desktop/renderer/views/common.mjs", import.meta.url).href);
   const { doSpawn } = await import(new URL("../packages/desktop/renderer/views/spawn.mjs", import.meta.url).href);
-  const opened = [];
-  let release;
-  const panelWith = (names) => ({ ok: true, status: 200, json: async () => ({ instances: names.map((n) => ({ instance: n, running: true, tmux: { session: "pi-agents" } })) }) });
-  const ctx = {
-    api: (pathname) => pathname.startsWith("/api/panel")
-      ? Promise.resolve(panelWith(["dev-1"]))          // roster already caught up
-      : new Promise((ok) => { release = () => ok({ ok: true, status: 200, json: async () => ({ instance: "dev-1", launched: true }) }); }),
-    openTerminal: (name) => opened.push(name),
-  };
-  const fields = { ftask: { value: "t" }, fpurpose: { value: "" }, fspawn: { disabled: false, textContent: "" }, fstatus: { textContent: "" } };
-  const s = { ctx, selAgent: { name: "dev", agentsRoot: "/a" }, q: (cls) => fields[cls], spawnOp: 0, waitOpts: { delayMs: 0, tries: 3 } };
-  const prevWs = common.currentWorkspace();
+  const { refreshCli } = await import(new URL("../packages/desktop/renderer/views/cli-status.mjs", import.meta.url).href);
+  await refreshCli({ api: async () => ({ ok: true, version: "0.25.7", bin: "/oats", remote: ["spawn"] }) });
+  const releases = [], opened = [];
+  const ctx = { api: (pathname) => pathname === "/api/spawn" ? new Promise((ok, err) => releases.push({ ok, err })) : Promise.resolve({ instances: [] }),
+    openTerminal: (ref) => opened.push(ref) };
+  const s = { ctx, alive: true, selAgent: { name: "dev", agentsRoot: "/a" }, spawnOp: 0, waitOpts: { delayMs: 0, tries: 1, sleep: async () => {} } };
+  return { common, doSpawn, releases, opened, s };
+}
+const remoteFields = (log) => ({ server: "host", task: "t", status: (text) => log.push(text) });
+
+test("spawn op token: a superseded execution-server spawn completing late never writes status or opens a terminal", async () => {
+  const { common, doSpawn, releases, opened, s } = await remoteSpawnHarness();
+  const prevWs = common.currentWorkspace(); common.setWorkspace("wsA");
   try {
-    // in-flight spawn survives a workspace switch: must NOT auto-open
-    common.setWorkspace("wsA");
-    const inFlight = doSpawn(s);
-    common.setWorkspace("wsB");              // user switches while spawning
-    fields.fstatus.textContent = "Workspace B status";
-    fields.fspawn.disabled = false; fields.fspawn.textContent = "Spawn in B";
-    release();
-    await inFlight;
-    assert.deepEqual(opened, [], "openTerminal(dev-1) with wsB current would target a same-named B instance");
-    assert.equal(fields.fstatus.textContent, "Workspace B status", "stale success must not write into the new workspace");
-    assert.equal(fields.fspawn.disabled, false);
-    assert.equal(fields.fspawn.textContent, "Spawn in B", "stale finally must not change the new workspace control");
-    // control: same flow without a switch DOES auto-open
-    const p2 = doSpawn(s);
-    release();
-    await p2;
-    assert.deepEqual(opened, [{ instance: "dev-1", agentsRoot: "/a" }],
-      "open carries the composite ref (@7dd1e7b)");
-  } finally {
-    common.setWorkspace(prevWs);
-  }
+    const first = [], second = [];
+    const spawn1 = doSpawn(s, remoteFields(first));
+    const spawn2 = doSpawn(s, remoteFields(second)); // supersedes spawn1
+    releases[0].ok({ instance: "inst-1", home: "/h1", server: "host" });
+    assert.equal(await spawn1, undefined, "the stale completion is not reported as created by this op");
+    assert.deepEqual(first, ["Spawning on host…"], "stale success writes nothing after its dispatch");
+    releases[1].ok({ instance: "inst-2", home: "/h2", server: "host" });
+    assert.deepEqual(await spawn2, { created: true });
+    assert.match(second.at(-1), /^Spawned inst-2 on host\./);
+    assert.deepEqual(opened, []);
+  } finally { common.setWorkspace(prevWs); }
 });
 
-test("spawn op token: a stale workspace-A spawn completing during an in-flight B spawn never touches B's form", async () => {
-  const common = await import(new URL("../packages/desktop/renderer/views/common.mjs", import.meta.url).href);
-  const { doSpawn } = await import(new URL("../packages/desktop/renderer/views/spawn.mjs", import.meta.url).href);
-  const opened = [];
-  const releases = [];
-  const respond = (instance) => ({ ok: true, status: 200, json: async () => ({ instance, launched: true }) });
-  const ctx = {
-    api: (pathname) => pathname.startsWith("/api/panel")
-      ? Promise.resolve({ ok: true, status: 200, json: async () => ({ instances: [{ instance: "inst-A", running: true, tmux: { session: "pi-agents" } }, { instance: "inst-B", running: true, tmux: { session: "pi-agents" } }] }) })
-      : new Promise((ok) => releases.push(ok)),
-    openTerminal: (name) => opened.push(name),
-  };
-  const fields = { ftask: { value: "task-A" }, fpurpose: { value: "" }, fspawn: { disabled: false, textContent: "" }, fstatus: { textContent: "" } };
-  const s = { ctx, selAgent: { name: "dev", agentsRoot: "/a" }, q: (cls) => fields[cls], spawnOp: 0, waitOpts: { delayMs: 0, tries: 3 } };
-  const prevWs = common.currentWorkspace();
+test("spawn op token: a superseded execution-server spawn ERROR never overwrites the active spawn's status", async () => {
+  const { common, doSpawn, releases, s } = await remoteSpawnHarness();
+  const prevWs = common.currentWorkspace(); common.setWorkspace("wsA");
   try {
-    // spawn 1 dispatched in wsA
-    common.setWorkspace("wsA");
-    const spawnA = doSpawn(s);
-    // user switches to wsB, fills the SAME form for a B agent, spawns again
-    common.setWorkspace("wsB");
-    fields.ftask.value = "task-B"; fields.fstatus.textContent = "";
-    s.selAgent = { name: "dev-b", agentsRoot: "/b" };
-    const spawnB = doSpawn(s);
-    assert.equal(fields.fspawn.disabled, true, "B's spawn is in flight — button disabled");
-    // A's STALE completion lands while B is still in flight
-    releases[0](respond("inst-A"));
-    await spawnA;
-    assert.equal(fields.ftask.value, "task-B", "stale A completion must not clear B's task field");
-    assert.equal(fields.fstatus.textContent, "", "stale A completion must not overwrite B's status");
-    assert.equal(fields.fspawn.disabled, true, "stale A completion must not re-enable the button mid-B-spawn (duplicate-spawn hazard)");
-    assert.deepEqual(opened, [], "stale A completion must not open a terminal");
-    // B completes normally: owns the form, clears it, auto-opens
-    releases[1](respond("inst-B"));
-    await spawnB;
-    assert.equal(fields.ftask.value, "");
-    assert.match(fields.fstatus.textContent, /Spawned inst-B/);
-    assert.equal(fields.fspawn.disabled, false);
-    assert.deepEqual(opened, [{ instance: "inst-B", agentsRoot: "/b" }]);
-  } finally {
-    common.setWorkspace(prevWs);
-  }
-});
-
-test("spawn op token: a stale spawn ERROR never overwrites the active spawn's status or button", async () => {
-  const common = await import(new URL("../packages/desktop/renderer/views/common.mjs", import.meta.url).href);
-  const { doSpawn } = await import(new URL("../packages/desktop/renderer/views/spawn.mjs", import.meta.url).href);
-  const releases = [];
-  const ctx = {
-    api: (pathname) => pathname.startsWith("/api/panel") ? Promise.resolve({ ok: true, status: 200, json: async () => ({ instances: [{ instance: "inst-2", running: true, tmux: { session: "pi-agents" } }] }) }) : new Promise((ok, err) => releases.push({ ok, err })),
-    openTerminal: () => {},
-  };
-  const fields = { ftask: { value: "" }, fpurpose: { value: "" }, fspawn: { disabled: false, textContent: "" }, fstatus: { textContent: "" } };
-  const s = { ctx, selAgent: { name: "dev", agentsRoot: "/a" }, q: (cls) => fields[cls], spawnOp: 0, waitOpts: { delayMs: 0, tries: 3 } };
-  const prevWs = common.currentWorkspace();
-  try {
-    common.setWorkspace("wsA");
-    const spawn1 = doSpawn(s);
-    const spawn2 = doSpawn(s);             // supersedes spawn1 on the same form
-    releases[0].err(new Error("boom"));    // spawn1 fails LATE
+    const first = [], second = [];
+    const spawn1 = doSpawn(s, remoteFields(first));
+    const spawn2 = doSpawn(s, remoteFields(second));
+    releases[0].err(Object.assign(new Error("boom"), { code: "E_SPAWN_FAILED" }));
     await spawn1;
-    assert.equal(fields.fstatus.textContent, "", "stale error must not paint over the active spawn's status");
-    assert.equal(fields.fspawn.disabled, true, "stale error's finally must not re-enable the in-flight button");
-    releases[1].ok({ ok: true, status: 200, json: async () => ({ instance: "inst-2", launched: false }) });
+    assert.deepEqual(first, ["Spawning on host…"], "stale error paints nothing");
+    releases[1].ok({ instance: "inst-2", home: "/h2", server: "host" });
     await spawn2;
-    assert.match(fields.fstatus.textContent, /Spawned inst-2/);
-    assert.equal(fields.fspawn.disabled, false);
-  } finally {
-    common.setWorkspace(prevWs);
-  }
-});
-
-test("stale snapshot: spawn waits for the instance to appear in /api/panel before auto-opening the terminal", async () => {
-  const common = await import(new URL("../packages/desktop/renderer/views/common.mjs", import.meta.url).href);
-  const { doSpawn } = await import(new URL("../packages/desktop/renderer/views/spawn.mjs", import.meta.url).href);
-  const opened = [];
-  let panelCalls = 0;
-  const panel = (names) => ({ ok: true, status: 200, json: async () => ({ instances: names.map((n) => ({ instance: n, running: true, tmux: { session: "pi-agents" } })) }) });
-  const ctx = {
-    // background snapshot lags: first two polls miss the new instance, third has it
-    api: (pathname) => pathname.startsWith("/api/panel")
-      ? Promise.resolve(panel(++panelCalls >= 3 ? ["old-1", "dev-new"] : ["old-1"]))
-      : Promise.resolve({ ok: true, status: 200, json: async () => ({ instance: "dev-new", launched: true }) }),
-    openTerminal: (name) => opened.push(name),
-  };
-  const fields = { ftask: { value: "" }, fpurpose: { value: "" }, fspawn: { disabled: false, textContent: "" }, fstatus: { textContent: "" } };
-  const s = { ctx, selAgent: { name: "dev", agentsRoot: "/a" }, q: (cls) => fields[cls], spawnOp: 0, waitOpts: { delayMs: 0, tries: 10 } };
-  const prevWs = common.currentWorkspace();
-  try {
-    common.setWorkspace("wsA");
-    await doSpawn(s);
-    assert.equal(panelCalls, 3, "must poll until the snapshot includes the new instance");
-    assert.deepEqual(opened, [{ instance: "dev-new", agentsRoot: "/a" }], "auto-open fires only after the roster knows the instance");
-  } finally {
-    common.setWorkspace(prevWs);
-  }
-});
-
-test("stale snapshot: if the roster never catches up, spawn reports instead of opening an unresolvable terminal", async () => {
-  const common = await import(new URL("../packages/desktop/renderer/views/common.mjs", import.meta.url).href);
-  const { doSpawn } = await import(new URL("../packages/desktop/renderer/views/spawn.mjs", import.meta.url).href);
-  const opened = [];
-  const ctx = {
-    api: (pathname) => pathname.startsWith("/api/panel")
-      ? Promise.resolve({ ok: true, status: 200, json: async () => ({ instances: [{ instance: "old-1" }] }) })
-      : Promise.resolve({ ok: true, status: 200, json: async () => ({ instance: "dev-new", launched: true }) }),
-    openTerminal: (name) => opened.push(name),
-  };
-  const fields = { ftask: { value: "" }, fpurpose: { value: "" }, fspawn: { disabled: false, textContent: "" }, fstatus: { textContent: "" } };
-  const s = { ctx, selAgent: { name: "dev", agentsRoot: "/a" }, q: (cls) => fields[cls], spawnOp: 0, waitOpts: { delayMs: 0, tries: 3 } };
-  const prevWs = common.currentWorkspace();
-  try {
-    common.setWorkspace("wsA");
-    await doSpawn(s);
-    assert.deepEqual(opened, [], "never call openTerminal with an instance the roster cannot resolve");
-    assert.match(fields.fstatus.textContent, /catching up.*sidebar instance roster/,
-      "user is pointed at the permanent sidebar roster (the Instances stage is gone)");
-    assert.equal(fields.fspawn.disabled, false, "button unlocks after the wait gives up");
-  } finally {
-    common.setWorkspace(prevWs);
-  }
+    assert.match(second.at(-1), /^Spawned inst-2 on host\./);
+  } finally { common.setWorkspace(prevWs); }
 });
 
 test("stale snapshot: a workspace switch during the roster wait aborts the auto-open", async () => {

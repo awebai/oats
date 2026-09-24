@@ -3,7 +3,7 @@
  * The broker must qualify a success receipt before exposing it or handing off. */
 import { execFile } from 'node:child_process';
 import { parseEnvelope, writeTaskFile } from './cli-adapter.mjs';
-import { absolute, record, previewTarget } from './renderer/spawn-preview-contract.mjs';
+import { absolute, record, previewTarget, choiceArgv } from './renderer/spawn-preview-contract.mjs';
 import { spawnDecision } from './renderer/spawn-decision.mjs';
 import { spawnApplySupported, spawnApplyChoicesSupported, spawnPrepareInput, spawnReference, spawnApplyReason } from './renderer/spawn-apply-contract.mjs';
 const failure = (code, started = false) => ({ started, envelope: { schemaVersion: 1, ok: false, error: spawnApplyReason(code) } });
@@ -37,11 +37,7 @@ export async function cliSpawnApply(cli, options = {}, io = {}) {
     taskFile = writeTaskFile(input.task, io);
     if (input.wake) wakeFile = writeTaskFile(JSON.stringify(input.wake), io);
     const choices = input.choices;
-    const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot];
-    for (const [k, flag] of [['purpose', '--purpose'], ['branch', '--branch'], ['base', '--base'], ['runtime', '--runtime'], ['launchConfig', '--launch-config'], ['backend', '--backend']]) if (choices[k] !== undefined) argv.push(flag, choices[k]);
-    if (choices.model.kind !== 'inherit') argv.push('--model', choices.model.kind === 'native-default' ? '@native-default' : choices.model.value);
-    for (const [k, on, off] of [['yolo', '--yolo', '--no-yolo'], ['allowChildSpawns', '--allow-child-spawns', '--no-child-spawns']]) if (choices[k] !== undefined) argv.push(choices[k] ? on : off);
-    if (choices.relation.kind !== 'unrelated') argv.push('--relation', choices.relation.kind, '--relative-to', choices.relation.anchor.instance, '--relative-root', choices.relation.anchor.agentsRoot);
+    const argv = ['spawn', target.selector.soul, '--dir', target.context, '--agents-root', target.selector.agentsRoot, ...choiceArgv(choices)];
     argv.push('--expect-decision', decision.revision, '--idempotency-key', options.key, '--task-file', taskFile.file);
     if (wakeFile) argv.push('--wake-file', wakeFile.file);
     argv.push('--json');

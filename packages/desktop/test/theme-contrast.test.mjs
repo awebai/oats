@@ -507,3 +507,17 @@ for (const [name] of palettes) test(`${name}: actual schedule table, native menu
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });
+
+test("every full-screen modal backdrop uses the shared scrim token, and each theme defines it", () => {
+  const overlays = [];
+  for (const { path, text } of shipped) for (const [, selector, body] of text.matchAll(/([^{}\n]+)\{([^{}]*)\}/g)) {
+    if (!/position:\s*fixed/.test(body) || !/inset:\s*0\s*[;}]?/.test(body) || /inset:\s*auto/.test(body)) continue;
+    overlays.push({ selector: selector.trim(), path, background: body.match(/background(?:-color)?:\s*([^;]+)/)?.[1].trim() });
+  }
+  assert.deepEqual(overlays.map(o => o.selector).sort(), [".instance-start-modal", ".palette-overlay", ".spawn-modal", ".ws-modal", ".ws-sync-sheet"]);
+  for (const o of overlays) assert.equal(o.background, "var(--scrim)", `${o.selector} (${o.path})`);
+  for (const theme of ["dark", "light", "solarized"]) {
+    const start = css.indexOf(`[data-theme="${theme}"] {`); assert.ok(start >= 0, theme);
+    assert.match(css.slice(start, css.indexOf("}", start)), /--scrim:\s*rgb\(/, theme);
+  }
+});

@@ -32,7 +32,7 @@
   --shadow: 0 1px 3px rgb(0 0 0 / .4);
   --shadow-popover: 0 12px 32px rgb(0 0 0 / .35);
   --shadow-modal: 0 30px 80px rgb(0 0 0 / .35);
-  --scrim: rgb(0 0 0 / .4);
+  --scrim: rgb(0 0 0 / .6);
   /* ── terminal ANSI set (feeds the xterm.js theme via theme.mjs) ── */
   --ansi-black: #768390; --ansi-red: #ff7b72; --ansi-green: #4ac26b; --ansi-yellow: #d9a032;
   --ansi-blue: #6cb2ff; --ansi-magenta: #c297ff; --ansi-cyan: #4ed1db; --ansi-white: #c3ccd6;
@@ -85,7 +85,7 @@
   --shadow: 0 1px 3px rgb(26 26 24 / .06);
   --shadow-popover: 0 12px 32px rgb(26 26 24 / .18);
   --shadow-modal: 0 30px 80px rgb(0 0 0 / .22);
-  --scrim: rgb(26 26 24 / .28);
+  --scrim: rgb(26 26 24 / .46);
   /* Local ANSI remap: neutral inks follow the white terminal; chromatic
      ANSI colors retain distinct meanings, independent of app selection. */
   --ansi-black: #686862; --ansi-red: #b52f35; --ansi-green: #267548; --ansi-yellow: #725500;
@@ -138,7 +138,7 @@
   --shadow: 0 1px 3px rgb(88 110 117 / .14);
   --shadow-popover: 0 12px 32px rgb(88 110 117 / .18);
   --shadow-modal: 0 30px 80px rgb(0 0 0 / .22);
-  --scrim: rgb(88 110 117 / .28);
+  --scrim: rgb(0 43 54 / .46);
   /* solarized ANSI remap — base colors stay AA-readable on paper */
   --ansi-black: #55666b; --ansi-red: #b52f35; --ansi-green: #465f00; --ansi-yellow: #725500;
   --ansi-blue: #155d91; --ansi-magenta: #9d2b61; --ansi-cyan: #0f6863; --ansi-white: #56676d;

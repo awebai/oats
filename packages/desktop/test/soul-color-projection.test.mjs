@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import * as remote from '../server/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
-import { deploymentStatusData } from '../deployment-data.mjs';
+import { deploymentStatusData, soulsData } from '../deployment-data.mjs';
 
 // Exercise the actual response projection without starting the backend, CLI or
 // tmux. Local souls are the kernel's `oats status --json` rows, captured from a
@@ -18,25 +18,41 @@ const project = (ws, snapshot) => new Function('workspaceById', 'workspaces', 's
 const status = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/status.json', import.meta.url), 'utf8'));
 const context = dirname(status.root);
 
-test('kernel-reported soul metadata reaches the actual agents response with only named colors', () => {
-  // Variants of the captured row: the kernel passes a soul's optional
+const catalog = soulsData(JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/souls.json', import.meta.url), 'utf8')));
+
+test('the spawn catalog (oats souls) is the soul list; the status row only lends its named color', () => {
+  // Variants of the captured status row: the kernel passes a soul's optional
   // canonical color through; the Desktop admits named colors only.
   const raw = structuredClone(status);
-  const base = raw.agents[0];
+  const base = raw.agents[0], souls = catalog.souls.slice(0, 4);
   const variant = (name, extra) => ({ ...structuredClone(base), ...extra, name, dir: `${context}/agents/${name}`, instances: [] });
-  raw.agents = [{ ...base, color: 'SAGE' }, variant('helper', { color: ' slate ' }),
-    variant('invalid', { color: 'url(https://invalid.example)' }), variant('missing', {})];
+  raw.agents = [variant(souls[0].name, { color: 'SAGE' }), variant(souls[1].name, { color: ' slate ' }),
+    variant(souls[2].name, { color: 'url(https://invalid.example)' }), variant('not-in-catalog', { color: 'sage' })];
   const roster = deploymentStatusData(raw, context);
-  const souls = roster.agents.map(({ instances: _i, ...soul }) => soul);
-  const snapshot = { byWs: new Map([[context, { deployment: { status: 'observed', root: roster.root, souls } }]]) };
+  const snapshot = { byWs: new Map([[context, { deployment: { status: 'observed', root: roster.root,
+    souls: roster.agents.map(({ instances: _i, ...soul }) => soul), catalog: { souls, ambiguous: ['twin'], reason: null } } }]]) };
   const result = project({ id: context, name: 'northwind', roots: [roster.root] }, snapshot);
   assert.deepEqual(result.workspace, { id: context, name: 'northwind' });
+  assert.deepEqual(result.catalog, { reason: null, ambiguous: ['twin'] });
+  assert.deepEqual(result.agents.map(a => a.name), souls.map(s => s.name).sort(), 'only catalog souls are spawnable');
   const rows = Object.fromEntries(result.agents.map(row => [row.name, row]));
-  assert.equal(rows['release-manager'].color, 'sage'); assert.equal(rows.helper.color, 'slate');
-  for (const name of ['invalid', 'missing']) assert.equal(Object.hasOwn(rows[name], 'color'), false);
-  assert.equal(rows['release-manager'].team, 'engineering');
-  assert.deepEqual(rows['release-manager'].soulSource, status.agents[0].soulSource);
-  for (const row of result.agents) { assert.equal(row.agentsRoot, roster.root); assert.equal(row.workspace, context); }
+  assert.equal(rows[souls[0].name].color, 'sage'); assert.equal(rows[souls[1].name].color, 'slate');
+  for (const name of [souls[2].name, souls[3].name]) assert.equal(Object.hasOwn(rows[name], 'color'), false);
+  for (const soul of souls) {
+    const row = rows[soul.name];
+    assert.equal(row.work, soul.work); assert.equal(row.soulKind, soul.kind); assert.equal(row.origin, soul.origin);
+    assert.deepEqual(row.soulSource, { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null });
+    assert.equal(row.agentsRoot, roster.root); assert.equal(row.workspace, context);
+  }
+});
+
+test('a catalog that could not be read yields no souls and says why — the roster is never a fallback', () => {
+  const roster = deploymentStatusData(structuredClone(status), context);
+  const reason = { code: 'E_WORKSPACE', message: 'members not ready' };
+  const snapshot = { byWs: new Map([[context, { deployment: { status: 'observed', root: roster.root,
+    souls: roster.agents.map(({ instances: _i, ...soul }) => soul), catalog: { souls: null, ambiguous: [], reason } } }]]) };
+  const result = project({ id: context, name: 'northwind', roots: [roster.root] }, snapshot);
+  assert.deepEqual(result.agents, []); assert.deepEqual(result.catalog, { reason, ambiguous: [] });
 });
 
 test('an unobserved deployment has no spawnable souls — never a filesystem fallback', () => {

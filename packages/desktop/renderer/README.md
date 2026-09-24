@@ -9,12 +9,11 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 ## Views (`views/`)
 
 - **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
-  Souls come from `GET /api/agents`; selection opens the side inspector. Explicit
-  **Launch…** opens the two-column Spawn modal (`POST /api/spawn`), with a
-  source/context-grouped soul chooser and inherited CLI defaults. Named launch
-  configuration selection/read-only preview is restored on the existing seam.
-  An empty opening instruction waits for instructions; attached-mode souls
-  cannot launch standalone. The shell's
+  Souls come from `GET /api/agents` (the kernel's `oats souls` catalog);
+  selection opens the side inspector. Its Spawn action opens the Spawn dialog
+  (see below), which previews through the kernel and applies through the
+  confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
+  for instructions; attached-mode souls cannot launch standalone. The shell's
   **Spawn instance** footer navigates to soul selection; it does not launch.
   Capability facts and source provenance use negotiated read-only inspection,
   never inferred membership, installation or remote discovery. Shared CLI recovery
@@ -91,55 +90,49 @@ button/keyboard explanation directs users to Workspace's exact soul selection;
 the overview never guesses or adds a filesystem/IPC seam. This is a bounded7a
 surface, not final K7 or native/rendered acceptance.
 
-## Spawn modal — slice 6a, existing seams only
+## Spawn dialog — workspace model v2
 
-Frame 02 uses an 860px responsive dialog, 320px soul chooser, 52px header and
-independently scrollable chooser/configuration columns. The chooser uses reported
-context labels with disambiguating root suffixes, and keys selection by
-`agentsRoot + name + server`. Selecting another soul creates a new modal owner;
-opening-instruction/purpose/search drafts survive, but named configurations and
-runtime/model overrides do not silently cross scopes. Roster polls retain the
-form; a vanished or ambiguous exact soul cannot be submitted.
+`spawn-dialog.mjs` owns the form; `views/spawn.mjs` is a thin host (modal,
+focus trap, Esc/backdrop close, the `spawn.submit` binding and the terminal
+handoff). Souls come from the kernel's spawn catalog (`oats souls --json` via
+`GET /api/agents`), never from the roster. The chooser is grouped by source
+(alphabetical, externals last) and keyed by `agentsRoot + name + server`;
+switching soul keeps the typed name and instruction.
 
-`spawn-dialog.mjs` composes the actual existing fields, not copies. **More options**
-is expanded by default and preserves purpose, relationship + anchored root,
-execution server, backend, permission choice and wake schedule. The opening
-instruction remains a normal multiline textarea. Provider/model popups consume
-selection keys and Escape before the dialog. A modal-local, engine-owned
-`spawn.submit` binding defaults to **Mod+Enter**, with rebind/unbind-aware hints,
-IME/composition/229, repeat, consumed-event, owner and in-flight guards. It adds
-no terminal shortcut interception. Ordinary Enter never submits the launch.
+Main form, in order: **Name** (the `<soul>-` prefix plus a purpose, with the
+kernel's final name shown below; when the CLI advertises `spawn-name`, a
+**Prefix with the soul name** switch sends `--name` instead of `--purpose`),
+**Runtime** and **Model** (always visible, showing the kernel's real defaults
+with a *default* pill), **Relationship** (None / Child of / Sibling of /
+Parent of; choosing one reveals the instance picker) and the **Opening
+instruction**. **Developer settings** is collapsed: work area (base | branch,
+the worktree path relative to the deployment, *Use a worktree instead* for
+checkout souls), permissions, launch configuration, session backend, Run on
+and the wake schedule. The footer (Cancel, Spawn ⌘↵) is sticky.
 
-`spawn-launch.mjs` reads only existing scoped launch-config **list/preview** and
-capability **inspect** routes. There is no configuration editor or set/remove
-operation in this modal. `launchConfig` is forwarded through the already-supported
-server-gated Spawn property only when explicitly selected. A failed/foreign list
-never authorizes a named choice. Lists and previews have separate feedback,
-retries and request ownership; a late list cannot overwrite/replay a newer model
-preview. Preview success is not launch readiness or a reservation.
+Every value shown is the kernel's own preview: the dialog reads
+`POST /api/workspace-spawn-preview` in the background (debounced, one latest
+intent, owner-checked on success and rejection) and never resolves a default
+itself. **Spawn** is one click: prepare → the server checks the prepared
+decision still matches what was shown → apply with the bound revision and key.
+If the kernel decided differently at Spawn time nothing is applied and the
+dialog shows the new values for review. An unknown outcome offers **Check
+result** on the same intent. A completed receipt hands off to the terminal
+only after an exact composite roster match; partial wake results stay
+created with **View schedules**. Execution-server spawns (Run on, or a remote
+soul) use the host's own defaults and naming. The `spawn.submit` chord hint
+lives on `data-chord`, not `data-shortcut`, so the shell's shortcut titling
+never hides the Spawn button.
 
-Provider choices use `/api/cli`'s runtime list. The additive Desktop diagnostics
-field `runtimesSource: "reported" | "assumed"` distinguishes actual CLI reports
-from the existing legacy `pi`/`claude` fallback. Fallbacks are labeled assumed;
-an older Desktop response without provenance says so. Support lists never prove
-runtime installation, version or executable approval. Model suggestions remain
-advisory and local-only; custom entries remain valid. A remote execution target
-never borrows local model/configuration/inspection facts. An explicitly selected
-remote soul needs its registered execution workspace and negotiated read support.
+Problems read as one plain sentence about what happened and what to do
+(`spawn-messages.mjs`, keyed by the contract's stable code). The code and the
+technical or kernel text — paths, hashes, the `git clone` remedy — stay
+behind a **Details** toggle and in `data-code`; no decision depends on wording.
 
-The default model choice is **Use resolved defaults**: empty values are omitted,
-not transformed into an override. The displayed model and `modelSource` come from
-a qualified preview; **native default** is claimed only if reported. A true
-force-native override is disabled until K6. No proposed model object is sent.
-
-Installed/trusted counts describe only the exact, actually inspected capability
-set, with unknown for incomplete/missing/foreign observations or an empty set.
-Configured/enrolled remain **unknown**. No all-green or overall “Ready” verdict is
-manufactured. Future work-area name/suggestion, canonical worktree path, base/new
-branch, knowledge attachment/count, child-spawn authority and auto-PR controls
-remain visible but disabled with their seam notes. No fake paths, `main` base,
-node counts, child-policy defaults or K6 request fields are sent. These become
-functional only in slice 6b after reviewed kernel/provider contracts land.
+Model suggestions are advisory (`/api/models`), custom entries stay valid, and
+a remote target never borrows local model/configuration facts. No capability
+or readiness facts appear in this dialog; soul readiness belongs to the soul
+inspector.
 
 ## Souls: negotiated declarations, not launch readiness
 

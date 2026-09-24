@@ -1,6 +1,6 @@
 // CLI locator (packages/desktop/cli-locator.mjs) — Desktop CLI API v1
 // discovery order, canonicalization, acceptance, and stable diagnostics.
-import { requireExecutionSupport, requireRemoteSupport } from "../cli-locator.mjs";
+import { requireRemoteSupport } from "../cli-locator.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { delimiter } from "node:path";
@@ -105,9 +105,6 @@ test("0.24 version acceptance does not grant API2 or unadvertised execution capa
   const cli = await discover({ persisted: () => "/fixture/oats", env: { PATH: "" }, isExecutableFile: () => true },
     async () => ({ stdout: JSON.stringify(PROBE("0.24.0")) }));
   assert.equal(cli.ok, true); assert.equal(cli.version, "0.24.0");
-  assert.throws(() => requireExecutionSupport(cli, "pi", "herdr"), { code: "unsupported-backend" });
-  assert.throws(() => requireExecutionSupport(cli, "codex", "tmux"), { code: "unsupported-runtime" });
-  assert.throws(() => requireExecutionSupport(cli, "pi", "tmux", true), { code: "unsupported-launch-option" });
   assert.throws(() => requireRemoteSupport(cli, "spawn"), { code: "unsupported-remote-operation" });
 });
 

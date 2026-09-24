@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [
+      {
+        "name": "nw-house-style",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "nw-release-tooling",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "oats.core",
+        "from": {
+          "kind": "package",
+          "package": "oats.framework",
+          "version": "1.1.3",
+          "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+          "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "oats.okf",
+        "from": {
+          "kind": "package",
+          "package": "oats.okf",
+          "version": "2.1.3",
+          "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+          "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
+        },
+        "layer": "knowledge",
+        "private": false,
+        "changedSince": null
+      }
+    ],
+    "team": "engineering",
+    "resolution": "7bdd29b4f90f8bdda3e58c6a",
+    "declRevision": "2ed86abe4aaad0fbb699b4cc",
+    "payloadRevision": "d8f4f11f42a78258a62603d4",
+    "workspace": "local//fixture/base/fx/remotes/agents.git",
+    "standalone": false,
+    "providers": {},
+    "settings": {
+      "nw-house-style": {},
+      "nw-release-tooling": {},
+      "oats.core": {},
+      "oats.okf": {
+        "owns": "platform-reviewer"
+      }
+    },
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "platform-reviewer",
+    "kind": "persistent",
+    "instance": "platform-reviewer-review",
+    "home": "/fixture/base/northwind-workspace/agents/platform-reviewer/instances/platform-reviewer-review",
+    "repo": "/fixture/base/northwind-workspace/platform",
+    "work": "checkout",
+    "subject": {
+      "soul": "platform-reviewer",
+      "agentsRoot": "/fixture/base/northwind-workspace/agents",
+      "dir": "/fixture/base/northwind-workspace"
+    },
+    "decision": {
+      "instance": "platform-reviewer-review",
+      "home": "/fixture/base/northwind-workspace/agents/platform-reviewer/instances/platform-reviewer-review",
+      "branch": null,
+      "base": null,
+      "effective": {
+        "repo": "/fixture/base/northwind-workspace/platform",
+        "work": "checkout",
+        "runtime": "pi",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "nw-house-style": {},
+          "nw-release-tooling": {},
+          "oats.core": {},
+          "oats.okf": {
+            "owns": "platform-reviewer"
+          }
+        }
+      },
+      "resolution": "7bdd29b4f90f8bdda3e58c6a",
+      "revision": "dbded3a1b054488128b9abe2"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 67
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": true,
+      "started": false
+    },
+    "runtime": "pi",
+    "model": null,
+    "modelSource": "native default",
+    "launchConfig": null,
+    "backend": "tmux",
+    "branch": null,
+    "base": null,
+    "worktree": null,
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no declaration: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/bin/pi",
+    "capabilities": [
+      {
+        "name": "nw-house-style",
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+      },
+      {
+        "name": "nw-release-tooling",
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+      },
+      {
+        "name": "oats.core",
+        "origin": "package:oats.framework@1.1.3"
+      },
+      {
+        "name": "oats.okf",
+        "origin": "package:oats.okf@2.1.3"
+      }
+    ],
+    "skills": [
+      "review-pr",
+      {
+        "name": "cut-release",
+        "source": "module:nw-release-tooling"
+      },
+      {
+        "name": "oats-operate",
+        "source": "module:oats.core"
+      },
+      {
+        "name": "okf",
+        "source": "module:oats.okf"
+      }
+    ],
+    "task": null,
+    "soulFetched": true
+  }
+}

@@ -94,7 +94,7 @@ test('03: inspector shares the main-area top, header precedes canvas directly, a
   assert.doesNotMatch(inspectorCSS, /display:\s*contents|order:\s*-1|position:\s*absolute/);
 });
 
-test('03: cards have one semantic Details entry with compact identity, runtime, description and activity', async t => {
+test('03: cards have one semantic Details entry with compact identity, description and activity (no runtime: v2 souls choose it at spawn)', async t => {
   const u = await fixture(t);
   const card = u.get('.soul-card');
   assert.equal(card.tagName, 'BUTTON'); assert.equal(card.type, 'button');
@@ -105,8 +105,9 @@ test('03: cards have one semantic Details entry with compact identity, runtime, 
   assert.equal(u.css('.soul-card').padding, '16px'); assert.equal(u.css('.soul-card').gap, '10px');
   assert.equal(u.css('.sdesc').fontSize, '12px');
   assert.equal(u.css('.glyph').width, '36px'); assert.equal(u.css('.glyph').height, '36px'); assert.equal(u.css('.glyph').borderRadius, '9px');
-  assert.equal(u.get('.scontext').textContent, 'fixture'); assert.equal(u.get('.sruntime').getAttribute('aria-label'), 'Reported runtime: Pi');
-  assert.equal(u.css('.sruntime').width, '18px'); assert.equal(u.css('.sruntime').height, '18px'); assert.equal(u.css('.sruntime').borderRadius, '5px');
+  assert.equal(u.get('.scontext').textContent, 'fixture');
+  // v2 souls are runtime-agnostic (the runtime is chosen at spawn), so a card never claims one.
+  assert.equal(u.get('.sruntime'), null);
   card.focus(); card.dispatchEvent(new u.dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); await tick();
   for (const text of ['Launch…', 'Files', 'Schedule…', 'Edit defaults', 'Edit instructions']) assert.ok([...u.get('.soul-inspector').querySelectorAll('button')].find(b => b.textContent === text), text);
   assert.equal(u.get('.spawn-dialog'), null, 'keyboard inspection does not launch');
@@ -175,7 +176,7 @@ for (const cli of [null, { ok: false }]) test(`CLI ${JSON.stringify(cli)}: launc
   u.click('Files'); assert.deepEqual(u.files, ['dev']);
   assert.match(u.get('.inspector-status').textContent, /compatible OATS CLI/);
   await u.setCli({ ok: true, features: [] });
-  assert.equal(u.get('.spawn-act').disabled, false, 'CLI recovery enables legacy Launch without an operations request');
+  assert.equal(u.get('.spawn-act').disabled, false, 'CLI recovery enables Spawn without an operations request');
   u.get('.spawn-act').click(); assert.ok(u.get('.spawn-dialog'));
   await u.setCli({ ok: false });
   assert.equal(u.get('.spawn-dialog'), null); assert.equal(u.get('.spawn-act').disabled, true);

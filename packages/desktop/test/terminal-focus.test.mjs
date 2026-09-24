@@ -104,6 +104,8 @@ test("post-spawn auto-open is QUIET: openTerminalTab failures route through noti
     "the no-live-terminal refusal uses notify (the original stuck-modal alert)");
   // and the spawn view's handoff actually asks for quiet + closes the modal first
   const spawnSrc = read("renderer/views/spawn.mjs");
-  assert.match(spawnSrc, /closeSpawnModal\(s\);\n\s*s\.ctx\.openTerminal\(spawnedRef, \{ quiet: true \}\);/,
-    "doSpawn closes the modal then opens the terminal quietly");
+  assert.match(spawnSrc, /closeSpawnModal\(s\); s\.ctx\.openTerminal\(ref, \{ quiet: true \}\);/,
+    "the local handoff closes the modal then opens the terminal quietly");
+  assert.match(spawnSrc, /closeSpawnModal\(s\);\n\s*s\.ctx\.openTerminal\(ref, \{ quiet: true \}\);\n\s*return \{ created: true \};/,
+    "the execution-server handoff closes the modal then opens the terminal quietly");
 });

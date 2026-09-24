@@ -173,26 +173,6 @@ test('attached launch/schedule and capability downgrade remain disabled in the i
   assert.ok([...u.doc.querySelectorAll('.soul-inspector [data-launch]')].every(el => el.disabled));
 });
 
-for (const outcome of ['success', 'rejection']) test(`cancelled Spawn ${outcome} cannot clear, unlock or navigate from a newer modal`, async t => {
-  const pending = deferred();
-  const u = await setup(t, { spawn: () => pending.promise });
-  launchSoul(u.doc); await tick();
-  const old = u.doc.querySelector('.spawn-dialog'); old.querySelector('.fspawn').click();
-  old.querySelector('.fcancel').click();
-  launchSoul(u.doc);
-  const current = u.doc.querySelector('.spawn-dialog'); current.querySelector('.ftask').value = 'current task';
-  if (outcome === 'success') pending.resolve({ instance: 'old-result' }); else pending.reject(new Error('old failure'));
-  await tick();
-  assert.equal(u.doc.querySelector('.spawn-dialog'), current);
-  assert.equal(current.querySelector('.ftask').value, 'current task');
-  assert.equal(current.querySelector('.fstatus').textContent, '');
-  assert.equal(current.querySelector('.fspawn').disabled, false);
-  assert.deepEqual(u.opens, []);
-  const before = u.calls.length;
-  old.querySelector('.fspawn').dispatchEvent(new u.dom.window.Event('click'));
-  await tick(); assert.equal(u.calls.length, before, 'old submit cannot apply its draft to the current selection');
-});
-
 for (const outcome of ['success', 'rejection']) test(`selected inspector ignores late ${outcome} after another soul is selected`, async t => {
   const old = deferred();
   const agents = [soul('/team/one/agents', 'old-soul'), soul('/team/two/agents', 'new-soul')];
