@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "owner": "2dab92c7-701d-4101-bc7f-09acf4fc374e",
+  "owns": [
+    "oats/oats-assistant"
+  ],
+  "reads": [
+    "oats/oats-expert",
+    "oats/oats-kernel-expert",
+    "oats/oats-desktop-expert",
+    "oats/market-research-expert"
+  ]
+}

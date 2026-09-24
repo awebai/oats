@@ -1,51 +1,44 @@
-schemaVersion: 1
-name: oats-development
+schemaVersion: 2
+name: oats
 
-# Membership is reciprocal discovery, not capability activation or enrollment.
-# Omitted revisions use the hosting provider's observed default branch; there is
-# no guessed main branch or circular future workspace/member commit pin.
+# The official OATS development workspace (workspace model v2). Every framework
+# repository is a member: it backlinks here with its own oats-membership.yaml, and
+# its souls/ and capabilities/ are discovered at its latest default-branch state.
+# The package repositories are ALSO package publishers; what they publish is
+# consumed only through `packages:` below (member and publisher never collapse).
 members:
-  - source: git:github.com/awebai/oats
-  - source: git:github.com/awebai/oats-dev
-  - source: git:github.com/awebai/oats-okf
-  - source: git:github.com/awebai/oats-aweb
-  - source: git:github.com/awebai/oats-authoring
-  - source: git:github.com/awebai/oats-jira
-  - source: git:github.com/awebai/oats-linear
+  - git:github.com/awebai/oats          # the host is a member too
+  - git:github.com/awebai/oats-dev
+  - git:github.com/awebai/oats-okf
+  - git:github.com/awebai/oats-aweb
+  - git:github.com/awebai/oats-authoring
+  - git:github.com/awebai/oats-jira
+  - git:github.com/awebai/oats-linear
 
+# The only versioned things. Bare versions resolve through the official catalog
+# (package-catalog.json in this repository); oats-lock.json records commit and
+# integrity, and executables are approved once per version.
+packages:
+  oats.framework: v1.1.3
+  oats.okf: v2.1.4
+  oats.aweb: v1.12.0
+  oats.jira: v1.0.0
+  oats.linear: v1.0.0
+  oats.authoring: v1.0.0
+  oats.dev: v1.0.0
+
+teams:
+  global: { description: The framework's expert souls and its package experts }
+
+# The framework's own souls consume the official core and knowledge provider as
+# packages, exactly as an adopter does.
 defaults:
+  capabilities:
+    oats.core: { from: package }
+  knowledge: { oats.okf: { from: package } }
   tasks: none
 
-# Messaging: every human operator gets their own private team (the accepted default
-# policy). Declaring it here is what lets a messaging-enabled edition normalize in
-# workspace context; it does not enroll anyone or name a team id.
-teams:
-  private: per-human
-
-# Imports pin the six framework soul editions exported by this same repository at the
-# reviewed revision that declares messaging teams and the per-human private policy. Importing is selection, not activation, enrollment or approval.
-imports:
-  - source: git:github.com/awebai/oats
-    soul: souls/oats-expert
-    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
-    alias: oats-expert
-  - source: git:github.com/awebai/oats
-    soul: souls/oats-kernel-expert
-    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
-    alias: oats-kernel-expert
-  - source: git:github.com/awebai/oats
-    soul: souls/oats-desktop-expert
-    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
-    alias: oats-desktop-expert
-  - source: git:github.com/awebai/oats
-    soul: souls/market-research-expert
-    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
-    alias: market-research-expert
-  - source: git:github.com/awebai/oats
-    soul: souls/oats-assistant
-    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
-    alias: oats-assistant
-  - source: git:github.com/awebai/oats
-    soul: souls/oats-setup-expert
-    revision: 7416d84e3ac364748b87fc06d4ae8c30c9490af5
-    alias: oats-setup-expert
+# The central knowledge base. Where the base sits inside the repository (and the
+# host state it needs) is the knowledge provider's binding, on each machine.
+stores:
+  oats: git:github.com/awebai/oats-knowledge

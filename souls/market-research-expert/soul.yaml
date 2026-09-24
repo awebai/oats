@@ -1,41 +1,6 @@
-schemaVersion: 1
+schemaVersion: 2
 name: market-research-expert
 description: "Dated attributable research, fair scoped comparisons and positioning evidence; no facts invented."
 work: directory
-requires:
-  capabilities:
-    oats.core:
-      # Day-to-day OATS operation (oats-operate, oats-souls). Explicit and removable;
-      # retained from this repository's oats-package at the same reviewed revision.
-      source: repo:oats-package
-  knowledge:
-    capability: oats.okf
-    source: git:github.com/awebai/oats-okf@v2.1.2#oats-package
-  messaging:
-    capability: oats.aweb
-    source: git:github.com/awebai/oats-aweb@v1.11.2#oats-package
-defaults:
-  tasks: none
-# Messaging declaration consumed by the selected provider: no wider team memberships
-# requested; the operator's private per-human team (workspace policy) is the only one.
-teams: []
-knowledge:
-  contract: oats.okf.locations
-  version: 1
-  payload:
-    owner: 2a073e37-2114-474d-917d-29cf3333932f
-    stores:
-      oats:
-        inherit: stores.oats
-    owns:
-      - node: market-research-expert
-        destination: oats
-    reads:
-      - store: oats
-        node: oats-expert
-      - store: oats
-        node: oats-kernel-expert
-      - store: oats
-        node: oats-desktop-expert
-      - store: oats
-        node: oats-assistant
+# oats.core and the oats.okf knowledge slot come from the workspace defaults.
+# What this soul owns and reads in the central base is okf.json beside this file.
