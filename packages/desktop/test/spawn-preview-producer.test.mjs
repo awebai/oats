@@ -1,4 +1,4 @@
-// Kernel spawn previews (test/fixtures/workspace-v2/f3, repo kernel 0.25.7 on a
+// Kernel spawn previews (test/fixtures/workspace-v2/f3, main's kernel 0.25.9 on a
 // scratch Northwind build) replayed as inert bytes through the real adapter
 // and boundary. The Desktop's argv must be the argv the kernel was captured with.
 import test from 'node:test';
@@ -27,9 +27,16 @@ const cases = {
   'preview-after-apply': ['release-manager', purpose('api-v2')],
   'preview-other': ['release-manager', purpose('docs')],
   'preview-race': ['release-manager', purpose('race')],
+  // spawn-name: exact names; invalid (uppercase) and a soul's name; taken by the same and by another soul
+  'preview-name': ['release-manager', { name: 'api-gateway' }],
+  'preview-name-early': ['release-manager', { name: 'api-gateway' }],
+  'preview-name-invalid': ['release-manager', { name: 'Api-Gateway' }],
+  'preview-name-soul': ['release-manager', { name: 'support-triager' }],
+  'preview-name-taken': ['release-manager', { name: 'api-gateway' }],
+  'preview-name-taken-other-soul': ['support-triager', { name: 'api-gateway' }],
 };
 test('every captured preview is replayed here', () => {
-  assert.equal(provenance.kernel, '0.25.7');
+  assert.equal(provenance.kernel, '0.25.9');
   assert.deepEqual(Object.keys(provenance.files).filter(name => name.startsWith('preview-')).sort(), Object.keys(cases).sort());
 });
 for (const [name, [soul, choices]] of Object.entries(cases)) test(`kernel preview through adapter/boundary: ${name}`, async () => {
@@ -71,4 +78,12 @@ test('kernel preview subject binding is byte-exact; canonicalization cannot excu
     const bad = structuredClone(raw); bad.subject[key] = bad.subject[key].replace('/fixture/', '/fixture/./');
     assert.equal(previewData(bad, target), null);
   }
+});
+test('spawn-name: the kernel names the instance exactly and refuses taken names across souls', () => {
+  assert.equal(kernel('preview-name').result.instance, 'api-gateway');
+  for (const name of ['preview-name-taken', 'preview-name-taken-other-soul']) {
+    const e = kernel(name).error;
+    assert.equal(e.code, 'E_INSTANCE_NAME_TAKEN'); assert.equal(e.details.instance, 'api-gateway');
+  }
+  for (const name of ['preview-name-invalid', 'preview-name-soul']) assert.equal(kernel(name).error.code, 'E_INSTANCE_NAME_INVALID');
 });

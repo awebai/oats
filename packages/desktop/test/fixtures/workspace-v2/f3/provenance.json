@@ -1,6 +1,6 @@
 {
-  "source": "oats-desktop-engineer for the Desktop F3 slice; test/fixtures/northwind/build.mjs; capture-f3.mjs",
-  "kernel": "0.25.7",
+  "source": "oats-desktop-engineer for the Desktop F3 slice (main: no package approval, spawn-name); test/fixtures/northwind/build.mjs; capture-f3-main.mjs",
+  "kernel": "0.25.9",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
@@ -15,9 +15,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "08facaac577f3d091b4678e158313eb44cf6792edd8e3b940fb0563bd4aa1188",
-      "fixtureSha256": "9ecdf60b16deb09536d3aa6bb581a2640e3e8a8922101d2906389f41b787932a"
+      "kernel": "0.25.9",
+      "sourceSha256": "e081767b1df124d5c90306da3e9f64d877f5ebb218b04b8c2c2cbffc4c04466f",
+      "fixtureSha256": "5d66c7c77dc5773e6df4408032f581fae923430c26077c19ad92ef2abbd96500"
     },
     "version": {
       "argv": [
@@ -26,9 +26,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "05508cda08d4bea51d092ac2d5e255f970af2b989c370771926078092042abea",
-      "fixtureSha256": "2fc8290fa329ae1075018e09502d58b651aa1a1ce0d6eadb4888f1c1e286b64f"
+      "kernel": "0.25.9",
+      "sourceSha256": "69cd34a1f56726a9cff879ab3d82bcb44a82852be13ea2557d132da93350aba2",
+      "fixtureSha256": "19964c034d4d5e721d01e91260a4dc2ffdebf4695aa3064bd8b45bfb33ed7922"
     },
     "preview-worktree-default": {
       "argv": [
@@ -43,9 +43,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "964b7e05a83ea9c397e46ccea47d5af2a3877ba23091b46a0d140455a24ebdfc",
-      "fixtureSha256": "782cbef889cf206c24d288e580a3c1a4f40939362bf1b56051d7864f780f23ee"
+      "kernel": "0.25.9",
+      "sourceSha256": "6ca969328d37782290e41301ec952b691581e08d952135128ce51d1c6356b89f",
+      "fixtureSha256": "7dcdf45cb25d6d31e8f518b1564f7be5e0da523efc648985fa456b32adf03bd1"
     },
     "preview-worktree-purpose": {
       "argv": [
@@ -62,9 +62,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "00d170f029f353559aaf40856af17183828c1ef02d5b12e74545f6bdf76f8d0a",
-      "fixtureSha256": "a461b526ecb83d916364ec8adcae897bbf3f1dde6405d9735d2bba888ed34a9d"
+      "kernel": "0.25.9",
+      "sourceSha256": "77b866fdc898f512fb5566943ad5d3087e66202a4aa5d3ed085ca733d5c9c1a3",
+      "fixtureSha256": "ddac838116a2350aed6223255cdc24a95852ce83669cc71f5f3c27cad35e3387"
     },
     "preview-runtime-claude": {
       "argv": [
@@ -85,9 +85,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "e7c70dda372b61ce611ebada22f965abb8ec4441984e54c3c590e10cdad96634",
-      "fixtureSha256": "66f3c72733d3a37261f974147f0099d9641a094cf6d1a7bc71aaa2e866bf10a0"
+      "kernel": "0.25.9",
+      "sourceSha256": "4c493fe8e537758b28ad0fd2814a4f2aa8afbaf9deaf33db23a85e9af5d9698e",
+      "fixtureSha256": "44e021a5b790f6b2befc806a6c070560db6cadfcb554cb1e38a9b6d8abe4a573"
     },
     "preview-native-default": {
       "argv": [
@@ -106,9 +106,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "85c39b0bb2174eda8f50b3e14feb0ebb470c7fc0dba13a00fe7c9d0b5c403184",
-      "fixtureSha256": "4f5248bb342db8ac325ec58ef10d3185d6e07f1e8dd755d349a300ec1e798e9f"
+      "kernel": "0.25.9",
+      "sourceSha256": "a86b21b164626f1c56cdc374f29b62435c89bf23f8bcedfbda6234b800787943",
+      "fixtureSha256": "359c0af569c8d0fe75baa7e35912bee267e40d0dd4e40ddeb5029ad0b0fc5edd"
     },
     "preview-yolo": {
       "argv": [
@@ -126,9 +126,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "20f43e8f21aad942da714167648337f49090b1737e61a43920464b8492f19af7",
-      "fixtureSha256": "9c7188ef0f7283e00fb25fb5dc352e37584e1ee86a5fbdb0fc0fb88b7c566ae9"
+      "kernel": "0.25.9",
+      "sourceSha256": "32c6b1c101d0c3dd1b737bbf09e6328ea57401f4eb4718f47e05471c21706de3",
+      "fixtureSha256": "ad8f5419d83b639c28718d1f3c2dd8810f06862f351c7b11298a256de5ccaa15"
     },
     "preview-branch-base": {
       "argv": [
@@ -149,9 +149,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "ad5ecce68a2876fc8f0281f9a799b0dde9e630f2e50c168b4063b912e226efdd",
-      "fixtureSha256": "2095a01f8e4f09c7e2174b0a3f6fdcd9b26641a3f30e79e7fa119af46aa2f06f"
+      "kernel": "0.25.9",
+      "sourceSha256": "2e4de6d8dae15b426a2cef5336c3f7bfd3f750c2685b9851dd339e5ecea12029",
+      "fixtureSha256": "7a3c5b5dd0a226385a18df19252fd889c7f1b660e1ffdd67e407e42f0b2c01a1"
     },
     "preview-base-unknown": {
       "argv": [
@@ -170,7 +170,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.7",
+      "kernel": "0.25.9",
       "sourceSha256": "c4ed2983ba5d09fb5f9b97d08b73b35d3eb459451737db0ce42e1911b8514c8c",
       "fixtureSha256": "109d0b22291030a165bc302bd2253a6bb8b6738e1eba8dbd54b6ec77a27231be"
     },
@@ -189,9 +189,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "67bc293084bc159182b84b2a581349de19cc6188a7e68a0b7697cb4b5818ca5e",
-      "fixtureSha256": "e132695f76fc67146bbe6917d0e832e30743c8b7eeb3185d71a37d6caa9d8f23"
+      "kernel": "0.25.9",
+      "sourceSha256": "2d0cc585972e00abf2143e4f252a4ed3869bb5642d7cc539b9fc2d51f35d9cd1",
+      "fixtureSha256": "b2a83ed2c353e118659b5313a81feebb08126a87d7d27b3b2cfb3e8f099ee69d"
     },
     "preview-checkout-as-worktree": {
       "argv": [
@@ -210,9 +210,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "35366dd48ae0097319e5432be2ef9ffbf66c95ea9040ff00aa2352fb09c5935c",
-      "fixtureSha256": "c16b134e470b19cb5f707074fafd53c21bbfab9bafcf3a594b6003fff83b2d9a"
+      "kernel": "0.25.9",
+      "sourceSha256": "910ba3edd614ad851a55a5aa5376a1adc42f9f07eed71619be6a46007923bb98",
+      "fixtureSha256": "4a8a5686759bc40a00c87a8d903b76f307d928d1b9b6fa1667f348911995cf33"
     },
     "preview-directory": {
       "argv": [
@@ -229,9 +229,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "df4b9da48ea63c7b1b99585eac779e22304c000ccf93e2aa71279aea5e6c7062",
-      "fixtureSha256": "a442661fad6c32f8320cf8b5912eb5b1d883614e9b2db98465151b2a3b906c99"
+      "kernel": "0.25.9",
+      "sourceSha256": "cf1878936cef30e656980179f946c607fc651735cbeb2f16724c0635b4d738f3",
+      "fixtureSha256": "dd156d08f8f54dfc94f1a890aac9e8167e0d7ecd855d67f39da3f18815ec251c"
     },
     "preview-soul-unknown": {
       "argv": [
@@ -246,7 +246,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.7",
+      "kernel": "0.25.9",
       "sourceSha256": "3f6e112130cd96bf28ef36006ae1521a7cb3bf366d11cbe5117dd8bb7fee5cf5",
       "fixtureSha256": "e6f185ef0087dabb13d361177395419e111f04557855b8017b5249e0c27ae3ad"
     },
@@ -265,7 +265,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.7",
+      "kernel": "0.25.9",
       "sourceSha256": "d1947b9707535338b5f3e3ae3c9414eecccb9e6d99c79cd6a0ceb5b1625549a5",
       "fixtureSha256": "2be7390cfb9b7d3766156c4d226d0caff3539282d4fbb6f450cc305d8eb2e32c"
     },
@@ -281,16 +281,16 @@
         "--purpose",
         "api-v2",
         "--expect-decision",
-        "1d2cb921550c142f516d8b6f",
+        "fb0144597d14b072219f1e81",
         "--idempotency-key",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "--no-launch",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "e2378278b3ce604594beac1a47b60d80211cf94ab279e99a3966e10a5c3fce75",
-      "fixtureSha256": "639a31bb7b2dfb9a7ba419470d09c3a18b71caf5a16f2b326599c5752d0ba2e3"
+      "kernel": "0.25.9",
+      "sourceSha256": "8485eb3ad118873afaca97a53cfb0a51699e9e5df5b408cbdf2dc210335b4c98",
+      "fixtureSha256": "b2ae4548c9cd5730b88425679467ce9c4018a93dba0e9b882f65a4a23b5f1b0b"
     },
     "apply-replayed": {
       "argv": [
@@ -304,16 +304,16 @@
         "--purpose",
         "api-v2",
         "--expect-decision",
-        "1d2cb921550c142f516d8b6f",
+        "fb0144597d14b072219f1e81",
         "--idempotency-key",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "--no-launch",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "46ef5a15384e1ca913c4c789cb1a06fd84bc473539128723143b9c0822ba333b",
-      "fixtureSha256": "10e12e25463175218f31e442d6ce2f6bca1d1e4cac323459e6b103854ff10ad3"
+      "kernel": "0.25.9",
+      "sourceSha256": "0ddf667379bf796574d5f5646078d3acc59b46722629ac9db3395082b14bdc9a",
+      "fixtureSha256": "98c11bc62e16331b6b429c445a56cadb0503617d913f0ce01056fae26f0db923"
     },
     "apply-stale": {
       "argv": [
@@ -327,16 +327,16 @@
         "--purpose",
         "api-v2",
         "--expect-decision",
-        "1d2cb921550c142f516d8b6f",
+        "fb0144597d14b072219f1e81",
         "--idempotency-key",
         "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "--no-launch",
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.7",
-      "sourceSha256": "d487170a80d52b5a0ffb78db4d0683859ae113ec25c60cb9bd49d0b0532d2861",
-      "fixtureSha256": "832b793bf189bbe1c4c8cca2cbcc3b934d3fb5e9c0ba381ffb08f3606a9e2886"
+      "kernel": "0.25.9",
+      "sourceSha256": "57626facd174d95ac8de4fe700d5185e043203f8b8581468314fea2fa870720a",
+      "fixtureSha256": "45020d1168d68429f2d8cb26f81cbf6afae8de7d901c99423400131faa024e82"
     },
     "preview-after-apply": {
       "argv": [
@@ -353,9 +353,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "9112ce3adadd5300e67fd8a6763d9ef3c27c2c82f7826beb20f27483f558ef1c",
-      "fixtureSha256": "c06fecd66d981464ade57c5cb82cc59b23a631b69035729eb41e0c36c131bcb8"
+      "kernel": "0.25.9",
+      "sourceSha256": "bcf35c4f90e30ae9d79859da8f40729fe672872a6e1a6b5961a91210318c2a2d",
+      "fixtureSha256": "c4ef6dfb5591f57ea13b126c5f450e049c81b0fce7a1daad92573b4206a7234d"
     },
     "preview-other": {
       "argv": [
@@ -372,9 +372,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "7ef0babc16a0569a53567419e9993b8c2c48f1e5fabc90e5304b0cacbbccc315",
-      "fixtureSha256": "0164d152073f253cf4cc0c8984b78e7123842ca5fa476570b8610b79f1726b34"
+      "kernel": "0.25.9",
+      "sourceSha256": "d669dc646d7210f548e2cc8eedd64843cb6a0c720c5bc6d0f7fb3be009080aeb",
+      "fixtureSha256": "8c29b2d14807152cd179007eafbade5fe774178c3ef713545b54021f7b47dabd"
     },
     "apply-idempotency-conflict": {
       "argv": [
@@ -388,16 +388,16 @@
         "--purpose",
         "docs",
         "--expect-decision",
-        "ef00a35852eb7aec3e704c35",
+        "4d85edf03f25c88300dbdf9f",
         "--idempotency-key",
         "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "--no-launch",
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.7",
-      "sourceSha256": "0e87107808bde7e71840bcd7ab1fa4b5efe09a5d817f6bd301c33d9c7f961245",
-      "fixtureSha256": "acf6bcd70feb7353ca0e0a9f1dd6b4a26ffcff27e2e6cf9b2a2a6171ae56c3ec"
+      "kernel": "0.25.9",
+      "sourceSha256": "c87a5f8b3f01e2d7cfcebeef16290c226073008230f2504d28c33da9ee41d3ab",
+      "fixtureSha256": "809ec828b73f66c0a6224f434b369e8c3a876bd67a100656954b26825468cb5e"
     },
     "preview-race": {
       "argv": [
@@ -414,9 +414,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "8e0de112cd504a391caa89369fffe08fa3a6798bff31a99020102a9ea797db6c",
-      "fixtureSha256": "e0c2901b2cc2617151ca7b720f2e6f4d6b8c0c35e71b173f07cc81e850ae9c4a"
+      "kernel": "0.25.9",
+      "sourceSha256": "0fc49d272e6436ffd1e16d9739dec1928579e713cfaa47caf54a8f2be7cd31f6",
+      "fixtureSha256": "de80700d089095f7043bdbd21307d671fb1eef336b49a130b8448e7f2f58165d"
     },
     "apply-concurrent-a": {
       "argv": [
@@ -430,16 +430,16 @@
         "--purpose",
         "race",
         "--expect-decision",
-        "ec001848d942f8ddbc2e6695",
+        "d882ebc0ad96de02aa3299e1",
         "--idempotency-key",
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         "--no-launch",
         "--json"
       ],
-      "exit": 1,
-      "kernel": "0.25.7",
-      "sourceSha256": "b3360dd376701f2189bd9f0791d7984c5b831350a2fe3594bd1584f8e9cfebad",
-      "fixtureSha256": "8e8d221ebd490e7b700a576f5f3d2ff63debd2bbd6489f902963de9cdf0b2166"
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "13c2a42e32fbf185c9f51f01cc2785b6edac180e95ab150ca944e87948a4855b",
+      "fixtureSha256": "dec8fd256cc158b2c75ec28b15fed2d861b95b3ec14fe340b0efe6d466545d3c"
     },
     "apply-concurrent-b": {
       "argv": [
@@ -453,16 +453,176 @@
         "--purpose",
         "race",
         "--expect-decision",
-        "ec001848d942f8ddbc2e6695",
+        "d882ebc0ad96de02aa3299e1",
         "--idempotency-key",
         "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "--no-launch",
         "--json"
       ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "b3360dd376701f2189bd9f0791d7984c5b831350a2fe3594bd1584f8e9cfebad",
+      "fixtureSha256": "8e8d221ebd490e7b700a576f5f3d2ff63debd2bbd6489f902963de9cdf0b2166"
+    },
+    "preview-name": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "api-gateway",
+        "--preview",
+        "--json"
+      ],
       "exit": 0,
-      "kernel": "0.25.7",
-      "sourceSha256": "3700d041e530f5c055ffdc0d72e3b69334a8ea61ac0bdcefcb0b0255451517de",
-      "fixtureSha256": "04738135aa6749a4b4b980168a6cc4d14df80d718f755011603ed56632380ca7"
+      "kernel": "0.25.9",
+      "sourceSha256": "c49b98147491ce1d7abffccc5e87733424c8d462d3720ba263fb781d6f84d91b",
+      "fixtureSha256": "a547e7d242808e958a29c38e947db7280c3b962cec3638ded2aa2ad9d0c170c4"
+    },
+    "preview-name-invalid": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "Api-Gateway",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "a7a8e07d9916198ba622735b17c58926195fffc6b5f715777bed2820372bf81b",
+      "fixtureSha256": "86ae71b84a35700628aae68b5b8e34027b4e3d2cae680ecef78236a8beeea7b8"
+    },
+    "preview-name-soul": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "support-triager",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "015872795cb1c102ccc5dec29a00a5df3c8ac377aecaa3a55f6d66afcfae2f72",
+      "fixtureSha256": "e1f58dd85d0c2a8e432d706ffbc6d3b647d2a1819f23564f5eaa64b0a2c06356"
+    },
+    "preview-name-early": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "api-gateway",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "1a41a0b4e4ddab3724bea8b8d9c912649c60d4822a1b94d8772ac8a77e8519c5",
+      "fixtureSha256": "f07a208d4302236f17da9f3e30d020d2694ba57241af5890a64f12e888440bb3"
+    },
+    "apply-name": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "api-gateway",
+        "--expect-decision",
+        "0a6afca030774a11eac6d930",
+        "--idempotency-key",
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "--no-launch",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "16feb3faa0cf56d6ee51ace3b82940191ef716dac6066c6fb0af9cbcef69b668",
+      "fixtureSha256": "426bf021e48a6743b19e7a100fe9c447c4ca117ba69072f205960f7882ce3484"
+    },
+    "preview-name-taken": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "api-gateway",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "813afab34795e06ae316238adcfdbc518df430267b7dd15d0054c6e4625bc0f6",
+      "fixtureSha256": "719a5d6b5b7f2ba0cfbc76f5bef467f5a71922b71e2fc16d04f5b5c04d8dd2a8"
+    },
+    "preview-name-taken-other-soul": {
+      "argv": [
+        "oats",
+        "spawn",
+        "support-triager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "api-gateway",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "813afab34795e06ae316238adcfdbc518df430267b7dd15d0054c6e4625bc0f6",
+      "fixtureSha256": "719a5d6b5b7f2ba0cfbc76f5bef467f5a71922b71e2fc16d04f5b5c04d8dd2a8"
+    },
+    "apply-name-taken": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--name",
+        "api-gateway",
+        "--expect-decision",
+        "0a6afca030774a11eac6d930",
+        "--idempotency-key",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "--no-launch",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "813afab34795e06ae316238adcfdbc518df430267b7dd15d0054c6e4625bc0f6",
+      "fixtureSha256": "719a5d6b5b7f2ba0cfbc76f5bef467f5a71922b71e2fc16d04f5b5c04d8dd2a8"
     }
   }
 }

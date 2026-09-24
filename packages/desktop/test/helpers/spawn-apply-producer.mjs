@@ -10,15 +10,18 @@ import { spawnApplyView } from '../../renderer/spawn-apply-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './spawn-preview-fixture.mjs';
 const provenance = JSON.parse(readFileSync(new URL('../fixtures/workspace-v2/f3/provenance.json', import.meta.url), 'utf8'));
 export const APPLY_CASES = {
-  'apply-bound': { preview: 'preview-worktree-purpose', purpose: 'api-v2' },
-  'apply-replayed': { preview: 'preview-worktree-purpose', purpose: 'api-v2', lostFirst: true },
-  'apply-stale': { preview: 'preview-worktree-purpose', purpose: 'api-v2' },
-  'apply-idempotency-conflict': { preview: 'preview-other', purpose: 'docs' },
-  'apply-concurrent-a': { preview: 'preview-race', purpose: 'race' },
-  'apply-concurrent-b': { preview: 'preview-race', purpose: 'race' },
+  'apply-bound': { preview: 'preview-worktree-purpose', choices: { purpose: 'api-v2' } },
+  'apply-replayed': { preview: 'preview-worktree-purpose', choices: { purpose: 'api-v2' }, lostFirst: true },
+  'apply-stale': { preview: 'preview-worktree-purpose', choices: { purpose: 'api-v2' } },
+  'apply-idempotency-conflict': { preview: 'preview-other', choices: { purpose: 'docs' } },
+  'apply-concurrent-a': { preview: 'preview-race', choices: { purpose: 'race' } },
+  'apply-concurrent-b': { preview: 'preview-race', choices: { purpose: 'race' } },
+  // spawn-name: an exact name, and the same name taken since an earlier preview
+  'apply-name': { preview: 'preview-name', choices: { name: 'api-gateway' } },
+  'apply-name-taken': { preview: 'preview-name-early', choices: { name: 'api-gateway' } },
 };
 export async function replayKernelApply(name) {
-  const { preview: previewName, purpose, lostFirst } = APPLY_CASES[name];
+  const { preview: previewName, choices, lostFirst } = APPLY_CASES[name];
   const raw = kernel(name), preview = kernel(previewName).result;
   const selector = { soul: 'release-manager', agentsRoot: ROOT }, target = { workspace: 'northwind', context: DEPLOYMENT, selector };
   const c = { workspace: { id: 'northwind', scope: DEPLOYMENT }, cli, agents: [{ name: 'release-manager', agentsRoot: ROOT, work: 'worktree' }], instances: [] };
@@ -37,7 +40,7 @@ export async function replayKernelApply(name) {
         else done(raw.ok ? null : { code: 1 }, JSON.stringify(raw));
       } });
   } });
-  const prepared = await broker({ action: 'prepare', selector, choices: { purpose }, task: 'inert fixture task' }, () => c);
+  const prepared = await broker({ action: 'prepare', selector, choices, task: 'inert fixture task' }, () => c);
   assert.equal(prepared.status, 'prepared'); assert.equal(commands, 0);
   let view = await broker({ action: 'apply', spawnRef: prepared.spawnRef }, () => c);
   if (lostFirst) {
@@ -48,7 +51,9 @@ export async function replayKernelApply(name) {
   // The Desktop's apply argv carries the same decision flags the kernel was captured with.
   const captured = provenance.files[name].argv, argv = argvs.at(-1);
   const value = (list, flag) => list[list.indexOf(flag) + 1];
-  for (const flag of ['--dir', '--agents-root', '--purpose']) assert.equal(value(argv, flag), value(captured, flag).replaceAll('<base>', '/fixture/base'), flag);
+  const nameFlag = choices.name ? '--name' : '--purpose';
+  assert.equal(argv.includes(choices.name ? '--purpose' : '--name'), false, 'exactly one naming flag');
+  for (const flag of ['--dir', '--agents-root', nameFlag]) assert.equal(value(argv, flag), value(captured, flag).replaceAll('<base>', '/fixture/base'), flag);
   assert.equal(value(argv, '--expect-decision'), value(captured, '--expect-decision'));
   assert.ok(argv.includes('--idempotency-key') && argv.includes('--task-file')); assert.equal(argv.includes('--preview'), false);
   assert.equal(removed, directories);

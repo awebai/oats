@@ -8,7 +8,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+          "commit": "8ada287b0783af9e721a7681c0265ec5197b5be0"
         },
         "layer": null,
         "private": false,
@@ -19,7 +19,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+          "commit": "8ada287b0783af9e721a7681c0265ec5197b5be0"
         },
         "layer": null,
         "private": false,
@@ -45,8 +45,8 @@
           "kind": "package",
           "package": "oats.okf",
           "version": "2.1.3",
-          "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
-          "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+          "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
+          "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
           "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
         },
         "layer": "knowledge",
@@ -55,8 +55,8 @@
       }
     ],
     "team": "engineering",
-    "resolution": "7bdd29b4f90f8bdda3e58c6a",
-    "declRevision": "2ed86abe4aaad0fbb699b4cc",
+    "resolution": "2f17c4decf24e6a2e8d3fc14",
+    "declRevision": "98bd22438c8ffd6d4a448c2c",
     "payloadRevision": "d8f4f11f42a78258a62603d4",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
@@ -88,7 +88,7 @@
       "branch": "agents/platform-reviewer-review",
       "base": {
         "ref": "HEAD",
-        "oid": "f0f9e59b35a6f19ccb680665a42d041da35c5101"
+        "oid": "3af6bdff21f5b200559dbbe2604dd096658547fa"
       },
       "effective": {
         "repo": "/fixture/base/northwind-workspace/platform",
@@ -109,13 +109,13 @@
           }
         }
       },
-      "resolution": "7bdd29b4f90f8bdda3e58c6a",
-      "revision": "d8116f9f4a323c7330ed19a7"
+      "resolution": "2f17c4decf24e6a2e8d3fc14",
+      "revision": "46d7b0fa40bf86bffab66ecb"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 60
+      "elapsedMs": 53
     },
     "backendStatus": {
       "name": "tmux",
@@ -130,7 +130,7 @@
     "branch": "agents/platform-reviewer-review",
     "base": {
       "ref": "HEAD",
-      "oid": "f0f9e59b35a6f19ccb680665a42d041da35c5101"
+      "oid": "3af6bdff21f5b200559dbbe2604dd096658547fa"
     },
     "worktree": "/fixture/base/northwind-workspace/agents/platform-reviewer/instances/platform-reviewer-review/work",
     "relation": null,
@@ -148,11 +148,11 @@
     "capabilities": [
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@8ada287b0783af9e721a7681c0265ec5197b5be0"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@cecd2b0d21a0fa34580f7449a32f919797b45bdd"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@8ada287b0783af9e721a7681c0265ec5197b5be0"
       },
       {
         "name": "oats.core",

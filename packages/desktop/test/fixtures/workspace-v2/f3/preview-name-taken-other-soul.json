@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_INSTANCE_NAME_TAKEN",
+    "message": "instance name \"api-gateway\" is taken in this deployment (/fixture/base/northwind-workspace/agents/release-manager/instances/api-gateway); instance names are unique across every soul — pick another --name",
+    "details": {
+      "instance": "api-gateway",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/api-gateway"
+    }
+  }
+}

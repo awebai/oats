@@ -38,10 +38,10 @@ test('the dialog shows what the kernel decided: name, runtime, model and work â€
   // The relationship is in the main form, not in Developer settings.
   assert.equal(advanced.contains(u.q('.spawn-relationship')), false);
   assert.equal(u.q('.spawn-seg input:checked').value, 'unrelated'); assert.equal(u.q('.frelto').hidden, true);
-  // Removed: capability toggles, K6 placeholders, the preview button, the prefix toggle without spawn-name.
+  // Removed: capability toggles, K6 placeholders, the preview button. The captured kernel advertises spawn-name.
   assert.doesNotMatch(dialog.textContent, /Attach knowledge|Allow child spawns|Open PR|Available after|Preview invocation|Force native|capabilit/i);
   assert.equal(dialog.querySelectorAll('input[type=checkbox]:not(.fworktree):not(.fprefix):not(.fwake-enabled)').length, 0);
-  assert.equal(u.q('.spawn-prefix-toggle').hidden, true);
+  assert.equal(u.q('.spawn-prefix-toggle').hidden, false);
   assert.equal(u.q('.fspawn').disabled, false); assert.equal(u.q('.fspawn').hidden, false, 'the shell must not rewrite the Spawn button');
   assert.equal(u.q('.fspawn').textContent, 'Spawn'); assert.ok(u.q('.fspawn').dataset.chord);
   assert.equal(u.previews().length, 1); assert.equal(u.spawns().length, 0, 'opening never prepares or applies');
@@ -293,17 +293,19 @@ test('choosing another soul keeps the typed name and instruction', async t => {
 });
 
 test('the soul-name prefix toggle is offered only with spawn-name; off sends --name, and a name refusal shows at the field', async t => {
-  // No 0.25.9 capture yet: the refusal below is the documented shape (maintainer 270529f0), replaced by a capture when it ships.
-  const withName = { ...structuredClone(CLI), features: [...CLI.features, 'spawn-name'] };
-  const u = await mountSpawn(t, { cli: withName,
-    kernel: (_c, { choices }) => choices.name === 'release-bot' ? { schemaVersion: 1, ok: false, error: { code: 'E_INSTANCE_NAME_TAKEN', message: 'instance "release-bot" already exists in this deployment' } } : kernel('preview-worktree-default') });
+  const older = await mountSpawn(t, { cli: { ...structuredClone(CLI), features: CLI.features.filter(f => f !== 'spawn-name') } });
+  await older.open();
+  assert.equal(older.q('.spawn-prefix-toggle').hidden, true, 'a kernel without spawn-name never gets --name');
+  older.q('.fcancel')?.click(); await settle(20);
+  // The kernel's own refusal of a name taken in the deployment (f3 capture, spawn-name).
+  const u = await mountSpawn(t, { kernel: (_c, { choices }) => choices.name === 'api-gateway' ? kernel('preview-name-taken') : kernel('preview-worktree-default') });
   await u.open();
   assert.equal(u.q('.spawn-prefix-toggle').hidden, false); assert.equal(u.q('.fprefix').checked, true);
   await u.change('.fprefix', false);
   assert.ok(u.q('.spawn-name-input').classList.contains('unprefixed'));
   assert.match(u.text('.spawn-name-result'), /Type the instance name/);
-  await u.type('.fpurpose', 'release-bot');
-  assert.deepEqual(last(u), { name: 'release-bot', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
+  await u.type('.fpurpose', 'api-gateway');
+  assert.deepEqual(last(u), { name: 'api-gateway', model: { kind: 'inherit' }, relation: { kind: 'unrelated' } });
   assert.equal(u.text('.spawn-name-result'), 'An instance with this name already exists. Choose another name.');
   assert.equal(u.text('.fstatus'), '', 'said once, next to the name');
   assert.ok(u.q('.spawn-name-result').classList.contains('err')); assert.equal(u.q('.fspawn').disabled, true);

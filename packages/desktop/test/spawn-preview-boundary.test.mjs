@@ -113,7 +113,9 @@ test('projection rejects API1, wrong echoes and inconsistent decisions; drops ta
 // `--name <slug>` (kernel 0.25.9, feature spawn-name): the exact instance
 // name without the soul prefix. Admitted only when the CLI advertises it;
 // the boundary checks shape only — naming rules are the kernel's (E_INSTANCE_NAME_INVALID).
-const named = () => { const c = context(); c.cli = { ...c.cli, features: [...c.cli.features, 'spawn-name'] }; return c; };
+// The captured kernel advertises spawn-name; `older` withholds it.
+const named = () => { const c = context(); assert.ok(c.cli.features.includes('spawn-name')); return c; };
+const older = () => { const c = context(); c.cli = { ...c.cli, features: c.cli.features.filter(f => f !== 'spawn-name') }; return c; };
 test('name is sent as --name, exactly, only when the CLI advertises spawn-name', async () => {
   let argv;
   const read = createSpawnPreviewBoundary({ invoke: (cli, args) => cliSpawnPreview(cli, args, { exec: (bin, a, opts, callback) => {
@@ -123,7 +125,7 @@ test('name is sent as --name, exactly, only when the CLI advertises spawn-name',
   assert.deepEqual(argv.slice(argv.indexOf('--preview') + 1, argv.indexOf('--preview') + 3), ['--name', 'api-v2']);
   assert.equal(argv.includes('--purpose'), false);
   let calls = 0;
-  const old = await createSpawnPreviewBoundary({ invoke: () => { calls++; return envelope(data()); } })(request({ name: 'api-v2' }), context);
+  const old = await createSpawnPreviewBoundary({ invoke: () => { calls++; return envelope(data()); } })(request({ name: 'api-v2' }), older);
   assert.equal(old.reason.code, 'E_UNSUPPORTED_OPTION'); assert.equal(calls, 0, 'an older kernel would treat it as an unknown flag');
 });
 for (const choices of [{ name: 'api-v2', purpose: 'api-v2' }, { name: '../x' }, { name: '--preview' }, { name: '' }, { name: 7 }])

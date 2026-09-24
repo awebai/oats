@@ -146,7 +146,8 @@ Malformed/mismatched receipts, transport loss and ambiguous post-dispatch failur
 are **unknown**, not permission for a fresh spawn/key. A timeout does not prove
 rollback or stop an already launched agent.
 
-- `E_DECISION_STALE`, `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`: consume the
+- `E_DECISION_STALE`, `E_IDEMPOTENCY_CONFLICT`, `E_PLACEMENT_TAKEN`,
+  `E_INSTANCE_NAME_TAKEN` (an explicit `--name` taken since the preview): consume the
   attempt; any fresh decision/home is advisory. Full new review and explicit new
   confirmation are required. Never auto-suffix, change original refs or auto-apply.
 - `E_SPAWN_INCOMPLETE`: a keyed home is recorded but launch/lineage completion is
