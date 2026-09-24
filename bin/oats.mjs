@@ -774,6 +774,9 @@ async function workspaceTarget(bail, { command }) {
     if (!meta || typeof meta.modules !== "object" || meta.modules === null) return null;
     if (soulFlag && soulFlag !== meta.agent) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
     const deployment = dirname(dirname(dirname(dirname(realOrResolved(homeFlag)))));
+    // A v2 home lives at <deployment>/agents/<soul>/instances/<name>: its deployment is
+    // derived, so it must hold oats-local.yaml EXACTLY there (never found by walking up).
+    if (!existsSync(join(deployment, "oats-local.yaml"))) return bail("E_HOME_MISMATCH", `${homeFlag} is not at <deployment>/agents/<soul>/instances/<name>: ${deployment} has no oats-local.yaml`, { home: homeFlag, expected: join(deployment, "oats-local.yaml") });
     if (flag("dir") !== undefined) { let given = null; try { given = dirname(loadLocal(dirFlag()).path); } catch { given = dirFlag(); } if (realOrResolved(given) !== realOrResolved(deployment)) return bail("E_HOME_MISMATCH", `--dir ${dirFlag()} is not the deployment of ${homeFlag} (${deployment}); omit --dir for a home`); }
     if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_HOME_MISMATCH", `--agents-root ${rootFlag} is not the agents root of ${homeFlag}`);
     return homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness" });
@@ -2457,6 +2460,10 @@ async function spawnCmd() {
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
   let root;
+  // Workspace model: the agents root is <deployment>/agents. An ambient root (the
+  // invoking agent's own PI_AGENTS_ROOT / OATS_ROOT) never redirects a v2 spawn —
+  // a home outside <deployment>/agents would have no derivable deployment.
+  try { loadLocal(dirFlag()); delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_ROOT; } catch { /* not a workspace deployment: classic root rules */ }
   try { root = ensureRoot(dirFlag()); }
   catch (e) { bail("E_NO_DEPLOYMENT", e.message || e); throw e; }
   const isPreview = args.includes("--preview");
@@ -3435,7 +3442,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);

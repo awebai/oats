@@ -53,8 +53,10 @@ no progress prose (progress goes to stderr):
 On a workspace deployment (an `oats-local.yaml` in reach of `--dir`), and for
 any home whose `instance.json` records `modules`, these three commands read the
 workspace model's own records and **never the classic config chain**. The probe
-integers are the gate; there is no feature string. Gate each view on its
-integer, exactly:
+integers are the gate; there is no feature string. The probe's integer says
+this kernel CAN answer the v2 shape. **Dispatch on the payload's own integer**:
+a classic scope (no `oats-local.yaml`) still answers the v1 shapes until the
+classic chain is removed.
 
 | Command | Integer (probe and payload) | 0.25.x value |
 |---|---|---|
@@ -76,6 +78,11 @@ scope-wide lists.
   under `<home>/.oats/modules/`. Everything is as spawned.
 - `--soul` selects the soul, resolved exactly as a spawn of it would be:
   discovery, then soul `capabilities:` plus workspace defaults, then the lock.
+- A v2 home lives at `<deployment>/agents/<soul>/instances/<name>`, and its
+  deployment is derived from that path. `<deployment>/oats-local.yaml` must
+  exist exactly there (never found by walking up), otherwise
+  `E_HOME_MISMATCH`. A v2 spawn ignores an ambient `PI_AGENTS_ROOT` /
+  `OATS_ROOT`, so its homes always have this layout.
 - `--dir`, if given with `--home`, must be that home's deployment
   (`E_HOME_MISMATCH`). `--agents-root`, if given, must be
   `<deployment>/agents` (`E_HOME_MISMATCH` with `--home`, `E_SOUL_UNKNOWN`
@@ -219,9 +226,19 @@ not-applicable, and at least one required item exists. `byCapability` and
 - **`providers`** (producer `provider binding check`): for each module whose
   manifest declares `binding`, the kernel runs the provider's own check
   (`binding.check`). It relays **the provider's answer verbatim** as
-  `item.result: {status: "ready" | "needs-configuration", problems: [{code,
-  message}], warnings: [{code, message}]}`. `ready` maps to `pass`;
-  `needs-configuration` maps to `fail` (reason = the first problem's message).
+  `item.result: {status, problems: [{code, message}], warnings: [{code,
+  message}]}`. The status maps to the item:
+
+  | `result.status` | item `status` |
+  |---|---|
+  | `ready` | `pass` |
+  | `needs-configuration` | `fail` |
+  | `authorization-required` | `fail` |
+  | `unavailable` | `unknown` |
+
+  The reason is the first problem's message (`null` on pass).
+  `authorization-required` and `unavailable` were added in 0.26.0 (additive):
+  treat an unrecognized status as `unknown` and show `result` as sent.
   - `warnings` is always present (`[]` when the provider sends none). It
     **never changes the status** and is not counted in `summary`. A ready
     binding can still say, for example, that end-to-end encryption is off:
@@ -229,12 +246,21 @@ not-applicable, and at least one required item exists. `byCapability` and
     message}` strings makes the whole answer `unknown`, the same as a
     malformed `problems`.
   - A provider that cannot answer is `unknown`, with `item.problems` carrying
-    its error `{code, message}` and `result: null`. That covers a refusal
-    (`ok:false`, whose code is relayed), an invalid answer, a timeout (30 s),
-    or a module tree that cannot be made available.
-  - For `--home` the check runs from the home's module copy. For `--soul` it
-    runs from the module fetched into the deployment's module store (the tree
-    `oats <ns> …` dispatch uses).
+    its error `{code, message}` and `result: null`. That covers:
+    - a refusal (`ok:false`, whose code is relayed);
+    - an invalid answer (`provider-unavailable`, see the wire below);
+    - a timeout;
+    - a module tree that cannot be made available.
+  - **One time budget per readiness read**: 60 s for all provider checks
+    together, and at most 30 s for each. Checks the budget does not reach are
+    not run; they are `unknown` with code `time-budget-exhausted`.
+  - For `--home` the check runs from the home's module copy, as the home's
+    hooks do. For `--soul` it runs from the module in the deployment's module
+    store (the tree `oats <ns> …` dispatch uses). A store tree is used only
+    while its content digest matches the digest verified when it was fetched
+    at the locked commit. A drifted tree is fetched again, and a fetch that
+    does not verify is `E_PACKAGE_INTEGRITY` (the item is `unknown` with that
+    code).
   - A module without `binding` has no item; the check is `not-applicable`
     when there are none.
   - This check reads the provider; it does not bind. A spawn's fail-closed
@@ -272,11 +298,24 @@ on stdout:
 The environment is the provider's module environment:
 - `OATS_CAPABILITY`, `OATS_SETTINGS`, `OATS_CLI_BIN` and `OATS_WORKSPACE`;
 - the team variables (`OATS_TEAM_*`, `OATS_WORKSPACE_NAME`/`_KEY`);
-- for a home, `OATS_INSTANCE`, `OATS_INSTANCE_HOME`, `OATS_AGENT` and
-  `OATS_SOUL`.
+- `OATS_AGENT` (the soul), and `OATS_SOUL` when the soul directory is known;
+- for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
+
+For a home, `OATS_WORKSPACE_NAME` is `""` until spawn records the workspace
+name (planned).
 
 Ambient `OATS_*`/`PI_*` is removed. For a soul, `instance` and `home` are
-`null`. `result.warnings` is optional in the answer. The check executable must
+`null`. The answer is decoded by the binding wire's response rules:
+- the process exits 0;
+- stdout is exactly one JSON document within the wire limits;
+- the envelope has exactly `schemaVersion`, `phase`, `slot`, `capability`,
+  `ok` and `result` (or `error`), echoing the request's first four;
+- `result` has `status`, `problems` and optionally `warnings`, and nothing else;
+- `ready` carries no problems;
+- problems and warnings are `{code, message}` strings. Their codes are the
+  provider's own and are not checked against `binding.reasons`.
+
+Anything else is `unknown` (`provider-unavailable`). The check executable must
 resolve (realpath) inside its module directory and be a regular file; otherwise
 the item is `unknown` (`resource-not-found`). The request carries no captured
 `binding`. A provider whose check
@@ -873,7 +912,8 @@ the UI says so.
   interpretation.
 - **`--agents-root <abs>`** is accepted with `--soul` (and with `--home`), as
   inspect takes it — pin the exact root you admitted.
-- **Signature verification (feature `readiness-verify`)**: `--verify-signatures`
+- **Signature verification (feature `readiness-verify`, no longer advertised
+  from 0.26.0; the classic flag is removed with the classic chain)**: `--verify-signatures`
   is bounded custody — **one total budget per readiness read** (120 s default)
   shared by every capability's fetch and verify (an exhausted budget refuses the
   remaining capabilities with `budget-exhausted`, no fetch), each Git child in

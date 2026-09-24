@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
@@ -105,6 +105,16 @@ test("inspect / readiness / operation run over the workspace model: instance and
     assert.deepEqual(p2.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "setting state-dir is required (absolute host path)" }], warnings: [] });
     assert.equal(p2.status, "fail"); assert.equal(rd.summary.ready, false);
 
+    // ---- a drifted module-store tree is never run: readiness --soul re-materializes it ----
+    const store = join(dep, ".oats", "modules", readdirSync(join(dep, ".oats", "modules")).find((n) => n.startsWith("oats.okf@")));
+    const checkBin = join(store, "bin", "oats-okf.mjs");
+    const locked = readFileSync(checkBin, "utf8");
+    writeFileSync(checkBin, locked.replace('const [cmd = "help", ...rest] = process.argv.slice(2);', `const [cmd = "help", ...rest] = process.argv.slice(2);
+if (cmd === "binding-check") { process.stdout.write(JSON.stringify({ schemaVersion: 1, phase: "check", slot: "knowledge", capability: "oats.okf", ok: true, result: { status: "ready", problems: [] } }) + "\\n"); process.exit(0); }`));
+    rd = ok(run("readiness", "--soul", "release-manager", "--dir", dep), "readiness --soul over a tampered store");
+    assert.equal(rd.checks.providers.items.find((i) => i.subject === "oats.okf").result.status, "needs-configuration", "the tampered check did not run");
+    assert.equal(readFileSync(checkBin, "utf8"), locked, "the store tree was re-materialized from the lock");
+
     // ---- --policy is kept; no subject → refused ----
     rd = ok(run("readiness", "--home", home, "--policy"), "readiness --policy");
     assert.equal(rd.policy.childSpawns.enforced, true);
@@ -136,6 +146,19 @@ test("inspect / readiness / operation run over the workspace model: instance and
     assert.equal(rd.checks.member.items[0].required, false);
     assert.equal(ok(run("readiness", "--soul", "security-reviewer", "--dir", dep), "readiness --soul (external)").checks.member.status, "not-applicable");
     assert.equal(ok(run("inspect", "--home", ext), "inspect --home (external)").souls[0].kind, null, "the kind is not observed without discovery");
+
+    // ---- a v2 spawn ignores an ambient agents root; a home outside <deployment>/agents is refused ----
+    const other = join(base, "other", "agents"); mkdirSync(other, { recursive: true });
+    const amb = ok(oats(["spawn", "release-manager", "--dir", dep, "--purpose", "amb", "--work", "directory", "--no-launch", "--provider", "oats.okf", "state-dir=/tmp/x", "--json"],
+      { cwd: dep, env: { ...env, PI_AGENTS_ROOT: other, OATS_ROOT: other }, base }), "spawn under an ambient root").home;
+    assert.ok(amb.startsWith(join(agentsRoot, "release-manager", "instances") + "/"), `the home is under the deployment's agents root: ${amb}`);
+    const stray = join(base, "elsewhere", "agents", "release-manager", "instances", "release-manager-amb");
+    cpSync(amb, stray, { recursive: true });
+    for (const cmd of ["inspect", "readiness"]) {
+      const e = refused(run(cmd, "--home", stray), "E_HOME_MISMATCH", `${cmd} --home outside <deployment>/agents`);
+      assert.match(e.message, /has no oats-local\.yaml/);
+    }
+    refused(run("operation", "run", "knowledge:status", "--home", stray), "E_HOME_MISMATCH", "operation run --home outside <deployment>/agents");
 
     // ---- a home without its module copies never falls through to a classic chain ----
     const extModules = join(ext, ".oats", "modules");
