@@ -121,15 +121,20 @@ for, never named by convention — decision 9) is the acceptance: `oats onboard`
 Each package repo carries `souls/oats-<pkg>-expert` (oats-okf-expert,
 oats-aweb-expert, oats-jira-expert, oats-linear-expert, oats-authoring-expert,
 oats-dev-expert), the expert in that package, with a node in the central base
-from day one. **Messaging (lead, 2026-09-24):** there is no workspace-wide messaging
-default, because it would mint a real identity on every spawn, helpers and
-acceptance runs included. Every soul that is *addressed by mail* declares it
-itself, `capabilities: { oats.aweb: { from: package } }` (a slot is filled
-through `capabilities:` by the manifest's `layer`; a top-level `messaging:`
-object is only the provider payload): the coordinating
-experts (`oats-expert`, `oats-operator-expert`, `integrations-expert`) and all
-six package experts, which own their repository's PRs and receive review asks.
-Short-lived helpers do not.
+from day one. **Messaging (human, 2026-09-24; supersedes the lead's per-soul rule):**
+`oats.aweb` is the workspace's messaging **default**
+(`defaults.messaging: { oats.aweb: { from: package } }`, oats#140); a soul
+without messaging says `messaging: none`. The human calls it "the most
+important capability, and most workspaces will use it as default", so the
+provider must work well as a default. Open items (oats.aweb unless noted):
+an unconfigured default must not make every soul unspawnable (onboarding sets
+the messaging root before the first spawn, and/or an unconfigured provider
+reports what is missing instead of refusing); error texts and `setup` must stop
+pointing at `oats-config.yaml`; the deployment names its messaging root
+explicitly rather than by search; `aw mail` usable from `work/`; retired aliases
+reusable. Kernel (lead): in v2 the team scope is the deployment directory and
+the team id comes from the messaging payload, not the classic `team:` block.
+#140 merges together with the first answer to the unspawnable-default item.
 **Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
 it matches the repository names and the roster's `oats-kernel-`/`oats-desktop-`/
 `oats-operator-expert`, and it keeps instance aliases from colliding with the
