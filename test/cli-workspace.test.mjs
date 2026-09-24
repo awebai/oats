@@ -259,10 +259,10 @@ test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
-test("removed 0.24 verbs are unknown commands: install / use / init / trust / list / catalog / remove / migrate / inject exit nonzero and name the v2 replacement", () => {
+test("removed 0.24 verbs are unknown commands: install / use / init / trust / list / catalog / remove / migrate / inject / create exit nonzero and name the v2 replacement", () => {
   const base = fixtureBase();
   try {
-    for (const verb of ["install", "use", "init", "trust", "list", "catalog", "remove", "migrate", "config", "inject"]) {
+    for (const verb of ["install", "use", "init", "trust", "list", "catalog", "remove", "migrate", "config", "inject", "create"]) {
       let r = oats([verb], { cwd: base, base });
       assert.notEqual(r.status, 0, `${verb} must fail`);
       assert.match(r.stderr, new RegExp(`unknown command "${verb}" — removed by the workspace model v2`), `${verb}: ${r.stderr}`);
@@ -278,6 +278,10 @@ test("removed 0.24 verbs are unknown commands: install / use / init / trust / li
     assert.equal(inj.status, 1); assert.equal(envelope(inj).error.code, "E_UNKNOWN_COMMAND");
     assert.match(envelope(inj).error.details.replacement, /injection overrides are not part of the workspace model yet/);
     assert.doesNotMatch(oats(["--help"], { cwd: base, base }).stdout, /oats inject/, "usage no longer lists inject");
+    // `oats create` wrote souls under agents/ or local-agents/; a soul is now a member repository's souls/<name>.
+    const created = envelope(oats(["create", "helper", "--local", "--json"], { cwd: base, base }));
+    assert.match(created.error.details.replacement, /souls\/<name>\/soul\.yaml \+ AGENTS\.md in a member repository, then `oats sync`/);
+    assert.doesNotMatch(oats(["--help"], { cwd: base, base }).stdout, /oats create/, "usage no longer lists create");
     // `oats install` with what used to be a source argument is equally gone.
     const r = oats(["install", "oats.okf", "--json"], { cwd: base, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_UNKNOWN_COMMAND");

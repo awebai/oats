@@ -35,11 +35,8 @@ instances/dev-owner/work/.git
 instances/dev-owner/work/.gitignore
 instances/dev-owner/work/README.md
 soul/
-soul/.oats-scaffold-owners.json
 soul/AGENTS.md
 soul/CLAUDE.md -> AGENTS.md
-soul/knowledge/
-soul/knowledge/index.md
 soul/soul.yaml
 
 # git worktree list --porcelain

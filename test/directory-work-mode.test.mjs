@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { acquirePackage, approveCapability, createAgent, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance, startInstanceSession } from "../lib/core.mjs";
+import { acquirePackage, approveCapability, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance, startInstanceSession } from "../lib/core.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const HOST_PATH = process.env.PATH;
@@ -97,12 +97,11 @@ test("actual core spawn: directory mode has no Git dependency, canonical composi
 test("package-only non-Git configured workspace is discoverable and CLI-spawnable before local directories exist", (t) => {
   const f = fixture(t, { packaged: true });
   assert.equal(existsSync(f.root), false);
-  assert.equal(existsSync(join(f.context, "local-agents")), false);
   assert.equal(ensureRoot(f.context), f.root);
   assert.equal(listCapabilityAgents(f.context)[0].name, "worker");
   const result = cliSpawn(f);
   assert.equal(result.work, "directory");
-  assert.equal(result.home, join(f.context, "local-agents", "worker", "instances", "worker-cli"));
+  assert.equal(result.home, join(f.root, "worker", "instances", "worker-cli"));
   assert.throws(() => lstatSync(join(result.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
   assert.equal(JSON.parse(readFileSync(join(result.home, "instance.json"), "utf8")).soulDir, f.soul);
   const status = cli(f, ["status"]);
@@ -273,10 +272,8 @@ test("directory mode never uses worktree setup or disposable exemptions", (t) =>
   assert.equal(readFileSync(join(retired.workRecovery.path, "work", "cache", "authored"), "utf8"), "keep");
 });
 
-test("directory souls can be created with non-Git context without weakening other modes", (t) => {
+test("a non-Git context does not weaken the Git work modes", (t) => {
   const f = fixture(t);
-  const created = createAgent(f.root, { name: "new-worker", work: "directory", repo: ".", runtime: "claude" });
-  assert.equal(existsSync(join(created.soul, "soul.yaml")), true);
   for (const work of ["checkout", "worktree", "attached", "workspace"]) {
     assert.throws(() => f.spawn(`not-${work}`, { work, repo: ".", ...(work === "attached" ? { workDir: f.context } : {}) }), /not a git repo/);
   }
@@ -401,15 +398,6 @@ test("unsupported filesystem entries fail retirement closed, even with force", (
   execFileSync("mkfifo", [join(result.home, "work", "pipe")], { env: { ...process.env, PATH: HOST_PATH } });
   assert.throws(() => retireInstance(f.root, result.instance, { force: true }), (e) => e.code === "E_WORK_INSPECTION_FAILED");
   assert.equal(readFileSync(join(result.home, "work", "authored"), "utf8"), "keep");
-});
-
-test("explicit contradictory directory CLI options cannot upsert a local soul", (t) => {
-  const f = fixture(t);
-  const instructions = join(f.base, "instructions.md"); write(instructions, "# Local instructions\n");
-  const result = cli(f, ["spawn", "new-local", "--instructions-file", instructions, "--work", "directory", "--branch", "main", "--no-launch"]);
-  assert.notEqual(result.status, 0);
-  assert.equal(JSON.parse(result.stdout).error.code, "E_BAD_ARGS");
-  assert.equal(existsSync(join(f.context, "local-agents")), false);
 });
 
 test("directory mode is runtime-neutral and records the frozen no-launch recipe for every supported runtime", (t) => {

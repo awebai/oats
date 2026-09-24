@@ -256,7 +256,7 @@
       "items": {
         "type": "string"
       },
-      "description": "Package-relative soul directories (soul.yaml + AGENTS.md) \u2014 capability-defined agents; they resolve like local souls where the capability is active, souls stay read-only in the package, instances home under the scope's local-agents/."
+      "description": "Package-relative soul directories (soul.yaml + AGENTS.md) \u2014 capability-defined agents; they resolve where the capability is active, souls stay read-only in the package, instances home under <deployment>/agents/<agent>/instances/."
     },
     "settings": {
       "type": "object",

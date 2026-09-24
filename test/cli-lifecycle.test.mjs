@@ -90,7 +90,7 @@ test("a valueless --dir is refused by the roster commands too, before any scaffo
   const base = temp();
   const s = scope(base);
   const before = snapshot(s);
-  for (const argv of [["status"], ["spawn", "someone"], ["retire", "someone"], ["create", "someone"]]) {
+  for (const argv of [["status"], ["spawn", "someone"], ["retire", "someone"]]) {
     const r = cli([...argv, "--dir"], { cwd: s });
     assert.notEqual(r.status, 0, `${argv[0]} accepted a valueless --dir`);
   }

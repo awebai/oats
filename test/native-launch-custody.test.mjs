@@ -4,7 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { acquirePackage, approveCapability, createAgent, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance, startInstanceSession, restartInstanceSession, launchEnvExports } from "../lib/core.mjs";
+import { acquirePackage, approveCapability, ensureRoot, findAgent, findCapabilityAgent, findRoot, listCapabilityAgents, listInstances, resolveWorkMode, retireInstance, spawnInstance, startInstanceSession, restartInstanceSession, launchEnvExports } from "../lib/core.mjs";
 
 import { HERDR_PROTOCOL } from "../lib/herdr.mjs";
 import { nativeHistoryPath, historicalSessionRoots } from "../packages/record/lib/native-history.mjs";

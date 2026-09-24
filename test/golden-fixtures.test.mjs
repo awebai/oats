@@ -155,7 +155,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
@@ -236,8 +236,8 @@ const write = (path, content, mode) => {
 const HERMETIC_HOME = mkdtempSync(join(tmpdir(), "oats-golden-home-"));
 const BASES = [];
 
-/** The stub knowledge capability: a knowledge layer with a soul-scaffold hook
- *  (soul/knowledge/index.md), a spawn hook (STATE.md + notes/ in the home), an
+/** The stub knowledge capability: a knowledge layer with a spawn hook
+ *  (STATE.md + notes/ in the home), an
  *  injection block and one skill. Deliberately NOT oats-okf. */
 function knowledgeCapability(scope) {
   const dir = join(scope, ".agents", "capabilities", "owned", "golden-knowledge");
@@ -249,19 +249,10 @@ function knowledgeCapability(scope) {
     layer: "knowledge",
     skills: ["skills"],
     inject: "inject.md",
-    hooks: { "soul-scaffold": "hooks/scaffold.mjs", spawn: "hooks/spawn.mjs" },
+    hooks: { spawn: "hooks/spawn.mjs" },
   }, null, 2)}\n`);
   write(join(dir, "inject.md"), "## Knowledge (stub)\n\nYour durable knowledge is at `soul/knowledge/index.md`.\nYour working state for this instance is `STATE.md` and `notes/`.\n");
   write(join(dir, "skills", "golden-knowledge", "SKILL.md"), "---\nname: golden-knowledge\ndescription: Read and write the stub knowledge base.\n---\n\n# Stub knowledge skill\n\nRead `soul/knowledge/index.md`.\n");
-  write(join(dir, "hooks", "scaffold.mjs"), `#!/usr/bin/env node
-// soul-scaffold: create the soul-side knowledge tree exactly once.
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-const soul = process.env.OATS_SOUL;
-mkdirSync(join(soul, "knowledge"), { recursive: true });
-writeFileSync(join(soul, "knowledge", "index.md"), "# Knowledge index\\n");
-console.log(JSON.stringify({ meta: { scaffolded: ["knowledge/index.md"] } }));
-`);
   write(join(dir, "hooks", "spawn.mjs"), `#!/usr/bin/env node
 // spawn: this instance's own working state, inside the instance home.
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -322,8 +313,7 @@ console.log(JSON.stringify({
  *   <base>/scope/oats-config.yaml     team: block + the case's layer activations
  *   <base>/scope/.agents/capabilities/owned/…   the stub capabilities
  *   <base>/scope/repo/                the soul's git repo (branch `main`)
- *   <base>/scope/agents/dev/soul/     the soul, created through `oats create`
- *                                     so the soul-scaffold hook really runs
+ *   <base>/scope/agents/dev/soul/     the soul, authored as files
  */
 function fixture(kase) {
   const base = mkdtempSync(join(tmpdir(), "oats-golden-"));
@@ -401,18 +391,14 @@ exit 0
     + "team:\n  name: golden-team\n  id: golden-team-id\n"
     + (layers.length ? `capabilities:\n  layers:\n${layers.join("")}` : ""));
 
-  // The soul goes through the real CLI so the knowledge stub's soul-scaffold
-  // hook runs on the path an operator would take.
-  mkdirSync(root, { recursive: true });
-  const soulText = "# dev\n\nYou are the golden-fixture developer soul.\n\n## Operating notes\n\n- Do repository work in `./work`.\n";
-  const instrFile = join(base, "soul-AGENTS.md");
-  write(instrFile, soulText);
-  const created = spawnSync(process.execPath, [CLI, "create", "dev",
-    "--description", "Golden fixture developer soul.",
-    "--repo", repo, "--work", "checkout", "--runtime", "pi",
-    "--instructions-file", instrFile, "--dir", root,
-  ], { encoding: "utf8", env, cwd: tmpdir() });
-  assert.equal(created.status, 0, `oats create failed: ${created.stderr}${created.stdout}`);
+  // The soul is authored as files, the way a member repository carries one
+  // (`oats create` is gone). The kernel never scaffolds a soul.
+  const soulDir = join(root, "dev", "soul");
+  mkdirSync(join(root, "dev", "instances"), { recursive: true });
+  write(join(soulDir, "soul.yaml"), "name: dev\nkind: persistent\ndescription: Golden fixture developer soul.\n"
+    + `repo: ${repo}\nwork: checkout\nruntime: pi\n`);
+  write(join(soulDir, "AGENTS.md"), "# dev\n\nYou are the golden-fixture developer soul.\n\n## Operating notes\n\n- Do repository work in `./work`.\n");
+  symlinkSync("AGENTS.md", join(soulDir, "CLAUDE.md"));
 
   return { base, scope, repo, root, env, nativeHistoryKeys: new Map() };
 }
@@ -733,11 +719,6 @@ for (const kase of CASES) {
       "--runtime", kase.runtime, "--task", TASK, "--no-launch", "--json", ...extra]);
     const spawned = envelope.result;
     const home = spawned.home;
-
-    // The soul-scaffold hook is a spawn-adjacent contract that no other artifact
-    // here would witness, since the soul reaches the home as a symlink.
-    assert.equal(existsSync(join(f.root, "dev", "soul", "knowledge", "index.md")), kase.knowledge === "stub",
-      "the knowledge stub's soul-scaffold hook ran exactly when the slot is filled");
 
     // 1. the instance home tree (symlinks marked, never followed)
     golden(kase.id, "home-tree.txt", normalize(treeOf(home), f));

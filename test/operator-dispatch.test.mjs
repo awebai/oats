@@ -242,5 +242,28 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     const inside = spawnSync(process.execPath, [OATS, "okf", "inspect", "--json"], { env: { ...env, ...homeEnv }, cwd: r.json.result.home, encoding: "utf8" });
     assert.equal(inside.status, 0, inside.stdout + inside.stderr);
     assert.equal(JSON.parse(inside.stdout.trim().split("\n").pop()).ok, true);
+
+    // A capability-defined agent (the okf harvester) homes under the agents root like a
+    // soul: <deployment>/agents/<agent>/instances/<name>, the dir holding only instances/.
+    r = run(["spawn", "memory-harvest", "--dir", dep, "--parent", r.json.result.instance, "--purpose", "harvest", "--no-launch", "--json"]);
+    assert.equal(r.code, 0, r.out + r.err);
+    assert.equal(realpathSync(r.json.result.home), join(dep, "agents", "memory-harvest", "instances", r.json.result.instance));
+    assert.deepEqual(readdirSync(join(dep, "agents", "memory-harvest")), ["instances"], "no soul, no link: only instances/");
+    assert.ok(!existsSync(join(dep, "local-agents")), "nothing is written under the 0.25 local-agents/ base");
+
+    // A leftover 0.25 local-agents/ dir is ONE status/doctor problem and changes nothing else.
+    const statusOf = () => { const s = run(["status", "--dir", dep, "--json"]); assert.equal(s.code, 0, s.out + s.err); return JSON.parse(s.out); };
+    const before = statusOf();
+    assert.equal(before.problems, undefined);
+    mkdirSync(join(dep, "local-agents", "memory-harvest", "instances", "memory-harvest-old"), { recursive: true });
+    const after = statusOf();
+    assert.deepEqual(after.problems.map((p) => p.code), ["legacy-local-agents"]);
+    assert.deepEqual(after.problems[0].instances, ["memory-harvest-old"]);
+    assert.match(after.problems[0].message, /^1 instance home under local-agents\/ is from OATS 0\.25 and is not managed by this kernel; retire it with the 0\.25 kernel or delete the directory once it is stopped \(memory-harvest-old\)$/);
+    const { problems: _p, ...rest } = after;
+    assert.deepEqual(rest, before, "the legacy homes are never read into the roster");
+    const doctor = run(["doctor", "--dir", dep, "--json"]);
+    assert.equal(doctor.code, 0, doctor.out + doctor.err);
+    assert.deepEqual(JSON.parse(doctor.out).problems.map((p) => p.code), ["legacy-local-agents"]);
   } finally { rmSync(room, { recursive: true, force: true }); }
 });

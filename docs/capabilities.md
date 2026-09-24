@@ -80,7 +80,8 @@ A self-contained package has an `oats.json`:
   woken by mail. Every other hook stays best-effort and only warns, so advisory
   work never becomes a spawn blocker. `retire` and `soul-scaffold` cannot be
   required: they run outside a spawn transaction, so there is no moment to
-  enforce them.
+  enforce them. The kernel no longer runs `soul-scaffold` (it ran when
+  `oats create` wrote a soul); a manifest may still declare it.
 - A capability declaring a **required** spawn hook should declare a `retire` hook
   too. Without one, OATS has no way to undo what the spawn hook did and no way to
   know whether it did anything, so a failure quarantines the home rather than
@@ -328,12 +329,9 @@ this mechanism must never copy or expose that global identity's root keys to the
 worker process. Session-scoped execution credentials need a separate lifecycle
 and must not be encoded into this persisted spawn command.
 
-Spawn/scaffold order is by capability name; retirement reverses successful
+Spawn order is by capability name; retirement reverses successful
 spawn order. Hooks run from the instance's own copy
-(`<home>/.oats/modules/<cap>/`). Scaffold hooks cannot modify or delete
-canonical or another capability's files. OATS records ownership, restores the
-pre-hook snapshot, and raises a conflict instead of accepting destructive or
-last-writer-wins behavior.
+(`<home>/.oats/modules/<cap>/`).
 
 ## Official packages
 
