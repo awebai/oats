@@ -77,7 +77,7 @@ test("M1: per-commit soul cache — a preview/spawn at a newer commit swaps the 
     assert.equal(a.agent._dir, agentDir, "findAgent reads the soul through the pointer");
     assert.ok(listAgents(d.root).some((x) => x.name === "release-manager"), "listAgents reads through the pointer too");
     const A = await spawnInstanceAsync(d.root, a.agent, { prepared: a.prepared, purpose: "a", work: "directory", repo: d.dep, launch: false });
-    assert.ok(!existsSync(join(A.home, "soul")), "an instance home carries no soul link");
+    assert.throws(() => lstatSync(join(A.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
     const aMeta = JSON.parse(readFileSync(join(A.home, "instance.json"), "utf8"));
     const aSoul = aMeta.soulDir;
     const aReal = realpathSync(aSoul);

@@ -378,7 +378,7 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
     assert.equal(meta.workspace.soul.team, "engineering");
     assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /oats:work-mode:workspace/, "the workspace work-mode briefing is composed in");
     // The M1 soul cache shape holds for this soul too: the home records souls/<commit12>/ (no soul link), agents/<name>/soul is the pointer.
-    assert.ok(!existsSync(join(home, "soul")), "an instance home carries no soul link");
+    assert.throws(() => lstatSync(join(home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
     assert.equal(meta.soulDir, realpathSync(join(agentsRoot, "coordinator", "souls", added.commit.slice(0, 12))));
     assert.ok(lstatSync(join(agentsRoot, "coordinator", "soul")).isSymbolicLink());
     // preview is fine on the same soul (nothing created)
@@ -638,7 +638,7 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
       const p = path.join(work, "oats-package/capabilities/oats-okf/bin/oats-okf.mjs");
       const s = await fs.readFile(p, "utf8");
       await fs.writeFile(p, s.replace('const [cmd = "help", ...rest] = process.argv.slice(2);',
-        'const [cmd = "help", ...rest] = process.argv.slice(2);\nif ((cmd === "spawn" || cmd === "retire") && process.env.OATS_INSTANCE_HOME && (await import("node:fs")).existsSync(process.env.OATS_INSTANCE_HOME + "/../../../../FAIL")) { process.stderr.write("fixture: " + cmd + " hook failing on purpose\\n"); process.exit(3); }'));
+        'const [cmd = "help", ...rest] = process.argv.slice(2);\nif (cmd === "retire" && process.env.OATS_INSTANCE_HOME) (await import("node:fs")).writeFileSync(process.env.OATS_INSTANCE_HOME + "/../../../../retire-env.json", JSON.stringify({ OATS_SOUL: process.env.OATS_SOUL, OATS_SOUL_ID: process.env.OATS_SOUL_ID }));\nif ((cmd === "spawn" || cmd === "retire") && process.env.OATS_INSTANCE_HOME && (await import("node:fs")).existsSync(process.env.OATS_INSTANCE_HOME + "/../../../../FAIL")) { process.stderr.write("fixture: " + cmd + " hook failing on purpose\\n"); process.exit(3); }'));
     });
     spawnSync("git", ["-C", fx.refs["pkg-okf"].replace(/^file:\/\//, ""), "tag", "-f", "v2.1.3", moved.commit], { stdio: "ignore" });
     const catalogFile = join(base, "catalog.json");
@@ -660,6 +660,11 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
     assert.equal(stub.repo, undefined, "precondition: the retained instance.json is the pre-hook materialization stub, not a spawn record");
     const q = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
     assert.equal(q.cleanup.repo, join(dep, "agents-repo")); assert.deepEqual(q.cleanup.outstanding.hooks, ["oats.okf"]);
+    // The descriptor carries the soul the spawn hooks saw — the stub records neither — so the
+    // retried retire hook gets the per-commit directory and the stable id, not the pointer.
+    const perCommit = join(dep, "agents", "release-manager", "souls", String(fx.commits.agents).slice(0, 12));
+    assert.equal(q.cleanup.soulDir, realpathSync(perCommit), "descriptor records the per-commit soul directory");
+    assert.equal(q.cleanup.soulId, `${fx.keys.agents}#release-manager`, "descriptor records the stable soul id");
     // retry while the hook still fails: the hook RUNS (its failure is reported), the home stays
     r = oats(["retire", "release-manager-q", "--dir", dep, "--agents-root", join(dep, "agents"), "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 1, r.stdout);
@@ -668,6 +673,9 @@ test("0.25.4 quarantine retry: a workspace home retained after a required spawn-
     assert.ok(incomplete.some((m) => /^retire hook oats\.okf: Command failed/.test(m)), `hook was re-run: ${JSON.stringify(incomplete)}`);
     assert.ok(!incomplete.some((m) => /lost its context repo|did not run on this retry/.test(m)), `descriptor was read: ${JSON.stringify(incomplete)}`);
     assert.ok(existsSync(home), "home retained while cleanup is owed");
+    const retireEnv = JSON.parse(readFileSync(join(dep, "retire-env.json"), "utf8"));
+    assert.equal(retireEnv.OATS_SOUL, realpathSync(perCommit), "the retried retire hook sees the spawn's per-commit soul");
+    assert.equal(retireEnv.OATS_SOUL_ID, `${fx.keys.agents}#release-manager`, "…and its stable id");
     // the hook can now succeed: the retry completes and removes the home
     rmSync(join(dep, "FAIL"));
     r = oats(["retire", "release-manager-q", "--dir", dep, "--agents-root", join(dep, "agents"), "--json"], { cwd: dep, env, base });

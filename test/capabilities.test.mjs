@@ -639,7 +639,7 @@ test("capability-defined agents resolve when active, home locally, and keep the 
       const res = core.spawnInstance(root, { ...agent, repo }, { instance: "reviewer-1", launch: false });
       // instance homes under the scope's local-agents/; the recorded soul directory is inside the package
       assert.ok(res.home.includes(join("local-agents", "reviewer", "instances")));
-      assert.equal(existsSync(join(res.home, "soul")), false, "an instance home carries no soul link");
+      assert.throws(() => lstatSync(join(res.home, "soul")), { code: "ENOENT" }, "an instance home carries no soul link");
       assert.equal(JSON.parse(readFileSync(join(res.home, "instance.json"), "utf8")).soulDir, join(capDir, "agents", "reviewer"));
       assert.match(readFileSync(join(res.home, "AGENTS.md"), "utf8"), /Review fresh/);
       // the package soul was not written to (no instances/, no scaffolded memory)

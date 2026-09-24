@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, lstatSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -225,7 +225,7 @@ test('native preparation publishes complete source/curriculum/helper records, th
   const scaffold=scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'});
   assert.equal(scaffold.hooksPending,true);assert.equal(scaffold.responsibleHuman,null);assert.equal(scaffold.executionBinding.resolution.id,result.resolution.id);
   assert.equal(readFileSync(join(scaffoldHome,'AGENTS.md'),'utf8').startsWith('Expert instructions'),true);assert.equal(existsSync(join(scaffoldHome,'work')),true);
-  assert.equal(existsSync(join(scaffoldHome,'soul')),false,'a captured home carries no soul link; AGENTS.md holds the retained soul instructions');
+  assert.throws(() => lstatSync(join(scaffoldHome,'soul')), { code: "ENOENT" }, 'a captured home carries no soul link; AGENTS.md holds the retained soul instructions');
   const scaffoldMeta=JSON.parse(readFileSync(join(scaffoldHome,'instance.json'),'utf8'));assert.equal(scaffoldMeta.captured.lifecycle,'scaffolded-hooks-pending');
   assert.equal(scaffoldMeta.executionBinding.resolution.id,result.resolution.id);assert.equal(existsSync(join(scaffoldHome,'.agents/skills/procedure/SKILL.md')),true);
   assert.throws(()=>scaffoldCapturedInstance({deployment:f.deployment,resolution:result.resolution,home:scaffoldHome,instance:'imported-expert-1'}),{code:'E_INSTANCE_EXISTS'});

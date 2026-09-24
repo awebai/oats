@@ -3088,7 +3088,10 @@ async function capabilityCommand() {
     }
     if (!hit) return NOT_DISPATCHED;
     const teamCtx = hit.soul?.team ? { name: hit.soul.team } : undefined;
-    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, hit.settings, teamCtx, hit.ensureTree);
+    // No home, so no recorded soul: the soul's per-commit copy is OATS_SOUL when a spawn
+    // already fetched exactly this commit; otherwise the command gets none (never ambient).
+    const cachedSoul = hit.soul?.commit ? join(hit.deployment, "agents", hit.soul.name, "souls", String(hit.soul.commit).slice(0, 12)) : null;
+    return runManifestCommand({ capability: hit.module.name, ...hit.manifest }, hit.settings, teamCtx, hit.ensureTree, cachedSoul && existsSync(join(cachedSoul, "soul.yaml")) ? realpathSync(cachedSoul) : undefined);
   }
 
   async function dispatch() {
@@ -3180,8 +3183,11 @@ async function capabilityCommand() {
     try { abs = capabilityExecutablePath(withDir, script); }
     catch (e) { bail("E_CAPABILITY_BROKEN", e.message); }
     if (!abs) bail("E_CAPABILITY_BROKEN", `${cmd} ${sub}: script not found (${join(dir, script)})`);
+    // OATS_SOUL is the recorded soul or nothing: an ambient value inherited from the
+    // invoking process names some other soul (a coordinator's own), never this one.
+    const { OATS_SOUL: _ambientSoul, ...inherited } = process.env;
     const r = spawnSync("node", [abs, ...rest, ...args.slice(2)], { stdio: "inherit", env: {
-      ...process.env, OATS_CAPABILITY: m.capability,
+      ...inherited, OATS_CAPABILITY: m.capability,
       // Package-runtime boundary: dispatched commands receive the active
       // capability's EFFECTIVE settings (instance snapshot, resolved context, or
       // the soul's merged payload on operator-level dispatch), same contract as
