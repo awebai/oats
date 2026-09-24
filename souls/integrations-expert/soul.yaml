@@ -1,0 +1,6 @@
+schemaVersion: 2
+name: integrations-expert
+description: Cross-package provider integration — capability and hook contracts as judgement, live-rehearsal discipline, compensation reporting; builds OATS capability packages with users.
+work: directory
+capabilities:
+  oats.authoring: { from: package }   # capability, skill and soul authoring procedures; oats.core and oats.okf come from the workspace defaults
