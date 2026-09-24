@@ -359,22 +359,32 @@ test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the d
   assert.equal(again.error.code, 'E_DECISION_STALE'); assert.equal(again.error.details.decision.instance, 'wt-a-2'); assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'stale decision created no second home');
 });
 
-test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a preview — bounded by the shared budget, reported as preflight.status timeout, probe group killed', t => {
+test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a preview — bounded by the shared budget, reported as preflight.status timeout, probe group killed', async t => {
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   // Two provider-qualified preferences force the pi catalog probe; the fake pi hangs forever.
   createAgent(f.root, { name: 'pp', work: 'worktree', repo: f.context, runtime: 'pi', model: 'openai/gpt-x, anthropic/claude-y', oatsCore: false });
-  writeFileSync(join(f.bin, 'pi'), `#!/bin/sh\ncase "$1" in --list-models) sleep 600;; esac\nexit 0\n`, { mode: 0o700 });
-  const t0 = Date.now();
+  // The fake probe records its own pid and its forked child's, so custody is
+  // checked on exactly this fixture's processes (never a machine-wide match that
+  // a concurrent test file's probe could satisfy), and it never finishes.
+  const pids = join(f.base, 'probe.pids');
+  writeFileSync(join(f.bin, 'pi'), `#!/bin/sh\ncase "$1" in --list-models) echo $$ > '${pids}'; sleep 600 & echo $! >> '${pids}'; wait; echo finished > '${pids}.finished';; esac\nexit 0\n`, { mode: 0o700 });
   const out = spawnSync(process.execPath, [CLI, 'spawn', 'pp', '--preview', '--json'], { cwd: f.context, env: { ...process.env, PATH: f.bin + ':' + process.env.PATH, OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '1500' }, encoding: 'utf8', timeout: 60000 });
-  const elapsed = Date.now() - t0;
-  assert.ok(out.stdout.trim(), `no output (status ${out.status}, signal ${out.signal}, ${elapsed}ms): ${out.stderr.slice(0, 400)}`);
+  // The 60 s spawn timeout is only a safety net: the preview must return on its own (no signal).
+  assert.equal(out.signal, null, `the preview was killed by the test's safety timeout: the hanging probe hung it (${out.stderr.slice(0, 400)})`);
+  assert.ok(out.stdout.trim(), `no output (status ${out.status}): ${out.stderr.slice(0, 400)}`);
   const pv = JSON.parse(out.stdout.trim().split('\n').pop());
   assert.equal(pv.ok, true, out.stdout + out.stderr); assert.equal(pv.result.preflight.status, 'timeout'); assert.equal(pv.result.preflight.budgetMs, 1500);
-  assert.ok(elapsed < 20000, `preview returned in ${elapsed}ms despite a hanging probe`);
-  const leftover = spawnSync('pgrep', ['-f', 'list-models'], { encoding: 'utf8' }).stdout.trim();
-  assert.equal(leftover, '', 'probe process group reaped');
+  assert.equal(existsSync(pids + '.finished'), false, 'the preview returned while its probe was still hanging');
+  const probe = readFileSync(pids, 'utf8').trim().split('\n').map(Number);
+  assert.equal(probe.length, 2, `the probe started and forked its child: ${JSON.stringify(probe)}`);
+  // SIGKILL delivery and reaping are asynchronous: wait, bounded, for this
+  // group to be gone. A probe that was never killed sleeps 600 s and fails this.
+  const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+  const deadline = Date.now() + 10000;
+  while (probe.some(alive) && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
+  assert.deepEqual(probe.filter(alive), [], 'probe process group killed');
 });
 
 import { killGroup } from '../lib/process-group.mjs';
