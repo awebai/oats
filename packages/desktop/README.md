@@ -21,6 +21,24 @@ Flags/env:
   (default: this repo's root).
 - `OATS_DESKTOP_PORT` — backend server port (default 4820).
 
+## Brand artwork
+
+`assets/brand/oats-logo.png` is the one source of the app's brand artwork
+(the human-supplied logo, SHA-256 `b1d21d9a…de69e`). Every derived icon —
+the macOS `oats.icns`, the Linux `NxN.png` set and the 2x sidebar mark — lives
+in `assets/brand/generated/` and is regenerated from the source by one
+command:
+
+```bash
+cd packages/desktop
+npm run icons              # rewrite assets/brand/generated/ from the source
+npm run icons -- --check   # verify the checked-in set derives from the source
+```
+
+`build-icons.mjs` is zero-dependency (square source, premultiplied-alpha
+area averaging, transparency preserved); `test/brand-icons.test.mjs` fails if
+any checked-in icon's pixels stop matching what the source derives.
+
 ## UX and architecture
 
 The shell has three navigation contexts:

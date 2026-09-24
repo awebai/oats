@@ -12,7 +12,8 @@
     "postinstall": "node build-vendor.mjs",
     "dist": "electron-builder --config electron-builder.config.cjs",
     "postdist": "node scripts/clean-dist.mjs",
-    "dist:smoke": "node scripts/dist-smoke.mjs"
+    "dist:smoke": "node scripts/dist-smoke.mjs",
+    "icons": "node build-icons.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

@@ -48,11 +48,15 @@ module.exports = {
     "workspace-registry.mjs",
     "server/**/*",
     "renderer/**/*",
+    // Only the sidebar mark ships as a file; the platform icons are wired
+    // below and the 1254px source artwork stays out of the package.
+    "assets/brand/generated/sidebar-48.png",
     "package.json",
     "!renderer/harness.html",
     "!renderer/harness-server.mjs",
     "!test/**",
     "!build-vendor.mjs",
+    "!build-icons.mjs",
     "!electron-builder.config.cjs",
     "!**/*.test.mjs",
     "!**/.DS_Store",
@@ -92,6 +96,8 @@ module.exports = {
     // secrets, deterministic; Gatekeeper still requires the user's explicit
     // first-launch approval. Nothing may claim identified-developer trust.
     identity: "-",
+    // Derived from assets/brand/oats-logo.png by `npm run icons`.
+    icon: "assets/brand/generated/oats.icns",
   },
   linux: {
     // Filesystem-safe binary/package name. WITHOUT this, electron-builder
@@ -101,6 +107,8 @@ module.exports = {
     // safely used in file paths') — the v0.18.x Linux leg never went green
     // without it. Scoped to linux so the mac .app stays "OATS Desktop.app".
     executableName: "oats-desktop",
+    // NxN.png set derived from assets/brand/oats-logo.png by `npm run icons`.
+    icon: "assets/brand/generated/linux",
     target: ["AppImage", "deb"],
     category: "Development",
     // tmux is a hard runtime prerequisite (terminal attach path).

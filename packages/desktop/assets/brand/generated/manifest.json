@@ -1,0 +1,30 @@
+{
+  "regenerate": "cd packages/desktop && npm run icons",
+  "source": {
+    "path": "assets/brand/oats-logo.png",
+    "sha256": "b1d21d9a43b7915ba19d9d0b1850af8130087607dbb499e4bcb71237de0de69e",
+    "width": 1254,
+    "height": 1254
+  },
+  "pixels": {
+    "16": "07e1fa5e796c9548978cb38dad51fd15d81356782a796a2b0b7714ae32b27587",
+    "32": "fd97af3f6eaf32ba86b3d437a73407aa29e8cfb9ea9c9d0f1ce462c606e938bd",
+    "48": "82d328a406f57b7dc48d98ee76d5a8437567f3952aa2b2e8571274d5e3bebeb4",
+    "64": "395c3eca1f3fa34b9f72709dbe27ad7e136f8788f1e2097cefa314f03b659899",
+    "128": "0db25e525feac718feb339c10af31c1a35b055959c4eac0573561c710179ab95",
+    "256": "7dd3dc4d2144a16d65442854255b5d4844334e67e98e79cbaa1b83fa8248cb1a",
+    "512": "7f5ef7b6a75967268cbffe650b5f98201ecf7ee418e18553804e2faf4066843f",
+    "1024": "157c092caadd6f1c80558b9b290bd1c800faec4e4567133113e93206eb9fe908"
+  },
+  "files": {
+    "linux/16x16.png": "efe026fd00bbdb490a9072e12fb30699b8a4db69295a29175868e87d08378fee",
+    "linux/32x32.png": "cbf7e0fedd3711dfc7a93ff77d1f09c3783e303123163fcdca1708b999137ee3",
+    "linux/48x48.png": "627a0c27ed4ad3556f5a759f73c558cb87abd5bb463d0275a0410e135ec646b2",
+    "linux/64x64.png": "86c84866c7364fa8fddd65f1d1eb0c68ef592444017024be86988ab08d905feb",
+    "linux/128x128.png": "19e2bbdfee5ddfe9fb465058f07082cca95aa9e939702af3f1a561f291d27ef5",
+    "linux/256x256.png": "62ced0d10cc041aa0dcdd3c6a36cc6fd8ce0fefe433e2a78d777aa47399350be",
+    "linux/512x512.png": "55351ef625c8fc508bea76f29eba03b9a6be3e3f28606e6f7b4722915d6d55ea",
+    "oats.icns": "7fc7363654da34b528134ea4e67a2da49ce620d538536c81659be8b4dc9800e2",
+    "sidebar-48.png": "627a0c27ed4ad3556f5a759f73c558cb87abd5bb463d0275a0410e135ec646b2"
+  }
+}
