@@ -41,7 +41,7 @@ test('the spawn catalog (oats souls) is the soul list; the status row only lends
   for (const soul of souls) {
     const row = rows[soul.name];
     assert.equal(row.work, soul.work); assert.equal(row.soulKind, soul.kind); assert.equal(row.origin, soul.origin);
-    assert.deepEqual(row.soulSource, { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null });
+    assert.deepEqual(row.soulSource, { repoKey: soul.repoKey ?? null, commit: soul.commit ?? null, path: soul.path ?? null });
     assert.equal(row.agentsRoot, roster.root); assert.equal(row.workspace, context);
   }
 });

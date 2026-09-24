@@ -361,8 +361,9 @@ export async function cliLaunchConfig(bin, { action, name, definition, keepEnv, 
   finally { temporary?.cleanup(); }
 }
 
-/** Inspection, scoped activation and provider operations share one CLI boundary. */
-export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, binding, fields, operation, localCwd }, io = {}) {
+/** Inspection and provider operations share one CLI boundary. Read-only:
+ * workspace model v2 removed `oats use`, and a soul is edited in its repository. */
+export async function cliCapability(bin, { action, context, server, soul, agentsRoot, home, operation, localCwd }, io = {}) {
   const bad = message => { throw Object.assign(new Error(message), { code: 'E_BAD_ARGS' }); };
   const value = (v, label) => {
     if (typeof v !== 'string' || !v || v.startsWith('-') || v.includes('\0')) bad(`Invalid ${label}`);
@@ -372,48 +373,15 @@ export async function cliCapability(bin, { action, context, server, soul, agents
   if (context) target.push('--dir', value(context, 'scope'));
   if (server) target.push('--server', value(server, 'server'));
   if (home) target.push('--home', value(home, 'home'));
-  if (soul && action !== 'set') target.push('--soul', value(soul, 'soul'));
-  if (agentsRoot && action !== 'use') target.push('--agents-root', value(agentsRoot, 'agents root'));
-  let argv, temporary;
-  try {
-    if (action === 'inspect') argv = ['inspect'];
-    else if (action === 'run') {
-      if (typeof operation !== 'string' || !/^(knowledge|messaging|tasks):[a-zA-Z0-9._-]+$/.test(operation)) bad('Select a declared provider operation');
-      argv = ['operation', 'run', operation];
-    } else if (action === 'use') {
-      if (soul && (binding?.action === 'none' || binding?.capability === 'none')) bad('Layer-wide defaults cannot target one soul');
-      if (!binding || !['enable', 'disable', 'inherit', 'none'].includes(binding.action)) bad('Choose enable, disable, inherit, or none');
-      argv = ['use', binding.action === 'none' ? 'none' : value(binding.capability, 'capability')];
-      if (!soul) argv.push('--global');
-      if (binding.layer !== undefined) {
-        if (!['knowledge', 'messaging', 'tasks'].includes(binding.layer)) bad('Unknown capability layer');
-        argv.push('--layer', binding.layer);
-      }
-      if (binding.action === 'none' && !binding.layer) bad('Choose a layer to disable');
-      if (binding.action === 'disable') argv.push('--disable');
-      if (binding.action === 'inherit') argv.push('--inherit');
-    } else if (action === 'set') {
-      if (!fields || typeof fields !== 'object' || Array.isArray(fields) || !Object.keys(fields).length) bad('Specify the defaults to update');
-      argv = ['soul', 'set', value(soul, 'soul')];
-      for (const [key, v] of Object.entries(fields)) {
-        if (key === 'instructions') {
-          if (typeof v !== 'string' || Buffer.byteLength(v) > 256 * 1024) bad('Instructions must be text up to 256 KiB');
-          temporary = writeTaskFile(v, io); argv.push('--instructions-file', temporary.file);
-        } else if (key === 'yolo') {
-          if (typeof v !== 'boolean') bad('Invalid permission setting');
-          argv.push(v ? '--yolo' : '--no-yolo');
-        } else if (key === 'model' && v === '') argv.push('--no-model');
-        else if (key === 'description' && v === '') argv.push('--no-description');
-        else if (key === 'launch-config' && v === '') argv.push('--no-launch-config');
-        else if (['runtime', 'backend', 'model', 'description', 'launch-config'].includes(key)) {
-          const allowed = key === 'runtime' ? ['pi', 'claude', 'codex'] : key === 'backend' ? ['tmux', 'herdr'] : null;
-          if (allowed && !allowed.includes(v)) bad(`Invalid ${key}`);
-          argv.push(`--${key}`, value(v, key));
-        } else bad(`Unsupported soul field: ${key}`);
-      }
-    } else bad('Unknown capability action');
-    return await runJson(bin, [...argv, ...target, '--json'], {
-      cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
-    });
-  } finally { temporary?.cleanup(); }
+  if (soul) target.push('--soul', value(soul, 'soul'));
+  if (agentsRoot) target.push('--agents-root', value(agentsRoot, 'agents root'));
+  let argv;
+  if (action === 'inspect') argv = ['inspect'];
+  else if (action === 'run') {
+    if (typeof operation !== 'string' || !/^(knowledge|messaging|tasks):[a-zA-Z0-9._-]+$/.test(operation)) bad('Select a declared provider operation');
+    argv = ['operation', 'run', operation];
+  } else bad('Unknown capability action');
+  return await runJson(bin, [...argv, ...target, '--json'], {
+    cwd: localCwd, exec: io.exec, timeout: io.timeout ?? (action === 'run' ? 300_000 : ENVELOPE_TIMEOUT_MS),
+  });
 }

@@ -148,18 +148,18 @@ test('root/name/host focus survives polling, inspector close and modal close wit
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);
 });
 
-test('future-default and instruction drafts are stable under roster polling and do not become instance snapshots', async t => {
+test('the declared soul is read-only; its disclosed instructions are stable under roster polling', async t => {
   const u = await setup(t);
   u.doc.querySelector('.soul-card').click(); await tick();
-  assert.match(u.doc.querySelector('.soul-inspector').textContent, /future instances/);
-  assert.match(u.doc.querySelector('.soul-inspector').textContent, /AGENTS.md \/ instructions/);
-  u.click('Edit defaults'); const model = u.doc.querySelector('[name=model]'); model.value = 'unsaved';
+  const inspector = u.doc.querySelector('.soul-inspector');
+  assert.match(inspector.textContent, /future instances/);
+  assert.match(inspector.textContent, /Edit this soul in its repository/);
+  assert.equal(inspector.querySelector('form, textarea, input'), null, 'no in-place editor');
+  const details = [...inspector.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'AGENTS.md / instructions');
+  assert.ok(details); details.open = true;
   u.polls[0](); await tick();
-  assert.equal(u.doc.querySelector('[name=model]'), model); assert.equal(model.value, 'unsaved');
-  u.click('Cancel'); u.click('Edit instructions'); const text = u.doc.querySelector('.inspector-form textarea'); text.value = 'unsaved instructions';
-  u.polls[0](); await tick();
-  assert.equal(u.doc.querySelector('.inspector-form textarea'), text); assert.equal(text.value, 'unsaved instructions');
-  assert.equal(u.inspections().length, 1, 'polling never refreshes the inspector or writes a draft');
+  assert.equal([...inspector.querySelectorAll('details')].includes(details), true); assert.equal(details.open, true);
+  assert.equal(u.inspections().length, 1, 'polling never refreshes the inspector');
   assert.ok(u.inspections().every(c => c.body.action === 'inspect'));
 });
 
