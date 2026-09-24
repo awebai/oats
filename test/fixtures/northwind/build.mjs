@@ -565,6 +565,15 @@ function pkgOkfRepo() {
           "binding-normalize": "bin/oats-okf.mjs binding-normalize",
           "binding-bind": "bin/oats-okf.mjs binding-bind",
           "binding-check": "bin/oats-okf.mjs binding-check",
+          status: "bin/oats-okf.mjs status",
+          reindex: "bin/oats-okf.mjs reindex",
+        },
+        // Provider operations (a home view and a home action) so inspect lists them
+        // and `oats operation run` yields a real envelope (Desktop F3b-2 captures).
+        operations: {
+          status: { kind: "view", command: "status", context: "home", description: "This instance's knowledge status" },
+          reindex: { kind: "action", command: "reindex", context: "home", description: "Rebuild this instance's knowledge index",
+            args: [{ name: "scope", flag: "--scope", required: false, description: "Limit the reindex to one node" }] },
         },
         binding: {
           version: 1,
@@ -586,9 +595,29 @@ function pkgOkfRepo() {
     "oats-package/capabilities/oats-okf/injects/okf.md": "## Knowledge layer: OKF\n\nYour durable knowledge lives in an OKF bundle (fixture inject).\n",
     "oats-package/capabilities/oats-okf/bin/oats-okf.mjs": tinyScript(
       "oats-okf",
-      `if (cmd.startsWith("binding-")) {
-  // A real but minimal binding contract: normalize → bind → check all succeed.
+      `if (cmd === "binding-check") {
+  // The check wire: {status, problems} from the merged settings (OATS_SETTINGS, else the request's).
+  const fs = await import("node:fs");
+  let req = {}; try { req = process.stdin.isTTY ? {} : JSON.parse(fs.readFileSync(0, "utf8") || "{}"); } catch { req = {}; }
+  let settings = {}; try { settings = JSON.parse(process.env.OATS_SETTINGS || "null") ?? req.settings ?? {}; } catch { settings = req.settings ?? {}; }
+  const problems = typeof settings["state-dir"] === "string" && settings["state-dir"] ? [] : [{ code: "needs-configuration", message: "setting state-dir is required (absolute host path)" }];
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, phase: "check", slot: req.slot ?? "knowledge", capability: req.capability ?? "oats.okf", ok: true,
+    result: { status: problems.length ? "needs-configuration" : "ready", problems } }) + "\\n");
+  process.exit(0);
+}
+if (cmd.startsWith("binding-")) {
+  // A real but minimal binding contract: normalize → bind succeed.
   process.stdout.write(JSON.stringify({ ok: true, action: cmd, args: rest }) + "\\n");
+  process.exit(0);
+}
+if (cmd === "status") {
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { summary: "fixture knowledge status",
+    documents: [{ label: "Status", kind: "markdown", text: "# okf status\\n\\nInstance: " + (process.env.OATS_INSTANCE || "none") + "\\n" }] } }) + "\\n");
+  process.exit(0);
+}
+if (cmd === "reindex") {
+  const i = rest.indexOf("--scope");
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { status: "reindexed", scope: i >= 0 ? rest[i + 1] ?? null : null } }) + "\\n");
   process.exit(0);
 }
 if (cmd === "spawn" && process.env.OATS_INSTANCE_HOME) {

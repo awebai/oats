@@ -303,7 +303,7 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
   const cHome = join(f.root, 'ready', 'instances', 'ready-cap'); f.write(join(cHome, 'instance.json'), { instance: 'ready-cap', agent: 'ready', home: cHome, executionBinding: { deployment: f.context, resolution: { id: 'sha256-' + 'a'.repeat(64) } } });
   const cap1 = f.run(['readiness', '--home', cHome, '--json']); assert.equal(cap1.status, 1);
   const err = JSON.parse(cap1.stdout.trim().split('\n').pop()).error; assert.equal(err.code, 'E_UNSUPPORTED_MODE'); assert.equal(err.details.captured, true);
-  // Signature verification: closed failure code, no stderr; transport allowlist; feature advertised.
+  // Signature verification: closed failure code, no stderr; transport allowlist; feature no longer advertised.
   const sig = signatureOf({ url: 'file:///nowhere', commit: 'a'.repeat(40) }, { verify: true });
   assert.deepEqual(sig, { status: 'unknown', signer: null, reason: 'source transport is not https or ssh; not fetched', failure: { code: 'transport-not-allowed' } });
   const dead = signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budgetMs: 4000 });
@@ -313,7 +313,9 @@ test('K5 pins (slice 5): configured is EFFECTIVE activation not declaration; dat
   // One budget for the whole read: an exhausted shared budget refuses the next capability without a fetch.
   const spent = verificationBudget(1); const t0 = Date.now(); while (Date.now() - t0 < 3) { /* spin */ }
   assert.deepEqual(signatureOf({ url: 'https://127.0.0.1:9/none.git', commit: 'a'.repeat(40) }, { verify: true, budget: spent }), { status: 'unknown', signer: null, reason: 'the verification budget was exhausted', failure: { code: 'budget-exhausted' } });
-  assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('readiness-verify'));
+  // 0.26.0: the feature is no longer advertised (a v2 deployment refuses --verify-signatures; the
+  // classic flag itself is removed with the classic chain).
+  assert.ok(!JSON.parse(f.run(['version', '--json']).stdout).features.includes('readiness-verify'));
 });
 
 test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the deployment byte-identical (no event, no daemon, no soul write); --agents-root binds the exact root with no fallback; decision.revision binds the apply via --expect-decision (drift → E_DECISION_STALE, nothing created); preflight is bounded and reported', t => {

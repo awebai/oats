@@ -60,6 +60,7 @@ import { observeInstanceGit, diffInstanceFile } from "../lib/instance-git.mjs";
 import { planStop, applyStop, planRetire, resolveInstance as resolveInstanceForCli } from "../lib/instance-lifecycle.mjs";
 const await_import_lifecycle = () => ({ resolveInstance: resolveInstanceForCli });
 import { readinessOf, policyOf } from "../lib/readiness.mjs";
+import { homeTarget, soulTarget, isWorkspaceContext, inspectDocument, readinessDocument, policySoul, manifestMissingRequires, INSPECT_OPERATIONS_API } from "../lib/instance-inspect.mjs";
 import { readEvents } from "../lib/instance-events.mjs";
 
 const args = process.argv.slice(2);
@@ -744,7 +745,58 @@ function soulEntry(soul, root, { capability } = {}) {
  *  invoking process's ambient agents-root override must not redirect them
  *  to its own deployment. */
 function dropAmbientRoot() { delete process.env.PI_AGENTS_ROOT; }
-function inspectCmd() { const result = computeInspect(); if (!result) return; if (JSON_MODE) { const { _print, ...data } = result; jsonOk(data); return; } printInspect(result); }
+async function inspectCmd() {
+  const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
+  const t = await workspaceTarget(bail, { command: "inspect" });
+  if (t) {
+    if (t.resolutionError) return bail(t.resolutionError.code, t.resolutionError.message, t.resolutionError.details ?? undefined);
+    const doc = inspectDocument(t, { kernel: OATS_VERSION });
+    if (JSON_MODE) { jsonOk(doc); return; }
+    printWorkspaceInspect(doc); return;
+  }
+  const result = computeInspect(); if (!result) return; if (JSON_MODE) { const { _print, ...data } = result; jsonOk(data); return; } printInspect(result);
+}
+/** The workspace-model target of inspect / readiness / operation run (lead
+ *  decision 4): an instance home with materialized modules (`--home`), or a soul
+ *  of a workspace deployment (`--soul`, resolved as its spawn would be). null
+ *  when neither applies (a classic scope, until the classic chain is removed). */
+async function workspaceTarget(bail, { command }) {
+  dropAmbientRoot();
+  const homeFlag = flag("home"), soulFlag = flag("soul"), rootFlag = flag("agents-root");
+  if (homeFlag === true) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+  if (soulFlag === true) return bail("E_BAD_ARGS", "--soul needs a soul name");
+  if (rootFlag === true) return bail("E_BAD_ARGS", "--agents-root needs an absolute agents directory");
+  const remoteOptions = remoteOptionsFromEnv();
+  if (homeFlag) {
+    if (!isAbsolute(homeFlag)) return bail("E_BAD_ARGS", "--home needs an absolute instance home");
+    let meta = null;
+    try { meta = JSON.parse(readFileSync(join(homeFlag, "instance.json"), "utf8")); } catch { return null; } // the classic path reports it
+    if (!meta || typeof meta.modules !== "object" || meta.modules === null) return null;
+    if (soulFlag && soulFlag !== meta.agent) return bail("E_HOME_MISMATCH", `--soul ${soulFlag} is not the soul of ${homeFlag} (${meta.agent})`);
+    const deployment = dirname(dirname(dirname(dirname(realOrResolved(homeFlag)))));
+    // A v2 home lives at <deployment>/agents/<soul>/instances/<name>: its deployment is
+    // derived, so it must hold oats-local.yaml EXACTLY there (never found by walking up).
+    if (!existsSync(join(deployment, "oats-local.yaml"))) return bail("E_HOME_MISMATCH", `${homeFlag} is not at <deployment>/agents/<soul>/instances/<name>: ${deployment} has no oats-local.yaml`, { home: homeFlag, expected: join(deployment, "oats-local.yaml") });
+    if (flag("dir") !== undefined) { let given = null; try { given = dirname(loadLocal(dirFlag()).path); } catch { given = dirFlag(); } if (realOrResolved(given) !== realOrResolved(deployment)) return bail("E_HOME_MISMATCH", `--dir ${dirFlag()} is not the deployment of ${homeFlag} (${deployment}); omit --dir for a home`); }
+    if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_HOME_MISMATCH", `--agents-root ${rootFlag} is not the agents root of ${homeFlag}`);
+    return homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness" });
+  }
+  try { if (!isWorkspaceContext(dirFlag())) return null; }
+  catch (e) { return bail(e?.code || "E_WORKSPACE_SCHEMA", e?.message || String(e), e?.details); }
+  if (!soulFlag) return bail("E_BAD_ARGS", `${command} on a workspace deployment needs --soul <name> or --home <abs>${command === "inspect" ? " (the deployment's souls and capabilities: oats souls / oats capabilities)" : ""}`);
+  const deployment = dirname(loadLocal(dirFlag()).path);
+  if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_SOUL_UNKNOWN", `soul "${soulFlag}" is not at agents root ${rootFlag} (this deployment's is ${join(deployment, "agents")})`);
+  try { return await soulTarget(dirFlag(), String(soulFlag), { remoteOptions }); }
+  catch (e) { if (typeof e?.code === "string" && e.code.startsWith("E_")) return bail(e.code, e.message, e.details); throw e; }
+}
+function printWorkspaceInspect(doc) {
+  const s = doc.subject;
+  console.log(`oats inspect — ${s.kind === "instance" ? `instance ${s.instance} (soul ${s.soul}) ${shortPath(s.home)}` : `soul ${s.soul} from ${s.repoKey}`}`);
+  if (doc.identity) console.log(`  identity: ${servedIdentityLine(doc.identity)}`);
+  for (const l of LAYERS) console.log(`  layer ${l}: ${doc.layers[l].id || "none"}`);
+  for (const c of doc.capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.from?.kind === "package" ? `package ${c.from.package}` : c.from?.kind === "member" ? `member ${c.from.repoKey}` : ""}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
+  for (const p of doc.problems) console.log(`  ! ${p.code}: ${p.message}`);
+}
 /** The inspect answer as data — shared by `oats inspect` and `oats readiness`
  *  (K5), so the readiness quartet is derived from the SAME capability,
  *  activation, trust and soul facts inspect reports, never a second opinion. */
@@ -969,10 +1021,10 @@ const reportsRetainedEffectsText = (message) => /INCOMPLETE|quarantin|retain|cou
 // Comfortably below the scheduler's 5-minute command bound and any GUI
 // proxy, so the receipt always reaches the caller before a wrapper gives up.
 const OPERATION_TIMEOUT_MS = CAPTURED_OPERATION_TIMEOUT_MS;
-function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent, settlement }) {
+function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, meta, cleanupError, intent, settlement, api }) {
   const stderr = String(r.stderr || "").trim();
   const timedOut = r.error?.code === "ETIMEDOUT" || (r.status === null && ["SIGTERM", "SIGKILL"].includes(r.signal) && (!settlement || !r.error));
-  const base = { operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
+  const base = { ...(api ? { operationsApi: api } : {}), operation: address, capability: provider.capability, version: provider.version || null, argv: [provider.command, op.command, ...argFlags], cwd, target: home ? { home, instance: meta.instance } : null };
   // Unconfirmed outcomes (a timeout, no valid receipt, a receipt contradicted
   // by the exit status) carry what WAS observed in error.details, so a
   // scheduler can keep the slot as unknown and reconcile by any name the
@@ -1017,7 +1069,57 @@ function finishOperation({ r, bail, address, provider, op, argFlags, cwd, home, 
   else console.log(JSON.stringify(result, null, 2));
   if (stderr) console.error(stderr);
 }
-function operationCmd() {
+/** --arg k=v pairs of `oats operation run`. */
+function operationArgs(bail) {
+  const given = Object.create(null);
+  for (let i = 3; i < args.length; i++) {
+    if (args[i] !== "--arg") continue;
+    const kv = args[i + 1];
+    if (!kv || kv.startsWith("--") || !kv.includes("=")) bail("E_BAD_ARGS", "--arg expects name=value");
+    const eq = kv.indexOf("=");
+    given[kv.slice(0, eq)] = kv.slice(eq + 1);
+    i++;
+  }
+  return given;
+}
+/** `oats operation run` on the workspace model (operationsApi 2): the provider is
+ *  the module filling <layer> — the home's own copy, or the soul's resolved module
+ *  fetched into the deployment's module store — with its merged payload as
+ *  OATS_SETTINGS and the team facts hooks get. */
+async function workspaceOperation(t, { bail, address, layer, opName }) {
+  if (t.resolutionError) return bail(t.resolutionError.code, t.resolutionError.message, t.resolutionError.details ?? undefined);
+  const name = t.slots[layer];
+  const mod = name ? t.modules.find((x) => x.name === name) : null;
+  if (!mod?.manifest) return bail("E_OPERATION_UNAVAILABLE", `no ${layer} provider is resolved for ${t.home ? t.home : `soul ${t.soul.name}`}`);
+  const provider = { ...mod.manifest, capability: mod.name };
+  const op = manifestOperations(provider).find((o) => o.name === opName);
+  if (!op) return bail("E_OPERATION_UNKNOWN", `${mod.name} declares no operation ${JSON.stringify(opName)} (declared: ${manifestOperations(provider).map((o) => o.name).join(", ") || "none"})`);
+  const missingReq = manifestMissingRequires(provider);
+  if (missingReq.length) return bail("E_CAPABILITY_REQUIRES", `${mod.name} requires ${missingReq.map((m) => `"${m.command}" on PATH${m.why ? ` (${m.why})` : ""}${m.install ? ` [install: ${m.install}]` : ""}`).join(", ")}; ${address} was not run`);
+  if (op.context === "home" && !t.home) return bail("E_OPERATION_UNAVAILABLE", `${address} runs in an instance home; pass --home <abs>`);
+  const given = operationArgs(bail);
+  const declared = new Map(op.args.map((a) => [a.name, a]));
+  for (const n of Object.keys(given)) if (!declared.has(n)) return bail("E_BAD_ARGS", `${address} takes no arg ${JSON.stringify(n)} (declared: ${[...declared.keys()].join(", ") || "none"})`);
+  for (const a of op.args) if (a.required && given[a.name] === undefined) return bail("E_BAD_ARGS", `${address} needs --arg ${a.name}=<value>: ${a.description || "required"}`);
+  const argFlags = op.args.flatMap((a) => (given[a.name] === undefined ? [] : [a.flag, given[a.name]]));
+  const spec = provider.commands?.[op.command];
+  if (typeof spec !== "string" || !spec.trim()) return bail("E_CAPABILITY_BROKEN", `${mod.name}: command ${op.command} is not a non-empty string`);
+  let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
+  const { layerProvider } = await import("../lib/instance-inspect.mjs");
+  let lp;
+  try { lp = await layerProvider(t, layer, { catalog, remoteOptions: remoteOptionsFromEnv() }); } catch (e) { return bail(e.code || "E_CAPABILITY_BROKEN", e.message, e.details); }
+  const [script, ...rest] = spec.trim().split(/\s+/);
+  const abs = lp?.executable(script);
+  if (!abs) return bail("E_CAPABILITY_BROKEN", `${mod.name} ${op.command}: script not found (${script})`);
+  const settings = lp.settings;
+  const cwd = op.context === "home" ? t.home : t.deployment;
+  const env = { ...lp.env(mod.name, settings), OATS_OPERATION: address, OATS_CONTEXT: t.deployment, OATS_ROOT: t.agentsRoot, PI_AGENTS_ROOT: t.agentsRoot };
+  if (op.context === "home") Object.assign(env, { OATS_INSTANCE: t.meta.instance, OATS_INSTANCE_HOME: t.home, OATS_HOME: t.home, PI_AGENT_INSTANCE: t.meta.instance, PI_AGENT_HOME: t.home });
+  else for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "PI_AGENT_INSTANCE", "PI_AGENT_HOME"]) delete env[k];
+  const r = spawnSync("node", [abs, ...rest, ...argFlags, "--json"], { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 16 * 1024 * 1024, timeout: OPERATION_TIMEOUT_MS, killSignal: "SIGTERM" });
+  finishOperation({ r, bail, address, provider, op, argFlags, cwd, home: t.home, meta: t.meta, api: INSPECT_OPERATIONS_API });
+}
+async function operationCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
   if (args[1] !== "run") bail("E_USAGE", "usage: oats operation run <layer>:<name> (--home <abs> | --soul <name> [--dir <scope>] [--agents-root <abs>]) [--arg k=v ...] [--json]");
@@ -1025,6 +1127,8 @@ function operationCmd() {
   const m0 = typeof address === "string" ? OPERATION_ADDRESS_RE.exec(address) : null;
   if (!m0) bail("E_BAD_ARGS", `operation address must be <layer>:<name> with layer one of ${LAYERS.join(", ")} (got ${JSON.stringify(address)})`);
   const [, layer, opName] = m0;
+  const target = await workspaceTarget(bail, { command: "operation run" });
+  if (target) return workspaceOperation(target, { bail, address, layer, opName });
   const homeFlag = flag("home");
   if (homeFlag === true) bail("E_BAD_ARGS", "--home needs an absolute instance home");
   const home = homeFlag ? resolve(homeFlag) : undefined;
@@ -1783,7 +1887,7 @@ function instanceCmd() {
   }
 }
 /** `oats readiness [--soul <name> [--agents-root <abs>]] [--home <abs>] [--verify-signatures] [--policy] [--dir <d>] --json` — K5. */
-function readinessCmd() {
+async function readinessCmd() {
   const bail = (code, msg, details) => (JSON_MODE ? jsonFail(code, msg, details) : die(msg));
   dropAmbientRoot();
   // A captured incarnation's readiness comes from its retained resolution, not
@@ -1792,6 +1896,31 @@ function readinessCmd() {
   if (homeArg && homeArg !== true) {
     let capturedMeta = null; try { capturedMeta = JSON.parse(readFileSync(join(String(homeArg), "instance.json"), "utf8")); } catch { /* computeInspect reports the unreadable home */ }
     if (capturedMeta?.executionBinding || capturedMeta?.captured) return bail("E_UNSUPPORTED_MODE", `${basename(String(homeArg))} is a captured incarnation: its readiness is the retained resolution's, not the current configuration's (inspect it with oats operation --deployment/--resolution)`, { home: String(homeArg), captured: true });
+  }
+  // Workspace model (readinessApi 2): an instance or soul subject; checks
+  // installed | configured | member | providers. No trusted check.
+  const target = await workspaceTarget(bail, { command: "readiness" });
+  if (target) {
+    if (args.includes("--verify-signatures")) return bail("E_BAD_ARGS", "--verify-signatures was removed with the trusted check (readinessApi 2): declaring a package in packages: is the trust decision, and the lock pins commit + integrity");
+    const given = (name) => { const v = flag(name); return v && v !== true ? String(v) : null; };
+    const selector = homeArg && homeArg !== true ? { kind: "home", home: String(homeArg), soul: given("soul"), agentsRoot: given("agents-root") }
+      : { kind: "soul", soul: String(flag("soul")), agentsRoot: given("agents-root"), dir: given("dir") };
+    let catalog = null; try { catalog = officialPackageCatalog(); } catch { catalog = null; }
+    const doc = await readinessDocument(target, { selector, remoteOptions: remoteOptionsFromEnv(), catalog });
+    if (args.includes("--policy")) {
+      doc.policy = policyOf({ instanceMeta: target.meta, soul: target.meta ? null : policySoul(target) }).policy;
+      doc.notes.push("policy: a lifecycle-authority claim enforced by the spawn route, not an OS sandbox");
+    }
+    if (JSON_MODE) { jsonOk(doc); return; }
+    const s = doc.subject;
+    console.log(`readiness — ${s.kind === "instance" ? `instance ${s.instance} (soul ${s.soul})` : `soul ${s.soul}`}: ${doc.summary.ready ? "READY" : `${doc.summary.fail} failing, ${doc.summary.unknown} unknown of ${doc.summary.required} required`}`);
+    for (const [name, check] of Object.entries(doc.checks)) {
+      console.log(`  ${name}: ${check.status}`);
+      for (const i of check.items) console.log(`    ${i.status.padEnd(14)} ${i.subject}${i.required ? "" : " (optional)"}${i.reason ? ` — ${i.reason}` : ""}${i.remedy ? `  → ${i.remedy}` : ""}`);
+    }
+    if (doc.policy) console.log(`  policy: child spawns ${doc.policy.childSpawns.allowed ? "allowed" : "disabled"} (${doc.policy.childSpawns.origin.kind}${doc.policy.childSpawns.enforced ? ", enforced" : ""}); worktrees ${doc.policy.worktrees.allowed === null ? "unknown" : doc.policy.worktrees.allowed ? "allowed" : "not in this work mode"}`);
+    for (const n of doc.notes) console.log(`  note: ${n}`);
+    return;
   }
   const inspect = computeInspect({ onFail: bail });
   if (!inspect) return;
@@ -2331,6 +2460,10 @@ async function spawnCmd() {
   if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
   let root;
+  // Workspace model: the agents root is <deployment>/agents. An ambient root (the
+  // invoking agent's own PI_AGENTS_ROOT / OATS_ROOT) never redirects a v2 spawn —
+  // a home outside <deployment>/agents would have no derivable deployment.
+  try { loadLocal(dirFlag()); delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_ROOT; } catch { /* not a workspace deployment: classic root rules */ }
   try { root = ensureRoot(dirFlag()); }
   catch (e) { bail("E_NO_DEPLOYMENT", e.message || e); throw e; }
   const isPreview = args.includes("--preview");
@@ -3309,7 +3442,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 2, lifecycleApi: 1, readinessApi: 2, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 2, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3731,8 +3864,8 @@ const wantsHelp = args.slice(1).some((a) => a === "--help" || a === "-h");
 if (cmd && KERNEL_COMMANDS.has(cmd) && wantsHelp) { if (JSON_MODE) { jsonOk({ command: cmd, usage: usageLinesFor(cmd) }); process.exit(0); } usageFor(cmd); process.exit(0); }
 if (flag("server") !== undefined && ["spawn", "retire", "status", "session", "okf", "schedule", "inspect", "operation", "soul", "launch-config"].includes(cmd)) await serverRouteCmd();
 else if (cmd === "server") serverCmd();
-else if (cmd === "inspect") inspectCmd();
-else if (cmd === "operation") operationCmd();
+else if (cmd === "inspect") await inspectCmd();
+else if (cmd === "operation") await operationCmd();
 else if (cmd === "soul") await soulCmd();
 else if (cmd === "launch-config") await launchConfigCmd();
 else if (cmd === "doctor") {
@@ -3747,7 +3880,7 @@ else if (cmd === "update") {
   updateCmd();
 }
 else if (cmd === "type") typeCmd();
-else if (cmd === "readiness") readinessCmd();
+else if (cmd === "readiness") await readinessCmd();
 else if (cmd === "instance") instanceCmd();
 else if (cmd === "root") console.log(resolve(new URL("..", import.meta.url).pathname));
 else if (cmd === "sync") await syncCmd();

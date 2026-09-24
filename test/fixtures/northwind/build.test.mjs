@@ -198,9 +198,15 @@ test("the package executable actually runs", () => {
   cleanups.push(() => fs.rm(tmp, { recursive: true, force: true }));
   git(tmp, "clone", "-q", "--depth", "1", "--branch", "v2.1.3", fixture.refs["pkg-okf"], "okf");
   const script = path.join(tmp, "okf", "oats-package", "capabilities", "oats-okf", "bin", "oats-okf.mjs");
-  const r = spawnSync(process.execPath, [script, "binding-check", "--x"], { encoding: "utf8" });
+  let r = spawnSync(process.execPath, [script, "binding-normalize", "--x"], { encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(JSON.parse(r.stdout), { ok: true, action: "binding-check", args: ["--x"] });
+  assert.deepEqual(JSON.parse(r.stdout), { ok: true, action: "binding-normalize", args: ["--x"] });
+  // binding-check answers the check wire from its settings (OATS_SETTINGS, else the request's).
+  const check = (settings, env = {}) => JSON.parse(spawnSync(process.execPath, [script, "binding-check"], { encoding: "utf8",
+    input: JSON.stringify({ schemaVersion: 1, phase: "check", slot: "knowledge", capability: "oats.okf", settings }), env: { ...process.env, OATS_SETTINGS: "", ...env } }).stdout);
+  assert.deepEqual(check({ "state-dir": "/srv/okf" }).result, { status: "ready", problems: [] });
+  assert.deepEqual(check({}).result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "setting state-dir is required (absolute host path)" }] });
+  assert.equal(check({}, { OATS_SETTINGS: JSON.stringify({ "state-dir": "/srv/okf" }) }).result.status, "ready", "OATS_SETTINGS wins");
 });
 
 test("moveMember commits a change on main and updates fixture.commits", async () => {
