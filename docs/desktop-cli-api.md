@@ -204,8 +204,13 @@ not-applicable, and at least one required item exists. `byCapability` and
   reports it. The kernel never reads `oats.yaml` here.
   - `fail` when the backlink is not confirmed; the remedy names
     `oats-membership.yaml`.
-  - `unknown` when discovery could not be read, or on a standalone view.
-  - `not-applicable` for an external soul (it has no member backlink).
+  - `unknown` when discovery could not be read.
+  - `not-applicable` (`required: false`) for an external soul (it has no
+    member backlink) and on a standalone view (decision 10, an allowed mode:
+    membership is declared there, never confirmed). The reason starts with
+    `standalone view (explicit | unreadable-host)`, and
+    `evidence.standaloneReason` carries the reason code. A standalone soul can
+    therefore read Ready.
   - Never login, never team registration.
 - **`providers`** (producer `provider binding check`): for each module whose
   manifest declares `binding`, the kernel runs the provider's own check

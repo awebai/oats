@@ -139,5 +139,19 @@ if (cmd === "notes") { process.stdout.write(JSON.stringify({ schemaVersion: 1, o
     assert.deepEqual(op.result.documents.map((d) => d.label), ["Notes"]);
     refused(run("operation", "run", "knowledge:notes", "--soul", "release-manager", "--dir", dep), "E_OPERATION_UNAVAILABLE", "a home operation for a soul");
     refused(run("operation", "run", "knowledge:nope", "--home", home), "E_OPERATION_UNKNOWN", "undeclared operation");
+
+    // ---- an explicit standalone view (decision 10) is an allowed mode: member is not-applicable, not a required unknown ----
+    const sa = join(base, "standalone-dep");
+    mkdirSync(join(sa, "agents"), { recursive: true });
+    writeFileSync(join(sa, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.data}\nstandalone: ${fx.refs.data}\n`);
+    ok(oats(["sync", "--dir", sa, "--json"], { cwd: sa, env, base }), "sync standalone");
+    rd = ok(oats(["readiness", "--soul", "data-analyst", "--dir", sa, "--json"], { cwd: sa, env, base }), "readiness --soul (standalone)");
+    assert.equal(rd.checks.member.status, "not-applicable", JSON.stringify(rd.checks.member));
+    const sm = rd.checks.member.items[0];
+    assert.equal(sm.status, "not-applicable"); assert.equal(sm.required, false);
+    assert.match(sm.reason, /^standalone view \(explicit\)/); assert.equal(sm.evidence.standaloneReason, "explicit");
+    assert.equal(rd.checks.installed.status, "pass", JSON.stringify(rd.checks.installed));
+    assert.equal(rd.summary.ready, true, JSON.stringify(rd.summary));
+    assert.deepEqual(rd.summary.subjectBlockers, []);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
