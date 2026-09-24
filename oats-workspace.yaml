@@ -30,12 +30,15 @@ packages:
 teams:
   global: { description: The framework's expert souls and its package experts }
 
-# The framework's own souls consume the official core and knowledge provider as
-# packages, exactly as an adopter does.
+# The framework's own souls consume the official core, knowledge and messaging
+# providers as packages, exactly as an adopter does. Every soul gets messaging:
+# review asks and coordination arrive by mail. A soul opts out with
+# `messaging: none` in its soul.yaml.
 defaults:
   capabilities:
     oats.core: { from: package }
   knowledge: { oats.okf: { from: package } }
+  messaging: { oats.aweb: { from: package } }
   tasks: none
 
 # Knowledge stores. The provider does not read this block; each machine binds
