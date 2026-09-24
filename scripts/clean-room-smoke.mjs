@@ -132,7 +132,7 @@ try {
   const pinnedRef = packedCatalog.packages?.["oats.okf"]?.ref;
   const bundledVersion = readJson(join(kernelRoot, "capabilities/oats-okf/oats.json")).version;
   assert.equal(pinnedRef, `v${bundledVersion}`, "npm mirror and official catalog version drift");
-  assert.equal(bundledVersion, "2.1.3");
+  assert.equal(bundledVersion, "2.1.4");
   const okfCommit = gitRepo(officialRepo, "okf");
   const okfTag = `v${bundledVersion}`;
   run("git", ["-C", officialRepo, "tag", okfTag]);
