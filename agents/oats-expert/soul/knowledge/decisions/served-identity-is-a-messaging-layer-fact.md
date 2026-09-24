@@ -1,8 +1,8 @@
 ---
 type: Decision
 title: Per-spawn identity choice (local | global) — the served principal is a messaging-layer fact the kernel binds and shows, never a kernel vocabulary
-status: proposed
-description: PROPOSED (2026-09-23, to the human) from an OSS request that every instance creation offer a local (instance-lifetime) or global (resident identity served through a grant) messaging identity. Kernel asks reduced to four provider-neutral additions — `decision.effective.providers` binds the merged per-module payloads a spawn applied; roster/inspect copy a documented messaging-layer meta key `identity`; a manifest-declared `hostOnly` settings key is refused by the resolver in every committed or per-spawn layer; launch-hook meta is persisted into `capabilityMeta` — with NO new `oats spawn` flags; the choice travels through the existing `--provider <cap> k=v` payload and the provider owns every identity-specific rule.
+status: accepted
+description: ACCEPTED (2026-09-24, under the human's delegated release/decision authority — "you have freedom to make decisions") from an OSS request that every instance creation offer a local (instance-lifetime) or global (resident identity served through a grant) messaging identity. Kernel asks reduced to four provider-neutral additions — `decision.effective.providers` binds the merged per-module payloads a spawn applied; roster/inspect copy a documented messaging-layer meta key `identity`; a manifest-declared `hostOnly` settings key is refused by the resolver in every committed or per-spawn layer; launch-hook meta is persisted into `capabilityMeta` — with NO new `oats spawn` flags; the choice travels through the existing `--provider <cap> k=v` payload and the provider owns every identity-specific rule.
 tags: [identity, messaging, provider-payload, spawn, decision-record, desktop, kernel-boundary]
 timestamp: 2026-09-23
 ---
@@ -123,10 +123,13 @@ resolution revision.
 
 ## Status
 
-Proposed to the human 2026-09-23; amended the same day with K1″ after the
-provider's author showed the refusal cannot live in the hook (no provenance in
-the merged payload). Implementation of the provider half is with a developer
-instance under the OSS coordinator's review; K1′/K1″/K2 are the maintainer's
-after acceptance (or a developer of theirs against this text, if the human
-prefers). Until accepted, no kernel change lands;
-the provider work proceeds on its own repo lane under the usual PR review.
+Proposed to the human 2026-09-23; amended the same day with K1″ (the refusal
+cannot live in the hook — no provenance in the merged payload) and K3′
+(launch meta dropped). **Accepted 2026-09-24** under the human's delegated
+authority, after K3′ had already shipped as a defect fix (0.25.5) and the
+provider half (oats.aweb 1.12.0) had passed a live rehearsal and been
+published. Remaining implementation: K1′ (`decision.effective.providers`),
+K1″ (`settings.<key>.hostOnly` in the manifest schema + resolver refusal),
+K2 (roster/inspect `identity` from the messaging module's meta) — one kernel
+PR, then oats.aweb 1.12.1 declares `residents` `hostOnly`, then Desktop's
+Identity select as `--provider` pairs when its lane reaches Phase F.
