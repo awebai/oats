@@ -22,6 +22,16 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR #126 — Desktop F1: deployment model on kernel JSON (2026-09-24)
+- verdict: MERGED `033d040b`, first round
+- owner: oats-desktop-engineer-1 · coordinator: none (lead-reviewed)
+- gates: direction per boundary §2 F1 + §3b (0.24 readers deleted, not wrapped). Transport: fixed argv, no shell, bounded, env stripped; `status` accepted only as the raw document and `workspace status` only as its v1 envelope. Row withholding plus canonical file roots. CI green. **Native gate 9/9**: real Electron at the head, installed 0.25.7 CLI, scratch Northwind deployment with a granted instance and a hostile `instance.json`.
+- taught us:
+  - (1) **Ship the maintainer's exit-0 capture as the consumer's fixture.** A guard-refused study run (exit 86) produces a document that looks valid. Fixtures from a clean producer run, with argv/exit/kernel/hash provenance, remove that doubt.
+  - (2) The consumer found a **kernel** trust gap. `listInstances` spreads `instance.json` last, so a hostile file can report any `home`. Keep the consumer-side guard as defense in depth, and fix the producer too.
+  - (3) A CDP gate must wait for the observer's first read and navigate like an operator. The header lives in Workspace → Capabilities, and the first read can take tens of seconds.
+  - (4) F1 left the 0.24 inventory/readiness blocks on the same tab. Recorded as a required F2 deletion.
+
 ## PR #124 — configChain stops at a v2 deployment root → OATS v0.25.7 (2026-09-24)
 - verdict: MERGED `4f3747a4` (merged by the ops watcher on Node 22 green; lead-authored, test-first)
 - owner: oats-expert-knowledge-reworks (lead) · coordinator: none

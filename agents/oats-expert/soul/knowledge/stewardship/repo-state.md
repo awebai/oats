@@ -15,6 +15,8 @@ than letting the file grow stale.
 
 ## On main
 
+- **2026-09-24 — Desktop Phase F slice F1 MERGED (PR126 `033d040b`)**: the deployment model now reads kernel JSON (`oats status --json` + `oats workspace status --json`), and the 0.24 readers are deleted. Next: branding PR, then F2 (onboarding/sync; it deletes the leftover 0.24 inventory/readiness blocks) and F3/F4 (identity fixtures ready).
+
 - **2026-09-24 — OATS 0.25.7 PUBLISHED (tag `41e742ae`; bump PR125 `69ddbd8a`, opened and merged by the ops watcher under the bump-PR gate; 7 assets).** One fix: a v2 deployment root (`oats-local.yaml`) is a configuration boundary. `configChain` stops there, so nested or scratch deployments no longer inherit the outer scope (PR124 `4f3747a4`, from the Desktop engineer's Phase F study). First release under the co-lead protocol: Class B intent 26a4062f → ACK 7997aab9.
 
 - **2026-09-24 — OATS 0.25.6 PUBLISHED (tag `be26b05f`; bump PR122 `5c796ae6`; npm visible on first probe; 7 release assets)** — decision 27 kernel half (PR118 `5d9eccd5`: `decision.effective.providers`, `hostOnly` settings keys, served identity on the roster, feature `served-identity`) + **Desktop 10B-0 terminal owner leases (PR117 `deb82710`, native gate 23/23)** + Phase F boundary §3b native-rework rule + Phase D plan + PR120 Phase F answers + PR121 inbox seeds.
