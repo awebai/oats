@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { fs, join, dirname, safePath, readJSON, save, atomic, tree, materialize, digest, hash, withLock, exec, cleanEnv, fail, relPath, overlaps, resolve } from './io.mjs';
-import { metadata, noGit } from './config.mjs';
+import { metadata, noGit, gitTimeoutMs } from './config.mjs';
 const validator = fileURLToPath(new URL('../skills/okf/scripts/okf-validate.mjs', import.meta.url));
 // Never let local replace refs reinterpret frozen OIDs, including inside Git's
 // transport subprocesses. Override even an explicitly supplied command env.
@@ -17,11 +17,19 @@ export function validateBase(root, base) {
   if(result.errors.length || result.warnings.length) fail('E_VALIDATION', [...result.errors,...result.warnings].join('; '));
   return {files,meta,digest:digest(files)};
 }
-function rawBlob(cwd,oid) {
-  const result=spawnSync('git',['--no-replace-objects','-c','core.hooksPath=/dev/null','-C',cwd,'cat-file','blob',oid],{cwd,env:gitEnv(),timeout:30000,maxBuffer:16*1024*1024});
+/** Write a blob straight to a file descriptor: no in-memory buffer, so object
+ *  size never limits what a base may hold. The remote budget applies because a
+ *  partial clone fetches a missing blob on its first read. */
+function writeBlob(cwd,oid,target,mode) {
+  const fd=fs.openSync(target,'wx',mode);
+  let result; try { result=spawnSync('git',['--no-replace-objects','-c','core.hooksPath=/dev/null','-C',cwd,'cat-file','blob',oid],{cwd,env:gitEnv(),timeout:gitTimeoutMs(),stdio:['ignore',fd,'pipe']}); } finally { fs.closeSync(fd); }
   if(result.error || result.status!==0) fail('E_COMMAND','Git object read failed');
-  return result.stdout;
+  fs.chmodSync(target,mode);
 }
+/** A tree entry the store never materializes: outside the knowledge base root.
+ *  Its absence from a staging tree is by construction; its presence is a
+ *  worker's doing and is judged like any other change. */
+const outsideBase=(base,p)=>!(base.root==='.' || p===base.root || p.startsWith(base.root+'/'));
 function materializeGitObjects(base,dest,head) {
   immutableCommit(dest,head);
   const entries=gitTreeEntries(dest,head);
@@ -35,20 +43,32 @@ function materializeGitObjects(base,dest,head) {
   // Index/HEAD updates do not apply content filters. They preserve the normal
   // Git worktree needed by existing diff/publication guards without checkout.
   git(dest,['read-tree',head]);git(dest,['update-ref','--no-deref','HEAD',head]);
+  // Only the knowledge base is materialized: the index carries the whole tree
+  // for publication, but bytes outside the base root are never read, so the
+  // size of the rest of the repository does not matter. The scope checks know
+  // that an entry outside the root is expected to be absent (see outsideBase).
   for(const [p,entry] of entries) {
+    if(outsideBase(base,p)) continue;
     const target=safePath(join(dest,p));fs.mkdirSync(dirname(target),{recursive:true});
-    if(entry.mode==='160000') {fs.mkdirSync(target);continue;}
-    const bytes=rawBlob(dest,entry.oid);
-    if(entry.mode==='120000') fs.symlinkSync(bytes.toString('utf8'),target);
-    else {fs.writeFileSync(target,bytes,{flag:'wx',mode:entry.mode==='100755'?0o755:0o644});fs.chmodSync(target,entry.mode==='100755'?0o755:0o644);}
+    writeBlob(dest,entry.oid,target,entry.mode==='100755'?0o755:0o644);
   }
 }
 function clone(base, dest, selectedHead) {
   safePath(dest);
   if(fs.existsSync(dest)) fail('E_PATH',`staging destination exists: ${dest}`);
   fs.mkdirSync(dirname(dest),{recursive:true});
-  git(dirname(dest),['clone','--no-hardlinks','--no-checkout','--',base.repository,dest]);
-  git(dest,['fetch','origin',`refs/heads/${base.acceptedBranch}`]);
+  // Fetch only what the store reads: the accepted branch, trees now and blobs
+  // on demand. Only a remote that does not offer object filtering gets a plain
+  // single-branch clone instead; any other failure is the failure it is. The
+  // ancestry the publication checks walk is present either way.
+  const cloneArgs=['clone','--no-hardlinks','--no-checkout','--single-branch','--branch',base.acceptedBranch];
+  try { git(dirname(dest),[...cloneArgs,'--filter=blob:none','--',base.repository,dest],{timeout:gitTimeoutMs()}); }
+  catch(e) {
+    if(e.code!=='E_COMMAND' || !/filter/i.test(e.message)) throw e;
+    fs.rmSync(dest,{recursive:true,force:true});
+    git(dirname(dest),[...cloneArgs,'--',base.repository,dest],{timeout:gitTimeoutMs()});
+  }
+  git(dest,['fetch','origin',`refs/heads/${base.acceptedBranch}`],{timeout:gitTimeoutMs()});
   const head=selectedHead ?? git(dest,['rev-parse','FETCH_HEAD']);
   verifyRemote(base,dest);
   materializeGitObjects(base,dest,head);
@@ -142,7 +162,9 @@ function withVerificationIndex(cwd,fn) {
 }
 export function verifyGitScope(base, dest, baseline, { checkModes = true } = {}) {
   return withVerificationIndex(dest,read=>{
-    const names=read(['diff','--name-only','-z',baseline,'--']).split('\0').filter(Boolean);
+    // Entries outside the root are never materialized, so their absence is
+    // not a deletion; a present outside file that differs still is a change.
+    const names=read(['diff','--name-only','-z',baseline,'--']).split('\0').filter(Boolean).filter(p=>!(outsideBase(base,p) && !fs.existsSync(join(dest,p))));
     // A restored working file can conceal a staged, unauthorized index entry.
     names.push(...read(['diff','--cached','--name-only','-z',baseline,'--']).split('\0').filter(Boolean));
     names.push(...read(['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean));
@@ -303,7 +325,7 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   const baseline=immutableCommit(cwd,stage.head);
   verifyPublicationTree(base,cwd,baseline.tree,baseline.tree,proposal.before);
   // Baseline must still be accepted. Never rebase model output without rejudging it.
-  git(cwd,['fetch','origin',`refs/heads/${base.acceptedBranch}`]);
+  git(cwd,['fetch','origin',`refs/heads/${base.acceptedBranch}`],{timeout:gitTimeoutMs()});
   const accepted=git(cwd,['rev-parse','FETCH_HEAD']);
   if(accepted!==stage.head) {
     // A known or uncertain previously created PR may be reconciled, but a
@@ -350,13 +372,13 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   const publication=immutableCommit(cwd,receipt.commit);
   if(publication.parents.length!==1 || publication.parents[0]!==stage.head) fail('E_CONFIRM','publication commit must have exactly the frozen baseline as its parent');
   verifyPublicationTree(base,cwd,baseline.tree,publication.tree,proposal.after,proposal.before);
-  const remoteTip=()=>git(cwd,['ls-remote','--heads','origin',`refs/heads/${branch}`]).split(/\s/)[0] || null;
+  const remoteTip=()=>git(cwd,['ls-remote','--heads','origin',`refs/heads/${branch}`],{timeout:gitTimeoutMs()}).split(/\s/)[0] || null;
   let tip=remoteTip();
   if(tip && tip!==receipt.commit) fail('E_PR','publication branch has unexpected commit; never force push');
   if(tip!==receipt.commit) {
     beforePublish();
     receipt.status='push-intent'; persist();
-    try { verifyRemote(base,cwd);git(cwd,['push','--no-follow-tags','--recurse-submodules=no','origin',`${receipt.commit}:refs/heads/${branch}`]); }
+    try { verifyRemote(base,cwd);git(cwd,['push','--no-follow-tags','--recurse-submodules=no','origin',`${receipt.commit}:refs/heads/${branch}`],{timeout:gitTimeoutMs()}); }
     catch(e) { receipt.status='push-unknown'; receipt.error=e.message; persist(); throw e; }
     tip=remoteTip(); if(tip!==receipt.commit) {receipt.status='push-unknown';persist();fail('E_CONFIRM','pushed head not confirmed');}
   }
@@ -375,7 +397,7 @@ export function gitPublish(base, stage, proposal, receipt, persist, {beforePubli
   const pr=matching[0];receipt.pr=pr;receipt.status='delivered';receipt.deliveredAt ||= new Date().toISOString();persist();
   if(pr.state==='CLOSED' && !pr.mergedAt) {receipt.status='rejected';persist();fail('E_PR','PR closed without merge; retained proposal requires operator review');}
   if(pr.mergedAt) {
-    git(cwd,['fetch','origin',`refs/heads/${base.acceptedBranch}`]);
+    git(cwd,['fetch','origin',`refs/heads/${base.acceptedBranch}`],{timeout:gitTimeoutMs()});
     const merge=pr.mergeCommit?.oid;
     if(!merge) fail('E_CONFIRM','merged PR lacks merge commit');
     git(cwd,['merge-base','--is-ancestor',merge,'FETCH_HEAD']);

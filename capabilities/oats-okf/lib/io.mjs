@@ -70,7 +70,7 @@ export function unlock(path, token) {
   try { process.kill(o.pid, 0); fail('E_LOCKED', 'lock owner is still alive'); } catch (e) { if(e.code !== 'ESRCH') throw e; }
   fs.rmSync(path, { recursive: true }); syncDir(dirname(path)); return { unlocked: path };
 }
-export const identityKeys = ['OATS_INSTANCE','OATS_INSTANCE_HOME','OATS_HOME','PI_AGENT_HOME','PI_AGENT_NAME','PI_AGENT_INSTANCE','PI_AGENTS_ROOT','OATS_ROOT','OATS_SOUL','OATS_AGENT','OATS_KIND','OATS_EVENT','OATS_CONTEXT','OATS_REPO','OATS_WORK','OATS_BRANCH','OATS_META','OATS_SETTINGS','OATS_BINDING_FILE','OATS_SOURCE_RECEIPT_FILE','OATS_INVOCATION_CONTEXT_FILE','OATS_DEPLOYMENT','OATS_RESOLUTION'];
+export const identityKeys = ['OATS_INSTANCE','OATS_INSTANCE_HOME','OATS_HOME','PI_AGENT_HOME','PI_AGENT_NAME','PI_AGENT_INSTANCE','PI_AGENTS_ROOT','OATS_ROOT','OATS_SOUL','OATS_SOUL_ID','OATS_AGENT','OATS_KIND','OATS_EVENT','OATS_CONTEXT','OATS_REPO','OATS_WORK','OATS_BRANCH','OATS_META','OATS_SETTINGS','OATS_BINDING_FILE','OATS_SOURCE_RECEIPT_FILE','OATS_INVOCATION_CONTEXT_FILE','OATS_DEPLOYMENT','OATS_RESOLUTION'];
 export function cleanEnv(env = process.env) {
   return Object.fromEntries(Object.entries(env).filter(([k]) => !/^(OATS_(?!HOME_DIR$|PACKAGE_CATALOG$)|PI_AGENT|GIT_)/.test(k)));
 }

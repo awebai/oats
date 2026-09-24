@@ -29,7 +29,7 @@ two roles never collapse: `oats-okf`, `oats-aweb`, `oats-jira`, `oats-linear`,
 their `oats-package/` is consumed only as a package: `from: package`, pinned
 in the workspace's `packages:`, locked and approved per version. The framework's
 own souls therefore say `oats.okf: { from: package }` even though `oats-okf` is
-a member. A bare version in `packages:` (`oats.okf: v2.1.3`) resolves through
+a member. A bare version in `packages:` (`oats.okf: v2.1.4`) resolves through
 the catalog; a package outside it is written `git:<repo>@<ref>`.
 
 ## Join it on your machine

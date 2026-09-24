@@ -4,7 +4,7 @@ import { fs, join, dirname, resolve, readJSON, save, safePath, cliPath, oats, fa
 import { loadBindings, declaration, splitRef } from '../lib/config.mjs';
 import { register, registerCaptured, loadInvocationSourceReceipt, homeSource, loadSource, loadStatus, saveStatus, updateStatus, capture, scheduleSource, settleRetiredSchedule, service, markerPath, views } from '../lib/sources.mjs';
 import { runSource, complete, retry, readRun, requireQualifiedHelper } from '../lib/worker.mjs';
-import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource } from '../lib/migration.mjs';
+import { initBase, migrate, deliverMigration, cutoverMigration, migrateSource, forgetMigration } from '../lib/migration.mjs';
 import { inspect } from '../lib/inspection.mjs';
 import { loadInvocationKnowledgeBinding } from '../lib/binding-wire.mjs';
 import { loadCapturedOkfInvocation, loadOkfSourceReceiptInput, assertOkfInvocationAction, requireOkfAdmittedAction, assertOkfSourceContext, assertOkfRegisteredSourceReplay } from '../lib/invocation-context.mjs';
@@ -20,6 +20,7 @@ oats okf init --base ALIAS --nodes FILE [--output PATH | --confirm] [--json]
 oats okf migrate --legacy PATH --base ALIAS --node NODE --output PATH [--json]
 oats okf migrate --deliver FILE | --cutover FILE --soul-dir PATH [--json]
 oats okf migrate --source-home PATH [--json]
+oats okf migrate --forget ID [--json]
 oats okf unlock --lock PATH --token TOKEN [--json]
 Captured workers use oats operation run knowledge:harvest with SOURCE --deployment/--resolution/--home,
 --arg native-request=ABS_BACKEND_ONLY_JSON and optional --arg worker-mode=prepare|launch.
@@ -167,6 +168,7 @@ else {
     } else if(event==='init') result=initBase(loadBindings(),flags.base,flags.nodes,flags.output,{confirm:!!flags.confirm});
     else if(event==='migrate') {
       if(flags['source-home']) result=migrateSource(loadBindings(),flags['source-home']);
+      else if(flags.forget) result=forgetMigration(loadBindings(),flags.forget);
       else if(flags.deliver) result=deliverMigration(resolve(flags.deliver));
       else if(flags.cutover) result=cutoverMigration(resolve(flags.cutover),flags['soul-dir']);
       else result=migrate(loadBindings(),{legacy:flags.legacy,alias:flags.base,node:flags.node,output:flags.output});
