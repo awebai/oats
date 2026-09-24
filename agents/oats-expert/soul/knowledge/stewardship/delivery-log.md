@@ -22,6 +22,11 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR #124 — configChain stops at a v2 deployment root → OATS v0.25.7 (2026-09-24)
+- verdict: MERGED `4f3747a4` (merged by the ops watcher on Node 22 green; lead-authored, test-first)
+- owner: oats-expert-knowledge-reworks (lead) · coordinator: none
+- taught us: a defect the Desktop engineer reported as "inspect names the operator checkout" was the legacy `oats-config.yaml` ancestor walk crossing a v2 deployment boundary that docs/configuration.md already promised. Read the doc's promise first; the fix was one `break`, and the docs line made the boundary explicit. Release: the first cut under the co-lead push protocol (Class B intent → ACK), and the first where a delegated watcher opened and merged the `[skip ci]` bump PR under the corrected gate.
+
 ## PR #117 — Desktop 10B-0 terminal owner leases (`terminalApi: 2`) → OATS v0.25.6 (2026-09-24)
 - verdict: MERGED `deb82710` (round 1 returned earlier for a root-harness fix + rebase; round 2 at `56f0e41c`)
 - owner: oats-expert-knowledge-reworks (lead) · coordinator: none (Desktop engineer `oats-desktop-engineer-1` delivered directly)
