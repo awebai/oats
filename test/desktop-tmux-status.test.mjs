@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createTmuxStatusReader } from "../packages/desktop/server/tmux-status.mjs";
-import { initModel, collectControlPane } from "../packages/desktop/server/model.mjs";
+import { observeLiveness } from "../packages/desktop/server/liveness.mjs";
 
 test("saved socket and session determine status, with one query per socket", () => {
   const calls = [];
@@ -42,16 +42,36 @@ test("unreachable or malformed status stays unknown, proven missing socket is st
   assert.equal(createTmuxStatusReader({ exec: () => "garbage" })({ instance: "agent" }).running, null);
 });
 
-test("panel model preserves saved-route status instead of rechecking the default socket", () => {
-  const instances = [
-    { instance: "live", running: true, command: "PRIVATE_ENV=value claude", paneCommand: "claude", tmux: { socket: "/saved", session: "team", window: "live", id: "@1" } },
-    { instance: "unknown", running: null, runtimeError: "unreachable", tmux: { socket: "/lost" } },
-  ];
-  initModel({ listInstances: () => [{ name: "agent", dir: "/nonexistent-oats-status-test", instances }] });
-  const panel = collectControlPane("/nonexistent-oats-status-test");
-  assert.equal(panel.instances[0].running, true);
-  assert.equal(panel.instances[0].tmux.socket, "/saved");
-  assert.equal(panel.instances[0].tmux.id, "@1");
-  assert.equal(panel.instances[0].command, "claude", "do not expose the persisted launch command as process status");
-  assert.equal(panel.instances[1].running, null);
+test("liveness keeps the kernel-recorded socket/session target and never exposes a launch command", () => {
+  const calls = [];
+  const exec = (bin, args) => { calls.push([bin, args]); return "team\tlive\t@1\t0\tclaude\t42\n"; };
+  const [live, other] = observeLiveness([
+    { instance: "live", tmux: { socket: "/saved", session: "team", window: "live" } },
+    { instance: "absent", tmux: { socket: "/saved", session: "team", window: "absent" } },
+  ], { tmuxReader: createTmuxStatusReader({ exec }) });
+  assert.equal(live.running, true); assert.equal(live.runtimeState, "running");
+  assert.equal(live.tmux.socket, "/saved"); assert.equal(live.tmux.id, "@1");
+  assert.equal(Object.hasOwn(live, "paneCommand"), false, "process status is not a launch command");
+  assert.equal(other.running, false);
+  assert.equal(calls.length, 1, "one query per saved socket");
+  assert.deepEqual(calls[0][1].slice(0, 3), ["-u", "-S", "/saved"]);
+});
+
+test("liveness preserves Herdr targets instead of requiring a tmux window", () => {
+  const target = { backend: "herdr", terminalId: "term_probe" };
+  const states = { live: { present: true, status: "done" }, gone: { present: false, status: "unknown" } };
+  const rows = observeLiveness([
+    { instance: "live", sessionTarget: { ...target, id: "live" } },
+    { instance: "gone", sessionTarget: { ...target, id: "gone" } },
+    { instance: "unreachable", sessionTarget: { ...target, id: "x" } },
+  ], { tmuxReader: () => assert.fail("Herdr rows never probe tmux"),
+    herdr: (t) => { if (!states[t.id]) throw new Error("socket unavailable"); return states[t.id]; } });
+  assert.deepEqual(rows.map((r) => r.running), [true, false, null]);
+  assert.deepEqual(rows.map((r) => r.tmux), [null, null, null], "Herdr is not projected as a fabricated tmux target");
+  assert.equal(rows[2].runtimeState, "unreachable"); assert.equal(rows[2].runtimeError, "socket unavailable");
+});
+
+test("malformed liveness requests are refused, malformed rows are unknown", () => {
+  assert.throws(() => observeLiveness({}), /Invalid liveness request/);
+  assert.equal(observeLiveness([null], { tmuxReader: () => assert.fail() })[0].running, null);
 });

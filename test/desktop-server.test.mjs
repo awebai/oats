@@ -1,15 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, rmSync } from "node:fs";
-import { spawn, execFileSync } from "node:child_process";
+import { readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, symlinkSync, realpathSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
 import { request as httpRequest } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, basename, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Inert server tests: the backend runs against a FAKE installed CLI that
+// replays JSON captured from a real `oats` run on the hand-built Northwind
+// deployment (test/helpers/desktop-fake-oats.mjs). No kernel, runtime, network
+// or tmux session is created here; live tmux checks live in
+// desktop-tmux-anchoring.test.mjs.
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
+const FAKE = join(ROOT, "test", "helpers", "desktop-fake-oats.mjs");
+const SOUL = "release-manager", INSTANCE = "release-manager-cap";
 
 async function freePort() {
   const server = createServer();
@@ -22,27 +29,54 @@ async function freePort() {
   return port;
 }
 
-function desktopCapabilityFixture() {
-  const scope = mkdtempSync(join(tmpdir(), "oatsweb-capability-"));
-  const soul = join(scope, "agents", "dev", "soul");
-  mkdirSync(soul, { recursive: true });
-  writeFileSync(join(soul, "soul.yaml"), "name: dev\ndescription: Test developer.\nruntime: pi\nwork: checkout\n");
-  writeFileSync(join(soul, "AGENTS.md"), "# Test developer\n");
-  const capability = join(scope, ".agents", "capabilities", "owned", "oats-review");
-  cpSync(join(ROOT, "capabilities", "oats-review"), capability, { recursive: true });
-  writeFileSync(join(scope, "oats-config.yaml"), [
-    "name: desktop-test",
-    "capabilities:",
-    "  additive:",
-    "    oats.review:",
-    "      from: owned",
-    "      global: true",
-    "",
-  ].join("\n"));
-  return scope;
+/** A scratch deployment directory holding the FILE CONTENT the brain/file
+ * viewers read, at the paths the captured kernel status reports. The kernel
+ * JSON (not this layout) is the data authority for every roster fact. */
+function northwindDeployment() {
+  const scope = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-northwind-")));
+  writeFileSync(join(scope, "oats-local.yaml"), "workspace: fixture\n");
+  const agent = join(scope, "agents", SOUL), soul = join(agent, "soul");
+  mkdirSync(join(soul, "skills", "release-checklist"), { recursive: true });
+  mkdirSync(join(soul, "knowledge"), { recursive: true });
+  writeFileSync(join(soul, "AGENTS.md"), "# release-manager\n");
+  writeFileSync(join(soul, "skills", "release-checklist", "SKILL.md"), "---\nname: release-checklist\ndescription: Cut a release\n---\n# c\n");
+  writeFileSync(join(soul, "knowledge", "index.md"), "# index\n");
+  const home = join(agent, "instances", INSTANCE);
+  mkdirSync(join(home, ".agents", "skills", "nw-deploy", "deploy"), { recursive: true });
+  mkdirSync(join(home, "notes"), { recursive: true });
+  writeFileSync(join(home, ".agents", "skills", "nw-deploy", "deploy", "SKILL.md"), "---\nname: deploy\ndescription: Deploy\n---\n");
+  writeFileSync(join(home, "AGENTS.md"), "# composed\n");
+  writeFileSync(join(home, "TASK.md"), "# task\n");
+  writeFileSync(join(home, "notes", "note.md"), "# note\n");
+  return { scope, agent, soul, home };
 }
 
-// ---- registry cache + attach sequencing (extracted marked blocks) ----
+/** Start the real backend with the fake CLI as its only discovery candidate. */
+async function startServer(dir, { env = {}, drop = [], observed = true } = {}) {
+  const tools = mkdtempSync(join(tmpdir(), "oatsweb-fake-cli-"));
+  const bin = join(tools, "oats"), log = join(tools, "calls.jsonl");
+  writeFileSync(bin, `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(FAKE)} "$@"\n`);
+  chmodSync(bin, 0o755);
+  const port = await freePort();
+  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", dir], {
+    stdio: "ignore",
+    env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, FAKE_OATS_LOG: log, FAKE_OATS_DROP_FEATURES: drop.join(","), ...env },
+  });
+  let panel = null;
+  for (let i = 0; i < 100; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    try { panel = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json(); } catch { continue; }
+    if (!observed || panel.deployment?.status !== "pending") break;
+  }
+  assert.ok(panel, "server came up");
+  if (observed) assert.equal(panel.deployment?.status, "observed", JSON.stringify(panel.deployment));
+  const calls = () => { try { return readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse); } catch { return []; } };
+  return { port, proc, panel, calls, get: (p) => fetch(`http://127.0.0.1:${port}${p}`),
+    post: (p, body, headers = {}) => fetch(`http://127.0.0.1:${port}${p}`, { method: "POST",
+      headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }) };
+}
+
+// ---- marked-block extraction ----
 function extractBlock(file, marker) {
   const src = readFileSync(file, "utf8");
   const re = new RegExp(`\\/\\* OATSWEB_${marker}_BEGIN[^*]*\\*\\/([\\s\\S]*?)\\/\\* OATSWEB_${marker}_END \\*\\/`);
@@ -51,13 +85,11 @@ function extractBlock(file, marker) {
   return m[1];
 }
 
-test("desktop server: collect subcommand emits the roster snapshot JSON", () => {
-  const out = execFileSync(process.execPath, [SRV, "collect", "--dir", ROOT],
-    { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
-  const parsed = JSON.parse(out);
-  const ws = Object.values(parsed);
-  assert.ok(ws.length >= 1, "at least one workspace in the snapshot");
-  assert.ok(Array.isArray(ws[0].instances), "each workspace carries an instances array");
+test("desktop server: the retired collect helper is refused; no deployment reader ships", () => {
+  const r = spawnSync(process.execPath, [SRV, "collect", "--dir", ROOT], { encoding: "utf8", timeout: 30000 });
+  assert.equal(r.status, 1); assert.match(r.stderr, /usage: oats-web\.mjs start/);
+  const server = join(ROOT, "packages", "desktop", "server");
+  for (const retired of ["deployment.mjs", "model.mjs", "catalog.mjs"]) assert.ok(!readdirSync(server).includes(retired), retired);
 });
 
 test("desktop server: key-send failures never leak the payload or its hex encoding", () => {
@@ -81,33 +113,14 @@ test("desktop server: key-send failures never leak the payload or its hex encodi
   assert.ok(!t.log.includes(hex.slice(0, 8)) && t.log.includes("ETIMEDOUT") && t.log.includes("SIGTERM"));
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-// ---- HTTP origin guard regression (server must not crash on Origin: null) ----
+// ---- HTTP guards and the kernel-observed roster ----
 
 test("desktop server: POST origin guard rejects hostile/null origins without crashing", async () => {
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT], { stdio: "ignore" });
+  const { scope } = northwindDeployment();
+  const { port, proc, post, get } = await startServer(scope);
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    const post = (headers) => fetch(`http://127.0.0.1:${port}/api/keys/x`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: '{"data":"x"}' });
-    assert.equal((await post({ origin: "null" })).status, 403, "Origin: null is rejected, not a crash");
-    assert.equal((await post({ origin: "http://evil.com" })).status, 403);
+    assert.equal((await post("/api/keys/x", { data: "x" }, { origin: "null" })).status, 403, "Origin: null is rejected, not a crash");
+    assert.equal((await post("/api/keys/x", { data: "x" }, { origin: "http://evil.com" })).status, 403);
     // fetch can't override Host — use a raw request for the rebinding case
     const hostStatus = await new Promise((resolve, reject) => {
       const rq = httpRequest({ host: "127.0.0.1", port, path: "/api/keys/x", method: "POST",
@@ -115,54 +128,83 @@ test("desktop server: POST origin guard rejects hostile/null origins without cra
       rq.on("error", reject); rq.end('{"data":"x"}');
     });
     assert.equal(hostStatus, 403, "non-loopback Host is rejected");
-    const ok = await post({ origin: `http://127.0.0.1:${port}` });
-    assert.equal(ok.status, 404, "loopback origin passes the guard (unknown instance)");
-    // server survived the malformed origin
-    assert.equal((await fetch(`http://127.0.0.1:${port}/api/panel`)).status, 200);
-  } finally { proc.kill(); }
+    assert.equal((await post("/api/keys/x", { data: "x" }, { origin: `http://127.0.0.1:${port}` })).status, 404, "loopback origin passes the guard (unknown instance)");
+    assert.equal((await get("/api/panel")).status, 200, "server survived the malformed origin");
+  } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
-// ---- /api/brain/<agent>: soul + instance artifact map per the desktop-app contract ----
+test("desktop server: the roster, header and souls are the kernel's status/workspace-status JSON", async () => {
+  const { scope, home } = northwindDeployment();
+  const { proc, panel, get, calls } = await startServer(scope);
+  try {
+    assert.equal(panel.workspace.id, scope); assert.equal(panel.workspace.name, "northwind");
+    assert.equal(panel.deployment.root, join(scope, "agents"));
+    assert.equal(panel.deployment.workspaceStatus.workspaceStatusApi, 1);
+    assert.deepEqual(panel.deployment.workspaceStatus.approval, { approved: ["nw.tools", "oats.framework", "oats.okf"], needed: [] });
+    assert.equal(Object.hasOwn(panel.deployment, "souls"), false, "private soul rows stay server-side");
+    assert.equal(panel.instances.length, 1);
+    const i = panel.instances[0];
+    assert.equal(i.instance, INSTANCE); assert.equal(i.home, home); assert.equal(i.agentsRoot, join(scope, "agents"));
+    assert.equal(i.modules.length, 5); assert.ok(i.modules.every((m) => m.status === "current"));
+    assert.equal(i.soul.status, "current"); assert.equal(Object.hasOwn(i, "identity"), false, "absent identity is not synthesized");
+    for (const key of ["task", "next", "knowledgeCount", "command", "launch"]) assert.equal(Object.hasOwn(i, key), false, key);
+    const agents = (await (await get("/api/agents")).json()).agents;
+    assert.deepEqual(agents.map((a) => [a.name, a.kind, a.agentsRoot, a.team]), [[SOUL, "persistent", join(scope, "agents"), "engineering"]]);
+    // Exactly the two native reads (plus the probe); no removed verbs.
+    const verbs = calls().map((argv) => argv.slice(0, argv[0] === "workspace" ? 2 : 1).join(" "));
+    assert.ok(verbs.includes("status") && verbs.includes("workspace status") && verbs.includes("version"));
+    assert.ok(!verbs.some((v) => ["catalog", "list", "setup"].includes(v)), verbs.join(", "));
+    const reads = calls().filter((a) => a[0] === "status" || a[0] === "workspace");
+    assert.ok(reads.length >= 2);
+    for (const argv of reads) assert.deepEqual(argv.slice(-3), ["--dir", scope, "--json"]);
+  } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
+});
 
-test("desktop server: brain: findInstance is workspace-scoped — same-named instance elsewhere doesn't mark this one running", () => {
+for (const feature of ["workspace-v2", "instance-modules", "served-identity"]) test(`desktop server: a CLI without ${feature} yields an unavailable deployment naming it — no fallback reader`, async () => {
+  const { scope } = northwindDeployment();
+  const { proc, get, calls } = await startServer(scope, { drop: [feature], observed: false });
+  try {
+    let panel;
+    for (let n = 0; n < 50; n++) { panel = await (await get("/api/panel")).json(); if (panel.deployment.status !== "pending") break; await new Promise((r) => setTimeout(r, 100)); }
+    assert.equal(panel.deployment.status, "unavailable"); assert.equal(panel.deployment.reason.feature, feature);
+    assert.match(panel.deployment.reason.message, new RegExp(feature));
+    assert.deepEqual(panel.instances, []);
+    assert.deepEqual((await (await get("/api/agents")).json()).agents, []);
+    assert.deepEqual(calls().filter((a) => a[0] === "status" || a[0] === "workspace"), [], "an unadvertised read is never invoked");
+  } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
+});
+
+test("desktop server: findInstance is workspace-scoped and snapshot-only — same-named instance elsewhere doesn't answer", () => {
   const src = extractBlock(SRV, "FINDINST");
-  // two workspaces with a same-named instance: running in ws-b, stopped in ws-a
   const snapshot = { byWs: new Map([
-    ["ws-a", { instances: [{ instance: "dev-1", running: false }] }],
-    ["ws-b", { instances: [{ instance: "dev-1", running: true }, { instance: "only-b", running: true }] }],
+    ["ws-a", { instances: [{ instance: "dev-1", home: "/a/dev-1", running: false }] }],
+    ["ws-b", { instances: [{ instance: "dev-1", home: "/b/dev-1", running: true }, { instance: "only-b", home: "/b/only-b", running: true }] }],
   ]) };
-  const findInstance = new Function("snapshot", "collectNow", "Date",
-    src + "\nreturn findInstance;")(snapshot, () => snapshot.byWs, Date);
-  // scoped lookups resolve within their workspace only — the regression:
-  // /api/brain marked ws-a's stopped dev-1 as running via ws-b's twin
+  const findInstance = new Function("snapshot", src + "\nreturn findInstance;")(snapshot);
   assert.equal(findInstance("dev-1", "ws-a").running, false, "ws-a's dev-1 is stopped");
   assert.equal(findInstance("dev-1", "ws-b").running, true, "ws-b's dev-1 is running");
   assert.equal(findInstance("only-b", "ws-a"), undefined, "scoped lookup never leaks another workspace");
-  // unscoped (legacy callers) still searches all workspaces
-  assert.equal(findInstance("only-b").running, true);
-  // the brain endpoint passes its resolved workspace id to findInstance
-  const serverSrc = readFileSync(SRV, "utf8");
-  assert.ok(/const live = findInstance\(name, ws\?\.id, home\)/.test(serverSrc),
-    "brainData scopes its running lookup to the resolved workspace AND pins the exact home (@7dd1e7b)");
+  assert.equal(findInstance("dev-1"), findInstance.AMBIGUOUS, "an unscoped twin is ambiguous, not an arbitrary pick");
+  assert.equal(findInstance("dev-1", undefined, "/b/dev-1").running, true, "exact home qualifies");
+  const empty = new Function("snapshot", src + "\nreturn findInstance;")({ byWs: new Map() });
+  assert.equal(empty("dev-1"), undefined, "no cold-start collection: an unobserved roster has no instance");
 });
 
-test("desktop server: brain: capability skill paths expand leaf AND parent-tree forms; local + package merge", () => {
+test("desktop server: brain: skill-path expansion covers leaf and module-tree forms; merge keeps first", () => {
   const src = extractBlock(SRV, "BRAINSKILLS");
   const { expandSkillPath, mergeSkills } = new Function("join",
     src + "\nreturn { expandSkillPath, mergeSkills };")((...p) => p.join("/"));
   const entry = (p) => ({ name: p.split("/").pop(), path: p + "/SKILL.md", description: "" });
   const list = (p) => [entry(p + "/a"), entry(p + "/b")];
-  // leaf form: the path itself contains SKILL.md → one skill
-  assert.deepEqual(expandSkillPath("/cap/skills/code-review", (f) => f === "/cap/skills/code-review/SKILL.md", list, entry)
-    .map((s) => s.name), ["code-review"]);
-  // parent-tree form (`skills: ["skills"]`): no SKILL.md at the path → list children
-  assert.deepEqual(expandSkillPath("/cap/skills", () => false, list, entry).map((s) => s.name), ["a", "b"]);
-  // merge: local soul skill wins on duplicate names; result sorted
+  assert.deepEqual(expandSkillPath("/home/.agents/skills/soul-skill", (f) => f === "/home/.agents/skills/soul-skill/SKILL.md", list, entry)
+    .map((s) => s.name), ["soul-skill"]);
+  // materialized module tree `.agents/skills/<module>/<skill>/SKILL.md`
+  assert.deepEqual(expandSkillPath("/home/.agents/skills/nw-deploy", () => false, list, entry).map((s) => s.name), ["a", "b"]);
   const merged = mergeSkills(
-    [{ name: "dup", path: "/soul/skills/dup/SKILL.md" }, { name: "z", path: "/soul/skills/z/SKILL.md" }],
-    [{ name: "dup", path: "/cap/skills/dup/SKILL.md" }, { name: "a", path: "/cap/skills/a/SKILL.md" }]);
+    [{ name: "dup", path: "/first/dup/SKILL.md" }, { name: "z", path: "/first/z/SKILL.md" }],
+    [{ name: "dup", path: "/second/dup/SKILL.md" }, { name: "a", path: "/second/a/SKILL.md" }]);
   assert.deepEqual(merged.map((s) => s.name), ["a", "dup", "z"]);
-  assert.equal(merged.find((s) => s.name === "dup").path, "/soul/skills/dup/SKILL.md", "local soul wins duplicates");
+  assert.equal(merged.find((s) => s.name === "dup").path, "/first/dup/SKILL.md");
 });
 
 test("desktop harness: every shipped view has a tab in the shared harness", () => {
@@ -183,185 +225,81 @@ test("desktop harness: every shipped view has a tab in the shared harness", () =
   assert.deepEqual(strays, [], "no standalone dev-* harness files alongside the shared harness");
 });
 
-
-test("desktop server: /api/brain returns the contract shape with absolute paths", async () => {
-  const scope = desktopCapabilityFixture();
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope], { stdio: "ignore" });
+test("desktop server: /api/brain returns the contract shape for the kernel-reported soul and instances", async () => {
+  const { scope, soul, home } = northwindDeployment();
+  const { proc, get } = await startServer(scope);
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    // pick a real agent from /api/agents (persistent souls have a soul/ dir)
-    const agents = (await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json()).agents;
-    const target = agents.find((a) => a.kind === "persistent") || agents[0];
-    assert.ok(target, "an agent exists to inspect");
-    const d = await (await fetch(`http://127.0.0.1:${port}/api/brain/${target.name}`)).json();
-    assert.equal(d.agent, target.name);
-    assert.equal(typeof d.description, "string");
-    assert.ok(d.agentsRoot.startsWith("/"), "agentsRoot is absolute");
-    // soul block: AGENTS.md path, skills [{name,path,description}], knowledge {index,tree}
-    assert.ok(d.soul && typeof d.soul === "object", "soul block present");
-    if (d.soul.agentsMd) assert.ok(d.soul.agentsMd.startsWith("/") && d.soul.agentsMd.endsWith("AGENTS.md"));
-    assert.ok(Array.isArray(d.soul.skills));
-    for (const s of d.soul.skills) {
-      assert.ok(s.name && s.path.startsWith("/") && s.path.endsWith("SKILL.md"), "skill has name + absolute SKILL.md path");
-      assert.equal(typeof s.description, "string");
-    }
-    assert.ok(d.soul.knowledge && Array.isArray(d.soul.knowledge.tree));
-    for (const p of d.soul.knowledge.tree) assert.ok(p.startsWith("/") && p.endsWith(".md"), "knowledge tree entries are absolute .md paths");
-    if (d.soul.knowledge.index) assert.ok(d.soul.knowledge.tree.includes(d.soul.knowledge.index), "index is part of the tree");
-    // instances block
-    assert.ok(Array.isArray(d.instances));
-    for (const i of d.instances) {
-      assert.ok(i.instance && i.home.startsWith("/"), "instance has name + absolute home");
-      assert.equal(typeof i.running, "boolean");
-      assert.ok(Array.isArray(i.skills) && Array.isArray(i.notes));
-      for (const k of ["agentsMd", "state", "task"]) if (i[k] !== null) assert.ok(i[k].startsWith(i.home), `${k} lives under the instance home`);
-      for (const n of i.notes) assert.ok(n.startsWith(i.home) && n.endsWith(".md"));
-    }
-    // unknown agent → 404; hostile agent name never becomes a path probe
-    assert.equal((await fetch(`http://127.0.0.1:${port}/api/brain/no-such-agent`)).status, 404);
-    assert.equal((await fetch(`http://127.0.0.1:${port}/api/brain/..%2F..%2Fetc`)).status, 404, "traversal-shaped names don't match the route");
-    // capability-defined agents: their skills are declared at the PACKAGE level
-    // (manifest `skills:` paths), not under the soul dir — the brain must show
-    // the canonical skill set (regression: reviewer reported soul.skills: []).
-    const rev = await (await fetch(`http://127.0.0.1:${port}/api/brain/reviewer`)).json();
-    assert.ok(rev.soul, "capability agent resolves a brain");
-    const skillNames = rev.soul.skills.map((s) => s.name);
-    assert.ok(skillNames.includes("code-review") && skillNames.includes("security-review"),
-      `capability agent carries its package skills (got: ${skillNames.join(", ")})`);
-    for (const s of rev.soul.skills) assert.ok(s.path.startsWith("/") && s.path.endsWith("SKILL.md"));
+    const d = await (await get(`/api/brain/${SOUL}`)).json();
+    assert.equal(d.agent, SOUL); assert.equal(typeof d.description, "string");
+    assert.equal(d.agentsRoot, join(scope, "agents"));
+    assert.equal(d.soul.agentsMd, join(soul, "AGENTS.md"));
+    assert.deepEqual(d.soul.skills, [{ name: "release-checklist", path: join(soul, "skills", "release-checklist", "SKILL.md"), description: "Cut a release" }]);
+    assert.deepEqual(d.soul.knowledge, { index: join(soul, "knowledge", "index.md"), tree: [join(soul, "knowledge", "index.md")] });
+    assert.equal(d.instances.length, 1);
+    const i = d.instances[0];
+    assert.equal(i.instance, INSTANCE); assert.equal(i.home, home); assert.equal(i.running, false);
+    assert.deepEqual(i.skills.map((s) => s.name), ["deploy"], "materialized module skills are listed from the home");
+    assert.equal(i.agentsMd, join(home, "AGENTS.md")); assert.equal(i.task, join(home, "TASK.md")); assert.equal(i.state, null);
+    assert.deepEqual(i.notes, [join(home, "notes", "note.md")]);
+    assert.equal((await get("/api/brain/no-such-agent")).status, 404);
+    assert.equal((await get("/api/brain/..%2F..%2Fetc")).status, 404, "traversal-shaped names don't match the route");
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
-test("desktop server: harvestHome rejects out-of-layout homes independently of roster derivation (review 0b83988)", async () => {
-  // Defense-in-depth isolation: the roster pins home to the enumerated
-  // directory, but the ENDPOINT's own containment must also hold — a
-  // tampered snapshot or future roster regression must not reach the CLI.
-  // Exercise the extracted block directly with hostile inst objects.
-  const { mkdtempSync, mkdirSync, realpathSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { dirname, basename } = await import("node:path");
+test("desktop server: /api/brain never returns skills from symlinks escaping the soul or home", async () => {
+  const { scope, soul, home } = northwindDeployment();
+  const outside = mkdtempSync(join(tmpdir(), "oatsweb-brainesc-"));
+  writeFileSync(join(outside, "SKILL.md"), "---\nname: leaked-skill\ndescription: TOP-SECRET-SOUL-SKILL\n---\n");
+  mkdirSync(join(soul, "skills", "sneaky")); symlinkSync(join(outside, "SKILL.md"), join(soul, "skills", "sneaky", "SKILL.md"));
+  mkdirSync(join(home, ".agents", "skills", "evil")); symlinkSync(join(outside, "SKILL.md"), join(home, ".agents", "skills", "evil", "SKILL.md"));
+  const { proc, get } = await startServer(scope);
+  try {
+    const d = await (await get(`/api/brain/${SOUL}`)).json();
+    assert.ok(!JSON.stringify(d).includes("leaked-skill") && !JSON.stringify(d).includes("TOP-SECRET"), "no escaping skill surfaces");
+    assert.deepEqual(d.soul.skills.map((s) => s.name), ["release-checklist"], "contained skill still resolves");
+    assert.deepEqual(d.instances[0].skills.map((s) => s.name), ["deploy"]);
+  } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
+});
+
+test("desktop server: harvestHome admits only the exact kernel-reported home inside its deployment", () => {
   const src = extractBlock(SRV, "HARVESTHOME");
-  const scope = mkdtempSync(join(tmpdir(), "oatsweb-hh-"));
-  const root = join(scope, "agents");
-  const goodHome = join(root, "dev", "instances", "dev-1");
-  mkdirSync(goodHome, { recursive: true });
-  const localHome = join(scope, "local-agents", "loc", "instances", "loc-1");
-  mkdirSync(localHome, { recursive: true });
-  const outside = mkdtempSync(join(tmpdir(), "oatsweb-hh-outside-"));
-  mkdirSync(join(outside, "instances", "evil-1"), { recursive: true });
-  const harvestHome = new Function("realpathSync", "basename", "dirname", "join", "workspaces", "reader",
-    `${src}; return harvestHome;`)(
-    realpathSync, basename, dirname, join,
-    () => [{ roots: [root] }],
-    { localAgentsDirOf: (r) => join(dirname(r), "local-agents") });
-  // in-layout homes resolve (agents root and the local-agents sibling)
-  assert.equal(harvestHome({ instance: "dev-1", home: goodHome }), realpathSync(goodHome), "agents-root home accepted");
-  assert.equal(harvestHome({ instance: "loc-1", home: localHome }), realpathSync(localHome), "local-agents sibling home accepted");
-  // hostile shapes ALL reject regardless of what the roster said
-  assert.equal(harvestHome({ instance: "evil-1", home: join(outside, "instances", "evil-1") }), null, "foreign instances layout rejected");
-  assert.equal(harvestHome({ instance: "dev-1", home: outside }), null, "non-instances directory rejected");
-  assert.equal(harvestHome({ instance: "other-name", home: goodHome }), null, "basename/instance mismatch rejected");
-  assert.equal(harvestHome({ instance: "dev-1", home: join(scope, "nope", "instances", "dev-1") }), null, "unknown base rejected");
-  assert.equal(harvestHome({ instance: "dev-1" }), null, "missing home rejected");
-  assert.equal(harvestHome({ instance: "dev-1", home: 42 }), null, "non-string home rejected");
+  const { scope, home } = northwindDeployment();
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-hh-outside-")));
+  const evil = join(outside, "instances", "evil-1"); mkdirSync(evil, { recursive: true });
+  const unreported = join(scope, "agents", SOUL, "instances", "other-1"); mkdirSync(unreported, { recursive: true });
+  const escaping = join(scope, "agents", SOUL, "instances", "link-1"); symlinkSync(evil, escaping);
+  const snapshot = { byWs: new Map([[scope, { instances: [
+    { instance: INSTANCE, home }, { instance: "link-1", home: escaping }, { instance: "evil-1", home: evil },
+  ] }]]) };
+  const harvestHome = new Function("realpathSync", "basename", "dirname", "sep", "workspaces", "snapshot", `${src}; return harvestHome;`)(
+    realpathSync, basename, dirname, sep, () => [{ id: scope }], snapshot);
+  try {
+    assert.equal(harvestHome({ instance: INSTANCE, home }), home, "the reported home is accepted");
+    assert.equal(harvestHome({ instance: "other-1", home: unreported }), null, "an in-layout home the kernel did not report is rejected");
+    assert.equal(harvestHome({ instance: "link-1", home: escaping }), null, "a reported home canonicalizing outside the deployment is rejected");
+    assert.equal(harvestHome({ instance: "evil-1", home: evil }), null, "a reported home outside the deployment is rejected");
+    assert.equal(harvestHome({ instance: "other-name", home }), null, "basename/instance mismatch rejected");
+    assert.equal(harvestHome({ instance: INSTANCE, home, server: "remote" }), null, "remote rows never grant a local cwd");
+    assert.equal(harvestHome({ instance: INSTANCE }), null, "missing home rejected");
+    assert.equal(harvestHome({ instance: INSTANCE, home: 42 }), null, "non-string home rejected");
+  } finally { rmSync(scope, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
 
-// ---- /api/agents + /api/spawn: roster of spawnable souls incl. capability agents ----
-
-test("desktop server: /api/brain never returns skills from symlinks escaping a capability package (e2e, review 0b83988)", async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  // Workspace with an OWNED capability whose agent soul dir contains a
-  // skills tree where one SKILL.md is a symlink OUT of the package — the
-  // exact escape reviewer-ae3e199 reproduced against brainData's
-  // soulDir/skills walk (TOP-SECRET frontmatter leaked into soul.skills).
-  const scope = mkdtempSync(join(tmpdir(), "oatsweb-brainesc-"));
-  writeFileSync(join(scope, "outside-skill.md"), "---\nname: leaked-skill\ndescription: TOP-SECRET-SOUL-SKILL\n---\n# s\n");
-  const capDir = join(scope, ".agents", "capabilities", "owned", "esc");
-  mkdirSync(join(capDir, "agents", "helper", "skills", "good"), { recursive: true });
-  mkdirSync(join(capDir, "agents", "helper", "skills", "sneaky"), { recursive: true });
-  writeFileSync(join(scope, "oats-config.yaml"), "name: t\ncapabilities:\n  additive:\n    esc.cap: {}\n");
-  writeFileSync(join(capDir, "oats.json"), JSON.stringify({
-    capability: "esc.cap", version: "1.0.0", description: "x", agents: ["agents/helper"],
-  }));
-  writeFileSync(join(capDir, "agents", "helper", "soul.yaml"), "name: helper\ndescription: h\n");
-  writeFileSync(join(capDir, "agents", "helper", "AGENTS.md"), "# helper\n");
-  writeFileSync(join(capDir, "agents", "helper", "skills", "good", "SKILL.md"), "---\nname: good-skill\ndescription: ok\n---\n# g\n");
-  symlinkSync(join(scope, "outside-skill.md"), join(capDir, "agents", "helper", "skills", "sneaky", "SKILL.md"));
-  mkdirSync(join(scope, "agents"), { recursive: true });
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope], { stdio: "ignore" });
+test("desktop server: /api/spawn validates against the kernel roster; a resolved soul reaches the CLI boundary", async () => {
+  const { scope } = northwindDeployment();
+  // Without the apply fence the legacy route performs its own validation.
+  const { proc, post, get } = await startServer(scope, { drop: ["spawn-apply-2"], env: { PATH: "/nonexistent", SHELL: "/bin/false" } });
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    const d = await (await fetch(`http://127.0.0.1:${port}/api/brain/helper`)).json();
-    assert.ok(d.soul, "capability agent resolves a brain");
-    const names = d.soul.skills.map((s) => s.name);
-    assert.ok(!names.includes("leaked-skill"), `escaping SKILL.md symlink never surfaces (got: ${names.join(", ")})`);
-    assert.ok(!JSON.stringify(d).includes("TOP-SECRET"), "no leaked frontmatter anywhere in the brain payload");
-    assert.ok(names.includes("good-skill"), "contained skill still resolves (containment, not blanket removal)");
-  } finally { proc.kill(); }
-});
-
-
-test("desktop server: /api/agents lists persistent AND capability-defined agents; /api/spawn validates", async () => {
-  const scope = desktopCapabilityFixture();
-  const port = await freePort();
-  // The 503 assertion below requires the server to find NO compatible CLI.
-  // On dev machines a real `oats` is often on PATH (the probe settles ok and
-  // the spawn attempt answers 409 instead) — strip every locator source so
-  // the test is deterministic in CI and locally alike. PATH must be empty of
-  // ANY toolchain: even /usr/bin/npm lets the npm-global source rediscover a
-  // real oats (review b2a1564).
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope], {
-    stdio: "ignore",
-    env: { ...process.env, PATH: "/nonexistent", OATS_DESKTOP_OATS_BIN: "", SHELL: "/bin/false" },
-  });
-  try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    const d = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
-    assert.ok(Array.isArray(d.agents) && d.agents.length, "agents listed");
-    for (const a of d.agents) {
-      assert.ok(a.name && a.agentsRoot, "each agent has name and agentsRoot");
-      assert.ok(["persistent", "local", "capability"].includes(a.kind), `known kind (${a.kind})`);
-    }
-    // capability-defined agents (e.g. oats.review's reviewer) must appear — the
-    // CLI can spawn them via findCapabilityAgent, so the panel must offer them.
-    const reviewer = d.agents.find((a) => a.name === "reviewer");
-    assert.ok(reviewer, "capability-defined 'reviewer' is listed");
-    assert.equal(reviewer.kind, "capability");
-    assert.equal(reviewer.capability, "oats.review");
-    // /api/spawn input validation (no real spawn: bad root / unknown agent / bad body)
-    const post = (body) => fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
-      headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    assert.equal((await post({})).status, 400, "missing fields → 400");
-    assert.equal((await post({ agent: "reviewer", agentsRoot: "/tmp" })).status, 409, "foreign agentsRoot rejected");
-    const root = d.agents[0].agentsRoot;
-    assert.equal((await post({ agent: "no-such-agent", agentsRoot: root })).status, 409, "unknown agent rejected");
-    // capability agent RESOLVES through the spawn path: validation passes
-    // (not "unknown agent") and the mutation boundary answers with the
-    // stable cli-unavailable degradation (503) — the app never bundles a
-    // kernel; spawning requires a compatible installed oats CLI.
-    const r = await post({ agent: "reviewer", agentsRoot: root });
-    assert.equal(r.status, 503, "mutation without a CLI adapter degrades, not crashes");
-    const body = await r.json();
-    assert.ok(!/unknown agent/.test(body.error), `reviewer resolves via findCapabilityAgent (got: ${body.error})`);
-    assert.equal(body.code, "cli-unavailable", "stable degradation code for the UI");
+    const root = (await (await get("/api/agents")).json()).agents[0].agentsRoot;
+    assert.equal((await post("/api/spawn", {})).status, 400, "missing fields → 400");
+    assert.equal((await post("/api/spawn", { agent: SOUL, agentsRoot: "/tmp" })).status, 409, "foreign agentsRoot rejected");
+    const unknown = await post("/api/spawn", { agent: "no-such-agent", agentsRoot: root });
+    assert.equal(unknown.status, 409); assert.match((await unknown.json()).error, /unknown agent/);
+    // The fake CLI does not implement spawn: reaching its typed refusal proves
+    // the kernel-reported soul passed validation (no filesystem soul lookup).
+    const r = await post("/api/spawn", { agent: SOUL, agentsRoot: root });
+    assert.equal(r.status, 409); const body = await r.json();
+    assert.doesNotMatch(body.error, /unknown agent/); assert.equal(body.code, "E_FAKE_UNSUPPORTED");
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
@@ -392,18 +330,9 @@ test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces
   const countFile = join(bindir, "runs");
   writeFileSync(fakePi, `#!/bin/sh\necho x >> ${countFile}\nsleep 0.3\ncat <<'EOF'\nprovider        model                       context\nanthropic       claude-opus-4-5             200K\nanthropic       claude-sonnet-4-5           200K\nopenai          gpt-5.2                     400K\nEOF\n`);
   chmodSync(fakePi, 0o755);
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT], {
-    stdio: "ignore",
-    env: { ...process.env, PATH: `${bindir}:${process.env.PATH}` },
-  });
+  const { scope } = northwindDeployment();
+  const { port, proc } = await startServer(scope, { env: { PATH: `${bindir}:${process.env.PATH}` } });
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
     const post = (runtime, headers = {}) => fetch(`http://127.0.0.1:${port}/api/models`, {
       method: "POST", headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(runtime === undefined ? {} : { runtime }),
@@ -435,18 +364,9 @@ test("desktop server: POST /api/models serves runtime-scoped catalogs, coalesces
 });
 
 test("desktop server: /api/models degrades to an empty list when pi is not installed", async () => {
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT], {
-    stdio: "ignore",
-    env: { ...process.env, PATH: "/nonexistent", SHELL: "/bin/false" },
-  });
+  const { scope } = northwindDeployment();
+  const { port, proc } = await startServer(scope, { env: { PATH: "/nonexistent", SHELL: "/bin/false" } });
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
     const post = (runtime) => fetch(`http://127.0.0.1:${port}/api/models`, {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ runtime }) });
     const pi = await (await post("pi")).json();
@@ -515,235 +435,60 @@ test("desktop server: file guard never re-resolves roots — a dir→symlink swa
     "guard source must not re-resolve allowed roots");
 });
 
-test("desktop server: /api/file serves guarded text files with markdown flag", async () => {
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT], { stdio: "ignore" });
+test("desktop server: /api/file serves kernel-reported soul files; a symlinked soul pointer cannot widen the roots", async () => {
+  const { scope, agent, soul } = northwindDeployment();
+  const { proc, get } = await startServer(scope);
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    const get = (p) => fetch(`http://127.0.0.1:${port}${p}`);
-    // outside every root → 403 (or 404 if the path doesn't exist — never 200)
     const denied = await get(`/api/file?path=${encodeURIComponent("/etc/hosts")}`);
     assert.ok([403, 404].includes(denied.status), `outside path rejected (${denied.status})`);
     assert.equal((await get("/api/file?path=relative.md")).status, 400, "relative path is 400");
-    // a file inside a server-reported agents root must serve
-    const ad = await (await get("/api/agents")).json();
-    const roots = [...new Set(ad.agents.map((a) => a.agentsRoot))];
-    const { readdirSync, existsSync: ex } = await import("node:fs");
-    let served = false;
-    for (const agentsRoot of roots) {
-      for (const a of readdirSync(agentsRoot)) {
-        const p = join(agentsRoot, a, "soul", "AGENTS.md");
-        if (!ex(p)) continue;
-        const r = await get(`/api/file?path=${encodeURIComponent(p)}`);
-        if (r.status !== 200) continue;
-        const d = await r.json();
-        assert.equal(d.path, p);
-      assert.equal(d.markdown, true, "md extension sets markdown flag");
-      assert.ok(typeof d.content === "string" && d.content.length, "content served");
-      assert.ok(d.name && d.size > 0 && d.mtime, "metadata present");
-      served = true; break;
-      }
-      if (served) break;
-    }
-    assert.ok(served, "an agent AGENTS.md was served through the guard");
+    const r = await get(`/api/file?path=${encodeURIComponent(join(soul, "AGENTS.md"))}`);
+    assert.equal(r.status, 200); const d = await r.json();
+    assert.equal(d.path, join(soul, "AGENTS.md")); assert.equal(d.markdown, true);
+    assert.ok(d.content.length && d.name && d.size > 0 && d.mtime, "content and metadata served");
   } finally { proc.kill(); }
+  // Swap the soul pointer for a symlink to a secret directory outside the
+  // deployment: neither the pointer path nor its target may serve.
+  const secret = mkdtempSync(join(tmpdir(), "oatsweb-secret-"));
+  writeFileSync(join(secret, "AGENTS.md"), "# TOP-SECRET");
+  rmSync(soul, { recursive: true, force: true }); symlinkSync(secret, join(agent, "soul"));
+  const second = await startServer(scope);
+  try {
+    for (const path of [join(agent, "soul", "AGENTS.md"), join(secret, "AGENTS.md")]) {
+      const r = await second.get(`/api/file?path=${encodeURIComponent(path)}`);
+      assert.ok([403, 404].includes(r.status), `escaping soul pointer rejected (${path} → ${r.status})`);
+    }
+  } finally { second.proc.kill(); }
+  // Now the kernel-reported soul DIRECTORY itself (and so every instance home
+  // under it) is a symlink out of the deployment: nothing it points at serves.
+  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), "oatsweb-soul-elsewhere-")));
+  mkdirSync(join(elsewhere, "soul"), { recursive: true }); writeFileSync(join(elsewhere, "soul", "AGENTS.md"), "# TOP-SECRET-SOUL-DIR");
+  mkdirSync(join(elsewhere, "instances", INSTANCE), { recursive: true }); writeFileSync(join(elsewhere, "instances", INSTANCE, "TASK.md"), "# TOP-SECRET-HOME");
+  rmSync(agent, { recursive: true, force: true }); symlinkSync(elsewhere, agent);
+  const third = await startServer(scope);
+  try {
+    for (const path of [join(agent, "soul", "AGENTS.md"), join(elsewhere, "soul", "AGENTS.md"),
+      join(agent, "instances", INSTANCE, "TASK.md"), join(elsewhere, "instances", INSTANCE, "TASK.md")]) {
+      const r = await third.get(`/api/file?path=${encodeURIComponent(path)}`);
+      assert.ok([403, 404].includes(r.status), `escaping soul directory rejected (${path} → ${r.status})`);
+    }
+  } finally {
+    third.proc.kill(); rmSync(scope, { recursive: true, force: true });
+    rmSync(secret, { recursive: true, force: true }); rmSync(elsewhere, { recursive: true, force: true });
+  }
 });
 
 test("desktop server: hostile Host header is rejected on GET file APIs (DNS rebinding)", async () => {
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT], { stdio: "ignore" });
+  const { scope } = northwindDeployment();
+  const { port, proc } = await startServer(scope);
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
     const rawGet = (path) => new Promise((resolve, reject) => {
       const rq = httpRequest({ host: "127.0.0.1", port, path, method: "GET",
         headers: { host: "attacker.example" } }, (rs) => resolve(rs.statusCode));
       rq.on("error", reject); rq.end();
     });
-    assert.equal(await rawGet(`/api/file?path=${encodeURIComponent(join(ROOT, "README.md"))}`), 403, "rebinding host cannot read files");
+    assert.equal(await rawGet(`/api/file?path=${encodeURIComponent(join(scope, "agents", "release-manager", "soul", "AGENTS.md"))}`), 403, "rebinding host cannot read files");
     assert.equal(await rawGet("/api/panel"), 403, "rebinding host cannot enumerate roots");
     assert.equal((await fetch(`http://127.0.0.1:${port}/api/panel`)).status, 200, "loopback host still serves");
   } finally { proc.kill(); }
-});
-
-// ---- local-agents symlink escape: an untrusted workspace must not widen /api/file ----
-
-test("desktop server: a symlinked local-agents sibling never becomes an /api/file root (403)", async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  // A valid-looking workspace whose local-agents is a SYMLINK to a secret
-  // directory outside it — realpath-based guards would canonicalize the
-  // link and authorize its TARGET (review 4e2667b blocker).
-  const secret = mkdtempSync(join(tmpdir(), "oatsweb-secret-"));
-  writeFileSync(join(secret, "secret.md"), "# TOP-SECRET-LOCAL-AGENTS");
-  const scope = mkdtempSync(join(tmpdir(), "oatsweb-symlink-ws-"));
-  mkdirSync(join(scope, "agents", "dev", "soul"), { recursive: true });
-  writeFileSync(join(scope, "agents", "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
-  writeFileSync(join(scope, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
-  symlinkSync(secret, join(scope, "local-agents"));
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope], { stdio: "ignore" });
-  try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    const get = (p) => fetch(`http://127.0.0.1:${port}${p}`);
-    // the symlink target must NOT be readable through the sibling root
-    for (const path of [join(scope, "local-agents", "secret.md"), join(secret, "secret.md")]) {
-      const r = await get(`/api/file?path=${encodeURIComponent(path)}`);
-      assert.ok([403, 404].includes(r.status), `symlinked local-agents target rejected (${path} → ${r.status})`);
-      if (r.status === 200) assert.fail("secret served through a symlinked local-agents root");
-    }
-    // a legitimate file inside the real agents root still serves
-    const okR = await get(`/api/file?path=${encodeURIComponent(join(scope, "agents", "dev", "soul", "AGENTS.md"))}`);
-    assert.equal(okR.status, 200, "real agents-root files still serve");
-    // and a REAL (non-symlink) local-agents sibling still works end to end
-    const scope2 = mkdtempSync(join(tmpdir(), "oatsweb-real-local-"));
-    mkdirSync(join(scope2, "agents"), { recursive: true });
-    mkdirSync(join(scope2, "local-agents", "loc", "soul"), { recursive: true });
-    writeFileSync(join(scope2, "local-agents", "loc", "soul", "soul.yaml"), "name: loc\n");
-    writeFileSync(join(scope2, "local-agents", "loc", "soul", "AGENTS.md"), "# loc\n");
-    const port2 = await freePort();
-    const proc2 = spawn(process.execPath, [SRV, "start", "--port", String(port2), "--dir", scope2], { stdio: "ignore" });
-    try {
-      let up2 = false;
-      for (let i = 0; i < 40 && !up2; i++) {
-        await new Promise((r) => setTimeout(r, 100));
-        try { await fetch(`http://127.0.0.1:${port2}/api/panel`); up2 = true; } catch { /* retry */ }
-      }
-      assert.ok(up2, "second server came up");
-      const r2 = await fetch(`http://127.0.0.1:${port2}/api/file?path=${encodeURIComponent(join(scope2, "local-agents", "loc", "soul", "AGENTS.md"))}`);
-      assert.equal(r2.status, 200, "REAL local-agents sibling files serve (local souls stay first-class)");
-    } finally { proc2.kill(); }
-  } finally { proc.kill(); }
-});
-
-test("desktop server: dir→symlink swap after admission cannot re-resolve the local-agents root (TOCTOU)", async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  // Admission sees a REAL local-agents dir; a workspace process then swaps
-  // it for a symlink to a secret dir. Because fileRoots pushes the
-  // IMMUTABLE realpath captured at admission (review ac366f9), the later
-  // resolveGuardedFile canonicalization must not follow the swapped link.
-  const secret = mkdtempSync(join(tmpdir(), "oatsweb-toctou-secret-"));
-  writeFileSync(join(secret, "secret.md"), "# TOCTOU-SECRET");
-  const scope = mkdtempSync(join(tmpdir(), "oatsweb-toctou-ws-"));
-  mkdirSync(join(scope, "agents", "dev", "soul"), { recursive: true });
-  writeFileSync(join(scope, "agents", "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
-  mkdirSync(join(scope, "local-agents", "loc", "soul"), { recursive: true });
-  writeFileSync(join(scope, "local-agents", "loc", "soul", "AGENTS.md"), "# loc\n");
-  const port = await freePort();
-  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope], { stdio: "ignore" });
-  try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port}/api/panel`); up = true; } catch { /* retry */ }
-    }
-    assert.ok(up, "server came up");
-    const get = (p) => fetch(`http://127.0.0.1:${port}/api/file?path=${encodeURIComponent(p)}`);
-    // sanity: the real sibling serves before the swap
-    assert.equal((await get(join(scope, "local-agents", "loc", "soul", "AGENTS.md"))).status, 200, "real sibling serves pre-swap");
-    // THE SWAP: replace the directory with a symlink to the secret dir
-    rmSync(join(scope, "local-agents"), { recursive: true, force: true });
-    symlinkSync(secret, join(scope, "local-agents"));
-    for (const p of [join(scope, "local-agents", "secret.md"), join(secret, "secret.md")]) {
-      const r = await get(p);
-      assert.ok([403, 404].includes(r.status), `post-swap symlink target rejected (${p} → ${r.status})`);
-    }
-  } finally { proc.kill(); }
-});
-
-// ---- tmux target anchoring: prefix-match hazard (reviewer-death bug class) ----
-
-test("desktop server: tmux targets: exact-match anchoring fails closed for reads AND writes", (t) => {
-  const src = extractBlock(SRV, "TMUXTGT");
-  const tmuxTarget = new Function(`${src}; return tmuxTarget;`)();
-  // component validation: separator/anchor injection rejected
-  assert.equal(tmuxTarget({ tmux: { session: "s1", window: "reviewer-1" } }), "=s1:=reviewer-1");
-  for (const bad of ["a:b", "a=b", "", "a b"]) {
-    assert.throws(() => tmuxTarget({ tmux: { session: bad, window: "w" } }), `session "${bad}" rejected`);
-    assert.throws(() => tmuxTarget({ tmux: { session: "s", window: bad } }), `window "${bad}" rejected`);
-  }
-  // live half: reviewer-1 ABSENT, reviewer-15abc PRESENT — the unanchored
-  // target would prefix-match the live window; the anchored one must error.
-  const session = `oatswebtgt${process.pid}`;
-  try {
-    execFileSync("tmux", ["new-session", "-d", "-s", session, "-n", "reviewer-15abc"], { timeout: 4000 });
-  } catch { t.skip("tmux unavailable"); return; }
-  try {
-    const anchored = tmuxTarget({ tmux: { session, window: "reviewer-1" } });
-    const unanchored = `${session}:reviewer-1`;
-    // sanity: the hazard is real — unanchored prefix-match hits the live window
-    const hit = execFileSync("tmux", ["display-message", "-p", "-t", unanchored, "#{window_name}"],
-      { encoding: "utf8", timeout: 4000 }).trim();
-    assert.equal(hit, "reviewer-15abc", "unanchored target prefix-matches the wrong live window");
-    // read path fails closed
-    assert.throws(() => execFileSync("tmux", ["capture-pane", "-p", "-t", anchored], { stdio: "pipe", timeout: 4000 }),
-      "anchored capture-pane errors instead of exposing the wrong pane");
-    assert.throws(() => execFileSync("tmux", ["list-panes", "-t", anchored, "-F", "#{pane_width}"], { stdio: "pipe", timeout: 4000 }),
-      "anchored list-panes (paneInfo path) errors");
-    // NOTE display-message -p -t <missing> silently falls back to a default
-    // context instead of erroring — that's why paneInfo uses list-panes.
-    // write path fails closed
-    assert.throws(() => execFileSync("tmux", ["send-keys", "-t", anchored, "-H", "78"], { stdio: "pipe", timeout: 4000 }),
-      "anchored send-keys errors instead of typing into the wrong window");
-    assert.throws(() => execFileSync("tmux", ["send-keys", "-t", anchored, "C-c"], { stdio: "pipe", timeout: 4000 }),
-      "anchored interrupt errors");
-    // the exact-name window still works end to end
-    const ok = tmuxTarget({ tmux: { session, window: "reviewer-15abc" } });
-    execFileSync("tmux", ["send-keys", "-t", ok, "-H", "23"], { timeout: 4000 }); // harmless '#'
-    assert.ok(execFileSync("tmux", ["capture-pane", "-p", "-t", ok], { encoding: "utf8", timeout: 4000 }) !== undefined);
-  } finally {
-    try { execFileSync("tmux", ["kill-session", "-t", `=${session}`], { timeout: 4000 }); } catch { /* already gone */ }
-  }
-});
-
-test("desktop server: paneInfo: geometry comes from the ACTIVE pane, same pane capture/send target", (t) => {
-  // Drive the REAL paneInfo (extracted marker block, with the real
-  // tmuxTarget in scope) against a two-pane fixture where the active pane
-  // is index 1 with a distinct width — reverting the -f '#{pane_active}'
-  // filter makes this fail (row 0's width would be reported).
-  const tgtSrc = extractBlock(SRV, "TMUXTGT");
-  const piSrc = extractBlock(SRV, "PANEINFO");
-  const paneInfo = new Function("execFileSync", `${tgtSrc}${piSrc}; return paneInfo;`)(execFileSync);
-  const session = `oatswebpane${process.pid}`;
-  try {
-    execFileSync("tmux", ["new-session", "-d", "-s", session, "-n", "w1", "-x", "101", "-y", "30"], { timeout: 4000 });
-  } catch { t.skip("tmux unavailable"); return; }
-  try {
-    const target = `=${session}:=w1`;
-    execFileSync("tmux", ["split-window", "-h", "-t", target], { timeout: 4000 });
-    execFileSync("tmux", ["resize-pane", "-t", `${target}.1`, "-x", "30"], { timeout: 4000 });
-    execFileSync("tmux", ["select-pane", "-t", `${target}.1`], { timeout: 4000 });
-    // print some output into pane 1 so its history/cursor differ from pane 0
-    execFileSync("tmux", ["send-keys", "-t", `${target}.1`, "printf 'a\\nb\\nc\\n'", "Enter"], { timeout: 4000 });
-    const paneW = (idx) => Number(execFileSync("tmux", ["display-message", "-p", "-t", `${target}.${idx}`, "#{pane_width}"],
-      { encoding: "utf8", timeout: 4000 }).trim());
-    const w0 = paneW(0), w1 = paneW(1);
-    assert.notEqual(w0, w1, "fixture: the two panes have distinct widths");
-    const info = paneInfo({ tmux: { session, window: "w1" } });
-    assert.equal(info.size.cols, w1, "paneInfo reports the ACTIVE pane's width (pane 1), not row 0's");
-    // same pane capture-pane operates on: the window target's active pane
-    const capW = Number(execFileSync("tmux", ["display-message", "-p", "-t", `${target}.1`, "#{pane_width}"],
-      { encoding: "utf8", timeout: 4000 }).trim());
-    assert.equal(info.size.cols, capW, "geometry matches the pane capture/send target");
-    // fail-closed path of the real function: missing window falls back to defaults
-    const missing = paneInfo({ tmux: { session, window: "nope" } });
-    assert.equal(missing.size.cols, 80, "missing window returns the safe default, never another pane");
-  } finally {
-    try { execFileSync("tmux", ["kill-session", "-t", `=${session}`], { timeout: 4000 }); } catch { /* gone */ }
-  }
 });

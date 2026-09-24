@@ -187,7 +187,10 @@ test("REAL bundled server serves /api/version matching its package identity → 
     s.listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => ok(p)); });
   });
   const bin = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
-  const child = spawn(process.execPath, [bin, "start", "--port", String(free), "--dir", ROOT], { stdio: ["ignore", "pipe", "pipe"] });
+  // Hermetic: no CLI candidate is discoverable, so no installed kernel or
+  // login shell runs; identity and workspace advertisement need neither.
+  const child = spawn(process.execPath, [bin, "start", "--port", String(free), "--dir", ROOT], { stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, OATS_DESKTOP_OATS_BIN: "", PATH: "/nonexistent", SHELL: "/bin/false" } });
   const url = `http://127.0.0.1:${free}`;
   try {
     // wait for the server to answer (max ~10s) — readiness via /api/panel,

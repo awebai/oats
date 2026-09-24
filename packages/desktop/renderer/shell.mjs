@@ -15,6 +15,7 @@ import { createInstancePrAction } from "./instance-pr-action.mjs";
 import { instanceSplitPlan, instanceSplitIdentity } from "./instance-split.mjs";
 import { createInstanceStarter } from "./start-instance.mjs";
 import { retirementSummary, runtimeState } from "./instance-presentation.mjs";
+import { deploymentUnavailableText } from "./deployment-header.mjs";
 import {
   initTheme, toggleTheme, setTheme, THEMES, xtermTheme, onThemeChange,
   terminalTypography, setTerminalFontSize, setTerminalFontFamily, onTerminalTypographyChange,
@@ -322,6 +323,13 @@ async function refreshContextRoster() {
   if (panel.error) {
     const error = document.createElement("div"); error.className = "ctx-empty"; error.textContent = panel.error;
     listEl.prepend(error);
+  }
+  // A deployment the kernel could not observe is not an empty one: name the
+  // missing feature or keep the kernel's refusal (never an optimistic read).
+  if (panel.deployment && panel.deployment.status !== "observed" && !panel.workspace?.remote) {
+    const note = document.createElement("div"); note.className = "ctx-empty"; note.setAttribute("role", "status");
+    note.textContent = deploymentUnavailableText(panel.deployment);
+    listEl.prepend(note);
   }
 }
 

@@ -35,8 +35,6 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
       if (path.startsWith('/api/agents')) return { agents };
       if (path.startsWith('/api/panel')) return { instances: [], workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }] };
       if (path.startsWith('/api/capabilities')) return inspect(body);
-      if (path === '/api/catalog') return { catalogApi: 1, scope: 'local-cli', status: 'unavailable', minimumVersion: '0.24.6', description: null,
-        reason: { code: 'cli-no-catalog', message: 'This fixture has no catalog.' } };
       if (path === '/api/servers') return { servers: [] };
       throw new Error(`Unexpected fixture request: ${path}`);
     } };
@@ -141,8 +139,7 @@ test('04: ordinary capability state uses wrapping badges, 56px table rows and co
   assert.equal(u.get('.discovery-table').querySelector('button, a, input'), null, 'source provenance is read-only');
   assert.equal(u.get('.discovery-table caption').textContent, 'Reported source provenance');
   for (const { path, body } of u.calls.filter(c => c.body)) {
-    if (path === '/api/catalog') assert.deepEqual(body, {}, 'catalog has no client arguments');
-    else { assert.equal(path.split('?')[0], '/api/capabilities'); assert.equal(body.action, 'inspect', 'no fabricated membership/installation actions'); }
+    assert.equal(path.split('?')[0], '/api/capabilities'); assert.equal(body.action, 'inspect', 'no fabricated membership/installation actions');
   }
 });
 

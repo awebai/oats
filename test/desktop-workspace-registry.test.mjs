@@ -9,43 +9,31 @@ import {
   decideAdd, createGenerations,
 } from "../packages/desktop/workspace-registry.mjs";
 
-const mkValidate = (worlds) => (p) => validateWorkspace(p, {
-  resolveConfig: (path) => {
-    const w = worlds[path];
-    if (w === undefined) throw new Error("no config");
-    return w.team ? { team: w.team } : {};
-  },
-  hasAgentsRoot: (path) => !!worlds[path]?.agents,
+const mkValidate = (deployments) => (p) => validateWorkspace(p, {
+  // existence of the deployment file only; the registry never parses it
+  isDeployment: (path) => { if (path === "/w/throws") throw new Error("EACCES"); return deployments.includes(path); },
 });
 
-test("validateWorkspace: team scope wins, agents root fallback, garbage rejected", () => {
-  const validate = mkValidate({
-    "/w/team": { team: { name: "t", scope: "/w/team" } },
-    "/w/solo": { agents: true },
-    "/w/none": {},
-  });
-  assert.deepEqual(validate("/w/team"), { id: "/w/team", name: "team", team: { name: "t" }, path: "/w/team" });
-  assert.deepEqual(validate("/w/solo"), { id: "/w/solo", name: "solo", team: null, path: "/w/solo" });
-  assert.equal(validate("/w/none"), null);
-  assert.equal(validate("/nonexistent"), null);
+test("validateWorkspace: a v2 deployment directory is its own identity; no team scope; garbage rejected", () => {
+  const validate = mkValidate(["/w/northwind", "/w/member/deployment"]);
+  assert.deepEqual(validate("/w/northwind"), { id: "/w/northwind", name: "northwind", team: null, path: "/w/northwind" });
+  assert.deepEqual(validate("/w/member/deployment"), { id: "/w/member/deployment", name: "deployment", team: null, path: "/w/member/deployment" },
+    "a nested deployment is not promoted to an ancestor scope");
+  for (const bad of ["/w/none", "/nonexistent", "/w/throws", "relative", "", null]) assert.equal(validate(bad), null, String(bad));
+  assert.equal(validateWorkspace("/w/x", { isDeployment: () => "yes" }), null, "only a literal true admits");
 });
 
-test("suggestions: known + team siblings + recents, validated, advertised excluded, deduped with first reason", () => {
-  const validate = mkValidate({
-    "/w/a": { team: { name: "t", scope: "/w/a" } },
-    "/w/b": { team: { name: "t", scope: "/w/b" } },
-    "/w/c": { agents: true },
-    "/w/dead": undefined, // not a workspace anymore
-  });
+test("suggestions: known + recents only, validated, advertised excluded, deduped with first reason", () => {
+  const validate = mkValidate(["/w/a", "/w/b", "/w/c"]);
   const list = workspaceSuggestions({
-    knownPaths: ["/w/a"],
-    teamSiblings: (p) => (p === "/w/a" ? ["/w/b", "/w/dead"] : []),
+    knownPaths: ["/w/a", "/w/b"],
     recents: ["/w/c", "/w/b", "/w/dead"],
     advertised: new Set(["/w/a"]), // current workspace — not a suggestion
     validate,
+    teamSiblings: () => assert.fail("no team-scope discovery in workspace model v2"),
   });
   assert.deepEqual(list.map((s) => [s.id, s.reason]), [
-    ["/w/b", "team sibling of a"],
+    ["/w/b", "known workspace"],
     ["/w/c", "recently used"],
   ]);
 });
@@ -65,10 +53,7 @@ test("pushRecent: front insertion, dedup, cap", () => {
 
 const addIo = (over = {}) => ({
   realpath: (p) => { if (p.includes("gone")) throw new Error("ENOENT"); return p.replace("/link", "/real"); },
-  validate: mkValidate({
-    "/w/real": { team: { name: "t", scope: "/w/real" } },
-    "/w/plain": { agents: true },
-  }),
+  validate: mkValidate(["/w/real", "/w/plain"]),
   suggestedPaths: new Set(["/w/real"]),
   fromPicker: false,
   serverOwned: true,
@@ -108,7 +93,7 @@ test("decideAdd: non-workspace paths rejected even from the picker", () => {
   const r = decideAdd("/w/junk", addIo({ fromPicker: true, realpath: (p) => p }));
   assert.equal(r.ok, false);
   assert.equal(r.code, "not-a-workspace");
-  assert.match(r.reason, /not an OATS workspace/);
+  assert.match(r.reason, /not an OATS deployment \(no oats-local\.yaml\)/);
 });
 
 test("generations: reverse completion — a stale request's completion is not current", () => {

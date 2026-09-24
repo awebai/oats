@@ -41,11 +41,13 @@ The shell has three navigation contexts:
   hosts and always survive.
 - `server/oats-web.mjs` — the bundled zero-dependency backend: a loopback-only
   `node:http` server exposing the `/api/*` surface (roster, spawn, brain,
-  session capture, keys, file). `server/model.mjs` is the roster
-  collector; `server/deployment.mjs` is the app-owned READ-ONLY deployment
-  reader (the app never imports the framework kernel — lifecycle mutations
-  require a compatible installed `oats` CLI). Binds 127.0.0.1 only — it can
-  type into your terminals.
+  session capture, keys, file). The deployment model is the installed kernel's
+  JSON: `oats status --json` (roster) and `oats workspace status --json`
+  (workspace header), read by `server/deployment-observer.mjs` — the app reads
+  no deployment file and never imports the framework kernel; lifecycle
+  mutations require a compatible installed `oats` CLI. See
+  [docs/desktop-deployment-model.md](docs/desktop-deployment-model.md).
+  Binds 127.0.0.1 only — it can type into your terminals.
 - `preload.cjs` — contextBridge surface (`window.oatsDesktop`); renderer runs
   with contextIsolation on, nodeIntegration off.
 - `renderer/shell.mjs` — contextual single sidebar, stage host, artifact-tab

@@ -29,7 +29,6 @@ import { createTerminalIo } from './terminal-io.mjs';
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs } from "./workspace-registry.mjs";
-import { resolveDeployment, teamAgentRoots } from "./server/deployment.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
@@ -182,32 +181,21 @@ function guard(e) { if (!trustedFrame(e)) throw new Error("forbidden: untrusted 
 
 // ---- IPC: workspace suggestions + runtime add ---------------------------
 // Privileged side of the runtime workspace switcher (phase-2 hook 3; the
-// renderer modal is the designer's). Discovery is bounded: known dirs, team
-// siblings via the app-owned read-only deployment reader, validated recents.
+// renderer modal is the designer's). Discovery is bounded: known deployment
+// dirs and validated recents. The kernel reads the deployment itself.
 // workspace:add only ever replaces an app-OWNED server; foreign servers fail
 // closed.
 const wsGens = createGenerations();
 const RECENTS_FILE = () => join(app.getPath("userData"), "workspace-recents.json");
 const OPEN_WORKSPACES_FILE = () => join(app.getPath("userData"), "workspace-open.json");
 
+// A workspace-model v2 deployment is a directory holding a regular (lstat,
+// non-following) oats-local.yaml. Existence only: never parsed here.
 const wsValidate = (p) => validateWorkspace(p, {
-  resolveConfig: (path) => resolveDeployment(path),
-  // agents/ OR local-agents/ qualifies — OATS is fully usable with local souls alone.
-  hasAgentsRoot: (path) => ["agents", "local-agents"].some((d) => {
-    try { return existsSync(join(path, d)) && lstatSync(join(path, d)).isDirectory(); } catch { return false; }
-  }),
+  isDeployment: (path) => {
+    try { return lstatSync(join(path, "oats-local.yaml")).isFile(); } catch { return false; }
+  },
 });
-
-function teamSiblingsOf(p) {
-  // Sibling workspaces within p's team scope — same seams as the server's
-  // workspaceEntry: the team scope's child repos that themselves validate.
-  try {
-    const cfg = resolveDeployment(p);
-    const scope = cfg?.team?.scope;
-    if (!scope) return [];
-    return teamAgentRoots(scope).map((root) => dirname(root)).filter((d) => d !== p);
-  } catch { return []; }
-}
 
 function readRecents() {
   try { return parseRecents(readFileSync(RECENTS_FILE(), "utf8"), (p) => !!wsValidate(p)); }
@@ -242,7 +230,6 @@ ipcMain.handle("workspace:suggestions", async (e) => {
   await panelWorkspaces(); // refresh allowedWs from the live server
   const list = workspaceSuggestions({
     knownPaths: [...workspaceDirs],
-    teamSiblings: teamSiblingsOf,
     recents: readRecents(),
     advertised: allowedWs,
     validate: wsValidate,

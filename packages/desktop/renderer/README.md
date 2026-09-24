@@ -177,18 +177,17 @@ refresh/filter/scope changes own new projections; stale successes and rejections
 cannot overwrite current observations. Native visual acceptance is not inferred
 from the DOM/CSSOM and computed-token AA tests.
 
-## Capabilities: three independent observations
+## Capabilities: the workspace header and two independent observations
 
 Workspace's Capabilities tab keeps these separately qualified surfaces:
 
-- **Local CLI catalog** (`official-catalog.mjs`): read-only `POST /api/catalog`
-  with `{}` and no query arguments. The backend invokes only the discovered,
-  accepted local CLI's `catalog --json`, with an additional released-version
-  floor of **0.24.6**. The catalog remains explicitly local even when a remote
-  workspace is selected. A bundled official snapshot and an operator override
-  are distinguished; neither establishes acquisition, executable approval,
-  verified signatures, export inventory or readiness. Catalog tags remain refs,
-  not inferred versions; aliases remain mappings, not complete exports.
+- **Workspace header** (`deployment-header.mjs`): the kernel's
+  `oats workspace status --json` facts carried by the roster observation
+  (`/api/panel` `deployment`) — name, key @ commit, members, packages, lock
+  state and the header's approval ID arrays. There is no separate read. Sync's
+  detailed approval rows are the sync/approval surface, not the header. An
+  unobserved deployment names the missing advertised feature or keeps the
+  kernel's refusal code/message; withheld instance rows are counted.
 - **Classic deployment inventory** (`deployment-inventory.mjs`): read-only
   `POST /api/capabilities?ws=<id>` with `{action:"list",selector:{}}` or an exact
   admitted `{context}` selector. The server resolves the classic scope and uses
@@ -196,40 +195,32 @@ Workspace's Capabilities tab keeps these separately qualified surfaces:
   remote-to-local fallback is permitted. Packages, capability exports, health,
   integrity, executable approval and legacy lock reports retain their reported
   acquisition scopes. Same-named exports at different scopes remain separate;
-  no package-level trust or bare-name join with catalog/activation is invented.
+  no package-level trust or bare-name join with activation is invented.
   Invalid locks (including unsupported captured locks) are errors, not an empty
   successful inventory. A compatible CLI is required; operations API support
-  is not required for this list read.
+  is not required for this list read. (A 0.24 surface: its replacement is a
+  later Phase F slice.)
 - **Capability inspection**: the existing `inspect` action reports activation
   and scope/soul/home observations. It is not substituted for a failed inventory
   read. A compatible CLI change invalidates pending scope inspection as well as
-  the newer inventory/catalog surfaces. Sources uses the negotiated K4 portable
-  source context, or retains the older capability-origin projection when that
-  contract is not negotiated (see below).
+  the inventory surface. Sources uses the negotiated K4 portable source context,
+  or retains the older capability-origin projection when that contract is not
+  negotiated (see below).
 
-Catalog and list reads use bounded child execution (15 seconds, 4 MiB stdout),
-fixed argv without a shell, and in-flight coalescing, never a persistent response
-cache. The existing loopback Host/Origin and privileged sender-frame guards still
-apply. The new read adapters refuse success envelopes from a failed process exit;
-existing mutation exit semantics are unchanged. Catalog and capabilities bodies
-are parsed as JSON objects with a 64 KiB byte limit; malformed/oversized requests
-are rejected rather than silently converted to empty objects.
+List reads use bounded child execution (15 seconds, 4 MiB stdout), fixed argv
+without a shell, and in-flight coalescing, never a persistent response cache.
+The existing loopback Host/Origin and privileged sender-frame guards still
+apply. The read adapter refuses success envelopes from a failed process exit;
+existing mutation exit semantics are unchanged. Capabilities bodies are parsed
+as JSON objects with a 64 KiB byte limit; malformed/oversized requests are
+rejected rather than silently converted to empty objects.
 
 Each section degrades and retries independently. Roster polls do not refetch the
-catalog/list or rebuild their controls; CLI, workspace and classic-scope changes
+list or rebuild the header/controls; CLI, workspace and classic-scope changes
 revoke pending ownership on **both** success and rejection. These are independent
 CLI observations, not one atomic snapshot. K5 readiness is explicitly **Unknown**,
 including configured/enrolled facts, verified signatures and enforced policy;
 reported byte installation and executable approval are not readiness passes.
-
-**Add/acquire is review/copy only.** The only copyable command is the catalog's
-exact `['oats','install',package]` tuple, with literal POSIX shell quoting and
-refusal of malformed/option-shaped/control-character arguments. URLs, refs and
-extra arguments are never substituted into the command. Copying neither executes,
-acquires nor trusts anything, and does not choose a workspace: the operator must
-run it in the intended CLI context. Failed clipboard access leaves a selectable
-command rather than claiming success. No new main/preload IPC, native auth,
-filesystem access or Electron dependency is introduced.
 
 ## Keybindings (shell-level)
 
@@ -290,7 +281,7 @@ Lifecycle alerts and confirmation paths are not replaced.
 is local to reported advisory IDs/labels; **Defaults**, **Reported suggestions**
 and **Custom** are control/data groups, not model-quality claims. Arbitrary
 model IDs and comma-separated preferences remain free text. Filtering does not
-probe the catalog, change the model or launch. Late owned catalog fills refresh
+probe the model catalog, change the model or launch. Late owned model-catalog fills refresh
 choices without rebuilding the filter, losing its query or taking foreign focus.
 Keyboard/retained-option focus reveals only within the popup below its sticky
 search header, never by scrolling the outer dialog/page. Notification arrival

@@ -15,21 +15,36 @@ const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 
 /** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
-function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [] } = {}) {
+const V2_FIXTURES = join(ROOT, "packages", "desktop", "test", "fixtures", "workspace-v2");
+const V2_FEATURES = ["workspace-v2", "instance-modules", "served-identity"];
+/** The workspace-model v2 reads replay JSON captured from a real CLI run on the
+ * hand-built Northwind deployment, rebased onto the --dir under test.
+ * `status` may be replaced by a test-supplied document (written to a file). */
+function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [], v2 = true, status } = {}) {
   const log = join(dir, "cli-calls.jsonl");
+  const statusFile = status ? join(dir, "status-override.json") : null;
+  if (statusFile) writeFileSync(statusFile, JSON.stringify(status));
+  const probeFeatures = v2 ? [...(features || []), ...V2_FEATURES] : features;
   const js = join(dir, "oats.cjs");
   const bin = join(dir, "oats");
   writeFileSync(js, `const { appendFileSync, readFileSync } = require("node:fs");
 const argv = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, cwd: process.cwd() }) + "\\n");
 if (argv[0] === "version" && argv.includes("--json")) {
-  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)}, features: ${JSON.stringify(features)}, operationsApi: ${JSON.stringify(operationsApi)} }));
+  process.stdout.write(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: ${JSON.stringify(version)}, desktopApi: ${JSON.stringify(desktopApi)}, remote: ${JSON.stringify(remote)}, features: ${JSON.stringify(probeFeatures)}, operationsApi: ${JSON.stringify(operationsApi)}, workspaceApi: ${JSON.stringify(v2 ? 2 : undefined)} }));
   // Liar modes (review 0b83988): print a VALID probe, then exit nonzero or
   // REALLY hang past the probe timeout — either must be rejected by
   // discovery. if/else if throughout: fallthrough to the trailing exit(2)
   // previously made the "hanger" exit in 0.058s (review 6b90702).
   if (${JSON.stringify(probeHangMs)} > 0) { setTimeout(() => process.exit(0), ${JSON.stringify(probeHangMs)}); }
   else process.exit(${JSON.stringify(probeExit)});
+} else if ((argv[0] === "status" || (argv[0] === "workspace" && argv[1] === "status")) && argv.includes("--json")) {
+  const fixture = ${JSON.stringify(V2_FIXTURES)};
+  const captured = require("node:path").dirname(JSON.parse(readFileSync(fixture + "/status.json", "utf8")).root);
+  const target = argv[argv.indexOf("--dir") + 1];
+  const file = argv[0] === "status" ? (${JSON.stringify(statusFile)} || fixture + "/status.json") : fixture + "/workspace-status.json";
+  process.stdout.write(readFileSync(file, "utf8").split(captured).join(target));
+  process.exit(0);
 } else if (argv[0] === "server" && argv[1] === "roster") {
   process.stdout.write(JSON.stringify({ schemaVersion: 1, ok: true, result: { groups: ${JSON.stringify(groups)} } }));
   process.exit(0);
@@ -99,6 +114,15 @@ async function freePort() {
     s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => resolve(port)); });
   });
 }
+/** Wait until the kernel observation of the deployment has landed. */
+async function observed(port) {
+  for (let i = 0; i < 100; i++) {
+    const pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json();
+    if (pd.deployment?.status === "observed") return pd;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.fail("the deployment was never observed");
+}
 async function startServer(env) {
   const port = await freePort();
   const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", ROOT],
@@ -140,9 +164,9 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
   } finally { proc.kill(); }
 });
 
-test("desktop server: incompatible CLI → status carries per-candidate diagnostics; spawn degrades 503", async () => {
+test("desktop server: incompatible CLI → status carries per-candidate diagnostics; no roster and no spawn target", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-cliold-"));
-  const { bin, real } = fakeCli(dir, { version: "0.21.6" });
+  const { bin, real, calls } = fakeCli(dir, { version: "0.21.6" });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
@@ -151,14 +175,19 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
     assert.ok(envTried, "the rejected candidate is in diagnostics");
     assert.match(envTried.reason, /outside/);
     assert.equal(envTried.version, "0.21.6", "detected version surfaces for the card");
-    // mutation degrades with the stable code — reads keep working
+    // Workspace model v2: the deployment IS the kernel's JSON, so without a
+    // compatible CLI there is no roster — never a filesystem fallback reader.
+    let pd;
+    for (let i = 0; i < 50; i++) { pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json(); if (pd.deployment.status !== "pending") break; await new Promise((r) => setTimeout(r, 100)); }
+    assert.equal(pd.deployment.status, "unavailable"); assert.equal(pd.deployment.reason.code, "E_CLI_UNAVAILABLE");
+    assert.deepEqual(pd.instances, []);
     const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
-    assert.ok(Array.isArray(ad.agents) && ad.agents.length, "reads still work without a compatible CLI");
+    assert.deepEqual(ad.agents, [], "no souls without the kernel's observation");
     const r = await fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent: ad.agents[0].name, agentsRoot: ad.agents[0].agentsRoot }) });
-    assert.equal(r.status, 503);
-    assert.equal((await r.json()).code, "cli-unavailable");
+      body: JSON.stringify({ agent: "release-manager", agentsRoot: join(ROOT, "agents") }) });
+    assert.equal(r.status, 409, "an unobserved root is never a spawn target");
+    assert.equal(calls().some((c) => c.argv[0] === "spawn" || c.argv[0] === "status"), false);
   } finally { proc.kill(); }
 });
 
@@ -243,6 +272,7 @@ test("desktop server: spawn routes through the CLI with --dir/--task-file argv; 
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    await observed(port);
     const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
     const agent = ad.agents[0];
     // ---- spawn
@@ -288,45 +318,37 @@ test("desktop server: spawn routes through the CLI with --dir/--task-file argv; 
   } finally { proc.kill(); }
 });
 
-test("desktop server: hostile instance.json cannot steer the harvest cwd (review 53a20c7 blocker)", async () => {
-  const cliDir = mkdtempSync(join(tmpdir(), "oats-clihostile-"));
-  const { bin, calls } = fakeCli(cliDir, { features: ["operations"], operationsApi: 1 });
-  // Workspace with an instance whose instance.json points home at an
-  // ARBITRARY directory — the roster and the endpoint must both pin the
-  // directory-derived home; the CLI must never run in the steered cwd.
+test("desktop server: a kernel-reported home outside the soul's instances directory cannot steer the harvest cwd (review 53a20c7 blocker)", async () => {
+  // The kernel's status copies instance.json through; a hostile file can make
+  // it REPORT a steered home. The Desktop withholds that row (counted in the
+  // header), so no privileged route can address it and the CLI never runs there.
   const scope = realpathSync(mkdtempSync(join(tmpdir(), "oats-hostile-ws-")));
   const steerTarget = realpathSync(mkdtempSync(join(tmpdir(), "oats-steer-target-")));
-  const instHome = join(scope, "agents", "dev", "instances", "dev-evil");
-  mkdirSync(join(scope, "agents", "dev", "soul"), { recursive: true });
-  writeFileSync(join(scope, "agents", "dev", "soul", "soul.yaml"), "name: dev\ndescription: d\n");
-  mkdirSync(instHome, { recursive: true });
-  writeFileSync(join(instHome, "instance.json"),
-    JSON.stringify({ instance: "dev-evil", agent: "dev", home: steerTarget }));
-  const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
-  const proc2 = spawn(process.execPath, [SRV, "start", "--port", String(port + 1), "--dir", scope],
+  const fixture = JSON.parse(readFileSync(join(V2_FIXTURES, "status.json"), "utf8"));
+  const captured = dirname(fixture.root);
+  const hostile = JSON.parse(JSON.stringify(fixture).split(captured).join(scope));
+  hostile.agents[0].instances[0].home = steerTarget;
+  const cliDir = mkdtempSync(join(tmpdir(), "oats-clihostile-"));
+  const { bin, calls } = fakeCli(cliDir, { features: ["operations"], operationsApi: 1, status: hostile });
+  const port = await freePort();
+  const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope],
     { stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" } });
-  proc.kill(); // only the scope-scoped server matters here
   try {
-    let up = false;
-    for (let i = 0; i < 40 && !up; i++) {
+    let pd;
+    for (let i = 0; i < 100; i++) {
       await new Promise((r) => setTimeout(r, 100));
-      try { await fetch(`http://127.0.0.1:${port + 1}/api/panel`); up = true; } catch { /* retry */ }
+      try { pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json(); } catch { continue; }
+      if (pd.deployment?.status === "observed") break;
     }
-    assert.ok(up, "scoped server came up");
-    await fetch(`http://127.0.0.1:${port + 1}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    // roster: home must be the DIRECTORY-derived one, not the steered target
-    const pd = await (await fetch(`http://127.0.0.1:${port + 1}/api/panel`)).json();
-    const evil = pd.instances.find((i) => i.instance === "dev-evil");
-    assert.ok(evil, "instance surfaces");
-    assert.equal(evil.home, instHome, "roster home is directory-derived, never instance.json's");
-    // harvest: addresses the real home — never the steered directory
-    const hr = await fetch(`http://127.0.0.1:${port + 1}/api/harvest/dev-evil?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
-    assert.equal(hr.status, 200, JSON.stringify(await hr.clone().json()));
-    const harvestCall = calls().find((c) => c.argv[0] === "operation");
-    assert.ok(harvestCall, "harvest ran");
-    assert.deepEqual(harvestCall.argv, ["operation", "run", "knowledge:harvest", "--home", instHome, "--json"], "--home pinned to the enumerated directory");
-    assert.ok(!harvestCall.argv.includes(steerTarget) && harvestCall.cwd !== steerTarget, "steered home never reaches the CLI");
-  } finally { proc2.kill(); }
+    assert.equal(pd?.deployment?.status, "observed", JSON.stringify(pd?.deployment));
+    const name = fixture.agents[0].instances[0].instance;
+    assert.equal(pd.instances.some((i) => i.home === steerTarget), false, "the steered home is never published");
+    assert.deepEqual(pd.deployment.withheld, [{ agent: fixture.agents[0].name, instance: name, reason: "home-outside-soul" }]);
+    const hr = await fetch(`http://127.0.0.1:${port}/api/harvest/${name}?ws=${encodeURIComponent(pd.workspace.id)}`, { method: "POST" });
+    assert.equal(hr.status, 404, "a withheld row is not addressable");
+    assert.equal(calls().some((c) => c.argv[0] === "operation" || c.argv.includes(steerTarget) || c.cwd === steerTarget), false,
+      "the steered home never reaches the CLI");
+  } finally { proc.kill(); }
 });
 
 test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches the client UNSLICED; other codes stay capped (review 835a05f)", async () => {
@@ -335,6 +357,7 @@ test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches t
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    await observed(port);
     const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
     const agent = ad.agents[0];
     const post = (purpose) => fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
@@ -460,6 +483,7 @@ test("remote homes cannot grant local file access, and unguarded retirement refu
       await new Promise((r) => setTimeout(r, 50));
     }
     assert.equal(panel.instances.length, 3, "the remote rows were actually admitted to the roster");
+    await observed(port); // the local deployment's kernel-observed roots
     assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(secret)}`)).status, 403);
     assert.equal((await fetch(`${base}/api/file?path=${encodeURIComponent(join(ROOT, 'agents/cli-dev/soul/knowledge/index.md'))}`)).status, 200, "local knowledge remains readable");
     const retired = await fetch(`${base}/api/retire/missing-home?ws=remote%3Aguard&server=host`, { method: "POST" });

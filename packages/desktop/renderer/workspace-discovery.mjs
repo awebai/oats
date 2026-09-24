@@ -3,7 +3,7 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { cliStatus, cliKnownUnavailable, refreshCli } from './views/cli-status.mjs';
 import { createCapabilityMark } from './identity-marks.mjs';
-import { createOfficialCatalog, officialCatalogCSS } from './official-catalog.mjs';
+import { createDeploymentHeader, deploymentHeaderCSS } from './deployment-header.mjs';
 import { createDeploymentInventory, inventoryCSS } from './deployment-inventory.mjs';
 import { portableSources, renderPortableSources, sourcesCSS } from './soul-declarations.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
@@ -11,7 +11,7 @@ const readinessDismissed = new Set(); // session/workspace scoped, never a membe
 
 export const workspaceTabs = ['souls', 'capabilities', 'sources'];
 export const discoveryCSS = `
-${officialCatalogCSS}
+${deploymentHeaderCSS}
 ${inventoryCSS}
 ${sourcesCSS}
 ${readinessCSS}
@@ -110,7 +110,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   };
   let inspectedCli = inspectionCliIdentity();
   header.className = 'workspace-header';
-  header.append(node('h1', 'Workspace'));
+  const title = node('h1', 'Workspace'); header.append(title);
   const tabs = node('div', undefined, 'workspace-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', 'Workspace sections'); header.append(tabs);
   const controls = new Map(), counts = new Map();
   const readinessEntry = button('Readiness…', () => setReview(true)); readinessEntry.classList.add('workspace-readiness-entry'); readinessEntry.disabled = true;
@@ -150,8 +150,11 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   const details = button('Scope details…', () => inspect?.({ selector: { ...selector }, contexts }));
   toolbar.append(scopeLabel, searchLabel, retry, details);
   const note = node('p', '', 'discovery-note'), status = node('p', '', 'discovery-status'); status.setAttribute('role', 'status');
-  const catalogHost = node('div', undefined, 'workspace-catalog');
-  const catalog = createOfficialCatalog(catalogHost, { ctx });
+  // The kernel's workspace header (`oats workspace status --json`), from the
+  // current roster observation. No separate read; nothing to coalesce.
+  const deploymentHost = node('section', undefined, 'workspace-deployment');
+  const deploymentHeader = createDeploymentHeader(deploymentHost);
+  let deployment = null;
   const inventoryHost = node('div', undefined, 'workspace-inventory');
   const inventory = createDeploymentInventory(inventoryHost, { ctx });
   const effectiveHost = node('div'), effective = createReadinessView(effectiveHost, { ctx });
@@ -165,7 +168,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   invitation.append(button('Review readiness', () => setReview(true)));
   header.append(readinessEntry);
   const frameParent = panel.parentElement || panel; frameParent.append(invitation, frameHost);
-  const body = node('div'); panel.append(catalogHost, inventoryHost, effectiveHost, status, body, note);
+  const body = node('div'); panel.append(deploymentHost, inventoryHost, effectiveHost, status, body, note);
   const dismissalKey = () => JSON.stringify([workspace?.id, workspace?.scope, workspace?.server]);
   function setReview(show) {
     if (!alive || rosterGen !== workspaceGeneration() || !workspace) return;
@@ -178,12 +181,7 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   }
   function syncReadSurfaces() {
     const cli = cliStatus();
-    // Catalog belongs to the installed local CLI, never the selected scope.
-    // Generations invalidate A→B→A completions; identical roster/CLI polls do
-    // not rebuild controls or re-run the command. No wsQuery on this endpoint.
-    catalog.update({ active: tab === 'capabilities' && !reviewing, identity: JSON.stringify([
-      workspaceGeneration(), cli?.ok ?? null, cliKnownUnavailable(), cli?.bin ?? null, cli?.version ?? null,
-    ]) });
+    deploymentHeader.update(deployment, { active: tab === 'capabilities' && !reviewing });
     const context = selector.context || workspace?.scope;
     inventory.update({ active: tab === 'capabilities' && !reviewing, workspace, context, selector, cli,
       identity: JSON.stringify([workspaceGeneration(), workspace?.id, workspace?.scope, workspace?.remote, workspace?.server,
@@ -310,7 +308,8 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
     }
   }
   function updateRoster(agents, panelData) {
-    rosterGen = workspaceGeneration(); workspace = panelData.workspace || null;
+    rosterGen = workspaceGeneration(); workspace = panelData.workspace || null; deployment = panelData.deployment || null;
+    title.textContent = deployment?.status === 'observed' && deployment.workspace?.name ? deployment.workspace.name : 'Workspace';
     empty = agents.length === 0; readinessEntry.disabled = !workspace;
     syncPresentation();
     contexts = [{ context: '', label: 'Workspace defaults' }];
@@ -335,9 +334,9 @@ export function createWorkspaceDiscovery(header, panel, { ctx, soulsPanel, onTab
   setTab('souls');
   return {
     setTab, updateRoster, syncCli, get tab() { return tab; },
-    reset() { rosterGen = null; workspace = null; selector = {}; contexts = []; query = ''; reviewing = false; empty = false; readinessEntry.disabled = true;
+    reset() { rosterGen = null; workspace = null; deployment = null; title.textContent = 'Workspace'; selector = {}; contexts = []; query = ''; reviewing = false; empty = false; readinessEntry.disabled = true;
       search.value = ''; scope.replaceChildren(); syncPresentation(); onTab?.(tab); invalidate(); updateCounts(null); },
-    dispose() { alive = false; serial++; catalog.dispose(); inventory.dispose(); effective.dispose(); readinessFrame.dispose(); frameHost.remove(); invitation.remove(); },
+    dispose() { alive = false; serial++; deploymentHeader.dispose(); inventory.dispose(); effective.dispose(); readinessFrame.dispose(); frameHost.remove(); invitation.remove(); },
     reviewReadiness() { setReview(true); },
   };
 }

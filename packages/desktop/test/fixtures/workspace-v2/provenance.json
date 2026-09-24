@@ -1,0 +1,66 @@
+{
+  "source": "maintainer (lead) for the Desktop F1 gate; test/fixtures/northwind/build.mjs",
+  "kernel": "0.25.6",
+  "redactions": [
+    "<base> (capture tmpdir) → /fixture/base",
+    "<oats> (checkout) → /fixture/oats"
+  ],
+  "note": "Replaces the earlier exit-86 study capture. Shape diff against it: the study instance also carried instance.json passthrough keys (decision, layers, spawnCompleted, spawnIdempotencyKey, team, wake) from an idempotent spawn; the Desktop reads none of them. No field the Desktop reads differed.",
+  "files": {
+    "version": {
+      "document": "version",
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.6",
+      "sourceSha256": "48d5c35ecb4de7486d2676847c0e7fd5c0f3415d428807672c727be651cab2aa",
+      "fixtureSha256": "1b30d272faf5921537a68d0fff960487d868e5ce8445b699cd6e209c92e532bf"
+    },
+    "workspace-status": {
+      "document": "workspace-status-approved",
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.6",
+      "sourceSha256": "dee487ea8065240975ed1d4853e85948e05029dd9d73358c83a7dfe79b37da45",
+      "fixtureSha256": "dc3a1f2ebb7335e2d6ecbd70c4314f10b52f96a81e3518a373964108dfcb2263"
+    },
+    "status": {
+      "document": "status",
+      "argv": [
+        "oats",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.6",
+      "sourceSha256": "0f8724708271c5b1162b5e59dcb9932e45caf96caaf874387e0c3ab3566865b5",
+      "fixtureSha256": "e9ec3255320aa631119d9a51f431bea70444f40149db1c9de7770ab5f51ed3f3"
+    },
+    "status-identities": {
+      "document": "status-identities",
+      "argv": [
+        "oats",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.6",
+      "sourceSha256": "0b6a836b6813b161051f6b35bcff1d9bb18d4e2bcba62a0a2000ad6465d09a32",
+      "fixtureSha256": "2833436f38ab34da29fa97405faf37cdde55d5a088a5c2281f1938da972d4a56"
+    }
+  }
+}

@@ -15,7 +15,6 @@
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
- *   POST /api/catalog               {} → effective catalog from the accepted local CLI (>=0.24.6)
  *   POST /api/capabilities?ws=<id>   { action: list, selector: { context? } } → classic inventory
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
@@ -26,18 +25,21 @@
  *   GET  /api/file?path=<abs>       text file content, guarded to workspace roots + agent homes
  *
  * SECURITY: binds 127.0.0.1 ONLY. This process can type into your terminals.
+ * Deployment model: every roster/header fact is the installed kernel's
+ * `oats status --json` / `oats workspace status --json` (workspace model v2).
+ * The server reads no deployment file and has no fallback reader.
  * Interaction model: terminal-direct (tmux send-keys / capture-pane) — the
  * feel of sitting at the agent's terminal; identical for pi and claude runs.
  */
 import { createServer } from "node:http";
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync, lstatSync, realpathSync, accessSync, constants as fsConstants } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync, accessSync, constants as fsConstants } from "node:fs";
 import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
-import { catalogRequest } from "./catalog.mjs";
+import { createDeploymentObserver } from "./deployment-observer.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
@@ -64,75 +66,69 @@ const flag = (name) => {
 };
 const flagAll = (name) => args.flatMap((a, i) => (a === `--${name}` && args[i + 1] && !args[i + 1].startsWith("--") ? [args[i + 1]] : []));
 
-// "collect" is a hidden helper: the serving process spawns `oats-web.mjs
-// collect --dir ...` so the expensive synchronous roster collection runs in a
-// child and never blocks the event loop (see the snapshot refresher below).
-if (sub !== "start" && sub !== "collect") {
-  console.error("usage: oats-web.mjs start [--port <n>] [--dir <workspace>]...  (repeat --dir for multiple workspaces)");
+// "collect" is retired: the kernel owns roster collection and the CLI read is
+// asynchronous. Terminal liveness runs in server/liveness.mjs children.
+if (sub !== "start") {
+  console.error("usage: oats-web.mjs start [--port <n>] [--dir <deployment>]...  (repeat --dir for multiple deployments)");
   process.exit(1);
 }
 
-// App-owned READ-ONLY deployment reader — the packaged app never imports the
-// framework checkout's kernel module and accepts no framework-root
-// override; all lifecycle mutations go through the installed `oats` CLI.
-const reader = await import(pathToFileURL(join(HERE, "deployment.mjs")).href);
-const model = await import(pathToFileURL(join(HERE, "model.mjs")).href);
-model.initModel(reader);
+// The packaged app never imports the framework checkout's kernel module and
+// accepts no framework-root override; reads and mutations use the installed CLI.
 const locator = await import(pathToFileURL(join(HERE, "..", "cli-locator.mjs")).href);
 const adapter = await import(pathToFileURL(join(HERE, "..", "cli-adapter.mjs")).href);
 const remote = await import(pathToFileURL(join(HERE, "remote-roster.mjs")).href);
 let remoteGroups = [];
 let remoteCollecting = false;
 
-/** Workspaces in view. Each --dir registers one (repeatable); no --dir means
- * the cwd. Every context resolves to its team scope (or config scope) so the
- * switcher shows deployment-level entries; duplicates collapse. */
-const ctxs = (flagAll("dir").length ? flagAll("dir") : [process.cwd()]).map((d) => resolve(String(d)));
+/** Deployments in view. Each --dir registers one (repeatable); no --dir means
+ * the cwd. A deployment is identified by its canonical directory, exactly as
+ * given to `oats --dir`; the kernel decides whether it is one. */
+const ctxs = [...new Set((flagAll("dir").length ? flagAll("dir") : [process.cwd()]).map((d) => resolve(String(d))))];
 const port = Number(flag("port") || 4820);
 const DEBUG = flag("debug") === true || process.env.OATSWEB_DEBUG === "1";
 
+/** Roots come ONLY from the kernel's observed `status.root`; before (or
+ * without) an observation there is nothing to act on. No layout guess. */
 function workspaceEntry(ctx) {
-  let team, roots = [], scope = ctx;
-  try {
-    const r = reader.resolveDeployment(ctx);
-    if (r.team) { team = r.team; scope = r.team.scope; roots = reader.teamAgentRoots(r.team.scope); }
-    else {
-      const level = r.chain?.find((c) => c._level !== process.env.HOME)?._level;
-      if (level) scope = level;
-    }
-  } catch { /* fall through to local root */ }
-  if (!roots.length) { const root = reader.findAgentsRoot(ctx); roots = root ? [root] : []; }
-  return { id: scope, name: scope.split("/").pop(), scope, team: team || null, roots };
+  const deployment = snapshot.byWs.get(ctx)?.deployment;
+  const observed = deployment?.status === "observed";
+  return { id: ctx, name: (observed && deployment.workspace?.name) || basename(ctx) || ctx, scope: ctx, team: null,
+    roots: observed ? [deployment.root] : [] };
 }
 function workspaces() {
-  const map = new Map();
-  for (const ctx of ctxs) { const w = workspaceEntry(ctx); if (!map.has(w.id)) map.set(w.id, w); }
-  return [...map.values(), ...remoteGroups.map(remote.remoteWorkspace)];
+  return [...ctxs.map(workspaceEntry), ...remoteGroups.map(remote.remoteWorkspace)];
 }
 function workspaceById(id) {
   return workspaces().find((w) => w.id === id) || workspaces()[0];
 }
 
+/** Panel data is served from the latest observation and never blocks on a
+ * CLI read: the renderer and main's readiness probes stay responsive. */
 function panelData(wsId) {
   const all = workspaces();
   const ws = wsId ? workspaceById(wsId) : all[0];
   if (ws?.remote) return { ...remote.remotePanel(ws.group), workspaces: workspaceChoices(all) };
-  const instances = [];
-  for (const root of ws?.roots || []) {
-    try {
-      const data = model.collectControlPane(root);
-      for (const inst of data.instances) instances.push({ ...inst, agentsRoot: root });
-    } catch { /* one broken root must not hide the rest */ }
-  }
-  instances.sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+  const observed = ws ? snapshot.byWs.get(ws.id) : null;
+  const instances = observed?.instances || [];
   return {
-    workspace: ws ? { id: ws.id, name: ws.name, team: ws.team } : null,
+    workspace: ws ? { id: ws.id, name: ws.name, team: null } : null,
     workspaces: workspaceChoices(all),
-    team: ws?.team || null,
-    generatedAt: new Date().toISOString(),
+    team: null,
+    deployment: publicDeployment(observed?.deployment),
+    generatedAt: observed?.generatedAt || new Date().toISOString(),
     running: instances.filter((i) => i.running).length,
-    instances: instances.map(projectPanelInstance),
+    instances,
   };
+}
+
+/** The renderer's deployment facts: the header observation, reachability and
+ * any unavailable reason. The private soul rows stay server-side. */
+function publicDeployment(deployment) {
+  if (!deployment) return { status: "pending" };
+  if (deployment.status !== "observed") return deployment;
+  const { souls: _souls, ...rest } = deployment;
+  return rest;
 }
 
 function workspaceChoices(all = workspaces()) {
@@ -161,41 +157,41 @@ function projectPanelInstance(i) {
     relativeTo: i.relativeTo || null,
     ...(i.sessionTarget ? { sessionTarget: i.sessionTarget } : {}),
     runtimeState: i.runtimeState, runtimeError: i.runtimeError,
-    tmux: i.tmux, git: i.git, task: i.task, next: i.next,
+    tmux: i.tmux, git: null,
+    // Workspace-model v2 facts exactly as `oats status --json` reported them:
+    // module drift rows (or the recorded map when the workspace is
+    // unreachable), the soul source and the served identity. Identity is
+    // present only when a provider reported one — never synthesized.
+    ...(i.modules !== undefined ? { modules: i.modules } : {}),
+    ...(i.soul !== undefined ? { soul: i.soul } : {}),
+    ...(i.identity !== undefined ? { identity: i.identity } : {}),
+    ...(i.retirePending ? { retirePending: true } : {}),
+    ...(i.rollbackIncomplete ? { rollbackIncomplete: true } : {}),
+    ...(i.captured ? { captured: true } : {}),
     team: i.team || null,
   };
 }
 /* OATSWEB_PANELPROJ_END */
 
-/** Available agents (souls) of a workspace — what `oats spawn <agent>` could
- * start. Same read-only seams as the reader: listAgents per agents root, plus
- * capability-defined agents (packages' `agents:` souls) active in the root's
- * context. */
+/** Spawnable souls of a deployment as the kernel's status roster reports
+ * them (materialized souls). The workspace members' not-yet-materialized souls
+ * are F3's v2 spawn catalog; no soul.yaml or manifest is read here. */
 function agentsData(wsId) {
   const ws = wsId ? workspaceById(wsId) : workspaces()[0];
   if (ws?.remote) return { workspace: { id: ws.id, name: ws.name, server: ws.server }, agents: remote.remoteAgents(ws.group) };
+  const deployment = ws ? snapshot.byWs.get(ws.id)?.deployment : null;
   const agents = [];
-  for (const root of ws?.roots || []) {
-    const context = dirname(root); // the workspace/repo owning this agents root
-    const pushAgent = (a) => agents.push({
+  if (deployment?.status === "observed") {
+    const root = deployment.root, context = dirname(root);
+    for (const a of deployment.souls) agents.push({
       name: a.name, description: a.description || "", kind: a.kind || "persistent",
       ...(normalizeSoulColor(a.color) ? { color: normalizeSoulColor(a.color) } : {}),
       work: a.work || "checkout", backend: a.backend || "tmux", yolo: a.yolo, runtime: a.runtime || "pi", model: a.model || null,
       repo: a.repo || null, capability: a.capability || null, agentsRoot: root,
+      ...(a.soulSource !== undefined ? { soulSource: a.soulSource } : {}),
+      ...(a.team ? { team: a.team } : {}),
       workspace: context, repoName: resolve(context, a.repo || ".").split("/").pop(),
     });
-    try {
-      const local = reader.listAgents(root);
-      const seen = new Set(local.map((a) => a.name));
-      for (const a of local) pushAgent(a);
-      // Capability-defined agents (kind "capability") — read-only resolution.
-      for (const c of reader.listCapabilityAgents(context)) {
-        if (seen.has(c.name)) continue;
-        seen.add(c.name);
-        const soul = reader.findCapabilityAgent(context, root, c.name);
-        if (soul) pushAgent(soul);
-      }
-    } catch { /* one broken root must not hide the rest */ }
   }
   agents.sort((a, b) => a.name.localeCompare(b.name));
   return { workspace: ws ? { id: ws.id, name: ws.name } : null, agents };
@@ -321,8 +317,11 @@ async function spawnAgent({ agent, agentsRoot, task, purpose, relation, relative
   // supplies the name the operator picked.
   let def;
   if (!server) {
-    def = reader.findAgent(root, name)
-      || reader.findCapabilityAgent(dirname(root), root, name);
+    // The soul must be one the kernel's current roster reports for this
+    // exact root; no filesystem soul lookup.
+    const deployment = workspaces().filter((w) => !w.remote).map((w) => snapshot.byWs.get(w.id)?.deployment)
+      .find((d) => d?.status === "observed" && resolve(d.root) === root);
+    def = deployment?.souls.find((s) => s.name === name);
     if (!def) throw new Error(`unknown agent "${name}"`);
   }
   // Mutation boundary: a compatible installed CLI is required — degradation,
@@ -435,6 +434,7 @@ async function reprobeCli(chosen) {
   const r = await locator.discover(cliIo, probeBin);
   if (generation !== cliProbeGeneration) return cliState;
   cliState = { ...r, probedAt: Date.now() };
+  void refreshSnapshot(); // the deployment observation belongs to the accepted CLI
   void refreshRemoteSnapshot();
   return cliState;
 }
@@ -468,6 +468,7 @@ function cliStatus() {
     spawnPreviewApi: cliState.spawnPreviewApi === 2 ? 2 : null,
     spawnApplyApi: cliState.spawnApplyApi === 1 ? 1 : null,
     eventsApi: cliState.eventsApi === 2 ? 2 : null,
+    workspaceApi: cliState.workspaceApi === 2 ? 2 : null,
     remote: cliState.remote || [],
     relations: !!cliState.ok && locator.supportsRelations(cliState.version),
     relationsMin: locator.RELATIONS_MIN.join("."),
@@ -477,13 +478,65 @@ function cliStatus() {
 }
 
 /* ── Non-blocking roster snapshot ──
-   collectControlPane performs synchronous directory/metadata and session reads.
-   Keep that work outside the serving process so roster collection cannot stall
-   key/echo handling. A child (`oats-web.mjs collect`) refreshes the snapshot in
-   the background. The historical per-tree Git commands have been RETIRED:
-   local roster Git is null; only the on-demand K1 route observes Git now. */
-let snapshot = { at: 0, byWs: new Map() };   // wsId -> panelData
-let collecting = false;
+/* ── Kernel-observed roster snapshot ──
+   Every local deployment fact is one bounded `oats status --json` plus one
+   `oats workspace status --json` (deployment-observer.mjs). Terminal liveness for
+   the kernel-reported targets is observed in a separate short-lived child
+   (server/liveness.mjs) so tmux/Herdr latency cannot stall key/echo handling.
+   Local roster Git is null; only the on-demand K1 route observes Git. */
+let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt } | remote panel
+const DEPLOYMENT_REFRESH_MS = 5000;
+const LIVENESS = join(HERE, "liveness.mjs");
+const deploymentObserver = createDeploymentObserver({
+  // Only a registered local deployment, with the CURRENT accepted CLI. The
+  // probe generation is the revision: a reprobe revokes pending reads.
+  getContext: (id) => ctxs.includes(id) ? { deployment: id, revision: cliProbeGeneration, cli: cliState } : null,
+});
+function observeLivenessRows(rows) {
+  return new Promise((done) => {
+    if (!rows.length) return done([]);
+    const unknown = () => done(rows.map(() => ({ running: null, runtimeState: "unreachable", runtimeError: "Terminal status is unavailable" })));
+    let child;
+    try {
+      child = execFile(process.execPath, [LIVENESS], { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
+        if (err) return unknown();
+        try {
+          const parsed = JSON.parse(stdout);
+          return Array.isArray(parsed) && parsed.length === rows.length ? done(parsed) : unknown();
+        } catch { return unknown(); }
+      });
+      child.stdin.on("error", () => { /* reported through the exit callback */ });
+      child.stdin.end(JSON.stringify(rows));
+    } catch { unknown(); }
+  });
+}
+/** One deployment's panel entry. A transient busy/stale read keeps the last
+ * observation; every other failure is shown as unavailable, with the kernel's
+ * code/message or the missing feature's name, never as an empty roster. */
+async function observeDeployment(id) {
+  const previous = snapshot.byWs.get(id);
+  // Before the first CLI probe settles there is no verdict to report.
+  if (!cliState.probedAt) return previous || { deployment: { status: "pending" }, instances: [], generatedAt: new Date().toISOString() };
+  const result = await deploymentObserver.observe(id);
+  if (!result.ok) {
+    if (previous && ["E_DEPLOYMENT_BUSY", "E_DEPLOYMENT_STALE"].includes(result.reason?.code)) return previous;
+    return { deployment: { status: "unavailable", reason: result.reason }, instances: [], generatedAt: new Date().toISOString() };
+  }
+  const { roster, workspaceStatus } = result;
+  const rows = roster.agents.flatMap((agent) => agent.instances.map((instance) => ({
+    ...instance, agent: instance.agent || agent.name, description: agent.description || "",
+    team: agent.team || null, agentsRoot: roster.root,
+  })));
+  const liveness = await observeLivenessRows(rows.map((i) => ({ instance: i.instance, tmux: i.tmux, sessionTarget: i.sessionTarget })));
+  const instances = rows.map((row, index) => projectPanelInstance({ ...row, ...liveness[index] }))
+    .sort((a, b) => (a.running === b.running ? String(a.instance).localeCompare(b.instance) : a.running ? -1 : 1));
+  return {
+    deployment: { status: "observed", root: roster.root, workspace: workspaceStatus.workspace, workspaceStatus,
+      reachable: roster.workspace ?? null, withheld: roster.withheld,
+      souls: roster.agents.map(({ instances: _instances, ...soul }) => soul) },
+    instances, generatedAt: new Date().toISOString(),
+  };
+}
 function mergeRemotePanels(byWs) {
   for (const id of byWs.keys()) if (id.startsWith("remote:")) byWs.delete(id);
   for (const group of remoteGroups) {
@@ -516,36 +569,23 @@ async function refreshRemoteSnapshot() {
     if (cliState !== probe) void refreshRemoteSnapshot();
   }
 }
-function collectNow() {
-  const byWs = new Map();
-  for (const w of workspaces()) byWs.set(w.id, panelData(w.id));
-  return byWs;
-}
-if (sub === "collect") {
-  process.stdout.write(JSON.stringify(Object.fromEntries(collectNow())));
-  process.exit(0);
-}
+let refreshing = null, refreshAgain = false;
+/** Single-flight refresh; a request during a refresh schedules exactly one
+ * follow-up (a mutation's result must be observed), never a queue. */
 function refreshSnapshot() {
-  if (collecting) return;
-  collecting = true;
-  const argv = [fileURLToPath(import.meta.url), "collect", ...ctxs.flatMap((d) => ["--dir", d])];
-  execFile(process.execPath, argv, { encoding: "utf8", timeout: 30000, maxBuffer: 16 * 1024 * 1024 }, (err, stdout) => {
-    collecting = false;
-    if (err) { if (DEBUG) console.log(`[snapshot] collect failed: ${err.message}`); return; }
-    try {
-      const parsed = JSON.parse(stdout);
-      snapshot = { at: Date.now(), byWs: mergeRemotePanels(new Map(Object.entries(parsed))) };
-    } catch (e) { if (DEBUG) console.log(`[snapshot] bad collect output: ${e.message}`); }
-  });
-}
-function snapshotPanel(wsId) {
-  const ids = [...snapshot.byWs.keys()];
-  const id = wsId && snapshot.byWs.has(wsId) ? wsId : ids[0];
-  return id ? { ...snapshot.byWs.get(id), workspaces: workspaceChoices() } : null;
+  if (refreshing) { refreshAgain = true; return refreshing; }
+  refreshing = (async () => {
+    const entries = await Promise.all(ctxs.map(async (id) => [id, await observeDeployment(id)]));
+    const byWs = new Map(entries);
+    for (const [id, panel] of snapshot.byWs) if (id.startsWith("remote:")) byWs.set(id, panel);
+    snapshot = { at: Date.now(), byWs: mergeRemotePanels(byWs) };
+  })().catch((e) => { if (DEBUG) console.log(`[snapshot] refresh failed: ${e.message}`); })
+    .finally(() => { refreshing = null; if (refreshAgain) { refreshAgain = false; void refreshSnapshot(); } });
+  return refreshing;
 }
 /* OATSWEB_FINDINST_BEGIN — workspace-scoped instance lookup, extracted by tests */
 function findInstance(name, wsId, home, server) {
-  if (!snapshot.byWs.size) snapshot = { at: Date.now(), byWs: collectNow() }; // cold start, once
+  // Snapshot-only: an unobserved deployment has no instances to act on.
   // With a ws scope, resolve ONLY in that workspace — same-named instances
   // exist across workspaces and "first match anywhere" picks the wrong one.
   // Same-named instances also exist across roots WITHIN one workspace, so
@@ -577,30 +617,22 @@ function resolveInstanceOr(name, wsId, home, server) {
 
 /* OATSWEB_HARVESTHOME_BEGIN — privileged-cwd containment, extracted by tests.
    The harvest CLI runs with cwd = the instance home. That home must be
-   DERIVED and VERIFIED, never trusted from roster data: canonicalize it and
-   require <...>/instances/<name> whose grandparent agents base is one of
-   this server's workspace roots or their local-agents siblings. */
+   DERIVED and VERIFIED, never trusted from roster data alone: it must be the
+   exact home the kernel's current status reported for this instance in a
+   registered local deployment, canonicalize to <...>/instances/<name>, and
+   stay inside that deployment's canonical directory. No layout is named. */
 function harvestHome(inst) {
-  if (!inst?.home || typeof inst.home !== "string") return null;
+  if (!inst?.home || typeof inst.home !== "string" || inst.server) return null;
   let real;
   try { real = realpathSync(inst.home); } catch { return null; }
-  // shape: <agentDir>/instances/<instanceName>
-  if (basename(real) !== String(inst.instance)) return null;
-  const instancesDir = dirname(real);
-  if (basename(instancesDir) !== "instances") return null;
-  const agentDir = dirname(instancesDir);
-  const base = dirname(agentDir); // agents root or a local-agents base
-  const allowed = [];
+  if (basename(real) !== String(inst.instance) || basename(dirname(real)) !== "instances") return null;
   for (const w of workspaces()) {
-    for (const r of w.roots) {
-      allowed.push(r);
-      allowed.push(reader.localAgentsDirOf(r));
-      allowed.push(join(r, "local-agents"));   // legacy nested
-      allowed.push(join(r, "tmp-agents"));
-    }
-  }
-  for (const a of allowed) {
-    try { if (realpathSync(a) === base) return real; } catch { /* absent base */ }
+    if (w.remote) continue;
+    const reported = snapshot.byWs.get(w.id)?.instances || [];
+    if (!reported.some((i) => !i.server && i.instance === inst.instance && i.home === inst.home)) continue;
+    let scope;
+    try { scope = realpathSync(w.id); } catch { continue; }
+    if (real.startsWith(scope.endsWith(sep) ? scope : scope + sep)) return real;
   }
   return null;
 }
@@ -771,10 +803,34 @@ function chatData(inst, limit = 120) {
 
 // ---- Agent brain: soul + instance artifacts as absolute paths ----
 // The desktop brain view renders this map; file CONTENT is fetched separately
-// through /api/file (path-guarded there). This endpoint only walks known
-// agent directories under the workspace's agents roots — the agent name is
-// resolved through the same kernel seams as spawn (findAgent /
-// findCapabilityAgent), never from a caller-supplied path.
+// through /api/file (path-guarded there). The soul and its instances are the
+// ones the kernel's current `oats status --json` reported for this workspace —
+// never a caller-supplied path, soul.yaml lookup or manifest walk. Skill and
+// knowledge files are content for viewing, read with per-file containment.
+/** Display metadata of a SKILL.md: only the `name:`/`description:` scalars of
+ * its frontmatter. Content presentation, not deployment configuration. */
+function skillFrontmatter(text) {
+  const m = String(text).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+  const meta = {};
+  for (const line of m ? m[1].split(/\r?\n/) : []) {
+    const f = line.match(/^(name|description):\s*(.*?)\s*$/);
+    if (f) meta[f[1]] = f[2].replace(/^["']|["']$/g, "");
+  }
+  return meta;
+}
+/** The canonical path of `path` when it stays inside the canonical `parent`;
+ * null otherwise (absent, or a symlink escaping the deployment). */
+function canonicalInside(path, parent) {
+  try {
+    const real = realpathSync(path), base = realpathSync(parent);
+    return real === base || real.startsWith(base.endsWith(sep) ? base : base + sep) ? real : null;
+  } catch { return null; }
+}
+function containedIn(base) {
+  let real;
+  try { real = realpathSync(base); } catch { return () => false; }
+  return (file) => { try { const target = realpathSync(file); return target === real || target.startsWith(real + sep); } catch { return false; } };
+}
 function listSkills(dir, contained) {
   // skills live as <dir>/<skill>/SKILL.md with `name`/`description` frontmatter
   const skills = [];
@@ -790,11 +846,11 @@ function listSkills(dir, contained) {
 function skillEntry(skillDir, contained) {
   const p = join(skillDir, "SKILL.md");
   if (!existsSync(p)) return null;
-  // Package skill trees: a nested SKILL.md symlink can escape the package
-  // boundary even when the tree dir itself is contained — reject per file.
+  // A nested SKILL.md symlink can escape its owning tree even when the tree
+  // dir itself is contained — reject per file.
   if (contained && !contained(p)) return null;
   let meta = {};
-  try { meta = reader.parseFrontmatter(readFileSync(p, "utf8")).meta || {}; } catch { /* unreadable skill */ }
+  try { meta = skillFrontmatter(readFileSync(p, "utf8")); } catch { /* unreadable skill */ }
   return { name: meta.name || basename(skillDir), path: p, description: String(meta.description || "").trim() };
 }
 function mdTree(dir) {
@@ -817,23 +873,17 @@ function mdTree(dir) {
 const mdIf = (p) => (existsSync(p) ? p : null);
 function brainData(agentName, wsId) {
   const ws = wsId ? workspaceById(wsId) : workspaces()[0];
-  let def, root;
-  for (const r of ws?.roots || []) {
-    def = reader.findAgent(r, agentName) || reader.findCapabilityAgent(dirname(r), r, agentName);
-    if (def) { root = r; break; }
-  }
-  if (!def) return null;
-  // capability agents keep their canonical soul read-only in the package
-  const soulDir = def._soulDir || join(def._dir, "soul");
-  // Skills: local souls carry soul/skills/; capability agents ALSO declare
-  // skills at the package level (manifest `skills:` paths). Runtime
-  // composition includes both sources — mirror that: merge local + package,
-  // deterministic duplicate handling (local soul wins, then first-seen).
-  /* OATSWEB_BRAINSKILLS_BEGIN — capability skill-path expansion, extracted by tests */
+  const observed = ws && !ws.remote ? snapshot.byWs.get(ws.id) : null;
+  if (observed?.deployment?.status !== "observed") return null;
+  const root = observed.deployment.root;
+  const def = observed.deployment.souls.find((s) => s.name === agentName);
+  // The soul directory must canonically belong to this deployment.
+  if (!def?.dir || !canonicalInside(def.dir, ws.id)) return null;
+  const soulDir = join(def.dir, "soul");
+  /* OATSWEB_BRAINSKILLS_BEGIN — skill-path expansion, extracted by tests */
   const expandSkillPath = (p, exists, list, entry) =>
-    // manifest paths are either a leaf skill dir (contains SKILL.md) or a
-    // parent tree of skill dirs (the `skills: ["skills"]` form) — core
-    // materialization accepts both, so must we.
+    // a path is either a leaf skill dir (contains SKILL.md) or a parent tree
+    // of skill dirs (a materialized module's `.agents/skills/<module>/`).
     exists(join(p, "SKILL.md")) ? [entry(p)].filter(Boolean) : list(p);
   const mergeSkills = (...groups) => {
     const byName = new Map();
@@ -841,47 +891,33 @@ function brainData(agentName, wsId) {
     return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
   };
   /* OATSWEB_BRAINSKILLS_END */
-  // Skills under the soul dir. For CAPABILITY agents soulDir is PACKAGE-OWNED
-  // (untrusted content): the walk must apply per-file containment or a
-  // symlinked SKILL.md inside agents/helper/skills/ escapes the package
-  // (review ae3e199) — same boundary as the manifest skill trees below.
-  const soulContained = def._packageDir ? (f) => reader.containsPackageFile(def._packageDir, f) : undefined;
-  const localSkills = listSkills(join(soulDir, "skills"), soulContained);
-  let packageSkills = [];
-  if (def.capability) {
-    try {
-      packageSkills = reader.capabilitySkillDirs(def.capability, dirname(root))
-        .flatMap(({ dir, packageDir }) => {
-          const contained = (f) => reader.containsPackageFile(packageDir, f);
-          return expandSkillPath(dir, existsSync, (d) => listSkills(d, contained), (d) => skillEntry(d, contained));
-        });
-    } catch { /* manifest unreadable — no package skills */ }
-  }
-  const soulSkills = mergeSkills(localSkills, packageSkills);
+  // Soul content is workspace-member content: every file must stay inside the
+  // kernel-reported soul directory (a per-commit copy behind the soul pointer).
+  const soulContained = containedIn(def.dir);
+  const soulSkills = mergeSkills(listSkills(join(soulDir, "skills"), soulContained));
   const knowledgeDir = join(soulDir, "knowledge");
-  const instances = [];
-  const instancesDir = join(def._dir, "instances");
-  let instNames = [];
-  try { instNames = readdirSync(instancesDir, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name); } catch { /* no instances yet */ }
-  for (const name of instNames.sort()) {
-    const home = join(instancesDir, name);
-    // running comes from the roster snapshot, SCOPED to the brain's resolved
-    // workspace — unscoped lookup let a same-named instance running in another
-    // workspace mark this (possibly stopped) one as running (merged-state
-    // review @f889619) and offer a terminal that can't resolve locally.
-    // The HOME qualifier pins the exact instance — a same-named twin in
-    // another root of THIS workspace must not answer either (@7dd1e7b).
-    const live = findInstance(name, ws?.id, home);
+  // Instances are exactly the kernel-reported rows of this soul and root.
+  const rows = (observed.instances || []).filter((i) => !i.server && i.agent === def.name && i.agentsRoot === root
+    && canonicalInside(i.home, ws.id))
+    .sort((a, b) => String(a.instance).localeCompare(String(b.instance)));
+  const instances = rows.map((live) => {
+    const home = live.home;
+    const homeContained = containedIn(home);
+    const skillsDir = join(home, ".agents", "skills");
+    let entries = [];
+    try { entries = readdirSync(skillsDir, { withFileTypes: true }).filter((e) => e.isDirectory()); } catch { /* none */ }
+    const skills = mergeSkills(entries.flatMap((e) => expandSkillPath(join(skillsDir, e.name), existsSync,
+      (d) => listSkills(d, homeContained), (d) => skillEntry(d, homeContained))));
     const notesDir = join(home, "notes");
-    instances.push({
-      instance: name, home, running: live ? !!live.running : false,
+    return {
+      instance: live.instance, home, running: live.running === true,
       agentsMd: mdIf(join(home, "AGENTS.md")),
-      skills: listSkills(join(home, ".agents", "skills")),
+      skills,
       state: mdIf(join(home, "STATE.md")),
       task: mdIf(join(home, "TASK.md")),
       notes: existsSync(notesDir) ? mdTree(notesDir) : [],
-    });
-  }
+    };
+  });
   return {
     agent: def.name, description: def.description || "", agentsRoot: root,
     soul: {
@@ -934,27 +970,24 @@ function fileRoots() {
   const roots = [];
   const admit = (p) => { try { roots.push(realpathSync(p)); } catch { /* absent — skip */ } };
   for (const w of workspaces()) for (const r of w.roots) admit(r);
-  // Local souls live in the scope-level local-agents/ SIBLING of each agents
-  // root — their soul/knowledge/instance files must be viewable too.
-  // SECURITY: the sibling dir is UNTRUSTED workspace content — admit it only
-  // when lstat (non-following) shows a REAL directory whose canonical parent
-  // is the canonical workspace scope; what gets pushed is the canonical
-  // string, immutable from here on.
-  for (const w of workspaces()) {
-    for (const r of w.roots) {
-      const base = reader.localAgentsDirOf(r);
-      try {
-        if (!lstatSync(base).isDirectory()) continue;        // symlink or non-dir: reject (lstat does NOT follow)
-        const realBase = realpathSync(base);
-        if (dirname(realBase) !== realpathSync(dirname(r))) continue;
-        roots.push(realBase);
-      } catch { /* absent — no local souls here */ }
+  // Every soul directory the kernel reported for an observed local deployment
+  // (its souls/knowledge/instances are viewable), admitted only when its
+  // canonical path stays inside the canonical deployment: a symlinked soul
+  // directory must not widen the file roots. Canonicalized once here.
+  for (const [id, d] of snapshot.byWs) {
+    if (d.deployment?.status !== "observed") continue;
+    for (const soul of d.deployment.souls) {
+      const real = canonicalInside(soul.dir, id);
+      if (real) roots.push(real);
     }
   }
-  for (const d of snapshot.byWs.values()) {
+  for (const [id, d] of snapshot.byWs) {
     for (const i of d.instances) {
       if (i.server) continue; // Remote paths never grant access to local files.
-      if (i.home) { admit(i.home); admit(join(i.home, "work")); } // <home>/work = the work tree (i.work is the MODE)
+      // The home itself must canonicalize inside its deployment; its work tree
+      // and repo are operator checkouts that legitimately live elsewhere.
+      const home = i.home ? canonicalInside(i.home, id) : null;
+      if (home) { roots.push(home); admit(join(i.home, "work")); } // <home>/work = the work tree (i.work is the MODE)
       if (i.repo) admit(i.repo);
     }
   }
@@ -1043,9 +1076,8 @@ const server = createServer(async (req, res) => {
       return send(res, 200, { capability: MANIFEST.capability, version: MANIFEST.version });
     }
     if (req.method === "GET" && path === "/api/panel") {
-      const d = snapshotPanel(url.searchParams.get("ws") || undefined);
-      // first request before the initial snapshot lands: collect inline once
-      return send(res, 200, d || panelData(url.searchParams.get("ws") || undefined));
+      // Served from the latest kernel observation; never waits on a CLI read.
+      return send(res, 200, panelData(url.searchParams.get("ws") || undefined));
     }
     if (req.method === "GET" && path === "/api/agents") return send(res, 200, agentsData(url.searchParams.get("ws") || undefined));
     if (path === "/api/launch-configs" && req.method === "POST") {
@@ -1140,7 +1172,7 @@ const server = createServer(async (req, res) => {
         }
         const request = await readStrictBody(req);
         const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
-        // Never collect Git here or use snapshotPanel's fallback workspace.
+        // Never collect Git here or fall back to another workspace.
         // An absent exact snapshot is unavailable; refreshing the roster is
         // the existing collector's job, not an authority to infer another home.
         const result = await instanceGitRequest(request, { workspace, cli: cliState,
@@ -1151,13 +1183,6 @@ const server = createServer(async (req, res) => {
         return send(res, bad ? 400 : 503, { code: bad ? "E_BAD_ARGS" : "E_CLI_FAILED",
           error: bad ? "Git inspection requires one workspace selector and a JSON object body up to 64 KiB" : "Git inspection is unavailable" });
       }
-    }
-    if (path === "/api/catalog" && req.method === "POST") {
-      try {
-        if (url.search) throw Object.assign(new Error("Catalog reads accept no query arguments"), { code: "E_BAD_ARGS" });
-        const result = await catalogRequest(await readStrictBody(req), { cli: cliState, localCwd: ctxs[0] });
-        return send(res, 200, result);
-      } catch (e) { return send(res, 400, { error: "Catalog reads accept only an empty JSON object or body and no query arguments", code: "E_BAD_ARGS" }); }
     }
     if (path === "/api/capabilities" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
@@ -1369,11 +1394,11 @@ server.listen(port, "127.0.0.1", () => {
   console.log(`oats-desktop server — API at ${addr}  (workspaces: ${workspaces().map((w) => w.name).join(", ") || "none"})`);
   console.log("Bound to 127.0.0.1 only. This process can type into your agent terminals — do not expose it.");
 });
-refreshSnapshot();                       // initial roster snapshot, off-thread
+void refreshSnapshot();                  // pending until the CLI probe settles
 reprobeCli().then((s) => {
   console.log(s.ok
     ? `oats-desktop server: oats CLI ${s.version} at ${s.bin} (${s.source})`
     : `oats-desktop server: no compatible oats CLI found — reads and terminals work; Spawn/Harvest disabled (${(s.tried || []).length} candidate(s) tried)`);
 });
-setInterval(refreshSnapshot, 3000).unref(); // keep it fresh; child skipped if one is running
+setInterval(refreshSnapshot, DEPLOYMENT_REFRESH_MS).unref(); // single-flight kernel observation
 setInterval(refreshRemoteSnapshot, 10000).unref(); // coalesced host reads, independent of terminal traffic

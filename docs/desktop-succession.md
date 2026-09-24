@@ -8,7 +8,7 @@ the OATS Desktop app (`packages/desktop/` in the framework repo):
 |---|---|
 | `oats.web` marketplace capability (`oats web start`, browser panel) | OATS Desktop app — the same zero-dependency loopback server is bundled at `packages/desktop/server/` and spawned by the app |
 | `oats pane` CLI command and the Control Pane TUI | OATS Desktop app (Active overview / instance roster) |
-| `@awebai/oats/control-pane` package export (`lib/control-pane/model.mjs`) | The roster model moved into `packages/desktop/server/model.mjs`; it is no longer a public kernel export |
+| `@awebai/oats/control-pane` package export (`lib/control-pane/model.mjs`) | The roster model moved into the Desktop app; under workspace model v2 the app reads the kernel's `oats status --json` instead ([deployment model](../packages/desktop/docs/desktop-deployment-model.md)). It is not a public kernel export |
 
 ## Migrating a deployment that used `oats.web`
 
@@ -45,9 +45,9 @@ solarized) exist in the app's theme system.
 `import ... from "@awebai/oats/control-pane"` no longer resolves. The
 model's pure helpers (`readMarkdownSection`, `parseTmuxWindows`,
 `parseGitStatus`, `parseGitDiffStat`, `buildConstellation`, `relativeAge`)
-live in `packages/desktop/server/model.mjs`, which is private to the desktop
-app. If you depended on this export, vendor the helpers or open an issue —
-no known external consumer existed at removal time.
+moved into the private Desktop app and were retired with its workspace-model v2
+rebuild. If you depended on this export, vendor the helpers from a released tag
+or open an issue — no known external consumer existed at removal time.
 
 ## Release gating (maintainers)
 
