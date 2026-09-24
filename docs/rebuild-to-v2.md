@@ -77,7 +77,7 @@ members:
   - git:github.com/acme/platform
 packages:
   oats.framework: v1.1.3
-  oats.okf: v2.1.4
+  oats.okf: v2.1.5
   oats.aweb: v1.12.1
 teams:
   global: { description: Org-wide }
@@ -328,7 +328,7 @@ Member capabilities need no approval: membership is the trust.
 **Non-interactive approval (CI, scripted rebuilds):**
 
 ```bash
-oats sync --approve oats.okf@v2.1.4 --approve oats.aweb@v1.12.1
+oats sync --approve oats.okf@v2.1.5 --approve oats.aweb@v1.12.1
 ```
 
 `--approve <id>@<version>` is repeatable and approves **exactly** the entry the
@@ -340,7 +340,7 @@ stays unapproved (exit `2`, as above).
 
 `<version>` is the value `sync --json` reports as `approvalNeeded[].version`,
 which is what the lock records as the package's `version`. For a **catalog**
-package that is the published version (`oats.okf@2.1.4`). For a **git** source
+package that is the published version (`oats.okf@2.1.5`). For a **git** source
 pinned by commit (`git:github.com/awebai/oats-okf@<oid>`) it is the **full
 commit OID**, not the `git:` reference and not a tag name — copy it from the
 `approvalNeeded` line rather than from your workspace file.

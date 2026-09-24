@@ -291,7 +291,7 @@ function checkPhase(req) {
     if(gitBases.length) scratch=fs.mkdtempSync(join(fs.realpathSync(tmpdir()),'oats-okf-binding-check-'));
     for(const [alias,base] of Object.entries(bindings.bases)) {
       stage=base.kind==='directory'?'validate':'stage';
-      accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias))).meta;
+      accepted[alias]=(base.kind==='directory'?validateBase(base.path,base):stageBase(base,join(scratch,alias),{alias})).meta;
     }
     stage='runtime';
     checkKnowledgeRuntime({rendered:runtime,accepted});

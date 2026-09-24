@@ -101,7 +101,7 @@ export function views(bindings, decl, target) {
     for(const [alias,base] of Object.entries(bindings.bases)) {
       const scratch=fs.mkdtempSync(join(bindings.stateDir,'read-'));
       try {
-        const staged=stageBase(base,join(scratch,'base'));
+        const staged=stageBase(base,join(scratch,'base'),{alias});
         all[alias]=staged.meta;
         const path=`bases/${alias}`;
         materialize(join(pending,path),staged.files);
@@ -192,7 +192,8 @@ export function register(home) {
   if(fs.existsSync(join(home,'knowledge'))) fail('E_VIEW','unregistered knowledge view exists; preserve it and inspect before registering');
   if(['.okf-harvest-record.json','.okf-harvest-record.next.json'].some(p=>fs.existsSync(join(home,p))) && !fs.existsSync(join(home,'.okf-v1-migration.json'))) fail('E_MIGRATION','legacy source watermarks require explicit oats okf migrate --source-home PATH before v2 registration; no cursor is silently trusted');
   const meta=fs.existsSync(join(home,'instance.json'))?readJSON(join(home,'instance.json')):{};
-  const soul=fs.realpathSync(process.env.OATS_SOUL || join(home,'soul'));
+  if(!process.env.OATS_SOUL) fail('E_OATS_SOUL_MISSING','OATS_SOUL is not set; oats.okf hooks and commands run only under the OATS kernel');
+  const soul=fs.realpathSync(process.env.OATS_SOUL);
   const work=fs.existsSync(join(home,'work'))?fs.realpathSync(join(home,'work')):join(home,'work');
   const decl=declaration(soul);
   const soulId=process.env.OATS_SOUL_ID || null;
@@ -204,7 +205,6 @@ export function register(home) {
   if(!agent || !instance) fail('E_SOURCE','source instance/agent required');
   fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
   const ownersFile=join(bindings.stateDir,'owners.json');
-  pinOwner(ownersFile,decl.owner,{id:soulId,soulName:agent,path:soul});
   const id=randomUUID(); const dir=join(bindings.stateDir,'sources',id);
   // Copy only the role document, never instance.json wholesale, launch recipes,
   // environment, credentials, source worktree, or third-party message stores.
@@ -217,6 +217,7 @@ export function register(home) {
   fs.mkdirSync(dir,{recursive:true,mode:0o700});
   try {
     source.acceptedView=views(bindings,decl,pending);
+    pinOwner(ownersFile,decl.owner,{id:soulId,soulName:agent,path:soul});
     source.acceptedNodes=Object.fromEntries(Object.entries(source.acceptedView).map(([alias,r])=>[alias,r.nodes]));
     save(file,source);
     save(join(dir,'status.json'),{version:1,captured:{notes:[],threads:{},inputs:[]},processed:[],delivered:{},accepted:{},retired:false,auto:true,activeRun:null});
@@ -245,7 +246,7 @@ export function pinOwner(ownersFile,owner,{id,soulName,path}) {
     if(!obj(owners)) fail('E_OWNER','invalid owner registry');
     const prior=Object.hasOwn(owners,owner)?owners[owner]:undefined;
     const samePath=typeof prior==='string' && new RegExp(`/agents/${soulName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}/(soul|souls/[^/]+)$`).test(prior);
-    if(prior!==undefined && prior!==value && !(id && samePath)) fail('E_OWNER','stable owner ID already identifies a different soul in this state namespace');
+    if(prior!==undefined && prior!==value && !(id && samePath)) fail('E_OWNER',`stable owner ID already identifies a different soul in this state namespace: existing soul ${prior}; new soul ${value}. Remedies: retire the existing registration first, or use a fresh state directory.`);
     if(prior!==value) {owners[owner]=value;save(ownersFile,owners);}
     return value;
   });

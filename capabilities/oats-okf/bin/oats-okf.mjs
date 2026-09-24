@@ -175,7 +175,7 @@ else {
     } else if(event==='unlock') result=unlock(resolve(flags.lock),flags.token);
     else fail('E_USAGE',`unknown command ${event}; see --help`);
     answer=hook?result:{schemaVersion:1,ok:true,result};
-  } catch(e) {exit=1;answer=hook?{meta:{...(event==='retire'?{retired:false,reason:e.message}:{})},warning:`oats-okf: ${e.message}`}:{schemaVersion:1,ok:false,error:{code:e.code || 'E_OKF',message:e.message}};}
+  } catch(e) {const code=e.code || 'E_OKF';exit=1;answer=hook?{meta:{...(event==='retire'?{retired:false,reason:e.message}:{})},warning:`oats-okf ${code}: ${e.message}`}:{schemaVersion:1,ok:false,error:{code,message:e.message}};}
   // Let Node drain the pipe; no process.exit after a possibly large view.
   process.stdout.write(JSON.stringify(answer)+'\n');process.exitCode=exit;
 }
