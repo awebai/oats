@@ -729,8 +729,10 @@ if (event === "spawn") {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--username" && args[i + 1]) { username = args[++i]; continue; }
+    if (arg.startsWith("--username=") && arg.length > "--username=".length) { username = arg.slice("--username=".length); continue; }
     if (arg === "--invite" && args[i + 1]) { invite = args[++i]; continue; }
-    console.error(`oats aweb setup: unknown or incomplete argument ${JSON.stringify(arg)}\n${usage}`);
+    if (arg.startsWith("--invite=") && arg.length > "--invite=".length) { invite = arg.slice("--invite=".length); continue; }
+    console.error(`oats aweb setup: ${usage}`);
     process.exit(2);
   }
   const apiKey = !!process.env.AWEB_API_KEY;
