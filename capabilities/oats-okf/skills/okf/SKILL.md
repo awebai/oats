@@ -121,8 +121,9 @@ captured ProviderBinding as execution authority:
   `payload.bindings`. Workspace, adoption, and operator values remain separate
   inputs to the shared resolver; OKF does not select their precedence.
 - Durable placement is explicit selected settings: physical absolute
-  `bindings-file` and `state-dir`, plus selected `harvest-runtime` and optional
-  `harvest-model`. Never derive state from an instance home.
+  `bindings-file` and `state-dir`, plus selected `harvest-runtime`, optional
+  `harvest-model` and optional `git-timeout` (seconds for remote Git
+  operations, default 600). Never derive state from an instance home.
 - Provider codecs run only after exact retained executable approval. Their
   populated binding is not proof of readiness, enrollment, credentials, privacy
   or publication authority. Respect typed non-ready results.

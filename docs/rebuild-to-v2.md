@@ -48,8 +48,9 @@ capabilities plus `oats.core`), so a public soul stays usable.
 Two teams that need two different messaging identities (an open-source team
 and a hosted-operations team, say) stay in ONE workspace: `team:` is a label,
 and the provider payload is addressed by label under `messaging.byTeam` (§2).
-Read §8b before relying on it: the kernel merges `byTeam`, but oats.aweb 1.11.2
-does not yet read the `team` it delivers.
+Read §8b before relying on it: oats.aweb 1.12.0 mints into the `team` the
+payload names, but the `.aw` root it mints FROM is still found by search and
+must hold that team's membership (1.11.2 ignored `team` altogether).
 
 ## 2. Write `oats-workspace.yaml` v2 in the host repo
 
@@ -76,8 +77,8 @@ members:
   - git:github.com/acme/platform
 packages:
   oats.framework: v1.1.3
-  oats.okf: v2.1.3
-  oats.aweb: v1.11.2
+  oats.okf: v2.1.4
+  oats.aweb: v1.12.0
 teams:
   global: { description: Org-wide }
   engineering: { description: Platform }
@@ -136,7 +137,7 @@ they enumerate `souls/*/soul.yaml`. A soul left under `agents/` is invisible to
 | 0.24 | v2 |
 |---|---|
 | `schemaVersion: 1` | `schemaVersion: 2` |
-| `requires.knowledge: { capability: oats.okf, source: git:…@v2.1.3#oats-package }` | `capabilities: { oats.okf: { from: package } }` — or nothing, if the workspace default already says so |
+| `requires.knowledge: { capability: oats.okf, source: git:…@v2.1.4#oats-package }` | `capabilities: { oats.okf: { from: package } }` — or nothing, if the workspace default already says so |
 | `requires.capabilities.<cap>: { source: git:… }` | `<cap>: { from: package }` (published) or `<cap>: { from: here }` / `{ from: <repo key> }` (a member capability) |
 | `source: repo:…` / `path:` | `{ from: here }` |
 | `defaults.capabilities` | fold into `capabilities:`; use `off` to remove a workspace default |
@@ -217,8 +218,8 @@ messaging identity per team (§1), a soul that loses its label silently lands
 outside every team-addressed payload; nothing refuses it. Label the membership
 when a whole repo belongs to one team, and the soul when it does not.
 
-**Per-soul memory-harvest opt-out:** not available in OKF 2.1.3 — an OKF 2.1.4
-item. Neither `okf.json` (`version`, `owner`, `owns`, `reads`) nor the settings
+**Per-soul memory-harvest opt-out:** not available in OKF 2.1.3 or 2.1.4 — a
+later OKF item. Neither `okf.json` (`version`, `owner`, `owns`, `reads`) nor the settings
 payload (`bindings-file`, `state-dir`, `harvest-runtime`, `harvest-model`) has a
 key that keeps a soul registered for reads while excluding it from harvest. A
 soul that must not be harvested today says `knowledge: none` (no OKF at all for
@@ -327,7 +328,7 @@ Member capabilities need no approval: membership is the trust.
 **Non-interactive approval (CI, scripted rebuilds):**
 
 ```bash
-oats sync --approve oats.okf@v2.1.3 --approve oats.aweb@v1.11.2
+oats sync --approve oats.okf@v2.1.4 --approve oats.aweb@v1.12.0
 ```
 
 `--approve <id>@<version>` is repeatable and approves **exactly** the entry the
@@ -405,11 +406,11 @@ machine-level setting would give the seat to EVERY instance of every messaging
 soul on that machine, and a seat can be held once. The Desktop's
 confirmed apply carries the same map.
 
-## 8b. Where the team `.aw` lives now (oats.aweb 1.11.2), and what `byTeam` does today
+## 8b. Where the team `.aw` lives now, and what `byTeam` does today
 
 A freshly minted identity (every spawn without `identity.source`) needs an
 **initialised aweb root**: a directory holding `.aw` with a team membership to
-mint into. oats.aweb 1.11.2's spawn hook looks for `.aw` among these, first hit
+mint into. oats.aweb's spawn hook (1.11.2 and 1.12.0 alike) looks for `.aw` among these, first hit
 wins: the declared team scope (`OATS_TEAM_SCOPE`, from the removed
 `oats-config.yaml` `team:` block — **empty under v2**), the instance home, the
 git repo containing the home, the resolution context (the soul's work repo) and

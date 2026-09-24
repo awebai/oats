@@ -195,6 +195,7 @@ export function register(home) {
   const soul=fs.realpathSync(process.env.OATS_SOUL || join(home,'soul'));
   const work=fs.existsSync(join(home,'work'))?fs.realpathSync(join(home,'work')):join(home,'work');
   const decl=declaration(soul);
+  const soulId=process.env.OATS_SOUL_ID || null;
   const bindings=loadBindings(undefined,{sourceHome:home,sourceWork:work});
   const context=fs.realpathSync(process.env.OATS_CONTEXT || meta.repo || fail('E_CONFIG','source requires durable config context'));
   if(overlaps(home,context) && context.startsWith(home)) fail('E_PATH','config context cannot be in disposable home');
@@ -203,11 +204,7 @@ export function register(home) {
   if(!agent || !instance) fail('E_SOURCE','source instance/agent required');
   fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
   const ownersFile=join(bindings.stateDir,'owners.json');
-  withLock(join(bindings.stateDir,'owners.lock'),()=>{
-    const owners=fs.existsSync(ownersFile)?readJSON(ownersFile):{};
-    if(Object.hasOwn(owners,decl.owner) && owners[decl.owner]!==soul) fail('E_OWNER','stable owner ID already identifies a different soul in this state namespace');
-    owners[decl.owner]=soul;save(ownersFile,owners);
-  });
+  pinOwner(ownersFile,decl.owner,{id:soulId,soulName:agent,path:soul});
   const id=randomUUID(); const dir=join(bindings.stateDir,'sources',id);
   // Copy only the role document, never instance.json wholesale, launch recipes,
   // environment, credentials, source worktree, or third-party message stores.
@@ -235,6 +232,24 @@ export function register(home) {
   }
   return finishRegistration({...source,file});
 }
+/** Pin a stable owner id to the soul it identifies. The kernel names a soul by
+ *  identity (OATS_SOUL_ID: repository key plus soul name) so the pin survives
+ *  the per-commit soul copies a workspace deployment materializes; a classic
+ *  soul keeps the resolved path. A row written by an earlier version as a path
+ *  under agents/<same soul name>/(soul|souls/<commit>) is rewritten to the
+ *  identity once; any other mismatch is a different soul and is refused. */
+export function pinOwner(ownersFile,owner,{id,soulName,path}) {
+  const value=id || path;
+  return withLock(join(dirname(ownersFile),'owners.lock'),()=>{
+    const owners=fs.existsSync(ownersFile)?readJSON(ownersFile):{};
+    if(!obj(owners)) fail('E_OWNER','invalid owner registry');
+    const prior=Object.hasOwn(owners,owner)?owners[owner]:undefined;
+    const samePath=typeof prior==='string' && new RegExp(`/agents/${soulName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}/(soul|souls/[^/]+)$`).test(prior);
+    if(prior!==undefined && prior!==value && !(id && samePath)) fail('E_OWNER','stable owner ID already identifies a different soul in this state namespace');
+    if(prior!==value) {owners[owner]=value;save(ownersFile,owners);}
+    return value;
+  });
+}
 function enqueue(source,status,payload) {
   const id=hash(payload);const path=join(dirname(source.file),'inputs',`${id}.json`);
   if(!fs.existsSync(path)) save(path,payload);
@@ -246,19 +261,35 @@ export function input(source,id) {
   const value=readJSON(join(dirname(source.file),'inputs',`${id}.json`));
   if(hash(value)!==id) fail('E_INPUT','durable evidence hash mismatch');return value;
 }
-/** Switch a retired source's job off once nothing is pending. Idempotent; a
- *  scheduler failure is recorded, never thrown — the evidence is already safe. */
+/** Take a drained, retired source's job out of the kernel scheduler. The job is
+ *  first switched off, then removed: the definition it carried is kept as
+ *  evidence in this source's own schedule.json, so nothing about the run is
+ *  lost, and `oats schedule list` stops accumulating dead okf-<id> rows. A job
+ *  that is still running (or has unresolved effects) stays disabled and is
+ *  removed on the worker's next settle. Idempotent; a scheduler failure is
+ *  recorded, never thrown — the evidence is already safe. */
 export function settleRetiredSchedule(source) {
   const status=loadStatus(source);
-  if(status.schedule?.settled===true) return {status:'already-disabled',id:status.schedule.id};
+  if(status.schedule?.removed===true) return {status:'already-removed',id:status.schedule.id};
   if(!status.retired || status.auto || status.schedule?.id===undefined) return {status:'kept'};
+  const id=status.schedule.id;
+  const mark=(patch)=>updateStatus(source,current=>{current.schedule={...current.schedule,...patch};});
   try {
-    oats(['schedule','disable',status.schedule.id,'--dir',source.context,'--json'],source.context);
-    updateStatus(source,current=>{current.schedule={...current.schedule,settled:true,settledAt:new Date().toISOString()};});
-    return {status:'disabled',id:status.schedule.id};
+    if(status.schedule.settled!==true) {
+      oats(['schedule','disable',id,'--dir',source.context,'--json'],source.context);
+      mark({settled:true,settledAt:new Date().toISOString(),settleError:undefined});
+    }
   } catch(e) {
-    updateStatus(source,current=>{current.schedule={...current.schedule,settled:false,settleError:e.message};});
-    return {status:'disable-failed',id:status.schedule.id};
+    if(e.code!=='E_SCHEDULE_UNKNOWN') {mark({settled:false,settleError:e.message});return {status:'disable-failed',id};}
+  }
+  try {
+    oats(['schedule','remove',id,'--dir',source.context,'--json'],source.context);
+    mark({removed:true,removedAt:new Date().toISOString(),removeError:undefined});
+    return {status:'removed',id};
+  } catch(e) {
+    if(e.code==='E_SCHEDULE_UNKNOWN') {mark({removed:true,removedAt:new Date().toISOString(),removeError:undefined});return {status:'already-removed',id};}
+    mark({removed:false,removeError:e.message});
+    return {status:e.code==='E_SCHEDULE_RUNNING'?'disabled-pending-removal':'remove-failed',id};
   }
 }
 export function capture(source,{final=false,deadlineMs=85000}={}) {
@@ -336,8 +367,9 @@ export function capture(source,{final=false,deadlineMs=85000}={}) {
       if(final) {
         status.retired=true;status.retiredAt=new Date().toISOString();
         // A retired source whose every captured input is already processed has
-        // no further work: its schedule is switched off now (never deleted —
-        // the job definition stays as evidence). Anything still pending keeps
+        // no further work: its schedule is switched off and removed from the
+        // kernel scheduler (settleRetiredSchedule); the definition stays as
+        // evidence in this source's schedule.json. Anything still pending keeps
         // the job enabled until the worker drains it (see worker.mjs).
         const drained=status.captured.inputs.every(id=>status.processed.includes(id));
         status.auto=status.auto && !noLaunch && !drained;
@@ -349,10 +381,14 @@ export function capture(source,{final=false,deadlineMs=85000}={}) {
   });
 }
 export function scheduleSource(source) {
+  // A retired, drained source whose job was already taken out of the scheduler
+  // has nothing left to run: do not recreate the job (retire is re-entrant).
+  const current=loadStatus(source);
+  if(current.retired && current.schedule?.removed===true) return current.schedule.result;
   const captured=source.registration?.schemaVersion===1 && source.registration.kind==='captured';
   const argv=captured?['oats','okf','run-source','--source',source.file,'--deployment',source.executionBinding.deployment,'--resolution',source.executionBinding.resolution.id,'--json']
     :['oats','okf','run-source','--source',source.file,'--soul',source.agent,'--json'];
-  const spec={id:`okf-${source.id}`,kind:'command',enabled:loadStatus(source).auto,cron:source.bindings.cron,tz:source.bindings.tz,cwd:source.context,argv,
+  const spec={id:`okf-${source.id}`,kind:'command',enabled:current.auto,cron:source.bindings.cron,tz:source.bindings.tz,cwd:source.context,argv,
     ...(captured?{definitionVersion:2,recurrencePolicy:'capture',responsibleHuman:source.responsibleHuman}: {})};
   const file=join(dirname(source.file),'schedule.json');
   try {

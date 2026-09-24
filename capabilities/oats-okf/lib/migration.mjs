@@ -30,10 +30,16 @@ export function migrate(bindings,{legacy,alias,node,output}) {
     if(paths.some(path=>overlaps(path,output))) fail('E_PATH','migration stage overlaps configured accepted base or coordination artifacts');
   }
   const original=tree(legacy);
+  // Stage the accepted base before any record exists: a base that cannot be
+  // read leaves nothing behind. From the record on, a failure is recorded in
+  // it rather than left as an unexplained directory.
+  const stage=stageBase(base,output);
   fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
   const id=randomUUID();const dir=join(bindings.stateDir,'migrations',id);fs.mkdirSync(dir,{recursive:true,mode:0o700});
   save(join(dir,'legacy.json'),original); // byte-preserving backup BEFORE any delivery
-  const stage=stageBase(base,output); const spec=stage.meta.nodes[node];if(!spec) fail('E_OWNER','migration node must be explicitly provisioned first');
+  const recordFile=join(dir,'migration.json');
+  try {
+  const spec=stage.meta.nodes[node];if(!spec) fail('E_OWNER','migration node must be explicitly provisioned first');
   const prefix=spec.path+'/';
   if(Object.keys(stage.files).some(p=>p.startsWith(prefix) && ![prefix+'index.md',prefix+'log.md'].includes(p))) fail('E_MIGRATION','target node is not empty; merge migration requires human judgment');
   const after={...stage.files};for(const p of Object.keys(after)) if(p.startsWith(prefix)) delete after[p];
@@ -48,8 +54,23 @@ export function migrate(bindings,{legacy,alias,node,output}) {
   // Replace only the empty pre-provisioned node, not unrelated accepted bytes.
   fs.rmSync(join(stage.root,spec.path),{recursive:true});materialize(stage.root,after);validateBase(stage.root,base);
   const proposalFile=join(dir,'proposal.json');const proposal={version:1,run:id,created:new Date().toISOString(),file:proposalFile,before:stage.files,after};save(proposalFile,proposal);
-  const record={version:1,id,alias,node,base,owner:spec.owner,legacy,originalDigest:digest(original),stage:{root:stage.root,checkout:stage.checkout,head:stage.head},proposal:proposalFile,proposalHash:hash(proposal),receipt:{status:'staged'}};save(join(dir,'migration.json'),record);
-  return {status:'staged',migration:join(dir,'migration.json'),originalPreserved:true,stage:stage.root};
+  const record={version:1,id,alias,node,base,owner:spec.owner,legacy,originalDigest:digest(original),stage:{root:stage.root,checkout:stage.checkout,head:stage.head},proposal:proposalFile,proposalHash:hash(proposal),receipt:{status:'staged'}};save(recordFile,record);
+  return {status:'staged',migration:recordFile,originalPreserved:true,stage:stage.root};
+  } catch(e) {
+    save(recordFile,{version:1,id,alias,node,base,legacy,originalDigest:digest(original),receipt:{status:'failed',error:e.message,code:e.code||'E_MIGRATION',at:new Date().toISOString()}});
+    throw e;
+  }
+}
+/** Remove a migration record that never delivered anything (staged or failed).
+ *  The backup it holds is the legacy bundle, which still exists at its source;
+ *  a delivered record is custody and stays. */
+export function forgetMigration(bindings,id) {
+  identifier(id);const dir=join(bindings.stateDir,'migrations',id);const file=join(dir,'migration.json');
+  if(!fs.existsSync(dir)) fail('E_MIGRATION',`unknown migration ${id}`);
+  const status=fs.existsSync(file)?readJSON(file).receipt?.status:'incomplete';
+  if(!['failed','staged','incomplete'].includes(status)) fail('E_MIGRATION',`migration ${id} is ${status}: a delivered migration is custody and cannot be forgotten`);
+  fs.rmSync(dir,{recursive:true,force:true});
+  return {status:'forgotten',id,was:status};
 }
 export function deliverMigration(file) {
   safePath(file);const m=readJSON(file);const proposal=readJSON(m.proposal);if(hash(proposal)!==m.proposalHash) fail('E_MIGRATION','migration proposal changed');

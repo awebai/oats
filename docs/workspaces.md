@@ -61,7 +61,7 @@ members:                                   # repo refs, NO @revision (E_WORKSPAC
 
 packages:                                  # the ONLY versioned things
   oats.framework: v1.1.3                   # bare version → resolves through the official catalog
-  oats.okf: v2.1.3
+  oats.okf: v2.1.4
   acme.tools: git:github.com/acme/tools@v0.4.0   # outside the catalog → git:<repo>@<tag|OID>; still a package
 
 teams:                                     # labels, declared once so they cannot drift
@@ -383,13 +383,16 @@ a label under `byTeam` that is not declared in `teams:` is `E_WORKSPACE_SCHEMA`.
 **`byTeam` is kernel-merged; whether a provider honours what arrives is the
 provider's.** `spawn --preview` shows the merged `settings.<cap>` so the
 delivery is verifiable, and `instance.json.providers.<cap>` records it — but
-oats.aweb **1.11.2 does not read `team` from its payload** (it resolves the
-team from the removed `oats-config.yaml` `team:` block, else the active team at
-the `.aw` root it finds), so for 1.11.2 `byTeam` is a recorded intent, not a
-per-label identity; the per-repo `.aw` placement in
-[rebuild-to-v2.md §8b](rebuild-to-v2.md#8b-where-the-team-aw-lives-now-oatsaweb-1112-and-what-byteam-does-today)
-is the working alternative. An oats.aweb release that reads `team` from the
-payload closes the gap without a workspace edit (release notes will name it).
+**oats.aweb 1.12.0 reads `team` from its payload** and mints into exactly that
+team (`--team-id`), warning when the payload disagrees with an `OATS_TEAM_*`
+value — so `byTeam.<label>.team` IS the per-label identity. What the payload
+does not change is **where the `.aw` root is found**: the hook still searches
+the bounded candidates in
+[rebuild-to-v2.md §8b](rebuild-to-v2.md#8b-where-the-team-aw-lives-now-and-what-byteam-does-today)
+and that root must hold a membership of the named team (the deployment's `.aw`
+joined to every team its labels name is the simple layout). On oats.aweb
+1.11.2 `team` was ignored (the root's active team won), so `byTeam` there is
+a recorded intent only.
 A store (`stores: { <name>: <repo ref> }`) names a repository; where a
 knowledge base lives inside it is the knowledge provider's own concern — for
 OKF 2.1.3 that is the **bindings file** (`bases.<alias>.repository` + `root`,
