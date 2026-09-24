@@ -3755,8 +3755,10 @@ const BOUNDARY_MUST_SAY = [
   "commands from active capabilities, from instance home",   // the shape, not the sentence
   "for example, when the aweb messaging capability is active",  // an optional capability is CITED, never commanded
   "oats <cmd> --dir <path>",                               // the deliberate alternate scope
-  "The home's `soul` link is not your edit surface",      // not "read-only": it is writable, and that is the point
+  "How your own learnings reach your soul is your knowledge layer's business", // the boundary defers; ONE block owns the protocol
 ];
+// Human decision 2026-09-24: nothing in a briefing points an instance at a soul link.
+const BOUNDARY_MUST_NOT_SAY = /The home's `soul` link|`\.\/soul`/;
 // The instruction that taught the root-placement bug, in any shipped surface.
 const SETTLE_IN_WORK = /cd work\/? once|and stay there|where you live|Start in `work\/`/i;
 /** Compare wording, not line wrapping: the contract is what the agent reads. */
@@ -3772,6 +3774,7 @@ test("every work mode's generated instructions carry the home/work boundary (mai
       assert.ok(text.includes(flat(must)), `${mode}: generated instructions must say ${JSON.stringify(must)}`);
     }
     assert.doesNotMatch(text, SETTLE_IN_WORK, `${mode}: must not teach settling in the work tree`);
+    assert.doesNotMatch(text, BOUNDARY_MUST_NOT_SAY, `${mode}: must not point the instance at a soul link`);
     assert.ok(text.includes(`Work mode: ${mode}`), `${mode}: and still carries its own mode block`);
     assert.ok(text.indexOf("Your two directories") < text.indexOf(`Work mode: ${mode}`),
       `${mode}: the boundary precedes the mode rules it frames`);

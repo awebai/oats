@@ -40,6 +40,11 @@ root, and not the work tree. Anything that says "your home" means this directory
   scope from the directory you run them in, so running them from the work tree
   points them at the wrong deployment. To act on a different package or config
   scope deliberately, pass an explicit resolved path: `oats <cmd> --dir <path>`.
+- **Soul work is repository work.** If your TASK is to change soul content that
+  lives in this repository, that is ordinary code work — do it on tracked paths
+  under `work/`, reviewed like the rest. How your own learnings reach your soul
+  is your knowledge layer's business, and its instructions below say so if you
+  have one.
 
 **`<instance-home>/work` is your repository or workspace view** — whatever your
 work mode grants you of the code.
