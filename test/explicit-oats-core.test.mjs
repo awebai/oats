@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createAgent, upsertLocalAgent, findAgent, composeInstanceAgentsMd, planInstanceResources, spawnInstance, retireInstance, parseYamlNested } from '../lib/core.mjs';
+import { inertRuntimePath } from './helpers/runtime-stub.mjs';
 const CLI = fileURLToPath(new URL('../bin/oats.mjs', import.meta.url));
 const SOURCE = 'git:https://catalog.invalid/operations.git@v1.2.3#distribution';
 function fixture(t) {
@@ -14,7 +15,7 @@ function fixture(t) {
   for (const dir of [root, user, bin]) mkdirSync(dir, { recursive: true });
   const write = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value)); };
   write(catalog, { packages: { 'fixture.operations': { url: 'https://catalog.invalid/operations.git', ref: 'v1.2.3', path: 'distribution' } }, capabilities: { 'oats.core': 'fixture.operations' } });
-  const env = { PATH: bin + ':' + process.env.PATH, HOME: user, OATS_PACKAGE_CATALOG: catalog, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const env = { PATH: bin + ':' + inertRuntimePath(base), HOME: user, OATS_PACKAGE_CATALOG: catalog, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
   const prior = { ...process.env };
   for (const key of Object.keys(process.env)) delete process.env[key]; Object.assign(process.env, env);
   t.after(() => { for (const key of Object.keys(process.env)) delete process.env[key]; Object.assign(process.env, prior); rmSync(base, { recursive: true, force: true }); });

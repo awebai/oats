@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { findAgent, OATS_VERSION, runLifecycleHooks, spawnInstance } from "../lib/core.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = realpathSync(new URL("../bin/oats.mjs", import.meta.url));
 const quote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -24,7 +25,7 @@ function fixture(t, { probeCli = false } = {}) {
   for (const [name, text] of [["oats", "#!/bin/sh\necho POISONED\nexit 99\n"], ["claude", "#!/bin/sh\nexit 0\n"]]) {
     write(join(fakeBin, name), text); chmodSync(join(fakeBin, name), 0o755);
   }
-  process.env.PATH = `${fakeBin}:${process.env.PATH}`;
+  process.env.PATH = `${fakeBin}:${inertRuntimePath(base)}`;
   process.env.OATS_CLI_BIN = join(fakeBin, "oats");
   process.env.OATS_ROOT = join(base, "wrong-agents");
   const hook = join(base, "hook.mjs");

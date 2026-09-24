@@ -14,6 +14,7 @@ import {
   capabilityManifest, marketplaceCapabilities, parseYamlFlat, parseYamlNested,
   resolveCapabilities, resolveOatsConfig, validateConfigShape, withConfigFile,
 } from "../lib/core.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 function temp() { return mkdtempSync(join(tmpdir(), "oats-keysafe-test-")); }
@@ -214,7 +215,7 @@ function runCli(argv, cwd) {
   const env = {};
   for (const [k, v] of Object.entries(process.env)) if (!/^(OATS|PI)_/.test(k)) env[k] = v;
   const home = temp();
-  Object.assign(env, { HOME: home, OATS_HOME_DIR: join(home, ".oats") });
+  Object.assign(env, { HOME: home, OATS_HOME_DIR: join(home, ".oats"), PATH: inertRuntimePath(home) });
   return spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8", env, cwd: cwd || home });
 }
 /** A Node crash: an uncaught throw prints the source frame and a stack. */

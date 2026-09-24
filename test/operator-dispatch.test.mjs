@@ -23,6 +23,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { deploymentOf, ensureModuleTree, moduleRef, moduleStoreDir, resolveOperatorDispatch } from "../lib/operator-dispatch.mjs";
 import { MODULES_DIR } from "../lib/materialize.mjs";
 import { materializeOkfGitPayload } from "../scripts/check-okf-mirror.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const OATS = join(REPO_ROOT, "bin/oats.mjs");
@@ -145,7 +146,7 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${hostRef}\nsettings:\n  oats.okf:\n    bindings-file: ${bindings}\n`);
     const catalog = join(room, "catalog.json"); writeFileSync(catalog, JSON.stringify({ packages: { "oats.okf": { url: pathToFileURL(official).href, ref: "v2.1.3", path: "oats-package" } } }));
     const home = join(room, "home"); mkdirSync(home);
-    const env = { ...process.env, OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, "cache"), OATS_TMUX_SESSION: `none-${process.pid}`, HOME: home };
+    const env = { ...process.env, PATH: inertRuntimePath(room), OATS_PACKAGE_CATALOG: catalog, OATS_REMOTE_CACHE: join(room, "cache"), OATS_TMUX_SESSION: `none-${process.pid}`, HOME: home };
     delete env.PI_AGENT_HOME; delete env.OATS_HOME; delete env.OATS_INSTANCE_HOME; delete env.OATS_INSTANCE;
     const run = (a, cwd = dep) => { const r = spawnSync(process.execPath, [OATS, ...a], { env, cwd, encoding: "utf8" }); const last = r.stdout.trim().split("\n").pop() ?? ""; let json = null; try { json = JSON.parse(last); } catch { /* text */ } return { code: r.status, json, out: r.stdout, err: r.stderr }; };
 

@@ -10,13 +10,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind, makeUnreadable } from "./fixtures/northwind/build.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 
 function oats(args, { base, env = {} }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"),
+    env: { ...process.env, PATH: inertRuntimePath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"),
       OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`, ...env },
   });
 }

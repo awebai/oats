@@ -9,6 +9,7 @@ import {
   capabilityIntegrity, capabilityManifest, completeDeferredRetirement, composeInstanceAgentsMd, createAgent, deferredRetireResultPath, findAgent, findInstanceHomes, resolveOatsConfig, retirePendingMarkerPath,
   listInstances, resolveClaudeBinary, resolveWorkMode, retireInstance, runLifecycleHooks, spawnInstance, writeCapabilityLock,
 } from "@awebai/oats/core";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Parse a `--json` CLI success envelope (Desktop CLI API v1): stdout must be
@@ -40,7 +41,7 @@ function capability(repo, folder, manifest, files = {}) {
 function fakeRuntimes(base) {
   const bin = join(base, "bin"); mkdirSync(bin, { recursive: true });
   for (const name of ["pi", "claude"]) { write(join(bin, name), "#!/bin/sh\nexit 0\n"); execFileSync("chmod", ["+x", join(bin, name)]); }
-  return `${bin}:${process.env.PATH}`;
+  return `${bin}:${inertRuntimePath(base)}`;
 }
 
 /** A `pi` stub that answers `pi list` the way pi actually does: a two-space spec
