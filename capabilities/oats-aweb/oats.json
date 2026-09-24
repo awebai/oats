@@ -1,9 +1,9 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.12.1",
+  "version": "1.12.2",
   "compatibility": {
-    "oats": ">=0.24.4"
+    "oats": ">=0.25.6"
   },
   "layer": "messaging",
   "description": "Messaging layer via aweb: per-instance team identities + native aw mail/chat skills + cross-machine team roster.",
@@ -140,9 +140,11 @@
       "description": "Target aweb team id for identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID/OATS_TEAM_NAME; if both are set and differ the hook warns and uses this setting."
     },
     "root": {
+      "hostOnly": true,
       "description": "Host-owned absolute directory whose .aw is the aweb minting root. Put this only in oats-local.yaml settings.oats.aweb.root; use oats aweb setup to initialize it."
     },
     "roots": {
+      "hostOnly": true,
       "description": "Host-owned map of aweb team id to absolute directory whose .aw is that team's minting root, for deployments that mint into several teams. Put this only in oats-local.yaml settings.oats.aweb.roots."
     },
     "identity": {
@@ -152,6 +154,7 @@
       "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
     },
     "residents": {
+      "hostOnly": true,
       "description": "Host-owned map for global mode: resident name to absolute custody directory whose .aw holds the resident root keys and team certificate. Put this only in oats-local.yaml settings.oats.aweb.residents; committed workspace or soul files must never carry custody paths."
     }
   },

@@ -7,8 +7,8 @@
  *   oats-aweb retire   gracefully self-delete it (BEFORE the home dir is removed)
  *   oats-aweb roster   list the aweb team's members — the cross-machine directory
  *                     of live instances (alias = instance name) and humans
- *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the team
- *                     scope's aweb workspace, create/join the team
+ *   oats-aweb setup    guided onboarding: check the aw CLI, initialize the
+ *                     messaging root with aw init / aw team join, verify team
  *
  * Env contract (set by the kernel):
  *   OATS_EVENT     spawn|retire
@@ -721,80 +721,103 @@ if (event === "spawn") {
   console.log("\nAliases minted by OATS are instance names; message one with `aw mail send --to <alias> --subject \"...\" --body \"...\"`.");
   process.exit(0);
 } else if (event === "setup") {
-  // Guided onboarding — idempotent, prints what it finds and the one next step.
-  if (isClassicDeployment() && settings.root === undefined && settings.roots === undefined && settings.team === undefined) {
-    const scope = process.env.OATS_TEAM_SCOPE || process.cwd();
-    const teamName = process.env.OATS_TEAM_NAME;
-    const teamId = process.env.OATS_TEAM_ID;
-    console.log(`aweb onboarding — team scope: ${scope}${teamName ? `, config team: ${teamName}${teamId ? ` (${teamId})` : ""}` : ""}\n`);
-    if (!teamName) {
-      console.log("1. Declare your team in the deployment scope's oats-config.yaml first:");
-      console.log("     team:\n       name: <your-team>\n   then re-run `oats aweb setup` from there.");
-      process.exit(0);
-    }
-    if (!existsSync(join(scope, ".aw"))) {
-      console.log(`No aweb workspace at the team scope yet. Initialize it (interactive — creates or connects an aweb account):`);
-      console.log(`     cd ${scope} && aw init`);
-      console.log("   First time on aweb? `aw init` walks you through creating a hosted aweb.ai account.");
-      console.log("   Own your domain? Use `aw init --byod` (see the aweb-team-membership skill).");
-      process.exit(0);
-    }
-    let teams = { memberships: [] };
-    try { teams = JSON.parse(run(["aw", "team", "list", "--json"], scope)); } catch { /* fall through */ }
-    const want = teamId || teamName;
-    const match = teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`));
-    if (match) {
-      console.log(`✓ aweb workspace initialized and member of ${match}.`);
-      if (teams.active_team && teams.active_team !== match) console.log(`  Note: active team is ${teams.active_team}; instances join ${match} explicitly, but consider \`aw team switch ${match}\`.`);
-      console.log("  Done — spawned instances will join this team automatically (alias = instance name).");
-      console.log("  Roster: `oats aweb roster`  ·  local: `oats status --team`");
-    } else {
-      console.log(`Workspace initialized, but no membership matching "${want}".`);
-      console.log(`  Create the team:   cd ${scope} && aw team create ${teamName}`);
-      console.log("  Or join an existing one: get an invite token from a member, then `aw team join <token>`");
-      console.log("  (details: aweb-team-membership skill)");
-    }
-    process.exit(0);
+  // Guided onboarding — idempotent, prints what it finds and can run one
+  // existing aw primitive when the operator supplies the needed authority.
+  const args = process.argv.slice(3).filter((arg) => arg !== "--json");
+  const usage = "usage: oats aweb setup [--username <hosted-user> | --invite <token>]";
+  let username, invite;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--username" && args[i + 1]) { username = args[++i]; continue; }
+    if (arg === "--invite" && args[i + 1]) { invite = args[++i]; continue; }
+    console.error(`oats aweb setup: unknown or incomplete argument ${JSON.stringify(arg)}\n${usage}`);
+    process.exit(2);
   }
+  const apiKey = !!process.env.AWEB_API_KEY;
+  const actions = [username ? "--username" : null, invite ? "--invite" : null, apiKey ? "AWEB_API_KEY" : null].filter(Boolean);
+  if (actions.length > 1) { console.error(`oats aweb setup: choose exactly one onboarding authority (${actions.join(", ")})\n${usage}`); process.exit(2); }
+
   const resolvedTeam = payloadTeam();
   const teamName = resolvedTeam.team;
   const teamId = typeof settings.team === "string" && settings.team.trim() ? settings.team.trim() : process.env.OATS_TEAM_ID;
   const candidate = rootSettingCandidate(teamName);
-  const scope = candidate?.root ? resolve(candidate.root) : process.cwd();
-  console.log(`aweb onboarding — messaging root: ${scope}${teamName ? `, team: ${teamName}` : ""}\n`);
-  if (!teamName) {
-    console.log(`1. Choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
-    console.log("   The workspace file's `messaging:` / `messaging.byTeam.<label>.team` payload is portable; host-specific overrides belong in `settings.oats.aweb.team`.");
-    process.exit(0);
-  }
+  const scope = isClassicDeployment() && settings.root === undefined && settings.roots === undefined && settings.team === undefined
+    ? resolve(process.env.OATS_TEAM_SCOPE || process.cwd())
+    : (candidate?.root ? resolve(candidate.root) : process.cwd());
+  const classic = isClassicDeployment() && settings.root === undefined && settings.roots === undefined && settings.team === undefined;
+  console.log(`aweb onboarding — ${classic ? "team scope" : "messaging root"}: ${scope}${teamName ? `, team: ${teamName}` : ""}\n`);
   if (!isAbsolute(scope)) {
     console.log(`${candidate?.key || "settings.oats.aweb.root"} must be an absolute directory whose .aw is the aweb minting root.`);
     process.exit(0);
   }
-  if (!existsSync(join(scope, ".aw"))) {
-    console.log(`No aweb workspace at the messaging root yet (${candidate?.key || "settings.oats.aweb.root"}). Initialize it (interactive — creates or connects an aweb account):`);
-    console.log(`     cd ${scope} && aw init`);
-    console.log("   Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run `oats aweb setup`.");
-    console.log("   First time on aweb? `aw init` walks you through creating a hosted aweb.ai account.");
-    console.log("   Own your domain? Use `aw init --byod` (see the aweb-team-membership skill).");
-    process.exit(0);
-  }
-  let teams = { memberships: [] };
-  try { teams = JSON.parse(run(["aw", "team", "list", "--json"], scope)); } catch { /* fall through */ }
+
   const want = teamId || teamName;
-  const match = teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`));
-  if (match) {
-    console.log(`✓ aweb workspace initialized and member of ${match}.`);
-    if (teams.active_team && teams.active_team !== match) console.log(`  Note: active team is ${teams.active_team}; instances join ${match} explicitly, but consider \`aw team switch ${match}\`.`);
-    console.log("  Done — spawned instances will join this team automatically (alias = instance name).");
-    console.log("  Roster: `oats aweb roster`  ·  local: `oats status --team`");
-  } else {
-    console.log(`Workspace initialized, but no membership matching "${want}".`);
-    console.log(`  Create the team:   cd ${scope} && aw team create ${teamName}`);
-    console.log("  Or join an existing one: get an invite token from a member, then `aw team join <token>`");
-    console.log("  (details: aweb-team-membership skill)");
+  const defaultTeamForUsername = username ? `default:${username}.aweb.ai` : undefined;
+  const readTeams = () => {
+    try { return parseAwJson(run(["aw", "team", "list", "--json"], scope), "aw team list"); }
+    catch { return { memberships: [] }; }
+  };
+  const matchingTeam = (teams) => want ? teamIdsOf(teams).find((tid) => String(tid) === want || String(tid).startsWith(`${want}:`)) : undefined;
+  const printVerdict = (teams) => {
+    const match = matchingTeam(teams);
+    if (match) {
+      console.log(`readiness: ready`);
+      console.log(`✓ aweb workspace initialized and member of ${match}.`);
+      if (teams.active_team && teams.active_team !== match) console.log(`  Note: active team is ${teams.active_team}; instances join ${match} explicitly, but consider \`aw team switch ${match}\`.`);
+      console.log("  Done — spawned instances will join this team automatically (alias = instance name).");
+      console.log("  Roster: `oats aweb roster`  ·  local: `oats status --team`");
+      return;
+    }
+    console.log(`readiness: needs-configuration`);
+    if (!want) {
+      console.log(`  no team: ${teamConfigRemedy()}`);
+      const active = teams.active_team || teamIdsOf(teams)[0];
+      if (active) console.log(`  This root is a member of ${active}; map the workspace team to that id in the workspace file or settings.oats.aweb.team.`);
+      else if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; map the workspace team to that id if this is the intended team.`);
+      return;
+    }
+    console.log(`  Workspace initialized, but no membership matching "${want}".`);
+    if (defaultTeamForUsername) console.log(`  New hosted users create ${defaultTeamForUsername}; set messaging.byTeam.<label>.team or settings.oats.aweb.team to that id, then re-run setup.`);
+    console.log("  Existing team path: ask a member for an invite token, then run `oats aweb setup --invite <token>` (uses `aw team join <token>` at the root).");
+    console.log("  Team API-key path: set AWEB_API_KEY in the environment and run `oats aweb setup` (uses `aw init` at the root; the key is never printed).");
+    console.log("  New hosted-account path: run `oats aweb setup --username <u>` (uses `aw init --username <u>` and creates default:<u>.aweb.ai).");
+  };
+
+  try {
+    const hasRoot = existsSync(join(scope, ".aw"));
+    if (!hasRoot && !actions.length) {
+      console.log(`No aweb workspace at the ${classic ? "team scope" : "messaging root"} yet (${candidate?.key || "settings.oats.aweb.root"}).`);
+      if (!want) console.log(`  Also choose the aweb team for this deployment: ${teamConfigRemedy()}.`);
+      console.log("  Choose one guided setup path:");
+      console.log("    oats aweb setup --username <u>     # runs `aw init --username <u>` and creates default:<u>.aweb.ai");
+      console.log("    AWEB_API_KEY=<key> oats aweb setup  # runs `aw init` for the hosted team behind the key");
+      console.log("    oats aweb setup --invite <token>    # runs `aw team join <token>` from an existing-team invite");
+      console.log("  Or set settings.oats.aweb.root to an absolute directory whose .aw is the aweb minting root, then re-run setup.");
+      console.log("  Own your domain? Use the aweb-team-membership skill for BYOT flows.");
+      process.exit(0);
+    }
+    let teams = hasRoot ? readTeams() : { memberships: [] };
+    if (hasRoot && !matchingTeam(teams) && !actions.length) { printVerdict(teams); process.exit(0); }
+    if (!hasRoot || !matchingTeam(teams)) {
+      if (actions.length) mkdirSync(scope, { recursive: true });
+      if (username) {
+        console.log(`Running aw init --username <u> at ${scope} (username withheld from repeated logs).`);
+        run(["aw", "init", "--username", username], scope, 120000, { secrets: [username], unsetEnv: ["AWEB_API_KEY"] });
+      } else if (invite) {
+        console.log(`Running aw team join <token> at ${scope} (token withheld).`);
+        run(["aw", "team", "join", invite], scope, 120000, { secrets: [invite], secretSafe: true });
+      } else if (apiKey) {
+        console.log(`Running aw init at ${scope} with AWEB_API_KEY from the environment (key withheld).`);
+        run(["aw", "init"], scope, 120000, { secretSafe: true });
+      }
+      teams = readTeams();
+    }
+    printVerdict(teams);
+    process.exit(0);
+  } catch (e) {
+    console.error(`oats aweb setup: ${e.message || e}`);
+    process.exit(1);
   }
-  process.exit(0);
 } else {
   warn(`unknown event "${event}" (expected spawn|retire)`);
 }

@@ -361,6 +361,33 @@ test("decision 27 K1′: the spawn decision binds the merged per-module payloads
   });
 });
 
+test("oats.aweb 1.12.2: workspace-file root is refused because the manifest marks it hostOnly", { timeout: 300_000 }, async () => {
+  const d = await deployment();
+  await moveMember(d.fx, "agents", async (work, { fs, path }) => {
+    await fs.mkdir(path.join(work, "capabilities/oats-aweb"), { recursive: true });
+    await fs.writeFile(path.join(work, "capabilities/oats-aweb/oats.json"), JSON.stringify({
+      capability: "oats.aweb",
+      version: "1.12.2",
+      compatibility: { oats: ">=0.25.6" },
+      description: "aweb hostOnly root fixture",
+      layer: "messaging",
+      settings: {
+        root: { hostOnly: true, description: "host-owned aweb root" },
+        team: { description: "target aweb team" },
+      },
+    }, null, 2) + "\n");
+    const file = path.join(work, "oats-workspace.yaml");
+    const text = await fs.readFile(file, "utf8");
+    await fs.writeFile(file, text
+      .replace("messaging: none", `messaging:\n            oats.aweb:\n              from: ${d.fx.keys.agents}`)
+      .replace("messaging:\n  private: per-human", "messaging:\n  root: /must-live-in-oats-local\n  private: per-human"));
+  });
+  await withFixtureEnv(d, async () => {
+    await assert.rejects(prepareInstance(d.dep, "release-manager", { spawn: { providers: {} }, remoteOptions: d.remoteOptions }),
+      (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "host-only-key" && e.details.key === "root" && e.details.capability === "oats.aweb" && e.details.path === "/messaging/root");
+  });
+});
+
 test("decision 27 K1″: a settings key the manifest marks hostOnly is accepted from oats-local.yaml only — refused in a --provider flag, the soul's slot payload and the workspace messaging payload with E_WORKSPACE_SCHEMA reason host-only-key", { timeout: 300_000 }, async () => {
   const d = await deployment();
   await withFixtureEnv(d, async () => {

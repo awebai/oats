@@ -179,7 +179,9 @@ test("setup in v2 reads settings root/team and prints v2 remedies", () => {
     const root = join(base, "declared-root"); mkdirSync(root, { recursive: true });
     r = runHook(bin, "setup", { OATS_WORKSPACE: workspace, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", root }) });
     assert.equal(r.status, 0, r.stdout + r.stderr);
-    assert.match(r.stdout, new RegExp(`cd ${root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} && aw init`));
+    assert.match(r.stdout, /oats aweb setup --username <u>/);
+    assert.match(r.stdout, /AWEB_API_KEY=<key> oats aweb setup/);
+    assert.match(r.stdout, /oats aweb setup --invite <token>/);
     assert.match(r.stdout, /settings\.oats\.aweb\.root/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

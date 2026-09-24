@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
@@ -149,7 +149,13 @@ function binding(value) {
 }
 function checkResult(message) {return {status:'needs-configuration',problems:[{code:'needs-configuration',message}]};}
 function checkProblems(problems) {return problems.length?{status:'needs-configuration',problems}:null;}
-function teamFromSettings(settings) {return typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);}
+function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
+function activeTeamAt(root){try{return yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active_team')||yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active');}catch{return undefined;}}
+function teamFromSettings(settings,candidate) {
+  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);
+  if(configured || process.env.OATS_TEAM_LABEL) return configured;
+  return candidate?.root && isAbsolute(candidate.root) ? activeTeamAt(candidate.root) : undefined;
+}
 function classicEnv() {return !!process.env.OATS_TEAM_SCOPE && !(process.env.OATS_WORKSPACE_KEY || process.env.OATS_WORKSPACE_NAME || process.env.OATS_TEAM_LABEL);}
 function rootCandidate(settings,team) {
   const roots=obj(settings.roots)?settings.roots:{};
@@ -160,7 +166,8 @@ function rootCandidate(settings,team) {
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }
 function readinessFromSettings(settings) {
-  const team=teamFromSettings(settings),candidate=rootCandidate(settings,team),problems=[];
+  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);
+  const candidate=rootCandidate(settings,initialTeam),team=teamFromSettings(settings,candidate),problems=[];
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   if(!team) problems.push({code:'needs-configuration',message:'no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'});
   return checkProblems(problems) || {status:'ready',problems:[]};
