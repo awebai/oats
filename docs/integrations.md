@@ -218,27 +218,48 @@ warning naming the fresh-purpose remedy. On an older `aw` the pre-1.36.1
 report stands (`aliasReusable: false`, warning naming aweb-abim), because
 that CLI cannot revoke the certificate.
 
-## oats.aweb settings (1.12.0)
+## oats.aweb settings (1.12.1)
 
 Set in `oats-local.yaml` under `settings.oats.aweb.<key>` (host-owned), in the
 soul's `messaging:` payload (true of every instance), or per spawn with
 `oats spawn … --provider oats.aweb <key>=<value>`. The effective payload is
 merged in order: workspace messaging, `byTeam[team]`, soul messaging,
 `oats-local.yaml` `settings.oats.aweb`, then per-spawn `--provider` values.
-`residents` is host-file-only: put custody paths only in `oats-local.yaml`,
-never in a committed workspace or soul file (current kernels document this rule
-but do not yet enforce provenance in the hook payload).
+`root`, `roots`, and `residents` are host-file-only: put absolute root/custody
+paths only in `oats-local.yaml`, never in a committed workspace or soul file
+(current kernels document this rule but do not yet enforce provenance in the
+hook payload; the manifest schema does not yet carry a host-only marker).
 
 - `team: <team id>`. The payload team wins over `OATS_TEAM_ID`/
   `OATS_TEAM_NAME`; if both are set and differ, the hook warns and uses the
   payload. Workspace v2 spawns can have an empty `OATS_TEAM_ID`, so set this in
-  the payload for global grants.
+  the workspace file's `messaging:` / `messaging.byTeam.<label>.team`, or in
+  `settings.oats.aweb.team` for a host override.
+- `root: /absolute/dir`. Host-owned absolute directory whose `.aw` is the aweb
+  minting root. A declared root without `.aw` is fatal; run `oats aweb setup`
+  there or set `settings.oats.aweb.root` to the initialized root.
+- `roots: { <team id>: /absolute/dir }`. Host-owned map for deployments that
+  mint into several aweb teams. When a team is known, `roots[team]` wins over
+  `root`.
+- Minting root resolution for spawn and setup is: `roots[team]` when the team is
+  known and present, else `root`, else `<OATS_WORKSPACE>` (the deployment
+  directory whose `.aw` is used), else only for classic deployments with
+  `OATS_TEAM_SCOPE` the historical bounded candidate search. Workspace v2 never
+  searches above the deployment directory.
+- `binding-check` answers `needs-configuration` before spawn with one problem
+  per missing item: `no messaging root at <dir>: run oats aweb setup there or
+  set settings.oats.aweb.root`; `no team: set messaging.byTeam.<label>.team in
+  the workspace file or settings.oats.aweb.team`. With both present it answers
+  `ready` (subject to captured-session checks when an invocation is supplied).
 - `identity.mode: local | global` (default `local`). Any other value is fatal.
   Local mode is the historical behavior: a spawned team identity is minted for
   the instance, or `identity.source` uses the existing retained-seat flow below.
   Its spawn meta includes `identity: { mode: "local", alias, team, address:
   null, resident: null }` beside the existing top-level `alias`, `team`, and
-  `delivery` keys.
+  `delivery` keys. Local-mode spawn output contributes
+  `env.AWEB_IDENTITY_HOME=<home>/.aw` (and retained-seat local mode contributes
+  the same path) so `aw mail`, `aw chat`, `aw whoami`, `aw wake`, and
+  `aw workspace status` work from the instance's `work/` or any other cwd.
 - `identity.mode: global` makes the instance act as a resident global identity
   through an aweb session grant; it never mints a new global identity and never
   copies root keys into the instance home. `identity.resident` is required and
