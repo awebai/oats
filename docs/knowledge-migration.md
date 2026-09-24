@@ -6,7 +6,7 @@
 > the acquisition path. See [release gates](release-notes/v0.23.1.md).
 
 This is **not** `oats migrate`: kernel lock/package migration and
-[OAS name migration](migration-from-oas.md) do not relocate knowledge, establish
+OAS name migration do not relocate knowledge, establish
 v2 ownership or preserve source cursors. Nor does upgrading npm activate a new
 knowledge layer. V2 uses external accepted bases and independent workers, not
 `soul/knowledge/`, attached harvest commits or source-home watermarks.

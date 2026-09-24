@@ -103,9 +103,7 @@ secrets never belong in OATS config. See
 > favor of the OATS Desktop app (`packages/desktop/`), which bundles the same
 > zero-dependency loopback server. If an `oats-workspace.yaml` (`packages:`,
 > `defaults.capabilities`) or a `soul.yaml` still names `oats.web`, remove that
-> entry and `oats sync`; on a 0.24 classic deployment, remove it from
-> `oats-lock.json` / `oats-config.yaml`. Full migration steps:
-> [desktop-succession](desktop-succession.md).
+> entry and `oats sync`.
 
 ## Building an integration
 
