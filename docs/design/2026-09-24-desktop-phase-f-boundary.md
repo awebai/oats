@@ -81,6 +81,22 @@ identity.mode=… identity.resident=…` (decision 27 — there is no kernel fla
 `SPAWN_ARG_RULES` gains one `provider` rule (capability id, dotted key, value
 grammar); no identity-named rules. Work mode select includes `workspace`.
 
+**F3 amended by the human (2026-09-24). This supersedes design frame 02 and the
+text above wherever they differ.** The dialog leads with the **instance name**:
+the purpose field becomes a name field that shows `<soul>-<purpose>` live and
+then the kernel's final name from the preview. A no-prefix toggle maps to
+`spawn --name <slug>`, gated on the `spawn-name` feature; `--purpose` stays the
+default. **Runtime and model** are always visible, with their resolved value and
+its source. **Work** comes from the soul's `work:` mode, and a `checkout` soul is
+offered "Use a worktree instead?" (`--work worktree`). There is **no**
+modules/capabilities list and no attach-knowledge / child-spawn / open-PR
+toggles, because those behaviours come from capabilities. There is **no**
+preview button either. The preview runs in the background to fill the real
+defaults, and apply still binds with `--expect-decision` (`E_DECISION_STALE`
+re-previews). A collapsed **Advanced** section holds harness permissions, launch
+config, relation, messaging identity (`--provider <cap> identity.mode=…`,
+decision 27) and branch/base overrides. Every modal gets a darker backdrop.
+
 **F4 — Instance card and roster on v2 facts.** The served-identity line (`acts
 as <address> via grant, expires <t>` / `alias <a> on <team>`); module rows with
 "moved since" markers and a **re-spawn** action (preview → apply, then retire
