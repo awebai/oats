@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import {
   collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
-  captureTreeRenderState, configureDisclosure, rosterResponseOwns,
+  captureTreeRenderState, clusterHeader, treeConnectors, clusterInstances, rosterResponseOwns,
   ROSTER_SORTS, rosterRank, groupRosterFamilies, rosterGroupKey,
 } from "../renderer/instance-tree.mjs";
 
@@ -98,20 +98,46 @@ test("DOM rerender preserves focused disclosure/terminal identity and scroll acr
   dom.window.close();
 });
 
-test("filter includes ancestor paths and forces collapsed disclosures truthfully expanded without mutation", () => {
+test("filter includes ancestor paths without mutating persisted collapse state", () => {
   assert.deepEqual(filterInstanceTree(instances, "grand").map((i) => i.instance), ["root", "child", "grand"]);
-  const dom = new JSDOM(`<!doctype html><body><button id="d"></button></body>`);
-  const disclosure = dom.window.document.getElementById("d");
+  const collapsed = new Set([collapseKey("ws", "root")]);
+  assert.equal(instanceVisibleInTree(instances[2], instances, collapsed, "ws", true), true, "filtering reveals the matching path");
+  assert.deepEqual([...collapsed], [collapseKey("ws", "root")], "the user's collapse choice survives the filter");
+});
+
+test("agent-group header: named, counted, collapsible — and never a tab stop in the roving roster", () => {
+  const dom = new JSDOM("<!doctype html><body></body>");
   let toggles = 0;
-  configureDisclosure(disclosure, {
-    instance: "root", collapsed: true, filtering: true, onToggle: () => toggles++,
-  });
-  assert.equal(disclosure.getAttribute("aria-expanded"), "true");
-  assert.equal(disclosure.getAttribute("aria-disabled"), "true");
-  assert.equal(disclosure.disabled, true);
-  disclosure.click();
-  assert.equal(toggles, 0, "forced filter expansion never mutates persisted collapse state");
+  const header = clusterHeader(dom.window.document, { label: "docs-writer-1", count: 2, collapsed: false, onToggle: () => toggles++ });
+  assert.equal(header.tagName, "BUTTON"); assert.equal(header.type, "button");
+  assert.equal(header.tabIndex, -1, "group headers stay out of the roving tab order");
+  assert.equal(header.dataset.treeControl, "group");
+  assert.equal(header.getAttribute("aria-expanded"), "true");
+  assert.equal(header.getAttribute("aria-label"), "Collapse docs-writer-1, 2 instances");
+  assert.equal(header.querySelector(".ctx-group-name").textContent, "docs-writer-1");
+  assert.equal(header.querySelector(".ctx-group-count").textContent, "2");
+  assert.equal(header.querySelector(".ctx-group-caret").getAttribute("aria-hidden"), "true", "the caret is decorative");
+  header.click(); assert.equal(toggles, 1);
+  const closed = clusterHeader(dom.window.document, { label: "independent", count: 1, collapsed: true });
+  assert.equal(closed.getAttribute("aria-expanded"), "false");
+  assert.equal(closed.getAttribute("aria-label"), "Expand independent, 1 instance");
   dom.window.close();
+});
+
+test("tree connectors start at the dots: a parent stem from its dot, solid elbows to children, dotted links between sibling roots", () => {
+  const all = [{ instance: "a" }, { instance: "a1", parentInstance: "a" }, { instance: "a2", parentInstance: "a" },
+    { instance: "a2x", parentInstance: "a2" }, { instance: "b", siblingInstance: "a" }];
+  const items = clusterInstances(all)[0].instances;
+  const kinds = Object.fromEntries(items.map((i) => [i.instance, treeConnectors(items, i, all).map((c) => `${c.kind}@${c.level}`)]));
+  assert.deepEqual(kinds, {
+    a: ["down@0", "link-out@0"],
+    a1: ["elbow@0", "down@0"],
+    a2: ["elbow@0", "down@1", "link-out@0"],
+    a2x: ["elbow@1", "link-through@0"],
+    b: ["link-in@0"],
+  });
+  const lone = [{ instance: "solo" }];
+  assert.deepEqual(treeConnectors(lone, lone[0], lone), [], "an independent row draws no connector");
 });
 
 test("first-launch deferred roster owns both completion orders but rejects a true switch", async () => {
@@ -200,19 +226,6 @@ test("clusterInstances: cluster key is deterministic under liveness changes (rev
   ];
   assert.equal(keyOf(tree(true)), "z-root");
   assert.equal(keyOf(tree(false)), "z-root", "root name labels the cluster even when idle");
-});
-
-test("sidebar cluster separator: accessible boundary with NO visible glyph or name (human re-test)", () => {
-  const dom = new JSDOM("<!doctype html><html><body></body></html>");
-  return import("../renderer/instance-tree.mjs").then((m) => {
-    const el = m.clusterSeparator(dom.window.document, 3);
-    assert.equal(el.getAttribute("role"), "separator", "AT boundary preserved");
-    assert.match(el.getAttribute("aria-label"), /3 related instances/, "label carries the member count");
-    assert.equal(el.textContent, "", "NO visible glyph or text — the boundary reads from spacing only");
-    assert.ok(!el.getAttribute("aria-label").includes("◎"), "no glyph smuggled into the label");
-    assert.equal(el.className, "ctx-cluster-sep");
-    dom.window.close();
-  });
 });
 
 /* ── roster grouping: repo → agent family, sort modes ── */

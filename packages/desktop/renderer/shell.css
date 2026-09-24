@@ -9,9 +9,16 @@ body {
 }
 #app { display: flex; }
 #workbench { flex: 1; min-width: 0; min-height: 0; display: flex; container-type: inline-size; }
-#context-tools { height: 28px; flex: none; display: flex; align-items: center; justify-content: flex-end;
-                 gap: 6px; padding: 0 8px; border-top: 1px solid var(--border); background: var(--surface); }
-#context-tools button { border: 0; border-radius: 4px; padding: 3px 8px; font: inherit; font-size: 11px;
+/* Status bar (Redesign v3): 26px, 11px muted; facts left, layout tools right. */
+#context-tools { box-sizing: border-box; height: 26px; flex: none; display: flex; align-items: center; justify-content: flex-end;
+                 gap: 6px; padding: 0 8px 0 12px; border-top: 1px solid var(--border); background: var(--surface);
+                 color: var(--muted); font-size: 11px; }
+.context-status { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; overflow: hidden; white-space: nowrap; }
+.context-status > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.context-status-branch { display: flex; align-items: center; gap: 5px; font-family: ui-monospace, Menlo, monospace; }
+.context-status-branch > .shell-icon { width: 12px; height: 12px; flex: none; }
+.context-status-branch > span { overflow: hidden; text-overflow: ellipsis; }
+#context-tools button { border: 0; border-radius: 4px; padding: 2px 8px; font: inherit; font-size: 11px;
                        background: var(--surface); color: var(--muted); cursor: pointer; }
 #context-tools button:hover { background: var(--surface-2); color: var(--fg); }
 #context-tools button[aria-pressed="true"] { background: var(--sel); color: var(--accent); }
@@ -120,31 +127,50 @@ body {
 #instance-roster { flex: 1; min-height: 0; display: flex; flex-direction: column; border-top: 1px solid var(--border); }
 .ctx-head { height: 36px; flex: none; padding: 6px 12px 0 14px; display: flex; align-items: center; gap: 6px;
             color: var(--muted); font-size: 10.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .065em; }
-.ctx-count { margin-left: auto; color: var(--faint); font-weight: 500; letter-spacing: 0; text-transform: none; }
-.ctx-filter-field { display: flex; align-items: center; gap: 8px; margin: 2px 10px 8px; height: 30px; flex: none;
+/* "● 4 running · 2 stopped" — lower-case, keeps the head's tracking. */
+.ctx-count { margin-left: auto; display: flex; align-items: center; gap: 5px; color: var(--muted); font-weight: 500;
+             text-transform: none; white-space: nowrap; }
+.ctx-count-dot { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--accent); }
+.ctx-filter-field { display: flex; align-items: center; gap: 7px; margin: 2px 10px 6px; height: 30px; flex: none;
                     min-width: 0; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
-                    background: var(--bg); color: var(--fg); }
+                    background: var(--bg); color: var(--muted); }
 .ctx-filter-field:focus-within { border-color: var(--accent); }
+.ctx-filter-icon { flex: none; display: grid; place-items: center; color: var(--muted); }
+.ctx-filter-icon > .shell-icon { width: 12px; height: 12px; }
 .ctx-filter-field .shortcut-hint { color: var(--muted); }
 .ctx-filter { margin: 0; min-width: 0; width: 100%; height: 100%; flex: 1; padding: 0;
               border: 0; border-radius: 4px; background: var(--bg); color: var(--fg);
               font-family: inherit; font-size: 12px; line-height: 1; }
-.ctx-filter::placeholder { color: var(--faint); }
-.ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 6px 8px; }
-.ctx-repo { min-height: 24px; padding: 4px 8px 2px; margin-top: 0; color: var(--faint); font-size: 10.5px; font-weight: 600;
-            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Anonymous cluster boundary: pure spacing, no visible glyph (human re-test).
-   The element stays in the DOM as role=separator so AT users still get the
-   group boundary. */
-.ctx-cluster-sep { height: 12px; }
-/* Compact horizontal ancestry leaves room for names; retain vertical breathing
-   room, disclosure targets and selected-content inset. Guides share this pitch. */
-.ctx-tree-row { --tree-step: 8px; position: relative; width: 100%; min-height: 56px; height: auto; display: flex; align-items: center;
-                padding-block: 4px; padding-left: calc(var(--depth) * var(--tree-step)); }
-.ctx-actions { flex: none; display: flex; width: 28px; }
-.ctx-instance-actions { appearance: none; width: 28px; height: 28px; display: grid; place-items: center;
-  flex: none; border: 0; border-radius: 4px; padding: 0;
-  background: transparent; color: var(--muted); font: inherit; font-size: 18px; cursor: pointer; }
+.ctx-filter::placeholder { color: var(--muted); }
+.ctx-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 8px 8px; }
+/* Agent-group header (Redesign v3): caret · name · mono count. */
+.ctx-group { display: flex; align-items: center; gap: 6px; width: 100%; height: 26px; margin: 8px 0 2px; padding: 0 6px;
+             border: 0; border-radius: 5px; background: none; color: var(--muted); font: inherit; font-size: 10.5px;
+             font-weight: 600; line-height: 1.45; text-align: left; cursor: pointer; }
+.ctx-group:hover { color: var(--fg); }
+.ctx-group:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The design's small solid caret (▾), drawn, not a glyph or a chevron. */
+.ctx-group-caret { flex: none; width: 0; height: 0; margin: 0 1px; border-left: 3.5px solid transparent;
+                   border-right: 3.5px solid transparent; border-top: 4px solid currentColor; transition: transform .12s; }
+.ctx-group[aria-expanded="false"] .ctx-group-caret { transform: rotate(-90deg); }
+.ctx-group-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctx-group-count { margin-left: auto; font: 400 10px var(--mono, ui-monospace, Menlo, monospace); }
+/* One instance row: the design's tree at a slightly roomier 50px (human
+   preference over the design's 44px), 18px per level; the row (not the
+   button) carries hover/selection so it spans the indent like the design. */
+.ctx-tree-row { --tree-step: 18px; --row-solid: var(--surface); position: relative; width: 100%; min-height: 50px;
+                display: flex; align-items: center; border-radius: 7px;
+                padding-left: calc(var(--depth) * var(--tree-step)); }
+.ctx-tree-row:hover { --row-solid: var(--surface-2); background: var(--surface-2); }
+.ctx-tree-row.active { --row-solid: var(--sel); background: var(--sel); }
+.ctx-row-tools { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); z-index: 2;
+                 display: flex; align-items: center; gap: 4px; padding-left: 6px;
+                 background: var(--row-solid); visibility: hidden; }
+.ctx-tree-row:is(:hover, :focus-within) > .ctx-row-tools { visibility: visible; }
+.ctx-actions { flex: none; display: flex; }
+.ctx-instance-actions { appearance: none; width: 24px; height: 24px; display: grid; place-items: center;
+  flex: none; border: 0; border-radius: 6px; padding: 0;
+  background: transparent; color: var(--muted); font: inherit; cursor: pointer; }
 .ctx-instance-actions:hover, .ctx-instance-actions:focus { background: var(--surface-2); color: var(--fg); }
 .ctx-instance-actions:disabled { color: var(--muted); cursor: default; }
 .ctx-instance-menu { position: fixed; inset: auto; margin: 0; width: 240px; max-width: calc(100vw - 16px);
@@ -164,7 +190,7 @@ body {
 .ctx-instance-menu button[data-action="retire"]:is(:hover, :focus-visible),
 .ctx-instance-menu button.danger:is(:hover, :focus-visible) { background: var(--surface-2); }
 .ctx-instance-menu button:disabled { background: var(--surface-2); color: var(--faint); cursor: default; }
-.ctx-start { flex: none; padding: 4px 7px; font-size: 12px; color: var(--accent); background: var(--surface);
+.ctx-start { flex: none; padding: 2px 7px; font-size: 11.5px; line-height: 1.4; color: var(--accent); background: var(--surface);
   border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 .ctx-start:disabled { color: var(--muted); cursor: default; }
 .instance-start-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center;
@@ -189,38 +215,40 @@ body {
 .launch-config-editor { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
 .launch-config-editor summary { cursor: pointer; }
 .launch-preview-output { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: var(--surface-2); max-height: 240px; overflow: auto; }
-.ctx-dot.unknown { background: var(--warn); }
-.ctx-inst { min-width: 0; flex: 1; min-height: 48px; height: auto; display: flex; align-items: center; gap: 8px;
-            padding: 4px 7px 4px 8px; border: 1px solid transparent;
-            border-radius: 7px; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
-.ctx-inst:hover { background: var(--surface-2); }
-.ctx-inst.active { background: var(--sel); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.ctx-inst:disabled { cursor: default; color: var(--muted); border-style: dashed; }
-.ctx-inst:disabled:hover { background: none; }
-.ctx-disclosure { width: 18px; height: 26px; flex: none; padding: 0; border: 0; border-radius: 4px;
-                  background: none; color: var(--muted); font-family: inherit; font-size: 11px; line-height: 1; cursor: pointer; }
-.ctx-disclosure:hover { background: var(--surface-2); color: var(--fg); }
-.ctx-disclosure:disabled { cursor: default; color: var(--muted); }
-.ctx-disclosure:disabled:hover { background: none; }
-.ctx-disclosure.empty { visibility: hidden; pointer-events: none; }
-.ctx-guides { position: absolute; inset: 0 auto 0 0; pointer-events: none; }
-.ctx-guide { position: absolute; top: 0; bottom: 0; left: calc(8px + var(--guide-level) * var(--tree-step));
-             width: 1px; background: var(--border); }
-.ctx-guide.end { bottom: 50%; }
-.ctx-guide.branch::after, .ctx-guide.end::after {
-  content: ""; position: absolute; left: 0; top: 50%; width: 4px; height: 1px; background: var(--border);
-}
-/* End guides span only the upper half-row: their endpoint is the row center. */
-.ctx-guide.end::after { top: 100%; }
-.ctx-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
-.ctx-dot.on { background: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
-.ctx-dot.off { border: 1.5px solid var(--faint); background: transparent; }
-.ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
-.ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; line-height: 1.2; }
+.ctx-inst { position: relative; min-width: 0; flex: 1; min-height: 50px; height: auto; display: flex; align-items: center; gap: 9px;
+            padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: none; color: var(--fg);
+            font: inherit; text-align: left; cursor: pointer; }
+.ctx-inst:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ctx-inst.idle, .ctx-inst:disabled { color: var(--muted); }
+.ctx-inst:disabled { cursor: default; }
+/* Connectors sit on each dot's centre column (10px inset + 4px radius):
+   solid rounded elbows into children, pass-throughs for open branches,
+   dotted dot-to-dot sibling links. Dots paint above them with a surface
+   ring, so every line appears to leave the dot itself. */
+.ctx-guides { position: absolute; inset: 0 auto 0 0; width: 100%; pointer-events: none; }
+.ctx-guide { position: absolute; box-sizing: border-box; width: 0;
+             left: calc(13.25px + var(--guide-level) * var(--tree-step));
+             border-left: 1.5px solid var(--tree-line); }
+.ctx-guide.line { top: 0; bottom: 0; }
+.ctx-guide.elbow { top: -2px; height: calc(50% + 2px); width: 9px; border-bottom: 1.5px solid var(--tree-line);
+                   border-bottom-left-radius: 5px; }
+.ctx-guide.down { top: 50%; bottom: 0; }
+.ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through { border-left: 1.5px dotted var(--tree-link); }
+.ctx-guide.link-in { top: 0; height: 50%; }
+.ctx-guide.link-out { top: 50%; bottom: 0; }
+.ctx-guide.link-through { top: 0; bottom: 0; }
+.ctx-dot { position: relative; z-index: 1; box-sizing: border-box; width: 8px; height: 8px; flex: none; border-radius: 50%;
+           border: 1.5px solid var(--faint); background: var(--surface); box-shadow: 0 0 0 2px var(--surface); }
+.ctx-dot.on { border-color: var(--accent); background: var(--accent); }
+.ctx-dot.unknown { border-color: var(--warn); background: var(--warn); }
+.ctx-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.ctx-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; font-weight: 600; line-height: 15px; }
 .ctx-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ctx-repo-label { display: block; color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 400; line-height: 1.45; }
+.ctx-repo-label { display: block; color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; font-weight: 400; line-height: normal; }
 .ctx-runtime { width: 18px; height: 18px; flex: none; display: grid; place-items: center; border-radius: 5px;
                font-size: 9.5px; font-weight: 700; }
+/* A stopped instance's provider mark dims (design); AA text on the light pair. */
+#app .ctx-inst.idle .runtime-badge.ctx-runtime[data-runtime] { background: var(--border); color: var(--muted); }
 .ctx-empty { padding: 20px 10px; color: var(--muted); text-align: center; font-size: 12px; }
 .nav-item {
   display: flex; align-items: center; gap: 9px; min-height: 30px;
@@ -279,13 +307,17 @@ body {
 
 /* ── main / tabs ── */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-#tabstrip { display: flex; flex-direction: column; flex: none; background: var(--bg); border-bottom: 1px solid var(--border); }
+/* One bar height everywhere, border included (like .side-head): the strip's
+   bottom border lines up with the sidebar header's and runs unbroken under
+   every tab, the active one included (human preference). */
+#tabstrip { display: flex; flex-direction: column; flex: none; box-sizing: border-box; height: var(--bar-h);
+            background: var(--bg); border-bottom: 1px solid var(--border); }
 #tabstrip:has(> #tabbar-row > #tabbar:empty) { display: none; }
 #tabstrip.split-hidden { display: none; }
 #tabbar-row { display: flex; min-width: 0; }
 #tabbar {
   display: flex; flex: 1; min-width: 0;
-  overflow-x: auto; height: var(--bar-h);
+  overflow-x: auto; height: calc(var(--bar-h) - 1px); /* the strip's rule is the 48th pixel */
 }
 /* tab-strip split controls (shown while the active tab is a terminal) */
 #tab-actions { display: flex; align-items: center; gap: 2px; padding: 0 8px; flex: none; }
@@ -298,20 +330,32 @@ body {
 #tab-actions button:disabled { color: var(--faint); cursor: default; }
 /* Strips scroll instead of compressing tab identity to a few characters.
    Keep the existing long-label cap; full names remain in title/ARIA. */
+/* Strips scroll instead of compressing tab identity to a few characters
+   (earlier human decision); the long-label cap is the design's 280px. */
 .tab {
-  display: flex; flex: none; align-items: center; white-space: nowrap;
-  background: var(--bg); border-right: 1px solid var(--border);
-  color: var(--muted); max-width: 240px; font-size: 12.5px;
+  display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; max-width: 280px; white-space: nowrap;
+  padding: 0 8px 0 14px; background: transparent; border-right: 1px solid var(--border);
+  color: var(--muted); font-size: 12.5px;
 }
 .tab[hidden] { display: none; }
 .tab.active { background: var(--surface); color: var(--fg); box-shadow: inset 0 2px 0 var(--accent); font-weight: 600; }
 .tab-trigger, .tab .close {
   appearance: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer;
 }
-.tab-trigger { align-self: stretch; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-               padding: 0 8px 0 14px; text-align: left; }
+/* dot · name · branch (Redesign v3): the name keeps priority, the branch
+   takes what is left and ellipsizes first. */
+.tab-trigger { align-self: stretch; display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
+               overflow: hidden; padding: 0; text-align: left; }
+.tab-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--accent); }
+.tab-dot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
+.tab-icon { flex: none; display: grid; place-items: center; color: var(--muted); }
+.tab-icon > .shell-icon { width: 14px; height: 14px; }
+.tab-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-detail { min-width: 0; flex: 1 1 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+              font: 400 11px ui-monospace, Menlo, monospace; color: var(--faint); }
 .tab .close { display: grid; place-items: center; flex: none; width: 20px; height: 20px; color: var(--faint);
-              margin: 0 8px 0 0; padding: 0; border-radius: 4px; font-size: 13px; }
+              margin: 0; padding: 0; border-radius: 4px; font-size: 13px; }
+.tab .close > .shell-icon { width: 13px; height: 13px; }
 .tab .close:hover, .tab .close:focus-visible { color: var(--fg); background: var(--surface-2); }
 #tabhost { flex: 1; position: relative; min-height: 0; }
 /* ── editor groups: one .group-cell per group becomes a flex cell of #tabhost;
@@ -330,8 +374,11 @@ body {
 .split-resizer:hover, .split-resizer:focus-visible { background: var(--accent); outline: none; }
 #tabhost.split-row > .group-cell + .group-cell { border-left: 1px solid var(--border); }
 #tabhost.split-col > .group-cell + .group-cell { border-top: 1px solid var(--border); }
-.group-tabbar { display: flex; flex: none; min-width: 0; overflow-x: auto; height: var(--bar-h);
-                background: var(--bg); border-bottom: 1px solid var(--border); }
+/* 48px including the bottom rule, like .side-head: tabs fill the 47px
+   above it, so the rule aligns with the sidebar header's and stays visible
+   under the active tab. */
+.group-tabbar { display: flex; flex: none; box-sizing: border-box; min-width: 0; overflow-x: auto; overflow-y: hidden;
+                height: var(--bar-h); background: var(--bg); border-bottom: 1px solid var(--border); }
 .group-tabbar .tab { min-width: 0; }
 .group-tabbar > #tab-actions { margin-left: auto; }
 .tab-pane.split-cell { position: relative; inset: auto; flex: 1 1 0; min-width: 0; min-height: 0; }
@@ -355,7 +402,7 @@ body {
 /* FitAddon measures .xterm's parent and subtracts padding from .xterm itself.
    Keep horizontal gutters here—not on .term-wrap—or it allocates columns wider
    than the visible terminal and the screen overflows the right edge. */
-.term-wrap .xterm { width: 100%; height: 100%; padding: 0 32px; }
+.term-wrap .xterm { width: 100%; height: 100%; padding: 14px 18px; } /* Redesign v3 transcript inset */
 .term-banner {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   background: var(--term-bg); color: var(--warn); font-size: 15px; z-index: 5;

@@ -6,6 +6,7 @@ import { capabilityFacts, reportedText } from './workspace-discovery.mjs';
 import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
+import { iconElement } from './shell-icons.mjs';
 
 export const inspectorCSS = `
 ${declarationsCSS}
@@ -88,11 +89,12 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     readiness?.dispose(); readiness = null; container.replaceChildren();
     const head = node('div', undefined, 'inspector-head');
     // Hosted X hides the slot without deselecting or rebuilding an editor.
-    const closeControl = button('×', () => {
+    const closeControl = button('', () => {
       if (!alive) return;
       if (presentation) presentation.collapse();
       else close({ restoreFocus: true });
     });
+    closeControl.classList.add('icon-act'); closeControl.append(iconElement(doc, 'close', { size: 14 }));
     closeControl.setAttribute('aria-label', 'Close inspector');
     const heading = node('h2', title); heading.title = title;
     if (selection.agent) head.append(createSoulMark(doc, selection.agent));

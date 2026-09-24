@@ -1,6 +1,12 @@
 // Semantic tab chrome and keyboard policy, isolated so ARIA relationships and
 // roving-navigation behavior are covered without booting the whole shell.
-export function createTabChrome(document, id, title, isMac = false) {
+import { iconElement } from "./shell-icons.mjs";
+/** Decorative icon by tab kind (the accessible name is the bare title). */
+const KIND_ICONS = Object.freeze({ file: "file", brain: "brain" });
+/** decor (all decorative; the accessible name stays the bare title):
+ *  { kind } or { icon } an app icon for artifact tabs; { dot, detail } a
+ *  live-state dot and the instance branch for terminal tabs (Redesign v3). */
+export function createTabChrome(document, id, title, isMac = false, decor = {}) {
   const tabEl = document.createElement("div");
   tabEl.className = "tab";
   tabEl.setAttribute("role", "presentation");
@@ -13,14 +19,22 @@ export function createTabChrome(document, id, title, isMac = false) {
   triggerEl.setAttribute("aria-selected", "false");
   triggerEl.setAttribute("aria-controls", `tabpanel-${id}`);
   triggerEl.tabIndex = -1;
-  triggerEl.textContent = title;
+  const { dot = null, detail = null } = decor || {};
+  const icon = decor?.icon ?? KIND_ICONS[decor?.kind] ?? null;
+  if (dot) { const mark = document.createElement("span"); mark.className = `tab-dot ${dot === "on" ? "on" : "off"}`; mark.setAttribute("aria-hidden", "true"); triggerEl.append(mark); }
+  else if (icon) { const mark = document.createElement("span"); mark.className = "tab-icon"; mark.setAttribute("aria-hidden", "true"); mark.append(iconElement(document, icon, { size: 14 })); triggerEl.append(mark); }
+  const label = document.createElement("span"); label.className = "tab-label"; label.textContent = title; triggerEl.append(label);
+  if (typeof detail === "string" && detail) {
+    const extra = document.createElement("span"); extra.className = "tab-detail"; extra.setAttribute("aria-hidden", "true");
+    extra.textContent = detail; triggerEl.append(extra);
+  }
   triggerEl.title = title;
   triggerEl.setAttribute("aria-label", title);
 
   const closeEl = document.createElement("button");
   closeEl.type = "button";
   closeEl.className = "close";
-  closeEl.textContent = "×";
+  closeEl.append(iconElement(document, "close", { size: 13 }));
   closeEl.setAttribute("aria-label", `Close ${title}`);
   closeEl.title = `Close ${title} (Delete or ${isMac ? "⌘" : "Ctrl"}+W)`;
   tabEl.append(triggerEl, closeEl);

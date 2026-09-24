@@ -1,4 +1,6 @@
 import { moduleDriftText, servedIdentityText, soulSourceText } from './deployment-facts.mjs';
+import { iconElement } from './shell-icons.mjs';
+import { createSoulMark } from './identity-marks.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -22,9 +24,35 @@ export const contextPanelCSS = `
 #context-panel .context-panel-page { flex:1; min-height:0; overflow:auto; padding:16px; box-sizing:border-box; overflow-wrap:anywhere; }
 #context-panel .context-panel-page h2 { font-size:14px; margin:0 0 12px; }
 #context-panel .context-panel-note { color:var(--muted); }
-#context-panel .context-panel-facts { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.6fr); gap:10px; margin:0; }
-#context-panel .context-panel-facts dt { color:var(--muted); }
-#context-panel .context-panel-facts dd { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; }
+/* Redesign v3 instance page: identity header, then labelled sections. */
+#context-panel .context-panel-page[data-context-page="instance"], #context-panel .context-panel-page[data-context-page="soul"] { display:flex; flex-direction:column; gap:18px; }
+#context-panel .context-panel-page[hidden] { display:none; }
+#context-panel .context-panel-identity { display:flex; align-items:center; gap:10px; min-width:0; }
+#context-panel .context-panel-identity .identity-mark { width:36px; height:36px; border-radius:9px; font-size:15px; font-weight:700; }
+#context-panel .context-panel-identity-copy { display:flex; flex-direction:column; min-width:0; flex:1; }
+#context-panel .context-panel-identity-name { font-size:13.5px; font-weight:700; line-height:1.45; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-identity-sub { font-size:11.5px; line-height:1.45; color:var(--muted); overflow-wrap:anywhere; }
+#context-panel .context-panel-state { flex:none; display:flex; align-items:center; gap:5px; font-size:11.5px; font-weight:650; color:var(--muted); }
+#context-panel .context-panel-state[data-state="running"] { color:var(--accent); }
+#context-panel .context-panel-state::before { content:''; width:6px; height:6px; border-radius:50%; box-sizing:border-box; border:1.5px solid currentColor; }
+#context-panel .context-panel-state[data-state="running"]::before { background:currentColor; }
+#context-panel .context-panel-section { display:flex; flex-direction:column; gap:8px; min-width:0; }
+#context-panel .context-panel-label { font-size:10.5px; font-weight:650; line-height:1.45; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+#context-panel .context-panel-card { display:flex; flex-direction:column; gap:5px; padding:10px 12px; min-width:0; border:1px solid var(--border); border-radius:8px; background:var(--surface-2); }
+#context-panel .context-panel-branch { display:flex; align-items:center; gap:8px; min-width:0; font:700 12px ui-monospace, Menlo, monospace; }
+#context-panel .context-panel-branch > .shell-icon { width:13px; height:13px; flex:none; color:var(--muted); }
+#context-panel .context-panel-branch > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#context-panel .context-panel-path { font:11px/1.55 ui-monospace, Menlo, monospace; color:var(--muted); overflow-wrap:anywhere; }
+/* Facts are cards of hairline-separated rows (like the design's Changes
+   card): label column, value column; nothing is clipped — long paths and
+   ids wrap on any character in mono. */
+#context-panel .context-panel-facts { margin:0; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--surface); font-size:12px; line-height:1.45; }
+#context-panel .context-panel-fact { display:grid; grid-template-columns:minmax(76px,30%) minmax(0,1fr); gap:12px; align-items:baseline; padding:7px 12px; min-height:32px; box-sizing:border-box; }
+#context-panel .context-panel-fact + .context-panel-fact { border-top:1px solid var(--border); }
+#context-panel .context-panel-facts dt { color:var(--muted); font-size:11.5px; }
+#context-panel .context-panel-facts dd { margin:0; min-width:0; color:var(--fg); overflow-wrap:anywhere; }
+#context-panel .context-panel-facts dd.is-mono { font:11px/1.6 ui-monospace, Menlo, monospace; }
+#context-panel .context-panel-facts dd[data-unreported] { color:var(--muted); }
 #context-panel .context-panel-stage.oats-view { display:flex; flex:1; flex-direction:column; width:100%; min-width:0; min-height:0; overflow:auto; background:var(--surface); }
 #context-panel .context-panel-stage > * { max-width:100%; box-sizing:border-box; }
 `;
@@ -75,8 +103,10 @@ export function createContextPanel({
     if (text !== undefined) el.textContent = text;
     return el;
   };
-  const control = (className, text, label, click) => {
-    const el = node('button', `context-panel-control ${className}`, text);
+  // Controls carry a decorative app icon; the aria-label/title name them.
+  const control = (className, iconName, label, click) => {
+    const el = node('button', `context-panel-control ${className}`);
+    if (iconName) el.append(iconElement(document, iconName, { size: 15 }));
     el.type = 'button'; el.setAttribute('aria-label', label); el.title = label;
     el.addEventListener('click', click);
     return el;
@@ -104,12 +134,12 @@ export function createContextPanel({
   };
   const rail = node('div', 'context-panel-rail');
   rail.setAttribute('role', 'toolbar'); rail.setAttribute('aria-label', 'Context sections'); rail.setAttribute('aria-orientation', 'vertical');
-  const expand = control('context-panel-expand', '‹', 'Expand context panel', event => {
+  const expand = control('context-panel-expand', 'chevronLeft', 'Expand context panel', event => {
     if (!disposed && visible(event.currentTarget)) { onIntent(event); setCollapsed(false); }
   });
   expand.setAttribute('aria-expanded', 'false'); expand.setAttribute('aria-controls', 'context-panel'); expand.dataset.action = 'panel.toggle';
   const railTabs = new Map();
-  for (const [id, glyph, label] of [['instance', 'ⓘ', 'Instance'], ['git', '⑂', 'Git & GitHub'], ['soul', '✦', 'Soul']]) {
+  for (const [id, glyph, label] of [['instance', 'info', 'Instance'], ['git', 'branch', 'Git & GitHub'], ['soul', 'soul', 'Soul']]) {
     const button = control('context-panel-rail-tab', glyph, label, event => {
       if (disposed || root.hidden || !hasGeneric() || !pref().collapsed || !visible(button)) return;
       onIntent(event);
@@ -133,14 +163,14 @@ export function createContextPanel({
   const header = node('div', 'context-panel-header');
   const tablist = node('div', 'context-panel-tabs');
   tablist.setAttribute('role', 'tablist'); tablist.setAttribute('aria-label', 'Instance context');
-  const collapse = control('context-panel-collapse', '›', 'Collapse context panel', event => {
+  const collapse = control('context-panel-collapse', 'close', 'Collapse context panel', event => {
     if (!disposed && visible(event.currentTarget)) { onIntent(event); setCollapsed(true); }
   });
   collapse.setAttribute('aria-expanded', 'true'); collapse.setAttribute('aria-controls', 'context-panel');
   header.append(tablist, collapse); generic.append(header);
   const tabs = new Map(), pages = new Map();
   for (const [id, label] of [['instance', 'Instance'], ['git', 'Git & GitHub'], ['soul', 'Soul']]) {
-    const tab = control('context-panel-tab', label, label, event => selectTab(id, event));
+    const tab = control('context-panel-tab', null, label, event => selectTab(id, event)); tab.textContent = label;
     tab.id = `context-panel-tab-${id}`; tab.dataset.contextTab = id;
     tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', `context-panel-page-${id}`);
     tab.addEventListener('keydown', event => {
@@ -166,14 +196,45 @@ export function createContextPanel({
     }
     pages.get(pageId).append(dl);
   }
-  pages.get('instance').append(node('h2', null, 'Reported instance'));
-  facts('instance', [['instance', 'Instance'], ['running', 'Session'], ['runtime', 'Runtime'], ['model', 'Model'],
-    ['home', 'Home'], ['work', 'Work mode'], ['repo', 'Repository'], ['createdAt', 'Created'],
-    ['parentInstance', 'Parent'], ['siblingInstance', 'Sibling'], ['team', 'Team'],
-    ['soulSource', 'Soul source'], ['modules', 'Modules'], ['identity', 'Served identity']]);
-  pages.get('soul').append(node('h2', null, 'Reported soul'), node('p', 'context-panel-note',
+  // Instance page (Redesign v3): identity header — soul mark, name, "soul ·
+  // runtime · model", state — then Worktree and Details. Every value is the
+  // roster row's own reported fact; unreported facts read "Not reported".
+  const identityHeader = (pageId) => {
+    const wrap = node('div', 'context-panel-identity'), mark = node('span', 'context-panel-mark');
+    const copy = node('div', 'context-panel-identity-copy');
+    wrap.append(mark, copy); pages.get(pageId).append(wrap);
+    return { mark, copy };
+  };
+  const section = (pageId, label) => {
+    const el = node('section', 'context-panel-section'); el.append(node('div', 'context-panel-label', label));
+    pages.get(pageId).append(el); return el;
+  };
+  const field = (tag, className, id) => { const el = node(tag, className, 'Not reported'); el.dataset.contextField = id; fields.set(id, el); return el; };
+  pages.get('instance').dataset.contextPage = 'instance'; pages.get('soul').dataset.contextPage = 'soul';
+  const instanceHead = identityHeader('instance');
+  const instanceSub = node('div', 'context-panel-identity-sub');
+  instanceHead.copy.append(field('div', 'context-panel-identity-name', 'instance'), instanceSub);
+  const state = field('span', 'context-panel-state', 'running');
+  instanceHead.copy.after(state);
+  const worktree = section('instance', 'Worktree'), card = node('div', 'context-panel-card');
+  const branchLine = node('div', 'context-panel-branch'); branchLine.append(iconElement(document, 'branch', { size: 13 }), field('span', null, 'branch'));
+  card.append(branchLine, field('div', 'context-panel-path', 'repo')); worktree.append(card);
+  function facts(host, entries) {
+    const dl = node('dl', 'context-panel-facts');
+    for (const [id, label, mono] of entries) {
+      const row = node('div', 'context-panel-fact');
+      row.append(node('dt', null, label), field('dd', mono ? 'is-mono' : null, id)); dl.append(row);
+    }
+    host.append(dl);
+  }
+  facts(section('instance', 'Session'), [['runtime', 'Runtime'], ['model', 'Model'], ['work', 'Work mode'], ['createdAt', 'Created'], ['team', 'Team']]);
+  facts(section('instance', 'Lineage'), [['parentInstance', 'Parent'], ['siblingInstance', 'Sibling'], ['soulSource', 'Soul source'],
+    ['modules', 'Modules'], ['identity', 'Served identity']]);
+  facts(section('instance', 'Location'), [['home', 'Home', true]]);
+  const soulHead = identityHeader('soul');
+  soulHead.copy.append(field('div', 'context-panel-identity-name', 'agent'), node('div', 'context-panel-identity-sub',
     'Metadata reported by this instance. Soul defaults, instructions, and capability configuration are not inspected or changed here.'));
-  facts('soul', [['agent', 'Soul'], ['description', 'Description'], ['agentsRoot', 'Agents root']]);
+  facts(section('soul', 'Reported soul'), [['description', 'Description'], ['agentsRoot', 'Agents root', true]]);
   const gitPanel = typeof createGitPanel === 'function' ? createGitPanel(pages.get('git'), { applyFocus: projectFocus,
     onObservation(summary) {
       if (disposed) return;
@@ -244,8 +305,33 @@ export function createContextPanel({
       focus(visible(expand) ? expand : document.getElementById('focus-mode-toggle'));
     }
   }
+  /** Status bar (Redesign v3): the focused terminal's reported branch and
+   * "runtime · model" — the row's own facts, nothing inferred or fetched. */
+  function projectStatus(instance) {
+    const el = document.getElementById('context-status');
+    if (!el) return;
+    const parts = [];
+    if (typeof instance?.branch === 'string' && instance.branch) {
+      const branch = node('span', 'context-status-branch');
+      branch.append(iconElement(document, 'branch', { size: 12 }), node('span', '', instance.branch)); parts.push(branch);
+    }
+    const detail = [instance?.runtime, instance?.model].filter(v => typeof v === 'string' && v).join(' · ');
+    if (detail) parts.push(node('span', '', detail));
+    el.replaceChildren(...parts);
+  }
   function projectMetadata() {
+    projectStatus(context.instance);
     const instance = context.instance ?? {};
+    // Header: soul mark and the "soul · runtime · model" line omit what the
+    // row did not report (Details still says "Not reported" for each).
+    const soul = typeof instance.agent === 'string' && instance.agent ? { name: instance.agent, agentsRoot: instance.agentsRoot } : null;
+    const markKey = JSON.stringify([soul?.name ?? null, soul?.agentsRoot ?? null]);
+    for (const head of [instanceHead, soulHead]) if (head.mark.dataset.markKey !== markKey) {
+      head.mark.dataset.markKey = markKey; head.mark.replaceChildren(...(soul ? [createSoulMark(document, soul)] : []));
+    }
+    const sub = [instance.agent, instance.runtime, instance.model].filter(v => typeof v === 'string' && v).join(' · ');
+    if (instanceSub.textContent !== sub) instanceSub.textContent = sub;
+    state.dataset.state = instance.running === true ? 'running' : instance.running === false ? 'stopped' : 'unknown';
     for (const [id, el] of fields) {
       const value = id === 'running' ? instance.running === true ? 'Running'
         : instance.running === false ? 'Stopped' : 'Not reported'
@@ -255,6 +341,7 @@ export function createContextPanel({
         : id === 'identity' ? servedIdentityText(instance.identity) ?? 'Not reported'
         : reported(instance[id]);
       if (el.textContent !== value) el.textContent = value;
+      el.toggleAttribute('data-unreported', value === 'Not reported');
     }
   }
   function selectTab(id, event) {

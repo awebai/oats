@@ -2,6 +2,7 @@
  * explicit inert descriptors with owned renderer callbacks, never commands. */
 import { spawnOpenDescriptor } from './instance-action-target.mjs';
 import { revealInScrollport } from './reveal-in-scrollport.mjs';
+import { iconElement } from './shell-icons.mjs';
 let centers = 0;
 export const notificationCSS = `
 .app-notifications { position:fixed; right:16px; bottom:42px; width:min(340px,calc(100vw - 32px)); max-height:calc(100vh - 58px); overflow-y:auto; box-sizing:border-box; padding:3px; z-index:80; pointer-events:none; }
@@ -72,7 +73,7 @@ export function createNotificationCenter({ document: doc, generation = () => 0, 
       const element = doc.createElement('li'); element.className = 'app-toast';
       const text = doc.createElement('div'); text.className = 'app-toast-text'; text.id = `${namespace}-${++serial}`;
       text.textContent = message; text.tabIndex = 0;
-      const button = doc.createElement('button'); button.type = 'button'; button.className = 'app-toast-dismiss'; button.textContent = '×';
+      const button = doc.createElement('button'); button.type = 'button'; button.className = 'app-toast-dismiss'; button.append(iconElement(doc, 'close', { size: 14 }));
       button.setAttribute('aria-label', 'Dismiss notification'); button.setAttribute('aria-describedby', text.id);
       const record = { element, dismiss: button };
       button.addEventListener('click', () => dismiss(record));

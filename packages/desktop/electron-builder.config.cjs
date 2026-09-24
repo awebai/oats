@@ -58,6 +58,7 @@ module.exports = {
     "!test/**",
     "!build-vendor.mjs",
     "!build-icons.mjs",
+    "!build-lucide-icons.mjs",
     "!electron-builder.config.cjs",
     "!**/*.test.mjs",
     "!**/.DS_Store",

@@ -65,7 +65,8 @@ export function terminalTypography(el = document.documentElement) {
     family = localStorage.getItem(TERM_FONT_KEY) || family;
     size = Number(localStorage.getItem(TERM_SIZE_KEY)) || size;
   } catch { /* storage-less */ }
-  return { fontFamily: family, fontSize: Math.min(28, Math.max(9, size)) };
+  const lineHeight = Number.parseFloat(css.getPropertyValue("--term-line-height")) || 1.7;
+  return { fontFamily: family, fontSize: Math.min(28, Math.max(9, size)), lineHeight: Math.min(2, Math.max(1, lineHeight)) };
 }
 
 function notifyTerminalTypography() {

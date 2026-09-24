@@ -36,15 +36,18 @@ async function setup(t, options = {}) {
   };
 }
 
-test('frame07 counts relation groups separately from independents, with anonymous labels and truthful K7/K1 limits', async t => {
+test('frame07 counts relation groups separately from independents, named by their root instance (never a reported groupName) and truthful K7/K1 limits', async t => {
   const roster = [instance('root', { task: 'Asked about PR #412 — waiting on you', groupName: 'invented-group', git: { dirty: 42, pr: '#412' } }),
     instance('child', { parentInstance: 'root', agentsRoot: '/other/agents', home: '/other/child', repoName: 'other-repo', running: false }),
     instance('peer', { siblingInstance: 'root' }), instance('independent', { running: null, activity: 'blocked' })];
   const u = await setup(t, { instances: roster });
   assert.match(u.one('.hier-sum').textContent, /2 running.*1 stopped.*1 unknown.*1 group.*1 independent/);
   assert.equal(u.all('.hier-cluster').length, 1); assert.equal(u.all('.hier-solo .hnode').length, 1);
-  assert.equal(u.one('.hier-chead').textContent, '2/3 running');
-  assert.match(u.one('.hier-context').textContent, /reported-repo.*other-repo|other-repo.*reported-repo/);
+  // root and its sibling peer are both roots; the lexically-smallest root
+  // names the group — the same deterministic label the sidebar group shows.
+  assert.equal(u.one('.hier-chead .cnm').textContent, 'peer', 'the group is named like its sidebar group');
+  assert.match(u.one('.hier-chead .cct').textContent, /^3 · (reported-repo · other-repo|other-repo · reported-repo)$/);
+  assert.equal(u.one('.hier-context'), null, 'reported contexts live in the one header line');
   assert.ok(u.all('.hier-edges path:not(.sib)').every(path => !path.getAttribute('d').includes('C')));
   assert.match(u.one('.hier-edges path:not(.sib)').getAttribute('d'), /V .* H .* V .* H/);
   assert.equal(u.all('.hier-edges .sib').length, 1);
@@ -218,8 +221,8 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: actual Activ
   u.mouse(u.nodes()[0], 'click'); const root = u.dom.window.getComputedStyle(u.doc.documentElement);
   for (const [selector, background, fg, bg] of [
     ['.hier-sum', '.hier-bar', 'muted', 'surface'], ['.hier-chead .cct', '.hier-cluster', 'muted', 'surface-2'],
-    ['.hier-context', '.hier-cluster', 'muted', 'surface-2'], ['.hnode.sel .nm', '.hnode.sel', 'fg', 'sel'],
-    ['.hnode.sel .hmeta', '.hnode.sel', 'muted', 'sel'], ['.pavailability', '.hier-pop', 'muted', 'surface'],
+    ['.hier-chead .cnm', '.hier-cluster', 'muted', 'surface-2'], ['.hnode.sel .nm', '.hnode.sel', 'fg', 'surface'],
+    ['.hnode.sel .hmeta', '.hnode.sel', 'muted', 'surface'], ['.pavailability', '.hier-pop', 'muted', 'surface'],
     ['.pname', '.hier-pop', 'fg', 'surface'], ['.pidentity', '.hier-pop', 'muted', 'surface'], ['.pgit', '.pgit', 'faint', 'surface-2'], ['.spawnbtn', '.spawnbtn', 'primary-fg', 'primary-bg'],
   ]) {
     const el = u.one(selector), painted = u.one(background); assert.ok(el && painted);

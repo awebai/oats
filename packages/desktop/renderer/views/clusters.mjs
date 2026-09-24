@@ -31,7 +31,7 @@ export function siblingLinksOf(inst) {
     first (running-heavy first, then by cluster key), then singletons.
     Each cluster: { name, instances, running, size }.
     - name: INTERNAL deterministic grouping/ordering key (root-most member's
-      id), never rendered (clusters are anonymous by human decision).
+      id); label: the rendered group name (root-most display name).
     - instances: members in roster order (layout decides visual order). */
 export function computeClusters(instances) {
   const list = (instances || []).filter((i) => i && i.instance);
@@ -73,8 +73,11 @@ export function computeClusters(instances) {
     });
     const key = (roots.length ? roots : members)
       .map((m) => instanceId(m)).sort()[0];
+    // Display label: the lexically-smallest ROOT display name — the same
+    // group name the instances sidebar shows (liveness-independent).
+    const label = (roots.length ? roots : members).map((m) => m.instance).sort()[0];
     return {
-      name: key,
+      name: key, label,
       instances: members,
       ...runtimeCounts(members),
       size: members.length,

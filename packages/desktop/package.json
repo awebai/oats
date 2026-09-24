@@ -13,7 +13,8 @@
     "dist": "electron-builder --config electron-builder.config.cjs",
     "postdist": "node scripts/clean-dist.mjs",
     "dist:smoke": "node scripts/dist-smoke.mjs",
-    "icons": "node build-icons.mjs"
+    "icons": "node build-icons.mjs",
+    "icons:lucide": "node build-lucide-icons.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
@@ -28,7 +29,8 @@
     "electron": "^43.2.0",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.28.1",
-    "jsdom": "^29.1.1"
+    "jsdom": "^29.1.1",
+    "lucide": "1.48.0"
   },
   "homepage": "https://github.com/awebai/oats"
 }

@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 import { createNotificationCenter, notificationCSS } from '../renderer/notifications.mjs';
 import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
 import { revealInScrollport } from '../renderer/reveal-in-scrollport.mjs';
+import { iconElement } from '../renderer/shell-icons.mjs';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function setup(t, create = createNotificationCenter) {
   const dom = new JSDOM('<!doctype html><body><input id="terminal"><div id="roster"></div><button id="fallback">Focus mode</button></body>');
@@ -77,7 +78,7 @@ for (const weakened of [false, true]) test(`global generation independently bloc
   if (weakened) {
     const source = create.toString(), guard = 'scope !== generation() || !visible(entry.element)';
     assert.equal(source.split(guard).length, 2);
-    create = runInNewContext(`(${source.replace(guard, '!visible(entry.element)')})`, { centers: 0, revealInScrollport });
+    create = runInNewContext(`(${source.replace(guard, '!visible(entry.element)')})`, { centers: 0, revealInScrollport, iconElement });
   }
   const u = setup(t, create); u.center.notify('old'); const button = u.cards()[0].querySelector('button');
   u.bump(); u.bump(); button.dispatchEvent(new u.dom.window.Event('click'));

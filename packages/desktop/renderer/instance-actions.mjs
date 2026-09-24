@@ -1,5 +1,8 @@
 /** Keyboard-accessible lifecycle actions, independent of terminal liveness. */
 import { instanceId } from "./instance-tree.mjs";
+import { iconElement } from "./shell-icons.mjs";
+/** Decorative menu icons (the Redesign's context menu), keyed by action. */
+const MENU_ICONS = Object.freeze({ 'open-split': 'splitRight', 'open-pr': 'pullRequest', inspect: 'knowledge', start: 'start', restart: 'refresh', stop: 'stop', retire: 'remove' });
 
 const pending = new Map(); // instance key -> controls replaced during an action
 
@@ -29,7 +32,7 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
   };
   const wrapper = doc.createElement("span"); wrapper.className = "ctx-actions";
   const trigger = doc.createElement("button");
-  trigger.type = "button"; trigger.className = "ctx-instance-actions"; trigger.textContent = "⋯";
+  trigger.type = "button"; trigger.className = "ctx-instance-actions"; trigger.append(iconElement(doc, "more"));
   trigger.dataset.treeInstance = key; trigger.dataset.treeControl = "actions";
   trigger.setAttribute("aria-label", `Actions for ${instance.instance}${instance.server ? ` on ${instance.server}` : ""}`);
   trigger.setAttribute("aria-haspopup", "menu"); trigger.setAttribute("aria-expanded", "false");
@@ -133,7 +136,10 @@ export function instanceActions(doc, instance, { invoke, openLifecycle, done = (
     const { action, label, reason, actionId } = descriptor;
     const item = doc.createElement("button"); item.type = "button"; item.tabIndex = -1;
     item.setAttribute("role", "menuitem"); item.dataset.action = action;
-    const copy = doc.createElement('span'); copy.textContent = label; item.append(copy);
+    const glyph = doc.createElement('span'); glyph.className = 'ctx-menu-icon'; glyph.setAttribute('aria-hidden', 'true');
+    if (Object.hasOwn(MENU_ICONS, action)) glyph.append(iconElement(doc, MENU_ICONS[action], { size: 15 }));
+    if (action === 'stop') item.classList.add('ctx-menu-lifecycle'); // separator before the lifecycle group
+    const copy = doc.createElement('span'); copy.textContent = label; item.append(glyph, copy);
     if (actionId) { const hint = doc.createElement('kbd'); hint.dataset.shortcut = actionId; hint.textContent = shortcut(actionId) || ''; hint.hidden = !hint.textContent; item.append(hint); }
     if (reason !== undefined) { const note = doc.createElement('small'); item.append(note); }
     item.addEventListener('click', () => {

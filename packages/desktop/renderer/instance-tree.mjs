@@ -122,17 +122,53 @@ export function clusterInstances(instances, { links = instanceLinks } = {}) {
   return clusters;
 }
 
-/** Anonymous cluster boundary for the instances sidebar (human re-test on
- * feature/agent-relations): NO visible glyph or name — the group reads from
- * spacing — but the element keeps role=separator + an aria-label with the
- * member count so AT users still get the boundary. Importable so the
- * regression exercises the exact builder the shell uses. */
-export function clusterSeparator(doc, memberCount) {
-  const el = doc.createElement("div");
-  el.className = "ctx-cluster-sep";
-  el.setAttribute("role", "separator");
-  el.setAttribute("aria-label", `Agent cluster of ${memberCount} related instances`);
-  return el;
+/** Agent-group header for the instances sidebar (Redesign v3): the group's
+ * deterministic name and member count, with a real collapse control. The
+ * group is the relation cluster (never the repo); unrelated instances share
+ * one "independent" group. Importable so the regression exercises the exact
+ * builder the shell uses. */
+export function clusterHeader(doc, { label, count, collapsed = false, onToggle } = {}) {
+  const header = doc.createElement("button");
+  header.type = "button"; header.className = "ctx-group"; header.tabIndex = -1;
+  header.dataset.treeControl = "group";
+  header.setAttribute("aria-expanded", String(!collapsed));
+  header.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${label}, ${count} ${count === 1 ? "instance" : "instances"}`);
+  const caret = doc.createElement("span"); caret.className = "ctx-group-caret"; caret.setAttribute("aria-hidden", "true");
+  const name = doc.createElement("span"); name.className = "ctx-group-name"; name.textContent = label;
+  const total = doc.createElement("span"); total.className = "ctx-group-count"; total.textContent = String(count);
+  header.append(caret, name, total);
+  if (typeof onToggle === "function") header.addEventListener("click", onToggle);
+  return header;
+}
+
+/** Design connectors for one visible row, drawn from the dots (Redesign v3):
+ * solid parent→child elbows (rounded into the child dot), solid pass-through
+ * lines for open ancestor branches, and a DOTTED dot-to-dot link joining the
+ * depth-0 members of one agent group (sibling relations). Every line sits on
+ * a dot's centre column. `items` is the rendered group order. */
+export function treeConnectors(items, item, allInstances = items) {
+  const at = items.indexOf(item), depth = item.depth || 0;
+  const segments = treeGuideSegments(items, item, allInstances);
+  const out = [];
+  segments.forEach((segment, level) => {
+    if (segment === "continue") out.push({ kind: "line", level });
+    else if (segment === "branch") out.push({ kind: "elbow", level }, { kind: "down", level });
+    else if (segment === "end") out.push({ kind: "elbow", level });
+  });
+  // The stem: an expanded parent's own line leaves its dot downward to the
+  // first child's elbow (the child is the very next rendered item).
+  const next = at >= 0 ? items[at + 1] : null;
+  if (next && (next.depth || 0) === depth + 1) out.push({ kind: "down", level: depth });
+  const rootBefore = at > 0 && items.slice(0, at).some((i) => !(i.depth || 0));
+  const rootAfter = at >= 0 && items.slice(at + 1).some((i) => !(i.depth || 0));
+  if (!depth) {
+    if (rootBefore) out.push({ kind: "link-in", level: 0 });
+    if (rootAfter) out.push({ kind: "link-out", level: 0 });
+  } else if (rootAfter) {
+    if (segments[0] === "none") out.push({ kind: "link-through", level: 0 });
+    else if (segments[0] === "end") out.push({ kind: "link-out", level: 0 });
+  }
+  return out;
 }
 
 /** Find the roster instance a UI reference means. References carry the
@@ -449,24 +485,6 @@ export function captureTreeRenderState(listEl) {
   };
 }
 
-/** Filtering force-expands matching paths. Its disclosure remains truthful but
- * inert, so clicking cannot mutate persisted collapse state invisibly. */
-export function configureDisclosure(button, { instance, label, collapsed, filtering, onToggle }) {
-  const expanded = filtering || !collapsed;
-  button.dataset.treeInstance = instance;
-  button.dataset.treeControl = "disclosure";
-  button.textContent = expanded ? "▾" : "▸";
-  button.setAttribute("aria-expanded", String(expanded));
-  button.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${label || instance}`);
-  button.disabled = !!filtering;
-  if (filtering) {
-    button.setAttribute("aria-disabled", "true");
-    button.title = "Filtering temporarily expands matching branches";
-  } else {
-    button.addEventListener("click", onToggle);
-  }
-}
-
 /** A first-launch request dispatched with ws="" may complete before or after
  * another view silently adopts the same server-resolved workspace. Both are
  * owned; a real generation/workspace change is not. */
@@ -493,4 +511,18 @@ export function rosterParentId(instances, id) {
     byName.get(i.instance).push(i);
   }
   return resolveLinkId(me, me.parentInstance, byName);
+}
+
+/** Roster count line, "● 4 running · 2 stopped" (Redesign v3); unknown
+ * liveness is named, never folded into either bucket. */
+export function renderRosterCount(el, instances) {
+  if (!el) return;
+  const doc = el.ownerDocument;
+  // Same tri-state as runtimeState(): only reported booleans count.
+  const running = instances.filter((i) => i.running === true).length;
+  const stopped = instances.filter((i) => i.running === false).length;
+  const unknown = instances.length - running - stopped;
+  const dot = doc.createElement("span"); dot.className = "ctx-count-dot"; dot.setAttribute("aria-hidden", "true");
+  el.replaceChildren(...(running ? [dot] : []), doc.createTextNode(
+    [`${running} running`, `${stopped} stopped`, ...(unknown ? [`${unknown} unknown`] : [])].join(" · ")));
 }

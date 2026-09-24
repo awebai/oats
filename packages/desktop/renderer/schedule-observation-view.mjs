@@ -4,6 +4,7 @@ import { postJson, currentWorkspace, workspaceGeneration, onWorkspaceChange } fr
 import { cliStatus, onCliChange } from './views/cli-status.mjs';
 import { scheduleReadSupported, scheduleReadFailure, SCHEDULE_TRANSCRIPT_UNAVAILABLE } from './schedule-read-contract.mjs';
 import { scheduleReadData, scheduleReadIncomplete, scheduleRecentRuns, scheduleEditReason } from './schedule-read-data.mjs';
+import { iconElement } from './shell-icons.mjs';
 export const scheduleObservationCSS = `
 .schedule-table-wrap { overflow:auto; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
 .schedule-table { width:100%; border-collapse:collapse; font-size:12px; }
@@ -97,7 +98,7 @@ export function createScheduleObservationView(host, ctx, { cli = cliStatus, subs
         r.target = node('span'); cells[2].append(r.target);
         r.cron = node('span'); r.tz = node('small'); cells[3].append(r.cron, r.tz);
         r.next = node('span'); cells[4].append(r.next); r.last = node('span'); cells[5].append(r.last);
-        const menu = node('details', undefined, 'schedule-menu'), summary = node('summary', '⋯'); summary.setAttribute('aria-label', `Actions for ${job.id}`);
+        const menu = node('details', undefined, 'schedule-menu'), summary = node('summary'); summary.append(iconElement(doc, 'more')); summary.setAttribute('aria-label', `Actions for ${job.id}`);
         r.editNote = node('p'); const actions = node('div', undefined, 'schedule-actions');
         const edit = button('Edit', () => onEdit(r.job), () => valid() && r.job.editReason === null);
         r.run = button('Run now', () => onMutate('run', r.job.id), () => valid() && r.job.enabled);

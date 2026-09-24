@@ -40,7 +40,7 @@ function fixture(t, stylesheet = css) {
     instanceActionTarget, instanceSplitPlan, connectionGeneration: 0, menuState() {}, runAction: assert.fail,
     applyChordTitles() {}, updateActiveContexts() {}, getBinding: () => null, formatChord: c => c, isMac: true,
     contextRosterEl: doc.querySelector("#instance-roster"), contextFilter: "", contextWorkspace: "A",
-    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(),
+    contextInstances: roster, currentWorkspace: () => "A", workspaceGeneration: () => 0, collapsedInstances: new Set(), collapsedGroups: new Set(),
     tabs: new Map([[1, { key: tree.terminalKey("A", roster[1]) }]]), activeTab: 1,
     tabOpenIntents: { applyFocus: fn => fn() },
     // Display-only fixture: any attempted navigation/action is a test failure.
@@ -56,64 +56,48 @@ function fixture(t, stylesheet = css) {
 }
 
 function assertRoom(u) {
-  assert.equal(u.rule(".ctx-tree-row").minHeight, "56px", "row minimum follows the 4px rhythm");
-  assert.equal(u.rule(".ctx-tree-row").height, "auto", "row can grow with font metrics");
-  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("padding-block"), "4px",
-    "8px between adjacent controls lives inside the rows, not between guides");
-  assert.equal(u.rule(".ctx-inst").minHeight, "48px", "instance button has a roomy minimum");
-  assert.equal(u.rule(".ctx-inst").height, "auto", "never squeeze two labels into a fixed 40px box");
-  assert.equal(u.rule(".ctx-copy").gap, "4px", "name and repository have a full spacing unit");
-  assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).marginBottom, "8px", "filter/list separation");
+  assert.equal(u.rule(".ctx-tree-row").minHeight, "50px", "rows are the roomier 50px the human chose over the design's 44px");
+  assert.equal(u.rule(".ctx-inst").minHeight, "50px", "the whole row height is one click target");
+  assert.equal(u.rule(".ctx-inst").height, "auto", "never squeeze two labels into a fixed box");
+  assert.equal(u.rule(".ctx-copy").gap, "3px", "name/meta gap follows the supplied 3px stack");
+  assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).marginBottom, "6px", "filter/list separation");
+  assert.equal(u.computed(u.doc.querySelector(".ctx-filter-field")).height, "30px");
   for (const row of u.rows) {
     const button = row.querySelector(".ctx-inst");
     for (const el of [row, button]) {
       const style = u.computed(el);
-      assert.equal(style.height, "auto");
       assert.equal(style.maxHeight, "none", "no max-height clipping when labels grow");
       assert.equal(style.alignItems, "center");
-      assert.match(style.marginTop, /^0(?:px)?$/, "no external row/control gap to break guide continuity");
+      assert.match(style.marginTop, /^0(?:px)?$/, "no external row/control gap to break connector continuity");
       assert.match(style.marginBottom, /^0(?:px)?$/);
       assert.equal(style.overflowY, "visible", "do not clip the label stack or focus ring vertically");
     }
-    assert.equal(u.computed(button).paddingLeft, "8px", "content is inset from the selected background without changing tree depth");
-    assert.equal(u.computed(button).paddingTop, "4px");
-    assert.equal(u.computed(button).paddingBottom, "4px");
+    assert.equal(u.computed(button).paddingLeft, "10px", "the dot sits on the connector column");
   }
 }
 
-test("sidebar metadata uses reported branch/runtime without claiming membership or installation", t => {
-  const u = fixture(t);
-  u.render([{ ...roster[0], branch: "feature/<literal>", runtime: "pi" }]);
-  const row = u.doc.querySelector(".ctx-inst");
-  assert.equal(row.querySelector(".ctx-meta").textContent, "desktop-repo · feature/<literal>");
-  assert.equal(row.querySelector(".ctx-meta").title, "Repository: desktop-repo\nBranch: feature/<literal>");
-  assert.equal(row.querySelector(".ctx-runtime").textContent, "π");
-  assert.equal(row.querySelector(".ctx-runtime").getAttribute("aria-label"), "Reported runtime: Pi");
-  assert.equal(row.querySelector("literal"), null);
-});
-
-test("roster spacing (non-layout): auto-height rows, padded controls and filter/list separation", t => {
+test("roster spacing (non-layout): 50px rows, padded controls and filter/list separation", t => {
   const u = fixture(t);
   assertRoom(u);
   const filter = u.doc.querySelector(".ctx-filter");
   assert.equal(filter.parentElement.nextElementSibling.className, "ctx-list");
   assert.equal(filter.getAttribute("aria-label"), "Filter instances");
+  assert.equal(filter.getAttribute("placeholder"), "Filter instances");
   assert.equal(u.computed(filter.parentElement.nextElementSibling).overflowY, "auto", "longer rosters still scroll");
 });
 
 test("roster typography (non-layout): valid control family and supplied sidebar label scale", t => {
   const u = fixture(t);
-  for (const [selector, size] of [[".ctx-filter", "12px"], [".ctx-disclosure", "11px"]]) {
-    assert.equal(u.rule(selector).getPropertyValue("font"), "", "no invalid 'size/line-height inherit' shorthand");
-    assert.equal(u.rule(selector).fontFamily, "inherit");
-    assert.equal(u.rule(selector).fontSize, size);
-    assert.equal(u.rule(selector).lineHeight, "1");
-    assert.equal(u.computed(u.doc.querySelector(selector)).fontSize, size);
-  }
+  assert.equal(u.rule(".ctx-filter").getPropertyValue("font"), "", "no invalid 'size/line-height inherit' shorthand");
+  assert.equal(u.rule(".ctx-filter").fontFamily, "inherit");
+  assert.equal(u.rule(".ctx-filter").fontSize, "12px");
+  assert.equal(u.rule(".ctx-group").fontSize, "10.5px");
+  assert.equal(u.rule(".ctx-group").fontWeight, "600");
   assert.equal(u.rule(".ctx-inst").getPropertyValue("font"), "inherit");
   assert.equal(u.rule(".ctx-name").fontSize, "12.5px");
+  assert.equal(u.rule(".ctx-name").fontWeight, "600");
   assert.equal(u.rule(".ctx-repo-label").fontSize, "10.5px");
-  assert.equal(u.rule(".ctx-repo-label").lineHeight, "1.45");
+  assert.match(u.rule(".ctx-repo-label").fontFamily, /monospace/, "reference metadata is mono, like the design");
   for (const row of u.rows) {
     const name = row.querySelector(".ctx-name"), repo = row.querySelector(".ctx-repo-label");
     assert.equal(name.nextElementSibling, repo, "both labels remain in the same vertical stack");
@@ -127,55 +111,46 @@ test("roster typography (non-layout): valid control family and supplied sidebar 
   }
 });
 
-function assertGuideAnchors(u) {
+function assertConnectors(u) {
   assert.equal(u.rule(".ctx-tree-row").position, "relative");
-  assert.equal(u.rule(".ctx-guides").getPropertyValue("inset"), "0 auto 0 0", "span the entire padded row");
+  assert.equal(u.rule(".ctx-guides").getPropertyValue("inset"), "0 auto 0 0", "span the entire row");
   assert.equal(u.rule(".ctx-guides").pointerEvents, "none");
   assert.equal(u.rule(".ctx-guide").position, "absolute");
-  assert.equal(u.rule(".ctx-guide").top, "0px");
-  assert.equal(u.rule(".ctx-guide").bottom, "0px", "branch/ancestor segments reach the adjacent row");
-  assert.equal(u.rule(".ctx-guide.end").bottom, "50%", "final sibling line stops at row center");
-  const elbows = u.rule(".ctx-guide.branch::after, .ctx-guide.end::after");
-  assert.equal(elbows.position, "absolute");
-  assert.equal(elbows.top, "50%", "continuing branch elbow tracks full-row midpoint, not 23px");
-  assert.equal(u.rule(".ctx-guide.end::after").top, "100%",
-    "end elbow uses the endpoint of its HALF-height guide, not the quarter-row midpoint");
-  assert.equal(elbows.width, "4px", "compact elbow does not consume a full text column");
-  assert.equal(elbows.height, "1px");
-  assert.equal(elbows.background, "var(--border)");
+  assert.equal(u.rule(".ctx-guide").left, "calc(13.25px + var(--guide-level) * var(--tree-step))",
+    "every connector sits on a dot centre column (10px inset + 4px radius - half the stroke)");
+  assert.equal(u.rule(".ctx-guide").borderLeft, "1.5px solid var(--tree-line)", "a visible, tokenized stroke");
+  assert.equal(u.rule(".ctx-guide.line").top, "0px"); assert.equal(u.rule(".ctx-guide.line").bottom, "0px");
+  assert.equal(u.rule(".ctx-guide.elbow").height, "calc(50% + 2px)", "the elbow lands on the child dot's centre");
+  assert.equal(u.rule(".ctx-guide.elbow").borderBottomLeftRadius, "5px", "rounded elbows");
+  assert.equal(u.rule(".ctx-guide.down").top, "50%", "a parent's line leaves from its own dot");
+  assert.equal(u.rule(".ctx-guide.link-in, .ctx-guide.link-out, .ctx-guide.link-through").borderLeft,
+    "1.5px dotted var(--tree-link)", "sibling links are dotted");
+  assert.equal(u.rule(".ctx-dot").boxShadow, "0 0 0 2px var(--surface)", "the dot's ring hides the line under it");
 }
 
-test("tree guides (non-layout): full-span continuations and half-span end elbows remain row-centered", t => {
+test("tree connectors (non-layout): lines leave the dots, no disclosure arrows", t => {
   const u = fixture(t);
-  assertGuideAnchors(u);
-  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("--tree-step"), "8px");
+  assertConnectors(u);
+  assert.equal(u.rule(".ctx-tree-row").getPropertyValue("--tree-step"), "18px");
   assert.equal(u.rule(".ctx-tree-row").paddingLeft, "calc(var(--depth) * var(--tree-step))");
-  assert.equal(u.rule(".ctx-guide").left, "calc(8px + var(--guide-level) * var(--tree-step))", "guides use the same compact pitch as rows");
-  assert.equal(u.rule(".ctx-list").padding, "0px 6px 8px");
-  // Compared with the previous 8px list padding + 3px base + 14px depth:
-  // reclaim 7px at the root, 13px at depth1, 19px at depth2, without shrinking
-  // the 18px disclosure slot, 56px rows or 8px selected-content inset.
-  assert.equal(u.rule(".ctx-disclosure").width, "18px");
-  for (const depth of [0, 1, 2, 4]) {
-    const oldGutter = 2 * 8 + 3 + depth * 14;
-    const compactGutter = 2 * 6 + depth * Number.parseFloat(u.rule(".ctx-tree-row").getPropertyValue("--tree-step"));
-    assert.equal(oldGutter - compactGutter, 7 + depth * 6);
-  }
+  assert.equal(u.doc.querySelector(".ctx-disclosure"), null, "no disclosure arrows on rows");
   assert.deepEqual(u.rows.map(row => row.style.getPropertyValue("--depth")), ["0", "1", "2", "1", "2", "0"]);
-  assert.deepEqual(u.rows.map(row => [...row.querySelectorAll(".ctx-guide")].map(g => g.className)), [
-    [], ["ctx-guide branch"], ["ctx-guide continue", "ctx-guide end"],
-    ["ctx-guide end"], ["ctx-guide end"], [],
+  assert.deepEqual(u.rows.map(row => [...row.querySelectorAll(".ctx-guide")].map(g => `${g.className.replace("ctx-guide ", "")}@${g.style.getPropertyValue("--guide-level")}`)), [
+    ["down@0"], ["elbow@0", "down@0", "down@1"], ["line@0", "elbow@1"], ["elbow@0", "down@1"], ["elbow@1"], [],
   ]);
-  assert.deepEqual([...u.rows[2].querySelectorAll(".ctx-guide")].map(g => g.style.getPropertyValue("--guide-level")), ["0", "1"]);
-  assert.equal(u.rows[4].querySelector(".ctx-guide").style.getPropertyValue("--guide-level"), "1", "exhausted ancestor draws no continuation");
 });
 
-test("roster DOM contract: identity, active/focus state and closed action menus survive roomier rows", t => {
+test("roster DOM contract: named groups, identity, active state, hidden-but-reachable tools and closed menus", t => {
   const u = fixture(t);
+  assert.deepEqual([...u.doc.querySelectorAll(".ctx-group")].map(g => [g.querySelector(".ctx-group-name").textContent, g.querySelector(".ctx-group-count").textContent]),
+    [["root", "5"], ["independent", "1"]]);
+  assert.equal(u.doc.querySelector(".ctx-count").textContent, "5 running · 0 stopped · 1 unknown");
   for (const row of u.rows) {
     const button = row.querySelector(".ctx-inst"), name = row.querySelector(".ctx-name").textContent;
     assert.equal(button.dataset.treeInstance, `/synthetic/${name}`);
+    assert.equal(button.hasAttribute("aria-expanded"), button.dataset.rosterChildren === "1", "only parents announce expansion");
     const trigger = row.querySelector(".ctx-instance-actions"), menu = row.querySelector(".ctx-instance-menu");
+    assert.equal(trigger.closest(".ctx-row-tools")?.parentElement, row, "tools overlay the row");
     assert.equal(trigger.getAttribute("aria-haspopup"), "menu");
     assert.equal(trigger.getAttribute("aria-expanded"), "false");
     assert.equal(menu.getAttribute("popover"), "auto", "actions remain in the native closed popover");
@@ -184,24 +159,46 @@ test("roster DOM contract: identity, active/focus state and closed action menus 
     assert.deepEqual([...menu.querySelectorAll("[role=menuitem]")].map(item => item.dataset.action),
       button.disabled ? ['open-split', 'open-pr', "inspect", "stop", "retire"] : ['open-split', 'open-pr', "inspect", "restart", "stop", "retire"]);
   }
+  assertTools(u);
   const active = u.doc.querySelector(".ctx-inst.active");
   assert.equal(active.dataset.treeInstance, tree.instanceId(roster[1]));
+  assert.equal(active.closest(".ctx-tree-row").classList.contains("active"), true, "the row paints the selection across the indent");
   active.focus(); u.render(roster);
   assert.equal(u.doc.activeElement.dataset.treeInstance, tree.instanceId(roster[1]), "poll retains logical focus");
   assert.equal(u.doc.activeElement.classList.contains("active"), true);
   assert.equal(u.rule(".ctx-inst").color, "var(--fg)");
-  assert.equal(u.rule(".ctx-inst.active").background, "var(--sel)");
+  assert.equal(u.rule(".ctx-tree-row.active").background, "var(--sel)");
   assert.equal(u.rule(".ctx-repo-label").color, "var(--muted)");
   assert.equal(u.rule(".ctx-repo-label").background, "", "reference metadata is a plain subline, not a repository pill");
+});
+
+function assertTools(u) {
+  // Hidden tools must never be semi-transparent text (WCAG: no opacity compositing).
+  assert.equal(u.rule(".ctx-row-tools").visibility, "hidden", "tools hide by visibility, never opacity");
+  assert.equal(u.rule(".ctx-row-tools").opacity, "");
+  assert.equal(u.rule(".ctx-tree-row:is(:hover, :focus-within) > .ctx-row-tools").visibility, "visible",
+    "hover or keyboard focus reveals the row tools");
+}
+
+test("sidebar metadata uses reported branch/runtime without claiming membership or installation", t => {
+  const u = fixture(t);
+  u.render([{ ...roster[0], branch: "feature/<literal>", runtime: "pi" }]);
+  const row = u.doc.querySelector(".ctx-inst");
+  assert.equal(row.querySelector(".ctx-meta").textContent, "desktop-repo · feature/<literal>");
+  assert.equal(row.querySelector(".ctx-meta").title, "Repository: desktop-repo\nBranch: feature/<literal>");
+  assert.equal(row.querySelector(".ctx-runtime").textContent, "π");
+  assert.equal(row.querySelector(".ctx-runtime").getAttribute("aria-label"), "Reported runtime: Pi");
+  assert.equal(row.querySelector("literal"), null);
 });
 
 // Mutants exist only as in-memory stylesheets: no shared-file rollback, reload
 // or browser is needed to prove the contracts reject the reported regressions.
 for (const [label, before, after, check, message] of [
-  ["fixed button height", "min-height: 48px; height: auto", "min-height: 48px; height: 40px", assertRoom, /fixed 40px box/],
-  ["cramped label gap", "align-items: flex-start; gap: 4px", "align-items: flex-start; gap: 3px", assertRoom, /full spacing unit/],
-  ["old elbow offset", "left: 0; top: 50%; width: 4px", "left: 0; top: 23px; width: 4px", assertGuideAnchors, /not 23px/],
-  ["quarter-row end elbow", ".ctx-guide.end::after { top: 100%; }", ".ctx-guide.end::after { top: 50%; }", assertGuideAnchors, /HALF-height guide/],
+  ["fixed button height", "min-height: 50px; height: auto; display: flex", "min-height: 50px; height: 40px; display: flex", assertRoom, /fixed box/],
+  ["cramped label gap", "align-items: flex-start; gap: 3px", "align-items: flex-start; gap: 0", assertRoom, /3px stack/],
+  ["connectors off the dot column", "left: calc(13.25px + var(--guide-level)", "left: calc(8px + var(--guide-level)", assertConnectors, /dot centre column/],
+  ["square elbows", "border-bottom-left-radius: 5px", "border-bottom-left-radius: 0", assertConnectors, /rounded elbows/],
+  ["opacity-hidden tools", "background: var(--row-solid); visibility: hidden; }", "background: var(--row-solid); opacity: 0; }", assertTools, /never opacity/],
 ]) test(`roster CSS contract rejects ${label} (in-memory, non-layout)`, t => {
   assert.ok(css.includes(before), "mutate the shipped declaration");
   const u = fixture(t, css.replace(before, after));

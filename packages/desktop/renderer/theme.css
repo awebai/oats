@@ -9,6 +9,7 @@
   --surface: #161b22;     /* cards, sidebar */
   --surface-2: #1c2129;   /* hover / raised */
   --border: #2d333c;
+  --tree-line: #3d444d; --tree-link: #6e7681; /* sidebar tree: solid elbows / dotted sibling links */
   --fg: #e6edf3;          /* primary text  (13.9:1 on bg) */
   --muted: #9aa4b2;       /* secondary text (5.6:1 on surface) */
   --faint: #8b949e;       /* tertiary/disabled; AA where also used as metadata */
@@ -27,7 +28,7 @@
   --term-sel-fg: #f5f9ff;
   /* xterm typography: OS monospace by default; user overrides persist via theme.mjs */
   --term-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  --term-font-size: 13px;
+  --term-font-size: 12px; --term-line-height: 1.7;
   --shadow: 0 1px 3px rgb(0 0 0 / .4);
   --shadow-popover: 0 12px 32px rgb(0 0 0 / .35);
   --shadow-modal: 0 30px 80px rgb(0 0 0 / .35);
@@ -65,6 +66,7 @@
   --surface: #ffffff;
   --surface-2: #f8f8f6;
   --border: #e3e3df;
+  --tree-line: #cfcfca; --tree-link: #9a9a95; /* Redesign v3 tree connectors */
   --fg: #1a1a18;
   --muted: #5f5f5a;
   --faint: #686862;
@@ -117,6 +119,7 @@
   --surface: #fdf6e3;
   --surface-2: #f0e9d2;
   --border: #ddd4bc;
+  --tree-line: #cfc6ab; --tree-link: #93a1a1;
   --fg: #37424a;
   --muted: #56676d;
   --faint: #55666b;

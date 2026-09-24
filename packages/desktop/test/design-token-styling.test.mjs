@@ -60,7 +60,11 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   assert.equal(u.style("#sidebar").minWidth, "264px");
   assert.equal(u.style("#sidebar").flexShrink, "0");
   assert.equal(u.rule(':root, [data-theme="dark"]').getPropertyValue("--bar-h"), "48px");
-  for (const selector of [".side-head", "#tabbar", ".group-tabbar"]) assert.equal(u.style(selector).height, "var(--bar-h)");
+  // Every bar is 48px including its 1px rule; the flat strip's inner row
+  // yields that rule to #tabstrip so the active tab keeps its bottom border.
+  for (const selector of [".side-head", "#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).height, "var(--bar-h)", selector);
+  for (const selector of ["#tabstrip", ".group-tabbar"]) assert.equal(u.style(selector).boxSizing, "border-box", selector);
+  assert.equal(u.style("#tabbar").height, "calc(var(--bar-h) - 1px)");
   assert.equal(u.style(".side-head").padding, "0px 10px 0px 12px");
   assert.equal(u.style("#ws-trigger").gap, "9px");
   assert.equal(u.style("#ws-trigger").height, "36px");
@@ -78,7 +82,7 @@ test("visual shell geometry: 264px sidebar, aligned 48px bars, 24px brand and 16
   assert.equal(u.style("#ws-context").fontSize, "10.5px");
 });
 
-test("nav/footer rhythm stays separate from the newer roomy auto-height roster", t => {
+test("nav/footer rhythm stays separate from the 50px roster rows", t => {
   const u = fixture(t);
   assert.equal(u.style("#nav").padding, "8px 8px 6px");
   assert.equal(u.style("#nav").gap, "1px");
@@ -91,11 +95,10 @@ test("nav/footer rhythm stays separate from the newer roomy auto-height roster",
   assert.equal(u.doc.querySelectorAll("#sidebar-tools .nav-item").length, 4);
   assert.equal(u.style("#sidebar-tools .nav-item").height, "26px");
   assert.equal(u.style("#sidebar-tools .nav-item").flexGrow, "1");
-  assert.equal(u.style(".ctx-tree-row").minHeight, "56px");
-  assert.equal(u.style(".ctx-tree-row").height, "auto");
-  assert.equal(u.style(".ctx-inst").minHeight, "48px");
+  assert.equal(u.style(".ctx-tree-row").minHeight, "50px");
+  assert.equal(u.style(".ctx-inst").minHeight, "50px");
   assert.equal(u.style(".ctx-inst").height, "auto");
-  assert.equal(u.style(".ctx-copy").gap, "4px");
+  assert.equal(u.style(".ctx-copy").gap, "3px");
   assert.equal(u.style(".ctx-list").overflowY, "auto");
 });
 
@@ -126,7 +129,7 @@ test("running indicators use accent, while success stays distinct", t => {
   assert.equal(u.rule(".palette-item .pdot.on").background, "var(--accent)");
   assert.equal(u.rule(".palette-item .pdot.on").borderColor, "var(--accent)");
   assert.equal(u.rule(".tab.active").boxShadow, "inset 0 2px 0 var(--accent)");
-  assert.equal(u.rule(".ctx-inst.active").background, "var(--sel)");
+  assert.equal(u.rule(".ctx-tree-row.active").background, "var(--sel)");
 });
 
 test("component geometry: rounded popovers, 36px fields and persistent scrollable groups", t => {
@@ -166,18 +169,16 @@ test("shell component paints use tokens, not raw colors or text transparency", (
 });
 
 
-test("coordinated shell inset applies equally to selected and unselected rows; split strokes are thinner only", t => {
+test("coordinated shell inset applies equally to selected and unselected rows; icons share one Lucide stroke", t => {
   const u = fixture(t);
   const row = u.get(".ctx-inst");
-  assert.equal(u.style(".ctx-inst").paddingLeft, "8px");
+  assert.equal(u.style(".ctx-inst").paddingLeft, "10px");
   row.classList.remove("active");
-  assert.equal(u.style(".ctx-inst").paddingLeft, "8px", "selection never shifts the content");
-  assert.equal(u.style(".ctx-inst").paddingTop, "4px");
-  assert.equal(u.style(".ctx-inst").paddingBottom, "4px");
-  assert.equal(u.style(".ctx-inst").paddingRight, "7px");
-  for (const svg of u.doc.querySelectorAll("#tab-actions .shell-icon")) assert.equal(svg.getAttribute("stroke-width"), "1.1");
+  assert.equal(u.style(".ctx-inst").paddingLeft, "10px", "selection never shifts the content");
+  assert.equal(u.style(".ctx-inst").paddingRight, "8px");
+  for (const svg of u.doc.querySelectorAll("#tab-actions .shell-icon")) assert.equal(svg.getAttribute("stroke-width"), "2");
   assert.equal(u.style("#tab-actions .shell-icon").width, "16px");
-  assert.equal(u.get("#nav .shell-icon").getAttribute("stroke-width"), "1.4", "navigation icons retain their supplied strokes");
+  assert.equal(u.get("#nav .shell-icon").getAttribute("stroke-width"), "2", "navigation uses the same Lucide stroke");
 });
 
 for (const palette of ["light", "solarized", "dark"]) test(`${palette}: nav ink reaches labels/icons without recoloring active or disabled states`, t => {
