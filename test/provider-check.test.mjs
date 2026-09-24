@@ -4,7 +4,8 @@
 // problems; the check executable must stay inside its module (realpath containment).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readinessDocument, runProviderCheck } from "../lib/instance-inspect.mjs";
@@ -122,5 +123,82 @@ test("the providers check has one total time budget; checks past it are unknown,
     assert.equal(item.problems[0].code, "time-budget-exhausted");
     assert.match(item.reason, /^time budget exhausted/);
     assert.equal(existsSync(marker), false, "the check was not run");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+// ---- the wire, pinned: providers build against it, so it must not move silently ----
+/** A provider module whose check records exactly what it received (stdin, env, cwd,
+ *  argv) into `record`, then answers a valid envelope echoing the request. */
+function recordingProvider(base, record, { sleepMs = 0 } = {}) {
+  const dir = join(base, "module"); mkdirSync(join(dir, "bin"), { recursive: true });
+  const manifest = { capability: "fx.provider", version: "1.0.0", layer: "messaging", commands: { "binding-check": "bin/check.mjs check --wire 1" }, binding: { version: 1, check: "binding-check" } };
+  writeFileSync(join(dir, "oats.json"), JSON.stringify(manifest));
+  writeFileSync(join(dir, "bin", "check.mjs"), `import { readFileSync, writeFileSync } from "node:fs";
+const stdin = readFileSync(0, "utf8");
+writeFileSync(${JSON.stringify(record)}, JSON.stringify({ stdin, env: process.env, cwd: process.cwd(), argv: process.argv.slice(2) }));
+${sleepMs ? `await new Promise((r) => setTimeout(r, ${sleepMs}));` : ""}
+const req = JSON.parse(stdin);
+process.stdout.write(JSON.stringify({ schemaVersion: req.schemaVersion, phase: req.phase, slot: req.slot, capability: req.capability, ok: true, result: { status: "ready", problems: [] } }) + "\\n");
+`);
+  return { dir, mod: { name: "fx.provider", from: null, manifest, dir } };
+}
+function wireTarget(base, { home = null, soulDir = null, team = "engineering" } = {}) {
+  return { kind: home ? "instance" : "soul", home, meta: home ? { instance: "rm-1", agent: "release-manager" } : null, deployment: base, agentsRoot: join(base, "agents"),
+    soul: { name: "release-manager", repoKey: "github.com/acme/agents", commit: "c".repeat(40), team, external: false, path: null, soulDir, definition: null, problems: [] },
+    workspace: { key: "github.com/acme/agents", name: "acme", deployment: base, commit: "c".repeat(40), standalone: false },
+    payloads: { "fx.provider": { team: "acme:eng", root: "/srv/aw" } }, slots: { knowledge: null, messaging: "fx.provider", tasks: null } };
+}
+const AMBIENT = { OATS_INSTANCE: "ambient-instance", OATS_SOUL: "/ambient/soul", OATS_ROOT: "/ambient/agents", OAS_HOME: "/ambient/oas", PI_AGENTS_ROOT: "/ambient/pi", PI_AGENT_HOME: "/ambient/home", OATS_PROVIDER_WIRE_KEEP: "no", PROVIDER_WIRE_AMBIENT: "kept" };
+function withAmbient(fn) {
+  const saved = Object.fromEntries(Object.keys(AMBIENT).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, AMBIENT);
+  try { return fn(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+}
+
+test("provider-check wire (pinned): the request on stdin, the environment, the cwd and the argv a provider receives", () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-provider-wire-")));
+  try {
+    const record = join(base, "record.json");
+    const { dir, mod } = recordingProvider(base, record);
+    const settings = { team: "acme:eng", root: "/srv/aw" };
+
+    // ---- an instance home subject ----
+    const home = join(base, "agents", "release-manager", "instances", "rm-1"), soulDir = join(base, "agents", "release-manager", "souls", "cccccccccccc");
+    const out = withAmbient(() => runProviderCheck(wireTarget(base, { home, soulDir }), mod, dir));
+    assert.deepEqual(out, { outcome: "result", result: { status: "ready", problems: [], warnings: [] } });
+    let seen = JSON.parse(readFileSync(record, "utf8"));
+    assert.deepEqual(JSON.parse(seen.stdin), {
+      schemaVersion: 1, phase: "check", slot: "messaging", capability: "fx.provider", settings,
+      input: { context: { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: "engineering", instance: "rm-1", home },
+        action: { kind: "readiness" } },
+    }, "the stdin request, exactly");
+    assert.equal(seen.cwd, dir, "cwd is the module directory");
+    assert.deepEqual(seen.argv, ["check", "--wire", "1"], "the manifest command's arguments, no shell");
+    const oats = Object.fromEntries(Object.entries(seen.env).filter(([k]) => /^(OATS_|OAS_|PI_)/.test(k)));
+    assert.deepEqual(oats, {
+      OATS_CAPABILITY: "fx.provider", OATS_SETTINGS: JSON.stringify(settings), OATS_CLI_BIN: join(fileURLToPath(new URL("..", import.meta.url)), "bin", "oats.mjs"), OATS_WORKSPACE: base,
+      OATS_TEAM_NAME: "", OATS_TEAM_ID: "acme:eng", OATS_TEAM_SCOPE: base, OATS_TEAM_LABEL: "engineering", OATS_WORKSPACE_NAME: "acme", OATS_WORKSPACE_KEY: "github.com/acme/agents",
+      OATS_INSTANCE: "rm-1", OATS_INSTANCE_HOME: home, OATS_AGENT: "release-manager", OATS_SOUL: soulDir,
+    }, "exactly these OATS_* variables; every ambient OATS_/OAS_/PI_ variable is stripped");
+    assert.equal(seen.env.PROVIDER_WIRE_AMBIENT, "kept", "an ambient non-OATS variable passes through (as for the broker)");
+
+    // ---- a soul subject: no instance/home, no soul directory known, team null ----
+    rmSync(record);
+    withAmbient(() => runProviderCheck(wireTarget(base, { team: null }), mod, dir));
+    seen = JSON.parse(readFileSync(record, "utf8"));
+    assert.deepEqual(JSON.parse(seen.stdin).input.context, { kind: "workspace", workspace: "github.com/acme/agents", deployment: base, soul: "release-manager", team: null, instance: null, home: null });
+    for (const k of ["OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_SOUL", "OATS_ROOT", "OAS_HOME", "PI_AGENTS_ROOT", "PI_AGENT_HOME", "OATS_PROVIDER_WIRE_KEEP"]) assert.equal(seen.env[k], undefined, `${k} is not passed for a soul subject`);
+    assert.equal(seen.env.OATS_AGENT, "release-manager"); assert.equal(seen.env.OATS_TEAM_LABEL, "");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("provider-check wire (pinned): a check past its timeout is killed and reads unknown", () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "oats-provider-wire-")));
+  try {
+    const { dir, mod } = recordingProvider(base, join(base, "record.json"), { sleepMs: 20_000 });
+    const t0 = Date.now();
+    const out = runProviderCheck(wireTarget(base), mod, dir, { timeoutMs: 400 });
+    assert.ok(Date.now() - t0 < 10_000, "the stub was killed, not waited for");
+    assert.deepEqual(out, { outcome: "unknown", problems: [{ code: "provider-unavailable", message: "fx.provider check did not complete in time" }] });
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

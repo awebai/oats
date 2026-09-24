@@ -4106,14 +4106,18 @@ Usage:
   oats instance stop <instance> --apply --plan-revision <rev> --idempotency-key <key>
                                              quiesce (SIGTERM, bounded, never escalated),
                                              children first; home/work/launch retained
-  oats readiness [--soul <n> [--agents-root <abs>]] [--home <abs>] [--verify-signatures] [--policy] [--json]
-                                             quartet installed|trusted|configured|enrolled for a scope,
-                                             a soul, or an instance home (captured homes refuse:
-                                             their readiness is the retained resolution's)
-                                             installed | trusted | configured | enrolled, each
+  oats readiness (--soul <n> | --home <abs>) [--policy] [--json]
+                                             readinessApi 2 for a soul or an instance home:
+                                             installed | configured | member | providers, each
                                              pass|fail|unknown|not-applicable with items and
-                                             remedies; signature status per artifact; enforced
-                                             child-spawn / worktree policy with origins
+                                             remedies; providers relays each bound provider's
+                                             own check ({status, problems, warnings});
+                                             --policy: enforced child-spawn / worktree policy
+                                             with origins (captured homes refuse: their
+                                             readiness is the retained resolution's)
+  oats readiness [--soul <n>] [--verify-signatures] [--policy] [--json]
+                                             (classic scope, until removed) readinessApi 1:
+                                             installed | trusted | configured | enrolled
   oats retire <instance> --plan [--json]     what Remove would touch, with retention defaults
   oats retire <instance> [--plan-revision <rev> --idempotency-key <key>] [--discard-worktree] [--delete-branch]
                                              with a plan revision: refuses E_PLAN_STALE (fresh plan

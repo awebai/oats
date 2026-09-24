@@ -359,3 +359,94 @@ A manifest may declare `operations` (named actions or views delegating to
 its own commands) that a GUI or a schedule invokes through `oats operation
 run <layer>:<name>`; `oats inspect --json` reports them with availability.
 See [docs/design/operations-contract.md](design/operations-contract.md).
+
+## Readiness check (`binding.check`)
+
+A slot provider (knowledge, messaging, tasks) that declares `binding` in its
+manifest is asked by `oats readiness` whether it is ready for the subject. The
+subject is an instance home (`--home`) or a soul (`--soul`). The command named
+by `binding.check` receives one request and answers once. The kernel relays
+that answer to consumers as it came: readiness `providers` items. For the
+consumer side, see [desktop-cli-api.md](desktop-cli-api.md#oats-readiness---home---soul---dir---policy---json-readinessapi-2).
+This check reads configuration only; it binds nothing and does not change a
+spawn's fail-closed hooks.
+
+```json
+"commands": { "binding-check": "bin/my-provider.mjs binding-check" },
+"binding": { "version": 1, "normalize": "binding-normalize", "bind": "binding-bind", "check": "binding-check" }
+```
+
+**Invocation.** The kernel runs the command's script with `node`, from the
+module directory. That is the home's module copy for `--home`, or the
+deployment's verified module store for `--soul`. The script must resolve inside
+the module and be a regular file. The command's words after the script are
+passed as arguments; no shell is involved.
+
+**Request** — one JSON document on stdin. There is no captured `binding`:
+
+```json
+{"schemaVersion":1,"phase":"check","slot":"messaging","capability":"my.provider",
+ "settings":{"team":"acme:eng","root":"/srv/aw"},
+ "input":{"context":{"kind":"workspace","workspace":"github.com/acme/agents","deployment":"/srv/acme",
+                     "soul":"release-manager","team":"engineering","instance":"release-manager-1",
+                     "home":"/srv/acme/agents/release-manager/instances/release-manager-1"},
+          "action":{"kind":"readiness"}}}
+```
+
+- `slot` is the manifest's `layer`.
+- `settings` is the merged provider payload: the one the spawn recorded for a
+  home, or the one the resolution computes for a soul.
+- `context.team` is the soul's team label, or `null`.
+- `instance` and `home` are `null` for a soul subject.
+
+**Environment:**
+- Every ambient `OATS_*`, `OAS_*` and `PI_*` variable is removed. Other
+  variables pass through, as for the captured-path broker.
+- The kernel sets:
+  - `OATS_CAPABILITY` and `OATS_SETTINGS` (the payload as JSON);
+  - `OATS_CLI_BIN`;
+  - `OATS_WORKSPACE` (the deployment);
+  - the team variables `OATS_TEAM_ID` (the messaging payload's `team`),
+    `OATS_TEAM_SCOPE`, `OATS_TEAM_LABEL`, `OATS_TEAM_NAME`,
+    `OATS_WORKSPACE_NAME` and `OATS_WORKSPACE_KEY`;
+  - `OATS_AGENT` (the soul);
+  - `OATS_SOUL` when the soul directory is known;
+  - for a home, `OATS_INSTANCE` and `OATS_INSTANCE_HOME`.
+- A home's `OATS_WORKSPACE_NAME` is `""` until spawn records the workspace
+  name.
+
+**Answer** — exit 0, and exactly one JSON document on stdout (whitespace
+around it is fine; progress text is not):
+
+```json
+{"schemaVersion":1,"phase":"check","slot":"messaging","capability":"my.provider","ok":true,
+ "result":{"status":"ready","problems":[],"warnings":[{"code":"e2ee-disabled","message":"end-to-end encryption is off for this team"}]}}
+```
+
+- **The envelope** has exactly these keys. `schemaVersion`, `phase`, `slot`
+  and `capability` echo the request.
+- **A refusal** is `{…, "ok": false, "error": {"code", "message"?}}`.
+  Readiness shows it as `unknown`, with your code.
+- **`status`** is one of four values, and maps to the readiness item as
+  follows:
+
+  | `status` | readiness item | use it when |
+  |---|---|---|
+  | `ready` | `pass` | nothing is missing; `problems` must be `[]` |
+  | `needs-configuration` | `fail` | a setting or host resource is missing |
+  | `authorization-required` | `fail` | the operator must log in or grant access |
+  | `unavailable` | `unknown` | you cannot tell right now (a service is down) |
+
+- **`problems`** is a list of `{code, message}` strings. The codes are yours;
+  they are not matched against `binding.reasons`. The first message becomes
+  the item's reason.
+- **`warnings`** is optional: `{code, message}` strings, relayed as they come.
+  A warning never changes the status or the readiness summary.
+- **Anything else is `unknown`** (`provider-unavailable`): a nonzero exit, two
+  documents, unknown keys, a wrong echo, or `ready` with problems.
+
+**Time.** Each check gets at most 30 s and is killed after that. All provider
+checks in one readiness read share 60 s, and checks the budget does not reach
+are not run (`unknown`, `time-budget-exhausted`). Answer from configuration
+and local state. A provider that must call a remote service should bound that
+call well inside the 30 s.
