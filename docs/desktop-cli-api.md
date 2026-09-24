@@ -162,7 +162,7 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
   "providers":{"status":"fail","items":[
     {"subject":"oats.okf","status":"fail","required":true,"reason":"setting state-dir is required (absolute host path)","producer":"provider binding check",
      "evidence":null,"remedy":null,"capability":{"id":"oats.okf"},
-     "result":{"status":"needs-configuration","problems":[{"code":"needs-configuration","message":"setting state-dir is required (absolute host path)"}]}}]}},
+     "result":{"status":"needs-configuration","problems":[{"code":"needs-configuration","message":"setting state-dir is required (absolute host path)"}],"warnings":[]}}]}},
  "summary":{"ready":false,"required":3,"pass":2,"fail":1,"unknown":0,
    "byCapability":[{"capability":{"id":"oats.okf"},"checks":{"installed":"pass","configured":"not-applicable","member":"not-applicable","providers":"fail"},"ownReady":false,"ready":false}],
    "subjectBlockers":[]},
@@ -216,8 +216,14 @@ not-applicable, and at least one required item exists. `byCapability` and
   manifest declares `binding`, the kernel runs the provider's own check
   (`binding.check`). It relays **the provider's answer verbatim** as
   `item.result: {status: "ready" | "needs-configuration", problems: [{code,
-  message}]}`. `ready` maps to `pass`; `needs-configuration` maps to `fail`
-  (reason = the first problem's message).
+  message}], warnings: [{code, message}]}`. `ready` maps to `pass`;
+  `needs-configuration` maps to `fail` (reason = the first problem's message).
+  - `warnings` is always present (`[]` when the provider sends none). It
+    **never changes the status** and is not counted in `summary`. A ready
+    binding can still say, for example, that end-to-end encryption is off:
+    show it next to the pass. A `warnings` that is not an array of `{code,
+    message}` strings makes the whole answer `unknown`, the same as a
+    malformed `problems`.
   - A provider that cannot answer is `unknown`, with `item.problems` carrying
     its error `{code, message}` and `result: null`. That covers a refusal
     (`ok:false`, whose code is relayed), an invalid answer, a timeout (30 s),
@@ -256,7 +262,7 @@ on stdout:
 
 ```json
 {"schemaVersion":1,"phase":"check","slot":"knowledge","capability":"oats.okf","ok":true,
- "result":{"status":"ready","problems":[]}}
+ "result":{"status":"ready","problems":[],"warnings":[]}}
 ```
 
 The environment is the provider's module environment:
@@ -266,7 +272,10 @@ The environment is the provider's module environment:
   `OATS_SOUL`.
 
 Ambient `OATS_*`/`PI_*` is removed. For a soul, `instance` and `home` are
-`null`. The request carries no captured `binding`. A provider whose check
+`null`. `result.warnings` is optional in the answer. The check executable must
+resolve (realpath) inside its module directory and be a regular file; otherwise
+the item is `unknown` (`resource-not-found`). The request carries no captured
+`binding`. A provider whose check
 still requires one answers `invalid-binding`, and readiness reports it as
 `unknown`.
 
