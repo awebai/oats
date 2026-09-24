@@ -147,8 +147,8 @@ and `resources`, plus recorded provenance, exact revisions and declaration
 problems. Null provenance is **Unrecorded**, not Local. Explicit null declarations
 are **Not declared** only with clean declaration diagnostics; unreadable/missing
 facts remain **Not reported**. Requirements retain independent installation,
-executable approval, activation and version observations from the same CLI
-payload. **Sources installed is not Ready**, launchability, adoption, enrolment
+activation and version observations from the same CLI payload (there is no
+package approval to show). **Sources installed is not Ready**, launchability, adoption, enrolment
 or a verified signature. Existing launch and editable-field gates are unchanged;
 this does not add a declarations editor or widen file access.
 
@@ -172,7 +172,7 @@ workspace is observed through its server and never synced from here.
   `{action:"read"}` when the tab opens (and after a sync, or Refresh). The
   design table: *Capability* (name; `Member · <repo> · <team>` /
   `Package · <id> v<version>` / `External · <origin>`), *Status* (package:
-  locked + approved/approval needed; member: confirmed; the commit; "N instances
+  locked; member: confirmed; the commit; "N instances
   behind" only from the roster's own `moved` module rows) and *Used by* (souls
   whose instances record the module). No Members list here. **Team** and
   **Source** pill groups filter locally (AND); pills name only what the rows
@@ -180,20 +180,20 @@ workspace is observed through its server and never synced from here.
   member's `publishes` never absorbs its package's capabilities).
 - **Sources** renders the roster observation's `oats workspace status`:
   repositories (team, confirmation status + the kernel's detail), packages
-  (lock, approval, capabilities) and external souls. No extra read.
+  (lock, capabilities) and external souls. No extra read.
 - **Notes** keep the F1 guards visible: an unreachable workspace (module drift
   not current), withheld instance rows, unsynced/stale declarations and
   workspace problems, each in the kernel's own terms.
-- **Sync** (header) runs `oats sync --json`; exit 2 with ok:true is "lock
-  written, approvals pending" and opens the approval sheet. Each row shows id,
-  version, commit, the full `executables` digest and `targets`; nothing is
-  selected by default. Approve sends `{action:"approve", approvals:[{id,
-  version, executables}]}`; the server admits it only when every row EXACTLY
-  matches the latest sync report it holds for that deployment and CLI, then runs
-  `oats sync --approve <id>@<version>…` (the version verbatim). Otherwise
-  `E_APPROVAL_STALE`. One mutation per deployment (`E_SYNC_BUSY`). Refusals —
-  `E_PACKAGE_INTEGRITY`, lock drift, `E_BAD_ARGS` — are shown as code: message,
-  verbatim. The roster refreshes after a sync.
+- **Sync** (header) runs `oats sync --json`: it resolves every `packages:`
+  entry, fetches it and writes the lock. There is **no package approval** —
+  declaring a package is the trust decision (kernel feature
+  `packages-no-approval`; a kernel without it gets the "update OATS"
+  state, never a half-working view). The header says *Lock current* or *Lock
+  out of date* (from `oats workspace status`). A sync that did not finish
+  (`E_PACKAGE_INTEGRITY`, lock drift, an unreadable remote…) or that reports
+  problems opens a sheet with one plain sentence; the kernel's code and
+  message stay behind Details. One sync per deployment (`E_SYNC_BUSY`). The
+  roster refreshes after a sync.
 - **Onboarding** (Add workspace → Browse…): a picked folder without
   `oats-local.yaml` gets a single-use offer bound to its canonical path; the
   operator types the workspace repository and main runs `oats onboard <dir>

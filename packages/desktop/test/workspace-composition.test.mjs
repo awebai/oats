@@ -16,9 +16,9 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const CLI = { ok: true, operationsApi: 1, features: ['operations'], relations: true };
 const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
 const V2_CLI = { ...CLI, bin: '/fixture/bin/oats', workspaceApi: 2, features: ['operations', 'workspace-v2'] };
-const observedStatus = workspaceStatusData(f2('workspace-status-approved'), '/fixture/base/northwind-workspace');
-const catalogReply = (capabilities = f2('capabilities-approved').result.capabilities) => ({ workspaceSyncApi: 1, status: 'ok',
-  capabilities: { capabilitiesApi: 1, ...f2('capabilities-approved').result, capabilities } });
+const observedStatus = workspaceStatusData(f2('workspace-status'), '/fixture/base/northwind-workspace');
+const catalogReply = (capabilities = f2('capabilities').result.capabilities) => ({ workspaceSyncApi: 1, status: 'ok',
+  capabilities: { capabilitiesApi: 1, ...f2('capabilities').result, capabilities } });
 const soul = { name: 'dev', agentsRoot: '/fixture/agents', repoName: 'fixture', runtime: 'pi', work: 'worktree', description: 'Build and review' };
 const inspection = { operationsApi: 1, selected: { source: 'config' }, scope: { context: '/fixture' },
   souls: [{ ...soul, editable: { fields: ['model'], instructions: true }, instructions: { text: 'Saved instructions' } }], layers: {},

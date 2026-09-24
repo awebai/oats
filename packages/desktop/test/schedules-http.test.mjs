@@ -17,7 +17,7 @@ test("real HTTP schedule endpoint requires an explicit mutation workspace and ke
 import {appendFileSync,readFileSync} from 'node:fs';
 const a=process.argv.slice(2);appendFileSync(${JSON.stringify(log)},JSON.stringify(a)+'\\n');
 const result=a[0]==='schedule'?{schedules:[],scheduler:{installed:false,active:false},operation:a[1]}:a[0]==='server'?{groups:[]}:{};
-console.log(JSON.stringify(a[0]==='version'?{schemaVersion:1,name:'@awebai/oats',version:'0.22.10',desktopApi:1,scheduleApi:1,features:['schedule'],remote:['schedule','roster']}:{schemaVersion:1,ok:true,result}));
+console.log(JSON.stringify(a[0]==='version'?{schemaVersion:1,name:'@awebai/oats',version:'0.25.8',desktopApi:1,scheduleApi:1,features:['schedule'],remote:['schedule','roster']}:{schemaVersion:1,ok:true,result}));
 `, { mode: 0o700 });
   // The extensionless fixture is explicitly ESM regardless of the temp path.
   writeFileSync(join(temp, "package.json"), '{"type":"module"}');

@@ -122,7 +122,7 @@ test('public reprojection prevents foreign workspace/scope/draft, errors are sta
 test('locator/public CLI status retain only exact integer History3', async () => {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8').match(/function cliStatus\(\) \{[^]*?\n\}/)[0];
   for (const scheduleHistoryApi of [undefined, 1, 2, '3', true, 4, 3]) {
-    const found = await discover({ persisted: () => cli.bin, env: {}, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({ schemaVersion: 1, name: '@awebai/oats', version: '0.24.12', desktopApi: 1, features: ['schedule-read-2'], scheduleHistoryApi }) }));
+    const found = await discover({ persisted: () => cli.bin, env: {}, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({ schemaVersion: 1, name: '@awebai/oats', version: '0.25.8', desktopApi: 1, features: ['schedule-read-2'], scheduleHistoryApi }) }));
     assert.equal(found.scheduleHistoryApi, scheduleHistoryApi === 3 ? 3 : undefined);
     const status = new Function('cliState', 'locator', 'MANIFEST', `return (${source})();`)({ scheduleHistoryApi }, { supportsRelations: () => false, RELATIONS_MIN: [] }, { version: 'fixture' }); assert.equal(status.scheduleHistoryApi, scheduleHistoryApi === 3 ? 3 : null);
   }

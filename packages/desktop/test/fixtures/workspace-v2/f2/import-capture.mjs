@@ -1,4 +1,4 @@
-// Import the F2 kernel capture (repo kernel, Northwind scratch, capture-f2.mjs
+// Import the F2 kernel capture (main's kernel with packages-no-approval, Northwind scratch, capture-f2b.mjs
 // + provenance.json alongside it). NEVER runs a CLI, runtime or native probe.
 // <base>/<oats> placeholders become absolute fixture paths so projections'
 // absolute-path contracts apply unchanged. Refusal documents keep their exit.
@@ -10,10 +10,11 @@ import { createHash } from 'node:crypto';
 const [source] = process.argv.slice(2);
 if (typeof source !== 'string' || !source.startsWith('/')) throw new Error('One explicit absolute capture directory required');
 const target = fileURLToPath(new URL('.', import.meta.url));
-const documents = ['onboard-pending', 'onboard-bad-ref', 'onboard-unreadable', 'onboard-again',
-  'sync-pending', 'sync-approve-wrong-version', 'sync-approve-partial', 'sync-approved', 'sync-current', 'sync-moved', 'sync-integrity',
-  'capabilities-pending', 'capabilities-approved', 'capabilities-moved',
-  'workspace-status-pending', 'workspace-status-approved', 'status', 'version'];
+// No approval documents: declaring a package is the trust decision (packages-no-approval).
+const documents = ['onboard', 'onboard-bad-ref', 'onboard-unreadable', 'onboard-again',
+  'sync-current', 'sync-moved', 'sync-integrity',
+  'capabilities', 'capabilities-moved',
+  'workspace-status', 'status', 'version'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
 const provenance = { source: `${captured.capturedBy}; ${captured.fixture}; ${captured.script}`, kernel: captured.kernel,

@@ -6,7 +6,7 @@
     "workspace": {
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "21711544f702fa3696523dab62f2744ce65f07f5"
+      "commit": "fb5b11f83b7b60fc740433428cbd00d606c83d80"
     },
     "capabilities": [
       {
@@ -15,17 +15,16 @@
         "kind": "package",
         "package": "nw.tools",
         "version": "0.4.0",
-        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "commit": "8ecaae496cb9d4ee0119fee04eac9d35a1918f6f",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       },
       {
         "name": "nw-house-style",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 21711544",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ fb5b11f8",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "21711544f702fa3696523dab62f2744ce65f07f5",
+        "commit": "fb5b11f83b7b60fc740433428cbd00d606c83d80",
         "team": "global",
         "private": false,
         "path": "capabilities/nw-house-style",
@@ -38,17 +37,16 @@
         "kind": "package",
         "package": "nw.tools",
         "version": "0.4.0",
-        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "commit": "8ecaae496cb9d4ee0119fee04eac9d35a1918f6f",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 21711544",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ fb5b11f8",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "21711544f702fa3696523dab62f2744ce65f07f5",
+        "commit": "fb5b11f83b7b60fc740433428cbd00d606c83d80",
         "team": "engineering",
         "private": false,
         "path": "capabilities/nw-release-tooling",
@@ -57,10 +55,10 @@
       },
       {
         "name": "nw-tools-dev",
-        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ e8e0c7ef",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 8ecaae49",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
-        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "commit": "8ecaae496cb9d4ee0119fee04eac9d35a1918f6f",
         "team": "engineering",
         "private": false,
         "path": "capabilities/nw-tools-dev",
@@ -69,10 +67,10 @@
       },
       {
         "name": "nw-warehouse-access",
-        "origin": "member local//fixture/base/fx/remotes/data.git @ d75d300b",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ 071fcd98",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/data.git",
-        "commit": "d75d300b62f1af8dce764d231e466ee4896e2eda",
+        "commit": "071fcd981c09fa7e1437e2674bcd10b09168c013",
         "team": "engineering",
         "private": false,
         "path": "capabilities/nw-warehouse-access",
@@ -87,8 +85,7 @@
         "version": "1.1.3",
         "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       },
       {
         "name": "oats.okf",
@@ -96,10 +93,9 @@
         "kind": "package",
         "package": "oats.okf",
         "version": "2.1.3",
-        "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+        "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       }
     ],
     "problems": []

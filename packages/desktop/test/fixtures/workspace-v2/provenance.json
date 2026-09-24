@@ -1,11 +1,11 @@
 {
-  "source": "maintainer (lead) for the Desktop F1 gate; test/fixtures/northwind/build.mjs",
-  "kernel": "0.25.6",
+  "source": "oats-desktop-engineer: F1 reference recaptured on main (packages-no-approval), adapted from the maintainer F1 gate capture; test/fixtures/northwind/build.mjs",
+  "kernel": "0.25.9",
   "redactions": [
     "<base> (capture tmpdir) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
   ],
-  "note": "Replaces the earlier exit-86 study capture. Shape diff against it: the study instance also carried instance.json passthrough keys (decision, layers, spawnCompleted, spawnIdempotencyKey, team, wake) from an idempotent spawn; the Desktop reads none of them. No field the Desktop reads differed.",
+  "note": "Recaptured on main after package approval was removed (e62b8f16): sync exits 0 with nothing pending; module reasons read \"declared workspace package\".",
   "files": {
     "version": {
       "document": "version",
@@ -15,12 +15,12 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.6",
-      "sourceSha256": "48d5c35ecb4de7486d2676847c0e7fd5c0f3415d428807672c727be651cab2aa",
-      "fixtureSha256": "1b30d272faf5921537a68d0fff960487d868e5ce8445b699cd6e209c92e532bf"
+      "kernel": "0.25.9",
+      "sourceSha256": "0bd83f9d671e6f21fee1d4caaab08114bda91be024a64838a6232cfd6816a93c",
+      "fixtureSha256": "717ad377e020a309fd99cb37b6c031c548f8cbbce95466e6d4e39292173bbb45"
     },
     "workspace-status": {
-      "document": "workspace-status-approved",
+      "document": "workspace-status",
       "argv": [
         "oats",
         "workspace",
@@ -30,9 +30,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.6",
-      "sourceSha256": "dee487ea8065240975ed1d4853e85948e05029dd9d73358c83a7dfe79b37da45",
-      "fixtureSha256": "dc3a1f2ebb7335e2d6ecbd70c4314f10b52f96a81e3518a373964108dfcb2263"
+      "kernel": "0.25.9",
+      "sourceSha256": "060560bc3e2c538e48cd79a0d7d1cb708dfe6831952352e2de915d49c75b36b1",
+      "fixtureSha256": "0319baf5304d3930f7be0f6db4935ee9b3c02eb05f8904821c0d8eb721ed478e"
     },
     "status": {
       "document": "status",
@@ -44,9 +44,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.6",
-      "sourceSha256": "0f8724708271c5b1162b5e59dcb9932e45caf96caaf874387e0c3ab3566865b5",
-      "fixtureSha256": "e9ec3255320aa631119d9a51f431bea70444f40149db1c9de7770ab5f51ed3f3"
+      "kernel": "0.25.9",
+      "sourceSha256": "57bab389d283519b54c6420293437d45bd9700ddef8f306d8b1e35b2518f7bc9",
+      "fixtureSha256": "1a8778be1917a00e950be8364f4f376b6cb8689fee9bc8cfbdca5ef86550a3f3"
     },
     "status-identities": {
       "document": "status-identities",
@@ -58,9 +58,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.6",
-      "sourceSha256": "0b6a836b6813b161051f6b35bcff1d9bb18d4e2bcba62a0a2000ad6465d09a32",
-      "fixtureSha256": "2833436f38ab34da29fa97405faf37cdde55d5a088a5c2281f1938da972d4a56"
+      "kernel": "0.25.9",
+      "sourceSha256": "e00f403a4c3de9ac177a40cd7f6a58e14fa370412e83815f75500e9f2b1cc5e6",
+      "fixtureSha256": "508c29cd6a630946f11319d3f634a5f4638e11ad015bfefd84a1a1d0d5c46771"
     }
   }
 }

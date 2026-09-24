@@ -16,7 +16,7 @@
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
- *   POST /api/workspace-sync?ws=<id> { action: read|sync|approve } → `oats capabilities` / `oats sync [--approve]` (workspace-v2)
+ *   POST /api/workspace-sync?ws=<id> { action: read|sync } → `oats capabilities` / `oats sync` (workspace-v2)
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
@@ -1192,14 +1192,14 @@ const server = createServer(async (req, res) => {
       }
     }
     if (path === "/api/workspace-sync" && req.method === "POST") {
-      // Workspace model v2: catalog read, sync and bound approvals through the
-      // installed kernel (server/workspace-sync.mjs). One local deployment.
+      // Workspace model v2: catalog read and sync through the installed kernel
+      // (server/workspace-sync.mjs). One local deployment.
       try {
         if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(k => k !== "ws")) throw new Error("bad query");
         const request = await readStrictBody(req, 16384);
         const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
         const result = await workspaceSyncRequest(request, { workspace, cli: cliState });
-        if (request?.action !== "read" && ["ok", "pending"].includes(result.status)) {
+        if (request?.action === "sync" && result.status === "ok") {
           try { refreshSnapshot(); } catch { /* a refresh must not erase the sync report */ }
         }
         return send(res, 200, result);

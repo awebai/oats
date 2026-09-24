@@ -166,7 +166,6 @@ export function renderCapabilities(host, { rows, status, instances, root, total 
     const use = capabilityUse(instances, row.name);
     if (row.kind === 'package') {
       readiness.append(chip(doc, 'locked', 'ok', 'check'));
-      readiness.append(row.approved === true ? chip(doc, 'approved', 'ok', 'check') : chip(doc, 'approval needed', 'warn', 'warning'));
     } else if (row.kind === 'member') {
       readiness.append(chip(doc, 'member confirmed', 'ok', 'check'));
     } else readiness.append(chip(doc, 'external', ''));
@@ -198,7 +197,7 @@ export function deploymentNotes(deployment) {
   if (withheld.length) lines.push({ text: `${withheld.length} instance ${withheld.length === 1 ? 'row was' : 'rows were'} withheld: the kernel reported a home outside the soul's instances directory or a duplicate home (${withheld.map(w => w.instance).join(', ')}).`, warn: true });
   return [...lines, ...lockNotes(deployment?.workspaceStatus)];
 }
-/** Lock/approval lines in the kernel's own terms (workspace status). */
+/** Lock lines in the kernel's own terms (workspace status). */
 export function lockNotes(status) {
   const lines = [];
   if (list(status?.unsynced).length) lines.push({ text: `Declared but not locked: ${status.unsynced.join(', ')}. Sync to lock them.`, warn: true });
@@ -236,7 +235,7 @@ export function renderSources(host, { status }) {
     const who = node(doc, 'div', null, 'catalog-copy');
     who.append(node(doc, 'span', `${pkg.id}${pkg.version ? ` v${pkg.version}` : ''}`, 'catalog-name'), node(doc, 'span', [pkg.source, short(pkg.commit)].filter(text).join(' @ '), 'sources-key'));
     const facts = node(doc, 'div', null, 'catalog-chips');
-    facts.append(chip(doc, 'locked', 'ok', 'check'), pkg.approved ? chip(doc, 'approved', 'ok', 'check') : chip(doc, 'approval needed', 'warn', 'warning'));
+    facts.append(chip(doc, 'locked', 'ok', 'check'));
     const offers = node(doc, 'div', null, 'catalog-chips');
     for (const cap of list(pkg.capabilities)) offers.append(chip(doc, cap));
     row.append(who, facts, offers);

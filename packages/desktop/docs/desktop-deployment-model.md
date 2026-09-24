@@ -18,9 +18,9 @@ bound (`deployment-read-cli.mjs`):
   provider reported one.
 - `oats workspace status --dir D --json` — the workspace header: a
   `schemaVersion: 1` envelope with `workspaceStatusApi: 1`: workspace name,
-  key and commit, members, packages, `unsynced`/`stale`, and
-  `approval: {approved, needed}` package-ID arrays. Sync's detailed
-  `approvalNeeded[]` rows belong to the sync/approval surface.
+  key and commit, members, packages and `unsynced`/`stale`. There is no
+  package approval (kernel feature `packages-no-approval`): declaring a
+  package in `packages:` is the trust decision.
 
 A nonzero exit is never success, even with plausible stdout. A kernel refusal
 keeps only its bounded `code`/`message`. Ambient instance/deployment selectors
@@ -30,10 +30,12 @@ the child environment.
 ## Capability gates
 
 Reads are gated on the accepted probe (`oats version --json`), never on a
-version number: `workspaceApi === 2` and `workspace-v2` for the header, plus
-`instance-modules` and `served-identity` for the roster. A missing feature is
+version number: `workspaceApi === 2`, `workspace-v2` and
+`packages-no-approval` for the header, plus `instance-modules` and
+`served-identity` for the roster. A missing feature is
 shown by name in the header and roster; nothing is invoked optimistically.
-`ACCEPT_RANGE` is unchanged; the release owns its widening.
+`ACCEPT_RANGE` is `>=0.25.8 <0.27.0`: the floor admits main's kernel before
+0.26.0 is tagged, and the `packages-no-approval` fence is the real gate.
 
 ## Projection and ownership
 

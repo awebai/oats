@@ -6,15 +6,15 @@
     "workspace": {
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "21711544f702fa3696523dab62f2744ce65f07f5"
+      "commit": "fb5b11f83b7b60fc740433428cbd00d606c83d80"
     },
     "capabilities": [
       {
         "name": "nw-brand-voice",
-        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 25da6a17",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 27493c4f",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-        "commit": "25da6a17e44d7c575dd39a976bd799259bdbd386",
+        "commit": "27493c4fb19165c091e218b3852e9b4ef65e8f28",
         "team": "marketing",
         "private": false,
         "path": "capabilities/nw-brand-voice",
@@ -23,10 +23,10 @@
       },
       {
         "name": "nw-campaign-metrics",
-        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 25da6a17",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ 27493c4f",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/marketing.git",
-        "commit": "25da6a17e44d7c575dd39a976bd799259bdbd386",
+        "commit": "27493c4fb19165c091e218b3852e9b4ef65e8f28",
         "team": "marketing",
         "private": false,
         "path": "capabilities/nw-campaign-metrics",
@@ -39,17 +39,16 @@
         "kind": "package",
         "package": "nw.tools",
         "version": "0.4.0",
-        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "commit": "8ecaae496cb9d4ee0119fee04eac9d35a1918f6f",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       },
       {
         "name": "nw-house-style",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 21711544",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ fb5b11f8",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "21711544f702fa3696523dab62f2744ce65f07f5",
+        "commit": "fb5b11f83b7b60fc740433428cbd00d606c83d80",
         "team": "global",
         "private": false,
         "path": "capabilities/nw-house-style",
@@ -62,17 +61,16 @@
         "kind": "package",
         "package": "nw.tools",
         "version": "0.4.0",
-        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "commit": "8ecaae496cb9d4ee0119fee04eac9d35a1918f6f",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member local//fixture/base/fx/remotes/agents.git @ 21711544",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ fb5b11f8",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "21711544f702fa3696523dab62f2744ce65f07f5",
+        "commit": "fb5b11f83b7b60fc740433428cbd00d606c83d80",
         "team": "engineering",
         "private": false,
         "path": "capabilities/nw-release-tooling",
@@ -81,10 +79,10 @@
       },
       {
         "name": "nw-tools-dev",
-        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ e8e0c7ef",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 8ecaae49",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
-        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "commit": "8ecaae496cb9d4ee0119fee04eac9d35a1918f6f",
         "team": "engineering",
         "private": false,
         "path": "capabilities/nw-tools-dev",
@@ -93,10 +91,10 @@
       },
       {
         "name": "nw-warehouse-access",
-        "origin": "member local//fixture/base/fx/remotes/data.git @ 98b32274",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ 9a532aa0",
         "kind": "member",
         "repoKey": "local//fixture/base/fx/remotes/data.git",
-        "commit": "98b3227436fa92af43918ac64132e35f13290741",
+        "commit": "9a532aa02ebb34fdd7b824b417a180a64968057c",
         "team": "engineering",
         "private": false,
         "path": "capabilities/nw-warehouse-access",
@@ -111,8 +109,7 @@
         "version": "1.1.3",
         "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       },
       {
         "name": "oats.okf",
@@ -120,10 +117,9 @@
         "kind": "package",
         "package": "oats.okf",
         "version": "2.1.3",
-        "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+        "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
         "team": "unassigned",
-        "private": false,
-        "approved": true
+        "private": false
       }
     ],
     "problems": []

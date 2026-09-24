@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "@awebai/oats",
-  "version": "0.25.6",
+  "version": "0.25.9",
   "desktopApi": 1,
   "runtimes": [
     "pi",
@@ -57,7 +57,8 @@
     "workspace-v2",
     "instance-modules",
     "spawn-provider-payload",
-    "served-identity"
+    "served-identity",
+    "packages-no-approval"
   ],
   "workspaceApi": 2,
   "instanceGitApi": 1,

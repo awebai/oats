@@ -1,5 +1,6 @@
-// Import the maintainer's exit-0 reference capture (0.25.6 kernel, Northwind,
-// capture.mjs + provenance.json alongside it). NEVER runs a CLI, runtime or
+// Import the F1 exit-0 reference capture (main's kernel with packages-no-approval,
+// Northwind, capture-f1-main.mjs — the maintainer's F1 capture without the
+// removed approval steps — + provenance.json alongside it). NEVER runs a CLI, runtime or
 // native probe. The capture's <base>/<oats> placeholders become absolute
 // fixture paths so the projection's absolute-path contract applies unchanged.
 // Usage: node import-reference.mjs CAPTURE_DIR
@@ -11,12 +12,12 @@ const [source] = process.argv.slice(2);
 if (typeof source !== 'string' || !source.startsWith('/')) throw new Error('One explicit absolute capture directory required');
 const target = fileURLToPath(new URL('.', import.meta.url));
 // fixture name → capture document name
-const files = { version: 'version', 'workspace-status': 'workspace-status-approved', status: 'status', 'status-identities': 'status-identities' };
+const files = { version: 'version', 'workspace-status': 'workspace-status', status: 'status', 'status-identities': 'status-identities' };
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
 const provenance = { source: `${captured.capturedBy}; ${captured.fixture}`, kernel: captured.kernel,
   redactions: ['<base> (capture tmpdir) → /fixture/base', '<oats> (checkout) → /fixture/oats'],
-  note: 'Replaces the earlier exit-86 study capture. Shape diff against it: the study instance also carried instance.json passthrough keys (decision, layers, spawnCompleted, spawnIdempotencyKey, team, wake) from an idempotent spawn; the Desktop reads none of them. No field the Desktop reads differed.',
+  note: 'Recaptured on main after package approval was removed (e62b8f16): sync exits 0 with nothing pending; module reasons read "declared workspace package".',
   files: {} };
 for (const [name, document] of Object.entries(files)) {
   const original = readFileSync(join(source, document + '.json'));

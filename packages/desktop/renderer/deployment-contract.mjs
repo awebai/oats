@@ -1,5 +1,5 @@
 /** Native workspace-v2 read contract. No filesystem discovery or generation adapters. */
-export const DEPLOYMENT_FEATURES = Object.freeze(['workspace-v2', 'instance-modules', 'served-identity']);
+export const DEPLOYMENT_FEATURES = Object.freeze(['workspace-v2', 'instance-modules', 'served-identity', 'packages-no-approval']);
 export const deploymentRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 export function deploymentFailure(code, feature = null) {
   const messages = {
@@ -24,7 +24,7 @@ export function deploymentReadGate(cli, action) {
   if (!['status', 'workspace-status'].includes(action)) return deploymentFailure('E_BAD_ARGS');
   if (cli.workspaceApi !== 2) return deploymentFailure('E_DEPLOYMENT_FEATURE', 'workspace-v2');
   const features = Array.isArray(cli.features) ? cli.features : [];
-  const required = action === 'status' ? DEPLOYMENT_FEATURES : ['workspace-v2'];
+  const required = action === 'status' ? DEPLOYMENT_FEATURES : ['workspace-v2', 'packages-no-approval'];
   for (const name of required) if (!features.includes(name)) return deploymentFailure('E_DEPLOYMENT_FEATURE', name);
   return null;
 }

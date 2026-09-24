@@ -48,11 +48,11 @@
             },
             {
               "id": "nw-house-style",
-              "origin": "member:local//fixture/base/fx/remotes/agents.git@7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+              "origin": "member:local//fixture/base/fx/remotes/agents.git@f6775a2b498edcde656b647ab9388812d974526c",
               "level": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap",
               "settings": {},
               "provenance": [
-                "member local//fixture/base/fx/remotes/agents.git @ 7bc8403a93ec"
+                "member local//fixture/base/fx/remotes/agents.git @ f6775a2b498e"
               ],
               "skills": [],
               "hooks": [],
@@ -60,11 +60,11 @@
             },
             {
               "id": "nw-release-tooling",
-              "origin": "member:local//fixture/base/fx/remotes/agents.git@7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+              "origin": "member:local//fixture/base/fx/remotes/agents.git@f6775a2b498edcde656b647ab9388812d974526c",
               "level": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap",
               "settings": {},
               "provenance": [
-                "member local//fixture/base/fx/remotes/agents.git @ 7bc8403a93ec"
+                "member local//fixture/base/fx/remotes/agents.git @ f6775a2b498e"
               ],
               "skills": [
                 "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap/.agents/skills/nw-release-tooling/cut-release"
@@ -165,7 +165,7 @@
                 "source": "nw-house-style",
                 "declared": "injects/house-style.md",
                 "resolved": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap/.oats/modules/nw-house-style/injects/house-style.md",
-                "origin": "member:local//fixture/base/fx/remotes/agents.git@7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+                "origin": "member:local//fixture/base/fx/remotes/agents.git@f6775a2b498edcde656b647ab9388812d974526c",
                 "deferred": "materialize"
               },
               {
@@ -173,7 +173,7 @@
                 "source": "nw-release-tooling",
                 "declared": "skills/cut-release",
                 "resolved": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap/.agents/skills/nw-release-tooling",
-                "origin": "member:local//fixture/base/fx/remotes/agents.git@7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+                "origin": "member:local//fixture/base/fx/remotes/agents.git@f6775a2b498edcde656b647ab9388812d974526c",
                 "deferred": "materialize"
               },
               {
@@ -181,7 +181,7 @@
                 "source": "nw-release-tooling",
                 "declared": "injects/release-policy.md",
                 "resolved": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap/.oats/modules/nw-release-tooling/injects/release-policy.md",
-                "origin": "member:local//fixture/base/fx/remotes/agents.git@7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+                "origin": "member:local//fixture/base/fx/remotes/agents.git@f6775a2b498edcde656b647ab9388812d974526c",
                 "deferred": "materialize"
               },
               {
@@ -321,7 +321,7 @@
               "missingRequires": [],
               "trust": {
                 "trusted": true,
-                "reason": "approved package version"
+                "reason": "declared workspace package"
               },
               "executable": true
             },
@@ -366,7 +366,7 @@
               "missingRequires": [],
               "trust": {
                 "trusted": true,
-                "reason": "approved package version"
+                "reason": "declared workspace package"
               },
               "executable": false
             },
@@ -393,13 +393,13 @@
               "missingRequires": [],
               "trust": {
                 "trusted": true,
-                "reason": "approved package version"
+                "reason": "declared workspace package"
               },
               "executable": true
             }
           ],
           "tmux": {
-            "session": "none-89705",
+            "session": "none-92763",
             "window": "release-manager-cap"
           },
           "launch": {
@@ -424,7 +424,7 @@
             }
           },
           "command": "OATS_INSTANCE='release-manager-cap' OATS_INSTANCE_HOME='/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap' PI_AGENT_INSTANCE='release-manager-cap' PI_AGENT_HOME='/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap' '/fixture/base/bin/pi' --append-system-prompt '/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-cap/AGENTS.md' --approve --name 'release-manager-cap' '@TASK.md'",
-          "createdAt": "2026-09-24T11:52:17.397Z",
+          "createdAt": "2026-09-24T18:26:13.942Z",
           "modules": [
             {
               "name": "nw-deploy",
@@ -432,13 +432,13 @@
                 "kind": "package",
                 "package": "nw.tools",
                 "version": "0.4.0",
-                "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
-                "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+                "commit": "8601103d1b78a3d9bb7ef1ca22057c1e5ef07cd4",
+                "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
                 "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
               },
-              "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
+              "commit": "8601103d1b78a3d9bb7ef1ca22057c1e5ef07cd4",
               "current": {
-                "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
+                "commit": "8601103d1b78a3d9bb7ef1ca22057c1e5ef07cd4",
                 "version": "0.4.0"
               },
               "status": "current"
@@ -448,11 +448,11 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9"
+                "commit": "f6775a2b498edcde656b647ab9388812d974526c"
               },
-              "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+              "commit": "f6775a2b498edcde656b647ab9388812d974526c",
               "current": {
-                "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9"
+                "commit": "f6775a2b498edcde656b647ab9388812d974526c"
               },
               "status": "current"
             },
@@ -461,11 +461,11 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9"
+                "commit": "f6775a2b498edcde656b647ab9388812d974526c"
               },
-              "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+              "commit": "f6775a2b498edcde656b647ab9388812d974526c",
               "current": {
-                "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9"
+                "commit": "f6775a2b498edcde656b647ab9388812d974526c"
               },
               "status": "current"
             },
@@ -492,13 +492,13 @@
                 "kind": "package",
                 "package": "oats.okf",
                 "version": "2.1.3",
-                "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
-                "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+                "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
+                "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
                 "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
               },
-              "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+              "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
               "current": {
-                "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+                "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
                 "version": "2.1.3"
               },
               "status": "current"
@@ -519,13 +519,13 @@
           },
           "workspace": {
             "key": "local//fixture/base/fx/remotes/agents.git",
-            "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
-            "resolution": "9de09e4e5681ff9cc6596d74",
+            "commit": "f6775a2b498edcde656b647ab9388812d974526c",
+            "resolution": "ffb42e4318070b73a45149a7",
             "standalone": false,
             "soul": {
               "id": "local//fixture/base/fx/remotes/agents.git#release-manager",
               "repoKey": "local//fixture/base/fx/remotes/agents.git",
-              "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+              "commit": "f6775a2b498edcde656b647ab9388812d974526c",
               "team": "engineering"
             }
           },
@@ -533,17 +533,17 @@
           "running": false,
           "soul": {
             "repoKey": "local//fixture/base/fx/remotes/agents.git",
-            "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
-            "current": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+            "commit": "f6775a2b498edcde656b647ab9388812d974526c",
+            "current": "f6775a2b498edcde656b647ab9388812d974526c",
             "status": "current"
           }
         }
       ],
       "soulSource": {
         "repoKey": "local//fixture/base/fx/remotes/agents.git",
-        "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+        "commit": "f6775a2b498edcde656b647ab9388812d974526c",
         "path": "souls/release-manager",
-        "current": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+        "current": "f6775a2b498edcde656b647ab9388812d974526c",
         "status": "current"
       }
     }
