@@ -80,9 +80,9 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     assert.equal(r.status, 2, r.stderr);
     assert.match(r.stdout, /^Onboarded .*dep2 into workspace standalone:data /m);
     assert.match(r.stdout, /standalone — the workspace of data cannot be read from here/);
-    assert.match(r.stdout, /No soul named oats-setup-expert is listed here/);
+    assert.match(r.stdout, /No soul named oats-operator-expert is listed here/);
     assert.match(r.stdout, /spawn any listed soul: oats spawn <soul> --dir \S*dep2 \(e\.g\. data-analyst\)/);
-    assert.doesNotMatch(r.stdout, /oats spawn oats-setup-expert/);
+    assert.doesNotMatch(r.stdout, /oats spawn oats-operator-expert/);
     r = oats(["onboard", join(base, "dep3"), "--workspace", fx.refs.data, "--json"], { base, env });
     assert.equal(r.status, 2, r.stderr);
     const ob = envelope(r).result;
