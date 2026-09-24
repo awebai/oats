@@ -258,3 +258,74 @@ export function createAddExecutor(io) {
     return p;
   };
 }
+
+/* ── Onboarding (workspace model v2, decision 9) ───────────────────────────
+   A folder the operator PICKED that has no oats-local.yaml may be onboarded:
+   the kernel's `oats onboard <dir> --workspace <ref>` writes the deployment
+   files there, then the ordinary transactional add registers it. The renderer
+   never names the directory: it receives a single-use offer token bound to
+   the canonical picked path, and returns only that token plus the ref. */
+export const MAX_ONBOARD_OFFERS = 4;
+export function createOnboardOffers({ token }) {
+  const offers = new Map(); // token -> canonical path (insertion order = age)
+  return {
+    offer(path) {
+      if (typeof path !== "string" || !path.startsWith("/")) return null;
+      const id = token();
+      offers.set(id, path);
+      while (offers.size > MAX_ONBOARD_OFFERS) offers.delete(offers.keys().next().value);
+      return id;
+    },
+    take(id) {
+      if (typeof id !== "string" || !offers.has(id)) return null;
+      const path = offers.get(id); offers.delete(id); return path;
+    },
+  };
+}
+
+/**
+ * @param {object} io
+ * @param {(token: string) => string|null} io.take      offers.take
+ * @param {(p: string) => string|null} io.offer        offers.offer — a fresh token for a retry
+ * @param {(p: string) => string} io.realpath           canonicalize (throws when gone)
+ * @param {(p: string) => boolean} io.isDeployment      oats-local.yaml present (existence only)
+ * @param {() => Promise<object>} io.readCli            the server's accepted CLI probe
+ * @param {(cli, options) => Promise<object>} io.run    workspace-cli.mjs cliWorkspace
+ * @param {(document, dir) => object} io.project        deployment-data.mjs onboardData
+ * @param {(dir: string) => Promise<object>} io.add     the transactional add (fromPicker)
+ * @param {(ref: string) => boolean} io.validRef        workspace-cli.mjs validWorkspaceRef
+ */
+export function createOnboardExecutor(io) {
+  let busy = false;
+  return async function onboard(offerToken, ref) {
+    if (!io.validRef(ref)) return { ok: false, code: "bad-ref", reason: "Enter the workspace repository reference (for example github.com/org/agents)." };
+    if (busy) return { ok: false, code: "busy", reason: "An onboarding is already running." };
+    const dir = io.take(offerToken);
+    if (!dir) return { ok: false, code: "offer-expired", reason: "Choose the folder again: this onboarding offer is no longer valid." };
+    busy = true;
+    try {
+      let canonical;
+      try { canonical = io.realpath(dir); } catch { return { ok: false, code: "not-found", reason: "The chosen folder no longer exists." }; }
+      if (canonical !== dir) return { ok: false, code: "offer-expired", reason: "The chosen folder changed. Choose it again." };
+      if (io.isDeployment(dir)) return { ok: false, code: "E_ALREADY_ONBOARDED", reason: "This folder already realizes a workspace. Add it instead of onboarding it." };
+      // A refused onboarding that left no deployment behind may be retried
+      // for the same folder (e.g. a mistyped ref) with a FRESH single-use offer.
+      const retry = () => { try { return io.isDeployment(dir) ? {} : { retry: io.offer(dir) }; } catch { return {}; } };
+      let cli;
+      try { cli = await io.readCli(); } catch { cli = null; }
+      const result = await io.run(cli, { action: "onboard", dir, workspace: ref });
+      if (!result?.ok) {
+        const reason = result?.reason || {};
+        return { ok: false, code: reason.code || "E_CLI_FAILED", reason: reason.message || "The installed OATS CLI could not onboard this folder.",
+          ...(reason.rolledBack ? { rolledBack: true } : {}), ...retry() };
+      }
+      let report;
+      try { report = io.project(result.document, dir); } catch { return { ok: false, code: "E_CLI_PROTOCOL", reason: "The installed OATS CLI returned an invalid onboarding result.", ...retry() }; }
+      if (result.pending !== report.sync.approvalNeeded.length > 0) return { ok: false, code: "E_CLI_PROTOCOL", reason: "The installed OATS CLI returned an inconsistent onboarding result.", ...retry() };
+      // The deployment exists now; registering it is the ordinary add. An add
+      // failure is reported with the onboarding result, never rolled back here.
+      const added = await io.add(dir);
+      return { ok: true, pending: result.pending, onboard: report, added };
+    } finally { busy = false; }
+  };
+}

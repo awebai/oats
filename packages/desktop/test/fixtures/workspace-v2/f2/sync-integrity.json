@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_PACKAGE_INTEGRITY",
+    "message": "packages.nw.tools 0.4.0 is locked at e8e0c7ef321c26d34967b17a0e9563b151a25236 but git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0 now resolves to 790e13d18d19d8f8cff381b0b41b82500babb996 — the tag moved; a version string must change when its content does",
+    "details": {
+      "id": "nw.tools",
+      "value": "git:file:///fixture/base/fx/remotes/nw-tools.git@v0.4.0",
+      "version": "0.4.0",
+      "locked": {
+        "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236",
+        "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b"
+      },
+      "observed": {
+        "commit": "790e13d18d19d8f8cff381b0b41b82500babb996"
+      }
+    }
+  }
+}

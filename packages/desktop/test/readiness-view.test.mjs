@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createReadinessView } from '../renderer/readiness-view.mjs';
-import { createWorkspaceDiscovery } from '../renderer/workspace-discovery.mjs';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
@@ -10,13 +9,13 @@ import { VERIFY_UNAVAILABLE, ENROL_UNAVAILABLE, readinessFailure } from '../rend
 import { cli, workspace, selector, target, data, view, deferred, tick } from './helpers/readiness-fixture.mjs';
 function setup(t, api = () => view()) {
   const dom = new JSDOM('<!doctype html><body><button id="other">Other</button><main></main>', { pretendToBeVisual: true }), doc = dom.window.document, host = doc.querySelector('main');
-  const previous = currentWorkspace(); setWorkspace('team'); const calls = [], skipped = [];
-  const component = createReadinessView(host, { ctx: { api: (path, opts) => { const body = JSON.parse(opts.body); calls.push({ path, method: opts.method, body }); return api(path, opts); } }, onSkip: () => skipped.push('skip') });
+  const previous = currentWorkspace(); setWorkspace('team'); const calls = [];
+  const component = createReadinessView(host, { ctx: { api: (path, opts) => { const body = JSON.parse(opts.body); calls.push({ path, method: opts.method, body }); return api(path, opts); } } });
   t.after(() => { component.dispose(); setWorkspace(previous); dom.window.close(); });
-  return { dom, doc, host, component, calls, skipped, update: fields => component.update({ active: true, workspace, selector, cli, ...fields }),
+  return { dom, doc, host, component, calls, update: fields => component.update({ active: true, workspace, selector, cli, ...fields }),
     one: s => host.querySelector(s), text: () => host.textContent };
 }
-test('quartet/policy use real facts; unavailable network and enrollment never dispatch; Skip is only presentation', async t => {
+test('quartet/policy use real facts; unavailable network and enrollment never dispatch', async t => {
   const u = setup(t); await u.update();
   assert.equal(u.calls.length, 1); assert.deepEqual(u.calls[0], { path: '/api/workspace-readiness?ws=team', method: 'POST', body: { action: 'read', selector } });
   assert.match(u.text(), /1 unknown/); assert.match(u.text(), /not-applicable/); assert.match(u.text(), /advisory, not enforced/); assert.match(u.text(), /not an OS sandbox/);
@@ -26,7 +25,7 @@ test('quartet/policy use real facts; unavailable network and enrollment never di
   const policy = u.one('.readiness-policy'); policy.open = true; policy.querySelector('summary').focus();
   for (let n = 0; n < 5; n++) await u.update();
   assert.equal(u.one('.readiness-policy'), policy); assert.equal(policy.open, true); assert.equal(u.doc.activeElement, policy.querySelector('summary')); assert.equal(u.calls.length, 1);
-  u.one('.readiness-skip').click(); assert.equal(u.skipped.length, 1); assert.equal(u.calls.length, 1); assert.match(u.text(), /1 unknown/);
+  assert.equal(u.one('.readiness-skip'), null, 'the Workspace readiness frame (and its Skip) is gone');
 });
 for (const [name, fields] of [['remote', { workspace: { ...workspace, remote: true } }], ['missing CLI', { cli: null }], ['missing feature', { cli: { ...cli, features: [] } }], ['wrong API', { cli: { ...cli, readinessApi: '1' } }]]) test(`${name} has reachable read-only explanation but no request`, async t => {
   const u = setup(t, assert.fail); await u.update(fields); assert.equal(u.calls.length, 0); assert.equal(u.one('.readiness-refresh').disabled, true); assert.equal(u.one('.readiness-view').hidden, false);
@@ -67,48 +66,20 @@ test('named verified signatures only; hostile evidence/remedies are inert and ra
   assert.equal(u.one('img,script,a,input,textarea,form'), null); assert.ok(u.text().includes(hostile)); assert.doesNotMatch(u.text(), /PRIVATE/);
   d.checks.trusted.items[0].signature.status = 'unknown'; await u.component.refresh(); assert.doesNotMatch(u.text(), /Signed by/);
 });
-test('hidden pending view re-entry reads again; detached disposed controls cannot retry or Skip', async t => {
+test('hidden pending view re-entry reads again; detached disposed controls cannot retry', async t => {
   const gate = deferred(); let n = 0; const u = setup(t, () => ++n === 1 ? gate.promise : view()); void u.update();
   await u.update({ active: false }); await u.update(); gate.resolve(view()); await tick(); assert.equal(n, 2);
-  const refresh = u.one('.readiness-refresh'), skip = u.one('.readiness-skip'); u.component.dispose(); refresh.click(); skip.click(); await tick();
-  assert.equal(n, 2); assert.equal(u.skipped.length, 0);
+  const refresh = u.one('.readiness-refresh'); u.component.dispose(); refresh.click(); await tick();
+  assert.equal(n, 2);
 });
-test('hidden host controls cannot refresh, dismiss or steal focus; future verification feature does not enable this slice', async t => {
+test('hidden host controls cannot refresh or steal focus; future verification feature does not enable this slice', async t => {
   const u = setup(t); await u.update({ cli: { ...cli, features: ['readiness', 'readiness-verify'] } });
   assert.equal(u.one('.readiness-verify').disabled, true);
   u.host.hidden = true; u.doc.querySelector('#other').focus();
-  u.one('.readiness-refresh').click(); u.one('.readiness-skip').click(); await tick();
-  assert.equal(u.calls.length, 1); assert.equal(u.skipped.length, 0); assert.equal(u.doc.activeElement.id, 'other');
+  u.one('.readiness-refresh').click(); await tick();
+  assert.equal(u.calls.length, 1); assert.equal(u.doc.activeElement.id, 'other');
 });
 
-test('Workspace entry/empty invitation, Skip and capability section are integrated without a nav destination or roster blanking', async t => {
-  const dom = new JSDOM('<!doctype html><body><main><header></header><div id="souls">Existing roster</div><section id="panel"></section></main>', { pretendToBeVisual: true });
-  const doc = dom.window.document, previous = currentWorkspace(); setWorkspace('readiness-workspace-test'); resetCliStateForTests();
-  const calls = [], tabs = [], ws = { ...workspace, id: 'readiness-workspace-test' }; let intents = 0;
-  const ctx = { api: async (path, opts) => {
-    calls.push(path); if (path === '/api/cli') return cli;
-    if (path.startsWith('/api/workspace-readiness')) return view({ ...target, workspace: ws.id });
-    if (path.startsWith('/api/catalog')) return {};
-    if (path.startsWith('/api/capabilities')) return JSON.parse(opts.body).action === 'list' ? { inventoryApi: 1, scope: { kind: 'classic', context: '/team' }, packages: [], capabilities: [], legacy: [] } : { operationsApi: 1, capabilities: [] };
-    throw Error('unexpected');
-  } };
-  await refreshCli(ctx);
-  const discovery = createWorkspaceDiscovery(doc.querySelector('header'), doc.querySelector('#panel'), { ctx, soulsPanel: doc.querySelector('#souls'), onTab: tab => tabs.push(tab), onIntent: () => intents++ });
-  t.after(() => { discovery.dispose(); resetCliStateForTests(); setWorkspace(previous); dom.window.close(); });
-  discovery.updateRoster([], { workspace: ws, instances: [] });
-  assert.equal(doc.querySelector('.readiness-invitation').hidden, false); assert.equal(calls.filter(p => p.startsWith('/api/workspace-readiness')).length, 0);
-  doc.querySelector('.workspace-readiness-entry').click(); await tick();
-  assert.equal(intents, 1, 'entry supersedes older deferred Workspace selection');
-  assert.equal(doc.querySelector('.workspace-readiness-frame').hidden, false); assert.equal(doc.querySelector('#workspace-souls').textContent, 'Existing roster');
-  assert.equal(doc.querySelectorAll('[role=tab]').length, 3); assert.equal(discovery.tab, 'souls');
-  doc.querySelector('.workspace-readiness-frame .readiness-skip').click();
-  assert.equal(doc.querySelector('.workspace-readiness-frame').hidden, true); assert.equal(doc.querySelector('.readiness-invitation').hidden, true); assert.equal(doc.querySelector('#workspace-souls').hidden, false);
-  assert.equal(intents, 2, 'Skip is a new explicit selection intent');
-  assert.equal(doc.activeElement, doc.querySelector('.workspace-readiness-entry'));
-  discovery.updateRoster([], { workspace: ws, instances: [] }); assert.equal(doc.querySelector('.readiness-invitation').hidden, true);
-  discovery.setTab('capabilities'); await tick(); assert.equal(doc.querySelector('#workspace-capabilities .readiness-view').hidden, false); assert.equal(calls.filter(p => p.startsWith('/api/workspace-readiness')).length, 2);
-  discovery.reset(); assert.equal(doc.querySelector('.workspace-readiness-frame').hidden, true);
-});
 test('inspector owns exact soul and home selectors, independent of operations inspection and disposal', async t => {
   const dom = new JSDOM('<!doctype html><body><aside></aside>'), doc = dom.window.document, previous = currentWorkspace(); setWorkspace('team'); resetCliStateForTests();
   const calls = [], gates = []; const ctx = { api: async (path, opts) => {

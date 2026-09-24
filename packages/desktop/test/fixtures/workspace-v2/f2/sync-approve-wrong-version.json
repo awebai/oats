@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_BAD_ARGS",
+    "message": "--approve nw.tools@9.9.9: the lock resolves nw.tools to version 0.4.0 (@ e8e0c7ef) — approve what is there: --approve nw.tools@0.4.0",
+    "details": {
+      "id": "nw.tools",
+      "version": "9.9.9",
+      "locked": "0.4.0",
+      "commit": "e8e0c7ef321c26d34967b17a0e9563b151a25236"
+    }
+  }
+}

@@ -248,6 +248,16 @@ const workspaceLabel = createWorkspaceSwitcher({
   discoverSuggestions: desktopBridge.workspaceSuggestions || unavailableWorkspaceService,
   addWorkspace: desktopBridge.workspaceAdd || unavailableWorkspaceService,
   pickWorkspace: desktopBridge.workspacePick || unavailableWorkspaceService,
+  onboardWorkspace: desktopBridge.workspaceOnboard || null,
+  // After the kernel onboarded and the add selected the new deployment: land
+  // on its Workspace view, where pending package approvals are reviewed.
+  onboarded: (result) => {
+    const pending = result?.onboard?.sync?.approvalNeeded?.length || 0;
+    notifications.notify(pending
+      ? `Workspace onboarded. ${pending} package${pending === 1 ? "" : "s"} wait for your approval in Workspace.`
+      : "Workspace onboarded. The lock is written and every package is approved.");
+    void showStage("spawn");
+  },
 });
 
 // ── keybinding contexts ──────────────────────────────────────────────────────────

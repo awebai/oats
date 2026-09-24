@@ -21,7 +21,7 @@ const candidateName = (candidate) => candidate?.name
   || "Workspace";
 
 export function createWorkspaceSwitcher({
-  document, selectWorkspace, discoverSuggestions, addWorkspace, pickWorkspace,
+  document, selectWorkspace, discoverSuggestions, addWorkspace, pickWorkspace, onboardWorkspace = null, onboarded = null,
 }) {
   const q = (id) => document.getElementById(id);
   const trigger = q("ws-trigger"), currentName = q("ws-name"), menu = q("ws-menu");
@@ -33,6 +33,22 @@ export function createWorkspaceSwitcher({
   const modalSearch = q("ws-suggestion-search"), suggestionsEl = q("ws-suggestions");
   const status = q("ws-dialog-status"), confirm = q("ws-confirm"), browse = q("ws-browse");
   const cancel = q("ws-cancel"), closeButton = q("ws-dialog-close");
+  const title = q("ws-dialog-title"), intro = modal.querySelector(".ws-dialog-intro");
+  const defaults = { title: title.textContent, intro: intro.textContent, confirm: confirm.textContent };
+  // Onboarding (workspace model v2): a picked folder without oats-local.yaml.
+  // The folder is the one main offered; the renderer supplies only the ref.
+  const onboardEl = document.createElement("div"); onboardEl.className = "ws-onboard"; onboardEl.hidden = true;
+  const onboardPath = document.createElement("p"); onboardPath.className = "ws-onboard-path";
+  const refLabel = document.createElement("label"); refLabel.className = "ws-onboard-field";
+  const refText = document.createElement("span"); refText.textContent = "Workspace repository";
+  const refInput = document.createElement("input"); refInput.id = "ws-onboard-ref"; refInput.className = "field";
+  refInput.type = "text"; refInput.autocomplete = "off"; refInput.spellcheck = false; refInput.placeholder = "github.com/org/agents";
+  refLabel.append(refText, refInput);
+  const onboardNote = document.createElement("p"); onboardNote.className = "ws-onboard-note";
+  onboardNote.textContent = "Runs oats onboard in this folder: it writes oats-local.yaml and agents/, reads the workspace over Git and writes the lock. It installs nothing and spawns nothing. Packages that run executables wait for your approval.";
+  onboardEl.append(onboardPath, refLabel, onboardNote);
+  status.before(onboardEl);
+  let onboarding = null; // { token, path } — the current single-use offer
   let generation = 0, modalGeneration = 0, discoveryGeneration = 0;
   let activeId = "", workspaces = [], suggestions = [], selected = null;
   let adding = false, discoveryState = { message: "", error: false };
@@ -173,12 +189,30 @@ export function createWorkspaceSwitcher({
     cancel.disabled = value;
     closeButton.disabled = value;
     modalSearch.disabled = value;
+    refInput.disabled = value;
     for (const suggestion of suggestionsEl.querySelectorAll(".ws-suggestion")) suggestion.disabled = value;
-    confirm.disabled = value || !selected;
+    confirm.disabled = value || (onboarding ? !refInput.value.trim() : !selected);
     if (value) status.focus();
+  };
+  const enterOnboarding = (offer) => {
+    onboarding = { token: offer.token, path: offer.path };
+    title.textContent = "Onboard workspace";
+    intro.textContent = "This folder has no oats-local.yaml yet. Name the workspace repository to realize here.";
+    onboardPath.textContent = offer.path;
+    modalSearch.hidden = true; suggestionsEl.hidden = true; onboardEl.hidden = false;
+    confirm.textContent = "Onboard";
+    confirm.disabled = !refInput.value.trim();
+    refInput.focus();
+  };
+  const leaveOnboarding = () => {
+    onboarding = null;
+    title.textContent = defaults.title; intro.textContent = defaults.intro; confirm.textContent = defaults.confirm;
+    modalSearch.hidden = false; suggestionsEl.hidden = false; onboardEl.hidden = true;
+    refInput.value = "";
   };
   const closeModal = (restore = true) => {
     if (adding) return false;
+    leaveOnboarding();
     modalGeneration++;
     discoveryGeneration++;
     modal.hidden = true;
@@ -194,6 +228,7 @@ export function createWorkspaceSwitcher({
     const discoveryToken = ++discoveryGeneration;
     modal.hidden = false;
     modalSearch.value = "";
+    leaveOnboarding();
     suggestions = [];
     selected = null;
     discoveryState = { message: "Finding OATS workspaces…", error: false };
@@ -248,6 +283,9 @@ export function createWorkspaceSwitcher({
       setAdding(false);
       if (result?.code === "cancelled") { paintDiscoveryState(); browse.focus(); return; }
       if (resolvedMutation(result)) return;
+      if (result?.onboard?.token && typeof onboardWorkspace === "function") {
+        discoveryGeneration++; setStatus(""); enterOnboarding(result.onboard); return;
+      }
       discoveryGeneration++;
       setStatus(mutationFailureMessage(result, "Could not use that folder."), true);
       browse.focus();
@@ -259,7 +297,39 @@ export function createWorkspaceSwitcher({
       browse.focus();
     }
   };
+  const onOnboard = async () => {
+    const ref = refInput.value.trim();
+    if (!onboarding || adding || !ref) return;
+    const token = ++modalGeneration, offer = onboarding;
+    setAdding(true);
+    setStatus(`Onboarding ${offer.path}… reading the workspace over Git.`);
+    try {
+      const result = await onboardWorkspace(offer.token, ref);
+      if (token !== modalGeneration) return;
+      setAdding(false);
+      if (result?.ok) {
+        const added = result.added;
+        if (added?.ok && added.workspace) { reconcileAddedWorkspace(added.workspace); onboarded?.(result); return; }
+        // The deployment exists now; only its registration failed.
+        onboarding = null;
+        setStatus(`Onboarded ${offer.path}, but it could not be added: ${added?.reason || "unknown error"}. Use Browse… to add it.`, true);
+        leaveOnboarding(); browse.focus(); return;
+      }
+      if (result?.retry) onboarding = { token: result.retry, path: offer.path };
+      else if (result?.code !== "bad-ref" && result?.code !== "busy") onboarding = null;
+      const note = result?.rolledBack ? " Nothing was left in the folder." : "";
+      setStatus(`${result?.code ? `${result.code}: ` : ""}${result?.reason || "Could not onboard that folder."}${note}`, true);
+      if (onboarding) refInput.focus(); else { leaveOnboarding(); browse.focus(); }
+    } catch (error) {
+      if (token !== modalGeneration) return;
+      setAdding(false);
+      onboarding = null; leaveOnboarding();
+      setStatus(error?.message || "Could not onboard that folder.", true);
+      browse.focus();
+    }
+  };
   const onConfirm = async () => {
+    if (onboarding) return onOnboard();
     if (!selected || adding) return;
     const token = ++modalGeneration;
     const choice = selected;
@@ -341,6 +411,8 @@ export function createWorkspaceSwitcher({
   menu.addEventListener("keydown", onMenuKey);
   addOpen.addEventListener("click", openModal);
   modalSearch.addEventListener("input", renderSuggestions);
+  refInput.addEventListener("input", () => { if (!adding) confirm.disabled = !refInput.value.trim(); });
+  refInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); void onOnboard(); } });
   suggestionsEl.addEventListener("keydown", onSuggestionKey);
   browse.addEventListener("click", onBrowse);
   confirm.addEventListener("click", onConfirm);

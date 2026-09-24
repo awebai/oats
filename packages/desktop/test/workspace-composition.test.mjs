@@ -9,16 +9,22 @@ import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { inspectorCSS } from '../renderer/soul-inspector.mjs';
+import { workspaceStatusData } from '../deployment-data.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const CLI = { ok: true, operationsApi: 1, features: ['operations'], relations: true };
+const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
+const V2_CLI = { ...CLI, bin: '/fixture/bin/oats', workspaceApi: 2, features: ['operations', 'workspace-v2'] };
+const observedStatus = workspaceStatusData(f2('workspace-status-approved'), '/fixture/base/northwind-workspace');
+const catalogReply = (capabilities = f2('capabilities-approved').result.capabilities) => ({ workspaceSyncApi: 1, status: 'ok',
+  capabilities: { capabilitiesApi: 1, ...f2('capabilities-approved').result, capabilities } });
 const soul = { name: 'dev', agentsRoot: '/fixture/agents', repoName: 'fixture', runtime: 'pi', work: 'worktree', description: 'Build and review' };
 const inspection = { operationsApi: 1, selected: { source: 'config' }, scope: { context: '/fixture' },
   souls: [{ ...soul, editable: { fields: ['model'], instructions: true }, instructions: { text: 'Saved instructions' } }], layers: {},
   capabilities: [{ id: 'fixture.notes', version: '1.0', source: 'local', origin: 'installed',
     health: { installed: true, trusted: true, status: 'ok' }, activation: { enabled: true, target: 'global', provenance: ['workspace'] } }] };
-async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul] } = {}) {
+async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null } = {}) {
   const dom = new JSDOM('<body><div id="host"></div></body>', { url: 'http://localhost' });
   const doc = dom.window.document;
   const saved = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -33,7 +39,9 @@ async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [sou
       const body = opts.body && JSON.parse(opts.body); calls.push({ path, body });
       if (path === '/api/cli') { if (currentCli === null) throw new Error('Synthetic transport pending'); return currentCli; }
       if (path.startsWith('/api/agents')) return { agents };
-      if (path.startsWith('/api/panel')) return { instances: [], workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }] };
+      if (path.startsWith('/api/panel')) return { instances: [], workspace: { id: currentWorkspace() }, workspaces: [{ id: '/fixture', name: 'Fixture' }, { id: '/other', name: 'Other' }],
+        ...(sync ? { deployment: { status: 'observed', root: '/fixture/agents', workspace: observedStatus.workspace, workspaceStatus: observedStatus, reachable: { reachable: true }, withheld: [] } } : {}) };
+      if (path.startsWith('/api/workspace-sync') && sync) return sync(body);
       if (path.startsWith('/api/capabilities')) return inspect(body);
       if (path === '/api/servers') return { servers: [] };
       throw new Error(`Unexpected fixture request: ${path}`);
@@ -108,39 +116,27 @@ test('03: cards have one semantic Details entry with compact identity, runtime, 
   assert.equal(u.css('.souls-body').gridTemplateColumns, 'minmax(0,1fr)');
 });
 
-test('04: ordinary capability state uses wrapping badges, 56px table rows and compact vertical padding', async t => {
-  const u = await fixture(t);
-  u.get('#workspace-tab-capabilities').click(); await tick();
-  const tools = u.get('.discovery-tools');
-  assert.equal(tools.parentElement, u.get('.workspace-header')); assert.equal(tools.hidden, false); assert.equal(tools.open, false);
-  tools.open = true;
-  for (const selector of ['.discovery-filter', '.discovery-scope']) assert.ok(tools.querySelector(selector));
-  assert.equal(u.get('.discovery-filter').labels.length, 1); assert.equal(u.get('.discovery-scope').labels.length, 1);
-  tools.open = false;
-  const badges = [...u.doc.querySelectorAll('.capability-state > .capability-fact')];
-  assert.deepEqual(badges.map(el => el.textContent), ['Installation: Installed', 'Health: ok', 'Trust: Trusted', 'Activation: Enabled', 'Target: global', 'Binding: ["workspace"]']);
-  assert.equal(u.css('.capability-state').display, 'flex'); assert.equal(u.css('.capability-state').flexWrap, 'wrap');
-  assert.equal(u.get('.capability-state').querySelector('p'), null, 'no permanent paragraph for each health fact');
-  assert.equal(u.css('.capability-fact').lineHeight, '14px');
-  assert.equal(u.css('.discovery-table td').padding, '8px 16px');
-  assert.equal(u.css('.discovery-table thead tr').height, '36px');
-  assert.equal(u.css('.discovery-table th').padding, '0px 16px');
-  assert.equal(u.css('.discovery-table tbody tr').height, '56px', 'table-row height is a minimum; real wrapping can grow it');
-  assert.equal(u.css('.discovery-table td').verticalAlign, 'middle');
-  assert.equal(u.css('.discovery-table td > p').margin, '0px', 'ordinary two-line provenance fits the row rather than adding paragraph margins');
-  assert.equal(u.get('.discovery-table caption').textContent, 'Reported capabilities');
-  assert.equal(u.css('.discovery-table caption').position, 'absolute', 'semantic caption does not add a pre-table row');
-  assert.equal(u.css('.discovery-status').display, 'none');
-  assert.equal(u.get('.workspace-discovery').lastElementChild, u.get('.discovery-note'), 'explanatory provenance follows the data, not the reference canvas origin');
-  u.click('Scope details…'); await tick();
-  assert.equal(u.get('.inspector-head h2').textContent, 'Reported capabilities');
-  assert.doesNotMatch(u.get('.soul-inspector').textContent, /Installed capabilities|No capabilities installed/);
+test('04: the capability table follows the design grid — 36px head, 56px rows, 32px marks, 22px chips', async t => {
+  const u = await fixture(t, { cli: V2_CLI, sync: () => catalogReply() });
+  u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
+  assert.equal(u.get('.discovery-tools'), null, 'no classic "Filter & scope" selector remains');
+  assert.equal(u.get('.readiness-view, .deployment-inventory, .workspace-readiness-entry'), null, 'the 0.24 readiness/inventory blocks are gone');
+  const header = u.get('.workspace-header');
+  assert.equal(u.get('.ws-sync').parentElement, header, 'sync lives in the Workspace header');
+  assert.equal(u.css('.catalog-row.head').minHeight, '36px'); assert.equal(u.css('.catalog-row.head').textTransform, 'uppercase');
+  assert.equal(u.css('.catalog-row.head').fontSize, '10.5px');
+  assert.equal(u.css('.catalog-row:not(.head)').minHeight, '56px', 'a minimum: real wrapping can grow a row');
+  assert.equal(u.css('.catalog-row:not(.head)').padding, '8px 16px');
+  assert.equal(u.css('.catalog-row').gridTemplateColumns, 'minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr)');
+  assert.equal(u.css('.catalog-cap .identity-mark').width, '32px'); assert.equal(u.css('.catalog-cap .identity-mark').borderRadius, '8px');
+  assert.equal(u.css('.catalog-chip').minHeight, '22px'); assert.equal(u.css('.catalog-chip').padding, '0px 7px');
+  assert.equal(u.css('.catalog-chip').borderRadius, '5px'); assert.equal(u.css('.catalog-chip').fontSize, '10.5px');
+  assert.equal(u.css('.catalog-chips').flexWrap, 'wrap');
+  assert.equal(u.css('.catalog-pill').borderRadius, '999px');
+  assert.equal(u.get('.workspace-discovery').querySelectorAll('.catalog-filter').length, 2, 'Team and Source pill groups');
   u.get('#workspace-tab-sources').click(); await tick();
-  assert.equal(u.get('.discovery-table').querySelector('button, a, input'), null, 'source provenance is read-only');
-  assert.equal(u.get('.discovery-table caption').textContent, 'Reported source provenance');
-  for (const { path, body } of u.calls.filter(c => c.body)) {
-    assert.equal(path.split('?')[0], '/api/capabilities'); assert.equal(body.action, 'inspect', 'no fabricated membership/installation actions');
-  }
+  assert.equal(u.get('.workspace-discovery').querySelector('.catalog-table button, .catalog-table a, .catalog-table input'), null, 'Sources are read-only');
+  for (const { path, body } of u.calls.filter(c => c.body && c.path.startsWith('/api/workspace-sync'))) assert.equal(body.action, 'read', `no mutation from ${path}`);
 });
 
 for (const state of ['no operations', 'wrong API', 'rejection', 'pending', 'soul omitted']) test(`${state}: inspection never blocks otherwise compatible legacy Launch/Files`, async t => {
@@ -185,10 +181,10 @@ for (const cli of [null, { ok: false }]) test(`CLI ${JSON.stringify(cli)}: launc
   assert.equal(u.get('.spawn-dialog'), null); assert.equal(u.get('.spawn-act').disabled, true);
 });
 
-test('empty reported capabilities use factual empty copy, and empty rosters never select or launch', async t => {
-  const u = await fixture(t, { agents: [], inspect: () => ({ ...inspection, capabilities: [] }) });
+test('an empty catalog uses factual empty copy, and empty rosters never select or launch', async t => {
+  const u = await fixture(t, { agents: [], cli: V2_CLI, sync: () => catalogReply([]) });
   assert.equal(u.get('.soul-card, .spawn-act'), null); assert.equal(u.get('.soul-inspector').hidden, true);
-  u.get('#workspace-tab-capabilities').click(); await tick(); u.click('Scope details…'); await tick();
-  assert.match(u.get('.soul-inspector').textContent, /Reported capabilities.*No capabilities reported at this scope/s);
-  assert.doesNotMatch(u.get('.soul-inspector').textContent, /Installed capabilities|No capabilities installed/);
+  u.get('#workspace-tab-capabilities').click(); await tick(); await tick();
+  assert.match(u.get('.catalog-empty').textContent, /The workspace reports no capabilities/);
+  assert.doesNotMatch(u.get('.workspace-discovery').textContent, /Installed capabilities|No capabilities installed/);
 });

@@ -4,11 +4,8 @@ import { CHECKS, VERIFY_UNAVAILABLE, ENROL_UNAVAILABLE, readinessSelector, readi
 import { iconElement } from './shell-icons.mjs';
 export const readinessCSS = `
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
-.readiness-view[hidden], .readiness-view [hidden], .workspace-readiness-frame[hidden], .readiness-invitation[hidden] { display:none; }
-.workspace-readiness-frame { overflow:auto; min-height:0; padding:40px 20px; }
-.workspace-readiness-frame .readiness-view { width:640px; max-width:100%; margin:0 auto; display:flex; flex-direction:column; gap:22px; }
+.readiness-view[hidden], .readiness-view [hidden] { display:none; }
 .readiness-view h2 { font-size:14px; margin:0; }
-.workspace-readiness-frame .readiness-view h2 { font-size:24px; letter-spacing:-.01em; }
 .readiness-context, .readiness-note, .readiness-status, .readiness-item dt { color:var(--muted); overflow-wrap:anywhere; }
 .readiness-view p { margin:4px 0; }
 .readiness-status { min-height:1.5em; }
@@ -29,14 +26,11 @@ export const readinessCSS = `
 .readiness-view summary:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .readiness-view button { min-height:34px; }
 .readiness-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
-.readiness-invitation { padding:12px 20px; color:var(--muted); font-size:12px; }
-.readiness-invitation button { margin-left:10px; }
-.workspace-readiness-entry { flex:none; }
 .soul-inspector .readiness-view { margin-top:16px; }
 .soul-inspector .readiness-check { padding:12px 8px; }
 `;
 const label = v => v[0].toUpperCase() + v.slice(1);
-export function createReadinessView(host, { ctx, onSkip } = {}) {
+export function createReadinessView(host, { ctx } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
   let alive = true, active = false, serial = 0, identity = null, gen = null, state = {}, attempted = false, busy = false, value = null, blocked = '', query = '';
@@ -48,7 +42,6 @@ export function createReadinessView(host, { ctx, onSkip } = {}) {
   const verify = node('button', 'Verify signatures…', 'act readiness-verify'); verify.type = 'button'; verify.disabled = true; verify.title = VERIFY_UNAVAILABLE;
   const enrol = node('button', 'Enrol workspace', 'act readiness-enrol'); enrol.type = 'button'; enrol.disabled = true; enrol.title = ENROL_UNAVAILABLE;
   actions.append(refresh, verify, enrol);
-  if (onSkip) { const skip = node('button', 'Skip for now', 'act readiness-skip'); skip.type = 'button'; skip.addEventListener('click', () => { if (current() && visible()) onSkip(); }); actions.append(skip); }
   section.append(title, context, node('p', 'Independent kernel observations, not launch permission. Unknown is not granted; an empty required set is not Ready.', 'readiness-note'), status, body, actions,
     node('p', VERIFY_UNAVAILABLE, 'readiness-note'), node('p', ENROL_UNAVAILABLE, 'readiness-note'));
   host.append(section);

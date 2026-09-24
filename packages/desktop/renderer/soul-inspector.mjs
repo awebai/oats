@@ -2,11 +2,32 @@
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
-import { capabilityFacts, reportedText } from './workspace-discovery.mjs';
 import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs';
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
+
+
+/* Operations-API capability facts for the soul inspector (replaced with the
+   v2 instance card in F3/F4). */
+const record = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+export function reportedText(value, fallback = 'Not reported') {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+export function capabilityFacts(cap) {
+  cap = record(cap);
+  const health = record(cap.health), activation = record(cap.activation);
+  return [
+    ['Installation', health.installed === true ? 'Installed' : health.installed === false ? 'Not installed' : 'Not reported'],
+    ['Health', reportedText(health.status)],
+    ['Trust', health.trusted === true ? 'Trusted' : health.trusted === false ? 'Not trusted' : 'Not reported'],
+    ['Activation', activation.enabled === true ? 'Enabled' : activation.enabled === false ? 'Disabled' : 'Not reported'],
+    ...(activation.target ? [['Target', reportedText(activation.target)]] : []),
+    ...(activation.provenance ? [['Binding', reportedText(activation.provenance)]] : []),
+  ];
+}
 
 export const inspectorCSS = `
 ${declarationsCSS}

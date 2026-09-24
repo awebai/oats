@@ -34,7 +34,7 @@ module.exports = {
     "lifecycle-cli.mjs",
     "instance-events-cli.mjs", "instance-events-proxy.mjs",
     "schedule-read-cli.mjs", "schedule-read-proxy.mjs",
-    "deployment-read-cli.mjs", "deployment-data.mjs",
+    "deployment-read-cli.mjs", "deployment-data.mjs", "workspace-cli.mjs",
     "readiness-cli.mjs", "readiness-proxy.mjs",
     "spawn-preview-cli.mjs", "spawn-preview-proxy.mjs",
     "spawn-apply-cli.mjs", "spawn-apply-proxy.mjs",

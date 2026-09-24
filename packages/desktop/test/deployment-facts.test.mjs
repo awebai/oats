@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { memberLabel, moduleDriftText, servedIdentityText, soulSourceText } from '../renderer/deployment-facts.mjs';
-import { createDeploymentHeader, deploymentUnavailableText, lockStateLines } from '../renderer/deployment-header.mjs';
+import { deploymentUnavailableText } from '../renderer/deployment-header.mjs';
+import { deploymentNotes, lockNotes } from '../renderer/workspace-catalog.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
 
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
@@ -57,24 +58,22 @@ test('served identity follows the documented layer contract; absent stays absent
   for (const absent of [undefined, null, 'string']) assert.equal(servedIdentityText(absent), null);
 });
 
-test('lock state and unavailable text use header ID arrays and named features', () => {
+test('lock notes and unavailable text use workspace status arrays and named features', () => {
   const h = workspaceStatusData(header, context);
-  assert.deepEqual(lockStateLines(h), ['Every locked package is approved.']);
-  assert.deepEqual(lockStateLines({ ...h, approval: { approved: [], needed: ['a', 'b'] } }), ['Approval needed: a, b']);
+  assert.deepEqual(lockNotes(h), [], 'a locked, approved, declared set needs no note');
+  assert.deepEqual(lockNotes({ ...h, unsynced: ['a'], stale: ['b'] }).map(n => n.text),
+    ['Declared but not locked: a. Sync to lock them.', 'Locked but no longer declared: b. Sync to drop them.']);
   assert.match(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_DEPLOYMENT_FEATURE', feature: 'served-identity' } }), /does not advertise served-identity/);
   assert.equal(deploymentUnavailableText({ status: 'unavailable', reason: { code: 'E_X', message: 'kernel said' } }), 'E_X: kernel said');
   assert.equal(deploymentUnavailableText({ status: 'observed' }), '');
 });
 
-test('withheld instance rows are reported in the header with their names', () => {
-  const dom = new JSDOM('<section></section>');
-  const view = createDeploymentHeader(dom.window.document.querySelector('section'));
-  view.update({ status: 'observed', workspaceStatus: workspaceStatusData(header, context), reachable: { reachable: true },
-    withheld: [{ agent: 'release-manager', instance: 'rm-evil', reason: 'home-outside-soul' }] });
-  assert.match(dom.window.document.body.textContent, /1 instance row was withheld: .*\(rm-evil\)/);
-  view.dispose(); view.update({ status: 'pending' });
-  assert.equal(dom.window.document.querySelector('section').textContent, '', 'a disposed header stays inert');
-  dom.window.close();
+test('withheld instance rows and an unreachable workspace are reported with their names and codes', () => {
+  const notes = deploymentNotes({ status: 'observed', workspaceStatus: workspaceStatusData(header, context),
+    reachable: { reachable: false, code: 'E_REMOTE_UNREADABLE', message: 'network' },
+    withheld: [{ agent: 'release-manager', instance: 'rm-evil', reason: 'home-outside-soul' }] }).map(n => n.text);
+  assert.match(notes[0], /Workspace unreachable — module drift is not current\. E_REMOTE_UNREADABLE: network/);
+  assert.match(notes[1], /1 instance row was withheld: .*\(rm-evil\)/);
 });
 
 test('the context panel instance page projects soul source, modules and served identity from the roster row', async () => {

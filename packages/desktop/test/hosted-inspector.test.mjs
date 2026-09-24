@@ -14,7 +14,7 @@ import { currentWorkspace, setWorkspace, postJson, wsQuery, workspaceGeneration 
 import { refreshCli, cliStatus } from '../renderer/views/cli-status.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { capabilityFacts, reportedText } from '../renderer/workspace-discovery.mjs';
+import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
