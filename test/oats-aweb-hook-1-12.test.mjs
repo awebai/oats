@@ -31,6 +31,7 @@ const cmd = a;
 function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
 if (s === "version") { console.log("aw 1.36.1"); process.exit(0); }
 if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
+if (s === "custody status --json") { console.log(j({ status: "running", socket_path: path.join(process.cwd(), "custody.sock"), resident: { did_aw: "did:aw:resident", did_key: "did:key:resident", address: "oats.aweb.ai/resident-alias", alias: "resident-alias" }, teams: [{ team_id: process.env.FAKE_CUSTODY_TEAM || "t:example.test", ready: true, certificate_present: true, grant_status_endpoint_ready: true }], keys: { signing_ready: true, encryption_ready: true, encryption_key_id: "enc-1" }, ops: ["sign_plain_message/1", "create_e2ee_envelope/1", "unwrap_e2ee_message/1", "status/1"], freshness: { source: "fake", last_checked_at: "2026-09-24T00:00:00Z", max_cache_age_seconds: 30 }, errors: [] })); process.exit(0); }
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
 if (s.startsWith("team join")) { console.log(j({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
@@ -152,7 +153,7 @@ test("global mode revokes and removes the grant when the minted team differs fro
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "expected:team", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_GRANT_TEAM: "wrong:team" });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "expected:team", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_CUSTODY_TEAM: "expected:team", FAKE_GRANT_TEAM: "wrong:team" });
     assert.notEqual(r.status, 0);
     assert.equal(existsSync(join(home, ".aweb-identity")), false, "mismatched grant home removed after revoke");
     assert.equal(r.doc.meta.identity.grant.id, "grant-123", "meta is still emitted for idempotent retire compensation");

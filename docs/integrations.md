@@ -201,7 +201,7 @@ warning naming the fresh-purpose remedy. On an older `aw` the pre-1.36.1
 report stands (`aliasReusable: false`, warning naming aweb-abim), because
 that CLI cannot revoke the certificate.
 
-## oats.aweb settings (1.12.0)
+## oats.aweb settings (1.13.0)
 
 Set in `oats-local.yaml` under `settings.oats.aweb.<key>` (host-owned), in the
 soul's `messaging:` payload (true of every instance), or per spawn with
@@ -227,27 +227,59 @@ but do not yet enforce provenance in the hook payload).
   copies root keys into the instance home. `identity.resident` is required and
   resolves through `residents.<name>` to an absolute custody directory whose
   `.aw/identity.yaml` already exists. Missing or unresolved residents fail with
-  the `oats-local.yaml settings.oats.aweb.residents.<name>` key to set. Optional
-  `identity.scopes` defaults to exactly `[mail.read, mail.send, chat.read,
-  chat.send]`; optional `identity.ttl` defaults to `8h` (aw accepts `60s` to
-  `720h`). Spawn runs `aw id grant mint --scope <comma-list> --ttl <ttl>
-  --label oats:<instance> --out <home>/.aweb-identity --json` from the custody
-  directory with `AWEB_IDENTITY_HOME` removed from the child environment: in aw
-  1.36.1, grant commands are not identity-home-aware and intentionally refuse
-  both `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
-  custody identity. The hook parses the whole JSON document because aw `--json`
-  output is indented across lines, with a fallback to the first brace-prefixed
-  block when progress lines precede it; it then verifies the minted grant's
-  `team_id` and returns
-  `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
-  the hook revokes the grant and keeps nothing. As of aw 1.36.1, receiving,
-  wake registration and `aw whoami` work through a grant, but sending mail or
-  chat through a grant is rejected by the server with 422 (`from_did must match
-  the authenticated sender`) because the aw client signs with the grant-key DID
-  where the server expects the resident's. Retire revokes
-  `meta.identity.grant.id` through the custody directory; with no grant id it
-  reports `nothing-to-revoke`. A failed revoke exits nonzero and reports the TTL
-  expiry.
+  the `oats-local.yaml settings.oats.aweb.residents.<name>` key to set. Before
+  minting, the hook runs `aw custody status --json` from that custody directory
+  with `AWEB_IDENTITY_HOME` removed and requires `status: running`, the selected
+  team present and `ready`, `keys.signing_ready`, and the custody operations the
+  grant needs (`sign_plain_message/1`, plus `create_e2ee_envelope/1` and
+  `unwrap_e2ee_message/1` when `identity.e2ee` is not `false`). Encryption
+  readiness is fatal when E2E is required; with `identity.e2ee: false` it is a
+  warning in the brief. Failures name the status / first error code and the
+  remedy `start aw custody serve for <resident>`. There is no manifest `requires`
+  row for the custody service because it is a daemon, not a command-presence
+  check.
+
+  OATS defaults concrete grant scopes; these are not aweb bundles. Normal
+  profile (`identity.profile: normal`, the default): `mail.read mail.send
+  chat.read chat.send events.read coord.read coord.write presence.write
+  contacts.read contacts.write`. Reviewer profile (`identity.profile:
+  reviewer`): `mail.read chat.read events.read coord.read presence.write`.
+  `identity.scopes` is an explicit concrete list and wins over any profile;
+  profile names outside `normal` and `reviewer` are fatal. Optional
+  `identity.ttl` defaults to `8h` (aw accepts `60s` to `720h`). Spawn runs
+  `aw id grant mint [--team <team>] --scope <comma-list> --ttl <ttl> --label
+  oats:<instance> --out <home>/.aweb-identity --json` from the custody directory
+  with `AWEB_IDENTITY_HOME` removed from the child environment: in aw 1.36.1,
+  grant commands are not identity-home-aware and intentionally refuse both
+  `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the custody
+  identity. `--team` is passed only when the installed aw is at the placeholder
+  `GRANT_TEAM_FLAG_MIN` (`9.9.9` until the aweb common-slice release version is
+  filled in); older aw versions keep the 1.12 path and the hook verifies the
+  returned `team_id`, revoking on mismatch. The hook parses the whole JSON
+  document because aw `--json` output is indented across lines, with a fallback
+  to the first brace-prefixed block when progress lines precede it, and returns
+  `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`.
+
+  As of aw 1.36.1, receiving, wake registration and `aw whoami` work through a
+  grant, but sending mail or chat through a grant is rejected by the server with
+  422 (`from_did must match the authenticated sender`) because the aw client
+  signs with the grant-key DID where the server expects the resident's. This is
+  fixed by the aweb common slice once released (fill exact aw version here).
+  During a session, terminal grant errors `grant_expired`, `grant_revoked`,
+  `grant_subject_inactive`, `grant_issuer_revoked`, and
+  `grant_freshness_unavailable` mean the agent must report and stop; the host
+  restarts it with a fresh grant. Retire revokes `meta.identity.grant.id` through
+  the custody directory, reports `nothing-to-revoke` when no grant id is present,
+  and removes every `.aweb-identity*` grant directory.
+- `identity.renew: off | launch` (default `off`). `launch` runs the launch hook
+  on every start/restart, mints a fresh grant into a new
+  `<home>/.aweb-identity-<unix-seconds>` directory (never in place), returns the
+  new `meta.identity.grant` and `env.AWEB_IDENTITY_HOME`, then revokes the
+  previous grant. If mint fails the old grant and locator are kept; if old revoke
+  fails the new grant is kept and the warning says the previous grant was not
+  revoked. Keep this setting `off` until kernels persist launch-hook meta
+  (decision 27 / K3'), otherwise a later retire can still see and revoke the
+  original grant rather than the renewed current one.
 - `residents: { <name>: /abs/custody/dir }` is the host-owned map for global
   mode. Each custody directory's `.aw` holds the resident identity root keys and
   team certificate. Do not put this map in committed source; the hook cannot
