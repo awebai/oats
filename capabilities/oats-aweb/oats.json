@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.13.0",
+  "version": "1.12.0",
   "compatibility": {
     "oats": ">=0.24.4"
   },
@@ -121,8 +121,7 @@
       "command": "bin/oats-aweb.mjs spawn",
       "required": true
     },
-    "retire": "bin/oats-aweb.mjs retire",
-    "launch": "bin/oats-aweb.mjs launch"
+    "retire": "bin/oats-aweb.mjs retire"
   },
   "environment": [
     "AWEB_DELIVERY",
@@ -144,7 +143,7 @@
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
     },
     "residents": {
       "description": "Host-owned map for global mode: resident name to absolute custody directory whose .aw holds the resident root keys and team certificate. Put this only in oats-local.yaml settings.oats.aweb.residents; committed workspace or soul files must never carry custody paths."
