@@ -433,7 +433,12 @@ the pre-fix marker and is never accepted for dispatch.
     immediately after the decision check; a concurrent spawn that lost refuses
     **`E_PLACEMENT_TAKEN`** having touched nothing. Two concurrent applies of
     one decision yield exactly one home. There is no wider lock; this
-    reservation is the guarantee.
+    reservation is the guarantee. Instance names are deployment-wide
+    (0.26.0), so right after its reservation a spawn re-checks the whole agents
+    root: when another soul's concurrent spawn reserved the same name, it
+    removes its own empty reservation and refuses (`E_INSTANCE_NAME_TAKEN` for a
+    `--name`, `E_PLACEMENT_TAKEN` for a derived name). At most one wins, and
+    possibly neither.
   - Gate confirmation AND the exec owner on `spawn-preview-2` +
     `spawn-apply-2` + `spawn-idempotency`; a legacy local request on such a CLI
     is refused by the Desktop (`E_PLAN_REQUIRED`), not routed around the fence.
@@ -1051,7 +1056,7 @@ top-level `workspace` reachability field:
 ### Probe
 
 ```json
-{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval"],"workspaceApi":2}
+{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval","spawn-name"],"workspaceApi":2}
 ```
 
 A feature is listed only once the binary implements it. Gate `sync`/`package`/
@@ -1185,7 +1190,37 @@ Stable error codes: `E_USAGE`, `E_NO_DEPLOYMENT`, `E_UNKNOWN_AGENT`,
 multiple team instances — disambiguate with `--relative-root <agents-root>`
 — or the chosen anchor is shadowed by a same-named instance so the lineage
 edge would resolve wrongly), `E_BAD_ARGS`,
-`E_SPAWN_FAILED`.
+`E_INSTANCE_NAME_INVALID`, `E_INSTANCE_NAME_TAKEN`, `E_SPAWN_FAILED`.
+
+**Instance names** (0.26.0, feature `spawn-name`). By default the name is
+derived: `<agent>-<purpose>` with `--purpose <slug>`, else `<agent>-<n>`.
+`--name <slug>` (human decision 2026-09-24) is the explicit opt-in: the
+instance name is **exactly** `<slug>`, with no `<agent>-` prefix.
+
+- `--name` and `--purpose` are mutually exclusive (`E_BAD_ARGS`), and
+  `--name` needs a value (`E_BAD_ARGS`).
+- The name is never rewritten. Input that is not already a slug (lowercase
+  letters and digits, single dashes between them) is
+  `E_INSTANCE_NAME_INVALID`, and so is a name equal to any soul name of the
+  deployment (souls on the agents root, and every soul the workspace
+  declares, fetched or not). Soul and instance references stay unambiguous.
+- **Names are unique across the deployment.** An explicit name that any
+  `<agents-root>/<soul>/instances/` already holds (including homes whose soul
+  was since removed), or that a live window in the target tmux session carries
+  (tmux backend, launched or `--no-launch`), is `E_INSTANCE_NAME_TAKEN`
+  (`details.instance`, `details.home` or `details.session`). There is never a
+  silent `-2` for a name the operator typed. These checks run after
+  idempotency-key recovery (a keyed retry replays its receipt), and a
+  concurrent spawn of another soul under the same name is caught after
+  placement (see *Exclusive placement*). The invariant covers spawns through
+  the CLI. Homes from earlier kernels may already share a name.
+- Derived names de-duplicate deployment-wide too (`-2`, `-3`, …), against
+  every soul's instances and every soul name. Two souls never derive the same
+  name (soul `a` with `--purpose b-c` against soul `a-b` with `--purpose c`).
+- `--preview` reports the final name (`instance`, `decision.instance`) and
+  refuses with the same codes. The name is part of the decision revision, so
+  `--expect-decision` binds it: another name under a confirmed decision is
+  `E_DECISION_STALE`.
 
 Dispatch-level failures (any `--json` command): `E_UNKNOWN_COMMAND` (no
 kernel subcommand or capability namespace matches, or unknown capability
