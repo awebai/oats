@@ -2938,7 +2938,7 @@ async function paneCmd() {
  * remotes, confirm membership, resolve `packages:`, approve (TTY) or list what
  * needs approval (exit 2), write `oats-lock.json`. Nothing is installed, no soul
  * is created, nothing is spawned, no `oats-config.yaml` is written: the member
- * clones and the setup expert are the operator's next steps, printed here. */
+ * clones and the operator expert are the operator's next steps, printed here. */
 async function onboardCmd() {
   const bail = (code, message, details) => (JSON_MODE ? jsonFail(code, message, details) : die(message));
   const usage = "usage: oats onboard [<dir>] --workspace <repo ref> [--json]   (or --dir <dir>)";
@@ -3015,11 +3015,11 @@ async function onboardCmd() {
   // (4) The taught layout as next steps (design doc §4), and the envelope.
   const standalone = synced.discovery.standalone === true;
   const members = synced.report.members;
-  // The setup expert is suggested only when THIS workspace lists a soul by that name (a
+  // The operator expert is suggested only when THIS workspace lists a soul by that name (a
   // confirmed member's or, standalone, the repo's own); otherwise any listed soul is spawnable.
   const soulNames = synced.items.souls.map((s) => s.name);
-  const setupExpert = soulNames.includes("oats-setup-expert");
-  const spawnHint = setupExpert ? `oats spawn oats-setup-expert --dir ${shortPath(dir)}` : null;
+  const setupExpert = soulNames.includes("oats-operator-expert");
+  const spawnHint = setupExpert ? `oats spawn oats-operator-expert --dir ${shortPath(dir)}` : null;
   const anySoulHint = `spawn any listed soul: oats spawn <soul> --dir ${shortPath(dir)}${soulNames.length ? ` (e.g. ${soulNames.slice(0, 3).join(", ")})` : ""}`;
   // A member's clone goes beside oats-local.yaml under its repo name; `agents/` is the instance
   // homes, so a member called "agents" is cloned as `agents-repo/` (design doc §4). The HOST is
@@ -3060,7 +3060,7 @@ Next:
   2. Check who may read the host: ${synced.discovery.key}${hostIsMember ? " is itself a member" : " is a dedicated host"}. The workspace file
      names every member, so if any member is private the host must be a private repo that is not
      a public member; public contributors then get the standalone case (from: here + oats.core).
-  3. ${setupExpert ? "Spawn the setup expert to guide the rest (souls, teams, provider settings, approvals):" : "No soul named oats-setup-expert is listed here —"}
+  3. ${setupExpert ? "Spawn the operator expert to guide the rest (souls, teams, provider settings, approvals):" : "No soul named oats-operator-expert is listed here —"}
        ${spawnHint ?? anySoulHint}${synced.approvalNeeded.length ? `\n  (first: \`oats sync --dir ${shortPath(dir)}\` in a terminal to approve ${synced.approvalNeeded.map((a) => `${a.id} ${a.version}`).join(", ")})` : ""}`);
   process.exitCode = synced.approvalNeeded.length ? 2 : 0;
 }
@@ -3911,7 +3911,7 @@ Usage:
       [--json]                               and agents/, then runs the oats sync path (lock v3;
                                             exit 2 while approvals are pending) and prints the
                                             next steps (clone members you work IN, spawn
-                                            oats-setup-expert); creates no soul, spawns nothing
+                                            oats-operator-expert); creates no soul, spawns nothing
   oats create <name> [--local] [--no-oats-core] create an agent soul; --local = full
       [--description <d>] [--repo <r>]      soul under local-agents/ (uncommitted,
       [--work <mode>] [--runtime pi|claude|codex] gitignored; same memory + lifecycle)
