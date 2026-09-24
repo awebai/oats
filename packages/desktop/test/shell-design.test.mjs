@@ -90,7 +90,7 @@ function shell(t, shellSource = source) {
   };
 }
 
-test("provided workspace header structure and leaf are decorative; chooser semantics and ids survive", t => {
+test("provided workspace header structure and brand artwork are decorative; chooser semantics and ids survive", t => {
   const { document } = shell(t);
   const trigger = document.querySelector(".side-head > #ws-trigger");
   assert.deepEqual([...trigger.children].map(el => el.className), ["ws-brand-mark", "ws-heading-copy", "ws-chevron"]);
@@ -99,7 +99,12 @@ test("provided workspace header structure and leaf are decorative; chooser seman
   assert.equal(trigger.getAttribute("aria-expanded"), "false");
   assert.ok(trigger.querySelector(".ws-heading-copy > #ws-name"));
   assert.equal(trigger.querySelector("#ws-context").textContent, "", "unknown context starts empty");
-  assert.equal(trigger.querySelector(".ws-brand-icon path").getAttribute("d"), "M7 1 C10.5 4, 11.5 9, 7 15 C2.5 9, 3.5 4, 7 1 Z");
+  const mark = trigger.querySelector(".ws-brand-mark");
+  assert.equal(mark.getAttribute("aria-hidden"), "true");
+  const image = mark.querySelector("img.ws-brand-image");
+  assert.equal(image.getAttribute("src"), "../assets/brand/generated/sidebar-48.png", "the generated 2x sidebar icon");
+  assert.equal(image.getAttribute("alt"), ""); assert.equal(image.getAttribute("width"), "24"); assert.equal(image.getAttribute("height"), "24");
+  assert.equal(trigger.querySelector(".ws-brand-icon, [data-shell-icon=\"oats\"]"), null, "the placeholder leaf is gone");
   assert.match(source, /hasWorkspaceSwitcher: true/);
   const switcher = createWorkspaceSwitcher({ document, selectWorkspace() {}, discoverSuggestions: async () => [], addWorkspace: async () => ({}), pickWorkspace: async () => ({}) });
   switcher.begin()({ id: "/fixture/A", name: "A" }, []);
@@ -336,7 +341,7 @@ test('split SVG weights change only to 1.1, while geometry, leaf accent and nav 
       assert.equal(svg.querySelector('rect').getAttribute('width'), '12'); assert.equal(svg.querySelector('rect').getAttribute('height'), '12');
     }
   }
-  assert.equal(document.querySelector('.ws-brand-leaf').getAttribute('fill'), 'var(--accent)');
+  assert.throws(() => shellIcon('oats'), TypeError, 'the brand is artwork, not a shell icon');
 });
 
 test('shipped panel/footer buttons dispatch registry actions and preserve a visible exit from focus mode', t => {

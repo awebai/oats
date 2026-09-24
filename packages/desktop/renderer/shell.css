@@ -64,8 +64,10 @@ body {
 #ws-trigger:hover { background: var(--surface-2); }
 #ws-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 /* Brand stays a single 24px mark; the two-line copy flexes, never the icon. */
-.ws-brand-mark { width: 24px; height: 24px; flex: none; display: grid; place-items: center;
-                 border-radius: 6px; background: var(--primary-bg); color: var(--primary-fg); }
+.ws-brand-mark { width: 24px; height: 24px; flex: none; display: grid; place-items: center; }
+/* The supplied artwork (transparent ground) at 2x; decorative — the
+   workspace name beside it is the accessible text. */
+.ws-brand-image { width: 24px; height: 24px; display: block; }
 .ws-heading-copy { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 #ws-name { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ws-context { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

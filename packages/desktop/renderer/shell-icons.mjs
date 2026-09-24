@@ -17,8 +17,6 @@ const paths = Object.freeze({
 });
 
 export function shellIcon(name) {
-  // The leaf is the provided OATS mark, not a new brand or external asset.
-  if (name === "oats") return '<svg class="ws-brand-icon" width="14" height="16" viewBox="0 0 14 16" aria-hidden="true" focusable="false"><path class="ws-brand-leaf" d="M7 1 C10.5 4, 11.5 9, 7 15 C2.5 9, 3.5 4, 7 1 Z" fill="var(--accent)"/><path class="ws-brand-stem" d="M7 3.5 V13" fill="none" stroke="var(--primary-bg)" stroke-width="1.2"/></svg>';
   if (!Object.hasOwn(paths, name)) throw new TypeError("Unknown shell icon");
   return `<svg class="shell-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="${["splitRight", "splitDown", "splitClose"].includes(name) ? "1.1" : "1.4"}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[name]}</svg>`;
 }
