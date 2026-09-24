@@ -9,28 +9,8 @@ import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
 import { soulRepository } from './soul-repository.mjs';
+import { inspectData, inspectFacts } from './inspect-contract.mjs';
 
-
-/* Operations-API capability facts for the soul inspector (replaced with the
-   v2 instance card in F3/F4). */
-const record = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-export function reportedText(value, fallback = 'Not reported') {
-  if (value === undefined || value === null || value === '') return fallback;
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-export function capabilityFacts(cap) {
-  cap = record(cap);
-  const health = record(cap.health), activation = record(cap.activation);
-  return [
-    ['Installation', health.installed === true ? 'Installed' : health.installed === false ? 'Not installed' : 'Not reported'],
-    ['Health', reportedText(health.status)],
-    ['Trust', health.trusted === true ? 'Trusted' : health.trusted === false ? 'Not trusted' : 'Not reported'],
-    ['Activation', activation.enabled === true ? 'Enabled' : activation.enabled === false ? 'Disabled' : 'Not reported'],
-    ...(activation.target ? [['Target', reportedText(activation.target)]] : []),
-    ...(activation.provenance ? [['Binding', reportedText(activation.provenance)]] : []),
-  ];
-}
 
 export const inspectorCSS = `
 ${declarationsCSS}
@@ -96,8 +76,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     const w = workspace();
     const ref = selection?.instance;
     const selector = ref ? { kind: 'instance', instance: ref.instance, agent: ref.agent, agentsRoot: ref.agentsRoot, server: ref.server ?? null }
-      : selection?.agent ? { kind: 'soul', soul: selection.agent.name, agentsRoot: selection.agent.agentsRoot }
-        : { kind: 'scope', context: selection?.selector?.context || w?.scope };
+      : selection?.agent ? { kind: 'soul', soul: selection.agent.name, agentsRoot: selection.agent.agentsRoot } : null;
     readiness?.update({ active: !!selection && selectionGen === workspaceGeneration(), workspace: w, selector, cli: cliStatus(), identity: ref?.createdAt });
   }
   function message(text, error = false) {
@@ -121,12 +100,6 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (selection.agent) head.append(createSoulMark(doc, selection.agent));
     head.append(heading, button('Refresh', () => show(selection)), closeControl);
     summary = node('div', undefined, 'inspector-summary');
-    if (selection.contexts?.length > 1) {
-      const scopes = node('select'); scopes.className = 'field'; scopes.setAttribute('aria-label', 'Capability configuration scope');
-      for (const scope of selection.contexts) { const option = node('option', scope.label); option.value = scope.context || ''; scopes.append(option); }
-      scopes.value = selection.selector.context || '';
-      scopes.addEventListener('change', () => show({ contexts: selection.contexts, selector: scopes.value ? { context: scopes.value } : {} })); summary.append(scopes);
-    }
     status = node('p', '', 'inspector-status'); status.setAttribute('role', 'status');
     content = node('div', undefined, 'inspector-content'); container.append(head, summary, status, content);
     const readinessHost = node('div', undefined, 'inspector-content'); container.append(readinessHost);
@@ -149,8 +122,8 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   async function show(next) {
     if (!next || !alive) return;
     selection = next; const id = ++serial, gen = workspaceGeneration(); selectionGen = gen; data = null;
-    frame(next.agent?.name || next.instance?.instance || 'Reported capabilities'); message('Loading…');
-    if (!available()) { message('Capability inspection requires a compatible OATS CLI with operations support. Check the CLI and refresh.', true); return; }
+    frame(next.agent?.name || next.instance?.instance || ''); message('Loading…');
+    if (!available()) { message('Inspection needs an installed OATS CLI with operations API 2. Update OATS and refresh.', true); return; }
     try {
       const result = await request({ action: 'inspect', selector: next.selector });
       if (!valid(id, gen)) return;
@@ -162,28 +135,43 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     for (const [key, value] of entries) dl.append(node('dt', key), node('dd', value === undefined || value === null || value === '' ? '—' : String(value)));
     parent.append(dl);
   }
+  // One plain sentence each (the kernel's own message); the code waits behind Details.
+  function problem(p, parent = content) {
+    const row = node('div', undefined, 'inspector-problem');
+    row.append(node('p', typeof p?.message === 'string' && p.message ? p.message : 'The kernel reported a problem.'));
+    if (typeof p?.code === 'string' && p.code) { const more = node('details'); more.append(node('summary', 'Details'), node('p', p.code, 'muted')); row.append(more); }
+    parent.append(row);
+  }
+  function instructions(doc, truncatedNote) {
+    const box = node('details'); box.append(node('summary', 'AGENTS.md / instructions'), node('pre', doc?.text || 'No instructions reported.'));
+    if (Array.isArray(doc?.sources) && doc.sources.length) box.append(node('p', `Composed from: ${doc.sources.map(x => x?.source).filter(Boolean).join(', ')}`, 'muted'));
+    content.append(box);
+    if (doc?.truncated) content.append(node('p', truncatedNote, 'muted'));
+  }
   function render() {
     operationSerial++;
     content.replaceChildren();
-    if (!data || data.operationsApi !== 1) { message('This CLI does not support capability inspection. Update OATS and refresh.', true); return; }
-    for (const problem of data.problems || []) content.append(node('p', `${problem.code}: ${problem.message}`));
-    const snapshot = data.selected?.source === 'snapshot';
-    content.append(node('p', snapshot ? 'Instance snapshot: the instructions and capabilities this home was created with.' : 'The configuration future instances resolve, as the kernel reports it. Existing agent homes keep their snapshot.', 'muted'));
-    facts([['Scope', data.scope?.context], ['Source', snapshot ? 'Instance snapshot' : selection.agent ? `Soul: ${selection.agent.name}` : 'Workspace defaults']]);
-    const matches = selection.agent ? (Array.isArray(data.souls) ? data.souls : []).filter(s => s?.name === selection.agent.name && s?.agentsRoot === selection.agent.agentsRoot) : [];
-    const soul = matches.length === 1 ? matches[0] : null;
-    if (snapshot) summary.replaceChildren();
-    if (soul && !snapshot) renderSoul(soul);
-    else if (selection.agent && !snapshot) content.append(node('p', 'The selected soul was not reported at this scope. Refresh to retry.', 'muted'));
-    if (snapshot) {
-      content.append(node('h3', 'AGENTS.md / instructions'));
-      content.append(node('pre', data.snapshot?.instructions?.error || data.snapshot?.instructions?.text || 'No instructions reported.'));
-      if (data.snapshot?.drift?.length) {
-        content.append(node('h3', 'Configuration changes since creation'), node('pre', JSON.stringify(data.snapshot.drift, null, 2)));
-      }
+    const inspected = inspectData(data, selection);
+    if (!inspected) {
+      // Dispatch on the payload's own integer: a classic scope still answers operationsApi 1.
+      message(data?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection. The inspector shows it once it is on the workspace model.'
+        : 'The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and refresh.', true);
+      return;
     }
-    renderCapabilities(snapshot);
-    if (snapshot || selection.agent) renderOperations();
+    for (const p of inspected.problems) problem(p);
+    const soul = inspected.souls[0] ?? null;
+    if (inspected.subject.kind === 'instance') {
+      summary.replaceChildren();
+      content.append(node('p', 'As spawned: an instance never changes under itself. A newer soul or module needs a new instance.', 'muted'));
+      content.append(node('h3', 'Instance')); facts(inspectFacts.instance(inspected.instance));
+      instructions(inspected.instance.instructions, 'Instructions are truncated here.');
+      if (soul) renderSoul(soul, false);
+    } else if (soul) {
+      content.append(node('p', 'What a spawn of this soul resolves now.', 'muted'));
+      renderSoul(soul, true);
+    } else content.append(node('p', 'The kernel did not report this soul. Refresh to retry.', 'muted'));
+    renderCapabilities(inspected);
+    renderOperations(inspected);
   }
   // Roster-owned actions do not depend on operationsApi, inspect success, or
   // an editable soul record. Keep their DOM stable while inspection settles.
@@ -233,36 +221,30 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     }
     parent.append(block);
   }
-  function renderSoul(soul) {
+  function renderSoul(soul, withInstructions) {
+    content.append(node('h3', 'Soul')); facts(inspectFacts.soul(soul));
     renderSoulDeclarations(content, soul);
-    content.append(node('h3', 'Future-instance defaults'));
-    facts([['Runtime', soul.runtime], ['Launch configuration', soul.launchConfig || 'None'], ['Model', soul.model || 'Runtime default'], ['Permissions', soul.yolo === null || soul.yolo === undefined ? 'Scope default' : soul.yolo ? 'YOLO enabled' : 'Ask for permission'], ['Session backend', soul.backend], ['Description', soul.description]]);
-    const instructions = node('details'); instructions.append(node('summary', 'AGENTS.md / instructions'), node('pre', soul.instructions?.error || soul.instructions?.text || 'No instructions reported.'));
-    content.append(instructions);
-    if (soul.instructions?.truncated) content.append(node('p', 'Instructions are truncated here. The full document is in the soul\'s repository.', 'muted'));
+    if (withInstructions) instructions(soul.instructions, 'Instructions are truncated here. The full document is in the soul\'s repository.');
   }
-  function renderCapabilities(snapshot) {
+  function renderCapabilities(inspected) {
     content.append(node('h3', 'Effective providers'));
-    facts(['knowledge', 'messaging', 'tasks'].map(layer => [layer[0].toUpperCase() + layer.slice(1), data.layers?.[layer] === undefined ? 'Not reported' : data.layers[layer]?.id || (data.layers[layer]?.disabled ? 'Disabled' : 'None configured')]));
-    content.append(node('h3', 'Reported capabilities'));
-    if (!Array.isArray(data.capabilities)) content.append(node('p', 'Reported capabilities are unavailable from this CLI.'));
-    else if (!data.capabilities.length) content.append(node('p', 'No capabilities reported at this scope.'));
-    for (const cap of (Array.isArray(data.capabilities) ? data.capabilities : []).filter(cap => cap && typeof cap === "object")) {
+    facts(inspectFacts.layers(inspected.layers));
+    content.append(node('h3', `Capabilities · ${inspected.capabilities.length}`));
+    if (!inspected.capabilities.length) content.append(node('p', 'No capabilities resolved.', 'muted'));
+    for (const cap of inspected.capabilities) {
       const card = node('section', undefined, 'inspector-cap'); card.append(node('h4', cap.id));
-      const activation = cap.activation || {}, health = cap.health || {};
-      facts([['Version', cap.version], ['Source', reportedText(cap.source)], ['Origin', reportedText(cap.origin)], ...capabilityFacts(cap)], card);
-      if (health.detail) card.append(node('p', health.detail));
-      if (health.problems?.length) card.append(node('p', health.problems.join('\n')));
-      if (Object.keys(activation.settings || {}).length) {
-        const settings = node('details'); settings.append(node('summary', 'Effective settings'), node('pre', JSON.stringify(activation.settings, null, 2))); card.append(settings);
+      facts(inspectFacts.capability(cap), card);
+      if (cap.settings && typeof cap.settings === 'object' && Object.keys(cap.settings).length) {
+        const settings = node('details'); settings.append(node('summary', 'Settings'), node('pre', JSON.stringify(cap.settings, null, 2))); card.append(settings);
       }
       content.append(card);
     }
   }
-  function renderOperations() {
+  function renderOperations(inspected) {
     const id = serial, gen = selectionGen;
     content.append(node('h3', 'Provider operations'));
-    const providers = (Array.isArray(data.capabilities) ? data.capabilities : []).filter(cap => cap?.layer && cap.activation?.enabled);
+    // A layer provider is the module that fills the layer (no activation record in v2).
+    const providers = inspected.capabilities.filter(cap => cap.layer);
     let count = 0;
     for (const provider of providers) for (const operation of provider.operations || []) {
       count++; const row = node('div', undefined, 'inspector-cap');
@@ -280,6 +262,12 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
           try {
             const result = await request({ action: 'run', selector: selection.selector, operation: address });
             if (!owns()) return;
+            // Dispatch on the payload's own integer; the result must be for this operation.
+            if (result?.operationsApi !== 2 || result.operation !== address) {
+              message(result?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older operation result.'
+                : 'The installed OATS CLI returned an operation result this Desktop cannot read.', true);
+              return;
+            }
             const output = result.result;
             const area = node('div');
             if (operation.kind === 'view') {

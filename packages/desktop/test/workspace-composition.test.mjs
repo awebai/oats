@@ -9,21 +9,20 @@ import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { inspectorCSS } from '../renderer/soul-inspector.mjs';
+import { soulInspection } from './helpers/inspect-fixture.mjs';
 import { workspaceStatusData } from '../deployment-data.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const CLI = { ok: true, operationsApi: 1, features: ['operations'], relations: true };
+const CLI = { ok: true, operationsApi: 2, features: ['operations'], relations: true };
 const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
 const V2_CLI = { ...CLI, bin: '/fixture/bin/oats', workspaceApi: 2, features: ['operations', 'workspace-v2'] };
 const observedStatus = workspaceStatusData(f2('workspace-status'), '/fixture/base/northwind-workspace');
 const catalogReply = (capabilities = f2('capabilities').result.capabilities) => ({ workspaceSyncApi: 1, status: 'ok',
   capabilities: { capabilitiesApi: 1, ...f2('capabilities').result, capabilities } });
 const soul = { name: 'dev', agentsRoot: '/fixture/agents', repoName: 'fixture', runtime: 'pi', work: 'worktree', description: 'Build and review' };
-const inspection = { operationsApi: 1, selected: { source: 'config' }, scope: { context: '/fixture' },
-  souls: [{ ...soul, editable: { fields: ['model'], instructions: true }, instructions: { text: 'Saved instructions' } }], layers: {},
-  capabilities: [{ id: 'fixture.notes', version: '1.0', source: 'local', origin: 'installed',
-    health: { installed: true, trusted: true, status: 'ok' }, activation: { enabled: true, target: 'global', provenance: ['workspace'] } }] };
+// operationsApi 2 soul inspection from the kernel capture.
+const inspection = soulInspection('dev', { instructions: { file: '/fixture/AGENTS.md', text: 'Saved instructions', truncated: false } });
 async function fixture(t, { cli = CLI, inspect = () => inspection, agents = [soul], sync = null } = {}) {
   const dom = new JSDOM('<body><div id="host"></div></body>', { url: 'http://localhost' });
   const doc = dom.window.document;
@@ -146,7 +145,7 @@ for (const state of ['no operations', 'wrong API', 'rejection', 'pending', 'soul
   const request = deferred();
   const u = await fixture(t, {
     cli: state === 'no operations' ? { ok: true, features: [] } : CLI,
-    inspect: () => state === 'wrong API' ? { operationsApi: 0 } : state === 'soul omitted' ? { ...inspection, souls: [] }
+    inspect: () => state === 'wrong API' ? { operationsApi: 0 } : state === 'soul omitted' ? { ...structuredClone(inspection), souls: [] }
       : state === 'rejection' ? Promise.reject(new Error('Reported inspection failure')) : request.promise,
   });
   u.get('.soul-card').click();
@@ -158,10 +157,10 @@ for (const state of ['no operations', 'wrong API', 'rejection', 'pending', 'soul
   await tick();
   if (state === 'pending') { request.resolve(inspection); await tick(); }
   const diagnostic = u.get('.inspector-status').textContent;
-  if (state === 'no operations') assert.match(diagnostic, /operations support/);
-  if (state === 'wrong API') assert.match(diagnostic, /does not support/);
+  if (state === 'no operations') assert.match(diagnostic, /operations API 2/);
+  if (state === 'wrong API') assert.match(diagnostic, /cannot read/);
   if (state === 'rejection') assert.match(diagnostic, /Reported inspection failure/);
-  if (state === 'soul omitted') assert.match(u.get('.soul-inspector').textContent, /selected soul was not reported/);
+  if (state === 'soul omitted') assert.match(u.get('.soul-inspector').textContent, /did not report this soul/);
   assert.equal(u.get('.spawn-dialog'), modal); assert.equal(modal.querySelector('.ftask').value, 'Retain my task');
   assert.equal(u.get('.soul-inspector .spawn-act'), launch, 'inspection does not replace the action opener');
   modal.querySelector('.fcancel').click(); assert.equal(u.doc.activeElement, launch);
@@ -176,7 +175,7 @@ for (const cli of [null, { ok: false }]) test(`CLI ${JSON.stringify(cli)}: launc
   assert.match(u.get('.spawn-act').title, cli === null ? /Checking/ : /compatible installed/);
   u.get('.spawn-act').dispatchEvent(new u.dom.window.Event('click')); assert.equal(u.get('.spawn-dialog'), null);
   u.click('Files'); assert.deepEqual(u.files, ['dev']);
-  assert.match(u.get('.inspector-status').textContent, /compatible OATS CLI/);
+  assert.match(u.get('.inspector-status').textContent, /operations API 2/);
   await u.setCli({ ok: true, features: [] });
   assert.equal(u.get('.spawn-act').disabled, false, 'CLI recovery enables Spawn without an operations request');
   u.get('.spawn-act').click(); assert.ok(u.get('.spawn-dialog'));

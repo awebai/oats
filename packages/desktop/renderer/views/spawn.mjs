@@ -18,6 +18,7 @@ import { registerAction, getBinding, formatChord, onKeymapChange } from "../keyb
 import { resolveViewKey } from "../view-keys.mjs";
 import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, cliCard } from "./cli-status.mjs";
 import { preselectSchedule } from "./schedules.mjs";
+import { inspectSupported } from "../inspect-contract.mjs";
 
 /** True while the CLI probe has never SETTLED (no response classified yet).
  * Pending is card-less by design, so disabled buttons must explain
@@ -204,7 +205,7 @@ ${spawnDialogCSS}</style>
     ctx, presentation: s.presentation, launch: agent => { if (cliAvailable()) openSpawnModal(s, agent); },
     canLaunch: agent => canLaunchSoul(s, agent),
     launchReason: () => cliProbePending() ? "Checking for a compatible oats CLI — spawning enables once it is verified" : "Requires a compatible installed OATS CLI and a current standalone soul.",
-    available: () => cliAvailable() && cliStatus()?.operationsApi === 1 && cliStatus()?.features?.includes('operations'),
+    available: () => cliAvailable() && inspectSupported(cliStatus()),
     files: agent => s.ctx.openBrain?.(agent.name),
     canFiles: agent => canOpenFiles(s, agent),
     instances: agent => soulInstances(s, agent), workspace: () => s.workspace,

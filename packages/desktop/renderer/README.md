@@ -141,30 +141,43 @@ a remote target never borrows local model/configuration facts. No capability
 or readiness facts appear in this dialog; soul readiness belongs to the soul
 inspector.
 
-## Souls: negotiated declarations, not launch readiness
+## The soul inspector on the workspace model (`operationsApi: 2`, `soulsApi: 2`)
 
-The existing on-demand `POST /api/capabilities` inspect action carries K4 from
-OATS 0.24.7+. `soul-declarations.mjs` consumes **`soulsApi === 1`**, never a
-version guess, YAML parser or source-repository scanner. The selected soul must
-match exactly one reported name + agents root inside the workspace-owned request;
-instance snapshots do not become current soul declarations.
+`POST /api/capabilities` runs `oats inspect` for exactly one subject: the
+selected **soul** (`--soul`, what a spawn of it resolves now) or the selected
+**instance** (`--home`, as spawned — an instance never changes under itself).
+There is no scope subject. The gate is the probe integer `operationsApi === 2`
+(`inspect-contract.mjs`); a 0.25 kernel gets the "update OATS" line and no
+request. The response must name exactly the selected subject, or it is not
+rendered The payload's own integer is checked too: a classic scope
+still answers `operationsApi: 1`, which the inspector names ("still uses the
+classic layout") instead of reading.
 
-The inspector renders the soul's own `requires`, `defaults`, `knowledge`, `teams`
-and `resources`, plus recorded provenance, exact revisions and declaration
-problems. Null provenance is **Unrecorded**, not Local. Explicit null declarations
-are **Not declared** only with clean declaration diagnostics; unreadable/missing
-facts remain **Not reported**. Requirements retain independent installation,
-activation and version observations from the same CLI payload (there is no
-package approval to show). **Sources installed is not Ready**, launchability, adoption, enrolment
-or a verified signature. Existing launch and editable-field gates are unchanged;
-this does not add a declarations editor or widen file access.
+The inspector is read-only (the soul is edited in its repository) and shows the
+kernel's records: the soul row's source (`member <repo> @ <c7>`), team, path,
+work, declared runtime/model; its declarations (`capabilities`, `requires`,
+`defaults`, `knowledge`, `teams`, `resources`, `children`) with declaration
+problems verbatim; the instructions (for a home, with the composed inject
+sources); the effective layer providers; each resolved module with its version,
+layer, origin (its `from`), missing requirements and merged settings; and the
+layer providers' operations. Top-level `problems[]` read as one plain sentence
+each (the kernel's message), the code behind **Details**. No classic field
+(scope chain, activation, trust, snapshot drift, sources provenance) is read.
 
-These additions reuse existing inspection lifetimes and latest-intent guards;
-there is no per-card request fan-out or polling inspection command. Routine
-roster/CLI polls preserve the settled Sources DOM and text selection. Explicit
-refresh/filter/scope changes own new projections; stale successes and rejections
-cannot overwrite current observations. Native visual acceptance is not inferred
-from the DOM/CSSOM and computed-token AA tests.
+Provider operations are addressed `<layer>:<name>` (`oats operation run
+knowledge:status --home <h> --json`). An operation that is unavailable (e.g. a
+home operation on a soul: "needs a running home (--home)") or that has a
+required argument shows its reason instead of a control; optional arguments are
+never synthesized. A run result is read only when it is `operationsApi: 2` for
+exactly the operation pressed (a classic scope's `1` is named); a view renders
+its `summary` and `documents` as inert text, and an action its JSON. Kernel
+refusals (e.g. `E_OPERATION_UNKNOWN`) are shown in the kernel's words.
+
+These reuse the existing inspection lifetimes and latest-intent guards; there is
+no per-card request fan-out or polling inspection. Routine roster/CLI polls keep
+the settled DOM; stale successes and rejections cannot overwrite the current
+observation. Native visual acceptance is not inferred from the DOM/CSSOM and
+computed-token AA tests.
 
 ## Workspace view on workspace model v2 — Capabilities, Sources, sync (F2)
 

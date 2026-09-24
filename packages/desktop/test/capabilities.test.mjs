@@ -7,8 +7,9 @@ import { capabilityRequest } from '../server/capabilities.mjs';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { scheduleRequest } from '../server/schedules.mjs';
+import { soulInspection, homeInspection, capturedRun } from './helpers/inspect-fixture.mjs';
 
-const cli = { ok: true, bin: '/installed/oats', operationsApi: 1, scheduleApi: 1, features: ['operations', 'schedule'], remote: ['operations', 'schedule'] };
+const cli = { ok: true, bin: '/installed/oats', operationsApi: 2, scheduleApi: 1, features: ['operations', 'schedule'], remote: ['operations', 'schedule'] };
 const workspace = { id: '/team', scope: '/team' };
 const agents = ['one', 'two'].map(name => ({ name: 'dev', agentsRoot: `/team/${name}/agents`, workspace: `/team/${name}` }));
 const home = '/team/two/agents/dev/instances/dev-seat';
@@ -28,6 +29,9 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
     await assert.rejects(capabilityRequest({ action, selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, options), { code: 'E_BAD_ARGS', message: 'Unknown capability action' });
   }
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home: '/foreign' } }, options), /existing home/);
+  // Inspection has no scope subject (operationsApi 2): a context selector is refused before any CLI call.
+  await assert.rejects(capabilityRequest({ action: 'inspect', selector: { context: '/team' } }, options), /no scope subject/);
+  await assert.rejects(capabilityRequest({ action: 'inspect' }, options), /no scope subject/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: undefined }), /known workspace/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: { ...workspace, remote: true } }), /registered server/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, cli: { ...cli, operationsApi: undefined } }), /Update/);
@@ -54,11 +58,10 @@ test('scheduled actions require an available declaration on the selected home', 
 });
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+// operationsApi 2 inspections from the kernel capture (soul subject, or the seat's home):
+// oats.okf's status/reindex are unavailable on a soul and available on a home.
 function inspection(name = 'dev', source = 'config') {
-  return { operationsApi: 1, scope: { context: '/team/two' }, selected: { source }, layers: { knowledge: { id: 'test.notes' } }, souls: [{ name, agentsRoot: agents[1].agentsRoot, runtime: 'claude', model: 'opus', backend: 'tmux', yolo: true, description: 'Review', editable: { fields: ['runtime', 'model', 'backend', 'yolo', 'description'], instructions: true }, instructions: { text: '# Instructions' } }],
-    snapshot: source === 'snapshot' ? { instructions: { text: '# Composed' }, drift: [] } : null,
-    capabilities: [{ id: 'test.notes', version: '1.0', layer: 'knowledge', source: 'fixture', health: { status: 'ok' }, activation: { enabled: true, target: source === 'snapshot' ? 'snapshot' : 'soul:dev' }, operations: [{ name: 'inspect', kind: 'view', available: source === 'snapshot', reason: 'Needs a home', description: 'Read memory' }] }],
-  };
+  return source === 'snapshot' ? homeInspection(home, { instance: 'dev-seat', soul: 'dev' }) : soulInspection(name);
 }
 function ui(api) {
   setWorkspace('/team'); const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'); const el = dom.window.document.querySelector('aside');
@@ -85,54 +88,36 @@ test('inspector ignores old responses and offers no in-place editing', async () 
 });
 
 test('instance knowledge comes from provider text, with no local path read or HTML interpretation', async () => {
-  const view = ui(body => body.action === 'inspect' ? inspection('dev', 'snapshot') : { operation: 'knowledge:inspect', result: { documents: [{ label: 'Memory', kind: 'markdown', path: '/remote/MEMORY.md', text: '<img src=x onerror=evil()>\nProvider memory' }] } });
+  const view = ui(body => body.action === 'inspect' ? inspection('dev', 'snapshot') : capturedRun({ result: { summary: 'fixture knowledge status', documents: [{ label: 'Memory', kind: 'markdown', path: '/remote/MEMORY.md', text: '<img src=x onerror=evil()>\nProvider memory' }] } }));
   try {
     await view.controller.show({ instance: instances[0], selector: { home } }); view.click('View'); await tick();
     assert.match(view.el.textContent, /Provider memory/); assert.equal(view.el.querySelector('img'), null);
     assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Edit defaults' || b.textContent === 'Inherit'), false);
-    assert.deepEqual(view.calls[1].selector, { home }); assert.equal(view.calls[1].operation, 'knowledge:inspect');
-  } finally { view.close(); }
-});
-
-test('unreadable instructions are explained and never offered as an empty editable draft', async () => {
-  const value = inspection(); value.souls[0].instructions = { text: null, error: 'EACCES: cannot read AGENTS.md' };
-  const view = ui(() => value);
-  try {
-    await view.controller.show(selection);
-    assert.match(view.el.textContent, /EACCES: cannot read AGENTS.md/);
-    assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Edit instructions'), false);
-  } finally { view.close(); }
-});
-
-test('soul launchConfig inspection is shown as a reported fact', async () => {
-  const value = inspection(); value.souls[0].launchConfig = 'personal';
-  const view = ui(() => value);
-  try {
-    await view.controller.show(selection); assert.match(view.el.textContent, /personal/);
+    assert.deepEqual(view.calls[1].selector, { home }); assert.equal(view.calls[1].operation, 'knowledge:status');
   } finally { view.close(); }
 });
 
 test('inspector preserves current provider, availability, kind and required-argument operation contracts', async () => {
   const value = inspection('dev', 'snapshot');
-  value.capabilities[0].operations.push(
-    { name: 'digest', kind: 'action', available: true, args: [{ name: 'depth', flag: '--depth', required: false }] },
+  const provider = value.capabilities.find(cap => cap.layer === 'knowledge');
+  provider.operations.push(
     { name: 'search', kind: 'view', available: true, args: [{ name: 'query', flag: '--query', required: true }] },
     { name: 'unavailable', kind: 'action', available: false, reason: 'Provider is unavailable' },
   );
   value.capabilities.push(
-    { id: 'inactive.notes', layer: 'knowledge', activation: { enabled: false }, operations: [{ name: 'inactive', kind: 'view', available: true }] },
-    { id: 'unbound.notes', activation: { enabled: true }, operations: [{ name: 'unbound', kind: 'view', available: true }] },
+    // A module that fills no layer is not a provider: its operations are not offered.
+    { id: 'unbound.notes', version: '1.0.0', layer: null, from: null, settings: {}, missingRequires: [], operations: [{ name: 'unbound', kind: 'view', available: true }] },
   );
-  const view = ui(body => body.action === 'inspect' ? value : { result: { digested: true } });
+  const view = ui(body => body.action === 'inspect' ? value : capturedRun({ operation: 'knowledge:reindex', result: { digested: true } }));
   try {
     await view.controller.show({ instance: instances[0], selector: { home } });
-    assert.deepEqual([...view.el.querySelectorAll('[data-operation]')].map(b => [b.dataset.operation, b.textContent]), [['knowledge:inspect', 'View'], ['knowledge:digest', 'Run']]);
+    assert.deepEqual([...view.el.querySelectorAll('[data-operation]')].map(b => [b.dataset.operation, b.textContent]), [['knowledge:status', 'View'], ['knowledge:reindex', 'Run']]);
     assert.match(view.el.textContent, /requires arguments/);
     assert.match(view.el.textContent, /Provider is unavailable/);
     view.controller.syncAvailability();
     assert.equal(view.calls.length, 1, 'projecting operation controls never runs them');
     view.click('Run'); await tick();
-    assert.deepEqual(view.calls[1], { url: '/api/capabilities?ws=%2Fteam', action: 'run', selector: { home }, operation: 'knowledge:digest' });
+    assert.deepEqual(view.calls[1], { url: '/api/capabilities?ws=%2Fteam', action: 'run', selector: { home }, operation: 'knowledge:reindex' });
     assert.deepEqual(JSON.parse(view.el.querySelector('.operation-output pre').textContent), { digested: true });
     assert.equal(view.calls.length, 2, 'optional args are not synthesized and completion does not rerun');
   } finally { view.close(); }

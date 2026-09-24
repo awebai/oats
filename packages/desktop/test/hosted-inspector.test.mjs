@@ -14,22 +14,18 @@ import { currentWorkspace, setWorkspace, postJson, wsQuery, workspaceGeneration 
 import { refreshCli, cliStatus } from '../renderer/views/cli-status.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
+import { inspectData, inspectFacts } from '../renderer/inspect-contract.mjs';
+import { soulInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { soulRepository } from '../renderer/soul-repository.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const CLI = { ok: true, operationsApi: 1, features: ['operations'], relations: true };
+const CLI = { ok: true, operationsApi: 2, features: ['operations'], relations: true };
 const soul = root => ({ name: 'dev', agentsRoot: `/${root}/agents`, runtime: 'pi', work: 'worktree', description: root });
 const selection = root => ({ agent: soul(root), selector: { soul: 'dev', agentsRoot: soul(root).agentsRoot } });
-const inspection = (root = 'a') => ({
-  operationsApi: 1, scope: { context: `/${root}` }, selected: { source: 'config' },
-  souls: [{ ...soul(root), model: `${root}-model`, instructions: { text: `${root}-instructions` } }],
-  layers: { knowledge: { id: 'fixture.notes' } },
-  capabilities: [{ id: 'fixture.notes', layer: 'knowledge', activation: { enabled: true },
-    operations: [{ name: 'inspect', kind: 'view', available: true, args: [] }] }],
-});
+// operationsApi 2 inspection from the kernel capture, with oats.okf's captured status view.
+const inspection = (root = 'a') => soulInspection('dev', { instructions: { text: `${root}-instructions`, truncated: false }, operations: capturedOperations().filter(op => op.name === 'status') });
 const button = (el, text) => { const found = [...el.querySelectorAll('button')].find(control => control.textContent === text); assert.ok(found, `button ${text}`); return found; };
 const settle = (request, outcome, value) => outcome === 'success' ? request.resolve(value) : request.reject(new Error('controlled late rejection'));
 
@@ -179,7 +175,7 @@ for (const path of ['inspect', 'operation']) {
       if (visibility === 'covered') u.host.cover(); else u.get('[aria-label="Close inspector"]').click();
       u.get('#outside').focus(); u.focuses.length = 0;
       const events = [...record.events];
-      const value = path === 'operation' ? { result: { summary: 'Owned hidden output' } } : inspection();
+      const value = path === 'operation' ? capturedRun({ result: { summary: 'Owned hidden output' } }) : inspection();
       settle(pending, outcome, value); await tick(); await tick();
       assert.deepEqual(record.events, events, 'completion must not report presence or reclaim the host');
       assert.equal(record.lease.isVisible(), false); assert.equal(record.slot.hidden, true);
@@ -299,7 +295,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus, iconElement, soulRepository });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, soulRepository, inspectData, inspectFacts });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 

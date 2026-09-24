@@ -269,7 +269,7 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
 
 test("desktop server: an unguarded local spawn is refused before the CLI; harvest addresses the exact instance home", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-climut-"));
-  const { bin, calls } = fakeCli(dir, { features: ["operations"], operationsApi: 1 });
+  const { bin, calls } = fakeCli(dir, { features: ["operations"], operationsApi: 2 });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
@@ -315,7 +315,7 @@ test("desktop server: a kernel-reported home outside the soul's instances direct
   const hostile = JSON.parse(JSON.stringify(fixture).split(captured).join(scope));
   hostile.agents[0].instances[0].home = steerTarget;
   const cliDir = mkdtempSync(join(tmpdir(), "oats-clihostile-"));
-  const { bin, calls } = fakeCli(cliDir, { features: ["operations"], operationsApi: 1, status: hostile });
+  const { bin, calls } = fakeCli(cliDir, { features: ["operations"], operationsApi: 2, status: hostile });
   const port = await freePort();
   const proc = spawn(process.execPath, [SRV, "start", "--port", String(port), "--dir", scope],
     { stdio: "ignore", env: { ...process.env, OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" } });
@@ -398,7 +398,7 @@ test("desktop server: remote roster, souls and harvest stay on the saved host ro
       { instance: "dev-one", agent: "dev", home, agentsRoot: "/remote/project/agents", running: true, savedRoute: true, runtime: "codex" },
     ],
   }];
-  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "operations"], features: ["retire-home", "operations"], operationsApi: 1, groups });
+  const fake = fakeCli(dir, { remote: ["spawn", "retire", "session", "roster", "operations"], features: ["retire-home", "operations"], operationsApi: 2, groups });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: fake.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   const base = `http://127.0.0.1:${port}`;
   try {

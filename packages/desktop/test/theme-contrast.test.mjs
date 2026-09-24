@@ -396,10 +396,15 @@ for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations m
   }
 });
 
-for (const [name] of palettes) test(`${name}: actual readiness quartet, policy and unavailable controls use computed AA surfaces`, async t => {
+for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems, warnings and policy use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  const raw = readinessFixture(); raw.checks.installed.status = 'fail'; raw.checks.installed.items[0].status = 'fail'; raw.summary.pass--; raw.summary.fail++;
+  // One check per badge state: installed pass, configured not-applicable, member unknown, providers fail.
+  const raw = readinessFixture();
+  // The captured answer (needs-configuration) plus a second problem (.readiness-problem) and a warning (.readiness-warning).
+  const answer = raw.checks.providers.items[0].result;
+  answer.problems.push({ code: 'needs-configuration', message: 'A second provider problem' }); answer.warnings.push({ code: 'e2ee-disabled', message: 'A provider warning' });
+  raw.checks.member.status = 'unknown'; raw.checks.member.items[0].status = 'unknown'; raw.checks.member.items[0].reason = 'unreadable'; raw.summary.pass--; raw.summary.unknown++; // keeps an unknown badge
   const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
   t.after(() => { component.dispose(); dom.window.close(); });
   await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });
@@ -412,6 +417,7 @@ for (const [name] of palettes) test(`${name}: actual readiness quartet, policy a
     ['.readiness-badge[data-state=unknown]', '.readiness-badge[data-state=unknown]', 'warn', 'surface-2'],
     ['.readiness-badge[data-state=not-applicable]', '.readiness-badge[data-state=not-applicable]', 'muted', 'surface-2'],
     ['.readiness-policy summary', '.oats-view', 'fg', 'bg'], ['.readiness-refresh', '.readiness-refresh', 'fg', 'surface'],
+    ['.readiness-problem', '.readiness-checks', 'fg', 'surface'], ['.readiness-warning', '.readiness-checks', 'fg', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -419,9 +425,23 @@ for (const [name] of palettes) test(`${name}: actual readiness quartet, policy a
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  for (const selector of ['.readiness-verify', '.readiness-enrol']) {
-    const el = doc.querySelector(selector); assert.equal(el.disabled, true); assert.equal(dom.window.getComputedStyle(el).opacity, '1');
-  }
+  assert.equal(doc.querySelector('.readiness-verify, .readiness-enrol'), null, 'no signature or enrolment control (readinessApi 2)');
+});
+
+for (const [name] of palettes) test(`${name}: the "sign in needed" provider state uses a computed AA surface`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
+  for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const raw = readinessFixture(), provider = raw.checks.providers.items[0];
+  Object.assign(provider, { status: 'fail', reason: null, problems: [], result: { status: 'authorization-required', problems: [], warnings: [] } });
+  raw.checks.providers.status = 'fail'; // the captured provider already fails (needs-configuration)
+  const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
+  t.after(() => { component.dispose(); dom.window.close(); });
+  await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });
+  const root = dom.window.getComputedStyle(doc.documentElement), el = doc.querySelector('.readiness-badge[data-state=sign-in]');
+  assert.ok(el, 'sign-in badge');
+  assert.equal(dom.window.getComputedStyle(el).color, 'var(--warn)'); assert.equal(dom.window.getComputedStyle(el).background, 'var(--surface-2)');
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--warn').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5);
+  for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
 });
 
 for (const [name] of palettes) test(`${name}: actual Connections and reported PR checks use computed AA surfaces`, async t => {
