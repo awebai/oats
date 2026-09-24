@@ -5,8 +5,10 @@ import { parseConfigData } from "../lib/config-data.mjs";
 
 test("direct main pushes retain the same read-only CI gates as pull requests", () => {
   const workflow = parseConfigData(readFileSync(new URL("../.github/workflows/pull-request.yml", import.meta.url))).value;
-  assert.deepEqual(workflow.on.push.branches, ["main"]);
-  assert.deepEqual(workflow.on.pull_request.branches, ["main"]);
+  // main and every release/** maintenance branch (release/0.24 → 0.24.x) get the
+  // same gate on push and on pull request — the two lists must stay equal.
+  assert.deepEqual(workflow.on.push.branches, ["main", "release/**"]);
+  assert.deepEqual(workflow.on.pull_request.branches, workflow.on.push.branches);
   assert.equal(workflow.permissions.contents, "read");
   assert.match(workflow.concurrency.group, /github\.event\.pull_request\.number \|\| github\.ref/);
   const steps = workflow.jobs.verify.steps, commands = steps.map((step) => step.run);
