@@ -3,8 +3,12 @@
    here; the shell provides ctx = { api(pathname, opts), openFile(path),
    openTerminal(instance) } per the desktop-app contract. */
 
+/** HTML-escape text for BOTH element content and quoted attribute values:
+ * quotes are escaped too, so an interpolated value can never close its
+ * attribute and inject another (e.g. a data-open-file or data-action). */
 export function escapeHtml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 /* Tiny markdown for agent prose: fenced blocks, inline code, bold — the
@@ -123,9 +127,19 @@ export function instanceApiPath(kind, instance, query = "") {
 export function renderWorkspaceSelect(selectEl, list, current) {
   if (!Array.isArray(list) || list.length <= 1) { selectEl.style.display = "none"; return; }
   selectEl.style.display = "";
-  const options = list.map((w) =>
-    `<option value="${escapeHtml(w.id)}"${w.id === current ? " selected" : ""}>${escapeHtml(w.name)}${w.team ? ` · ${escapeHtml(w.team.name)}` : ""}</option>`).join("");
-  if (selectEl.innerHTML !== options) selectEl.innerHTML = options;
+  // Values are DOM properties, never parsed markup: a workspace id is a path
+  // and may contain any character. Rebuild only when the list changes.
+  const signature = JSON.stringify(list.map((w) => [String(w.id), String(w.name), w.team ? String(w.team.name) : null]));
+  if (selectEl.dataset.options !== signature) {
+    const doc = selectEl.ownerDocument;
+    selectEl.replaceChildren(...list.map((w) => {
+      const option = doc.createElement("option");
+      option.value = String(w.id);
+      option.textContent = `${w.name}${w.team ? ` · ${w.team.name}` : ""}`;
+      return option;
+    }));
+    selectEl.dataset.options = signature;
+  }
   selectEl.value = current;
 }
 

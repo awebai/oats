@@ -19,6 +19,7 @@
 import { Marked } from "marked";
 import hljs from "highlight.js";
 import DOMPurify from "dompurify";
+import { escapeHtml } from "./common.mjs";
 
 // Mirrors server/oats-web.mjs's fileData contract; pinned by renderer tests.
 export const FILE_MAX_BYTES = 2 * 1024 * 1024;
@@ -54,9 +55,8 @@ export function highlight(code, lang) {
     return hljs.highlightAuto(code).value;
   } catch { return escapeHtml(code); }
 }
-export function escapeHtml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
+// One escaper for content and quoted attributes (quotes included).
+export { escapeHtml };
 
 /** Resolve a relative markdown link against the open file's directory. */
 export function resolveRelative(fromPath, href) {

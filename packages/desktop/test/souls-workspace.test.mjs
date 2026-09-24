@@ -980,9 +980,9 @@ test("Spawn modal picker: hostile paths stay inert; colliding root tags render d
   const previousWs = common.currentWorkspace();
   const agent = { name: "dev", agentsRoot: "/a", description: "", runtime: "pi", work: "workspace", repo: true, repoName: "r",
     // SECURITY fixture (merged-state review @3e76616): workspace-controlled
-    // model with an attribute breakout — escapeHtml does not escape quotes,
-    // so attribute interpolation would mint an onpointerenter handler with
-    // access to the privileged bridge
+    // model with an attribute breakout — an unescaped quote in attribute
+    // interpolation would mint an onpointerenter handler with access to the
+    // privileged bridge (escapeHtml escapes quotes; this pins the view too)
     model: `x" onpointerenter="window.__pwned=1` };
   // hostile path: HTML-significant characters in a valid workspace path;
   // plus two roots whose naive one-segment tag collides ("project")
