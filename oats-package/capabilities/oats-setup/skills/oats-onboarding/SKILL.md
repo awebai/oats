@@ -94,8 +94,10 @@ spawn is rolled back. With messaging as the workspace default that is **every**
 soul, the operator expert included. So set the root up now, after approval and
 before any spawn.
 
-Put the root **in the deployment directory**. That is one of the places the
-hook looks, and where the root sits decides which team the instances join.
+Put the root **in the deployment directory**. The hook looks in the parent of
+`agents/`, which is the deployment directory when `agents/` sits directly in it
+(the layout `oats onboard` creates). Where the root sits decides which team
+the instances join.
 *Rationale:* operator node, lesson "messaging root placement decides the
 team" — read it before choosing another place.
 
