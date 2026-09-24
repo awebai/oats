@@ -208,10 +208,15 @@ function classicAwebRoot() {
 }
 const isClassicDeployment = () => !!process.env.OATS_TEAM_SCOPE;
 const teamConfigRemedy = () => `set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team${isClassicDeployment() ? " (classic: set team.id in oats-config.yaml)" : ""}`;
-function rootSettingCandidate(team = payloadTeam().team) {
+function declaredRootCandidate(team = payloadTeam().team) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
   if (team && typeof roots[team] === "string" && roots[team].trim()) return { root: roots[team].trim(), key: `settings.oats.aweb.roots[${JSON.stringify(team)}]`, declared: true };
   if (typeof settings.root === "string" && settings.root.trim()) return { root: settings.root.trim(), key: "settings.oats.aweb.root", declared: true };
+  return undefined;
+}
+function rootSettingCandidate(team = payloadTeam().team) {
+  const declared = declaredRootCandidate(team);
+  if (declared) return declared;
   const fallback = process.env.OATS_WORKSPACE || process.cwd();
   return fallback ? { root: fallback, key: "settings.oats.aweb.root", declared: false } : undefined;
 }
@@ -221,10 +226,12 @@ function awebRootProblem(candidate) {
   return `no messaging root at ${resolve(candidate.root)}: run oats aweb setup there or set ${candidate.key}`;
 }
 function resolveAwebRoot() {
+  const declared = declaredRootCandidate();
+  if (declared && isAbsolute(declared.root) && existsSync(join(resolve(declared.root), ".aw"))) return resolve(declared.root);
+  if (declared?.declared) return undefined;
+  if (isClassicDeployment()) return classicAwebRoot();
   const candidate = rootSettingCandidate();
   if (candidate && isAbsolute(candidate.root) && existsSync(join(resolve(candidate.root), ".aw"))) return resolve(candidate.root);
-  if (candidate?.declared) return undefined;
-  if (isClassicDeployment()) return classicAwebRoot();
   return undefined;
 }
 function awebRoot() { return resolveAwebRoot(); }

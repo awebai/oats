@@ -242,10 +242,11 @@ hook payload; the manifest schema does not yet carry a host-only marker).
   mint into several aweb teams. When a team is known, `roots[team]` wins over
   `root`.
 - Minting root resolution for spawn and setup is: `roots[team]` when the team is
-  known and present, else `root`, else `<OATS_WORKSPACE>` (the deployment
-  directory whose `.aw` is used), else only for classic deployments with
-  `OATS_TEAM_SCOPE` the historical bounded candidate search. Workspace v2 never
-  searches above the deployment directory.
+  known and present, else `root`. With no declared root, workspace v2 uses
+  `<OATS_WORKSPACE>` (the deployment directory whose `.aw` is used) and never
+  searches above it; classic deployments with `OATS_TEAM_SCOPE` keep the
+  historical bounded candidate search order exactly (team scope, home, home git
+  root, context, context git root, then workspace).
 - `binding-check` answers `needs-configuration` before spawn with one problem
   per missing item: `no messaging root at <dir>: run oats aweb setup there or
   set settings.oats.aweb.root`; `no team: set messaging.byTeam.<label>.team in

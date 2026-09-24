@@ -145,6 +145,28 @@ test("v2 spawn does not search above OATS_WORKSPACE when no root is declared", (
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
+test("classic spawn keeps 1.12.0 bounded root precedence before OATS_WORKSPACE", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
+  try {
+    const bin = fakeAw(base);
+    const teamScope = join(base, "team-scope"); awRoot(teamScope);
+    const workspace = join(base, "workspace"); awRoot(workspace);
+    const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
+    const r = runHook(bin, "spawn", {
+      OATS_INSTANCE: "probe",
+      OATS_HOME: home,
+      OATS_WORKSPACE: workspace,
+      OATS_CONTEXT: workspace,
+      OATS_TEAM_SCOPE: teamScope,
+      OATS_TEAM_ID: "t:example.test",
+      OATS_SETTINGS: JSON.stringify({}),
+    });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const invite = logLines(base).find((l) => l.argv.join(" ").startsWith("team invite"));
+    assert.equal(invite.cwd, realpathSync(teamScope));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
 test("setup in v2 reads settings root/team and prints v2 remedies", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
   try {
@@ -176,6 +198,16 @@ test("binding-check reports one v2 problem per missing root/team and ready once 
     ]);
     awRoot(workspace);
     r = runBinding(bindingRequest({ delivery: "session", team: "t:example.test" }), { OATS_WORKSPACE: workspace });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(r.doc.result, { status: "ready", problems: [] });
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("binding-check accepts classic team from environment without settings.team", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
+  try {
+    const workspace = join(base, "workspace"); awRoot(workspace);
+    const r = runBinding(bindingRequest({ delivery: "session" }), { OATS_WORKSPACE: workspace, OATS_TEAM_ID: "t:example.test" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.result, { status: "ready", problems: [] });
   } finally { rmSync(base, { recursive: true, force: true }); }
