@@ -18,6 +18,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const PKG_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -42,7 +43,7 @@ function fakeRuntimes(base) {
   // is asserted below; scaffold-only tests do not need a terminal backend.
   write(join(bin, "tmux"), "#!/bin/sh\nexit 1\n");
   execFileSync("chmod", ["+x", join(bin, "tmux")]);
-  return `${bin}:${process.env.PATH}`;
+  return `${bin}:${inertRuntimePath(base)}`;
 }
 function fixtureSoul(base) {
   const repo = join(base, "repo"); gitRepo(repo);

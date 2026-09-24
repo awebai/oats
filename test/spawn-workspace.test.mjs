@@ -14,6 +14,7 @@ import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind, moveMember, dropBacklink } from "./fixtures/northwind/build.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -30,7 +31,7 @@ function oats(args, { cwd, env = {}, base }) {
   return spawnSync(process.execPath, [CLI, ...args], {
     cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
     env: {
-      ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "",
+      ...process.env, PATH: inertRuntimePath(base), PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "",
       OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"),
       // Never a real tmux session: --no-launch everywhere, and liveness lookups hit a session that does not exist.
       OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}`,

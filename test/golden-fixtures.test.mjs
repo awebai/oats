@@ -158,6 +158,7 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve } from "node:path";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const KERNEL_ROOT = resolve(new URL("..", import.meta.url).pathname);
 const CLI = join(KERNEL_ROOT, "bin", "oats.mjs");
@@ -365,7 +366,7 @@ exit 0
     HOME: HERMETIC_HOME,
     OATS_HOME_DIR: join(HERMETIC_HOME, ".oats"),
     PI_AGENTS_TMUX_SESSION: "oats-golden",
-    PATH: `${bin}:${process.env.PATH}`,
+    PATH: `${bin}:${inertRuntimePath(base)}`,
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_SYSTEM: "/dev/null",
     GIT_AUTHOR_NAME: "Golden", GIT_AUTHOR_EMAIL: "golden@example.invalid",

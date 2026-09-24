@@ -10,6 +10,7 @@ import { inspectPortableOnboarding } from "../lib/core.mjs";
 import { buildFreshPreparationRequest } from "../lib/portable-onboarding.mjs";
 import { readCapturedInstanceIndex } from "../lib/captured-instance-index.mjs";
 import { verifyPortableArtifact } from "../lib/portable-artifacts.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = fileURLToPath(new URL("../bin/oats.mjs", import.meta.url));
 const SOURCE = "git:ssh://workspace.invalid/framework.git";
@@ -23,7 +24,7 @@ function fixture(t, { independentBindings = false } = {}) {
   const repo = join(root, "framework"), user = join(root, "operator"), workTarget = join(root, "project"), bin = join(root, "bin");
   for (const path of [repo, user, workTarget, bin]) mkdirSync(path);
   const gitconfig = join(user, "gitconfig"); write(gitconfig, "[commit]\n  gpgsign = false\n");
-  const env = { PATH: bin + ":" + process.env.PATH, HOME: user, GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", SHELL: "/usr/bin/true" };
+  const env = { PATH: bin + ":" + inertRuntimePath(root), HOME: user, GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_SYSTEM: "/dev/null", GIT_CONFIG_NOSYSTEM: "1", SHELL: "/usr/bin/true" };
   const git = (...args) => execFileSync("git", ["-C", repo, ...args], { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
   git("init", "--quiet", "--initial-branch=pilot"); git("config", "user.name", "Fixture"); git("config", "user.email", "fixture@example.invalid");
   git("config", "uploadpack.allowFilter", "true"); git("config", "uploadpack.allowAnySHA1InWant", "true");

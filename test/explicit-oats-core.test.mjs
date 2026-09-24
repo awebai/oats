@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { createAgent, upsertLocalAgent, findAgent, composeInstanceAgentsMd, planInstanceResources, spawnInstance, retireInstance, parseYamlNested } from '../lib/core.mjs';
+import { inertRuntimePath } from './helpers/runtime-stub.mjs';
 const CLI = fileURLToPath(new URL('../bin/oats.mjs', import.meta.url));
 const SOURCE = 'git:https://catalog.invalid/operations.git@v1.2.3#distribution';
 function fixture(t) {
@@ -14,7 +15,7 @@ function fixture(t) {
   for (const dir of [root, user, bin]) mkdirSync(dir, { recursive: true });
   const write = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value)); };
   write(catalog, { packages: { 'fixture.operations': { url: 'https://catalog.invalid/operations.git', ref: 'v1.2.3', path: 'distribution' } }, capabilities: { 'oats.core': 'fixture.operations' } });
-  const env = { PATH: bin + ':' + process.env.PATH, HOME: user, OATS_PACKAGE_CATALOG: catalog, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  const env = { PATH: bin + ':' + inertRuntimePath(base), HOME: user, OATS_PACKAGE_CATALOG: catalog, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
   const prior = { ...process.env };
   for (const key of Object.keys(process.env)) delete process.env[key]; Object.assign(process.env, env);
   t.after(() => { for (const key of Object.keys(process.env)) delete process.env[key]; Object.assign(process.env, prior); rmSync(base, { recursive: true, force: true }); });
@@ -359,22 +360,32 @@ test('K6b (spawnPreviewApi 2): a preview — success OR refusal — leaves the d
   assert.equal(again.error.code, 'E_DECISION_STALE'); assert.equal(again.error.details.decision.instance, 'wt-a-2'); assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'stale decision created no second home');
 });
 
-test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a preview — bounded by the shared budget, reported as preflight.status timeout, probe group killed', t => {
+test('K6b preflight custody: a hanging `pi --list-models` probe cannot hang a preview — bounded by the shared budget, reported as preflight.status timeout, probe group killed', async t => {
   const f = fixture(t);
   f.write(join(f.context, 'oats-config.yaml'), 'capabilities:\n  layers:\n    knowledge: none\n    messaging: none\n    tasks: none\n');
   spawnSync('git', ['init', '-q', '-b', 'main', f.context]); spawnSync('git', ['-C', f.context, '-c', 'user.email=t@x', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
   // Two provider-qualified preferences force the pi catalog probe; the fake pi hangs forever.
   createAgent(f.root, { name: 'pp', work: 'worktree', repo: f.context, runtime: 'pi', model: 'openai/gpt-x, anthropic/claude-y', oatsCore: false });
-  writeFileSync(join(f.bin, 'pi'), `#!/bin/sh\ncase "$1" in --list-models) sleep 600;; esac\nexit 0\n`, { mode: 0o700 });
-  const t0 = Date.now();
+  // The fake probe records its own pid and its forked child's, so custody is
+  // checked on exactly this fixture's processes (never a machine-wide match that
+  // a concurrent test file's probe could satisfy), and it never finishes.
+  const pids = join(f.base, 'probe.pids');
+  writeFileSync(join(f.bin, 'pi'), `#!/bin/sh\ncase "$1" in --list-models) echo $$ > '${pids}'; sleep 600 & echo $! >> '${pids}'; wait; echo finished > '${pids}.finished';; esac\nexit 0\n`, { mode: 0o700 });
   const out = spawnSync(process.execPath, [CLI, 'spawn', 'pp', '--preview', '--json'], { cwd: f.context, env: { ...process.env, PATH: f.bin + ':' + process.env.PATH, OATS_PREVIEW_PREFLIGHT_BUDGET_MS: '1500' }, encoding: 'utf8', timeout: 60000 });
-  const elapsed = Date.now() - t0;
-  assert.ok(out.stdout.trim(), `no output (status ${out.status}, signal ${out.signal}, ${elapsed}ms): ${out.stderr.slice(0, 400)}`);
+  // The 60 s spawn timeout is only a safety net: the preview must return on its own (no signal).
+  assert.equal(out.signal, null, `the preview was killed by the test's safety timeout: the hanging probe hung it (${out.stderr.slice(0, 400)})`);
+  assert.ok(out.stdout.trim(), `no output (status ${out.status}): ${out.stderr.slice(0, 400)}`);
   const pv = JSON.parse(out.stdout.trim().split('\n').pop());
   assert.equal(pv.ok, true, out.stdout + out.stderr); assert.equal(pv.result.preflight.status, 'timeout'); assert.equal(pv.result.preflight.budgetMs, 1500);
-  assert.ok(elapsed < 20000, `preview returned in ${elapsed}ms despite a hanging probe`);
-  const leftover = spawnSync('pgrep', ['-f', 'list-models'], { encoding: 'utf8' }).stdout.trim();
-  assert.equal(leftover, '', 'probe process group reaped');
+  assert.equal(existsSync(pids + '.finished'), false, 'the preview returned while its probe was still hanging');
+  const probe = readFileSync(pids, 'utf8').trim().split('\n').map(Number);
+  assert.equal(probe.length, 2, `the probe started and forked its child: ${JSON.stringify(probe)}`);
+  // SIGKILL delivery and reaping are asynchronous: wait, bounded, for this
+  // group to be gone. A probe that was never killed sleeps 600 s and fails this.
+  const alive = pid => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } };
+  const deadline = Date.now() + 10000;
+  while (probe.some(alive) && Date.now() < deadline) await new Promise(r => setTimeout(r, 50));
+  assert.deepEqual(probe.filter(alive), [], 'probe process group killed');
 });
 
 import { killGroup } from '../lib/process-group.mjs';
@@ -454,7 +465,7 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   // C. two concurrent applies of ONE fresh decision → exactly one home; the loser refuses E_PLACEMENT_TAKEN having touched nothing.
   const fresh = last(f.run(['spawn', 'wt', '--purpose', 'a', '--preview', '--json'])).result.decision.revision;
   const { spawn } = await import('node:child_process');
-  const run = () => new Promise(res => { const p = spawn(process.execPath, [CLI, 'spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json'], { cwd: f.context, env: process.env }); let out = ''; p.stdout.on('data', d => out += d); p.on('close', code => res({ code, doc: JSON.parse(out.trim().split('\n').pop()) })); });
+  const run = () => new Promise(res => { const p = spawn(process.execPath, [CLI, 'spawn', 'wt', '--purpose', 'a', '--expect-decision', fresh, '--no-launch', '--json'], { cwd: f.context, env: process.env }); let out = '', err = ''; p.stdout.on('data', d => out += d); p.stderr.on('data', d => err += d); p.on('close', code => { let doc; try { doc = JSON.parse(out.trim().split('\n').pop()); } catch { doc = { ok: false, error: { code: 'UNPARSEABLE', raw: (out + err).slice(0, 400) } }; } res({ code, doc }); }); });
   const results = await Promise.all([run(), run(), run()]);
   const wins = results.filter(r => r.doc.ok), losses = results.filter(r => !r.doc.ok);
   assert.equal(wins.length, 1, JSON.stringify(results.map(r => r.doc.ok ? 'ok' : r.doc.error.code)));
@@ -462,8 +473,13 @@ test('K6d (spawn-apply-2): the decision binds EFFECTIVE launch facts (a changed 
   // side effects landed: the exclusive mkdir (E_PLACEMENT_TAKEN), the bound decision
   // (E_DECISION_STALE), or — in worktree mode — the winner's freshly created branch
   // (E_BRANCH_EXISTS). All three are honest "nothing created" refusals.
-  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE', 'E_BRANCH_EXISTS'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error.code)));
+  // All three applies bind ONE decision, so they plan the same branch by design:
+  // the branch is not a per-run name to make unique, it is what they race for.
+  assert.ok(losses.every(l => ['E_PLACEMENT_TAKEN', 'E_DECISION_STALE', 'E_BRANCH_EXISTS'].includes(l.doc.error.code)), JSON.stringify(losses.map(l => l.doc.error)));
   assert.deepEqual(readdirSync(join(f.root, 'wt', 'instances')).filter(n => !n.startsWith('.')), ['wt-a'], 'exactly one home');
+  const git = (...a) => spawnSync('git', ['-C', f.context, ...a], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(git('for-each-ref', '--format=%(refname:short)', 'refs/heads/agents/'), 'agents/wt-a', 'the losers created no branch');
+  assert.deepEqual(git('worktree', 'list', '--porcelain').split('\n').filter(l => l.startsWith('worktree ')).map(l => realpathSync(l.slice(9))), [f.context, join(f.root, 'wt', 'instances', 'wt-a', 'work')], 'and no worktree');
   assert.ok(JSON.parse(f.run(['version', '--json']).stdout).features.includes('spawn-apply-2'));
 });
 

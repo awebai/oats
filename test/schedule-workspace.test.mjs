@@ -20,6 +20,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const CLI = join(here, "..", "bin", "oats.mjs");
@@ -28,6 +29,7 @@ if (/[\s@]/.test(base)) { rmSync(base, { recursive: true, force: true }); throw 
 process.env.OATS_HOME_DIR = join(base, "oats-home");
 process.env.HOME = join(base, "home"); mkdirSync(process.env.HOME, { recursive: true });
 process.env.OATS_REMOTE_CACHE = join(base, "cache");
+process.env.PATH = inertRuntimePath(base);
 // Never a real tmux session: io.noLaunch everywhere, and liveness lookups hit a session that does not exist.
 process.env.OATS_TMUX_SESSION = `none-${process.pid}`; process.env.PI_AGENTS_TMUX_SESSION = `none-${process.pid}`;
 delete process.env.OATS_INSTANCE; delete process.env.OATS_INSTANCE_HOME; delete process.env.PI_AGENTS_ROOT; delete process.env.OATS_HOME; delete process.env.PI_AGENT_HOME;

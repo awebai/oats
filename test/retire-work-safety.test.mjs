@@ -4,6 +4,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const temporaryDirectories = [];
@@ -43,7 +44,7 @@ function fixture({ disposable = [] } = {}) {
   write(join(bin, "pi"), "#!/bin/sh\nexit 0\n", 0o755);
   const env = {
     ...process.env,
-    PATH: `${bin}:${process.env.PATH}`,
+    PATH: `${bin}:${inertRuntimePath(base)}`,
     OATS_HOME_DIR: join(base, "oats-state"),
   };
   delete env.PI_AGENTS_ROOT;

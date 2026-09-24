@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { resolveMemberClone, requireMemberClone, conventionCloneDir, memberNameOf, verifyMemberClone } from "../lib/instance-resolution.mjs";
 import { ensureRoot } from "../lib/core.mjs";
+import { inertRuntimePath } from "./helpers/runtime-stub.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 /** Run fn, expecting an oatsError with `code`; returns the error (assert.throws returns nothing). */
@@ -174,7 +175,7 @@ test("R2: ensureRoot with an oats-local.yaml above but no agents/ → E_NO_DEPLO
       const e = caught(() => ensureRoot(bare), "E_NO_DEPLOYMENT");
       assert.doesNotMatch(e.message, /oats-local\.yaml names this deployment/);
       // through the CLI: one JSON envelope, the same remedy
-      const r = spawnSync(process.execPath, [CLI, "spawn", "platform-engineer", "--dir", dep, "--no-launch", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PI_AGENTS_ROOT: "", PI_AGENT_HOME: "", OATS_HOME: "", HOME: join(base, "home") } });
+      const r = spawnSync(process.execPath, [CLI, "spawn", "platform-engineer", "--dir", dep, "--no-launch", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, PATH: inertRuntimePath(base), PI_AGENTS_ROOT: "", PI_AGENT_HOME: "", OATS_HOME: "", HOME: join(base, "home") } });
       assert.equal(r.status, 1, r.stdout + r.stderr);
       const doc = JSON.parse(r.stdout);
       assert.equal(doc.error.code, "E_NO_DEPLOYMENT");
