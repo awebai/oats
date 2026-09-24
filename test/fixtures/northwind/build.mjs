@@ -84,6 +84,9 @@ async function git(cwd, args, { date = BASE_DATE } = {}) {
       "git",
       [
         "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", "-c", "core.symlinks=true", "-c", "init.defaultBranch=main",
+        // No detached background writers: an auto-gc or auto-maintenance child can outlive the command
+        // and race the fixture's temp-dir removal (ENOTEMPTY on .git/info, CI 2026-09-24).
+        "-c", "gc.auto=0", "-c", "maintenance.auto=false",
         // GIT_CONFIG_GLOBAL=/dev/null does NOT disable the DEFAULT excludes/attributes files
         // (~/.config/git/ignore, ~/.config/git/attributes); an operator's `bin/` or `*.json` ignore
         // would silently drop fixture files from the trees.
@@ -614,7 +617,10 @@ async function withClone(barePath, fn) {
     await git(work, ["checkout", "-q", "-B", "main"]);
     return await fn(work);
   } finally {
-    await fs.rm(tmp, { recursive: true, force: true });
+    // git may still be finishing a write under .git/ (a detached auto-gc or an
+    // index lock) when the clone's last command returns; a single rmdir then
+    // races it and fails ENOTEMPTY (seen on CI, 2026-09-24). Retry, bounded.
+    await fs.rm(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 
