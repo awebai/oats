@@ -960,9 +960,15 @@ between preview and apply is `E_DECISION_STALE`):
   (unchanged since the newest previous instance), or
   `{ instance, was }` (`was` = the previous commit, or `null` when the previous
   instance had no such module).
-- `capabilities[]` / `skills[]` keep their Preview-1 meaning; on a workspace
-  spawn the authoritative module set is `modules[]` (`capabilities[]` may be
-  empty there, since capability rows are filled after materialization).
+- `capabilities[]` / `skills[]` on a **workspace** spawn are **objects**, not
+  Preview-1's strings: `capabilities[]` is `{ name, origin }` (`origin` =
+  `package:<id>@<version>` or `member:<repoKey>@<commit>`), and `skills[]` is
+  `{ name, source }`. Neither is a binding surface, because the authoritative
+  module set is `modules[]` and what apply binds is `decision.effective` /
+  `decision.resolution`. Consumers should read those fields, not project
+  `capabilities[]` / `skills[]`. (Corrected 2026-09-24: this said "keep their
+  Preview-1 meaning", which read as strings; found by the Desktop engineer in
+  F3.)
 - `workspace` is the workspace host's canonical key, `team` the soul's label
   (or `null`), `resolution` the 24-hex revision `decision.resolution` binds.
 - `--provider <cap> <key>=<value>` (repeatable; `a.b=c` nests) is accepted by
