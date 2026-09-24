@@ -34,7 +34,7 @@ const COMMON = {
   E_INSTANCE_NAME_INVALID: 'Use lowercase letters, numbers and dashes, and don’t reuse a soul’s name.',
   E_INSTANCE_NAME_TAKEN: 'An instance with this name already exists. Choose another name.',
   E_PACKAGE_MISSING: 'A package this soul uses isn’t installed yet. Run Sync in the Workspace view.',
-  E_PACKAGE_INTEGRITY: 'A package this soul uses changed since it was approved. Run Sync in the Workspace view.',
+  E_PACKAGE_INTEGRITY: 'A package this soul uses no longer matches the lock. Run Sync in the Workspace view.',
   E_TARGET_CHANGED: 'The workspace changed while this was loading. Reading it again…',
   E_PLAN_CHANGED: 'The workspace changed while this was loading. Check the values and press Spawn again.',
 };
