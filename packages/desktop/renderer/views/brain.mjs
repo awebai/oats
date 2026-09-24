@@ -11,10 +11,10 @@
 const mounts = new Set();
 let nextMountId = 0;
 import { runtimeState } from "../instance-presentation.mjs";
-import { wsQuery, onWorkspaceChange } from "./common.mjs";
+import { wsQuery, onWorkspaceChange, escapeHtml } from "./common.mjs";
 import { icon } from "../shell-icons.mjs";
 
-const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const esc = (s) => escapeHtml(s ?? ""); // the one content+attribute escaper
 
 const CSS = `
 .brain { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
