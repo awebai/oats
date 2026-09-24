@@ -376,6 +376,15 @@ the pre-fix marker and is never accepted for dispatch.
   import; `--instructions-file`/`--def-file` refused with `E_BAD_ARGS`). Test:
   the deployment tree is byte-identical after a success, a refusal and an
   unknown-soul preview.
+  **Workspace deployments (0.25.1+) — one stated exception**: the first preview
+  of a workspace soul may populate the deployment's per-commit soul cache
+  (`agents/<soul>/souls/<commit>/`, the swappable `agents/<soul>/soul` pointer,
+  `soulFetched: true` in the result). That cache is derived, content-addressed
+  and idempotent — the same member commit yields the same bytes, a later
+  preview of the same commit writes nothing — and nothing else moves: no lock,
+  no event, no home, no instance. A Desktop treats a preview as
+  side-effect-free for everything it shows; it must not assume the deployment
+  directory's byte-identity across the FIRST preview of a soul or commit.
 - **Exact root**: `spawn <soul> --agents-root <abs>` binds the soul to that root
   (as inspect/readiness take it) — no team-soul / capability-agent / importable-
   def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes
@@ -785,9 +794,12 @@ written. Captured selectors are refused (`E_BAD_ARGS`).
 
 - `sync` is the `syncApi: 1` report of the first sync (members, packages,
   changes, `approvalNeeded`, `problems`); `lock` is the lock it wrote.
-- **Exit `2` with `ok: true`** when `sync.approvalNeeded` is non-empty (approval
-  is interactive-only; tell the operator to run `oats sync --dir <dir>` in a
-  terminal). Exit `0` otherwise.
+- **Exit `2` with `ok: true`** when `sync.approvalNeeded` is non-empty. Approve
+  non-interactively with `oats sync --dir <dir> --approve <id>@<version> …`
+  (0.25.2+; `<version>` is `approvalNeeded[].version` verbatim — a catalog
+  version, or the full commit OID for a git-pinned package); a Desktop renders
+  `approvalNeeded[].executables` (the digest of the executable set it is
+  approving) and `targets`, then runs that command. Exit `0` otherwise.
 - `hosting` states decision 26 (the kernel cannot see forge visibility, so it
   reports `hostIsMember` and the rule rather than judging).
 - `next.clone[]` is one row per **confirmed** member (`url` = what the
@@ -812,9 +824,10 @@ written. Captured selectors are refused (`E_BAD_ARGS`).
 
 Discovers, confirms membership, resolves `packages:` to commits, writes
 `oats-lock.json` (lockfileVersion 3), reports. **Exit `2` with `ok: true`** when
-the lock was written but approvals are pending (`approvalNeeded` non-empty);
-approval is interactive-only, so a Desktop must tell the operator to run
-`oats sync` in a terminal. Exit `0` otherwise.
+the lock was written but approvals are pending (`approvalNeeded` non-empty).
+Approve with repeatable `--approve <id>@<version>` (0.25.2+, non-interactive;
+`<version>` = `approvalNeeded[].version` verbatim); the interactive prompt is
+the TTY fallback, not the contract. Exit `0` otherwise.
 
 ```json
 {"syncApi":1,
@@ -1063,6 +1076,10 @@ refreshes the home in place:
   materialized modules is not supported yet; re-spawn"): its `AGENTS.md` was
   composed from the soul at a recorded member commit plus the materialized
   modules' injects, and the instance never changes under itself (decision 7).
+  **Desktop contract (Phase F, F4)**: for a module home, show the drift rows
+  and offer *re-spawn* (preview → apply of the same soul/purpose, then retire
+  the old instance); do not offer "recompose". A kernel recompose for module
+  homes is not planned — an instance never changes under itself.
   The refresh path for such a home is a new spawn (the soul is re-fetched at
   the member's current commit). `session-recompose` **stays advertised** in
   `features[]` because the verb still works for classic homes; gate the UI

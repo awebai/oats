@@ -83,7 +83,9 @@ grammar); no identity-named rules. Work mode select includes `workspace`.
 
 **F4 — Instance card and roster on v2 facts.** The served-identity line (`acts
 as <address> via grant, expires <t>` / `alias <a> on <team>`); module rows with
-"moved since" markers and a "recompose" action (`oats session recompose`); the
+"moved since" markers and a **re-spawn** action (preview → apply, then retire
+the old instance — module homes answer `E_UNSUPPORTED_MODE` to
+`session recompose` by design; an instance never changes under itself); the
 soul-source row; quarantine state from `rollbackIncomplete` with the retry
 action (`oats retire`) and `--force` behind a confirm.
 
