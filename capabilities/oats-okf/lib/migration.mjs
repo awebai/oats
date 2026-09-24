@@ -33,7 +33,7 @@ export function migrate(bindings,{legacy,alias,node,output}) {
   // Stage the accepted base before any record exists: a base that cannot be
   // read leaves nothing behind. From the record on, a failure is recorded in
   // it rather than left as an unexplained directory.
-  const stage=stageBase(base,output);
+  const stage=stageBase(base,output,{alias});
   fs.mkdirSync(bindings.stateDir,{recursive:true,mode:0o700});
   const id=randomUUID();const dir=join(bindings.stateDir,'migrations',id);fs.mkdirSync(dir,{recursive:true,mode:0o700});
   save(join(dir,'legacy.json'),original); // byte-preserving backup BEFORE any delivery
@@ -106,7 +106,7 @@ export function cutoverMigration(file,soul) {
   try {
     for(const alias of new Set([...decl.owns,...decl.reads].map(r=>splitRef(r)[0]))) {
       if(!Object.hasOwn(bindings.bases,alias)) fail('E_CONFIG',`unresolved base: ${alias}`);
-      const staged=stageBase(bindings.bases[alias],join(scratch,alias));
+      const staged=stageBase(bindings.bases[alias],join(scratch,alias),{alias});
       accepted[alias]=staged.meta;
       if(alias===m.alias) {
         if(hash(staged.meta.nodes[m.node] || null)!==hash(frozen)) fail('E_OWNER','accepted migration ownership/path differs from delivered node');

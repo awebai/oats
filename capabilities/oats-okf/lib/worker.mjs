@@ -142,7 +142,7 @@ function prepareWorker(source,run) {
   for(const [alias,base] of Object.entries(source.bindings.bases)) {
     if(run.settled?.includes(alias)) continue;
     const dest=join(work,'bases',alias);
-    const staged=stageBase(base,dest);
+    const staged=stageBase(base,dest,{alias});
     const owned=source.decl.owns.map(splitRef).filter(([a])=>a===alias).map(([,n])=>n);
     for(const n of owned) if(staged.meta.nodes[n]?.owner!==source.owner || JSON.stringify(staged.meta.nodes[n])!==JSON.stringify(source.acceptedNodes[alias][n])) fail('E_OWNER','accepted ownership/path changed from frozen destination; explicit migration required');
     run.stages[alias]={root:staged.root,checkout:staged.checkout,head:staged.head,baseline:staged.files,digest:staged.digest,owned};persist(source,run);
@@ -235,7 +235,7 @@ export function complete(source,id,judgmentFile,opts={}) {
         if(base.kind==='git') verifyGitScope(base,s.checkout,s.head);
         const checkDir=fs.mkdtempSync(join(source.bindings.stateDir,'baseline-'));
         try {
-          const current=stageBase(base,join(checkDir,'base'));
+          const current=stageBase(base,join(checkDir,'base'),{alias});
           if(current.digest!==s.digest || (base.kind==='git' && current.head!==s.head)) fail('E_BASELINE','accepted base changed; rejudge on fresh baseline');
         } finally {fs.rmSync(checkDir,{recursive:true,force:true});}
         const claims=judgment.outcomes.flatMap(o=>o.concepts).filter(c=>c.base===alias).map(c=>c.path);
@@ -310,7 +310,7 @@ export function retry(source,{run:id,rejudge=false,launch=false,adoptHome}={}) {
     const stages={...run.stages},outstanding=Object.keys(stages).filter(a=>!settled.includes(a));
     for(const alias of outstanding) {
       const base=source.bindings.bases[alias];
-      const staged=stageBase(base,join(work,'rejudgments',attempt,'bases',alias));
+      const staged=stageBase(base,join(work,'rejudgments',attempt,'bases',alias),{alias});
       const owned=run.stages[alias].owned;
       for(const n of owned) if(staged.meta.nodes[n]?.owner!==source.owner || JSON.stringify(staged.meta.nodes[n])!==JSON.stringify(source.acceptedNodes[alias][n])) fail('E_OWNER','accepted ownership/path changed from frozen destination; explicit migration required');
       stages[alias]={root:staged.root,checkout:staged.checkout,head:staged.head,baseline:staged.files,digest:staged.digest,owned};

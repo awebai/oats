@@ -3,25 +3,25 @@
   "generatedBy": "scripts/check-okf-mirror.mjs --finalize --source <standalone-repository> --final-tag <tag> --final-commit <full-oid>",
   "distributionPath": "oats-package",
   "capabilityPath": "capabilities/oats-okf",
-  "version": "2.1.4",
+  "version": "2.1.5",
   "source": {
     "repository": "https://github.com/awebai/oats-okf.git",
     "branch": "HEAD",
-    "head": "2af47ad3ab60ac49e652b9e4086f4adb733b888c",
+    "head": "00eaedd321f372a811f30643cb7fabfc2e5decad",
     "dirty": false,
     "workingTreeStatus": []
   },
   "release": {
     "status": "published",
-    "finalMergedCommit": "2af47ad3ab60ac49e652b9e4086f4adb733b888c",
-    "plannedTag": "v2.1.4",
-    "finalTag": "v2.1.4",
+    "finalMergedCommit": "00eaedd321f372a811f30643cb7fabfc2e5decad",
+    "plannedTag": "v2.1.5",
+    "finalTag": "v2.1.5",
     "published": true,
     "remote": "origin",
-    "tagObject": "f1aeb269fed3347dbcb917564479a5c63179077b"
+    "tagObject": "5cb1df8549ec1e3f13500e24624d0c9a8b3e3d29"
   },
-  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"2.1.4\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.24.4\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
-  "distributionManifestSha256": "0693337a9ef38c76d1b9b7ffb2c1c6e0c7fd6d9d4db3f95510336c496541aec8",
+  "distributionManifestText": "{\n  \"package\": \"oats.okf\",\n  \"version\": \"2.1.5\",\n  \"description\": \"Official OATS knowledge integration for Open Knowledge Format bundles and continuous memory harvesting.\",\n  \"compatibility\": {\n    \"oats\": \">=0.24.4\"\n  },\n  \"capabilities\": [\n    \"capabilities/oats-okf\"\n  ]\n}\n",
+  "distributionManifestSha256": "07eb4ab43ade15bad3c75371e3b1abb362bbe516457e433599f5e2d7863b47ee",
   "distributionLicenseText": "MIT License\n\nCopyright (c) 2026 OATS Framework\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\n",
   "distributionLicenseSha256": "549762a3949c109455d73fabcd2340e98bd32ecbb6fea0fcac9ba7f5d41e52fd",
   "entries": [
@@ -70,8 +70,8 @@
       "path": "bin/oats-okf.mjs",
       "type": "file",
       "mode": "100755",
-      "size": 15336,
-      "sha256": "4092793938414287572a211b2a7511c9fb6f45aed11200ebcdc0b4566c6378fe"
+      "size": 15355,
+      "sha256": "7a5c95470269deed13582a1bb600ed2bd0c013720a802d25e2556ff8553b4921"
     },
     {
       "path": "injects",
@@ -92,8 +92,8 @@
       "path": "lib/binding-wire.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 23220,
-      "sha256": "4ee9277ea55030b6022a2c8b7141653ce032c23c47a89e2c367a4ff9c645e8d5"
+      "size": 23228,
+      "sha256": "e39740af98e0c54cb0d4bc0ce35fb4a6464a4d2d3d114cd922e6cda0b56ed90c"
     },
     {
       "path": "lib/captured-worker.mjs",
@@ -141,8 +141,8 @@
       "path": "lib/migration.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 11697,
-      "sha256": "c2ecf486d4fc3ea95783f2f31c973f1d71f0fa4017bd9719abae1eefa3515c31"
+      "size": 11713,
+      "sha256": "ab93ac80d3fcbcace7989ca111aa0d9d9ae70bcdf263c456a478f38f127df30b"
     },
     {
       "path": "lib/portable-binding.mjs",
@@ -162,29 +162,29 @@
       "path": "lib/sources.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 31450,
-      "sha256": "21a23af1f33a34ed3a37b3b13133f9a3dbf4096a17fab4fad2e18fa29c038207"
+      "size": 31706,
+      "sha256": "fdd01dd845001a043154e05994a31936285c303528ea00165587c502a3863255"
     },
     {
       "path": "lib/stores.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 29897,
-      "sha256": "edbda45b544d48ce599156eb58a06f1feda4f5bb30c883c25ddfc7fcb6c81ef8"
+      "size": 32669,
+      "sha256": "6841ee4205fd1a43b3040274ee7f4830ca609d4a38d4956cb3bb4fade4ca02b1"
     },
     {
       "path": "lib/worker.mjs",
       "type": "file",
       "mode": "100644",
-      "size": 31857,
-      "sha256": "c60690176b3a6f8af5ba33220254c266c5655d3c12cb5b0a796cc098120721f6"
+      "size": 31881,
+      "sha256": "b36776a58afbfdfe28a8b8f896864dc9cdb248bf922e867fd4dc0dca6b3f44e9"
     },
     {
       "path": "oats.json",
       "type": "file",
       "mode": "100644",
       "size": 4917,
-      "sha256": "be067c0b95f4975f93709585f7b01c5fb5439b1c5d558922c5d79a77faed8913"
+      "sha256": "21eb0f3bc9f4a2d652f5d0693730bcfff856d9b3dac50cd337994d6aedd46f87"
     },
     {
       "path": "schemas",
@@ -263,7 +263,7 @@
       "sha256": "a784569cd80ebc1e31cc7a0699f013b3ce449712dd3fe052e986be217c1b07f1"
     }
   ],
-  "snapshotSha256": "6089e5a480d16cfcaa9fd45a2188d6f6b2f30a668f59197aa02a121dfe396f47",
+  "snapshotSha256": "e1c6ecd2410d01c963d9c7ea888ad1f59b6c3424165df80f10fb96f61603969d",
   "distributionManifestMode": "100644",
   "distributionLicenseMode": "100644"
 }
