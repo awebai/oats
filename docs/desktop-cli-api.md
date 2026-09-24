@@ -18,9 +18,11 @@ prints exactly one JSON object on stdout:
 ```
 
 `version` is the installed package's exact semver (e.g. `0.20.0`).
-Desktop 0.25 accepts `desktopApi === 1` and semver `>=0.22.0 <0.26.0`
-(the earlier Desktop 0.23 band was `>=0.22.0 <0.24.0`). This admits the paired
-0.24 CLI without changing Desktop API v1. It does not establish complete captured
+The Desktop accepts `desktopApi === 1` and gates on the kernel feature
+`packages-no-approval` (semver range `>=0.25.8 <0.27.0`: the floor admits the
+main-branch kernel before 0.26.0 is tagged; the feature fence is the real gate).
+Earlier bands were `>=0.22.0 <0.26.0` (Desktop 0.25) and `>=0.22.0 <0.24.0`
+(Desktop 0.23). It does not establish complete captured
 UI, backend, plugin, retirement or recovery parity; capability checks and explicit
 refusals below remain authoritative.
 
