@@ -1,4 +1,4 @@
-// The operational skills (oats.core, oats.setup)
+// The operational skills (oats.core, oats.setup, the oats-getting-started bootstrap)
 // may teach only commands and flags the shipped CLI has (implementation plan
 // W9b: "every skill is validated against the shipped CLI ... so they cannot
 // drift from the commands"). Every `oats …` line inside a fenced shell
@@ -18,6 +18,7 @@ const SKILLS = [
   "oats-package/capabilities/oats-setup/skills/oats-onboarding/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-package-pins/SKILL.md",
   "oats-package/capabilities/oats-setup/skills/oats-rebuild/SKILL.md",
+  "skills/oats-getting-started/SKILL.md",
 ];
 // Flags a command's own usage line accepts but the top-level `oats help` omits.
 // Each one must still exist in the CLI source; remove the entry once help lists it.
