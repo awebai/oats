@@ -1,13 +1,14 @@
 # Capability packages
 
 A **capability** is OATS's reusable unit of behaviour. It can contribute
-skills, instance instructions, requirements, namespaced commands, and approved
+skills, instance instructions, requirements, namespaced commands, and declared
 lifecycle hooks. A soul — not the capability — decides which souls receive it,
 by naming it with where it comes from (`from:`; see [workspaces](workspaces.md)).
 
 The [official marketplace policy](official-marketplace.md) defines the reviewed
 package list and its acceptance criteria. Finding an official package does not
-pin, approve or give it to any soul; those remain explicit, separate choices.
+declare it or give it to any soul; declaring it in `packages:` is the
+workspace's trust decision, and giving it to a soul is a separate choice.
 
 An **integration** is a capability that implements one exclusive fundamental
 layer: `knowledge`, `messaging`, or `tasks`. General capabilities claim no
@@ -20,8 +21,8 @@ A capability lives in one of two kinds of source:
 1. a **member repo** of the workspace, at `capabilities/<name>/oats.json` —
    unversioned, always the member's latest state, trusted by membership;
 2. a **package** (`oats-package/` in a repo, pinned by version in the
-   workspace's `packages:`, locked and approved once per version —
-   [packages.md](packages.md)).
+   workspace's `packages:` — the declaration is the trust — and locked to a
+   commit and integrity; [packages.md](packages.md)).
 
 A soul says `capabilities: { <name>: { from: here | <repo key> | package } }`
 (or `off`); the workspace supplies defaults. At spawn every resolved
@@ -84,10 +85,10 @@ A self-contained package has an `oats.json`:
   too. Without one, OATS has no way to undo what the spawn hook did and no way to
   know whether it did anything, so a failure quarantines the home rather than
   rolling it back — the operator cleans up by hand and removes it with `--force`.
-- A required hook must also be **able** to run: a package capability whose
-  version is not approved in the lock is refused at resolution
-  (`E_PACKAGE_UNAPPROVED`, remedy `oats sync`), so a required hook never
-  silently fails to configure an instance.
+- A required hook must also be **able** to run: a package capability the lock
+  does not pin is refused at resolution (`E_PACKAGE_MISSING`, remedy `oats
+  sync`), and drifted content is `E_PACKAGE_INTEGRITY`, so a required hook
+  never silently fails to configure an instance.
 - When a required hook fails and its compensation cannot finish, the instance
   home is **retained**, not deleted — it holds the credentials and metadata a
   retry needs, and removing it would turn a transient cleanup failure into
@@ -136,8 +137,8 @@ A self-contained package has an `oats.json`:
   with the consent command that fixes it.
 - OATS never installs a host requirement silently. A missing host command is
   the operator's to install; `oats doctor` reports it. Consent to install is
-  separate from package approval.
-- `environment` lists the exact launch variables executable trust approves;
+  separate from declaring the package.
+- `environment` lists the exact launch variables the capability may set;
   spawn hook output must be a subset and use the capability vendor prefix.
 - Target names never appear in a package manifest.
 
@@ -223,10 +224,10 @@ A **package** is the versioned tier: a directory with an `oats-package.json`
 that enumerates one or more capabilities (schema
 [`oats-package.schema.json`](oats-package.schema.json)). It is pinned once in
 the workspace's `packages:`, resolved to an exact commit + integrity by
-`oats sync` into `oats-lock.json` (lockfileVersion 3), and its executables are
-approved once per version. A soul names a package capability with
-`from: package`. Everything about declaring, syncing, locking, approving and
-publishing packages is in [packages.md](packages.md). There is no installed
+`oats sync` into `oats-lock.json` (lockfileVersion 3); declaring it is the
+workspace's decision to trust it. A soul names a package capability with
+`from: package`. Everything about declaring, syncing, locking and publishing
+packages is in [packages.md](packages.md). There is no installed
 copy at a deployment and no `oats install`/`trust`/`update`/`remove`.
 
 ## Member capabilities
@@ -292,10 +293,10 @@ never be able to choose.
 
 A hook may return only names in its manifest's exact `environment` declaration.
 For package capabilities that declaration is part of the integrity-locked tree
-and of what the per-version approval showed; for member capabilities it is
-part of what membership trusts. Undeclared output is fatal. This positive
-authority is the contract boundary — adding a new launch variable requires a
-visible manifest change (and, for a package, a new approved version).
+the workspace declared; for member capabilities it is part of what membership
+trusts. Undeclared output is fatal. This positive authority is the contract
+boundary — adding a new launch variable requires a visible manifest change
+(and, for a package, a new version, reviewed as a new pin).
 
 `OATS_*`, `PI_AGENT_*`, kernel launch variables, and known shell/bootstrap/loader
 names are also rejected as defense in depth. The denylist includes current Node,

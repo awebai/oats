@@ -24,10 +24,11 @@ describe the target, not a workspace you can join today.
 
 A framework repository is a **member and a package publisher at once**, and the
 two roles never collapse: `oats-okf`, `oats-aweb`, `oats-jira`, `oats-linear`,
-`oats-authoring`, `oats-dev` are members (their `souls/` — `okf-expert`,
-`aweb-expert`, … — are discoverable at latest state, team `global`) **and**
+`oats-authoring`, `oats-dev` are members (their `souls/` — `oats-okf-expert`,
+`oats-aweb-expert`, … — are discoverable at latest state, team `global`) **and**
 their `oats-package/` is consumed only as a package: `from: package`, pinned
-in the workspace's `packages:`, locked and approved per version. The framework's
+in the workspace's `packages:` (the declaration is the trust) and locked to a
+commit and integrity. The framework's
 own souls therefore say `oats.okf: { from: package }` even though `oats-okf` is
 a member. A bare version in `packages:` (`oats.okf: v2.1.4`) resolves through
 the catalog; a package outside it is written `git:<repo>@<ref>`.
@@ -39,10 +40,10 @@ oats onboard ~/oats-workspace --workspace git:github.com/awebai/oats
 ```
 
 This writes `oats-local.yaml`, creates `agents/`, runs the first `sync`
-(membership table, `packages:` resolved into `oats-lock.json`, approval asked
-once per package version — exit `2` until approved in a terminal), and prints
-which members to clone beside it. Read `oats souls` / `oats capabilities`,
-then `oats spawn oats-setup-expert` for the guided rest. Exact shapes and
+(membership table, `packages:` resolved, fetched and integrity-checked into
+`oats-lock.json`), and prints which members to clone beside it. Read `oats
+souls` / `oats capabilities`, then `oats spawn oats-operator-expert` for the
+guided rest. Exact shapes and
 errors (`E_ALREADY_ONBOARDED`, `E_REPO_REF`, `details.rolledBack`):
 [desktop-cli-api.md](desktop-cli-api.md#oats-onboard-onboardapi-2).
 

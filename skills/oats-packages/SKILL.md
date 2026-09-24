@@ -2,8 +2,10 @@
 name: oats-packages
 description: >-
   Use only for legacy uncaptured OATS package acquisition and mutable installed
-  store operations: oats install/update/remove, lock v1/v2, restore, migration,
-  and legacy trust. Triggers: "legacy package", "uncaptured oats install",
+  store operations: oats install/update/remove, lock v1/v2, restore and
+  migration. In the workspace model, declaring a package is the trust decision
+  and `oats sync` verifies integrity — load oats-package-pins (oats.setup).
+  Triggers: "legacy package", "uncaptured oats install",
   "oats-lock v2", or "legacy migration". For retained artifact-set/resolution
   approval and diagnostics, load oats-portable-artifacts instead.
 ---
@@ -30,7 +32,7 @@ codes) and `--dir <scope>`.
 oats install git:github.com/org/repo@v1.0.0    # git shorthand (ref optional; resolved once, exact-locked)
 oats install https://host/org/repo.git@v1.0.0  # raw HTTPS/SSH git URL
 oats install ../my-package                     # local path (dev escape hatch)
-oats install <catalog-id>                      # official catalog short id (identity only — no auto-trust)
+oats install <catalog-id>                      # official catalog short id (identity only)
 ```
 
 ### Which directory in the repo is the package?
@@ -50,8 +52,9 @@ oats install git:github.com/org/repo@v1.0.0#.          # → the repository ROOT
   manifest sits at the root needs `#.`; the error message says so.
 - **Only the selected subtree is installed and hashed.** Repository docs, CI
   config, owner souls and sibling packages never become installed bytes and
-  never affect `integrity` — so editing them cannot invalidate approvals, and
-  editing the payload (including a nested capability-agent soul) always does.
+  never affect `integrity` — so editing them cannot change the locked integrity,
+  and editing the payload (including a nested capability-agent soul) always
+  does.
 - **One repo can ship several packages** at different paths; install each by
   its own source. Two contained roots claiming the SAME package identity still
   fail with `duplicate-package-identity`.
@@ -86,25 +89,20 @@ package, path, integrity, trust).
 oats install                    # bare: EXACT restore of this chain's locks (never advances refs)
 oats list [--json]              # packages, exported capabilities, scopes, trust state
 oats update <package>           # transactional: temp fetch, closure validation, diff,
-                               # artifact+lock replaced together; approvals of every
-                               # CHANGED-integrity package are invalidated (unchanged
-                               # packages in the closure keep theirs)
+                               # artifact+lock replaced together; every
+                               # CHANGED-integrity package gets its new integrity
+                               # locked (unchanged packages in the closure keep theirs)
 oats remove <package>           # refuses while config or dependent packages reference it
 ```
 
 ## Trust
 
-Executable surfaces (commands/hooks) are blocked until approved at each
-capability artifact's EXACT integrity:
-
-```
-oats trust <capability>                     # approve only that capability
-oats trust <package> --all-capabilities     # explicit bulk; prints the full executable surface first
-```
-
-Any artifact integrity change (update, drift) resets that capability's trust —
-re-review, then re-trust. Skill/instruction/config-only capabilities need lock
-integrity but no approval. Official-catalog identity is NOT executable trust.
+Declaring a package is the trust decision: in the workspace model a package is
+trusted by its entry in the workspace's `packages:`, and `oats sync` resolves
+it, fetches it, verifies its integrity and locks it (see **oats-package-pins**
+in oats.setup). Review a package's commands and hooks before declaring it; an
+integrity change is refused until a new version is declared. Official-catalog
+identity is not trust.
 
 ## Runtime dependencies
 
@@ -112,8 +110,8 @@ A capability may check in `package.json` + `package-lock.json`; OATS materialize
 it with `npm ci --omit=dev --omit=peer --ignore-scripts` — production tree only,
 no lifecycle scripts. The package payload hash EXCLUDES `node_modules`. The
 materialized `node_modules` is instead part of that capability's own artifact
-integrity, so tampering with materialized deps resets the capability's trust
-just like source drift, and restore re-verifies it. Closures must be
+integrity, so tampering with materialized deps fails integrity just like
+source drift, and restore re-verifies it. Closures must be
 platform-invariant. Host peer APIs are reached only through the supported
 runtime boundary, never auto-installed.
 
@@ -129,8 +127,7 @@ lock only when EVERY entry maps to a package. If any entry cannot be mapped yet
 (a marketplace id the catalog does not resolve, an unknown source), the whole
 scope stays byte-identical v1 and keeps working — re-run when it can map. A
 successful run writes a fresh v2 lock for the scope. There is NO residue
-container: a converted lock never carries leftover v1 entries. Approvals never
-carry over — re-trust after migrating.
+container: a converted lock never carries leftover v1 entries.
 
 ### Upgrading a 0.18 deployment (bundled official capabilities → packages)
 
@@ -156,9 +153,8 @@ path order, ancestors first), then applies each scope transactionally.
   containing only those entries is skipped with their IDs under `retained`; a
   scope mixing them with official capabilities is blocked whole and stays v1.
   Plain `oats migrate` can convert custom sources only when every entry maps.
-- After it runs: `oats trust <capability> --dir <scope>` for each executable
-  surface it names (approvals never transfer), then `oats install --dir <scope>`
-  — already-installed host requirements verify, nothing is reinstalled.
+- After it runs: `oats install --dir <scope>` — already-installed host
+  requirements verify, nothing is reinstalled.
 - `--json` emits one envelope; an aggregate failure is `ok:false` with
   `error.code = E_MIGRATE_FAILED` and the complete per-scope report (including
   the scopes that DID migrate) under `error.details`.
@@ -170,9 +166,8 @@ confirming the legacy capabilities remain supported.
 ## Troubleshooting
 
 `oats doctor [dir] [--json]` distinguishes: missing locked package (run
-`oats install`), integrity drift (reacquire/update explicitly — approvals are
-already invalid), a capability whose `.oats-installation.json` disagrees with
-the lock, untrusted executable surface (`oats trust <capability>`), and a legacy
+`oats install`), integrity drift (reacquire/update explicitly), a capability
+whose `.oats-installation.json` disagrees with the lock, and a legacy
 v1 lock pending migration (`legacyLockFiles[]` plus `officialMigration`
 readiness). A refused lock — including the superseded transitional v2 shape —
 is reported as the single `lockError` diagnosis and is never partially

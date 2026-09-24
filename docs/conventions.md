@@ -66,7 +66,7 @@ where its owner keeps it and is copied whole into each instance at spawn:
 ```text
 <member repo>/capabilities/<name>/oats.json           # member-tier capability, latest state (membership is the trust)
 <package repo>/oats-package/oats-package.json         # package-tier: versioned via oats-workspace.yaml packages:
-<deployment>/oats-lock.json                           # lockfileVersion 3: package commit, integrity, per-version approval
+<deployment>/oats-lock.json                           # lockfileVersion 3: package commit and integrity
 <instance>/.oats/modules/<capability>/                # the copy this instance runs
 ```
 

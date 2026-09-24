@@ -385,6 +385,10 @@ Acquisition, exact version, integrity, dependency closure,
 executable trust.  Exists; a package may now also ship soul
 types.
 
+> **Superseded in part (2026-09-24):** there is no separate executable
+> approval for packages; declaring a package in a workspace's `packages:`
+> is the trust decision. See [workspaces.md](workspaces.md#packages-lock-catalog).
+
 ## Three simplifications
 
 **The harvester is a soul.** Its input is the capture contract

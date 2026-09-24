@@ -12,15 +12,16 @@ or workspace membership alone does not make a package official.
   can point to the package that supplies them.
 - A workspace pins an official package by **bare version** in its
   `packages:` map (`oats.okf: v2.1.3`); `oats sync` resolves it through the
-  catalog to an exact commit, locks it and asks for executable approval once
-  per version. A package outside the catalog is written `git:<repo>@<ref>`.
+  catalog to an exact commit, fetches it, verifies its integrity and locks it.
+  A package outside the catalog is written `git:<repo>@<ref>`.
   Pinning does not enroll a team or adopt the publisher's workspace. See
   [packages](packages.md).
 - The Desktop marketplace view/search is **planned for the parity phase**, not
   shipped by this policy or by OATS 0.24. There is no new marketplace CLI verb.
-- **Discoverable ≠ pinned ≠ approved.** A catalog listing grants nothing; a
-  `packages:` pin selects a version; the lock's per-version approval is what
-  lets its executables run. Nothing is installed.
+- **Discoverable ≠ declared.** A catalog listing grants nothing; a
+  `packages:` pin is the workspace's decision to trust that package at that
+  version, and the lock pins it to an exact commit and integrity. Nothing is
+  installed.
   Official status never grants trust, credentials or permission to run code.
 - Listing also does not prove that every harness, provider combination or
   deployment profile is supported. Check the package's declared compatibility,
@@ -46,8 +47,9 @@ or workspace membership alone does not make a package official.
 - **Valid declarations:** capability manifests validate against the supported
   schema and state truthful identities, compatibility and requirements.
 - **Honest execution surface:** commands, hooks, launch environment and other
-  executable contributions are declared accurately. Review their effects;
-  approval still binds to each capability's exact artifact, not its official name.
+  executable contributions are declared accurately. Review their effects: a
+  workspace that declares the package trusts exactly the locked version, not
+  its official name.
 - **Maintainership:** a documented, reachable maintainer contact or maintained
   issue/security-reporting route.
 - **License:** clear redistribution terms for the package and its dependencies,
@@ -84,4 +86,4 @@ Use the same catalog PR and maintainer-review path to update, deprecate or remov
 an entry. State the reason, affected releases and supported replacement or hold,
 and assess existing locks/restores before changing discovery. Preserve immutable
 release history. A list change is not permission to rewrite a deployment's locks,
-revoke or grant local approvals, uninstall packages or delete retained resources.
+change what a workspace declares, uninstall packages or delete retained resources.

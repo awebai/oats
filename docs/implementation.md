@@ -214,13 +214,12 @@ never reconciled into committed souls.
 (`lib/packages.mjs#resolvePackages`) resolves every `packages:` entry of
 `oats-workspace.yaml` to a commit, computes the package tree's integrity and
 writes `oats-lock.json` **lockfileVersion 3** (`packages.<id>: { source, url,
-path, version, commit, integrity, capabilities[], approved }`). Executable
-approval is **per package version**, recorded in the lock as
-`approved: { executables: sha256-…, at }` after `oats sync` shows the
-executables and the operator says yes; a spawn of a soul using an unapproved
-package is `E_PACKAGE_UNAPPROVED`, and 0.25.1 re-verifies the approved digest
-against the package tree at the locked commit at every spawn. Member-tier
-capabilities need no approval: membership is the trust (decision 2). The
+path, version, commit, integrity, capabilities[] }`). A package is trusted by
+its declaration in `packages:` (human decision, 2026-09-24); member-tier
+capabilities are trusted by membership (decision 2). The lock is
+reproducibility: a moved tag or drifted content is `E_PACKAGE_INTEGRITY`, at
+spawn the lock's capability list must match what the package declares at the
+locked commit, and a spawn uses only packages the workspace still declares. The
 verbs `oats install|trust|list|restore|use|migrate` are removed
 (`E_UNKNOWN_COMMAND` naming the replacement).
 

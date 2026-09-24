@@ -26,8 +26,8 @@ knowledge layer. V2 uses external accepted bases and independent workers, not
   substitutes an empty bundle.
 
 After publication, bump `packages.oats.okf` in the workspace file and run
-`oats sync`: the new version resolves to a commit and its executables are
-approved once. An existing lock never advances by itself. Package content is
+`oats sync`: the new version resolves to a commit, is fetched, its integrity is
+verified and the lock is rewritten. An existing lock never advances by itself. Package content is
 read from the catalog **Git** repository, never from an npm mirror (npm drops
 the source worker's canonical `CLAUDE.md` symlink).
 

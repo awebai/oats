@@ -52,7 +52,7 @@ Acquire the catalog Git payload; do not install a copied npm mirror as a local
 package or repair missing aliases in installed artifacts.
 
 Under the 0.25 workspace model OKF is a **package**: pin it once in the
-workspace file, let `oats sync` lock and approve it, and let every soul that
+workspace file, let `oats sync` resolve, verify and lock it, and let every soul that
 fills the knowledge slot say (or inherit) `oats.okf: { from: package }`.
 Operator-level `oats okf` commands run from the deployment directory with
 `--soul <name>` (an explicit `--soul` does not override an invoking instance's
@@ -80,7 +80,7 @@ settings:
 ```
 
 ```bash
-oats sync                                  # resolves v2.1.3 to a commit, asks executable approval once
+oats sync                                  # resolves v2.1.3 to a commit, verifies its integrity, writes the lock
 oats spawn domain-expert --preview --json  # the exact oats.okf module (package, version, commit) + settings.oats.okf (the merged payload)
 ```
 
@@ -90,7 +90,7 @@ bindable — it may carry **only** the four settings below (`bindings-file`,
 `state-dir`, `harvest-runtime`, `harvest-model`); `owns`/`reads`/`root` on the
 soul payload are refused by 2.1.3, not read. The lock stays exact until the
 workspace bumps `packages.oats.okf`; v1 operators must plan migration before
-that bump. Executable changes come with a new version and a new approval. A
+that bump. Executable changes come with a new version, reviewed as a new pin. A
 service worker need not itself fill the knowledge slot (`knowledge: none`).
 
 ### Bindings document
@@ -180,13 +180,14 @@ oats okf init --base project --nodes /absolute/config/project-nodes.json --outpu
 
 These run **before any instance exists**. Outside an instance home the kernel
 resolves `oats okf … --soul <name>` exactly as `oats spawn <name>` would
-(discover → resolve → the soul's `oats.okf` module at its locked, approved
-commit), fetches that module into the deployment's module store
+(discover → resolve → the soul's `oats.okf` module at its locked commit and
+integrity), fetches that module into the deployment's module store
 (`<deployment>/.oats/modules/oats.okf@<commit12>/`) and dispatches to that copy
 with the soul's merged payload as `OATS_SETTINGS`; `--soul` is required
 (`E_BAD_ARGS` names it) unless the namespace's capability is a workspace
-default. It never runs "the newest instance's copy" and never an unapproved
-cache read (`E_PACKAGE_UNAPPROVED` until `oats sync` approves the version).
+default. It never runs "the newest instance's copy" and never a cache read the
+lock does not pin (`E_PACKAGE_MISSING` until `oats sync` locks the declared
+version; drifted content is `E_PACKAGE_INTEGRITY`).
 *0.25.0 still answers `E_CAPABILITY_INACTIVE` here (the operator-level dispatch
 lands in 0.25.1); the interim is to run the module binary directly with
 `OATS_SETTINGS` and `OATS_CLI_BIN` set, as the tarball smoke does.*

@@ -54,8 +54,8 @@ A **module** is one capability copied whole into your home at spawn — its
 skills, instruction inject, scripts and hooks — from one of two sources:
 
 - a **member** repository at its latest commit (trusted by membership), or
-- a **package** at the version the workspace pins (locked, approved per
-  version).
+- a **package** at the version the workspace pins (trusted by that
+  declaration, locked to a commit and integrity).
 
 `instance.json` records each module's source, commit and content digest
 (`modules`), the provider payloads it received (`providers`), and the soul
@@ -80,7 +80,7 @@ running instance keeps its commit; a re-spawn picks up the new state.
 Other read-only views:
 
 ```bash
-oats workspace status        # members confirmed or why not; packages and approval
+oats workspace status        # members confirmed or why not; locked packages
 oats souls                   # souls the workspace offers (see oats-souls)
 oats capabilities            # capabilities, member or package, with origin and team
 oats instance events <instance>          # what happened to an instance, as recorded
@@ -136,7 +136,7 @@ unless told to discard.
 
 - Never edit `instance.json`, `oats-lock.json`, `oats-local.yaml` or anything
   under `.oats/` by hand. Report a wrong value instead.
-- Never re-onboard, sync-approve or change a deployment from an instance
+- Never re-onboard, sync or change a deployment from an instance
   unless that is your task; those are operator actions (oats.setup).
 - A scaffold is not a working session, a sent message is not a delivered
   one, and a green command on the wrong tree is not evidence. Say which tree
