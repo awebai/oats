@@ -42,6 +42,26 @@ pushes. Agreed by both on 2026-09-24:
 - `main` on these repositories carries no branch or tag protection: the parity
   gate and the cross-review are the only things between a merge and `main`.
 
+## Human decision (2026-09-24): no package approval
+
+**Package approval is removed from the kernel and from the Desktop.** People
+install a package only when they trust it. Declaring it in the workspace's
+`packages:` IS the trust decision, so there's no second, per-version approval
+step. This supersedes the "executables approved once per version" rule in
+`docs/workspaces.md` (§ Packages, lock, approval, catalog) and everything built
+on it:
+- `oats sync` exit 2 for pending approvals and `approvalNeeded`
+- `--approve <id>@<version>` and the interactive prompt
+- the lock's `approved` record
+- `E_PACKAGE_UNAPPROVED` at spawn and dispatch
+- the Desktop F2 approval flow (`E_APPROVAL_STALE`)
+- the planned pinned `--approve …=<digest>`
+
+What stays: the lock still pins each package to the exact commit and integrity,
+and restore still refuses drift (`E_PACKAGE_INTEGRITY`). Reproducibility is not
+approval. It's a breaking contract change, so it ships in a minor release, and
+the Desktop requires that kernel.
+
 ## Slices, in order
 
 ### D1 — Knowledge centralisation (IN PROGRESS)
