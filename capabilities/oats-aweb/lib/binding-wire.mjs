@@ -150,11 +150,12 @@ function binding(value) {
 function checkResult(message) {return {status:'needs-configuration',problems:[{code:'needs-configuration',message}]};}
 function checkProblems(problems) {return problems.length?{status:'needs-configuration',problems}:null;}
 function teamFromSettings(settings) {return typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);}
+function classicEnv() {return !!process.env.OATS_TEAM_SCOPE && !(process.env.OATS_WORKSPACE_KEY || process.env.OATS_WORKSPACE_NAME || process.env.OATS_TEAM_LABEL);}
 function rootCandidate(settings,team) {
   const roots=obj(settings.roots)?settings.roots:{};
   if(team && typeof roots[team]==='string' && roots[team].trim()) return {root:roots[team].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(team)}]`,declared:true};
   if(typeof settings.root==='string' && settings.root.trim()) return {root:settings.root.trim(),key:'settings.oats.aweb.root',declared:true};
-  const candidates=process.env.OATS_TEAM_SCOPE?[process.env.OATS_TEAM_SCOPE,process.env.OATS_WORKSPACE].filter(Boolean):[process.env.OATS_WORKSPACE || process.cwd()];
+  const candidates=classicEnv()?[process.env.OATS_TEAM_SCOPE,process.env.OATS_WORKSPACE].filter(Boolean):[process.env.OATS_WORKSPACE || process.env.OATS_TEAM_SCOPE || process.cwd()];
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }

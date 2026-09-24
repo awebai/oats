@@ -212,3 +212,21 @@ test("binding-check accepts classic team from environment without settings.team"
     assert.deepEqual(r.doc.result, { status: "ready", problems: [] });
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("unmapped v2 team label reports no team instead of inheriting the root active team", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-1121-"));
+  try {
+    const bin = fakeAw(base);
+    const workspace = join(base, "workspace"); awRoot(workspace);
+    const teamScope = join(base, "deployment-dir"); awRoot(teamScope);
+    const home = join(workspace, "agents", "dev", "instances", "probe"); mkdirSync(home, { recursive: true });
+    const env = { OATS_WORKSPACE: workspace, OATS_TEAM_SCOPE: teamScope, OATS_WORKSPACE_KEY: "fixture-workspace", OATS_WORKSPACE_NAME: "Fixture Workspace", OATS_TEAM_LABEL: "engineering", OATS_TEAM_ID: "" };
+    const check = runBinding(bindingRequest({ delivery: "session" }), env);
+    assert.equal(check.status, 0, check.stdout + check.stderr);
+    assert.deepEqual(check.doc.result, { status: "needs-configuration", problems: [{ code: "needs-configuration", message: "no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team" }] });
+    const spawn = runHook(bin, "spawn", { ...env, OATS_INSTANCE: "probe", OATS_HOME: home, OATS_CONTEXT: workspace, OATS_SETTINGS: JSON.stringify({}) });
+    assert.notEqual(spawn.status, 0);
+    assert.match(spawn.doc.warning, /set messaging\.byTeam\.<label>\.team in the workspace file or settings\.oats\.aweb\.team/);
+    assert.equal(existsSync(join(base, "aw.log")) && logLines(base).some((l) => l.argv.join(" ").startsWith("team invite")), false, "no invite is minted from the root active team");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});

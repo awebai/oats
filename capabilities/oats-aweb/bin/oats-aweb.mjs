@@ -206,7 +206,8 @@ function classicAwebRoot() {
   for (const c of candidates) if (existsSync(join(c, ".aw"))) return c;
   return undefined;
 }
-const isClassicDeployment = () => !!process.env.OATS_TEAM_SCOPE;
+const hasWorkspaceV2Facts = () => !!(process.env.OATS_WORKSPACE_KEY || process.env.OATS_WORKSPACE_NAME || process.env.OATS_TEAM_LABEL);
+const isClassicDeployment = () => !!process.env.OATS_TEAM_SCOPE && !hasWorkspaceV2Facts();
 const teamConfigRemedy = () => `set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team${isClassicDeployment() ? " (classic: set team.id in oats-config.yaml)" : ""}`;
 function declaredRootCandidate(team = payloadTeam().team) {
   const roots = settings.roots && typeof settings.roots === "object" && !Array.isArray(settings.roots) ? settings.roots : {};
@@ -217,7 +218,7 @@ function declaredRootCandidate(team = payloadTeam().team) {
 function rootSettingCandidate(team = payloadTeam().team) {
   const declared = declaredRootCandidate(team);
   if (declared) return declared;
-  const fallback = process.env.OATS_WORKSPACE || process.cwd();
+  const fallback = process.env.OATS_WORKSPACE || (!isClassicDeployment() ? process.env.OATS_TEAM_SCOPE : undefined) || process.cwd();
   return fallback ? { root: fallback, key: "settings.oats.aweb.root", declared: false } : undefined;
 }
 function awebRootProblem(candidate) {
@@ -560,6 +561,7 @@ if (event === "spawn") {
     const resolvedTeam = payloadTeam();
     let team = resolvedTeam.team;
     const teamPayloadMismatch = resolvedTeam.payload && resolvedTeam.env && resolvedTeam.payload !== resolvedTeam.env;
+    if (!team && process.env.OATS_TEAM_LABEL) fatal(`cannot determine target team for workspace team label ${JSON.stringify(process.env.OATS_TEAM_LABEL)}, so no identity could be minted — ${teamConfigRemedy()}`);
     if (!team) team = JSON.parse(run(["aw", "team", "list", "--json"], root)).active_team;
     if (!team) fatal(`cannot determine target team, so no identity could be minted — ${teamConfigRemedy()}, or activate a team at the aweb root`);
     // A bare team name (no namespace) resolves against the root's memberships.
