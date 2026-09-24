@@ -5,7 +5,7 @@ description: >-
   the CLI and pi adapter, decide which repository hosts the organisation's
   workspace, write the three shared declarations (oats-workspace.yaml,
   oats-membership.yaml, souls/<name>/soul.yaml), realize the workspace on this
-  machine with `oats onboard`, approve packages and spawn the first soul. Use
+  machine with `oats onboard` and spawn the first soul. Use
   for "get started with OATS", "set up/install/adopt OATS", "create my first
   agent", or "how do I start using OATS".
 ---
@@ -17,7 +17,7 @@ disposable **instances** (a soul at work, in its own home) and **capabilities**
 (skills, instructions and hooks copied whole into each instance at spawn). One
 **workspace** per organisation lists the repositories that belong to it. Do not
 run setup blindly: explain each decision and ask before writing a file,
-approving a package or spawning.
+declaring a package or spawning.
 
 This skill is the one pre-workspace bootstrap. Once the first instance exists,
 the `oats.setup` capability's skills (and the `oats-operator-expert` soul, where
@@ -74,6 +74,11 @@ Take the current package versions from the official catalog
 filled (knowledge, messaging, tasks) instead of copying the example. No absolute
 paths, accounts or team ids go in this file.
 
+Declaring a package in `packages:` is the decision to trust it: its commands
+and hooks run on every machine that spawns a soul using it. Show the user what
+each package runs (its capability manifests' `commands` and `hooks`) before
+adding its pin.
+
 In **every** member repository, including the host, `oats-membership.yaml`:
 
 ```yaml
@@ -112,24 +117,23 @@ oats onboard <dir> --workspace git:github.com/acme/agents
 
 It writes `<dir>/oats-local.yaml` (the one per-machine file, never committed)
 and `agents/`, confirms each member, resolves and locks the packages, and prints
-the next steps. Exit code 2 means packages await approval. Fix any member that
-is not confirmed (`oats workspace status` says why) before going on.
+the next steps. Fix any member that is not confirmed (`oats workspace status` says why) before going on.
 
 Host-owned settings a package asks for (absolute paths, state directories) go
 under `settings:` in `oats-local.yaml`, never in the workspace file. For
 `oats.okf` that is `bindings-file` and `state-dir`; its own skill explains the
 bindings file.
 
-## 5. Approve packages deliberately
+## 5. Sync after any change
 
 ```bash
-oats sync --dir <dir>                                   # on a terminal: shows each package's executables, asks per version
-oats sync --dir <dir> --approve oats.okf@2.1.4          # unattended: exactly that locked id@version
+oats sync --dir <dir>          # resolve every pin to a commit, fetch, verify integrity, write oats-lock.json
 ```
 
-Show the user what each package will execute before approving. Approval is per
-package version and recorded in `oats-lock.json`; member capabilities need no
-approval — membership is the trust.
+Run it after any change to the workspace file. It asks nothing; the lock pins
+each package to an exact commit and integrity, and content that no longer
+matches is refused (`E_PACKAGE_INTEGRITY`). Member capabilities come from
+membership.
 
 ## 6. Spawn the first soul
 
