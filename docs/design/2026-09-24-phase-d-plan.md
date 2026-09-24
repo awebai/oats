@@ -121,7 +121,14 @@ for, never named by convention — decision 9) is the acceptance: `oats onboard`
 Each package repo carries `souls/oats-<pkg>-expert` (oats-okf-expert,
 oats-aweb-expert, oats-jira-expert, oats-linear-expert, oats-authoring-expert,
 oats-dev-expert), the expert in that package, with a node in the central base
-from day one. **Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
+from day one. **Messaging (lead, 2026-09-24):** there is no workspace-wide messaging
+default, because it would mint a real identity on every spawn, helpers and
+acceptance runs included. Every soul that is *addressed by mail* declares it
+itself, `messaging: { oats.aweb: { from: package } }`: the coordinating
+experts (`oats-expert`, `oats-operator-expert`, `integrations-expert`) and all
+six package experts, which own their repository's PRs and receive review asks.
+Short-lived helpers do not.
+**Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
 it matches the repository names and the roster's `oats-kernel-`/`oats-desktop-`/
 `oats-operator-expert`, and it keeps instance aliases from colliding with the
 messaging project's own `aweb-expert` soul on a shared team. **Seams named in the
