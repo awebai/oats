@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "soulsApi": 1,
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+    },
+    "souls": [
+      {
+        "name": "campaign-writer",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ d38d588e",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "d38d588e42ece706e2454b99ab4fc675e1ef52bc",
+        "team": "marketing",
+        "private": false,
+        "path": "souls/campaign-writer",
+        "work": "directory",
+        "description": "Drafts launch campaigns from what engineering is actually shipping."
+      },
+      {
+        "name": "data-analyst",
+        "origin": "member local//fixture/base/fx/remotes/data.git @ 02e30502",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/data.git",
+        "commit": "02e305028b58174dec85665b573443ee380aef93",
+        "team": "engineering",
+        "private": false,
+        "path": "souls/data-analyst",
+        "work": "directory",
+        "description": "Answers questions against the warehouse with attributable evidence."
+      },
+      {
+        "name": "platform-engineer",
+        "origin": "member local//fixture/base/fx/remotes/platform.git @ 9d6727ab",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/platform.git",
+        "commit": "9d6727abd3d80e1ab6c048e118be590ec1a9b0d6",
+        "team": "engineering",
+        "private": false,
+        "path": "souls/platform-engineer",
+        "work": "worktree",
+        "description": "Implements platform features on a branch and opens PRs."
+      },
+      {
+        "name": "positioning-analyst",
+        "origin": "member local//fixture/base/fx/remotes/marketing.git @ d38d588e",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+        "commit": "d38d588e42ece706e2454b99ab4fc675e1ef52bc",
+        "team": "marketing",
+        "private": false,
+        "path": "souls/positioning-analyst",
+        "work": "directory",
+        "description": "Analyses market positioning against competitors."
+      },
+      {
+        "name": "release-manager",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 15395aeb",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1",
+        "team": "engineering",
+        "private": false,
+        "path": "souls/release-manager",
+        "work": "worktree",
+        "description": "Cuts, verifies and announces platform releases."
+      },
+      {
+        "name": "security-reviewer",
+        "origin": "external local//fixture/base/fx/remotes/experts.git @ 3c606e09",
+        "kind": "external",
+        "repoKey": "local//fixture/base/fx/remotes/experts.git",
+        "commit": "3c606e09ea25c9976d9c8371d48e9737564e6896",
+        "team": "unassigned",
+        "private": false,
+        "path": "souls/security-reviewer",
+        "work": "worktree",
+        "description": "Reviews changes for security regressions."
+      },
+      {
+        "name": "support-triager",
+        "origin": "member local//fixture/base/fx/remotes/agents.git @ 15395aeb",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1",
+        "team": "global",
+        "private": false,
+        "path": "souls/support-triager",
+        "work": "directory",
+        "description": "Triages inbound support issues into Jira."
+      },
+      {
+        "name": "tools-expert",
+        "origin": "member local//fixture/base/fx/remotes/nw-tools.git @ 317315a2",
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git",
+        "commit": "317315a2b888fe8fed086049cd1f77390aea0875",
+        "team": "engineering",
+        "private": false,
+        "path": "souls/tools-expert",
+        "work": "worktree",
+        "description": "Knows the nw.tools package — its manifests, executables, release tags and consumers; evolves it through PRs."
+      }
+    ],
+    "problems": []
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_CAPABILITY_MISSING",
+    "message": "--provider nw.nothing: the soul release-manager does not resolve a capability named \"nw.nothing\" (modules: nw-deploy, nw-house-style, nw-release-tooling, nw.messaging, oats.core, oats.okf)",
+    "details": {
+      "capability": "nw.nothing",
+      "soul": "release-manager",
+      "hint": "a provider payload targets one of the soul's resolved capabilities",
+      "modules": [
+        "nw-deploy",
+        "nw-house-style",
+        "nw-release-tooling",
+        "nw.messaging",
+        "oats.core",
+        "oats.okf"
+      ]
+    }
+  }
+}

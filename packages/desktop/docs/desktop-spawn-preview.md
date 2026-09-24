@@ -23,7 +23,8 @@ the confirmed transaction; an ordinary local `/api/spawn` body is refused
 only for an execution server (`serverId`), where the host decides defaults and
 naming; decision fields (key, ref, revision) cannot enter it
 (`E_UNSUPPORTED_OPTION`). There is no remote-to-local fallback.
-`--name` (feature `spawn-name`) is admitted only when advertised.
+`--name` (feature `spawn-name`) and a messaging identity (feature
+`spawn-provider-payload`) are admitted only when advertised.
 
 ## Selector and choices
 
@@ -33,7 +34,13 @@ reports twice, refuses rather than falling back to the roster.
 Choices include purpose **or** name (exclusive; the kernel owns naming rules and
 refuses with `E_INSTANCE_NAME_INVALID`/`E_INSTANCE_NAME_TAKEN`), work
 (`worktree` for a checkout soul), worktree-only branch/base, advertised
-runtime/backend, launchConfig, yolo, model and relation. Models are
+runtime/backend, launchConfig, yolo, model, relation and identity.
+`identity` is `{provider, mode:"local"}` or `{provider, mode:"global", resident}`
+(decision 27): `provider` is the soul's messaging capability as the preview
+reported it (the one module on layer `messaging`), and the argv is
+`--provider <cap> identity.mode=<mode>` [`--provider <cap> identity.resident=<r>`]
+— there is no kernel flag. The kernel refuses a capability the soul does not
+resolve (`E_CAPABILITY_MISSING`); the provider validates the resident. Models are
 `{kind:"inherit"}`, `{kind:"native-default"}` or `{kind:"custom",value}`; the native
 sentinel is reserved, not a custom model. Custom model text is advisory, not
 restricted to a catalog. Relations are `{kind:"unrelated"}` or
@@ -73,6 +80,9 @@ without effective remains an observation, never a synthesized executable plan.
 
 Projection preserves bounded work/runtime/model provenance, the `resolution`
 binding (top-level facts cross-checked against `decision.effective`),
+`messaging{provider, identity{mode,resident}|null}` — the identity
+`decision.effective.providers[<cap>]` binds, which must equal the preview's
+`settings[<cap>]`; none means the provider's documented default, local —
 `backendStatus{name,installed,started:false}` and
 `preflight{status:complete|timeout,budgetMs,elapsedMs}`. Installation is not daemon
 reachability. Omitted yolo remains unknown. Capabilities, skills, providers, task,

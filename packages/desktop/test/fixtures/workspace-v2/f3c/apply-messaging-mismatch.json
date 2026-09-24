@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_DECISION_STALE",
+    "message": "the previewed decision changed (b4d3f640f24b628214ea42a2 → 035b3ac2c916891a53caecc2): release-manager-api-v2-2 from HEAD@15395aeb4fe4; preview again",
+    "details": {
+      "decision": {
+        "instance": "release-manager-api-v2-2",
+        "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2-2",
+        "branch": "agents/release-manager-api-v2-2",
+        "base": {
+          "ref": "HEAD",
+          "oid": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+        },
+        "effective": {
+          "repo": "/fixture/base/northwind-workspace/agents-repo",
+          "work": "worktree",
+          "runtime": "pi",
+          "model": null,
+          "launchConfig": null,
+          "yolo": null,
+          "backend": "tmux",
+          "childSpawns": true,
+          "relation": null,
+          "providers": {
+            "nw-deploy": {},
+            "nw-house-style": {},
+            "nw-release-tooling": {},
+            "nw.messaging": {
+              "private": "per-human",
+              "channels": [
+                "northwind-eng"
+              ],
+              "identity": {
+                "mode": "global",
+                "resident": "ops"
+              }
+            },
+            "oats.core": {},
+            "oats.okf": {
+              "owns": "release-manager",
+              "reads": [
+                "platform-engineer",
+                "data-analyst"
+              ]
+            }
+          }
+        },
+        "resolution": "3af5ef48b5084a01b4a93e24",
+        "revision": "035b3ac2c916891a53caecc2"
+      }
+    }
+  }
+}

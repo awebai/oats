@@ -9,13 +9,42 @@ const arg = (v, max = 1024) => typeof v === 'string' && !!v && v.length <= max &
 const safe = (v, max = 4096) => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]|https?:\/\/[^/\s]*@|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/.test(v);
 const nullable = v => v === null || safe(v);
 const names = v => Array.isArray(v) && v.length <= 512 && v.every(x => safe(x, 512));
+const CAPABILITY = /^[a-z0-9][a-z0-9._-]{0,127}$/;
+const RESIDENT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** The soul's messaging provider and the identity its bound payload carries:
+ * the one module on layer messaging, and decision.effective.providers[cap]
+ * .identity (what the apply binds; the preview's settings must agree). No
+ * identity in the payload means the provider's documented default (local). */
+function messagingOf(v) {
+  // Idempotent: the renderer re-validates the server's projection, which
+  // carries `messaging` itself instead of the kernel's modules/settings.
+  if (!Object.hasOwn(v, 'modules') && Object.hasOwn(v, 'messaging')) {
+    const m = v.messaging;
+    if (m === null) return null;
+    if (!exact(m, ['provider', 'identity']) || !CAPABILITY.test(m.provider ?? '')) return undefined;
+    if (m.identity === null) return { provider: m.provider, identity: null };
+    const i = m.identity;
+    if (!exact(i, ['mode', 'resident']) || !['local', 'global'].includes(i.mode) || i.resident !== null && !RESIDENT.test(i.resident)) return undefined;
+    return { provider: m.provider, identity: { mode: i.mode, resident: i.resident } };
+  }
+  if (!Array.isArray(v.modules)) return null;
+  const rows = v.modules.filter(m => record(m) && m.layer === 'messaging');
+  if (!rows.length) return null;
+  if (rows.length !== 1 || !CAPABILITY.test(rows[0].name ?? '')) return undefined;
+  const cap = rows[0].name, bound = v.decision?.effective?.providers?.[cap], shown = v.settings?.[cap];
+  if (!record(bound) || !record(shown) || JSON.stringify(bound.identity ?? null) !== JSON.stringify(shown.identity ?? null)) return undefined;
+  const i = bound.identity;
+  if (i === undefined) return { provider: cap, identity: null };
+  if (!record(i) || !['local', 'global'].includes(i.mode) || i.resident !== undefined && !RESIDENT.test(i.resident)) return undefined;
+  return { provider: cap, identity: { mode: i.mode, resident: i.resident ?? null } };
+}
 export const previewSupported = cli => cli?.ok === true && absolute(cli.bin) && cli.spawnPreviewApi === 2
   && Array.isArray(cli.features) && cli.features.includes('spawn-preview-2');
 export function previewSelector(v) {
   return exact(v, ['soul', 'agentsRoot']) && name(v.soul) && absolute(v.agentsRoot) ? { soul: v.soul, agentsRoot: v.agentsRoot } : null;
 }
 export function previewChoices(v) {
-  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'runtime', 'model', 'launchConfig', 'backend', 'yolo', 'relation'])) return null;
+  if (!exact(v, ['purpose', 'name', 'work', 'branch', 'base', 'runtime', 'model', 'launchConfig', 'backend', 'yolo', 'relation', 'identity'])) return null;
   // --name (exact, unprefixed; feature spawn-name) and --purpose are mutually exclusive.
   if (Object.hasOwn(v, 'purpose') && Object.hasOwn(v, 'name')) return null;
   const out = {};
@@ -28,6 +57,17 @@ export function previewChoices(v) {
   // The only work override the Desktop offers: a checkout soul in a worktree.
   if (Object.hasOwn(v, 'work')) { if (v.work !== 'worktree') return null; out.work = 'worktree'; }
   if (Object.hasOwn(v, 'yolo')) { if (typeof v.yolo !== 'boolean') return null; out.yolo = v.yolo; }
+  // Messaging identity (decision 27; feature spawn-provider-payload): sent to
+  // the soul's messaging provider as --provider <cap> identity.mode=… — there
+  // is no kernel flag. `provider` is the capability the preview reported on
+  // layer messaging; the kernel refuses any other (E_CAPABILITY_MISSING).
+  if (Object.hasOwn(v, 'identity')) {
+    const i = v.identity;
+    if (!record(i) || !CAPABILITY.test(i.provider ?? '')) return null;
+    if (exact(i, ['provider', 'mode']) && i.mode === 'local') out.identity = { provider: i.provider, mode: 'local' };
+    else if (exact(i, ['provider', 'mode', 'resident']) && i.mode === 'global' && RESIDENT.test(i.resident ?? '')) out.identity = { provider: i.provider, mode: 'global', resident: i.resident };
+    else return null;
+  }
   const model = v.model === undefined ? { kind: 'inherit' } : v.model;
   if (exact(model, ['kind']) && ['inherit', 'native-default'].includes(model.kind)) out.model = { kind: model.kind };
   else if (exact(model, ['kind', 'value']) && model.kind === 'custom' && arg(model.value) && model.value !== '@native-default') out.model = { kind: model.kind, value: model.value };
@@ -50,6 +90,10 @@ export function choiceArgv(choices) {
   if (choices.model.kind !== 'inherit') argv.push('--model', choices.model.kind === 'native-default' ? '@native-default' : choices.model.value);
   if (choices.yolo !== undefined) argv.push(choices.yolo ? '--yolo' : '--no-yolo');
   if (choices.relation.kind !== 'unrelated') argv.push('--relation', choices.relation.kind, '--relative-to', choices.relation.anchor.instance, '--relative-root', choices.relation.anchor.agentsRoot);
+  if (choices.identity) {
+    argv.push('--provider', choices.identity.provider, `identity.mode=${choices.identity.mode}`);
+    if (choices.identity.mode === 'global') argv.push('--provider', choices.identity.provider, `identity.resident=${choices.identity.resident}`);
+  }
   return argv;
 }
 export function previewTarget(v) {
@@ -116,10 +160,12 @@ export function previewData(v, expected) {
     || !record(v.backendStatus) || v.backendStatus.name !== v.backend || typeof v.backendStatus.installed !== 'boolean' || v.backendStatus.started !== false
     || !record(v.preflight) || !['complete', 'timeout'].includes(v.preflight.status) || !Number.isInteger(v.preflight.budgetMs) || v.preflight.budgetMs <= 0 || v.preflight.budgetMs > 20000
     || !Number.isSafeInteger(v.preflight.elapsedMs) || v.preflight.elapsedMs < 0) return null;
+  const messaging = messagingOf(v);
+  if (messaging === undefined) return null;
   return { spawnPreviewApi: 2, preview: true, subject: { soul: v.subject.soul, agentsRoot: v.subject.agentsRoot, dir: v.subject.dir },
     decision: d, resolution: d.resolution, instance: d.instance, home: d.home, branch: d.branch, base: base ? { ...base } : null,
     repo: e.repo, work: e.work, worktree: v.worktree, runtime: e.runtime, model: e.model, modelSource: v.modelSource, relation: e.relation?.kind ?? null,
     launchConfig: e.launchConfig, yolo: e.yolo, backend: e.backend, team: v.team ?? null,
     backendStatus: { name: v.backendStatus.name, installed: v.backendStatus.installed, started: false },
-    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs } };
+    preflight: { status: v.preflight.status, budgetMs: v.preflight.budgetMs, elapsedMs: v.preflight.elapsedMs }, messaging };
 }

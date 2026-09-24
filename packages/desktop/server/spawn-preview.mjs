@@ -17,6 +17,7 @@ export function admitSpawnSelection(selector, choices, { workspace: w, cli, agen
   if (soul.work === 'attached') return fail('E_UNSUPPORTED_MODE'); // no renderer workDir authority
   // An exact (unprefixed) name only where the CLI advertises it.
   if (choices.name !== undefined && !cli.features.includes('spawn-name')) return fail('E_UNSUPPORTED_OPTION');
+  if (choices.identity !== undefined && !cli.features.includes('spawn-provider-payload')) return fail('E_UNSUPPORTED_OPTION');
   // The one work override offered: a checkout soul asked for a worktree.
   if (choices.work !== undefined && soul.work !== 'checkout') return fail('E_UNSUPPORTED_OPTION');
   const work = choices.work ?? soul.work;

@@ -364,19 +364,33 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   taskLabel.append(task);
   // Developer settings (collapsed)
   const advanced = el('details', undefined, 'spawn-advanced');
-  const advancedSummary = el('summary', 'Developer settings'); advancedSummary.append(el('small', 'Work area · permissions · launch · session · wake-up'));
+  const advancedSummary = el('summary', 'Developer settings'), advancedTopics = el('small', 'Work area · permissions · launch · session · wake-up');
+  advancedSummary.append(advancedTopics);
   advanced.append(advancedSummary);
   const advancedBody = el('div', undefined, 'spawn-advanced-body'); advanced.append(advancedBody);
   const permRow = el('div', undefined, 'spawn-row');
   const yoloLabel = el('label', 'Permissions'), yolo = el('select', undefined, 'field fyolo'); yoloLabel.append(yolo);
   const configLabel = el('label', 'Launch configuration'), config = el('select', undefined, 'field flaunch'); configLabel.append(config);
   permRow.append(yoloLabel, configLabel);
+  // Messaging identity (decision 27): offered when the CLI takes provider
+  // payloads and the preview reports the soul's messaging provider.
+  const identityField = el('div', undefined, 'spawn-field spawn-identity'); identityField.hidden = true;
+  const identityRow = el('div', undefined, 'spawn-row');
+  const identityLabel = el('label', 'Messaging identity'), identity = el('select', undefined, 'field fidentity');
+  for (const [value, label] of [['', 'Default'], ['local', 'Local — its own team identity'], ['global', 'Global — act as a resident']]) { const o = el('option', label); o.value = value; identity.append(o); }
+  identityLabel.append(identity);
+  const residentLabel = el('label', 'Resident'), resident = el('input', undefined, 'field fresident');
+  resident.autocomplete = 'off'; resident.spellcheck = false; resident.placeholder = 'resident name, e.g. ops'; residentLabel.append(resident); residentLabel.hidden = true;
+  identityRow.append(identityLabel, residentLabel);
+  const identityHint = el('p', '', 'spawn-hint spawn-identity-hint'); identityHint.setAttribute('aria-live', 'polite');
+  identityField.append(identityRow, identityHint);
+  let messagingProvider = null; // the capability the latest preview reported on layer messaging
   const hostRow = el('div', undefined, 'spawn-row');
   const backendLabel = el('label', 'Session backend'), backend = el('select', undefined, 'field fbackend'); backendLabel.append(backend);
   const serverLabel = el('label', 'Run on'), server = el('select', undefined, 'field fserver'); server.setAttribute('aria-label', 'Execution server'); serverLabel.append(server);
   hostRow.append(backendLabel, serverLabel);
   const wake = wakeScheduleFields(doc);
-  advancedBody.append(workField, permRow, hostRow, wake.el);
+  advancedBody.append(workField, permRow, identityField, hostRow, wake.el);
   // Footer
   const footer = el('div', undefined, 'spawn-footer');
   const statusRow = el('div', undefined, 'spawn-status');
@@ -431,6 +445,7 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   const applicable = () => previewable() && spawnApplySupported(cli()) && !soul.captured;
   const busy = () => !!flight || remoteBusy;
   const effectiveWork = () => worktree.checked && soul.work === 'checkout' ? 'worktree' : soul.work;
+  const identityOffered = () => local() && !!messagingProvider && !!cli()?.features?.includes('spawn-provider-payload');
   const selector = { soul: soul.name, agentsRoot: soul.agentsRoot };
 
   function relationChoice() {
@@ -449,13 +464,16 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     if (!relationValue) return { error: `Pick the instance this one is a ${rel.value} of.`, field: 'relation' };
     const exact = !prefixLabel.hidden && !prefixed.checked;
     if (exact && !p) return { error: 'Type the instance name, or turn the soul-name prefix back on.', field: 'name' };
+    const identityChoice = identityOffered() && identity.value ? identity.value === 'local' ? { provider: messagingProvider, mode: 'local' }
+      : { provider: messagingProvider, mode: 'global', resident: resident.value.trim() } : null;
+    if (identityChoice?.mode === 'global' && !identityChoice.resident) return { error: 'Type the resident this instance acts as.', field: 'identity' };
     const out = { ...(p ? exact ? { name: p } : { purpose: p } : {}), ...(soul.work === 'checkout' && worktree.checked ? { work: 'worktree' } : {}),
       ...(effectiveWork() === 'worktree' && branch.value.trim() ? { branch: branch.value.trim() } : {}),
       ...(effectiveWork() === 'worktree' && base.value.trim() ? { base: base.value.trim() } : {}),
       ...(runtime.value ? { runtime: runtime.value } : {}), ...(config.value ? { launchConfig: config.value } : {}),
       ...(backend.value ? { backend: backend.value } : {}), ...(yolo.value ? { yolo: yolo.value === 'true' } : {}),
       model: nativeModel ? { kind: 'native-default' } : model.value.trim() ? { kind: 'custom', value: model.value.trim() } : { kind: 'inherit' },
-      relation: relationValue };
+      relation: relationValue, ...(identityChoice ? { identity: identityChoice } : {}) };
     const valid = previewChoices(out);
     return valid ? { value: valid } : { error: 'A value here is not a valid spawn option (no spaces or leading dashes).', field: 'option' };
   }
@@ -516,6 +534,20 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
     config.options[0].textContent = data?.launchConfig ? `Default · ${data.launchConfig}` : 'Default';
     branch.placeholder = data?.branch && !branch.value ? data.branch : `agents/${soul.name}-…`;
     base.placeholder = data?.base ? `${data.base.ref} · ${short(data.base.oid)}` : 'HEAD';
+    // Messaging identity: what the kernel bound for this spawn, and the choice.
+    if (data) messagingProvider = data.messaging?.provider ?? null;
+    identityField.hidden = !identityOffered();
+    residentLabel.hidden = identity.value !== 'global';
+    advancedTopics.textContent = `Work area · permissions${identityOffered() ? ' · identity' : ''} · launch · session · wake-up`;
+    if (identityOffered()) {
+      const bound = data?.messaging?.identity;
+      identity.options[0].textContent = !data ? 'Default' : bound?.mode === 'global' && !identity.value ? `Default · global as ${bound.resident}` : identity.value ? 'Default' : 'Default · local';
+      identityHint.classList.toggle('err', draftChoice.field === 'identity');
+      identityHint.textContent = draftChoice.field === 'identity' ? draftChoice.error
+        : !data || !data.messaging ? '' : (data.messaging.identity?.mode ?? 'local') === 'global'
+          ? `Messaging through ${data.messaging.provider}: acts as the resident ${data.messaging.identity.resident} through a session grant.`
+          : `Messaging through ${data.messaging.provider}: gets its own team identity.`;
+    }
     const related = rel.value !== 'unrelated';
     relTo.hidden = !related; relTo.disabled = !related; relTo.setAttribute('aria-label', related ? `${rel.value[0].toUpperCase()}${rel.value.slice(1)} of which instance?` : 'Which instance');
     relDesc.textContent = !related ? 'Independent — not linked to another instance.' : relTo.value ? `Spawns as a ${rel.value} of ${relTo.value}.` : `Pick the instance this one is a ${rel.value} of.`;
