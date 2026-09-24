@@ -381,7 +381,18 @@ the pre-fix marker and is never accepted for dispatch.
   def fallback; mismatch → `E_SOUL_UNKNOWN`. The preview echoes
   `subject {soul, agentsRoot|null, dir|null}` **as given, byte-exact**.
 - **Decision binding**: `decision {instance, home, branch, base{ref,oid},
-  revision}` (24-hex). Apply with `spawn … --expect-decision <revision>`: the
+  effective{…, providers}, resolution, revision}` (24-hex). From 0.25.6
+  (`features: served-identity`) `effective.providers` is the merged
+  per-module payload each provider will receive (`{ "<cap>": {…} }`, exactly
+  `settings.<cap>` of the preview) — so a confirmed apply binds every
+  provider fact (an identity choice, a delivery mode) **by value**; a Desktop
+  that changes a provider field re-previews. `instances[].identity` (status)
+  and `selected.identity` (inspect) carry the served principal a messaging
+  provider reported: `{ mode: "local"|"global", alias, team, address|null,
+  resident|null, grant?: { id, expiresAt, scopes }, provider }`; absent when
+  no provider emitted one. A Desktop offers the identity choice as
+  `--provider <cap> identity.mode=… identity.resident=…` — there is no
+  kernel flag for it. Apply with `spawn … --expect-decision <revision>`: the
   kernel recomputes name/home/branch/base under the same placement path and
   refuses **`E_DECISION_STALE`** with `details.decision` (the fresh one) on ANY
   drift — no auto-suffix, no silent re-base, nothing created. A GUI re-previews

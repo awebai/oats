@@ -263,6 +263,10 @@
           },
           "description": {
             "type": "string"
+          },
+          "hostOnly": {
+            "type": "boolean",
+            "description": "When true, this key is a host fact (a custody path, a state directory): the resolver accepts it only from the deployment's oats-local.yaml settings.<capability> and refuses it in the workspace file, byTeam payloads, a soul's slot payload and --provider flags (E_WORKSPACE_SCHEMA reason host-only-key). Decision 27."
           }
         },
         "additionalProperties": false

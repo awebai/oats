@@ -565,6 +565,21 @@ is a member; a soul that lives in it may need a work clone). Under an explicit
 `oats-local.yaml` `standalone:` header the next steps say the view is standalone
 and list only that repo.
 
+### 0.25.6 — decision 27: served identity is a messaging-layer fact (K1′, K1″, K2)
+
+- **K1′** `decision.effective.providers` = the resolution's merged per-module payloads
+  (exactly what reaches `OATS_SETTINGS`), bound by the decision revision. No new flag.
+- **K1″** manifest `settings.<key>.hostOnly: true` → the resolver refuses that key in
+  the workspace base, `byTeam[*]`, the soul's slot and `--provider` layers with
+  `E_WORKSPACE_SCHEMA { reason: "host-only-key", path, key, capability }`; only
+  `oats-local.yaml settings.<cap>` may carry it. Generalises decision 23's reserved
+  `byTeam` into a capability-declared attribute. Schema: `docs/capability-manifest.schema.json`.
+- **K2** `oats status --json instances[].identity` and `oats inspect … selected.identity`
+  copy `capabilityMeta[<cap>].identity` (messaging-layer capability preferred; `provider`
+  added); text `identity: acts as <address> via grant, expires <t>` / `alias <a> on <team>`.
+  Layer contract shape in `docs/integrations.md`.
+- `features[]` gains `served-identity`.
+
 ### 0.25.5 — launch-hook `meta` is persisted
 
 `runLifecycleHooks("launch")` collected each capability's `meta` and the
