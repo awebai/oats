@@ -10,6 +10,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { createTerminalTab } from "../renderer/terminal-tab.mjs";
+import { handle, opened, ready, confirmed } from './helpers/terminal-wire.mjs';
+import { terminalFailure } from '../renderer/terminal-contract.mjs';
 
 function deferred() {
   let resolve, reject;
@@ -23,8 +25,9 @@ function makeDoubles(openPromise) {
   const wrap = doc.createElement("div");
   doc.body.append(wrap);
   const desk = {
-    termOpen: () => { log.push("open"); return openPromise; },
-    termClose: (id) => log.push(`closePty:${id}`),
+    termOpen: () => { log.push("open"); return openPromise.then(value => typeof value === 'number' ? opened(value) : value); },
+    termReady: h => { log.push('ready'); return ready(h); },
+    termClose: h => { log.push(`closePty:${h.id}`); return confirmed(h); },
     termWrite: () => log.push("write"),
     termResize: () => log.push("resize"),
     onTermData: () => { log.push("onData+"); return () => log.push("onData-"); },
@@ -52,7 +55,7 @@ const mk = (d, extra = {}) => createTerminalTab({
 test("terminal tab forwards the instance's saved socket to the privileged bridge", async () => {
   const d = makeDoubles(Promise.resolve(7));
   let spec;
-  d.desk.termOpen = async (value) => { spec = value; return { id: 7 }; };
+  d.desk.termOpen = async (value) => { spec = value; return opened(7); };
   const tab = mk(d, { tmux: { session: "team", window: "minerva", socket: "/saved/socket" } });
   await tab.start();
   assert.equal(spec.socket, "/saved/socket");
@@ -81,7 +84,7 @@ test("live path: setup in onReady, close disposes every resource, setup precedes
   await tab.start();
   const setupEnd = d.log.length;
   assert.deepEqual(d.log.slice(0, setupEnd),
-    ["open", "onData+", "onExit+", "term.onData", "term.onResize", "observe+", "focus"],
+    ["open", "onData+", "onExit+", "term.onData", "term.onResize", "observe+", "ready", "resize", "focus"],
     "all setup inside onReady, in order");
   await tab.close();
   assert.deepEqual(d.log.slice(setupEnd),
@@ -102,7 +105,8 @@ test("open rejection on a live tab shows the banner and close stays safe", async
   gate.reject(new Error("attach failed"));
   await starting;
   const banner = d.wrap.querySelector(".term-banner");
-  assert.ok(banner && /attach failed/.test(banner.textContent), "error banner rendered");
+  assert.ok(banner && /Could not attach/.test(banner.textContent), "safe error banner rendered");
+  assert.ok(!banner.textContent.includes('attach failed'), 'raw error withheld');
   await tab.close();                    // no pty to detach; UI still disposed
   assert.ok(d.log.includes("term.dispose"));
   assert.ok(!d.log.some((l) => l.startsWith("closePty")), "no pty was created");
@@ -114,20 +118,16 @@ test("session-ended (pty exit) then close: banner shown, no double-kill", async 
   d.desk.onTermExit = (_id, cb) => { exitCb = cb; d.log.push("onExit+"); return () => d.log.push("onExit-"); };
   const tab = mk(d);
   await tab.start();
-  exitCb();                             // main reports the pty exited
+  exitCb({ terminalApi: 2, status: 'ended', handle: handle(9), cleanupPending: false }); // confirmed cleanup
   assert.ok(/session ended/.test(d.wrap.querySelector(".term-banner")?.textContent || ""));
   await tab.close();
   assert.ok(!d.log.some((l) => l.startsWith("closePty")), "forget() prevented a double-kill");
 });
 
-// Slice G: the structured term:open result → lifecycle translation
-// (review cb7622e-r2 important 1). The doubles above return a bare numeric
-// id (the legacy/fallback path); these drive the {id}/{reused}/{capped}/
-// {error} shapes main.mjs now returns and assert the actionable banner /
-// numeric resolve — a regression (e.g. treating {capped:true} as a truthy
-// id) would otherwise pass the whole suite.
-test("term:open result translation: {id} resolves to the numeric id (attach proceeds)", async () => {
-  const d = makeDoubles(Promise.resolve({ id: 7 }));
+// Private wire2 only. Numeric values in makeDoubles are synthetic producer IDs,
+// translated by the fixture into leased results, never a production fallback.
+test("term:open wire2 resolves to a copied lease (attach proceeds)", async () => {
+  const d = makeDoubles(Promise.resolve(opened(7)));
   const tab = mk(d);
   await tab.start();
   assert.ok(d.log.includes("focus"), "onReady ran → attach proceeded with the unwrapped id");
@@ -136,8 +136,8 @@ test("term:open result translation: {id} resolves to the numeric id (attach proc
   assert.ok(d.log.includes("closePty:7"), "the unwrapped id is what gets closed");
 });
 
-test("term:open result translation: {reused,id} → actionable 'already open' banner, no attach", async () => {
-  const d = makeDoubles(Promise.resolve({ reused: true, id: 3 }));
+test("term:open reuse is not a second lease acquisition; its close never detaches the existing view", async () => {
+  const d = makeDoubles(Promise.resolve({ ...opened(3), status: 'reused' }));
   const tab = mk(d);
   await tab.start();
   const banner = d.wrap.querySelector(".term-banner");
@@ -146,25 +146,69 @@ test("term:open result translation: {reused,id} → actionable 'already open' ba
   await tab.close();
 });
 
-test("term:open result translation: {capped} → 'Terminal limit reached' with the runtime max", async () => {
-  const d = makeDoubles(Promise.resolve({ capped: true, active: 20, max: 20 }));
+test("term:open typed cap → actionable safe failure", async () => {
+  const d = makeDoubles(Promise.resolve(terminalFailure('E_TERM_CAP')));
   const tab = mk(d);
   await tab.start();
   const banner = d.wrap.querySelector(".term-banner");
-  assert.ok(banner && /Terminal limit reached \(20\)/.test(banner.textContent), `cap banner (got: ${banner?.textContent})`);
-  assert.ok(/Close a terminal tab first/.test(banner.textContent), "actionable guidance present");
+  assert.ok(banner && /Terminal limit reached/.test(banner.textContent), `cap banner (got: ${banner?.textContent})`);
+  assert.ok(/Close a terminal first/.test(banner.textContent), "actionable guidance present");
   assert.ok(!d.log.includes("focus"), "no attach when capped");
   await tab.close();
 });
 
-test("term:open result translation: {error} → surfaces the message, no attach", async () => {
-  const d = makeDoubles(Promise.resolve({ error: "no tmux target =s:=1" }));
+test("term:open typed failure → safe literal message, no attach", async () => {
+  const d = makeDoubles(Promise.resolve(terminalFailure('E_TERM_OPEN_FAILED')));
   const tab = mk(d);
   await tab.start();
   const banner = d.wrap.querySelector(".term-banner");
-  assert.ok(banner && /no tmux target/.test(banner.textContent), `error banner (got: ${banner?.textContent})`);
+  assert.ok(banner && /Could not attach/.test(banner.textContent), `error banner (got: ${banner?.textContent})`);
   assert.ok(!d.log.includes("focus"), "no attach on error");
   await tab.close();
+});
+
+test('wire2 has no numeric or old-object fallback', async () => {
+  for (const value of [7, { id: 7 }, { reused: true, id: 7 }]) {
+    const d = makeDoubles(Promise.resolve(7)); d.desk.termOpen = async () => value;
+    const tab = mk(d); await tab.start();
+    assert.ok(!d.log.includes('onData+')); assert.ok(!d.log.includes('focus')); await tab.close();
+    assert.ok(!d.log.some(value => value.startsWith('closePty')));
+  }
+});
+
+test('pending close remains literal and undisposed; input is disabled and an explicit retry can confirm', async () => {
+  const d = makeDoubles(Promise.resolve(12)); let attempts = 0, input;
+  d.term.onData = cb => { input = cb; };
+  d.desk.termClose = h => ++attempts === 1 ? terminalFailure('E_TERM_CLOSE_PENDING') : confirmed(h);
+  const tab = mk(d); await tab.start();
+  assert.equal((await tab.close()).ok, false);
+  assert.equal(d.wrap.querySelector('.term-banner').textContent, 'closing… not yet confirmed');
+  assert.ok(!d.log.includes('term.dispose')); input('must not write'); assert.ok(!d.log.includes('write'));
+  assert.equal((await tab.close()).ok, true); assert.equal(d.log.filter(v => v === 'term.dispose').length, 1);
+});
+
+test('ready timeout is a retained literal failed view, not healthy; listeners precede acknowledgment', async () => {
+  const d = makeDoubles(Promise.resolve(13));
+  d.desk.termReady = () => {
+    assert.ok(d.log.includes('onData+')); assert.ok(d.log.includes('onExit+'));
+    return terminalFailure('E_TERM_READY_TIMEOUT');
+  };
+  const tab = mk(d); await tab.start();
+  assert.equal(d.wrap.querySelector('.term-banner').textContent, 'terminal did not become ready; closed');
+  assert.ok(!d.log.includes('focus')); assert.ok(!d.log.includes('term.dispose'));
+  await tab.close(); assert.ok(d.log.includes('term.dispose'));
+});
+
+test('exit while ready acknowledgment is pending never restores healthy input or focus', async () => {
+  const d = makeDoubles(Promise.resolve(14)), gate = deferred(); let exit;
+  d.desk.onTermExit = (_h, cb) => { exit = cb; return () => {}; };
+  d.desk.termReady = () => gate.promise;
+  const tab = mk(d), starting = tab.start();
+  await new Promise(setImmediate);
+  exit({ terminalApi: 2, handle: handle(14), status: 'ended', cleanupPending: false });
+  gate.resolve(ready(handle(14))); await starting;
+  assert.ok(!d.log.includes('focus')); assert.match(d.wrap.querySelector('.term-banner').textContent, /session ended/);
+  await tab.close(); assert.ok(!d.log.includes('closePty:14'));
 });
 
 // ── Shift+Enter → newline (chat-input fix) ────────────────────────────────
@@ -202,10 +246,10 @@ test("custom key handler: Shift+Enter writes \\n once and suppresses keydown, ke
   assert.equal(typeof handler, "function", "handler installed during onReady");
   const ev = (o) => ({ type: "keydown", key: "Enter", shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...o });
   assert.equal(handler(ev({ shiftKey: true })), false, "keydown suppressed (default \\r blocked)");
-  assert.deepEqual(writes, [[5, "\n"]], "newline byte written to the live pty");
+  assert.deepEqual(writes, [[handle(5), "\n"]], "newline byte written with the original lease");
   assert.equal(handler(ev({ shiftKey: true, type: "keypress" })), false, "keypress suppressed — the \\r leak that SENT the message");
   assert.equal(handler(ev({ shiftKey: true, type: "keyup" })), false, "keyup suppressed");
-  assert.deepEqual(writes, [[5, "\n"]], "exactly one write for the whole chord");
+  assert.deepEqual(writes, [[handle(5), "\n"]], "exactly one write for the whole chord");
   assert.equal(handler(ev({})), true, "plain Enter left to xterm (message sends)");
   assert.equal(writes.length, 1, "no extra writes for pass-through keys");
   await tab.close();
@@ -283,7 +327,7 @@ test("wired handler: an intercepted chord is suppressed in every phase and write
   assert.deepEqual(intercepted, ["keydown"], "action dispatch observed once, on keydown");
   assert.equal(handler(ev({})), true, "plain k left to xterm (types into the terminal)");
   assert.equal(handler(ev({ key: "Enter", shiftKey: true })), false, "Shift+Enter still composes");
-  assert.deepEqual(writes, [[9, "\n"]], "Shift+Enter newline still written");
+  assert.deepEqual(writes, [[handle(9), "\n"]], "Shift+Enter newline still written");
   await tab.close();
 });
 

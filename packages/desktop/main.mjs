@@ -22,11 +22,10 @@ import { createGhRunner, forgeEnvironment } from "./forge-cli.mjs";
 import { createForgeAuthBroker, verifyAuthCli } from "./forge-auth.mjs";
 import { forgeFailure } from "./renderer/forge-contract.mjs";
 import { lifecycleFailure } from './renderer/lifecycle-contract.mjs';
-import { openTerm, sweepViewers } from "./tmux-target.mjs";
-import { localTmuxIo, tmuxSocketArgs } from "./local-tmux-io.mjs";
-import { remoteTargetKey, prepareRemoteTerm, createTerminalPrepareGate, remoteTerminalEnvironment } from "./remote-target.mjs";
-import { openHerdrTerm, herdrTargetKey } from "./herdr-target.mjs";
-import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "./terminal-registry.mjs";
+import { sweepViewers } from "./tmux-target.mjs";
+import { tmuxSocketArgs } from "./local-tmux-io.mjs";
+import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-owner.mjs';
+import { createTerminalIo } from './terminal-io.mjs';
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
 import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs } from "./workspace-registry.mjs";
@@ -38,7 +37,6 @@ import { proxyInstanceEvents } from './instance-events-proxy.mjs';
 import { proxyScheduleRead, isScheduleReadAlias } from './schedule-read-proxy.mjs';
 import { proxySpawnApply } from './spawn-apply-proxy.mjs';
 import { startSingleInstance } from "./single-instance.mjs";
-import { prepareTerminalAttachments } from "./terminal-attachments.mjs";
 
 const require = createRequire(import.meta.url);
 const pty = require("node-pty");
@@ -63,6 +61,7 @@ const workspaceDirs = [WORKSPACE];
 // Server host (server-host.mjs): owns the child lifecycle, the ownership-
 // through-transition invariant, and trust-state invalidation on replace.
 let invalidateForgeReads = () => {};
+let invalidateTerminalPreparations = () => {};
 const serverHost = createServerHost({
   spawnChild: (dirs, onPort) => {
     const bin = join(HERE, "server", "oats-web.mjs");
@@ -84,7 +83,7 @@ const serverHost = createServerHost({
   },
   // trust state belongs to the outgoing server — stale entries must never
   // validate ?ws= or decideAdd; repopulated only from the current server.
-  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); },
+  onInvalidate: () => { allowedWs = new Set(); serverEpoch++; invalidateForgeReads(); invalidateTerminalPreparations(); },
 });
 let wsId = null;        // verified workspace id on the server we use
 let allowedWs = new Set(); // workspace ids the connected server advertises
@@ -434,32 +433,18 @@ installForgeAuthHandlers({ ipc: ipcMain, broker: forgeAuth, rendererUrl: RENDERE
   owner.on('render-process-gone', drop); owner.once('destroyed', drop);
 } });
 
-// ---- IPC: integrated terminal (node-pty ↔ grouped tmux viewer session) ---
-const ptys = new Map(); // id -> { pty, killViewer, wc }
-let nextPtyId = 1;
-// Resource registry (terminal-registry.mjs): DEDUPE by target + HARD CAP.
-// The main process owns the ptys and oatsdesk viewer sessions, so the ceiling
-// lives here — the renderer cannot be trusted to bound it.
-const termRegistry = createTerminalRegistry({ max: MAX_TERMINALS });
-const terminalPrepare = createTerminalPrepareGate(termRegistry, MAX_TERMINALS);
-
-/** Kill + release every pty owned by a renderer that navigated/reloaded/
- * died (review cb7622e-r2 important 2). On a renderer reload the OLD tabs are
- * gone but their ptys survive in main and stay committed in the registry —
- * without this they'd occupy cap slots forever with no tab to reattach them
- * (a functional dead-end and a slow cap leak). Wiring the source window's
- * lifecycle events to a drop closes it: a reloaded renderer starts clean and
- * the freed targets can be re-opened. */
-function dropPtysForWebContents(wc) {
-  for (const [id, t] of [...ptys]) {
-    if (t.wc !== wc) continue;
-    ptys.delete(id);
-    termRegistry.release(id);
-    try { t.pty.kill(); } catch { /* already gone */ }
-    t.killViewer();
-  }
-}
-const wcWired = new WeakSet(); // wire each renderer's lifecycle listeners once
+// ---- IPC: integrated terminal (leased linked-window viewers) ------------
+// The shared broker owns process-wide reservations, document principals,
+// current-owner output and confirmed cleanup. No numeric-ID IPC lane.
+const terminalContext = () => serverHost.inTransition() ? null : `${serverEpoch}:${base()}`;
+const terminalBroker = createTerminalOwnerBroker({ rendererUrl: RENDERER_URL, context: terminalContext,
+  io: createTerminalIo({ base, context: terminalContext,
+    attachmentDirectory: () => join(app.getPath('userData'), 'attachments'),
+    spawnPty: (...args) => pty.spawn(...args), execFileSync, sweep: sweepOrphanViewers,
+  }),
+});
+invalidateTerminalPreparations = () => terminalBroker.invalidatePreparations();
+installTerminalHandlers(ipcMain, terminalBroker);
 
 const tmuxRun = (args) => execFileSync("tmux", args, { stdio: "ignore", timeout: 4000 });
 
@@ -479,113 +464,6 @@ function sweepOrphanViewers(socket) {
     if (swept.length) console.log(`oats-desktop: swept ${swept.length} orphaned viewer session(s): ${swept.join(", ")}`);
   } catch { /* no tmux server — nothing to sweep */ }
 }
-
-ipcMain.handle("term:open", async (e, { session, window: win, socket, sessionTarget, remote, cols, rows }) => {
-  guard(e);
-  const targetKey = remote ? remoteTargetKey(remote) : sessionTarget ? herdrTargetKey(sessionTarget) : terminalTargetKey(session, win, socket);
-  let prepared;
-  if (remote && !termRegistry.has(targetKey)) {
-    try {
-      prepared = await terminalPrepare.prepare(targetKey, async () => {
-        // CLI selection belongs to the backend's verified discovery state.
-        const response = await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(5000) });
-        const cli = await response.json();
-        if (!response.ok || !cli.ok || !cli.bin) throw new Error("remote terminal needs a compatible installed oats CLI");
-        return prepareRemoteTerm(cli, remote);
-      });
-      if (prepared.capped) return prepared;
-      guard(e); // the renderer may have navigated while SSH was inspected
-    } catch (err) { return { error: String(err.message || err) }; }
-  }
-  // All asynchronous preparation ends before plan/create/commit. The final
-  // synchronous check preserves dedupe and the PTY cap across concurrent opens.
-  const plan = termRegistry.plan(targetKey);
-  if (plan.action === "reuse") return { reused: true, id: plan.id };
-  if (plan.action === "cap" || termRegistry.activeCount() + terminalPrepare.pendingCount() >= MAX_TERMINALS) return { capped: true, active: termRegistry.activeCount(), max: MAX_TERMINALS };
-  // openTerm (tmux-target.mjs): anchors + PREFLIGHTS the exact source target
-  // (missing target rejects here → the renderer's "could not attach"), then
-  // builds a per-tab LINKED-WINDOW viewer session (placeholder → link exact
-  // window → drop placeholder → lock keys) and attaches the pty THERE. The
-  // viewer contains ONLY the linked window: no client's window switch, no
-  // viewer-side key binding, and no sibling auto-select on window death can
-  // ever steer this tab to another agent — when the source window dies the
-  // viewer terminates (pty exit → "session ended"). Durable session
-  // untouched. A create FAILURE (bad target) leaks nothing: openTerm kills
-  // its own partial viewer and nothing is committed to the registry.
-  let opened;
-  try {
-    if (!remote && !sessionTarget) sweepOrphanViewers(socket);
-    opened = remote ? {
-      pty: pty.spawn(prepared.binary, prepared.args, { name: "xterm-256color", cols: Math.max(20, Number(cols) || 80), rows: Math.max(5, Number(rows) || 24), cwd: process.env.HOME, env: remoteTerminalEnvironment() }),
-      killViewer: () => {}, // CLI/SSH disconnect cleans only its host-side viewer
-    } : sessionTarget ? openHerdrTerm({ sessionTarget, cols, rows }, {
-      spawnPty: (argv, c, r, env) => pty.spawn("herdr", argv, { name: "xterm-256color", cols: c, rows: r, cwd: process.env.HOME, env }),
-    }) : openTerm({ session, window: win, cols, rows }, localTmuxIo(socket, {
-      execFileSync, spawnPty: (...args) => pty.spawn(...args),
-    }));
-  } catch (err) {
-    return { error: String(err.message || err) };
-  }
-  const { pty: p, killViewer } = opened;
-  const id = nextPtyId++;
-  const wc = e.sender;
-  const dropViewer = () => { try { killViewer(); } catch { /* already gone (session ended) */ } };
-  p.onData((data) => { if (!wc.isDestroyed()) wc.send(`term:data:${id}`, data); });
-  p.onExit(({ exitCode }) => {
-    ptys.delete(id);
-    termRegistry.release(id);   // free the target slot the moment the pty ends
-    dropViewer(); // pty gone (detach or session end) — the viewer session must not linger
-    if (!wc.isDestroyed()) wc.send(`term:exit:${id}`, exitCode);
-  });
-  ptys.set(id, { pty: p, killViewer: dropViewer, wc, remote });
-  termRegistry.commit(targetKey, id);
-  // Release this renderer's ptys when it reloads, navigates, or its process
-  // goes away — the tabs that owned them no longer exist (wired once per wc).
-  if (!wcWired.has(wc)) {
-    wcWired.add(wc);
-    const drop = () => dropPtysForWebContents(wc);
-    wc.on("did-navigate", drop);            // full reload / navigation (not in-page hash)
-    wc.on("render-process-gone", drop);     // renderer crash/replace
-    wc.once("destroyed", drop);              // window/webContents torn down
-  }
-  return { id };
-});
-ipcMain.handle("term:attachments", async (e, id, items) => {
-  guard(e);
-  const target = ptys.get(id);
-  if (!target || target.wc !== e.sender) throw new Error("This terminal is no longer open.");
-  if (target.attaching) throw new Error("Wait for the current attachments to finish.");
-  target.attaching = true;
-  try {
-    let cli;
-    if (target.remote) {
-      const response = await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error("OATS CLI is unavailable.");
-      cli = await response.json();
-    }
-    const paths = await prepareTerminalAttachments(items, {
-      directory: join(app.getPath("userData"), "attachments"), remote: target.remote, cli,
-    });
-    if (ptys.get(id) !== target || e.sender.isDestroyed()) throw new Error("The terminal closed before the files were attached.");
-    return paths;
-  } finally { target.attaching = false; }
-});
-ipcMain.on("term:write", (e, id, data) => { guard(e); ptys.get(id)?.pty.write(String(data)); });
-ipcMain.on("term:resize", (e, id, cols, rows) => {
-  guard(e);
-  const t = ptys.get(id);
-  if (t && cols > 0 && rows > 0) { try { t.pty.resize(cols, rows); } catch { /* racing exit */ } }
-});
-ipcMain.on("term:close", (e, id) => {
-  guard(e);
-  // Kill the pty and ITS viewer session only — the durable session and its
-  // windows always survive (onExit also drops the viewer; both are safe).
-  const t = ptys.get(id);
-  ptys.delete(id);
-  termRegistry.release(id);   // free the target slot so a re-open is allowed
-  try { t?.pty.kill(); } catch { /* already gone */ }
-  t?.killViewer();
-});
 
 // ---- window -------------------------------------------------------------
 // Application menu policy lives in app-menu.mjs (pure, unit-tested):
@@ -611,6 +489,8 @@ async function createWindow() {
       sandbox: false, // preload needs require() for contextBridge; renderer stays isolated
     },
   });
+  // Register hooks before loadFile or any terminal request/preparation.
+  terminalBroker.register(win.webContents);
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: "deny" };
@@ -666,23 +546,25 @@ const primaryInstance = startSingleInstance(app, () => BrowserWindow.getAllWindo
 
 if (primaryInstance) app.on("window-all-closed", () => { app.quit(); });
 
-function shutdown() {
-  forgeAuth.dispose(); // only the ephemeral gh child; never a durable session
+async function shutdown() {
+  try { forgeAuth.dispose(); } catch { /* other resource cleanup must still run */ } // ephemeral gh child only
   // Detach every pty and kill its viewer session (never the durable
   // sessions); stop the server only if we started it; sweep any orphans.
-  for (const id of [...ptys.keys()]) {
-    const t = ptys.get(id);
-    try { t.pty.kill(); } catch { /* best-effort */ }
-    t.killViewer();
-    termRegistry.release(id);
-  }
-  ptys.clear();
+  await terminalBroker.dispose(); // bounded grace for async viewer cleanup, never a fake release
   sweepOrphanViewers();
   serverHost.stop();
 }
-if (primaryInstance) app.on("before-quit", shutdown);
-// SIGTERM/SIGINT (e.g. `kill <pid>`, Ctrl-C from a launcher shell) do not run
-// before-quit on their own — without this the spawned backend child leaks.
+let quitStarted = false, quitReady = false;
+if (primaryInstance) app.on('before-quit', event => {
+  if (quitReady) return;
+  event.preventDefault();
+  if (quitStarted) return;
+  quitStarted = true;
+  void shutdown().catch(() => { /* quit remains bounded; no raw errors/extra signals */ })
+    .finally(() => { quitReady = true; app.quit(); });
+});
+// Existing quit signals enter the same bounded cleanup path; no extra signal
+// or PID fallback is sent to terminals or their durable sources.
 for (const sig of primaryInstance ? ["SIGTERM", "SIGINT", "SIGHUP"] : []) {
-  process.on(sig, () => { shutdown(); app.quit(); });
+  process.on(sig, () => app.quit());
 }

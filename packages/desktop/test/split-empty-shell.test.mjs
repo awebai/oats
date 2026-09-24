@@ -2,6 +2,8 @@
 // xterm, IPC and panel responses are synthetic. No processes or live sessions.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
+import { terminalFailure } from '../renderer/terminal-contract.mjs';
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
@@ -71,8 +73,9 @@ function shell(t, shellSource = source) {
       dispose() { this.disposed++; }
     },
     desk: {
-      termOpen(spec) { const gate = { ...deferred(), spec }; attachments.push(gate); return gate.promise; },
-      termClose(id) { detached.push(id); }, termResize() {}, termWrite() { assert.fail("selection must not write terminal bytes"); },
+      termOpen(spec) { const gate = { ...deferred(), spec }; attachments.push(gate); return gate.promise.then(({ id }) => opened(id)); },
+      termReady: terminalReady,
+      termClose(h) { detached.push(h.id); return confirmed(h); }, termResize() {}, termWrite() { assert.fail("selection must not write terminal bytes"); },
       onTermData: () => () => {}, onTermExit: () => () => {},
     },
     registerAction: action => actions.set(action.id, action.run),
@@ -282,12 +285,21 @@ for (const outcome of ["resolve", "reject"]) test(`empty selection supersedes a 
 for (const outcome of ["resolve", "reject"]) for (const supersede of [false, true]) {
   test(`close/reopen while attachment cleanup ${outcome}: ${supersede ? "new empty choice cancels reopen" : "latest reopen uses chosen empty group"}`, async t => {
     const s = shell(t), old = await s.open("slow", false);
-    s.splitPane("row"); s.c.tabs.get(old.id).closeEl.click();
+    s.splitPane("row");
+    if (supersede) {
+      // Seed and close a UI-only neighbor to establish two persistent empty
+      // destinations without pretending the pending source has already closed.
+      const neighbor = s.addTab({ title: 'neighbor', kind: 'terminal' });
+      s.splitPane('row'); s.closeTab(neighbor.id);
+    }
+    s.c.tabs.get(old.id).closeEl.click();
     s.empty(2).focus();
     const reopened = s.openTerminalTabFlow("slow", () => assert.fail("refusal"));
     s.requests.at(-1).resolve({ instances: [instance("slow")] }); await tick();
     assert.equal(s.attachments.length, 1, "reopen waits for old detach, including late materialization");
-    if (supersede) s.empty(1).focus();
+    // The closing source stays occupied until confirmed. A third, genuinely
+    // empty destination supplies the newer intent (not an imaginary free tab).
+    if (supersede) s.empty(3).focus();
     const focused = s.document.activeElement;
     if (outcome === "resolve") old.gate.resolve({ id: 99 }); else old.gate.reject(new Error("old attach failure"));
     await old.done; await tick();
@@ -301,10 +313,10 @@ for (const outcome of ["resolve", "reject"]) for (const supersede of [false, tru
     await reopened;
     if (supersede) {
       assert.equal(s.attachments.length, 1); assert.equal(s.c.tabs.size, 0);
-      assert.equal(s.c.activeTab, null); assert.equal(s.c.split.focusedGroup, 1);
+      assert.equal(s.c.activeTab, null); assert.equal(s.c.split.focusedGroup, 3);
       assert.equal(s.document.activeElement, focused);
     } else assert.equal(s.terms.at(-1).focuses, 1);
-    assert.equal(s.cells().length, 2);
+    assert.equal(s.cells().length, supersede ? 3 : 2);
   });
 }
 
@@ -335,6 +347,50 @@ test("files/brains only cover empty terminal destinations; split controls/action
   }
   assert.equal(layout.groupOfTab(s.c.split, terminal.id).id, 1);
   assert.equal(s.attachments.length, 1); assert.deepEqual(s.detached, []);
+});
+
+test('actual shell retains a close-pending terminal and destination; retry removes only after confirmation', async t => {
+  const s = shell(t), terminal = await s.open('close-pending'); s.splitPane('row');
+  s.c.desk.termClose = async () => terminalFailure('E_TERM_CLOSE_PENDING');
+  await s.closeTab(terminal.id, true);
+  assert.equal(s.c.tabs.has(terminal.id), true); assert.equal(terminal.term.disposed, 0);
+  assert.equal(s.c.tabs.get(terminal.id).paneEl.querySelector('.term-banner').textContent, 'closing… not yet confirmed');
+  assert.equal(layout.groupOfTab(s.c.split, terminal.id).id, 1); assert.equal(s.cells().length, 2);
+  s.c.desk.termClose = async h => confirmed(h);
+  await s.closeTab(terminal.id, true);
+  assert.equal(s.c.tabs.has(terminal.id), false); assert.equal(terminal.term.disposed, 1); assert.equal(s.cells().length, 2);
+});
+
+for (const outcome of ['resolve', 'reject']) test(`close ${outcome} after workspace/selection change never steals newer foreground`, async t => {
+  const s = shell(t), terminal = await s.open(`late-close-${outcome}`), gate = deferred(); let held;
+  s.c.desk.termClose = h => { held = h; return gate.promise; };
+  const closing = s.closeTab(terminal.id, true);
+  s.switchTo('B'); const newer = s.addTab({ title: 'newer', kind: 'file' });
+  s.c.tabs.get(newer.id).triggerEl.focus(); const focused = s.document.activeElement;
+  if (outcome === 'resolve') gate.resolve(confirmed(held)); else gate.reject(new Error('private transport detail'));
+  await closing;
+  assert.equal(s.c.workspace, 'B'); assert.equal(s.c.activeTab, newer.id); assert.equal(s.document.activeElement, focused);
+  assert.equal(s.c.tabs.has(terminal.id), outcome === 'reject');
+});
+
+test('close confirmation in the same workspace cannot steal a newer editable focus', async t => {
+  const s = shell(t), terminal = await s.open('same-ws-close'), gate = deferred(); let held;
+  s.c.desk.termClose = h => { held = h; return gate.promise; };
+  const closing = s.closeTab(terminal.id, true);
+  const newer = s.addTab({ title: 'newer', kind: 'file' });
+  const input = s.document.createElement('input'); newer.paneEl.append(input); input.focus();
+  gate.resolve(confirmed(held)); await closing;
+  assert.equal(s.c.activeTab, newer.id); assert.equal(s.document.activeElement, input);
+});
+
+test('repeated close coalesces cleanup but retains the latest explicit close focus intent', async t => {
+  const s = shell(t), terminal = await s.open('repeated-close'), newer = s.addTab({ title: 'newer', kind: 'file' });
+  const gate = deferred(); let held, calls = 0;
+  s.c.desk.termClose = h => { held = h; calls++; return gate.promise; };
+  const first = s.closeTab(terminal.id, true), second = s.closeTab(terminal.id, true);
+  assert.equal(first, second); assert.equal(calls, 1);
+  gate.resolve(confirmed(held)); await second;
+  assert.equal(s.c.activeTab, newer.id); assert.equal(s.document.activeElement, s.c.tabs.get(newer.id).triggerEl);
 });
 
 function assertPanel(s, ref) {
@@ -374,7 +430,7 @@ test('two existing groups project only the focused instance; empty, file and bra
     s.selectTab(left.id); assertPanel(s, instance('left-panel'));
     assert.deepEqual(structuredClone(s.c.split), split);
   }
-  s.selectTab(right.id); s.closeTab(right.id); assertPanel(s, null);
+  s.selectTab(right.id); await s.closeTab(right.id); assertPanel(s, null);
   // Reopening an existing terminal moves its original pane into the empty
   // destination, rather than creating a third attachment or copying context.
   const again = await s.open('left-panel');

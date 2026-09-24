@@ -1,9 +1,7 @@
 // Remote terminal addressing is an installed-CLI operation, never a renderer
 // supplied SSH command, executable path, socket or server registration.
 import { requireRemoteSupport } from "./cli-locator.mjs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-const exec = promisify(execFile);
+import { runTerminalCommand } from './terminal-exec.mjs';
 
 export function remoteTargetKey(remote) {
   if (!/^[a-z0-9][a-z0-9-]{0,63}$/.test(remote?.serverId || "")
@@ -11,17 +9,21 @@ export function remoteTargetKey(remote) {
   if (remote.home !== undefined && (typeof remote.home !== "string" || !remote.home.startsWith("/") || remote.home.includes("\0"))) throw new Error("invalid remote terminal home");
   return JSON.stringify(["remote", remote.serverId, remote.instance, ...(remote.home ? [remote.home] : [])]);
 }
-export async function prepareRemoteTerm(cli, remote, { run = exec } = {}) {
+export async function prepareRemoteTerm(cli, remote, { run = runTerminalCommand, signal, current = () => true } = {}) {
+  const check = () => { if (signal?.aborted || !current()) throw Object.assign(new Error('Terminal context changed'), { code: 'E_TERM_CONTEXT_CHANGED' }); };
+  check();
   requireRemoteSupport(cli, "session");
   const bin = cli.bin;
   remoteTargetKey(remote);
   const address = ["--server", remote.serverId, "--instance", remote.instance, ...(remote.home ? ["--home", remote.home] : [])];
+  check(); // actual execution owner, not only IPC admission
   const { stdout } = await run(bin, ["session", "inspect", ...address, "--json"], {
-    encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024,
+    encoding: "utf8", timeout: 20000, maxBuffer: 1024 * 1024, shell: false, ...(signal ? { signal } : {}),
   });
+  check();
   const envelope = JSON.parse(stdout);
   if (envelope.schemaVersion !== 1 || envelope.ok !== true) throw new Error(envelope.error?.message || "remote session inspection failed");
-  if (!envelope.result?.present) throw new Error("remote terminal no longer exists");
+  if (envelope.result?.present !== true) throw new Error("remote terminal no longer exists");
   return { binary: bin, args: ["session", "attach", ...address] };
 }
 

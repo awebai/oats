@@ -124,9 +124,26 @@ export function openTerm(spec, io) {
   //    placeholder's window ID: fixed indices (0/9) break under a custom
   //    base-index (review linkview — base-index 1 made kill-window :0 fail
   //    and every open reject); window IDs are index-agnostic.
-  const placeholderId = io.tmuxOut(["new-session", "-d", "-s", viewer, "-P", "-F", "#{window_id}"]);
-  const killViewer = () => io.tmux(["kill-session", "-t", `=${viewer}`]);
+  let cleaned = false, cleaning = null;
+  const killViewer = () => {
+    if (cleaned) return;
+    if (io.cleanupViewer) {
+      if (!cleaning) cleaning = Promise.resolve().then(() => io.cleanupViewer(viewer))
+        .then(() => { cleaned = true; }).finally(() => { cleaning = null; });
+      return cleaning;
+    }
+    try { io.tmux(["kill-session", "-t", `=${viewer}`]); }
+    catch (error) {
+      // Source death may already have removed its linked-only viewer. Only a
+      // successful inventory proving this exact name absent confirms cleanup;
+      // an inaccessible/unresponsive server is uncertainty, not absence.
+      const names = io.tmuxOut(["list-sessions", "-F", "#{session_name}"]).split('\n');
+      if (names.includes(viewer)) throw error;
+    }
+    cleaned = true;
+  };
   try {
+    const placeholderId = io.tmuxOut(["new-session", "-d", "-s", viewer, "-P", "-F", "#{window_id}"]);
     if (!/^@\d+$/.test(placeholderId)) throw new Error(`unexpected window id "${placeholderId}"`);
     // 2. link the EXACT source window (anchored); bare "viewer:" lets tmux
     //    pick a free index regardless of base-index
@@ -157,8 +174,18 @@ export function openTerm(spec, io) {
     const pty = io.spawnPty(`=${viewer}`, Math.max(20, Number(spec.cols) || 80), Math.max(5, Number(spec.rows) || 24));
     return { target, viewer, pty, killViewer };
   } catch (e) {
-    // link/lock/pty failure — do not leak the viewer session
-    try { killViewer(); } catch { /* best-effort */ }
+    // Creation can have taken effect even if its response failed. The broker
+    // must keep a slot for unconfirmed cleanup, not orphan it by deleting a key.
+    let pending = false;
+    try {
+      const work = killViewer();
+      if (work && typeof work.then === 'function') { work.catch(() => {}); pending = true; }
+    } catch { pending = true; }
+    if (pending) {
+      const uncertain = new Error('term:open: viewer cleanup not confirmed', { cause: e });
+      uncertain.terminalCleanup = killViewer;
+      throw uncertain;
+    }
     throw e;
   }
 }

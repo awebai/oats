@@ -1,22 +1,19 @@
-// Terminal resource registry (terminal-registry.mjs) — Slice G hard
-// invariant: the Desktop app must never fan out enough terminal viewers to
-// hang the machine. Dedupe by target + hard cap of 6, enforced main-side.
-//
-// The tests drive a FAITHFUL simulation of main.mjs's term:open handler
-// (plan → create-on-"create" → commit; release on close/exit/failure) with a
-// fake openTerm that counts real viewer creations, so the regressions prove
-// the resource bound end to end, not just the map bookkeeping.
+// Historical target-index helper tests, retained for pure bookkeeping coverage.
+// This simulator is NOT the current main terminal authority or an end-to-end
+// security proof. Production owns20 global slots through terminal-owner.mjs;
+// terminal-owner.test.mjs and terminal-wire-io.test.mjs exercise the actual
+// broker/handlers/composition, including owner/document leases and pending cleanup.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTerminalRegistry, terminalTargetKey, MAX_TERMINALS } from "../terminal-registry.mjs";
 
-// A stand-in for the main-process handler + openTerm + ptys map.
+// Historical synchronous helper simulation, not the production broker.
 function makeApp({ max = MAX_TERMINALS, failTargets = new Set() } = {}) {
   const reg = createTerminalRegistry({ max });
   const ptys = new Map();          // id -> { key, killed }
   let nextId = 1;
-  let viewersCreated = 0;          // real openTerm() calls that built a viewer
-  // Mirrors main.mjs term:open EXACTLY: synchronous plan→create→commit.
+  let viewersCreated = 0;          // synthetic creates only
+  // Tests the legacy helper's synchronous plan→create→commit bookkeeping.
   const open = (session, window) => {
     const key = terminalTargetKey(session, window);
     const plan = reg.plan(key);

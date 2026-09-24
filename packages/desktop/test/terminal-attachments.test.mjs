@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { prepareTerminalAttachments } from '../terminal-attachments.mjs';
 import { wireTerminalAttachments, attachmentText } from '../renderer/terminal-attachments.mjs';
+import { handle } from './helpers/terminal-wire.mjs';
 
 test('local paths and clipboard image bytes survive; private image file persists for agent reading', async () => {
  const dir=await mkdtemp(join(tmpdir(),'oats-attachments-'));
@@ -36,10 +37,10 @@ test('remote uploads use installed CLI and exact home; unsupported/failed upload
 
 test('drop targets its pane, never submits; pending close discards transfer result; text paste is untouched',async()=>{
  const dom=new JSDOM('<div id="pane"></div>'),wrap=dom.window.document.querySelector('#pane');
- const file=new dom.window.File(['image'],'screen.png',{type:'image/png'});let id=7,resolve,calls=0;const pasted=[];
- const off=wireTerminalAttachments({wrap,desk:{termAttachFiles:async(target,files)=>{calls++;assert.equal(target,7);assert.equal(files[0],file);return new Promise(r=>resolve=r);}},term:{paste:s=>pasted.push(s),focus(){}},ptyId:()=>id});
+ const file=new dom.window.File(['image'],'screen.png',{type:'image/png'});let id=handle(7),resolve,calls=0;const pasted=[];
+ const off=wireTerminalAttachments({wrap,desk:{termAttachFiles:async(target,files)=>{calls++;assert.deepEqual(target,handle(7));assert.equal(files[0],file);return new Promise(r=>resolve=r);}},term:{paste:s=>pasted.push(s),focus(){}},ptyId:()=>id});
  const drop=()=>{const e=new dom.window.Event('drop',{bubbles:true,cancelable:true});Object.defineProperty(e,'dataTransfer',{value:{files:[file]}});wrap.dispatchEvent(e);assert.equal(e.defaultPrevented,true);};
  const text=new dom.window.Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(text,'clipboardData',{value:{files:[]}});wrap.dispatchEvent(text);assert.equal(text.defaultPrevented,false);
- drop();drop();assert.equal(calls,1);resolve(['/tmp/screen.png']);await new Promise(r=>setImmediate(r));assert.deepEqual(pasted,["'/tmp/screen.png' "]);
- drop();id=null;off();resolve(['/tmp/late.png']);await new Promise(r=>setImmediate(r));assert.equal(pasted.length,1);assert.equal(wrap.querySelector('[role=status]'),null);dom.window.close();
+ drop();drop();assert.equal(calls,1);resolve({terminalApi:2,ok:true,paths:['/tmp/screen.png']});await new Promise(r=>setImmediate(r));assert.deepEqual(pasted,["'/tmp/screen.png' "]);
+ drop();id=null;off();resolve({terminalApi:2,ok:true,paths:['/tmp/late.png']});await new Promise(r=>setImmediate(r));assert.equal(pasted.length,1);assert.equal(wrap.querySelector('[role=status]'),null);dom.window.close();
 });

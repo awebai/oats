@@ -44,6 +44,7 @@ module.exports = {
     "herdr-target.mjs", "remote-target.mjs",
     "terminal-registry.mjs",
     "terminal-attachments.mjs",
+    "terminal-owner.mjs", "terminal-target.mjs", "terminal-io.mjs", "terminal-exec.mjs", "terminal-bridge.cjs",
     "workspace-registry.mjs",
     "server/**/*",
     "renderer/**/*",
