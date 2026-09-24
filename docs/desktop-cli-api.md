@@ -1023,8 +1023,9 @@ the per-module row set (`toCapabilityRows`) that `oats inspect`/`status` read.
 
 `soulDir` (0.26.0) is the absolute soul directory the instance incarnates — a
 workspace soul's per-commit copy `<deployment>/agents/<soul>/souls/<commit12>`, or
-the read-only soul inside a capability package — and is what every hook and
-dispatched command receives as `OATS_SOUL`. Instance homes carry no `soul` link.
+the read-only soul inside a capability package — and is what every classic
+lifecycle hook and dispatched command receives as `OATS_SOUL` (captured
+lifecycle hooks set none). Instance homes carry no `soul` link.
 
 `digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
 `providers.<cap>` is the merged payload (soul ⊕ `oats-local.yaml`

@@ -320,7 +320,7 @@ follow. Every mode sits inside the same home/work boundary, which the generated
 instructions state first (`injects/instance-boundary.md`):
 
 - `<instance-home>` — the gitignored instance directory, `$OATS_INSTANCE_HOME` —
-  holds the brain (`AGENTS.md`, `soul/`), the task, the provenance
+  holds the brain (the composed `AGENTS.md`; there is no soul link), the task, the provenance
   (`instance.json`) and the episodic state (`STATE.md`, `log.md`, `notes/`), and
   is where OATS operational/lifecycle commands — and the commands of whatever
   capabilities are active, `aw` among them when aweb messaging is — are run,

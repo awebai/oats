@@ -322,7 +322,6 @@ Nothing is symlinked, nothing is shared between instances.
 ├── .claude/skills → ../.agents/skills
 ├── .oats/modules/<capability>/        # the full capability copy: oats.json, bin/, injects/, skills/
 ├── instance.json                      # modules{}, providers{}, workspace{} recorded here
-├── soul → <agents-root>/<soul>/soul   # read-only reference
 ├── TASK.md
 └── work/
 ```

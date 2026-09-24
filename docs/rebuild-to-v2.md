@@ -348,7 +348,7 @@ Under v2 that path is no longer your checkout. `oats spawn` fetches the soul
 from its member repo at the confirmed commit into the deployment's
 **per-commit soul cache**, `agents/<name>/souls/<commit12>/` (immutable once
 written; `agents/<name>/soul` is a kernel-swapped pointer to the current one),
-and the kernel hands every hook of the instance **its own commit's directory**
+and the kernel hands every lifecycle hook of the instance **its own commit's directory**
 as `OATS_SOUL` (recorded as `instance.json` `soulDir`; homes carry no soul
 link) — so the realpath the hook pins is `<deployment>/agents/<name>/souls/<commit12>`, which
 never equals the 0.24 pin (`<repo>/agents/<name>/soul`) and changes whenever the
