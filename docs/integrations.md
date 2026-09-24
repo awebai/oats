@@ -230,10 +230,13 @@ but do not yet enforce provenance in the hook payload).
   the `oats-local.yaml settings.oats.aweb.residents.<name>` key to set. Optional
   `identity.scopes` defaults to exactly `[mail.read, mail.send, chat.read,
   chat.send]`; optional `identity.ttl` defaults to `8h` (aw accepts `60s` to
-  `720h`). Spawn runs `aw --identity-home <custody>/.aw id grant mint --scope
-  <comma-list> --ttl <ttl> --label oats:<instance> --out <home>/.aweb-identity
-  --json` from the custody directory with `AWEB_IDENTITY_HOME=<custody>/.aw`,
-  parses the last JSON line, verifies the minted grant's `team_id`, and returns
+  `720h`). Spawn runs `aw id grant mint --scope <comma-list> --ttl <ttl>
+  --label oats:<instance> --out <home>/.aweb-identity --json` from the custody
+  directory with `AWEB_IDENTITY_HOME` removed from the child environment: in aw
+  1.36.1, grant commands are not identity-home-aware and intentionally refuse
+  both `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
+  custody identity. The hook parses the last JSON line, verifies the minted
+  grant's `team_id`, and returns
   `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
   the hook revokes the grant and keeps nothing. Retire revokes
   `meta.identity.grant.id` through the custody directory; with no grant id it

@@ -21,7 +21,12 @@ const a = process.argv.slice(2);
 const s = a.join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
-const cmd = a[0] === "--identity-home" ? a.slice(2) : a;
+const grantCmd = a[0] === "--identity-home" ? a.slice(2) : a;
+if (grantCmd[0] === "id" && grantCmd[1] === "grant" && (a[0] === "--identity-home" || process.env.AWEB_IDENTITY_HOME)) {
+  console.error('command "aw ' + grantCmd.slice(0, 3).join(' ') + '" is not yet identity-home-aware; refusing to use an external identity home');
+  process.exit(2);
+}
+const cmd = a;
 function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
 if (s === "version") { console.log("aw 1.36.1"); process.exit(0); }
 if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
@@ -117,7 +122,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
-    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin", scopes: ["mail.read", "chat.send"], ttl: "90m" }, residents: { merlin: custody } }) });
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin", scopes: ["mail.read", "chat.send"], ttl: "90m" }, residents: { merlin: custody } }), AWEB_IDENTITY_HOME: join(base, "ambient-grant-home") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aweb-identity") });
     assert.deepEqual(r.doc.meta.identity, { mode: "global", alias: "resident-alias", team: "t:example.test", address: "oats.aweb.ai/resident-alias", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read", "chat.send"] } });
@@ -129,9 +134,9 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
     const lines = logLines(base);
     const mint = lines.find((l) => l.argv.join(" ").includes("id grant mint"));
-    assert.deepEqual(mint.argv, ["--identity-home", join(custody, ".aw"), "id", "grant", "mint", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--json"]);
+    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--json"]);
     assert.equal(mint.cwd, realpathSync(custody));
-    assert.equal(mint.identityHome, join(custody, ".aw"));
+    assert.equal(mint.identityHome, null);
     const wake = lines.find((l) => l.argv[0] === "wake" && l.argv[1] === "register");
     assert.deepEqual(wake.argv, ["wake", "register", "--home", home, "--identity-home", join(home, ".aweb-identity"), "--delivery", "session"]);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -147,8 +152,9 @@ test("global mode revokes and removes the grant when the minted team differs fro
     assert.equal(r.doc.meta.identity.grant.id, "grant-123", "meta is still emitted for idempotent retire compensation");
     assert.match(r.doc.warning, /minted grant team wrong:team differs from expected:team/);
     const revoke = logLines(base).find((l) => l.argv.join(" ").includes("id grant revoke"));
-    assert.deepEqual(revoke.argv, ["--identity-home", join(custody, ".aw"), "id", "grant", "revoke", "grant-123", "--json"]);
+    assert.deepEqual(revoke.argv, ["id", "grant", "revoke", "grant-123", "--json"]);
     assert.equal(revoke.cwd, realpathSync(custody));
+    assert.equal(revoke.identityHome, null);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -184,11 +190,14 @@ test("global retire revokes the grant through custody and deregisters session de
   try {
     const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
     const meta = { delivery: "session", identity: { mode: "global", alias: "resident-alias", team: "t:example.test", address: null, resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read"] } } };
-    const r = runHook(bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify({ residents: { merlin: custody } }) });
+    const r = runHook(bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify({ residents: { merlin: custody } }), AWEB_IDENTITY_HOME: join(home, ".aweb-identity") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.equal(r.doc.meta.identityRevoked, true);
     const lines = logLines(base);
-    assert.ok(lines.some((l) => l.argv.join(" ") === ["--identity-home", join(custody, ".aw"), "id", "grant", "revoke", "grant-123", "--json"].join(" ")));
+    const revoke = lines.find((l) => l.argv.join(" ") === ["id", "grant", "revoke", "grant-123", "--json"].join(" "));
+    assert.ok(revoke);
+    assert.equal(revoke.cwd, realpathSync(custody));
+    assert.equal(revoke.identityHome, null);
     assert.ok(lines.some((l) => l.argv.join(" ") === ["wake", "deregister", "--home", home].join(" ")));
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

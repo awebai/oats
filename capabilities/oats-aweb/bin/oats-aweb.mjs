@@ -50,9 +50,11 @@ import { parseBindingJson } from "../lib/binding-wire.mjs";
  * property of one helper staying correct forever, while argv removes the class.
  * This hook is a REQUIRED spawn hook, so it gates every spawn, which is reason
  * enough not to rely on quoting. */
-const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env: extraEnv } = {}) => {
+const run = (argv, cwd, timeout = 45000, { secrets = [], secretSafe = false, env: extraEnv, unsetEnv = [] } = {}) => {
   try {
-    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, ...(extraEnv ? { env: { ...process.env, ...extraEnv } } : {}) }).trim();
+    const childEnv = extraEnv || unsetEnv.length ? { ...process.env, ...(extraEnv || {}) } : undefined;
+    for (const name of unsetEnv) if (childEnv) delete childEnv[name];
+    return execFileSync(argv[0], argv.slice(1), { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout, ...(childEnv ? { env: childEnv } : {}) }).trim();
   } catch (e) {
     // execFileSync puts the WHOLE ARGV in e.message ("Command failed: aw team
     // join <token> …"). This hook's failures are reported by the kernel and land
@@ -259,7 +261,7 @@ function resolveResidentCustody(name) {
   return custody;
 }
 function revokeGrant(custody, grantId) {
-  return run(["aw", "--identity-home", join(custody, ".aw"), "id", "grant", "revoke", grantId, "--json"], custody, 60000, { env: { AWEB_IDENTITY_HOME: join(custody, ".aw") } });
+  return run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
 }
 function recoverGrantHome(grantHome) {
   try {
@@ -284,7 +286,7 @@ function globalGrantSpawn() {
   const cleanup = () => { try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ } };
   const failAfterMint = (message, code = 1) => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}` }, code); };
   try {
-    const raw = run(["aw", "--identity-home", join(custody, ".aw"), "id", "grant", "mint", "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"], custody, 60000, { env: { AWEB_IDENTITY_HOME: join(custody, ".aw") } });
+    const raw = run(["aw", "id", "grant", "mint", "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
     let minted;
     try { minted = lastJsonLine(raw, "aw id grant mint"); }
     catch (parseError) {
