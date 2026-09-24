@@ -284,7 +284,7 @@ for (const boundary of ["dispose", "reset", "refresh", "retry"]) {
 // Each mutant must fail one of the behavioral assertions above, not a source check.
 async function mutant(from, to) {
   assert.equal(source.split(from).length, 2, "mutation targets exactly one boundary");
-  const changed = source.replace(from, to).replace('"./common.mjs"', JSON.stringify(new URL("../renderer/views/common.mjs", import.meta.url).href));
+  const changed = source.replace(from, to).replace(/from "(\.[^"]+)"/g, (_all, path) => `from ${JSON.stringify(new URL(path, new URL("../renderer/views/cli-status.mjs", import.meta.url)).href)}`);
   return import(`data:text/javascript;base64,${Buffer.from(changed).toString("base64")}`);
 }
 test("mutation: interpreting parsed domain ok:false as HTTP failure is caught", async () => {

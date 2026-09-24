@@ -11,6 +11,7 @@
 // and the palette's legacy `sc < 0` no-match filter silently dropped exact
 // prefix matches — fixed with this extraction.)
 import { captureFocusReturn } from "./focus-return.mjs";
+import { icon } from "./shell-icons.mjs";
 
 export function subsequenceScore(text, query) {
   const t = String(text).toLowerCase();
@@ -200,7 +201,7 @@ export function createOverlayPicker({ placeholder, ariaLabel, loadItems, compute
         row.id = `${id}-option-${i}`;
         row.className = "palette-item";
         row.setAttribute("role", "option");
-        const dot = it.dot != null ? `<span class="pdot${it.dot ? " on" : ""}" aria-hidden="true"></span>` : `<span class="picon" aria-hidden="true">›</span>`;
+        const dot = it.dot != null ? `<span class="pdot${it.dot ? " on" : ""}" aria-hidden="true"></span>` : `<span class="picon" aria-hidden="true">${icon("chevronRight", { size: 13 })}</span>`;
         row.innerHTML = `${dot}<span class="plabel"></span><span class="pdetail"></span>`;
         row.querySelector(".plabel").textContent = it.label;
         row.querySelector(".pdetail").textContent = it.detail || "";

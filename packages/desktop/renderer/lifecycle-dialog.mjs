@@ -2,6 +2,7 @@ import { takePickerFocusReturn } from './overlay-picker.mjs';
 import { gitTarget, gitTargetKey } from './instance-git-contract.mjs';
 import { lifecyclePlan, lifecycleOptions, planReference, lifecycleReason, publicLifecycleReceipt, stoppedTargets, lifecycleChoicesApplicable } from './lifecycle-contract.mjs';
 import { projectedPullRequest } from './forge-contract.mjs';
+import { iconElement } from './shell-icons.mjs';
 export const lifecycleCSS = `
 .lifecycle-dialog { width:min(420px,calc(100vw - 32px)); max-height:88vh; overflow:auto; display:flex; flex-direction:column; gap:14px; padding:20px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--fg); box-shadow:var(--shadow-popover); font-size:12.5px; }
 .lifecycle-dialog h2 { margin:0; font-size:15px; font-weight:700; overflow-wrap:anywhere; }
@@ -189,7 +190,7 @@ export function createLifecycleDialog({ doc, request, gitRequest, forgeRequest, 
     overlay = node('div', undefined, 'palette-overlay lifecycle-overlay');
     const dialog = node('section', undefined, 'lifecycle-dialog'); dialog.dataset.operation = operation;
     dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-modal', 'true'); dialog.setAttribute('aria-label', `${next === 'stop' ? 'Stop' : 'Remove'} ${target.instance}?`);
-    const heading = node('div', undefined, 'lifecycle-heading'), mark = node('span', next === 'stop' ? '■' : '⌫', 'lifecycle-mark'); mark.setAttribute('aria-hidden', 'true');
+    const heading = node('div', undefined, 'lifecycle-heading'), mark = node('span', undefined, 'lifecycle-mark'); mark.append(iconElement(doc, next === 'stop' ? 'stop' : 'remove', { size: 18 })); mark.setAttribute('aria-hidden', 'true');
     heading.append(mark, node('h2', `${next === 'stop' ? 'Stop' : 'Remove'} ${target.instance}?`));
     const explanation = node('p', '', 'lifecycle-note'), status = node('p', '', 'lifecycle-note'); status.setAttribute('role', 'status');
     const facts = node('div', undefined, 'lifecycle-facts'), options = node('div', undefined, 'lifecycle-options');

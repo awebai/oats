@@ -12,6 +12,7 @@ import {
   isPlainChord, DEFAULT_KEYMAP,
 } from "./keybindings.mjs";
 import { takePickerFocusReturn } from "./overlay-picker.mjs";
+import { icon } from "./shell-icons.mjs";
 
 const CONTEXT_LABELS = {
   global: "Global",
@@ -75,7 +76,7 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
         <div class="kb-head">
           <h2 class="kb-title">Keyboard shortcuts</h2>
           <button type="button" class="kb-reset-all">Reset all</button>
-          <button type="button" class="kb-close" aria-label="Close shortcuts editor">✕</button>
+          <button type="button" class="kb-close" aria-label="Close shortcuts editor">${icon("close", { size: 14 })}</button>
         </div>
         <p class="kb-hint">Click a shortcut to record a new one — Esc cancels, Backspace unbinds.</p>
         <div class="kb-body"></div>
@@ -151,7 +152,7 @@ export function createKeybindingsEditor({ doc = document, isMac } = {}) {
         <span class="kb-label"></span>
         <span class="kb-conflict" role="status"></span>
         <button type="button" class="kb-chord"></button>
-        <button type="button" class="kb-reset" title="Reset to default">↺</button>`;
+        <button type="button" class="kb-reset" title="Reset to default" aria-label="Reset to default">${icon("reset", { size: 14 })}</button>`;
       el.querySelector(".kb-label").textContent = action.label;
       const chordBtn = el.querySelector(".kb-chord");
       chordBtn.dataset.actionId = action.id;

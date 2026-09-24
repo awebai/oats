@@ -1,4 +1,5 @@
 import { createWorkspaceMark } from "./identity-marks.mjs";
+import { iconElement } from "./shell-icons.mjs";
 
 export function workspaceChoiceLabels(choices) {
   const base = choices.map((choice) => choice.name
@@ -25,7 +26,7 @@ export function createWorkspaceSwitcher({
   const q = (id) => document.getElementById(id);
   const trigger = q("ws-trigger"), currentName = q("ws-name"), menu = q("ws-menu");
   const menuSearch = q("ws-menu-search"), options = q("ws-options"), addOpen = q("ws-add-open");
-  addOpen.textContent = '＋ Add local workspace…'; addOpen.setAttribute('aria-label', 'Add local workspace…');
+  addOpen.replaceChildren(iconElement(document, 'plus', { size: 13 }), document.createTextNode('Add local workspace…')); addOpen.setAttribute('aria-label', 'Add local workspace…');
   const empty = document.createElement('p'); empty.className = 'ws-menu-empty'; empty.setAttribute('role', 'status'); empty.hidden = true;
   options.after(empty);
   const modal = q("ws-modal"), dialog = modal.querySelector(".ws-dialog");
@@ -65,7 +66,7 @@ export function createWorkspaceSwitcher({
       const check = document.createElement("span");
       check.className = "ws-check";
       check.setAttribute("aria-hidden", "true");
-      check.textContent = workspace.id === activeId ? "✓" : "";
+      check.replaceChildren(...(workspace.id === activeId ? [iconElement(document, "check", { size: 14 })] : []));
       const copy = document.createElement("span");
       copy.className = "ws-option-copy";
       const name = document.createElement("span");

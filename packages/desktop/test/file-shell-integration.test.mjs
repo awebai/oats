@@ -81,7 +81,7 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     workspace: "A", generation: 0, tabWorkspace: "A", contextWorkspace: "A", connectionGeneration: 0,
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity, baseTitles: new WeakMap(), menuState() {},
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), contextRosterEl: null,
+    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), collapsedGroups: new Set(), contextRosterEl: null,
     wsActiveTerminal: new Map(), pendingTerms: new Set(), brainIntents: createIntentGate(), workspaceTabMemory: createWorkspaceTabMemory(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -162,8 +162,10 @@ function shell(t, shellSource = source, platform = "MacIntel") {
     cancel: input => input.dispatchEvent(new dom.window.Event("cancel")),
     roster(instances) { c.contextInstances = instances; s.renderContextRoster(instances); },
     control(instance, control = "terminal") {
-      return [...document.querySelectorAll("[data-tree-instance][data-tree-control]")]
-        .find(el => el.dataset.treeInstance === tree.instanceId(instance) && el.dataset.treeControl === control);
+      const terminal = [...document.querySelectorAll("[data-tree-instance][data-tree-control=terminal]")]
+        .find(el => el.dataset.treeInstance === tree.instanceId(instance));
+      // The row's actions trigger is the other logical roster control.
+      return control === "terminal" ? terminal : terminal?.closest(".ctx-tree-row")?.querySelector(`[data-tree-control="${control}"]`);
     },
     seed(title = "Existing terminal") { return s.addTab({ title, key: `term:${c.workspace}:${title}`, kind: "terminal" }).id; },
     switchTo(workspace) { c.workspace = workspace; c.generation++; listeners.forEach(listener => listener()); s.restoreWorkspaceTabs(); },
@@ -220,7 +222,7 @@ for (const action of ["collapse", "expand", "poll-only"]) for (const outcome of 
   test(`roster ${action} followed by logical row replacement: attachment ${outcome}`, t => rosterAttachment(t, action, outcome));
 }
 
-for (const picker of ["palette", "quickOpen", "palette→quickOpen"]) for (const control of ["terminal", "disclosure"]) {
+for (const picker of ["palette", "quickOpen", "palette→quickOpen"]) for (const control of ["terminal", "actions"]) {
   test(`${picker} cancellation restores replaced composite-identity ${control}, not its remote same-name twin`, async t => {
     const s = shell(t); s.roster(roster);
     const original = s.control(twin, control); original.focus();

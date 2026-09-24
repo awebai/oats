@@ -2,6 +2,7 @@
 import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
 import { createChoicePopup as popup } from './choice-popup.mjs';
+import { iconElement } from './shell-icons.mjs';
 
 export const spawnDialogCSS = `
 .spawn-modal .spawn-dialog { width:860px; max-width:100%; box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; }
@@ -46,7 +47,7 @@ export const spawnDialogCSS = `
 .spawn-dialog .fstatus { flex-basis:100%; overflow-wrap:anywhere; }
 .spawn-choice-popover { position:relative; min-width:0; }
 .spawn-choice-trigger { width:100%; min-height:36px; border:1px solid var(--border); border-radius:7px; background:var(--surface); color:var(--fg); font:600 12.5px var(--sans,system-ui); text-align:left; padding:0 10px; display:flex; align-items:center; gap:8px; cursor:pointer; }
-.spawn-choice-trigger::after { content:'⌄'; margin-left:auto; color:var(--muted); }
+.spawn-choice-trigger::after { content:''; flex:none; width:6px; height:6px; margin:-3px 3px 0 auto; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg); color:var(--muted); }
 .spawn-choice-trigger .identity-mark { width:20px; height:20px; border-radius:5px; flex:none; }
 .spawn-choice-menu { position:absolute; left:0; top:calc(100% + 4px); width:min(300px,calc(100vw - 60px)); max-height:260px; overflow:auto; z-index:2; border:1px solid var(--border); border-radius:9px; padding:6px; box-shadow:var(--shadow-popover); background:var(--surface); }
 .spawn-dialog .spawn-popup-search input.field { min-height:30px; height:30px; padding:0 8px; font-size:12px; }
@@ -92,7 +93,7 @@ export function composeSpawnDialog(modal, { soul, agents, workspace, choose, can
   const configLabel = el('label', 'Launch config', 'spawn-launch-label'), config = el('select', undefined, 'field launch-config-select');
   config.setAttribute('aria-label', 'Launch configuration');
   const defaultConfig = el('option', 'Use resolved defaults'); defaultConfig.value = ''; config.append(defaultConfig);
-  const refreshConfigs = el('button', '↻', 'act spawn-config-refresh'); refreshConfigs.type = 'button'; refreshConfigs.setAttribute('aria-label', 'Refresh launch configurations');
+  const refreshConfigs = el('button', '', 'act spawn-config-refresh'); refreshConfigs.append(iconElement(doc, 'refresh', { size: 14 })); refreshConfigs.type = 'button'; refreshConfigs.setAttribute('aria-label', 'Refresh launch configurations');
   configLabel.append(config, refreshConfigs);
   header.replaceChildren(title, context, selectionSummary, configLabel, close);
   const columns = el('div', undefined, 'spawn-columns'), chooser = el('section', undefined, 'spawn-chooser'); chooser.setAttribute('aria-label', 'Choose a soul');

@@ -210,7 +210,7 @@ test("layoutClusters: all-singleton roster yields only the Independent block", (
   assert.equal(soloBlock.y, 0, "no cluster cards above — block starts at the top");
 });
 
-test("cluster cards are anonymous: header carries counts only, never the derived cluster name", async t => {
+test("agent groups are named by their root instance (Redesign v3), matching the sidebar group", async t => {
   const { JSDOM } = await import("jsdom");
   const dom = new JSDOM(`<div id="root"></div>`, { pretendToBeVisual: true });
   const g = globalThis;
@@ -229,12 +229,12 @@ test("cluster cards are anonymous: header carries counts only, never the derived
     await new Promise((r) => setTimeout(r, 30));
     const head = el.querySelector(".hier-cluster .hier-chead");
     assert.ok(head, "cluster card has a header");
-    assert.equal(head.textContent, "1/2 running", "counts only — no cluster name");
-    assert.ok(!head.textContent.includes("named-root"), "derived name never shown");
+    assert.equal(head.querySelector(".cnm").textContent, "named-root", "the root instance names the group");
+    assert.equal(head.querySelector(".cct").textContent, "2", "member count; no repo was reported");
+    assert.ok(!head.textContent.includes("kid"), "a child never names the group");
     const card = el.querySelector(".hier-cluster");
-    assert.equal(card.getAttribute("aria-label"), "Cluster of 2 agents, 1 running",
-      "aria-label is counts-only — accessibility surfaces are part of the anonymity contract");
-    assert.ok(!card.getAttribute("aria-label").includes("named-root"), "derived name never spoken");
+    assert.equal(card.getAttribute("aria-label"), "Agent group named-root: 2 agents, 1 running",
+      "the accessible name carries the group name and live counts");
     const soloCard = el.querySelector(".hier-solo");
     assert.equal(soloCard.getAttribute("aria-label"), "Independent agents: 1",
       "Independent is an allowed category label, not a cluster name");

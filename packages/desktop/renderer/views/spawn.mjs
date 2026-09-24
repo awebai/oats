@@ -23,6 +23,7 @@ import { cliAvailable, cliKnownUnavailable, cliStatus, refreshCli, onCliChange, 
 import { distinguishingRootTags } from "../instance-tree.mjs";
 import { preselectSchedule } from "./schedules.mjs";
 import { wakeScheduleFields } from "../wake-schedule-fields.mjs";
+import { icon } from "../shell-icons.mjs";
 
 /** Required-version label for the disabled relation note. The floor is the
  * LOCATOR's (RELATIONS_MIN, served as `relationsMin`); restating a number here
@@ -58,7 +59,7 @@ const CSS = `
              text-align: left; font: inherit; color: var(--fg); }
 .soul-card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .soul-card.attached { border-style: dashed; background: var(--surface-2); }
-.soul-card.open { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.soul-card.open { border-color:color-mix(in srgb, var(--accent) 35%, var(--border)); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent); } /* Redesign v3 soft selection */
 .soul-card .sname { font-weight:650; font-size:13.5px; display:flex; align-items:flex-start; gap:10px; }
 .soul-card .sidentity { display:flex; flex-direction:column; gap:1px; min-width:0; flex:1; }
 .soul-card .stitle { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -708,7 +709,7 @@ function openSpawnModal(s, a, draft = {}) {
             ${a.repo ? `<span class="chip">${escapeHtml(a.repoName)}</span>` : ""}
           </div>
         </div>
-        <button class="close-act fcancel-x" type="button" aria-label="Close spawn dialog">×</button>
+        <button class="close-act fcancel-x" type="button" aria-label="Close spawn dialog">${icon("close", { size: 14 })}</button>
       </div>
       <div class="soul-form">
         <label>Purpose (optional — becomes part of the instance name)

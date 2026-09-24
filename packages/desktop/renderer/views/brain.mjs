@@ -12,6 +12,7 @@ const mounts = new Set();
 let nextMountId = 0;
 import { runtimeState } from "../instance-presentation.mjs";
 import { wsQuery, onWorkspaceChange } from "./common.mjs";
+import { icon } from "../shell-icons.mjs";
 
 const esc = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
@@ -243,7 +244,7 @@ export async function mount(el, ctx) {
     loadAgents.list = agents;
     sel.innerHTML = "";
     sel.disabled = false;
-    if (!agents.length) { desc.textContent = ""; status("No agents in this workspace.", "◎"); return; }
+    if (!agents.length) { desc.textContent = ""; status("No agents in this workspace.", icon("soul", { size: 22 })); return; }
     for (const a of agents) {
       const o = document.createElement("option");
       o.value = a.name;

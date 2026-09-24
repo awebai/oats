@@ -33,6 +33,7 @@ import {
 } from "./common.mjs";
 import { registerAction } from "../keybindings.mjs";
 import { resolveViewKey } from "../view-keys.mjs";
+import { icon } from "../shell-icons.mjs";
 
 export const hierarchyCSS = `
 .hier { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); color: var(--fg);
@@ -42,7 +43,7 @@ export const hierarchyCSS = `
             border-bottom: 1px solid var(--border); background: var(--surface); }
 .hier-sum { color: var(--muted); font-size: 12.5px; }
 .hier-sum b { color: var(--fg); font-weight: 600; }
-.hier .spawnbtn { min-height:28px; padding:4px 12px; font-size:12px; }
+.hier .spawnbtn { display:inline-flex; align-items:center; gap:6px; min-height:28px; padding:0 12px; font-size:12px; font-weight:650; white-space:nowrap; }
 .hier-notice { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted); background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
 .hier-notice-message { flex:1; }
 .hier-retry { flex:none; }
@@ -59,9 +60,8 @@ export const hierarchyCSS = `
 .hier-chead { position: absolute; left: 14px; top: 9px; display: flex; align-items: baseline; gap: 8px;
               max-width: calc(100% - 24px); white-space: nowrap; pointer-events: none; }
 .hier-chead .cnm { color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase;
-                   letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; }
-.hier-chead .cct { color: var(--muted); font-size: 11px; }
-.hier-context { position:absolute; left:14px; top:26px; max-width:calc(100% - 28px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); font-size:11px; }
+                   letter-spacing: .06em; min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.hier-chead .cct { color: var(--muted); font-size: 11px; min-width: 0; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; }
 .hier-zoom { position: absolute; right: 14px; bottom: 14px; z-index: 5; display: flex; gap: 4px;
              background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 3px; box-shadow: var(--shadow); }
 .hier-zoom button { background: none; border: none; color: var(--muted); font: 14px/1 inherit; width: 26px; height: 24px;
@@ -74,22 +74,23 @@ export const hierarchyCSS = `
 .hier-ws { position: absolute; color: var(--faint); font-size: 11px; font-weight: 650;
            text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 .hnode { position: absolute; width:220px; min-height:60px; background: var(--surface); border: 1px solid var(--border);
-         border-radius: 10px; padding:9px 12px; box-shadow: var(--shadow); cursor: pointer; user-select: none; }
+         border-radius: 10px; padding:9px 12px; cursor: pointer; user-select: none; }
 .hnode.dragging { cursor: grabbing; }
 .hnode:hover { background: var(--surface-2); }
 .hnode.idle { border-style: dashed; background: var(--surface-2); }
-.hnode.sel { border-color: var(--accent); background: var(--sel); }
+.hnode.sel { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .hnode.lit { border-color: var(--accent); }
 .hnode .hname { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap:8px; min-width: 0; }
 .hnode .hname .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hnode .hmeta { color: var(--muted); font-size: 11.5px; margin-top:3px; padding-left:16px; overflow: hidden;
                 text-overflow: ellipsis; white-space: nowrap; }
 .hdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-.hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.hdot.on { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
 .hdot.unknown { background: var(--warn); border: 1.5px dashed var(--fg); }
-.hdot.off { background: transparent; border: 1.5px solid var(--faint); }
+.hdot.off { box-sizing: border-box; background: transparent; border: 1.5px solid var(--faint); }
+.hnode.idle .hname { color: var(--muted); }
 .hier-pop { position: absolute; z-index:4; width:224px; max-width:calc(100% - 16px); background:var(--surface); border:1px solid var(--border);
-            border-radius:10px; box-shadow:var(--shadow); padding:11px 12px; font-size:12px; overflow-wrap:anywhere; }
+            border-radius:10px; box-shadow:var(--shadow-popover); padding:11px 12px; font-size:12px; overflow-wrap:anywhere; }
 .hier-pop .pname { margin:0 0 8px; font-size:12.5px; font-weight:650; }
 .hier-pop .pstate, .hier-pop .pavailability, .hier-pop .pstatus { margin:0 0 8px; color:var(--muted); line-height:1.5; }
 .hier-pop .pstatus:empty { display:none; }
@@ -97,8 +98,9 @@ export const hierarchyCSS = `
 .hier-pop .pidentity { color:var(--muted); font:11px/1.5 var(--mono,monospace); margin:0 0 8px; }
 .hier-pop .pidentity[hidden] { display:none; }
 .hier-pop .pchips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 9px; }
-.hier-pop .pacts { display:flex; gap:6px; flex-wrap:wrap; }
-.hier-pop .pacts button { flex: 1; }
+/* Actions wrap as whole buttons (never letter by letter), design-sized. */
+.hier-pop .pacts { display:grid; grid-template-columns:repeat(auto-fill, minmax(62px, 1fr)); gap:6px; }
+.hier-pop .pacts button { min-width:0; padding:6px 4px; font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hier-empty-wrap { flex: 1; display: flex; align-items: center; justify-content: center; }
 ${instanceEventsCSS}
 `;
@@ -272,14 +274,14 @@ export function mount(el, ctx) {
         <select class="field wssel" aria-label="Workspace" style="display:none"></select>
         <span class="hier-sum"><span class="spinner"></span></span>
         <span style="flex:1"></span>
-        <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">＋ Spawn</button>
+        <button class="act primary spawnbtn" title="Choose a soul in Workspace to spawn">${icon("plus", { size: 14 })}Spawn</button>
       </div>
       <div class="hier-notice" role="status" aria-live="polite" hidden><span class="hier-notice-message"></span><button class="act hier-retry" type="button">Retry roster</button></div>
       <div class="hier-canvas" tabindex="0" role="tree" aria-label="Active agents by cluster">
         <div class="hier-zoom">
-          <button class="zout" title="Zoom out" aria-label="Zoom out">−</button>
-          <button class="zin" title="Zoom in" aria-label="Zoom in">+</button>
-          <button class="zfit" title="Fit to screen" aria-label="Fit to screen">⤢</button>
+          <button class="zout" title="Zoom out" aria-label="Zoom out">${icon("zoomOut", { size: 14 })}</button>
+          <button class="zin" title="Zoom in" aria-label="Zoom in">${icon("zoomIn", { size: 14 })}</button>
+          <button class="zfit" title="Fit to screen" aria-label="Fit to screen">${icon("fit", { size: 14 })}</button>
         </div>
       </div>
     </div>`;
@@ -491,7 +493,7 @@ function render(s) {
     const w = document.createElement("div");
     w.className = "hier-empty-wrap";
     w.style.height = "100%";
-    w.innerHTML = `<div class="empty"><span class="big">◎</span>` +
+    w.innerHTML = `<div class="empty"><span class="big">${icon("overview", { size: 22 })}</span>` +
       `No instances reported in this observation.<br>Choose a soul in Workspace or use <code>oats spawn &lt;agent&gt;</code>.</div>`;
     canvas.append(w);
     return;
@@ -564,20 +566,19 @@ function render(s) {
     return group;
   };
 
-  // Cluster cards are ANONYMOUS by design (human decision): the header
-  // carries only counts/status — no derived name. c.name remains an
-  // internal, deterministic grouping/ordering key only, never shown.
-  // Cluster naming may return later tied to a task-layer integration.
+  // Agent groups (Redesign v3; supersedes the anonymous-card decision): the
+  // header names the group by its deterministic key — the same name as the
+  // sidebar group — then "count · reported repos".
   for (const pc of placed) {
     const c = pc.cluster;
-    const aria = `Cluster of ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
+    const aria = `Agent group ${c.label}: ${c.size} agents, ${c.running} running${c.unknown ? `, ${c.unknown} unknown` : ""}`;
     const group = groupFor(pc, c.name, aria, "hier-cluster");
     const head = document.createElement("div");
     head.className = "hier-chead";
-    head.append(node(s, 'span', `${c.running}/${c.size} running${c.unknown ? ` · ${c.unknown} unknown` : ''}`, 'cct'));
-    group.prepend(head);
     const contexts = [...new Set(c.instances.map(i => i.repoName).filter(Boolean))];
-    if (contexts.length) { const metadata = node(s, 'div', `Reported context: ${contexts.join(' · ')}`, 'hier-context'); metadata.title = metadata.textContent; group.append(metadata); }
+    head.append(node(s, 'span', c.label, 'cnm'), node(s, 'span', [String(c.size), ...contexts].join(' · '), 'cct'));
+    head.title = `${c.label} — ${c.running}/${c.size} running${c.unknown ? `, ${c.unknown} unknown` : ''}`;
+    group.prepend(head);
     stage.append(group);
   }
   if (soloBlock) {
@@ -618,7 +619,7 @@ function nodeEl(s, n, wsName) {
   const name = node(s, 'div', undefined, 'hname');
   const dot = node(s, 'span', undefined, `hdot ${status === 'running' ? 'on' : status === 'stopped' ? 'off' : 'unknown'}`); dot.setAttribute('aria-hidden', 'true');
   name.append(dot, node(s, 'span', i.instance, 'nm'));
-  const metadata = [target, i.repoName || 'Context not reported', i.runtime || 'Runtime not reported', i.branch ? `Branch: ${i.branch}` : '', status === 'unknown' ? 'state unknown' : ''].filter(Boolean).join(' · ');
+  const metadata = [target, i.repoName || 'Context not reported', i.runtime || 'Runtime not reported', i.branch || '', status === 'unknown' ? 'state unknown' : ''].filter(Boolean).join(' · ');
   d.append(name, node(s, 'div', metadata, 'hmeta'));
   d.title = `${i.instance}\n${metadata}\nHome: ${i.home || 'not reported'}\nRoot: ${i.agentsRoot || 'not reported'}`;
   const current = () => dataCurrent(s) && visibleOwner(s, d) && !s.pending && s.nodeEls.get(id)?.el === d;
@@ -779,8 +780,9 @@ function fit(s) {
   const w = maxX - minX, h = maxY - minY;
   const z = Math.min(Z_MAX, Math.max(Z_MIN, Math.min((rect.width - PAD * 2) / w, (rect.height - PAD * 2) / h, 1)));
   s.z = z;
-  s.tx = (rect.width - w * z) / 2 - minX * z;
-  s.ty = Math.max(PAD, (rect.height - h * z) / 2 - minY * z);
+  // Anchor at the canvas's top-left inset (Redesign v3), never centred.
+  s.tx = PAD - minX * z;
+  s.ty = PAD - minY * z;
   applyTransform(s);
 }
 

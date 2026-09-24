@@ -45,8 +45,8 @@ import { createInstanceGitPanel, instanceGitCSS } from "./instance-git.mjs";
 import { createNotificationCenter, notificationCSS } from "./notifications.mjs";
 import { createPanelOwner } from "./panel-owner.mjs";
 import {
-  collapseKey, hasInstanceChildren, instanceRepoLabel, treeGuideSegments, filterInstanceTree, instanceVisibleInTree,
-  captureTreeRenderState, configureDisclosure, rosterResponseOwns, clusterSeparator,
+  collapseKey, hasInstanceChildren, instanceRepoLabel, treeConnectors, filterInstanceTree, instanceVisibleInTree,
+  captureTreeRenderState, rosterResponseOwns, clusterHeader, renderRosterCount,
   instanceId, rosterParentId, terminalKey, resolveTerminalOpen, visibleClusters,
 } from "./instance-tree.mjs";
 import {
@@ -107,7 +107,7 @@ const ctx = {
         onError: message => { throw new Error(message); } }),
     });
   },
-  openFile: (path) => openViewTab("markdown", `≡ ${String(path).split("/").pop()}`, { path }, `file:${path}`),
+  openFile: (path) => openViewTab("markdown", String(path).split("/").pop(), { path }, `file:${path}`),
   openTerminal: (instance, opts) => openTerminalTab(instance, opts),
   startInstance: (instance) => openInstanceStart(instance),
   restartInstance: (instance) => openInstanceStart(instance, { restart: true }),
@@ -236,6 +236,8 @@ function menuState(value, element) {
   updateActiveContexts();
 }
 const collapsedInstances = new Set();
+// Collapsed agent groups (sidebar group headers), keyed like instances.
+const collapsedGroups = new Set();
 const desktopBridge = window.oatsDesktop;
 const unavailableWorkspaceService = () => Promise.reject(new Error("Workspace discovery is not available in this desktop service yet."));
 const workspaceLabel = createWorkspaceSwitcher({
@@ -355,8 +357,7 @@ function renderContextRoster(instances) {
   const visible = matching.filter((i) => instanceVisibleInTree(
     i, instances, collapsedInstances, ws, filtering,
   ));
-  const unknown = instances.filter((i) => runtimeState(i) === "unknown").length;
-  contextRosterEl.querySelector(".ctx-count").textContent = `${instances.filter((i) => i.running).length}/${instances.length}${unknown ? ` · ${unknown} unknown` : ""}`;
+  renderRosterCount(contextRosterEl.querySelector(".ctx-count"), instances);
   if (!visible.length) {
     listEl.innerHTML = `<div class="ctx-empty">${instances.length ? "Nothing matches." : "No instances."}</div>`;
     tabOpenIntents.applyFocus(restoreTreeState);
@@ -370,12 +371,30 @@ function renderContextRoster(instances) {
   // nothing. Clusters are computed on the FULL roster then projected to
   // visible members — clustering a filtered subset could forge edges from
   // globally ambiguous names (merged-state review @3e76616).
-  for (const cluster of visibleClusters(instances, visible)) {
-    const items = cluster.instances;
-    if (items.length > 1) {
-      listEl.append(clusterSeparator(document, items.length));
-    }
-    {
+  // Agent groups (Redesign v3): each multi-member relation cluster under its
+  // deterministic name, then every unrelated instance under "independent".
+  // Clusters are computed on the FULL roster then projected to visible
+  // members — clustering a filtered subset could forge edges from globally
+  // ambiguous names (merged-state review @3e76616).
+  const clusters = visibleClusters(instances, visible);
+  const groups = [
+    ...clusters.filter((c) => c.instances.length > 1).map((c) => ({ key: `cluster:${c.key}`, label: c.key, clusters: [c] })),
+    ...(clusters.some((c) => c.instances.length === 1)
+      ? [{ key: "independent", label: "independent", clusters: clusters.filter((c) => c.instances.length === 1) }] : []),
+  ];
+  for (const group of groups) {
+    const groupKey = collapseKey(ws, `group:${group.key}`);
+    const groupCollapsed = !filtering && collapsedGroups.has(groupKey);
+    listEl.append(clusterHeader(document, {
+      label: group.label, count: group.clusters.reduce((n, c) => n + c.instances.length, 0), collapsed: groupCollapsed,
+      onToggle: () => {
+        if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey); else collapsedGroups.add(groupKey);
+        renderContextRoster(contextInstances);
+      },
+    }));
+    if (groupCollapsed) continue;
+    for (const cluster of group.clusters) {
+      const items = cluster.instances;
       for (const i of items) {
         const rowWrap = document.createElement("div");
         rowWrap.className = "ctx-tree-row";
@@ -389,32 +408,16 @@ function renderContextRoster(instances) {
         const hasChildren = hasInstanceChildren(instances, i);
         const collapsed = collapsedInstances.has(key);
 
-        // VS Code-style ancestry guides: exhausted ancestor branches vanish;
-        // the final sibling stops at its elbow instead of implying another row.
+        // Design connectors drawn from the dots: rounded solid elbows into
+        // children, solid stems/pass-throughs, dotted sibling links.
         const guides = document.createElement("span");
         guides.className = "ctx-guides";
-        treeGuideSegments(items, i, instances).forEach((segment, d) => {
-          if (segment === "none") return;
+        guides.setAttribute("aria-hidden", "true");
+        for (const { kind, level } of treeConnectors(items, i, instances)) {
           const guide = document.createElement("span");
-          guide.className = `ctx-guide ${segment}`;
-          guide.style.setProperty("--guide-level", String(d));
+          guide.className = `ctx-guide ${kind}`;
+          guide.style.setProperty("--guide-level", String(level));
           guides.append(guide);
-        });
-        const disclosure = document.createElement("button");
-        disclosure.type = "button";
-        disclosure.className = `ctx-disclosure${hasChildren ? "" : " empty"}`;
-        disclosure.tabIndex = hasChildren ? 0 : -1;
-        if (hasChildren) {
-          configureDisclosure(disclosure, {
-            instance: instanceId(i), label: i.instance, collapsed, filtering,
-            onToggle: () => {
-              if (collapsed) collapsedInstances.delete(key); else collapsedInstances.add(key);
-              renderContextRoster(contextInstances);
-            },
-          });
-        } else {
-          disclosure.textContent = "▾";
-          disclosure.setAttribute("aria-hidden", "true");
         }
 
         const row = document.createElement("button");
@@ -423,6 +426,8 @@ function renderContextRoster(instances) {
         row.dataset.treeControl = "terminal";
         const state = runtimeState(i);
         row.className = "ctx-inst" + (state === "stopped" ? " idle" : "") + (isActive ? " active" : "");
+        rowWrap.classList.toggle("active", isActive);
+        if (hasChildren) row.setAttribute("aria-expanded", String(filtering || !collapsed));
         row.disabled = i.running == null || (!!i.server && !i.savedRoute);
         row.title = i.runtimeError || (i.server && !i.savedRoute ? "No saved route for this instance on this machine"
           : i.running ? `Open ${i.instance} terminal` : i.running === false ? `Start ${i.instance}` : `${i.instance}: status unknown`);
@@ -453,18 +458,21 @@ function renderContextRoster(instances) {
         row.dataset.rosterCollapsed = collapsed ? "1" : "0";
         row.tabIndex = -1;
         row.addEventListener("keydown", onRosterRowKey);
-        rowWrap.append(guides, disclosure, row);
+        rowWrap.append(guides, row);
+        // Row tools (Start…, actions) overlay the row end on hover/focus only.
+        const tools = document.createElement("span");
+        tools.className = "ctx-row-tools";
         if (i.running === false) {
           const start = document.createElement("button"); start.className = "act ctx-start";
           start.textContent = "Start…"; start.setAttribute("aria-label", `Start ${i.instance}`);
           start.disabled = !!i.server && !i.savedRoute;
           start.addEventListener("click", () => openInstanceStart(i));
-          rowWrap.append(start);
+          tools.append(start);
         }
         const actionTarget = instanceActionTarget(ws, i), menuConnection = connectionGeneration;
         const menuOwner = () => currentWorkspace() === ws && workspaceGeneration() === rosterGeneration && connectionGeneration === menuConnection
           && (!actionTarget || ownsInstanceTarget(actionTarget));
-        rowWrap.append(instanceActions(document, i, {
+        tools.append(instanceActions(document, i, {
           scope: ws, owner: menuOwner, onMenuState: menuState, onFocusChange: () => updateActiveContexts(), dispatch: runAction,
           shortcut: id => { const chord = getBinding(id); return chord ? formatChord(chord, isMac) : ''; },
           extra: [
@@ -498,6 +506,7 @@ function renderContextRoster(instances) {
             alert([message, retirementSummary(result)].filter(Boolean).join("\n"));
           },
         }));
+        rowWrap.append(tools);
         listEl.append(rowWrap);
       }
     }
@@ -648,7 +657,7 @@ const fileOpener = createFileOpener({
   document,
   beginIntent: () => tabOpenIntents.begin(),
   report: message => alert(message),
-  openFile: (pickedFile, owns) => openViewTab("markdown", `≡ ${pickedFile.name}`,
+  openFile: (pickedFile, owns) => openViewTab("markdown", pickedFile.name,
     { pickedFile }, `picked-file:${++nextPickedFileId}`, "file", undefined, owns),
 });
 
@@ -786,7 +795,7 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
+function addTab({ decor = null, title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) {
       if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
@@ -797,7 +806,7 @@ function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(),
   }
   const id = nextTabId++;
   const { tabEl, triggerEl, closeEl, paneEl } = createTabChrome(
-    document, id, title, navigator.platform.includes("Mac"),
+    document, id, title, navigator.platform.includes("Mac"), decor ?? { kind },
   );
   tabbar.append(tabEl);
   tabhost.append(paneEl);
@@ -982,7 +991,7 @@ async function openBrainTab(agent) {
   // selection. Supersede earlier opens before deferred cleanup/module loading.
   const owns = brainIntents.begin();
   for (const [id, t] of tabs) if (t.kind === "brain" && t.workspace === currentWorkspace()) closeTab(id, false, { explicit: false });
-  return openViewTab("brain", `◈ ${agent}`, { agent }, "view:brain", "brain", owns);
+  return openViewTab("brain", agent, { agent }, "view:brain", "brain", owns);
 }
 
 async function openViewTab(name, title, extra = {}, key = `view:${name}`,
@@ -1147,6 +1156,7 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   const term = new Terminal(terminalOptions({
     fontSize: type.fontSize,
     fontFamily: type.fontFamily,
+    lineHeight: type.lineHeight,
     theme: xtermTheme(),
   }));
   // live terminals follow app theme + persisted typography preferences
@@ -1190,7 +1200,8 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
   });
 
   const made = addTab({
-    title: `⌗ ${name}${inst.server ? ` · ${inst.server}` : ""}`,
+    title: `${name}${inst.server ? ` · ${inst.server}` : ""}`,
+    decor: { dot: inst.running ? "on" : "off", detail: typeof inst.branch === "string" ? inst.branch : null },
     key,
     kind: "terminal",
     workspace: ws,

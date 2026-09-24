@@ -15,6 +15,7 @@ import { refreshCli, cliStatus } from '../renderer/views/cli-status.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
 import { capabilityFacts, reportedText } from '../renderer/workspace-discovery.mjs';
+import { iconElement } from '../renderer/shell-icons.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -299,7 +300,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus, iconElement });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 

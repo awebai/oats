@@ -331,15 +331,15 @@ test('White, Solarized and Dark have explicit registry/palette choices without n
   assert.equal(commands.some(item => /light\/dark/i.test(item.label)), false);
 });
 
-test('split SVG weights change only to 1.1, while geometry, leaf accent and nav weight remain intact', t => {
+test('shell icons are the pinned Lucide set: 24-unit geometry, stroke 2, decorative, brand excluded', t => {
   const dom = domFixture(t), document = dom.window.document;
-  for (const name of ['splitRight', 'splitDown', 'splitClose', 'overview', 'workspace']) {
+  for (const name of ['splitRight', 'splitDown', 'splitClose', 'overview', 'workspace', 'schedules', 'close', 'branch']) {
     const span = document.createElement('span'); span.innerHTML = shellIcon(name); const svg = span.firstElementChild;
-    assert.equal(svg.getAttribute('stroke-width'), name.startsWith('split') ? '1.1' : '1.4');
-    assert.equal(svg.getAttribute('viewBox'), '0 0 16 16'); assert.equal(svg.getAttribute('aria-hidden'), 'true');
-    if (name.startsWith('split')) {
-      assert.equal(svg.querySelector('rect').getAttribute('width'), '12'); assert.equal(svg.querySelector('rect').getAttribute('height'), '12');
-    }
+    assert.equal(svg.getAttribute('viewBox'), '0 0 24 24', name);
+    assert.equal(svg.getAttribute('stroke-width'), '2', name);
+    assert.equal(svg.getAttribute('aria-hidden'), 'true'); assert.equal(svg.getAttribute('focusable'), 'false');
+    assert.ok(svg.children.length > 0, `${name} carries Lucide geometry`);
+    assert.equal(svg.querySelector('script,foreignObject,[onload]'), null);
   }
   assert.throws(() => shellIcon('oats'), TypeError, 'the brand is artwork, not a shell icon');
 });

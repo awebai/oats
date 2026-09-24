@@ -31,13 +31,14 @@
       <div id="ws-menu" class="ws-menu" hidden>
         <input id="ws-menu-search" type="search" placeholder="Find workspace…" autocomplete="off" aria-label="Find an added workspace">
         <div id="ws-options" class="ws-options" role="listbox" aria-label="Added workspaces"></div>
-        <button id="ws-add-open" class="ws-add-open" type="button"><span aria-hidden="true">＋</span> Add local workspace…</button>
+        <button id="ws-add-open" class="ws-add-open" type="button"><span data-shell-icon="plus" aria-hidden="true"></span>Add local workspace…</button>
       </div>
       <nav id="nav" aria-label="Main views"></nav>
       <section id="instance-roster" aria-label="Instances">
         <div class="ctx-head"><span>Instances</span><span class="ctx-count"></span></div>
         <label class="ctx-filter-field">
-          <input class="ctx-filter" placeholder="Filter instances…" autocomplete="off" aria-label="Filter instances"
+          <span class="ctx-filter-icon" data-shell-icon="search" aria-hidden="true"></span>
+          <input class="ctx-filter" placeholder="Filter instances" autocomplete="off" aria-label="Filter instances"
                  data-action="sidebar.focusFilter" title="Focus the instance roster filter">
           <kbd class="shortcut-hint" data-shortcut="sidebar.focusFilter" aria-hidden="true" hidden></kbd>
         </label>
@@ -83,6 +84,7 @@
       <div id="stagehost"></div>
       <div id="tabhost" style="display:none"></div>
       <footer id="context-tools" aria-label="Workspace layout">
+        <span id="context-status" class="context-status"></span>
         <button id="panel-toggle" type="button" data-action="panel.toggle" title="Toggle the context panel"
                 aria-controls="context-panel" aria-expanded="false" disabled>Details</button>
         <button id="focus-mode-toggle" type="button" data-action="app.focusMode" title="Toggle focus mode"
@@ -96,7 +98,7 @@
     <section class="ws-dialog" role="dialog" aria-modal="true" aria-labelledby="ws-dialog-title" aria-describedby="ws-dialog-status">
       <header class="ws-dialog-head">
         <div><span class="side-kicker">OATS desktop</span><h2 id="ws-dialog-title">Add workspace</h2></div>
-        <button id="ws-dialog-close" class="icon-button" type="button" aria-label="Close add workspace dialog">×</button>
+        <button id="ws-dialog-close" class="icon-button" type="button" aria-label="Close add workspace dialog" data-shell-icon="close"></button>
       </header>
       <p class="ws-dialog-intro">Choose a discovered OATS workspace or browse for another folder.</p>
       <input id="ws-suggestion-search" type="search" placeholder="Filter suggestions…" autocomplete="off" aria-label="Filter suggested OATS workspaces">

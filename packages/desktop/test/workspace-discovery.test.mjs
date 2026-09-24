@@ -624,7 +624,7 @@ test('soul identity marks stay qualified and stable across reordered polling and
     assert.equal(u.doc.querySelector('.inspector-head h2').textContent, name);
     assert.equal(u.doc.querySelector('[name=color]'), null, 'no invented writable CLI field');
   }
-  assert.equal(u.doc.querySelector('img,svg,script,[data-runtime="<svg onload=evil()>"]'), null);
+  assert.equal(u.doc.querySelector('img,svg:not(.shell-icon),script,[data-runtime="<svg onload=evil()>"]'), null, 'only the vetted Lucide chrome renders SVG');
   assert.ok(u.calls.filter(call => call.method === 'POST').every(call => call.body.action === 'inspect'));
   assert.deepEqual(u.files, []); assert.deepEqual(u.opens, []);
 });

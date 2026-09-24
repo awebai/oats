@@ -1,6 +1,7 @@
 /** Owned offline readiness presentation. No background polling or remediation. */
 import { postJson, workspaceGeneration } from './views/common.mjs';
 import { CHECKS, VERIFY_UNAVAILABLE, ENROL_UNAVAILABLE, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from './readiness-contract.mjs';
+import { iconElement } from './shell-icons.mjs';
 export const readinessCSS = `
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
 .readiness-view[hidden], .readiness-view [hidden], .workspace-readiness-frame[hidden], .readiness-invitation[hidden] { display:none; }
@@ -74,7 +75,7 @@ export function createReadinessView(host, { ctx, onSkip } = {}) {
     body.append(node('p', `Observed: ${data.at}. Target: ${value.target.observedAs}. This is not an atomic snapshot or a permission lease.`, 'readiness-note'), checks);
     for (const key of CHECKS) {
       const c = data.checks[key], row = node('section', undefined, 'readiness-check'), head = node('div', undefined, 'readiness-check-head');
-      const mark = node('span', c.status === 'pass' ? '✓' : c.status === 'fail' ? '!' : c.status === 'not-applicable' ? '—' : '?', 'readiness-badge'); mark.dataset.state = c.status; mark.setAttribute('aria-hidden', 'true');
+      const mark = node('span', c.status === 'pass' || c.status === 'fail' ? undefined : c.status === 'not-applicable' ? '—' : '?', 'readiness-badge'); if (c.status === 'pass' || c.status === 'fail') mark.append(iconElement(mark.ownerDocument, c.status === 'pass' ? 'check' : 'alert', { size: 12 })); mark.dataset.state = c.status; mark.setAttribute('aria-hidden', 'true');
       head.append(mark, node('h3', label(key)), node('span', c.status)); row.append(head);
       for (const i of c.items) {
         if (query && !JSON.stringify(i).toLowerCase().includes(query)) continue;

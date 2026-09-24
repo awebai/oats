@@ -20,6 +20,7 @@
    This module owns the fetch/refresh/subscribe state and the card DOM so
    every mutation surface renders the SAME card; views only mount it. */
 import { escapeHtml } from "./common.mjs";
+import { icon } from "../shell-icons.mjs";
 
 /** Recovery command when the backend could not tell us which version to
  * pin — version-LESS on purpose: it names the package without restating any
@@ -167,7 +168,7 @@ export function cliCard(doc, ctx) {
       : candidates.find((t) => typeof t.version === "string" && t.version) || candidates[0];
     const version = typeof detected?.version === "string" && detected.version ? detected.version : "unknown";
     el.innerHTML = `
-      <div class="cli-head"><span class="glyph" aria-hidden="true">⚠</span> Compatible <code>oats</code> CLI required</div>
+      <div class="cli-head"><span class="glyph" aria-hidden="true">${icon("warning", { size: 14 })}</span> Compatible <code>oats</code> CLI required</div>
       <div class="cli-body">
         <p class="cli-explanation">Spawn and Harvest run through the installed <code>oats</code> CLI. Reads and
         terminals keep working without it.</p>

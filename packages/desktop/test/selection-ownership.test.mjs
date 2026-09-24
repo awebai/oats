@@ -54,7 +54,7 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
     instanceActionTarget, sameInstanceActionTarget, instanceSplitPlan, instanceSplitIdentity,
     menuState() {}, getBinding: () => null, formatChord: c => c, isMac: true, applyChordTitles() {}, runAction: id => actions.get(id)?.(),
     tabs: new Map(), nextTabId: 1, activeTab: null, split: null, sidebarMode: "instances", tabLayerVisible: false,
-    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(),
+    contextRosterGen: 0, contextInstances: [], contextFilter: "", collapsedInstances: new Set(), collapsedGroups: new Set(),
     wsActiveTerminal: new Map(), pendingTerms: new Set(),
     tabbar: document.getElementById("tabbar"), tabhost: document.getElementById("tabhost"),
     tabActionsEl: document.getElementById("tab-actions"),
@@ -454,13 +454,13 @@ function ambiguousClusterGuides(t, ambiguity, shellSource = source) {
   const rows = [...s.document.querySelectorAll(".ctx-tree-row")];
   assert.equal(rows.length, full.length, "ambiguity must not hide a row");
   const row = name => rows.find(r => r.querySelector(".ctx-name").textContent === name);
-  assert.equal(row("worker").querySelectorAll(".ctx-guide").length, 0, "shipped caller must not forge an ambiguous parent guide");
-  assert.equal(row("child").querySelectorAll(".ctx-guide.end").length, 1, "unambiguous parent still draws its elbow");
+  assert.equal(row("worker").querySelectorAll(".ctx-guide.elbow").length, 0, "shipped caller must not forge an ambiguous parent guide");
+  assert.equal(row("child").querySelectorAll(".ctx-guide.elbow").length, 1, "unambiguous parent still draws its elbow");
 }
 for (const ambiguity of ["same-root", "cross-root"]) {
   test(`shipped roster guides use the full roster for ${ambiguity} ambiguity across clusters`, t => ambiguousClusterGuides(t, ambiguity));
   test(`mutation: omitting the full roster for ${ambiguity} guides is caught at the shipped caller`, t => {
-    const mutant = source.replace("treeGuideSegments(items, i, instances)", "treeGuideSegments(items, i)");
+    const mutant = source.replace("treeConnectors(items, i, instances)", "treeConnectors(items, i)");
     assert.notEqual(mutant, source);
     assert.throws(() => ambiguousClusterGuides(t, ambiguity, mutant), /shipped caller must not forge/);
   });

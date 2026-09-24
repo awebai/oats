@@ -143,7 +143,7 @@ test("flat and grouped strips preserve intrinsic tab sizing and scroll instead o
     // The report's 165.5px group size is a fixture constraint, not a claim that
     // jsdom performs layout or that arbitrary tiny terminal panes are usable.
     bar.style.width = "165.5px";
-    const tabs = ["⌗ A-reviewer", "⌗ A-desktop-engineer-with-a-long-name"].map((title, i) =>
+    const tabs = ["A-reviewer", "A-desktop-engineer-with-a-long-name"].map((title, i) =>
       createTabChrome(doc, `${grouped}-${i}`, title));
     for (const tab of tabs) bar.append(tab.tabEl);
     const actions = doc.createElement("div");
@@ -160,9 +160,10 @@ test("flat and grouped strips preserve intrinsic tab sizing and scroll instead o
       assert.equal(style.flexShrink, "0", "tab identity cannot shrink to A-… under strip pressure");
       assert.equal(style.flexGrow, "0");
       assert.equal(style.flexBasis, "auto", "preserve content-based width, not equal-width slots");
-      assert.equal(style.maxWidth, "240px", "existing long-label cap is unchanged");
+      assert.equal(style.maxWidth, "280px", "the Redesign v3 long-label cap");
       assert.equal(style.whiteSpace, "nowrap");
-      assert.equal(window.getComputedStyle(triggerEl).textOverflow, "ellipsis", "long labels retain the existing cap");
+      assert.equal(window.getComputedStyle(triggerEl.querySelector(".tab-label")).textOverflow, "ellipsis", "long labels ellipsize inside the cap");
+      assert.equal(window.getComputedStyle(triggerEl).minWidth, "0px", "the trigger yields width to its label, not to Close");
       assert.equal(window.getComputedStyle(closeEl).flexShrink, "0", "Close remains a usable control within the cap");
     }
     assert.equal(window.getComputedStyle(actions).flexShrink, "0", "do not remove or compress group controls");
