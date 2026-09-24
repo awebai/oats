@@ -57,6 +57,7 @@ decisions/ and referenced from here.
   - PR165 oats.aweb 1.13.0 mirror + catalog pin v1.13.0 `19d96df3`. The payload is byte-identical to tag v1.13.0 (`772e0664`).
     - Returned once for a re-dated behavioural claim: a guide sentence said grant sends were still 422 on the new floor, but the floor release fixed them.
     - The first CI run was red: the Desktop pins the manifest's `settings.identity` byte for byte in a stand-in fixture. Fixed by the Desktop engineer's fixture-only recapture from the mirror's tree, fast-forwarded in as the new head `f85fed6c`.
+    - After the merge, Antares deleted `hold/oats-aweb-1.13.0` under a Class B ACK. It pointed at `a8a8d1f6`, the pre-1.12.1 draft, whose content had shipped in 1.12.2 or been rebased into v1.13.0.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
