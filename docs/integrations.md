@@ -85,10 +85,11 @@ can spawn. `owns`/`reads` are responsibility/context, not ACLs. See
 [knowledge](knowledge.md) for the **prepared** version scope, provisioning and
 commands, and [migration](knowledge-migration.md) before updating v1.
 
-**`oats.aweb`** fills `messaging`: mints an instance identity at spawn,
-removes it at retire, contributes the aweb messaging and team skills, wires
-the channel plugin so sessions are woken by mail, and exposes
-`oats aweb roster` and `oats aweb setup`. Requires the `aw` CLI.
+**`oats.aweb`** fills `messaging`: mints an instance identity at spawn (local
+mode) or grants an instance an expiring session as a resident global identity
+(global mode), removes or revokes it at retire, contributes the aweb messaging
+and team skills, wires the channel plugin so sessions are woken by mail, and
+exposes `oats aweb roster` and `oats aweb setup`. Requires the `aw` CLI.
 
 **`oats.jira`** fills `tasks`: the `jira-tasks` protocol and an advisory
 spawn hook. Requires `acli`; settings commonly include `site` and `project`.
@@ -135,6 +136,9 @@ remove it on `retire`; supply the roster; teach send, reply, chat, and "read
 the event first" in the inject and skill; contribute launch arguments so the
 session is woken; enforce the soul type's `reach` on both sides; state
 whether the address outlives the instance; and keep task coordination out.
+Any messaging provider emits `identity: { mode, alias, team, address|null,
+resident|null, grant?: { id, expiresAt, scopes } }` in its spawn meta;
+`oats.aweb` is the reference implementation.
 
 **Tasks.** Teach claim, update, block, hand off, and complete; identify the
 instance to the tracker in a way that survives it; keep conversation out.
@@ -197,12 +201,57 @@ warning naming the fresh-purpose remedy. On an older `aw` the pre-1.36.1
 report stands (`aliasReusable: false`, warning naming aweb-abim), because
 that CLI cannot revoke the certificate.
 
-## oats.aweb settings (1.10.0)
+## oats.aweb settings (1.12.0)
 
 Set in `oats-local.yaml` under `settings.oats.aweb.<key>` (host-owned), in the
 soul's `messaging:` payload (true of every instance), or per spawn with
-`oats spawn … --provider oats.aweb <key>=<value>`.
+`oats spawn … --provider oats.aweb <key>=<value>`. The effective payload is
+merged in order: workspace messaging, `byTeam[team]`, soul messaging,
+`oats-local.yaml` `settings.oats.aweb`, then per-spawn `--provider` values.
+`residents` is host-file-only: put custody paths only in `oats-local.yaml`,
+never in a committed workspace or soul file (current kernels document this rule
+but do not yet enforce provenance in the hook payload).
 
+- `team: <team id>`. The payload team wins over `OATS_TEAM_ID`/
+  `OATS_TEAM_NAME`; if both are set and differ, the hook warns and uses the
+  payload. Workspace v2 spawns can have an empty `OATS_TEAM_ID`, so set this in
+  the payload for global grants.
+- `identity.mode: local | global` (default `local`). Any other value is fatal.
+  Local mode is the historical behavior: a spawned team identity is minted for
+  the instance, or `identity.source` uses the existing retained-seat flow below.
+  Its spawn meta includes `identity: { mode: "local", alias, team, address:
+  null, resident: null }` beside the existing top-level `alias`, `team`, and
+  `delivery` keys.
+- `identity.mode: global` makes the instance act as a resident global identity
+  through an aweb session grant; it never mints a new global identity and never
+  copies root keys into the instance home. `identity.resident` is required and
+  resolves through `residents.<name>` to an absolute custody directory whose
+  `.aw/identity.yaml` already exists. Missing or unresolved residents fail with
+  the `oats-local.yaml settings.oats.aweb.residents.<name>` key to set. Optional
+  `identity.scopes` defaults to exactly `[mail.read, mail.send, chat.read,
+  chat.send]`; optional `identity.ttl` defaults to `8h` (aw accepts `60s` to
+  `720h`). Spawn runs `aw id grant mint --scope <comma-list> --ttl <ttl>
+  --label oats:<instance> --out <home>/.aweb-identity --json` from the custody
+  directory with `AWEB_IDENTITY_HOME` removed from the child environment: in aw
+  1.36.1, grant commands are not identity-home-aware and intentionally refuse
+  both `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
+  custody identity. The hook parses the whole JSON document because aw `--json`
+  output is indented across lines, with a fallback to the first brace-prefixed
+  block when progress lines precede it; it then verifies the minted grant's
+  `team_id` and returns
+  `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
+  the hook revokes the grant and keeps nothing. As of aw 1.36.1, receiving,
+  wake registration and `aw whoami` work through a grant, but sending mail or
+  chat through a grant is rejected by the server with 422 (`from_did must match
+  the authenticated sender`) because the aw client signs with the grant-key DID
+  where the server expects the resident's. Retire revokes
+  `meta.identity.grant.id` through the custody directory; with no grant id it
+  reports `nothing-to-revoke`. A failed revoke exits nonzero and reports the TTL
+  expiry.
+- `residents: { <name>: /abs/custody/dir }` is the host-owned map for global
+  mode. Each custody directory's `.aw` holds the resident identity root keys and
+  team certificate. Do not put this map in committed source; the hook cannot
+  distinguish payload provenance.
 - `delivery: channel | session` (default `channel`). `session` hands
   notification delivery to the host wake broker: `AWEB_DELIVERY=session` in
   the launch environment (declared by the manifest), no Claude channel flag,

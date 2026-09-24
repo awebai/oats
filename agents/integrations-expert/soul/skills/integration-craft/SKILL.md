@@ -110,10 +110,13 @@ denied dispatch.
    records.
 5. Test missing requirements, duplicate skill/ID/command errors, hook order and
    reverse retire, and scaffold ownership when relevant.
-6. For external packages, test unlocked, untrusted executable, trusted exact
+6. If tests fake an external CLI, cover refusal paths as well as success: rejected
+   flags/env, policy boundaries, and output shape must match the real binary
+   version, or tests may validate an impossible integration path.
+7. For external packages, test unlocked, untrusted executable, trusted exact
    integrity, tampered integrity paths, and manifest paths or symlinks that
    escape the locked artifact.
-7. Run `oats doctor <repo> --soul <name>` and retire the probe.
+8. Run `oats doctor <repo> --soul <name>` and retire the probe.
 
 Gotcha: `spawnInstance` takes the agent object returned by `findAgent`, not a
 name string.

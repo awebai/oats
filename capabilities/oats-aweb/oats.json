@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.11.2",
+  "version": "1.12.0",
   "compatibility": {
     "oats": ">=0.24.4"
   },
@@ -124,7 +124,8 @@
     "retire": "bin/oats-aweb.mjs retire"
   },
   "environment": [
-    "AWEB_DELIVERY"
+    "AWEB_DELIVERY",
+    "AWEB_IDENTITY_HOME"
   ],
   "settings": {
     "delivery": {
@@ -134,6 +135,18 @@
         "session"
       ],
       "description": "channel: the native aweb channel packages wake the instance (default). session: delivery is external (AWEB_DELIVERY=session), no channel flag; the host wake broker registers the instance once it exists."
+    },
+    "team": {
+      "description": "Target aweb team id for identity lifecycle. In workspace v2 spawns this payload value wins over OATS_TEAM_ID/OATS_TEAM_NAME; if both are set and differ the hook warns and uses this setting."
+    },
+    "identity": {
+      "default": {
+        "mode": "local"
+      },
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
+    },
+    "residents": {
+      "description": "Host-owned map for global mode: resident name to absolute custody directory whose .aw holds the resident root keys and team certificate. Put this only in oats-local.yaml settings.oats.aweb.residents; committed workspace or soul files must never carry custody paths."
     }
   },
   "environmentNamespaces": [
