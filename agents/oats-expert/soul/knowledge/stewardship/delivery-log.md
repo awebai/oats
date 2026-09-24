@@ -22,6 +22,12 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## PR #117 — Desktop 10B-0 terminal owner leases (`terminalApi: 2`) → OATS v0.25.6 (2026-09-24)
+- verdict: MERGED `deb82710` (round 1 returned earlier for a root-harness fix + rebase; round 2 at `56f0e41c`)
+- owner: oats-expert-knowledge-reworks (lead) · coordinator: none (Desktop engineer `oats-desktop-engineer-1` delivered directly)
+- gates: direction/correctness/security read against `packages/desktop/terminal-owner.mjs` (256-bit lease validated by regex; principal = sender + senderFrame + mainFrame + trusted URL; epoch bump on navigation/crash/destroy; synchronous cap reservation before any await, epoch recheck after; bounded well-formed one-way writes; `register(wc)` before `loadFile`; bounded `dispose()` grace). **Native gate 23/23** — real Electron dev tree + real tmux on a private socket + real PTY, driven over CDP through `window.oatsDesktop.term*`: open/ready/write/close, stale-write zero effect, 20 opens + 21st `E_TERM_CAP`, reload revocation of 20 viewers, source isolation, no residue after quit.
+- taught us: (1) **read the wire contract before asserting** — two of my first-run "failures" were the contract working (`termWrite` is one-way; "sent" means forwarded, a revoked lease is dropped silently) — assert on the effect at the far end (source pane marker) and on round-trip refusals, never on a one-way call's return. (2) A CDP-driven gate script in the maintainer's tmp is enough for a Desktop native gate; it needs a PRIVATE tmux socket (`tmux -S`) so viewer counting is exact and the operator's server is never touched. (3) The harness guard blocks any tmux teardown verb appearing in the agent's command text, even for private sockets — the gate script's own node-side call must do its cleanup.
+
 ## PR45 Desktop slice 1a + PR46 `oats catalog` → OATS v0.24.6 (2026-09-22)
 - verdict: both MERGED (`508c4b5f`, `524180b7`) + PUBLISHED. PR45 by the Desktop engineer (retrofitted aweb identity; first PR of the S8 program); PR46 lead-implemented as the kernel seam the engineer specified.
 - owner: oats-desktop-engineer-1 (PR45); lead (PR46).
