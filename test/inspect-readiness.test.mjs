@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildNorthwind } from "./fixtures/northwind/build.mjs";
@@ -128,6 +128,35 @@ test("inspect / readiness / operation run over the workspace model: instance and
     refused(run("operation", "run", "knowledge:reindex", "--home", home, "--arg", "depth=2"), "E_BAD_ARGS", "an undeclared arg");
     refused(run("operation", "run", "knowledge:status", "--soul", "release-manager", "--dir", dep), "E_OPERATION_UNAVAILABLE", "a home operation for a soul");
     refused(run("operation", "run", "knowledge:nope", "--home", home), "E_OPERATION_UNKNOWN", "undeclared operation");
+
+    // ---- an external soul's home: member is not-applicable (observed from discovery), never a required fail ----
+    const ext = ok(run("spawn", "security-reviewer", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "x", "--work", "directory", "--no-launch"), "spawn external").home;
+    rd = ok(run("readiness", "--home", ext), "readiness --home (external soul)");
+    assert.equal(rd.checks.member.status, "not-applicable", JSON.stringify(rd.checks.member));
+    assert.equal(rd.checks.member.items[0].required, false);
+    assert.equal(ok(run("readiness", "--soul", "security-reviewer", "--dir", dep), "readiness --soul (external)").checks.member.status, "not-applicable");
+    assert.equal(ok(run("inspect", "--home", ext), "inspect --home (external)").souls[0].kind, null, "the kind is not observed without discovery");
+
+    // ---- a home without its module copies never falls through to a classic chain ----
+    const extModules = join(ext, ".oats", "modules");
+    renameSync(extModules, `${extModules}.off`);
+    doc = ok(run("inspect", "--home", ext), "inspect --home without modules");
+    noClassic(doc, "inspect --home without modules");
+    assert.ok(doc.capabilities.length > 0 && doc.capabilities.every((c) => c.version === null && c.dir.endsWith(c.id)), JSON.stringify(doc.capabilities.map((c) => [c.id, c.version])));
+    assert.ok(doc.problems.some((x) => x.code === "module-missing"));
+    assert.equal(ok(run("readiness", "--home", ext), "readiness --home without modules").checks.installed.status, "fail");
+    renameSync(`${extModules}.off`, extModules);
+
+    // ---- a malformed oats-local.yaml is reported, never a silent classic fallback ----
+    const local = readFileSync(join(dep, "oats-local.yaml"), "utf8");
+    writeFileSync(join(dep, "oats-local.yaml"), "schemaVersion: [\n");
+    for (const cmd of ["readiness", "inspect"]) {
+      const r = run(cmd, "--soul", "release-manager", "--dir", dep);
+      assert.equal(r.status, 1, `${cmd} with a malformed oats-local.yaml\n${r.stdout}`);
+      assert.match(JSON.parse(r.stdout).error.code, /^E_/);
+      assert.doesNotMatch(r.stdout, /"chain"|"trusted"|"enrolled"/);
+    }
+    writeFileSync(join(dep, "oats-local.yaml"), local);
 
     // ---- an explicit standalone view (decision 10) is an allowed mode: member is not-applicable, not a required unknown ----
     const sa = join(base, "standalone-dep");

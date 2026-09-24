@@ -67,7 +67,9 @@ document keeps its own `soulsApi: 1`, because its shape did not change (see
 [`oats souls`](#oats-capabilities---dir---json-capabilitiesapi-1-oats-souls---dir---json-soulsapi-1)).
 
 **The subject is an instance or a soul, never a scope.** Pass `--home <abs>`
-or `--soul <name>`. A workspace deployment with neither is `E_BAD_ARGS`. For
+or `--soul <name>`. A workspace deployment with neither is `E_BAD_ARGS`. An
+`oats-local.yaml` that exists but cannot be read is reported with its own
+error code, never answered from the classic chain. For
 inspect, the message points to `oats souls` and `oats capabilities`, the
 scope-wide lists.
 - `--home` selects the instance, from its `instance.json` and the module copies
@@ -94,7 +96,7 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
  "subject":{"kind":"instance","instance":"release-manager-x","home":"/w/agents/release-manager/instances/release-manager-x","soul":"release-manager"},
  "workspace":{"key":"github.com/northwind/agents","name":null,"deployment":"/w","commit":"461b9c24…","standalone":false},
  "souls":[{"soulsApi":2,"name":"release-manager","repoKey":"github.com/northwind/agents","commit":"461b9c24…","team":"engineering",
-   "kind":"member","path":null,"description":"Cuts, verifies and announces platform releases.","work":"worktree","runtime":null,"model":null,
+   "kind":null,"path":null,"description":"Cuts, verifies and announces platform releases.","work":"worktree","runtime":null,"model":null,
    "declarations":{"requires":null,"defaults":null,"knowledge":{"owns":"release-manager","reads":["platform-engineer"]},"teams":null,"resources":null,"children":null,
                    "capabilities":{"nw-release-tooling":{"from":"here"},"nw-deploy":{"from":"package"}}},
    "declarationProblems":[],
@@ -129,6 +131,8 @@ payload the spawn recorded for a home, or the resolution computes for a soul.
   recorded `soulDir` (the per-commit copy the instance incarnates), with
   `path: null`. For a soul, it is the member's current definition, with
   `path` inside the member repository. `kind` is `member` or `external`.
+  It is observed from discovery, so it is `null` on `inspect --home`
+  (readiness `--home` observes it).
   `declarations` gains `capabilities` (the soul's own `capabilities:`).
 - `capabilities[]` lists the subject's resolved modules, sorted by id:
   - `dir` is the home's module copy, or `null` for a soul (nothing is

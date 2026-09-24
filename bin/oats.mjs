@@ -778,7 +778,8 @@ async function workspaceTarget(bail, { command }) {
     if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_HOME_MISMATCH", `--agents-root ${rootFlag} is not the agents root of ${homeFlag}`);
     return homeTarget(homeFlag, meta, { remoteOptions, discover: command === "readiness" });
   }
-  if (!isWorkspaceContext(dirFlag())) return null;
+  try { if (!isWorkspaceContext(dirFlag())) return null; }
+  catch (e) { return bail(e?.code || "E_WORKSPACE_SCHEMA", e?.message || String(e), e?.details); }
   if (!soulFlag) return bail("E_BAD_ARGS", `${command} on a workspace deployment needs --soul <name> or --home <abs>${command === "inspect" ? " (the deployment's souls and capabilities: oats souls / oats capabilities)" : ""}`);
   const deployment = dirname(loadLocal(dirFlag()).path);
   if (rootFlag && realOrResolved(rootFlag) !== realOrResolved(join(deployment, "agents"))) return bail("E_SOUL_UNKNOWN", `soul "${soulFlag}" is not at agents root ${rootFlag} (this deployment's is ${join(deployment, "agents")})`);
