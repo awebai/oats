@@ -94,12 +94,14 @@ workflow requires it.
 
 ### Instance naming
 
-Name an instance for both **who it is** and **what this incarnation does** by
-spawning with `oats spawn <soul> --purpose <descriptive-role>`. OATS constructs
-`<full-soul-name>-<descriptive-role>`; use a short, lowercase kebab-case role
-suffix (for example, `desktop-ux` or `terminal-safety`), not an opaque number
-or generic word. The current spawn command always retains the full soul name,
-so shorten the purpose—not the soul prefix—when the result would be unwieldy.
+By default the name is `<soul>-<purpose>`: `oats spawn <soul> --purpose
+<descriptive-role>` names the incarnation for both **who it is** and **what it
+does**. Use a short, lowercase kebab-case role (for example, `desktop-ux` or
+`terminal-safety`), not an opaque number or generic word. `--name <slug>` gives
+an exact, unprefixed name instead (not together with `--purpose`); it must be a
+slug and must not be a soul name. Instance names are unique across the whole
+deployment: a derived name in use gets `-2`, `-3`…; an explicit `--name` in
+use is refused, never silently suffixed.
 Do **not** use `oats create` to name an incarnation: it creates a new persistent
 soul. Never put secrets, user data, or volatile task details in an instance
 name.

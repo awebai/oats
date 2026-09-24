@@ -342,9 +342,10 @@ executable, runtime packages, child-spawn policy) and returns what the spawn
  "executable":"/abs/bin/claude","capabilities":["oats.core"],"skills":["oats-operate","oats-souls"],"task":"…"}
 ```
 
-- **Name / work area**: `instance` is the canonical name (`<agent>-<purpose>`,
-  de-duplicated with `-2`, `-3`…); `home` and `worktree` are the canonical
-  paths. The renderer never derives paths.
+- **Name / work area**: `instance` is the name: by default the derived shape
+  `<agent>-<purpose>` (de-duplicated with `-2`, `-3`…), or exactly the
+  `--name <slug>` the caller gave (see *Instance names* below); `home` and
+  `worktree` are the canonical paths. The renderer never derives paths.
 - **Branch / base** (worktree mode): `branch` defaults to `agents/<instance>`
   (`--branch <name>` overrides; validated); `base` is `--base <ref>` resolved
   to its commit oid (default `HEAD`). `E_BRANCH_EXISTS` and `E_BASE_UNKNOWN`
