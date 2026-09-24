@@ -115,10 +115,14 @@ const warn = (m) => out({ warning: `oats-aweb: ${String(m).slice(0, 300)}` });
  * nonzero so the kernel rolls the spawn back. `meta` carries whatever external
  * state already exists (e.g. a joined identity) so retire can undo it. */
 const fatal = (m, meta) => out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(m).slice(0, 300)}` }, 1);
-const lastJsonLine = (text, what) => {
-  const lines = String(text ?? "").trim().split(/\r?\n/).filter(Boolean).reverse();
-  for (const line of lines) {
-    try { return JSON.parse(line); } catch { /* keep looking */ }
+const parseAwJson = (text, what) => {
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) throw new Error(`${what} returned no JSON result`);
+  try { return JSON.parse(trimmed); } catch { /* may have progress before JSON */ }
+  const lines = trimmed.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (!lines[i].trimStart().startsWith("{")) continue;
+    try { return JSON.parse(lines.slice(i).join("\n")); } catch { /* keep looking */ }
   }
   throw new Error(`${what} returned no JSON result`);
 };
@@ -260,8 +264,25 @@ function resolveResidentCustody(name) {
   }
   return custody;
 }
+function grantShow(custody, grantId) {
+  const raw = run(["aw", "id", "grant", "show", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+  return parseAwJson(raw, "aw id grant show");
+}
+const revokeMaybeApplied = (error) => /may have applied|context deadline exceeded|timed out|timeout/i.test(String(error?.message || error));
 function revokeGrant(custody, grantId) {
-  return run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+  try {
+    const raw = run(["aw", "id", "grant", "revoke", grantId, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+    return parseAwJson(raw, "aw id grant revoke");
+  } catch (e) {
+    if (revokeMaybeApplied(e)) {
+      try {
+        const shown = grantShow(custody, grantId);
+        const status = String(shown.status || shown.grant?.status || "").toLowerCase();
+        if (status === "revoked" || shown.revoked === true) return { grant_id: grantId, status: "revoked", verifiedByShow: true };
+      } catch { /* fall through to original revoke error */ }
+    }
+    throw e;
+  }
 }
 function recoverGrantHome(grantHome) {
   try {
@@ -288,13 +309,13 @@ function globalGrantSpawn() {
   try {
     const raw = run(["aw", "id", "grant", "mint", "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
     let minted;
-    try { minted = lastJsonLine(raw, "aw id grant mint"); }
+    try { minted = parseAwJson(raw, "aw id grant mint"); }
     catch (parseError) {
       const recovered = recoverGrantHome(grantHome);
       if (recovered.grantId) {
         meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes } }) };
-        try { revokeGrant(custody, recovered.grantId); } catch { /* retire compensation gets meta */ }
-        failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`);
+        try { revokeGrant(custody, recovered.grantId); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
+        catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, but revoke failed: ${revokeError.message || revokeError}`); }
       }
       throw parseError;
     }
@@ -308,8 +329,8 @@ function globalGrantSpawn() {
     const address = typeof minted.address === "string" && minted.address ? minted.address : null;
     meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes } }) };
     if (mintedTeam !== team) {
-      try { revokeGrant(custody, grantId); } catch (e) { /* report the original mismatch; retire compensation gets meta */ }
-      failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`);
+      try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
+      catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }
     }
     const launch = (process.env.OATS_RUNTIME || "") === "claude" && deliveryMode === "channel"
       ? { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" }
@@ -317,7 +338,10 @@ function globalGrantSpawn() {
     const env = { ...(deliveryMode === "session" ? { AWEB_DELIVERY: "session" } : {}), AWEB_IDENTITY_HOME: grantHome };
     if (deliveryMode === "session") {
       try { wakeRegister(home, grantHome); }
-      catch (e) { try { revokeGrant(custody, grantId); } catch { /* retire compensation gets meta */ } failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}`); }
+      catch (e) {
+        try { revokeGrant(custody, grantId); failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; grant revoked and grant home removed`); }
+        catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
+      }
     }
     const warnings = [];
     if (payload && envTeam && payload !== envTeam) warnings.push(`oats-aweb: settings.oats.aweb.team ${payload} differs from OATS team ${envTeam}; using payload team`);

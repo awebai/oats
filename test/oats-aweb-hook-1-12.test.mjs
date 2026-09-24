@@ -20,6 +20,7 @@ const path = require("node:path");
 const a = process.argv.slice(2);
 const s = a.join(" ");
 const log = ${JSON.stringify(join(base, "aw.log"))};
+const j = (obj) => JSON.stringify(obj, null, 2);
 fs.appendFileSync(log, JSON.stringify({ argv: a, cwd: process.cwd(), identityHome: process.env.AWEB_IDENTITY_HOME || null }) + "\\n");
 const grantCmd = a[0] === "--identity-home" ? a.slice(2) : a;
 if (grantCmd[0] === "id" && grantCmd[1] === "grant" && (a[0] === "--identity-home" || process.env.AWEB_IDENTITY_HOME)) {
@@ -30,11 +31,11 @@ const cmd = a;
 function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
 if (s === "version") { console.log("aw 1.36.1"); process.exit(0); }
 if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
-if (s.startsWith("team list")) { console.log(JSON.stringify({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
-if (s.startsWith("team invite")) { console.log(JSON.stringify({ token: "TOK-secret" })); process.exit(0); }
-if (s.startsWith("team join")) { console.log(JSON.stringify({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
+if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
+if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
+if (s.startsWith("team join")) { console.log(j({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
 if (s.startsWith("init")) process.exit(0);
-if (s.startsWith("workspace delete")) { console.log(JSON.stringify({ alias_released: true, alias_released_reason: "revoked" })); process.exit(0); }
+if (s.startsWith("workspace delete")) { console.log(j({ alias_released: true, alias_released_reason: "revoked" })); process.exit(0); }
 if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "mint") {
   const out = val("--out");
   if (!out) { console.error("missing --out"); process.exit(2); }
@@ -42,12 +43,17 @@ if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "mint") {
   fs.writeFileSync(path.join(out, "grant.yaml"), "version: 1\\ngrant_id: grant-123\\nteam_id: " + (process.env.FAKE_GRANT_TEAM || "t:example.test") + "\\nexpires_at: 2026-09-24T07:00:00Z\\n");
   console.log("progress: minted");
   if (process.env.FAKE_MINT_NO_JSON) process.exit(0);
-  console.log(JSON.stringify({ grant_id: "grant-123", expires_at: "2026-09-24T07:00:00Z", team_id: process.env.FAKE_GRANT_TEAM || "t:example.test", alias: "resident-alias", address: process.env.FAKE_GRANT_ADDRESS || "oats.aweb.ai/resident-alias", out }));
+  console.log(j({ grant_id: "grant-123", expires_at: "2026-09-24T07:00:00Z", team_id: process.env.FAKE_GRANT_TEAM || "t:example.test", alias: "resident-alias", address: process.env.FAKE_GRANT_ADDRESS || "oats.aweb.ai/resident-alias", out }));
   process.exit(0);
 }
 if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "revoke") {
+  if (process.env.FAKE_REVOKE_MAYBE_APPLIED) { console.error("context deadline exceeded; request may have applied"); process.exit(1); }
   if (process.env.FAKE_REVOKE_FAIL) { console.error("revoke unavailable"); process.exit(1); }
-  console.log(JSON.stringify({ revoked: true, grant_id: cmd[3] }));
+  console.log(j({ grant_id: cmd[3], status: "revoked" }));
+  process.exit(0);
+}
+if (cmd[0] === "id" && cmd[1] === "grant" && cmd[2] === "show") {
+  console.log(j({ grant_id: cmd[3], status: process.env.FAKE_SHOW_STATUS || "active" }));
   process.exit(0);
 }
 console.error("fake aw: unexpected " + s); process.exit(2);
@@ -182,6 +188,20 @@ test("global mode compensates when mint writes a grant home but prints no JSON",
     assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed after malformed mint output");
     assert.ok(logLines(base).some((l) => l.argv.join(" ").includes("id grant revoke grant-123")), "grant revoked despite missing JSON output");
     assert.match(r.doc.warning, /returned no JSON/);
+    assert.match(r.doc.warning, /revoked it/);
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global mode reports a failed recovery revoke truthfully while keeping grant meta", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_SETTINGS: JSON.stringify({ team: "t:example.test", identity: { mode: "global", resident: "merlin" }, residents: { merlin: custody } }), FAKE_MINT_NO_JSON: "1", FAKE_REVOKE_FAIL: "1" });
+    assert.notEqual(r.status, 0);
+    assert.equal(r.doc.meta.identity.grant.id, "grant-123", "meta kept for retire compensation retry");
+    assert.equal(existsSync(join(home, ".aweb-identity")), false, "grant home removed even when revoke failed");
+    assert.match(r.doc.warning, /revoke failed: .*revoke unavailable/);
+    assert.doesNotMatch(r.doc.warning, /revoked it/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -199,6 +219,20 @@ test("global retire revokes the grant through custody and deregisters session de
     assert.equal(revoke.cwd, realpathSync(custody));
     assert.equal(revoke.identityHome, null);
     assert.ok(lines.some((l) => l.argv.join(" ") === ["wake", "deregister", "--home", home].join(" ")));
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
+
+test("global retire treats a maybe-applied revoke timeout as success when grant show says revoked", () => {
+  const base = mkdtempSync(join(tmpdir(), "oats-aweb-112-"));
+  try {
+    const bin = fakeAw(base); const { root, home } = deployment(base); const custody = resident(base);
+    const meta = { identity: { mode: "global", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: [] } } };
+    const r = runHook(bin, "retire", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_META: JSON.stringify(meta), OATS_SETTINGS: JSON.stringify({ residents: { merlin: custody } }), FAKE_REVOKE_MAYBE_APPLIED: "1", FAKE_SHOW_STATUS: "revoked" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.equal(r.doc.meta.identityRevoked, true);
+    const lines = logLines(base);
+    assert.ok(lines.some((l) => l.argv.join(" ") === "id grant revoke grant-123 --json"));
+    assert.ok(lines.some((l) => l.argv.join(" ") === "id grant show grant-123 --json"));
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
