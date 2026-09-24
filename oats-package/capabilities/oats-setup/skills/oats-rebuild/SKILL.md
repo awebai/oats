@@ -44,14 +44,14 @@ named at each step.
    old state root). The previous state directory is frozen custody — read,
    never edited or re-pointed. *Rationale:* playbook "rebuild starts fresh
    provider state".
-5. Place the messaging root inside the deployment directory. *Rationale:*
-   lesson "messaging root placement decides the team".
+5. Place the messaging root inside the deployment directory (oats-onboarding
+   step 6). *Rationale:* lesson "messaging root placement decides the team".
 6. `oats sync`, approve packages (oats-package-pins), clone work targets.
 
 ## Accept it
 
 Verify by positive enumeration on the rebuilt deployment (oats-onboarding
-step 7), then prove the knowledge owner pin across a member move:
+step 8), then prove the knowledge owner pin across a member move:
 
 ```bash
 oats spawn <knowledge-owning soul> --purpose check --no-launch

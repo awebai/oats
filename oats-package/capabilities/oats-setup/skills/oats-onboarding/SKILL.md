@@ -4,8 +4,8 @@ description: >-
   Use when helping an operator realize an OATS workspace on a machine: deciding
   where the workspace file is hosted, writing or checking the shared
   declarations, choosing the deployment directory, running `oats onboard`,
-  placing host settings, approving packages, cloning work targets and verifying
-  before the first spawn. For package pins see oats-package-pins; for moving an
+  placing host settings, approving packages, setting up messaging, cloning work
+  targets and verifying before the first spawn. For package pins see oats-package-pins; for moving an
   existing deployment see oats-rebuild.
 ---
 
@@ -73,12 +73,10 @@ lesson "the installed provider is the authority for a setting".
   `okf.json` name, under exactly those aliases (the workspace file lists them
   next to `stores:`). Use real paths: the provider's path check refuses a
   path that traverses a symlink (`E_PATH symlink not allowed`; on macOS `/tmp`
-  is one — use `/private/tmp`). A soul
-  whose knowledge slot is `oats.okf` does not spawn until these exist — set
-  them before spawning any soul, the operator expert included.
-- **Messaging**: the provider needs an initialised root inside the deployment
-  directory, placed where its spawn hook looks. *Rationale:* operator node,
-  lesson "messaging root placement decides the team".
+  is one — use `/private/tmp`). A soul whose knowledge slot is `oats.okf`
+  does not spawn until these exist — set them before spawning any soul, the
+  operator expert included.
+- **Messaging** is set up in its own step, after approval (step 6).
 - A fact true of **one spawn** (a retained messaging seat) is not a host
   setting: it is `oats spawn <soul> --provider <cap> key=value`.
 
@@ -88,7 +86,46 @@ See **oats-package-pins**. In short: show the operator each package's
 executables, then `oats sync` on a terminal, or `oats sync --approve
 <id>@<version>` for exactly the locked entries.
 
-## 6. Clone work targets
+## 6. Set up messaging before the first spawn
+
+If the workspace's messaging default, or any soul, uses `oats.aweb`, its spawn
+hook is required: with no initialised aweb root among the places it looks, the
+spawn is rolled back. With messaging as the workspace default that is **every**
+soul, the operator expert included. So set the root up now, after approval and
+before any spawn.
+
+Put the root **in the deployment directory**. The hook looks in the parent of
+`agents/`, which is the deployment directory when `agents/` sits directly in it
+(the layout `oats onboard` creates). Where the root sits decides which team
+the instances join.
+*Rationale:* operator node, lesson "messaging root placement decides the
+team" — read it before choosing another place.
+
+The root must be a **member of the team the workspace's messaging payload
+names** (`messaging:` / `messaging.byTeam` in the workspace file). `aw init`
+alone in a clean directory creates a hosted account and joins no team, so every
+spawn would still be refused. Obtain the membership first:
+
+1. **Join the team** from the clean deployment directory. An existing member
+   of that team creates an invite; the operator joins here. (Or, for a new
+   team, create it here.)
+
+   ```bash
+   aw team invite --team-id <team id>              # run by an existing member, where their root is
+   cd <deployment-dir>
+   aw team join <invite-token> --name <alias>      # the operator, in the clean deployment directory
+   ```
+2. **Connect**, only if the join did not: `aw init --do-not-touch-agents-md`.
+3. **Check**: `aw check --online`, then `aw team list --json` must show the
+   payload's team as the active one. A root in another team mints instances
+   into the wrong one.
+
+Joining and initialising act on the messaging service: ask the operator first,
+and let them run it. oats.aweb 1.12.0's `oats aweb setup` still reads the
+earlier configuration file's team block; in a workspace-model deployment use
+`aw` directly as above.
+
+## 7. Clone work targets
 
 Only souls with `work: worktree | checkout` need a clone of their repository.
 The kernel looks, in order, at `oats spawn … --repo <path>`, the local file's
@@ -96,7 +133,7 @@ The kernel looks, in order, at `oats spawn … --repo <path>`, the local file's
 member named `agents`). Clone with the operator's own credentials; a
 directory whose origin is another repository is refused, not used.
 
-## 7. Verify before the first real spawn
+## 8. Verify before the first real spawn
 
 Positive enumeration, in order — absence of errors proves nothing
 (*rationale:* operator node, playbook "outsider verification of a rebuild"):
@@ -109,11 +146,15 @@ oats spawn <soul> --preview                    # modules at locked commits; merg
 
 Then spawn one soul with `--no-launch` and check its home: exactly one "You run
 on OATS" block in `AGENTS.md` (two means `oats.core` did not resolve), the
-expected skills under `.agents/skills/`. Only then spawn for real.
+expected skills under `.agents/skills/`, and — with messaging — a spawn the
+aweb hook did not roll back: its output carries a `Comms:` line, and
+`instance.json` → `capabilityMeta["oats.aweb"].team` equals the payload's team.
+Only then spawn for real.
 
 ## Never
 
 Re-onboard, re-point or clean a deployment the operator did not name; approve
 packages on the operator's behalf without showing what runs; edit
 `oats-lock.json` or `instance.json` by hand; put host facts in shared files;
-treat a scaffold as a working session.
+initialise or copy a messaging root above the deployment directory; treat a
+scaffold as a working session.
