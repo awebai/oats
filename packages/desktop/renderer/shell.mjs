@@ -778,7 +778,7 @@ function onTabKeydown(e, id) {
   if (selectTab(nextId)) tab.triggerEl.focus();
 }
 
-function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
+function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(), instanceRef = null, onClose, confirmClose = null, onShow, focusContent = null, focusOnActivate = false, intent = null }) {
   if (key) {
     for (const [tid, t] of tabs) if (t.key === key) {
       if (instanceRef && (!intent || intent())) t.instanceRef = instanceRef;
@@ -803,7 +803,7 @@ function addTab({ title, key, kind = "artifact", workspace = currentWorkspace(),
     isApplyingFocus: () => tabOpenIntents.isApplyingFocus(),
     select: () => selectTab(id),
   });
-  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, onShow, focusContent });
+  tabs.set(id, { tabEl, triggerEl, closeEl, paneEl, title, key, kind, workspace, instanceRef, onClose, confirmClose, onShow, focusContent });
   if (intent) selectTab(id, { intent, focusContent: focusOnActivate });
   else activateTab(id);
   return { id, paneEl };
@@ -888,12 +888,30 @@ function activateTab(id, { keepGroupFocus = false } = {}) {
   return true;
 }
 
-function closeTab(id, restoreFocus = false, { explicit = true } = {}) {
+function closeTab(id, restoreFocus = false, { explicit = true, confirmed = false, passive = false } = {}) {
   // All public close paths supersede foreground work, even for inactive tabs.
   // Internal replacement (brain open) is part of its enclosing open intent.
   if (explicit) tabOpenIntents.invalidate();
   const t = tabs.get(id);
   if (!t) return;
+  if (t.confirmClose && !confirmed) {
+    t.closeIntent = { owns: tabOpenIntents.begin(), restoreFocus };
+    if (t.closeFlight) return t.closeFlight;
+    let work;
+    try { work = t.confirmClose(); } catch { return; }
+    const flight = Promise.resolve(work).then(result => {
+      if (tabs.get(id) !== t || t.closeFlight !== flight) return;
+      const latest = t.closeIntent.owns();
+      if (result?.terminalApi === 2 && result.ok && result.status === 'closed') {
+        closeTab(id, t.closeIntent.restoreFocus && latest, { explicit: false, confirmed: true, passive: !latest });
+      }
+      // Pending/failure retains the exact tab, its literal state and key.
+    }, () => { /* failure does not repaint, navigate, focus or remove the tab */ })
+      .finally(() => { if (tabs.get(id) === t && t.closeFlight === flight) t.closeFlight = null; });
+    t.closeFlight = flight;
+    if (t.key) reserveKey(t.key, flight);
+    return flight;
+  }
   // onClose may return a promise (deferred cleanup while a mount is pending);
   // reserve the key until it resolves — reopen requests queue behind it via
   // whenKeyFree() instead of mounting under the stale lifecycle.
@@ -910,6 +928,11 @@ function closeTab(id, restoreFocus = false, { explicit = true } = {}) {
   const removed = removeSplitTab(split, id);
   const splitSuccessor = activeTab === id ? removed.successor : null;
   split = removed.split;
+  // Delayed cleanup never reopens a covered terminal layer/other workspace.
+  if (passive && (!tabLayerVisible || t.workspace !== currentWorkspace())) {
+    if (activeTab === id) activeTab = null;
+    return;
+  }
   if (wasSplitMember && tabLayerVisible
       && (activeTab == null || activeTab === id || tabs.get(activeTab)?.kind === "terminal")) {
     const next = activeTab === id ? splitSuccessor : activeTab;
@@ -1165,9 +1188,10 @@ async function openTerminalTabInner(inst, ws, key, owns, notify = (msg) => alert
     workspace: ws,
     instanceRef: inst,
     intent: owns,
-    // close() resolves when cleanup (incl. a late-materializing pty detach)
-    // actually ran — closeTab reserves the key on this promise.
-    onClose: () => { offTheme(); offTypography(); return tab.close(); },
+    // Keep the pane/key while cleanup is pending or unconfirmed. Theme hooks
+    // belong to the retained view and are removed only on confirmed disposal.
+    confirmClose: () => tab.close(),
+    onClose: () => { offTheme(); offTypography(); },
     onShow: () => { requestAnimationFrame(() => { try { fit.fit(); } catch {} }); },
     // user-initiated activation → keyboard lands in the xterm textarea
     focusContent: () => tab.focus(),

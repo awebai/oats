@@ -10,6 +10,8 @@ import { createSelectionOwnership, wirePaneSelection } from "../renderer/selecti
 import { createIntentGate, prepareOwnedOpen } from "../renderer/open-intent.mjs";
 import { createTerminalTab, terminalOptions, terminalKeyDecision } from "../renderer/terminal-tab.mjs";
 import { createTermLifecycle } from "../renderer/term-lifecycle.mjs";
+import { opened, confirmed, ready } from './helpers/terminal-wire.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure } from '../renderer/terminal-contract.mjs';
 import { createViewLifecycle } from "../renderer/view-lifecycle.mjs";
 import { reserveKey, whenKeyFree } from "../renderer/tab-keys.mjs";
 import { createTabChrome, tabKeyAction, focusAfterLastTab } from "../renderer/tab-a11y.mjs";
@@ -90,8 +92,9 @@ function shell(t, { shellSource = source, ownership = createSelectionOwnership, 
       dispose() { this.disposed++; }
     },
     desk: {
-      termOpen(spec) { const gate = { ...deferred(), spec }; attachments.push(gate); return gate.promise; },
-      termClose: id => detached.push(id), termWrite() {}, termResize() {},
+      termOpen(spec) { const gate = { ...deferred(), spec }; attachments.push(gate); return gate.promise.then(({ id }) => opened(id)); },
+      termReady: ready,
+      termClose: h => { detached.push(h.id); return confirmed(h); }, termWrite() {}, termResize() {},
       onTermData: () => () => {}, onTermExit: () => () => {},
     },
   };
@@ -296,7 +299,7 @@ test("mutation: readiness must consult current focus ownership, not pane visibil
     assert.equal(pending.term.focuses, 0, "readiness must not steal focus");
   }
   await run();
-  const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision });
+  const terminal = mutatedFactory(createTerminalTab, "!ownsFocus()", "!isActive()", { createTermLifecycle, terminalKeyDecision, terminalHandle, terminalSameHandle, terminalFailure });
   await assert.rejects(run(terminal), /readiness must not steal focus/);
 });
 

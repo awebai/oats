@@ -3,6 +3,7 @@
 // boundaries are synthetic. No native dialog, server, Electron or operator state.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { opened, confirmed, ready as terminalReady } from './helpers/terminal-wire.mjs';
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { JSDOM } from "jsdom";
@@ -125,8 +126,9 @@ function shell(t, shellSource = source, platform = "MacIntel") {
       dispose() { this.disposed++; }
     },
     desk: {
-      termOpen(spec) { const gate = { ...deferred(), spec }; attachments.push(gate); return gate.promise; },
-      termClose: id => detached.push(id), termWrite: () => assert.fail("file commands must not write terminal bytes"), termResize() {},
+      termOpen(spec) { const gate = { ...deferred(), spec }; attachments.push(gate); return gate.promise.then(({ id }) => opened(id)); },
+      termReady: terminalReady,
+      termClose: h => { detached.push(h.id); return confirmed(h); }, termWrite: () => assert.fail("file commands must not write terminal bytes"), termResize() {},
       onTermData: () => () => {}, onTermExit: () => () => {},
     },
   };

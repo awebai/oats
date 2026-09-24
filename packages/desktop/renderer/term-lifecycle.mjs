@@ -1,75 +1,54 @@
-// Terminal open lifecycle for the desktop shell — the terminal-tab variant
-// of view-lifecycle.mjs, extracted so the close-during-pending-termOpen
-// semantics are unit-testable without Electron.
-//
-// Hazard (merged-state review @3e1a611): closing a terminal tab while the
-// async termOpen() IPC call is pending saw ptyId === null in cleanup; the
-// open then resolved AFTER the tab was gone and the created pty — an
-// invisible attached tmux client — leaked until app shutdown.
-//
-// Semantics:
-//  - close before the open settles → when it resolves, the pty is closed
-//    IMMEDIATELY (detach; never the tmux session); onReady is not called.
-//  - open rejects → onOpenError runs (repaint) unless the tab is already
-//    closed; nothing leaks (no pty was created).
-//  - close after settle → normal cleanup with the known pty id.
-// close() returns a promise resolving when cleanup has actually run, so the
-// host can keep the tab's dedup key reserved until then (tab-keys.mjs).
+// Leased terminal lifecycle. Setup is inside start/onReady and must settle before
+// disposal. A close request disables use immediately, but UI teardown/key release
+// is permitted only by a confirmed close (not a timeout or transport failure).
+import { terminalHandle, terminalSameHandle, terminalFailure, terminalSuccess } from './terminal-contract.mjs';
 
-/**
- * @param {{ open: () => Promise<number>, closePty: (id: number) => void }} io
- *   open(): performs the async termOpen; closePty(): detaches the pty.
- * @param {(e: unknown) => void} [onError] error sink for cleanup failures
- * @returns {{
- *   start(onReady: (id: number) => void, onOpenError: (e: unknown) => void): Promise<void>,
- *   close(disposeUi?: () => void): Promise<void>,
- *   ptyId(): number | null,
- * }}
- */
 export function createTermLifecycle(io, onError = () => {}) {
-  let ptyId = null;
-  let closed = false;
-  let settled = false;
-  let disposeUi = null;
-  let settleSignal;
-  const settledP = new Promise((r) => { settleSignal = r; });
-
-  const detach = () => {
-    if (ptyId === null) return;
-    const id = ptyId;
-    ptyId = null;
-    try { io.closePty(id); } catch (e) { onError(e); }
-  };
-
+  let held = null, closing = false, started = false, settled = false, disposed = false;
+  let disposeUi = null, closeFlight = null, earlyClose = null, settleSignal;
+  const settledP = new Promise(resolve => { settleSignal = resolve; });
+  const detached = () => terminalSuccess('closed');
+  async function detach() {
+    const h = held;
+    if (!h) return detached();
+    try {
+      const result = await io.closePty(h);
+      if (!held) return detached(); // a matching confirmed exit arrived meanwhile
+      if (result?.terminalApi === 2 && result.ok && result.status === 'closed' && terminalSameHandle(result.handle, h)) {
+        if (terminalSameHandle(held, h)) held = null;
+        return result;
+      }
+      return terminalFailure('E_TERM_CLOSE_PENDING');
+    } catch (error) { onError(error); return held ? terminalFailure('E_TERM_CLOSE_PENDING') : detached(); }
+  }
   return {
     async start(onReady, onOpenError) {
+      if (started) return; started = true;
       try {
-        const id = await io.open();
-        settled = true;
-        if (closed) {
-          // Tab closed while the open was in flight — the pty exists now;
-          // detach it immediately instead of leaking an invisible client.
-          try { io.closePty(id); } catch (e) { onError(e); }
-        } else {
-          ptyId = id;
-          onReady(id);
+        held = terminalHandle(await io.open());
+        if (!held) throw terminalFailure('E_TERM_OPEN_FAILED');
+        if (closing) earlyClose = await detach();
+        else await onReady(held);
+      } catch (error) { if (!closing) onOpenError(error); }
+      finally { settled = true; settleSignal(); }
+    },
+    close(ui) {
+      closing = true; disposeUi = ui || disposeUi;
+      if (!started) { started = true; settled = true; settleSignal(); } // failed mount before start: never acquire later
+      if (closeFlight) return closeFlight;
+      closeFlight = (async () => {
+        if (!settled) await settledP;
+        const result = earlyClose || await detach(); earlyClose = null;
+        if (result.ok && result.status === 'closed' && !disposed) {
+          disposed = true;
+          try { disposeUi?.(); } catch (error) { onError(error); }
         }
-      } catch (e) {
-        settled = true;
-        if (!closed) onOpenError(e);
-      } finally {
-        settleSignal();
-      }
+        return result;
+      })().finally(() => { closeFlight = null; });
+      return closeFlight;
     },
-    async close(ui) {
-      closed = true;
-      disposeUi = ui || disposeUi;
-      if (!settled) await settledP; // the start() continuation detaches
-      detach();
-      try { disposeUi?.(); } catch (e) { onError(e); }
-    },
-    ptyId: () => ptyId,
-    /** the shell's exit handler clears the id (session ended, pty gone) */
-    forget: () => { ptyId = null; },
+    ptyId: () => held, // historical accessor name; value is always an immutable handle
+    closing: () => closing,
+    forget(h) { if (terminalSameHandle(held, h)) held = null; },
   };
 }

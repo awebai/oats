@@ -1,99 +1,19 @@
-// Terminal tab composition for the desktop shell — the glue between
-// createTermLifecycle and the concrete xterm/IPC/DOM resources, extracted
-// from shell.mjs so the SHELL-LEVEL setup/teardown ordering is testable
-// (review termlc2: a lifecycle-only test passes even if the shell performs
-// setup after `await start()`, i.e. on a disposed terminal).
-//
-// All post-attach setup happens inside onReady (before the lifecycle's
-// settle signal), so a close-during-pending resumes only after setup — or
-// skips it entirely — and disposeUi covers every resource created here.
-import { createTermLifecycle } from "./term-lifecycle.mjs";
-import { wireTerminalAttachments } from "./terminal-attachments.mjs";
+// xterm/leased-IPC composition. All subscriptions/observers are installed inside
+// lifecycle onReady, before its settlement signal; no late setup after disposal.
+import { createTermLifecycle } from './term-lifecycle.mjs';
+import { wireTerminalAttachments } from './terminal-attachments.mjs';
+import { terminalHandle, terminalSameHandle, terminalFailure } from './terminal-contract.mjs';
 
-/**
- * @param {object} deps
- * @param {{ termOpen: Function, termClose: Function, termWrite: Function,
- *           termResize: Function, onTermData: Function, onTermExit: Function }} deps.desk
- *        the preload bridge (or a test double)
- * @param {object} deps.term        xterm Terminal (or a test double with
- *        cols/rows/onData/onResize/focus/dispose)
- * @param {{ session: string, window?: string|number }} deps.tmux
- * @param {Element} deps.wrap       the tab's terminal container
- * @param {() => boolean} deps.isActive  whether the tab is visible (fit gate)
- * @param {() => boolean} deps.ownsFocus  current explicit focus owner (not visibility)
- * @param {() => void} [deps.focusInput] apply xterm focus under the shell's
- *        synchronous programmatic-focus guard (default: term.focus)
- * @param {() => void} deps.fit     refit callback
- * @param {(el: Element) => void} [deps.observe]  install a resize observer on
- *        wrap, return handled via the returned disposer (defaults to a real
- *        ResizeObserver; injectable for tests)
- * @param {(ev: KeyboardEvent) => boolean} [deps.interceptKey]  shell-provided
- *        shortcut interception hook, called BEFORE xterm handles a key event
- *        (i.e. before any byte reaches the pty). Return true to claim the
- *        event: it is suppressed in xterm for EVERY phase of the chord
- *        (keydown/keypress/keyup) and never written to the pty. The shell
- *        wires this to the keybinding engine's terminal-allowlist match —
- *        without it, xterm's capture-phase handler consumes allowlisted
- *        chords (e.g. Ctrl+K) before the bubble-phase window listener runs.
- * @param {(e: unknown) => void} [deps.onError]
- * @returns {{ start: () => Promise<void>, close: () => Promise<void>, focus: () => void }}
- */
-/* Shift+Enter must insert a newline in the agent's input line, not send the
-   message. xterm.js emits a plain \r for Enter regardless of Shift, so the
-   modifier is lost before tmux or the agent runtime ever sees it. pi binds
-   Ctrl+J (a raw \n linefeed) as its default newline alias precisely for
-   terminals that cannot deliver a real shift+enter through tmux (see pi
-   docs/terminal-setup.md), so translating Shift+Enter → \n here composes a
-   newline in every runtime that follows that convention while plain Enter
-   keeps sending.
-
-   xterm invokes the custom handler for keydown, keypress AND keyup of the
-   same physical press. Suppressing only the keydown is NOT enough: the
-   browser still fires keypress (charCode 13), xterm's _keyPress path is
-   reached because the handler returned true for it, and a \r goes to the
-   pty right after our \n — newline immediately followed by SEND (the
-   v0.18.4 field failure: Shift+Enter looked like it "did nothing" because
-   the message submitted anyway). Every event of a Shift+Enter press must
-   be suppressed; the \n is written once, on the keydown.
-
-   Returns { suppress, byte } — byte is the payload to write (only on
-   keydown), suppress covers keypress/keyup of the same chord. Pure —
-   exported for tests. */
+// Shift+Enter writes pi's raw Ctrl+J alias exactly once. Suppress all three key
+// phases, otherwise xterm's subsequent keypress writes CR and submits the draft.
 export function shiftEnterAction(ev) {
-  if (ev.key !== "Enter" || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) {
-    return { suppress: false, byte: null };
-  }
-  return { suppress: true, byte: ev.type === "keydown" ? "\n" : null };
+  if (ev.key !== 'Enter' || !ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return { suppress: false, byte: null };
+  return { suppress: true, byte: ev.type === 'keydown' ? '\n' : null };
 }
-
-/* xterm Terminal construction options for a shell terminal tab — exported
-   (rather than inlined in shell.mjs) so the invariant-bearing lines are
-   testable (lesson: regression tests must exercise the bug layer).
-
-   macOptionClickForcesSelection: the tab attaches to a tmux viewer session
-   running with `mouse on` (wheel scrollback — tmux-target.mjs), so tmux
-   grabs the mouse and a plain drag never creates an xterm selection — copy
-   looked broken (v0.18.4 field report). xterm's escape hatch is a modifier-
-   forced LOCAL selection, and it is platform-split (shouldForceSelection):
-   Option+drag on macOS — only when this option is on (default off) — and
-   Shift+drag on non-mac platforms. */
 export function terminalOptions({ fontSize, fontFamily, theme }) {
-  return {
-    fontSize,
-    fontFamily,
-    theme,
-    scrollback: 5000,
-    macOptionClickForcesSelection: true,
-  };
+  // tmux mouse capture must not defeat Option-drag local copy selection on macOS.
+  return { fontSize, fontFamily, theme, scrollback: 5000, macOptionClickForcesSelection: true };
 }
-
-/* Compose the per-event decision for xterm's custom key handler: the
-   Shift+Enter newline translation wins first (it must WRITE a byte, not
-   just suppress), then the shell's shortcut interception (terminal-
-   allowlisted chords must never reach the pty). Returns
-   { handled, byte } — handled=true means xterm must NOT process the event
-   (return false from the handler); byte is written to the pty (keydown
-   only). Pure — exported for tests. */
 export function terminalKeyDecision(ev, interceptKey) {
   const { suppress, byte } = shiftEnterAction(ev);
   if (suppress) return { handled: true, byte };
@@ -101,93 +21,103 @@ export function terminalKeyDecision(ev, interceptKey) {
   return { handled: false, byte: null };
 }
 
-export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wrap, isActive, ownsFocus = () => false, focusInput = () => term.focus(), fit, observe, interceptKey, onError = (e) => console.error(e) }) {
-  let offData = null, offExit = null;
-  let unobserve = null;
-  let detachAttachments = null;
-  let ready = false;
-  let closed = false;
-  // Do not queue an acquisition-time boolean: a later explicit selection can
-  // own this retained tab, while an A→B→A restoration cannot revive old focus.
+export function createTerminalTab({ desk, term, tmux, sessionTarget, remote, wrap, isActive, ownsFocus = () => false,
+  focusInput = () => term.focus(), fit, observe, interceptKey, onError = () => {} }) {
+  let offData, offExit, unobserve, detachAttachments, bannerEl;
+  let ready = false, closed = false, ended = false, arming = false;
+  const subscriptions = [];
+  const banner = text => {
+    if (!bannerEl) { bannerEl = wrap.ownerDocument.createElement('div'); bannerEl.className = 'term-banner'; bannerEl.setAttribute('role', 'status'); wrap.append(bannerEl); }
+    bannerEl.textContent = text;
+  };
   const focus = () => {
-    if (closed || !ready || !ownsFocus()) return;
-    try { focusInput(); } catch { /* disposed/unavailable input */ }
+    if (closed || !ready || ended || !ownsFocus()) return;
+    try { focusInput(); } catch { /* no focus into a disposed input */ }
   };
-
-  const life = createTermLifecycle(
-    { open: async () => {
-        // term:open now returns a STRUCTURED result (Slice G resource
-        // registry): {id} | {reused,id} | {capped,active,max} | {error}.
-        // Translate to the lifecycle's numeric-id contract, classifying
-        // the two rejections so the banner is actionable.
-        const r = await desk.termOpen({ ...(remote ? { remote } : sessionTarget ? { sessionTarget } : { session: tmux.session, window: tmux.window, socket: tmux.socket }), cols: term.cols, rows: term.rows });
-        if (r && typeof r === "object") {
-          if (r.capped) { const e = new Error(`Terminal limit reached (${r.max}). Close a terminal tab first.`); e.code = "cap"; throw e; }
-          if (r.reused) { const e = new Error("This terminal is already open."); e.code = "reused"; throw e; }
-          if (r.error) throw new Error(r.error);
-          if (r.id !== undefined) return r.id;
-        }
-        return r; // legacy numeric id (test doubles)
-      },
-      closePty: (id) => desk.termClose(id) },
-    onError,
-  );
-
+  const life = createTermLifecycle({
+    open: async () => {
+      const result = await desk.termOpen({ ...(remote ? { remote } : sessionTarget ? { sessionTarget } : {
+        session: tmux.session, window: tmux.window, socket: tmux.socket,
+      }), cols: term.cols, rows: term.rows });
+      if (result?.terminalApi !== 2) throw terminalFailure('E_TERM_TRANSPORT');
+      if (!result.ok) throw terminalFailure(result.code);
+      // Reuse is not a second tab's lease acquisition. Its close must not detach
+      // the already-open tab, even though both tabs share this document owner.
+      if (result.status === 'reused') throw terminalFailure('E_TERM_REUSED');
+      const h = terminalHandle(result.handle);
+      if (result.status !== 'opened' || !h) throw terminalFailure('E_TERM_TRANSPORT');
+      return h;
+    },
+    closePty: h => desk.termClose(h),
+  }, onError);
   const disposeUi = () => {
-    // Detach-only semantics live in the lifecycle; this is the UI teardown.
-    offData?.(); offExit?.();
-    unobserve?.();
-    detachAttachments?.();
-    term.dispose();
+    offData?.(); offExit?.(); unobserve?.(); detachAttachments?.();
+    for (const subscription of subscriptions) subscription?.dispose?.();
+    term.dispose(); bannerEl?.remove(); bannerEl = null;
   };
-
-  const banner = (text) => {
-    const el = wrap.ownerDocument.createElement("div");
-    el.className = "term-banner";
-    el.textContent = text;
-    wrap.append(el);
+  const defaultObserve = el => {
+    const ro = new ResizeObserver(() => { if (!closed && isActive()) { try { fit(); } catch { /* hidden geometry */ } } });
+    ro.observe(el); return () => ro.disconnect();
   };
-
-  const defaultObserve = (el) => {
-    const ro = new ResizeObserver(() => {
-      if (!isActive()) return;
-      try { fit(); } catch { /* zero-size while hidden */ }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+  const write = (h, data) => {
+    if (!arming || closed || ended || !terminalSameHandle(life.ptyId(), h)) return;
+    const result = desk.termWrite(h, data);
+    if (result?.ok === false) banner(terminalFailure(result.code).message);
   };
-
   return {
-    start: () => life.start(
-      (ptyId) => {
-        // ALL post-attach setup — runs before the settle signal, so close()
-        // cannot resolve mid-setup and disposeUi covers everything below.
-        offData = desk.onTermData(ptyId, (data) => term.write(data));
-        offExit = desk.onTermExit(ptyId, () => {
-          life.forget(); // pty is gone; close() must not double-kill
-          banner("session ended — close this tab");
-        });
-        term.onData((data) => { if (life.ptyId() !== null) desk.termWrite(life.ptyId(), data); });
-        // Custom key handler: Shift+Enter → newline (Ctrl+J alias), then
-        // shell shortcut interception (terminal-allowlisted chords, e.g.
-        // Ctrl+K palette). Returning false suppresses xterm's handling for
-        // EVERY event of a claimed chord — keydown AND keypress (either
-        // would otherwise write to the pty; see shiftEnterAction).
-        term.attachCustomKeyEventHandler?.((ev) => {
-          const { handled, byte } = terminalKeyDecision(ev, interceptKey);
-          if (!handled) return true;
-          if (byte !== null && life.ptyId() !== null) desk.termWrite(life.ptyId(), byte);
-          return false;
-        });
-        term.onResize(({ cols, rows }) => { if (life.ptyId() !== null) desk.termResize(life.ptyId(), cols, rows); });
-        unobserve = (observe || defaultObserve)(wrap);
-        if (desk.termAttachFiles) detachAttachments = wireTerminalAttachments({ wrap, desk, term, ptyId: () => life.ptyId() });
-        ready = true;
-        focus();
-      },
-      (e) => banner(`could not attach: ${e?.message || e}`),
-    ),
+    start: () => life.start(async h => {
+      offData = desk.onTermData(h, data => { if (!closed && terminalSameHandle(life.ptyId(), h)) term.write(data); });
+      offExit = desk.onTermExit(h, result => {
+        if (!terminalSameHandle(result?.handle, h) || !terminalSameHandle(life.ptyId(), h)) return;
+        ready = false; ended = true; arming = false;
+        if (!result.cleanupPending) life.forget(h);
+        banner(result.reason?.code === 'E_TERM_READY_TIMEOUT' ? terminalFailure('E_TERM_READY_TIMEOUT').message
+          : result.cleanupPending ? terminalFailure('E_TERM_CLOSE_PENDING').message
+            : result.reason ? terminalFailure(result.reason.code).message : 'session ended — close this tab');
+      });
+      subscriptions.push(term.onData(data => write(h, data)));
+      term.attachCustomKeyEventHandler?.(event => {
+        const { handled, byte } = terminalKeyDecision(event, interceptKey);
+        if (!handled) return true;
+        if (byte !== null) write(h, byte);
+        return false;
+      });
+      subscriptions.push(term.onResize(({ cols, rows }) => {
+        if (ready && !closed && !ended && terminalSameHandle(life.ptyId(), h)) desk.termResize(h, cols, rows);
+      }));
+      unobserve = (observe || defaultObserve)(wrap);
+      if (desk.termAttachFiles) detachAttachments = wireTerminalAttachments({ wrap, desk, term,
+        ptyId: () => !closed && !ended && ready ? life.ptyId() : null, ownsFocus,
+      });
+      // Permit xterm protocol replies while the ready FIFO is being flushed;
+      // main alone admits writes once it has acknowledged this lease's readiness.
+      arming = true;
+      let result;
+      try { result = await desk.termReady(h); } catch { result = terminalFailure('E_TERM_TRANSPORT'); }
+      if (closed || !terminalSameHandle(life.ptyId(), h) || ended) return;
+      if (result?.terminalApi !== 2 || !result.ok || result.status !== 'ready' || !terminalSameHandle(result.handle, h)) {
+        ready = false; arming = false; ended = true;
+        banner(terminalFailure('E_TERM_READY_TIMEOUT').message);
+        // An absent/revoked lease is no longer ours to detach. This clears only
+        // the local handle, NOT main's quota or any other owner's resource.
+        if (result?.code === 'E_TERM_LEASE') life.forget(h);
+        else {
+          try {
+            const cleanup = await desk.termClose(h);
+            if (cleanup?.ok && cleanup.status === 'closed' && terminalSameHandle(cleanup.handle, h)) life.forget(h);
+          } catch { /* retain handle; explicit close must confirm cleanup */ }
+        }
+        return;
+      }
+      ready = true; desk.termResize(h, term.cols, term.rows); focus();
+    }, error => banner(`could not attach: ${terminalFailure(error?.code).message}`)),
     focus,
-    close: () => { closed = true; return life.close(disposeUi); },
+    async close() {
+      closed = true; ready = false; arming = false;
+      banner(terminalFailure('E_TERM_CLOSE_PENDING').message);
+      const result = await life.close(disposeUi);
+      if (!result.ok) banner(terminalFailure('E_TERM_CLOSE_PENDING').message);
+      return result;
+    },
   };
 }

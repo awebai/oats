@@ -18,7 +18,7 @@ function bridge() {
   let advertised = ["/"];
   let panelFails = false;
   let heldResponse = null;
-  let inTransition = false, forgeInvalidations = 0;
+  let inTransition = false, forgeInvalidations = 0, terminalInvalidations = 0;
   const requests = [];
   const fetch = async (input) => {
     const url = new URL(input);
@@ -37,16 +37,16 @@ function bridge() {
   const setup = 'const base = () => "http://127.0.0.1:4820"; const wsId = "/"; let allowedWs = new Set(["/"]); let serverEpoch = 0;\n'
     + 'const { forgeProxyOptions, trustedForgeFrame, FORGE_EPOCH_HEADER } = forge; const currentForgeEpoch = () => "fixture:0"; const RENDERER_URL = "file:///fixture/index.html";\n'
     + source.slice(apiStart, apiEnd) + '\nreturn () => {' + invalidation + '};';
-  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", setup)(
+  const invalidate = new Function("fetch", "apiUrl", "apiInit", "classifyApiRoute", "ipcMain", "guard", "serverHost", "forge", "forgeFailure", "invalidateForgeReads", "invalidateTerminalPreparations", setup)(
     fetch, apiUrl, apiInit, classifyApiRoute, { handle: (name, fn) => { assert.equal(name, "api"); handler = fn; } }, () => {},
-    { inTransition: () => inTransition }, forge, forgeFailure, () => { forgeInvalidations++; },
+    { inTransition: () => inTransition }, forge, forgeFailure, () => { forgeInvalidations++; }, () => { terminalInvalidations++; },
   );
   return {
     call: (path, opts) => handler({}, path, opts),
     advertise: (ids) => { advertised = ids; },
     failPanel: () => { panelFails = true; },
     holdNext: () => { let release; heldResponse = new Promise((resolve) => { release = resolve; }); return release; },
-    invalidate, requests, forgeInvalidations: () => forgeInvalidations,
+    invalidate, requests, forgeInvalidations: () => forgeInvalidations, terminalInvalidations: () => terminalInvalidations,
     beginTransition: () => { inTransition = true; invalidate(); },
     endTransition: () => { inTransition = false; },
   };
@@ -94,6 +94,7 @@ test("an outgoing backend response cannot restore its invalidated choices", asyn
   const pending = b.call("/api/panel");
   b.invalidate();
   assert.equal(b.forgeInvalidations(), 1, 'server replacement also revokes forge read generations');
+  assert.equal(b.terminalInvalidations(), 1, 'server replacement also revokes pending terminal preparations');
   release();
   await pending;
   const result = await b.call("/api/agents?ws=" + encodeURIComponent(remote));
@@ -104,6 +105,8 @@ test("a poll started during replacement cannot teach outgoing choices after repl
   const b = bridge();
   b.advertise(["/", remote]);
   b.beginTransition();
+  assert.equal(b.forgeInvalidations(), 1, 'transition start immediately revokes forge reads');
+  assert.equal(b.terminalInvalidations(), 1, 'transition start immediately revokes pending terminal preparations');
   const release = b.holdNext();
   const pending = b.call("/api/panel");
   b.advertise(["/"]);

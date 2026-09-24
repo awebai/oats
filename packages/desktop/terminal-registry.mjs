@@ -1,4 +1,6 @@
-// OATS desktop — terminal viewer resource registry (Slice G).
+// Historical target-index helper (Slice G). Production now uses the owner/lease
+// broker in terminal-owner.mjs and imports only MAX_TERMINALS from this module.
+// The helper semantics below are not the active IPC/resource boundary.
 //
 // HARD invariant (human release blocker): the Desktop app must never fan out
 // enough terminal/viewer sessions to hang the machine. The main process owns
