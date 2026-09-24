@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
-import { createDeploymentHeader, deploymentHeaderCSS } from "../renderer/deployment-header.mjs";
-import { workspaceStatusData } from "../deployment-data.mjs";
-import { createDeploymentInventory, inventoryCSS } from "../renderer/deployment-inventory.mjs";
+import { workspaceStatusData, syncData } from "../deployment-data.mjs";
+import { renderCapabilities, renderFilters, renderSources, filterChoices, memberNames } from "../renderer/workspace-catalog.mjs";
+import { discoveryCSS } from "../renderer/workspace-discovery.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
 import { instanceGitCSS } from '../renderer/instance-git.mjs';
@@ -299,44 +299,42 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
   }
 });
 
-for (const [name] of palettes) test(`${name}: workspace header and inventory text use AA tokens on their computed surfaces`, async t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><section class="header-host"></section></main></body></html>`);
-  const doc = dom.window.document, host = doc.querySelector('main');
-  for (const source of [css, identityCSS, deploymentHeaderCSS, inventoryCSS]) {
-    const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
-  }
-  const ctx = { api: async () => ({ inventoryApi: 1, scope: { kind: 'classic', context: '/fixture' }, packages: [], capabilities: [{ capability: 'fixture.cap', level: '/fixture' }], legacy: [] }) };
-  // Captured kernel header, with one pending approval and one problem so every
-  // painted status variant is present.
-  const raw = JSON.parse(readFileSync(new URL("fixtures/workspace-v2/workspace-status.json", new URL("./", import.meta.url)), "utf8"));
-  const dir = raw.result.workspace.local.replace(/\/oats-local\.yaml$/, '');
-  raw.result.approval.needed = ['nw.tools']; raw.result.problems = [{ code: 'E_FIXTURE', message: 'fixture problem' }];
-  const header = createDeploymentHeader(doc.querySelector('.header-host')), inventory = createDeploymentInventory(host, { ctx });
-  t.after(() => { header.dispose(); inventory.dispose(); dom.window.close(); });
-  header.update({ status: 'observed', workspaceStatus: workspaceStatusData(raw, dir), reachable: { reachable: true } });
-  await inventory.update({ active: true, identity: name, workspace: { scope: '/fixture' }, context: '/fixture', selector: {}, cli: { ok: true } });
+for (const [name] of palettes) test(`${name}: workspace catalog, sources and sync text use AA tokens on their computed surfaces`, t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><header class="workspace-header"><div class="ws-sync"><span class="ws-sync-state warn">3 packages need approval</span></div></header><p class="catalog-note warn">note</p><div class="filters"></div><div class="caps"></div><div class="sources"></div></main></body></html>`);
+  const doc = dom.window.document;
+  for (const source of [css, identityCSS, discoveryCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  t.after(() => dom.window.close());
+  // Kernel captures (F2): the pending catalog paints both approval states;
+  // a later sync's members carry an unconfirmed row with its detail.
+  const f2 = file => JSON.parse(readFileSync(new URL(`fixtures/workspace-v2/f2/${file}.json`, new URL("./", import.meta.url)), "utf8"));
+  const dir = '/fixture/base/northwind-workspace';
+  const status = { ...workspaceStatusData(f2('workspace-status-approved'), dir), members: syncData(f2('sync-moved'), dir).members };
+  const rows = f2('capabilities-pending').result.capabilities;
+  const names = memberNames(status);
+  renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', source: null }, onChange() {} });
+  renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
+  renderSources(doc.querySelector('.sources'), { status });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.deployment-header h2', '.oats-view', 'fg', 'bg'],
-    ['.deployment-header-key', '.oats-view', 'muted', 'bg'],
-    ['.deployment-header-status:not(.warn)', '.oats-view', 'muted', 'bg'],
-    ['.deployment-header-status.warn', '.oats-view', 'fg', 'bg'],
-    ['.deployment-header h3', '.oats-view', 'fg', 'bg'],
-    ['.deployment-header li strong', '.deployment-header li', 'fg', 'surface'],
-    ['.deployment-header li small', '.deployment-header li', 'muted', 'surface'],
-    ['.deployment-header-fact', '.deployment-header-fact', 'muted', 'surface-2'],
-    ['.inventory-note', '.oats-view', 'muted', 'bg'],
-    ['.inventory-table th', '.inventory-table th', 'muted', 'surface-2'],
-    ['.inventory-table small', '.inventory-table', 'muted', 'surface'],
-    ['.inventory-table summary', '.inventory-table', 'fg', 'surface'],
-    ['.inventory-table dt', '.inventory-table', 'muted', 'surface'],
-    ['.inventory-refresh', '.inventory-refresh', 'fg', 'surface'],
+    ['.catalog-row.head', '.catalog-row.head', 'muted', 'surface-2'],
+    ['.catalog-sub', '.catalog-table', 'muted', 'surface'],
+    ['.catalog-chip.ok', '.catalog-chip.ok', 'ok', 'surface-2'],
+    ['.catalog-chip.warn', '.catalog-chip.warn', 'warn', 'surface-2'],
+    ['.catalog-chip.mono', '.catalog-chip.mono', 'muted', 'surface-2'],
+    ['.catalog-used', '.catalog-table', 'muted', 'surface'],
+    ['.catalog-filter-label', '.oats-view', 'muted', 'bg'],
+    ['.catalog-pill[aria-pressed=false]', '.catalog-pill[aria-pressed=false]', 'fg', 'surface'],
+    ['.catalog-pill[aria-pressed=true]', '.catalog-pill[aria-pressed=true]', 'fg', 'sel'],
+    ['.catalog-note.warn', '.oats-view', 'warn', 'bg'],
+    ['.sources-key', '.catalog-table', 'muted', 'surface'],
+    ['.sources-detail', '.catalog-table', 'warn', 'surface'],
+    ['.ws-sync-state.warn', '.workspace-header', 'warn', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted);
     assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
     assert.equal(dom.window.getComputedStyle(surface).background, `var(--${bg})`, painted);
-    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
+    assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, `${selector} on ${bg}`);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
 });

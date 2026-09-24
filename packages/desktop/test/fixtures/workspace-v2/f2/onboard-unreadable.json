@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_REMOTE_UNREADABLE",
+    "message": "cannot read remote /fixture/base/fx/remotes/missing.git (not-found)",
+    "details": {
+      "url": "/fixture/base/fx/remotes/missing.git",
+      "key": "local//fixture/base/fx/remotes/missing.git",
+      "reason": "not-found",
+      "at": null,
+      "dir": "/fixture/base/other-workspace",
+      "rolledBack": true
+    }
+  }
+}

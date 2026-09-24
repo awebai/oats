@@ -260,7 +260,6 @@ ${spawnDialogCSS}</style>
       s.spawnOp++; closeSpawnModal(s); s.inspector.close();
       s.q("souls-bar").hidden = tab !== "souls";
     },
-    inspect: selection => selection ? s.inspector.show(selection) : s.inspector.close(),
   });
   // Capture actual tab choices before discovery projects them. Its onTab
   // callback runs only for CHANGES; clicking Souls or pressing Home while

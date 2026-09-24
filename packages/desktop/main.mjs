@@ -28,7 +28,9 @@ import { createTerminalOwnerBroker, installTerminalHandlers } from './terminal-o
 import { createTerminalIo } from './terminal-io.mjs';
 import { ensureServerOnPort, serverCompatible } from "./server-compat.mjs";
 import { createServerHost, createServerAdapter } from "./server-host.mjs";
-import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs } from "./workspace-registry.mjs";
+import { cliWorkspace, validWorkspaceRef } from "./workspace-cli.mjs";
+import { onboardData } from "./deployment-data.mjs";
+import { validateWorkspace, workspaceSuggestions, parseRecents, pushRecent, decideAdd, createGenerations, createAddExecutor, restoreWorkspaceDirs, saveWorkspaceDirs, matchWorkspaceDirs, createOnboardOffers, createOnboardExecutor } from "./workspace-registry.mjs";
 import { appMenuTemplate } from "./app-menu.mjs";
 import { proxyReadiness } from './readiness-proxy.mjs';
 import { proxySpawnPreview } from './spawn-preview-proxy.mjs';
@@ -249,7 +251,18 @@ async function performAdd(requestedPath, fromPicker) {
     serverOwned: serverHost.owned(),
     advertised: allowedWs,
   });
-  if (!decision.ok) return { ok: false, code: decision.code, reason: decision.reason };
+  if (!decision.ok) {
+    // A picked folder without oats-local.yaml can be onboarded (decision 9):
+    // the renderer gets a single-use offer for THIS canonical path, never a
+    // way to name another directory.
+    if (fromPicker && decision.code === "not-a-workspace") {
+      let canonical = null;
+      try { canonical = realpathSync(requestedPath); } catch { /* reported as not-a-workspace */ }
+      const token = canonical ? onboardOffers.offer(canonical) : null;
+      if (token) return { ok: false, code: decision.code, reason: decision.reason, onboard: { token, path: canonical } };
+    }
+    return { ok: false, code: decision.code, reason: decision.reason };
+  }
   const ws = decision.workspace;
   if (decision.action === "already-advertised") return { ok: true, workspace: ws };
   // Transactional executor (workspace-registry.mjs): serialized adds, staged
@@ -257,6 +270,24 @@ async function performAdd(requestedPath, fromPicker) {
   // Terminals are unaffected throughout: viewers attach to tmux, not the backend.
   return executeAdd(ws, () => wsGens.isCurrent("add", gen));
 }
+
+const onboardOffers = createOnboardOffers({ token: () => randomBytes(16).toString("hex") });
+const onboardExecutor = createOnboardExecutor({
+  take: (token) => onboardOffers.take(token),
+  offer: (path) => onboardOffers.offer(path),
+  realpath: (p) => realpathSync(p),
+  isDeployment: (p) => !!wsValidate(p),
+  // The server's accepted probe: the same binary every other kernel verb uses.
+  readCli: async () => (await fetch(`${base()}/api/cli`, { signal: AbortSignal.timeout(10_000) })).json(),
+  run: (cli, options) => cliWorkspace(cli, options),
+  project: onboardData,
+  add: (dir) => performAdd(dir, true),
+  validRef: validWorkspaceRef,
+});
+ipcMain.handle("workspace:onboard", async (e, token, ref) => {
+  guard(e);
+  return onboardExecutor(token, ref);
+});
 
 ipcMain.handle("workspace:add", async (e, requestedPath) => {
   guard(e);
@@ -347,7 +378,7 @@ ipcMain.handle("api", async (e, pathname, opts) => {
   // Provider actions may perform bounded work before returning their receipt.
   // Let the CLI's five-minute limit report the outcome before the proxy times out.
   const forge = route === 'forge' ? forgeProxyOptions(url.pathname, opts, currentForgeEpoch()) : null;
-  const timeout = lifecycle ? mutation ? 610_000 : 35_000 : forge?.timeout ?? (route === 'capabilities' ? 310_000 : 20_000);
+  const timeout = lifecycle ? mutation ? 610_000 : 35_000 : forge?.timeout ?? (route === 'capabilities' || route === 'workspace-sync' ? 310_000 : 20_000);
   const init = { ...(forge?.init ?? apiInit(opts)), signal: AbortSignal.timeout(timeout) };
   const r = await fetch(url, init);
   const text = await r.text();

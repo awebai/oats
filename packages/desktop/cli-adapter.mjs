@@ -1,5 +1,5 @@
 // OATS desktop — CLI JSON v1 adapter (the ONLY mutation path).
-// Catalog/classic inventory also use this adapter, with strict read exits.
+// Read-only K1 Git reads also use this adapter, with strict read exits.
 //
 // Runs the two Desktop v1 mutations through a discovered absolute `oats`
 // binary via execFile/argv — never a shell, never kernel imports:
@@ -164,10 +164,6 @@ const READ_ERRORS = {
   E_CLI_TIMEOUT: "The installed OATS CLI read timed out",
   E_CLI_OUTPUT_LIMIT: "The installed OATS CLI read exceeded the output limit",
   E_USAGE: "The installed OATS CLI does not support this read command",
-  "invalid-source": "The installed OATS CLI could not read a package source",
-  "invalid-lock": "The installed OATS CLI refused an invalid or unsupported lock; inventory is unavailable",
-  "migration-required": "This scope requires migration; classic inventory is unavailable",
-  "unsupported-wire-version": "This scope uses an unsupported lock version; inventory is unavailable",
 };
 function readError(code) {
   if (!Object.hasOwn(READ_ERRORS, code)) code = "E_CLI_FAILED";
@@ -175,23 +171,6 @@ function readError(code) {
 }
 const readObject = value => !!value && typeof value === "object" && !Array.isArray(value);
 const absoluteReadPath = value => typeof value === "string" && isAbsolute(value) && !value.includes("\0");
-
-/** Classic inventory at a server-admitted context, never a captured/remote read. */
-export async function cliList(bin, options = {}, io = {}) {
-  try {
-    if (!absoluteReadPath(bin) || !readObject(options) || Object.keys(options).some(key => !["context", "localCwd"].includes(key))
-      || !absoluteReadPath(options.localCwd) || !absoluteReadPath(options.context)) return readError("E_BAD_ARGS");
-    const timeout = Number.isFinite(io.timeout) && io.timeout > 0 ? Math.min(io.timeout, 15_000) : 15_000;
-    const result = await runJson(bin, ["list", "--dir", options.context, "--json"], {
-      cwd: options.localCwd, exec: io.exec, timeout, strictExit: true,
-    });
-    // A kernel that does not dispatch this verb answers E_UNKNOWN_COMMAND (the
-    // workspace model v2 removed `list`). That is the typed "unsupported read"
-    // the boundary already knows as E_USAGE — never the retry-shaped E_CLI_FAILED.
-    if (!result.ok && result.error?.code === "E_UNKNOWN_COMMAND") return readError("E_USAGE");
-    return result.ok ? result : readError(result.error?.code);
-  } catch { return readError("E_CLI_FAILED"); }
-}
 
 const GIT_READ_ERRORS = {
   E_BAD_ARGS: 'Invalid instance Git read arguments',

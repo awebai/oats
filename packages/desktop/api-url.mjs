@@ -20,6 +20,7 @@ export function classifyApiRoute(pathname, base) {
       case '/api/forge-connections':
       case '/api/instance-forge': return 'forge';
       case '/api/capabilities': return 'capabilities';
+      case '/api/workspace-sync': return 'workspace-sync';
       case '/api/panel': return 'panel';
       default: return null;
     }

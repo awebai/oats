@@ -15,7 +15,7 @@
  *   POST /api/interrupt/<instance>  sends Ctrl-C (Escape for pi/claude prompts stays manual)
 
  *   POST /api/instance-git?ws=<id>  { action: git|diff, selector, fileId?, revision?, indexRevision? } → qualified K1 read
- *   POST /api/capabilities?ws=<id>   { action: list, selector: { context? } } → classic inventory
+ *   POST /api/workspace-sync?ws=<id> { action: read|sync|approve } → `oats capabilities` / `oats sync [--approve]` (workspace-v2)
  *   POST /api/models                { runtime: pi|claude|codex } → advisory model catalog for the spawn modal
  *   GET  /api/cli                   CLI discovery status (bin, version, required range, tried)
  *   POST /api/cli/reprobe           re-run discovery; body { bin? } prioritizes a user-chosen binary
@@ -40,6 +40,7 @@ import { homedir } from "node:os";
 import { scheduleRequest } from "./schedules.mjs";
 import { capabilityRequest } from "./capabilities.mjs";
 import { createDeploymentObserver } from "./deployment-observer.mjs";
+import { createWorkspaceSyncBoundary, syncFailure } from "./workspace-sync.mjs";
 import { instanceGitRequest } from "./instance-git.mjs";
 import { lifecycleRequest } from "./instance-lifecycle.mjs";
 import { readinessRequest } from './readiness.mjs';
@@ -487,6 +488,7 @@ function cliStatus() {
 let snapshot = { at: 0, byWs: new Map() };   // wsId -> { deployment, instances, generatedAt } | remote panel
 const DEPLOYMENT_REFRESH_MS = 5000;
 const LIVENESS = join(HERE, "liveness.mjs");
+const workspaceSyncRequest = createWorkspaceSyncBoundary();
 const deploymentObserver = createDeploymentObserver({
   // Only a registered local deployment, with the CURRENT accepted CLI. The
   // probe generation is the revision: a reprobe revokes pending reads.
@@ -1184,17 +1186,28 @@ const server = createServer(async (req, res) => {
           error: bad ? "Git inspection requires one workspace selector and a JSON object body up to 64 KiB" : "Git inspection is unavailable" });
       }
     }
+    if (path === "/api/workspace-sync" && req.method === "POST") {
+      // Workspace model v2: catalog read, sync and bound approvals through the
+      // installed kernel (server/workspace-sync.mjs). One local deployment.
+      try {
+        if (url.searchParams.getAll("ws").length !== 1 || !url.searchParams.get("ws") || [...url.searchParams.keys()].some(k => k !== "ws")) throw new Error("bad query");
+        const request = await readStrictBody(req, 16384);
+        const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
+        const result = await workspaceSyncRequest(request, { workspace, cli: cliState });
+        if (request?.action !== "read" && ["ok", "pending"].includes(result.status)) {
+          try { refreshSnapshot(); } catch { /* a refresh must not erase the sync report */ }
+        }
+        return send(res, 200, result);
+      } catch { return send(res, 400, syncFailure("E_BAD_ARGS")); }
+    }
     if (path === "/api/capabilities" && req.method === "POST") {
       const workspace = workspaces().find(w => w.id === url.searchParams.get("ws"));
       try {
         const request = await readStrictBody(req);
-        if (request.action === "list" && ([...url.searchParams.keys()].some(k => k !== "ws") || url.searchParams.getAll("ws").length !== 1)) {
-          throw Object.assign(new Error("List accepts only one workspace query selector"), { code: "E_BAD_ARGS" });
-        }
         const result = await capabilityRequest(request, {
           workspace, cli: cliState, localCwd: ctxs[0],
           agents: workspace ? agentsData(workspace.id).agents : [],
-          instances: workspace && request.action !== "list" ? panelData(workspace.id).instances : [],
+          instances: workspace ? panelData(workspace.id).instances : [],
         });
         return send(res, 200, result);
       } catch (e) { const { status, body } = spawnErrorPayload(e); return send(res, status, body); }

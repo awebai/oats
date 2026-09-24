@@ -1,0 +1,256 @@
+{
+  "source": "oats-desktop-engineer for the Desktop F2 slice; test/fixtures/northwind/build.mjs; capture-f2.mjs",
+  "kernel": "0.25.7",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base",
+    "<oats> (checkout) → /fixture/oats"
+  ],
+  "files": {
+    "onboard-pending": {
+      "argv": [
+        "oats",
+        "onboard",
+        "<base>/northwind-workspace",
+        "--workspace",
+        "<base>/fx/remotes/agents.git",
+        "--json"
+      ],
+      "exit": 2,
+      "kernel": "0.25.7",
+      "sourceSha256": "03835a0905595398c3ac3e869f81470ef40245fa46c17bf6208f17bddd58e92d",
+      "fixtureSha256": "1ad6fe4ca023b8ee21edc5704be3ed278ad4b1e594f909083e43471877504831"
+    },
+    "onboard-bad-ref": {
+      "argv": [
+        "oats",
+        "onboard",
+        "<base>/northwind-workspace",
+        "--workspace",
+        "not a repo ref",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.7",
+      "sourceSha256": "b45e76424b3fe438db6f16f7cad1bdf97d78bb07c30b7d2a0fed110114b72f6c",
+      "fixtureSha256": "836d65421efdaa34391294fd50d7ea6a513a0e9b80d4b40a8a97733e2da7a718"
+    },
+    "onboard-unreadable": {
+      "argv": [
+        "oats",
+        "onboard",
+        "<base>/other-workspace",
+        "--workspace",
+        "<base>/fx/remotes/missing.git",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.7",
+      "sourceSha256": "c76ac940dbd105eb9dadb3534e94961fb6d9e0f844e80641f71c9e804613cafe",
+      "fixtureSha256": "42b13b724eada72b989caa54fbb6db8888b637439a043af4b1d4bd8877e9d046"
+    },
+    "onboard-again": {
+      "argv": [
+        "oats",
+        "onboard",
+        "<base>/northwind-workspace",
+        "--workspace",
+        "<base>/fx/remotes/agents.git",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.7",
+      "sourceSha256": "395cb69aae9cf91c8ce55de4c9c69d848d006531616013714ba811685eb53cbe",
+      "fixtureSha256": "f67e84e273b2d66906a9617ee12b7a94b7b085e011f02c303034abf6a6d208ab"
+    },
+    "sync-pending": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 2,
+      "kernel": "0.25.7",
+      "sourceSha256": "3b563a45f61040c1311ed38c1ced312915d0b6d68399f9071d5ec3b52ca92db5",
+      "fixtureSha256": "0690abdeb92938d185a02c34b6f733ae8f2757bf98ff26aac8f8f6c2c983b48d"
+    },
+    "sync-approve-wrong-version": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--approve",
+        "nw.tools@9.9.9",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.7",
+      "sourceSha256": "f2975b7ed708ddfe1156c5306fc3f05bc06771ced8324d3dca0f90f012d8329f",
+      "fixtureSha256": "88fa90be8cb7c87546831c09add0513a2d2eaa04cc81342b439f3a5623f74f65"
+    },
+    "sync-approve-partial": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--approve",
+        "nw.tools@0.4.0",
+        "--json"
+      ],
+      "exit": 2,
+      "kernel": "0.25.7",
+      "sourceSha256": "658ddd1ee88f283413f2cf87e7ded91344fda183892d0e5224b9604894673229",
+      "fixtureSha256": "5dcc14a8f94c7b62c1afce81ae09879c1cdde39e7be6a82f885169c9ad14c5e0"
+    },
+    "sync-approved": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--approve",
+        "oats.framework@1.1.3",
+        "--approve",
+        "oats.okf@2.1.3",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "e7261447d5107bb447b7be82ad12941a3f8611a6fa2580a62ec74948763afc34",
+      "fixtureSha256": "5d0aa9b37f895e23248f777e1faf82e13c3355ffaa46da5369a97636df2ece1b"
+    },
+    "sync-current": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "32615bef5eed2ddee58977815b0d63a50102a9f61cef4154bbe34673e858fbea",
+      "fixtureSha256": "b17f8a5ff49d2948284c8bd3d7e9184453ded0aceb5cfbfc898b7ed6b0cfcdc0"
+    },
+    "sync-moved": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "cddffaba034380bba5e652eb547c340ac384535301f03ce8692c7d4c575a0c89",
+      "fixtureSha256": "ff3d5eace670436bd48e113369ddad195e909607c9592222d688b6a747cda0b5"
+    },
+    "sync-integrity": {
+      "argv": [
+        "oats",
+        "sync",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.7",
+      "sourceSha256": "410cc85f0ebd09c88b4f3dd05e8ee49649bb9ce463daa9545ddb04535d322737",
+      "fixtureSha256": "07f46b8527ae91911a3dffec1ec3fecf8049e9785eab5f7fac722f283131cadd"
+    },
+    "capabilities-pending": {
+      "argv": [
+        "oats",
+        "capabilities",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "7cf81eb6efa86b24353a58c4551dee6d6227ea1dcbd3002b3ea395794e41a9c0",
+      "fixtureSha256": "043c5c9d867ceb21f2a6a768f5ce5395ee2a3964d21ea0d9baf3eb6e140eb4c9"
+    },
+    "capabilities-approved": {
+      "argv": [
+        "oats",
+        "capabilities",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "cbbfd932a6e804ffd8144ffe469719838597d57cedbcc6b391fcdb28282c1af2",
+      "fixtureSha256": "c95b30ad902d412bf73881595a495e7623c5190d0bb7bd4a8648741ec0592208"
+    },
+    "capabilities-moved": {
+      "argv": [
+        "oats",
+        "capabilities",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "c188af326f2733a62686f1080d8ee8cfaf2e10876448c054a2882dac3137cfba",
+      "fixtureSha256": "37485b3f3786aa146fc44fb36ac5a766e6c450ae0368da33d94572fcb0a429a0"
+    },
+    "workspace-status-pending": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "29bcf6e41e31c0ab7a77fa849201838f734d2472ea8a69d6d3cd20cfb9310d35",
+      "fixtureSha256": "2f07471348df6f05d9fe42c73e6ace38d083889d78658c4e47553cc96ab52d22"
+    },
+    "workspace-status-approved": {
+      "argv": [
+        "oats",
+        "workspace",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "54dee491a06471d504c4738d778d7d79e8dcc81abaed461178c7a24dbe6abbc2",
+      "fixtureSha256": "353acf161da76a420577c68f3475a9cba239c1bb1258878758d07d9289fbb940"
+    },
+    "status": {
+      "argv": [
+        "oats",
+        "status",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "47583e54aee270e0f25babb55b87a1f4bb934b68e5dd15ccaa9277e49ec1a0d3",
+      "fixtureSha256": "1c2c4b2c2c44ef38c270040e9d74fa9a3e88ddd7c30a09b90d99538d018d9476"
+    },
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.7",
+      "sourceSha256": "05508cda08d4bea51d092ac2d5e255f970af2b989c370771926078092042abea",
+      "fixtureSha256": "2fc8290fa329ae1075018e09502d58b651aa1a1ce0d6eadb4888f1c1e286b64f"
+    }
+  }
+}

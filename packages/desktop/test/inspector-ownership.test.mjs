@@ -8,7 +8,7 @@ import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { capabilityFacts, reportedText } from '../renderer/workspace-discovery.mjs';
+import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
 import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 

@@ -13,18 +13,6 @@ export const declarationsCSS = `
 .soul-declarations pre { margin:0; padding:10px; border:1px solid var(--border); border-radius:7px; background:var(--surface-2); color:var(--fg); }
 .soul-requirement { padding:10px 0; border-top:1px solid var(--border); }
 `;
-export const sourcesCSS = `
-.portable-sources { min-width:0; color:var(--fg); }
-.portable-sources h2 { margin:0 0 8px; font-size:14px; font-weight:650; }
-.portable-sources > p { color:var(--muted); font-size:12px; line-height:1.5; }
-.portable-source-list { list-style:none; padding:0; margin:14px 0 0; display:grid; gap:12px; }
-.portable-source { min-width:0; padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--surface); font-size:12px; overflow-wrap:anywhere; }
-.portable-source h3 { margin:0 0 10px; font-size:12.5px; font-weight:650; }
-.portable-source dl { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,2fr); gap:6px 12px; }
-.portable-source dt { color:var(--muted); }
-.portable-source dd { margin:0; white-space:pre-wrap; }
-`;
-
 function builder(parent) {
   const node = (tag, value, cls) => {
     const el = parent.ownerDocument.createElement(tag);
@@ -95,48 +83,4 @@ export function renderSoulDeclarations(parent, soul) {
     section.append(row);
   }
   return true;
-}
-
-/** null means unnegotiated: preserve the older capability-origin projection.
- * Malformed v1 is unavailable, never a healthy zero or a legacy fallback. */
-export function portableSources(data) {
-  const sources = data?.sources;
-  if (sources?.soulsApi !== 1) return null;
-  const unavailable = { kind: 'unavailable', items: [], message: 'Portable source context is malformed or incomplete. Refresh inspection to retry.' };
-  if (!['recorded-provenance', 'none-recorded'].includes(sources.kind) || !Array.isArray(sources.items)) return unavailable;
-  if (sources.kind === 'none-recorded') return sources.items.length ? unavailable : { kind: sources.kind, items: [] };
-  if (!sources.items.length || sources.items.some(item => !object(item)
-    || typeof item.source !== 'string' || !item.source
-    || !['kind', 'revision', 'path', 'workspaceRevision'].every(key => nullableText(item[key]))
-    || !Array.isArray(item.souls) || item.souls.some(name => typeof name !== 'string' || !name))) return unavailable;
-  return { kind: sources.kind, items: sources.items.map(item => ({
-    kind: item.kind, source: item.source, revision: item.revision, path: item.path,
-    workspaceRevision: item.workspaceRevision, souls: [...item.souls],
-  })) };
-}
-
-export function renderPortableSources(parent, sources, query = '') {
-  const { node, facts } = builder(parent);
-  const section = node('section', undefined, 'portable-sources');
-  section.setAttribute('aria-label', 'Recorded portable source context');
-  section.append(node('h2', 'Recorded portable sources'));
-  parent.append(section);
-  if (sources.kind === 'unavailable') { section.append(node('p', sources.message)); return; }
-  section.append(node('p', 'Only source addresses recorded by souls in this inspection scope. Revisions and paths are provenance, not installation, approval, launch readiness or permission to open files.'));
-  if (sources.kind === 'none-recorded') {
-    // The producer's generic note says authored local souls only, but its own
-    // packaged-definition fixture also has no source address. Do not infer local.
-    section.append(node('p', 'None recorded — no soul in this scope records a portable source address. A soul may still have a recorded origin kind.', 'discovery-empty'));
-    return;
-  }
-  const items = sources.items.filter(item => JSON.stringify(item).toLowerCase().includes(query.toLowerCase()));
-  if (!items.length) { section.append(node('p', 'No recorded sources match the filter.', 'discovery-empty')); return; }
-  const list = node('ul', undefined, 'portable-source-list'); section.append(list);
-  for (const item of items) {
-    const row = node('li', undefined, 'portable-source');
-    row.append(node('h3', item.source));
-    facts(row, [['Kind', text(item.kind)], ['Revision', text(item.revision)], ['Payload path', text(item.path)],
-      ['Workspace revision', text(item.workspaceRevision)], ['Reported soul names', item.souls.length ? item.souls.join(', ') : 'Not reported']], 'portable-source-facts');
-    list.append(row);
-  }
 }

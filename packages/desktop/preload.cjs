@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld("oatsDesktop", {
   workspaceSuggestions: () => ipcRenderer.invoke("workspace:suggestions"),
   workspaceAdd: (path) => ipcRenderer.invoke("workspace:add", path),
   workspacePick: () => ipcRenderer.invoke("workspace:pick"),
+  /** Onboard the folder behind a picker offer (single-use token) — kernel `oats onboard`. */
+  workspaceOnboard: (token, ref) => ipcRenderer.invoke("workspace:onboard", token, ref),
 
   /** CLI degradation affordances: native binary picker (Choose oats…) and
    * focus-triggered re-probe notifications (contract re-probe triggers). */

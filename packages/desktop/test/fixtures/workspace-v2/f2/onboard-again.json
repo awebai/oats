@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_ALREADY_ONBOARDED",
+    "message": "/fixture/base/northwind-workspace/oats-local.yaml already exists — this directory realizes a workspace; run `oats sync --dir /fixture/base/northwind-workspace` to refresh it",
+    "details": {
+      "local": "/fixture/base/northwind-workspace/oats-local.yaml",
+      "dir": "/fixture/base/northwind-workspace"
+    }
+  }
+}

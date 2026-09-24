@@ -141,7 +141,7 @@ remain visible but disabled with their seam notes. No fake paths, `main` base,
 node counts, child-policy defaults or K6 request fields are sent. These become
 functional only in slice 6b after reviewed kernel/provider contracts land.
 
-## Souls and Sources: negotiated declarations, not launch readiness
+## Souls: negotiated declarations, not launch readiness
 
 The existing on-demand `POST /api/capabilities` inspect action carries K4 from
 OATS 0.24.7+. `soul-declarations.mjs` consumes **`soulsApi === 1`**, never a
@@ -159,17 +159,6 @@ payload. **Sources installed is not Ready**, launchability, adoption, enrolment
 or a verified signature. Existing launch and editable-field gates are unchanged;
 this does not add a declarations editor or widen file access.
 
-Sources renders `result.sources` only when its own `soulsApi` marker is1:
-`recorded-provenance` lists the recorded source addresses, revisions, payload
-paths, workspace revisions and reported soul names; `none-recorded` explicitly
-reports that no portable source address is recorded. It does not imply that all
-souls are authored locally: a packaged definition can record its origin kind
-without recording a source address. Malformed v1 is unavailable, not an empty
-inventory or silent legacy fallback. Older/unnegotiated CLIs keep the separately
-labeled capability-origin rows and their “reported” count, not a portable-source
-count. Source paths/URLs/names are inert text, never links, file-open authority,
-import/install actions, inferred memberships or name-only action targets.
-
 These additions reuse existing inspection lifetimes and latest-intent guards;
 there is no per-card request fan-out or polling inspection command. Routine
 roster/CLI polls preserve the settled Sources DOM and text selection. Explicit
@@ -177,50 +166,51 @@ refresh/filter/scope changes own new projections; stale successes and rejections
 cannot overwrite current observations. Native visual acceptance is not inferred
 from the DOM/CSSOM and computed-token AA tests.
 
-## Capabilities: the workspace header and two independent observations
+## Workspace view on workspace model v2 — Capabilities, Sources, sync (F2)
 
-Workspace's Capabilities tab keeps these separately qualified surfaces:
+Every fact comes from the installed kernel; the Desktop parses no deployment
+file and resolves nothing itself (`workspace-discovery.mjs`, `workspace-catalog.mjs`,
+`workspace-sync-view.mjs`, server `server/workspace-sync.mjs`, `workspace-cli.mjs`).
+Gate: `version --json` advertises `workspace-v2` with `workspaceApi: 2`; a remote
+workspace is observed through its server and never synced from here.
 
-- **Workspace header** (`deployment-header.mjs`): the kernel's
-  `oats workspace status --json` facts carried by the roster observation
-  (`/api/panel` `deployment`) — name, key @ commit, members, packages, lock
-  state and the header's approval ID arrays. There is no separate read. Sync's
-  detailed approval rows are the sync/approval surface, not the header. An
-  unobserved deployment names the missing advertised feature or keeps the
-  kernel's refusal code/message; withheld instance rows are counted.
-- **Classic deployment inventory** (`deployment-inventory.mjs`): read-only
-  `POST /api/capabilities?ws=<id>` with `{action:"list",selector:{}}` or an exact
-  admitted `{context}` selector. The server resolves the classic scope and uses
-  only `list --dir <scope> --json`. No soul/home/captured-resolution selector or
-  remote-to-local fallback is permitted. Packages, capability exports, health,
-  integrity, executable approval and legacy lock reports retain their reported
-  acquisition scopes. Same-named exports at different scopes remain separate;
-  no package-level trust or bare-name join with activation is invented.
-  Invalid locks (including unsupported captured locks) are errors, not an empty
-  successful inventory. A compatible CLI is required; operations API support
-  is not required for this list read. (A 0.24 surface: its replacement is a
-  later Phase F slice.)
-- **Capability inspection**: the existing `inspect` action reports activation
-  and scope/soul/home observations. It is not substituted for a failed inventory
-  read. A compatible CLI change invalidates pending scope inspection as well as
-  the inventory surface. Sources uses the negotiated K4 portable source context,
-  or retains the older capability-origin projection when that contract is not
-  negotiated (see below).
+- **Capabilities** is `oats capabilities --dir <deployment> --json`
+  (capabilitiesApi 1), read on demand via `POST /api/workspace-sync?ws=<id>`
+  `{action:"read"}` when the tab opens (and after a sync, or Refresh). The
+  design table: *Capability* (name; `Member · <repo> · <team>` /
+  `Package · <id> v<version>` / `External · <origin>`), *Status* (package:
+  locked + approved/approval needed; member: confirmed; the commit; "N instances
+  behind" only from the roster's own `moved` module rows) and *Used by* (souls
+  whose instances record the module). No Members list here. **Team** and
+  **Source** pill groups filter locally (AND); pills name only what the rows
+  hold — member repositories first, then packages (non-collapse rule: a
+  member's `publishes` never absorbs its package's capabilities).
+- **Sources** renders the roster observation's `oats workspace status`:
+  repositories (team, confirmation status + the kernel's detail), packages
+  (lock, approval, capabilities) and external souls. No extra read.
+- **Notes** keep the F1 guards visible: an unreachable workspace (module drift
+  not current), withheld instance rows, unsynced/stale declarations and
+  workspace problems, each in the kernel's own terms.
+- **Sync** (header) runs `oats sync --json`; exit 2 with ok:true is "lock
+  written, approvals pending" and opens the approval sheet. Each row shows id,
+  version, commit, the full `executables` digest and `targets`; nothing is
+  selected by default. Approve sends `{action:"approve", approvals:[{id,
+  version, executables}]}`; the server admits it only when every row EXACTLY
+  matches the latest sync report it holds for that deployment and CLI, then runs
+  `oats sync --approve <id>@<version>…` (the version verbatim). Otherwise
+  `E_APPROVAL_STALE`. One mutation per deployment (`E_SYNC_BUSY`). Refusals —
+  `E_PACKAGE_INTEGRITY`, lock drift, `E_BAD_ARGS` — are shown as code: message,
+  verbatim. The roster refreshes after a sync.
+- **Onboarding** (Add workspace → Browse…): a picked folder without
+  `oats-local.yaml` gets a single-use offer bound to its canonical path; the
+  operator types the workspace repository and main runs `oats onboard <dir>
+  --workspace <ref> --json`, then the ordinary transactional add. A refused ref
+  gets a fresh offer for the same folder; `rolledBack` is reported.
 
-List reads use bounded child execution (15 seconds, 4 MiB stdout), fixed argv
-without a shell, and in-flight coalescing, never a persistent response cache.
-The existing loopback Host/Origin and privileged sender-frame guards still
-apply. The read adapter refuses success envelopes from a failed process exit;
-existing mutation exit semantics are unchanged. Capabilities bodies are parsed
-as JSON objects with a 64 KiB byte limit; malformed/oversized requests are
-rejected rather than silently converted to empty objects.
-
-Each section degrades and retries independently. Roster polls do not refetch the
-list or rebuild the header/controls; CLI, workspace and classic-scope changes
-revoke pending ownership on **both** success and rejection. These are independent
-CLI observations, not one atomic snapshot. K5 readiness is explicitly **Unknown**,
-including configured/enrolled facts, verified signatures and enforced policy;
-reported byte installation and executable approval are not readiness passes.
+All awaited reads and mutations carry latest-intent ownership (request serial +
+workspace generation) checked on success and rejection, mutation-verified in
+`workspace-v2-view.test.mjs`. Fixtures are kernel captures
+(`test/fixtures/workspace-v2/f2`, with provenance).
 
 ## Keybindings (shell-level)
 

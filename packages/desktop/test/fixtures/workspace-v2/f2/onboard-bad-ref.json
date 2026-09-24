@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_REPO_REF",
+    "message": "unrecognized repository reference: not a repo ref",
+    "details": {
+      "ref": "not a repo ref"
+    }
+  }
+}
