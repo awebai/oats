@@ -294,12 +294,15 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   block when progress lines precede it; it then verifies the minted grant's
   `team_id` and returns
   `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
-  the hook revokes the grant and keeps nothing. As of aw 1.36.2 with aweb
-  server 1.27.5, receiving, wake registration and `aw whoami` work through a
-  grant, but sending mail or chat through a grant is rejected by the server
-  with 422 (`from_did must match the authenticated sender`) because the aw
-  client signs with the grant-key DID
-  where the server expects the resident's. Retire revokes
+  the hook revokes the grant and keeps nothing. Receiving, wake registration,
+  and `aw whoami` work through a grant. On aw 1.36.1 the server rejected mail
+  or chat sent through a grant with 422 (`from_did must match the authenticated
+  sender`) because the client signed with the grant-key DID. aw 1.36.2 with
+  aweb server 1.27.5, the floor, fixes this; grant mail and chat sends passed
+  real-server acceptance there. A hosted team whose server has not yet adopted
+  1.27.5 still refuses grant sends; the custody preflight reports that as
+  needs-configuration before spawn through `grant_status_endpoint_ready`.
+  Retire revokes
   `meta.identity.grant.id` through the custody directory; with no grant id it
   reports `nothing-to-revoke`. A failed revoke exits nonzero and reports the TTL
   expiry.
