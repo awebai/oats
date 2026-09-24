@@ -262,6 +262,17 @@ return `meta`, `brief`, `warning`, or runtime-specific `launch` arguments. A
 **spawn hook only** may also return an `env` object for the launched process;
 returning `env` from retire or soul-scaffold is an explicit contract error.
 
+A **launch hook** runs at every start and restart of a home for each provider
+captured at spawn (under its captured settings). Its `launch` arguments and
+`env` replace that provider's previous contribution whole. Its `meta`, when
+returned, replaces that provider's entry in `instance.json.capabilityMeta`
+after the start succeeds — the same record the spawn hook wrote and the retire
+hook later reads as `OATS_META` — so a provider that re-issues a credential at
+start (a renewed session grant, for example) leaves the CURRENT one on record. A
+launch hook that answers without `meta` keeps its previous entry; a start whose
+preparation fails changes nothing. (Kernel ≥ 0.25.5; earlier kernels collected
+launch `meta` and discarded it.)
+
 Hook environment values are strings, at most 8192 UTF-8 bytes, with no NUL or
 newlines. Names use the portable environment grammar and must belong to an
 unambiguous vendor namespace. Only a dotted capability ID participates: its

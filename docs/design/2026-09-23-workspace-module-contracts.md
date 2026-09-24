@@ -565,6 +565,18 @@ is a member; a soul that lives in it may need a work clone). Under an explicit
 `oats-local.yaml` `standalone:` header the next steps say the view is standalone
 and list only that repo.
 
+### 0.25.5 — launch-hook `meta` is persisted
+
+`runLifecycleHooks("launch")` collected each capability's `meta` and the
+start/restart path discarded it (only `contributions` and `env` were consumed).
+From 0.25.5 a successful start merges `res.meta` per capability into
+`instance.json.capabilityMeta` — the record spawn writes and retire reads as
+`OATS_META`. A hook answering without `meta` keeps its prior entry; a failed
+launch preparation writes nothing. No new field, flag or hook event; this is
+the documented hook return finally honoured (decision 27, K3′). Driver: a
+provider renewing a session grant at every start would otherwise leave the
+original grant id on record and retire would revoke the wrong grant.
+
 ### 0.25.3 — `OATS_SOUL_ID` (stable soul identity for providers)
 
 The per-commit soul cache (0.25.1, M1) made `realpath(<home>/soul)` change with every

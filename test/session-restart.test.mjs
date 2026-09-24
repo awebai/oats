@@ -298,6 +298,43 @@ test("launch hooks: only capabilities captured for the home take part; a hook an
   assert.equal(out.result.ok, false); assert.match(out.result.preflight.find((c) => c.check === "capabilities").detail, /test.extra was part of .*no longer installed/);
 });
 
+test("0.25.5 launch-hook meta is persisted: after a successful start, each capability's launch `meta` lands in instance.json.capabilityMeta over the spawn's record; a hook that answers without meta keeps its prior entry; a failed launch leaves the record untouched", async () => {
+  const cap = join(repo, ".agents", "capabilities", "owned", "renew");
+  write(join(cap, "oats.json"), JSON.stringify({ capability: "test.renew", version: "0.1.0", description: "renew", compatibility: { oats: ">=0.6.2" }, hooks: { launch: "bin/launch.mjs" }, environment: [], settings: {} }));
+  write(join(cap, "bin", "launch.mjs"), `import { readFileSync } from "node:fs"; import { join, dirname } from "node:path"; import { fileURLToPath } from "node:url";\nprocess.stdout.write(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "answer.json"), "utf8") + "\\n");\n`);
+  const hook = (answer) => write(join(cap, "bin", "answer.json"), JSON.stringify(answer));
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace("launch-configs:\n", "  additive:\n    test.renew:\n      from: owned\n      global: true\nlaunch-configs:\n"));
+  const name = "dev-renew";
+  const home = join(repo, "agents", "dev", "instances", name);
+  makeHome(name, { command: renderFor(home, name, join(binDir, "polite")), launch: recipeFor(home, name, { executable: join(binDir, "polite") }) });
+  // Captured provider with a spawn-time record: the ORIGINAL grant id, as spawn's hook wrote it.
+  const meta0 = readJson(join(home, "instance.json"));
+  const captured = { capability: "test.renew", layer: null, level: repo, settings: {}, trust: { trusted: true, integrity: null }, launch: {}, env: [] };
+  write(join(home, "instance.json"), JSON.stringify({ ...meta0, launch: { ...meta0.launch, hooks: { launch: {}, env: {}, contributions: [captured] } }, capabilityRuntime: [{ id: "test.renew", layer: null, level: repo, settings: {}, trust: { trusted: true, integrity: null }, hooks: { launch: "bin/launch.mjs" }, environment: [] }], capabilityMeta: { "test.renew": { grant: { id: "grant-original" } }, "test.other": { keep: true } } }));
+  const start = () => { const r = spawnSync(process.execPath, [CLI, "session", "restart", "--home", home, "--launch-config", "codexy", "--json"], { encoding: "utf8", env: env() }); return { r, out: JSON.parse(r.stdout.trim()) }; };
+  // 1. The hook renews: its meta replaces ITS entry; another capability's entry is untouched.
+  hook({ meta: { grant: { id: "grant-renewed-1" } } });
+  tmux("new-window", "-t", `${session}:`, "-n", name, "-c", home, "exec /bin/sh");
+  await waitFor(() => inspectInstanceSession(home).state === "shell", "idle pane shell");
+  let { r, out } = start(); assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  let after = readJson(join(home, "instance.json"));
+  assert.deepEqual(after.capabilityMeta, { "test.renew": { grant: { id: "grant-renewed-1" } }, "test.other": { keep: true } }, "launch meta persisted per capability; retire will revoke the renewed grant, not the original");
+  // 2. A hook answering WITHOUT meta keeps its prior (renewed) entry.
+  hook({});
+  ({ r, out } = start()); assert.equal(out.ok, true, r.stdout + r.stderr);
+  assert.ok(await waitFor(() => runningPid(home) !== null));
+  after = readJson(join(home, "instance.json"));
+  assert.deepEqual(after.capabilityMeta["test.renew"], { grant: { id: "grant-renewed-1" } }, "no meta → prior entry kept");
+  // 3. A failed launch preparation leaves the record untouched (the hook's meta never reached instance.json).
+  hook({ meta: { grant: { id: "grant-never-recorded" } }, env: { TEST_UNDECLARED: "x" } });
+  ({ r, out } = start()); assert.equal(out.ok, false, r.stdout);
+  after = readJson(join(home, "instance.json"));
+  assert.deepEqual(after.capabilityMeta["test.renew"], { grant: { id: "grant-renewed-1" } }, "failed launch → record untouched");
+  rmSync(cap, { recursive: true, force: true });
+  write(join(repo, "oats-config.yaml"), readFileSync(join(repo, "oats-config.yaml"), "utf8").replace(/  additive:\n    test.renew:\n      from: owned\n      global: true\n/, ""));
+});
+
 test("a captured provider with no contribution at spawn still takes part (launch hook, conditional requirement); package probes run under the launch's effective environment, not the ambient one", async () => {
   // A wrapper that answers claude's plugin list only under the SELECTED environment; otherwise it is the polite harness.
   const wrapper = join(binDir, "claude-wrapper"); write(wrapper, `#!/bin/sh\nif [ "$1" = "plugin" ] && [ "$2" = "list" ]; then\n  if [ "$TEST_PROBE_TOKEN" = "selected" ]; then printf '[{"id":"chan@acme-marketplace","scope":"user","enabled":true}]'; else printf '[]'; fi\n  exit 0\nfi\nexec ${JSON.stringify(join(binDir, "polite"))} "$@"\n`); chmodSync(wrapper, 0o755);
