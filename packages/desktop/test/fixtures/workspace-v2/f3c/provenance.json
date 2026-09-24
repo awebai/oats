@@ -1,0 +1,241 @@
+{
+  "source": "oats-desktop-engineer for the Desktop F3c slice (messaging identity); test/fixtures/northwind/build.mjs + one stand-in messaging package (below); capture-f3c.mjs",
+  "kernel": "0.25.8",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base",
+    "<oats> (checkout) → /fixture/oats"
+  ],
+  "standIn": {
+    "reason": "No fixture binds a messaging provider; oats.aweb itself would run aw at spawn. The stand-in copies oats.aweb's settings.identity declaration byte for byte and declares no executables.",
+    "copiedFrom": "capabilities/oats-aweb/oats.json#/settings/identity",
+    "copiedFromSha256": "80ae4e9f9083369c3a3ebc2078fff22b1526a0a1d26f4f589ab6a03cf611f0cc",
+    "declaration": {
+      "default": {
+        "mode": "local"
+      },
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
+    },
+    "manifest": {
+      "capability": "nw.messaging",
+      "version": "0.1.0",
+      "compatibility": {
+        "oats": ">=0.25.6"
+      },
+      "layer": "messaging",
+      "description": "Stand-in messaging provider for Desktop fixtures: oats.aweb's settings.identity declaration, no executables.",
+      "requires": [],
+      "settings": {
+        "identity": {
+          "default": {
+            "mode": "local"
+          },
+          "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
+        }
+      }
+    },
+    "manifestSha256": "ad59a6c221fcff473fad21ad064dbbaa612f23e1fc200883e90268e3271a9e09",
+    "package": {
+      "package": "nw.messaging",
+      "version": "0.1.0",
+      "description": "Stand-in messaging package (Desktop fixture).",
+      "compatibility": {
+        "oats": ">=0.25.6"
+      },
+      "capabilities": [
+        "capabilities/nw-messaging"
+      ]
+    },
+    "binding": {
+      "packages": {
+        "nw.messaging": "git:/fixture/base/fx/remotes/pkg-messaging.git@v0.1.0"
+      },
+      "defaults.messaging": {
+        "nw.messaging": {
+          "from": "package"
+        }
+      }
+    }
+  },
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "d342462d406b6818d50863bd849df6f52a21597bc10f2f3648cc319984a9a592",
+      "fixtureSha256": "81c10d0dcd01f7b87b131752227bc75351c02b4b0ad08ba439f16e658f005107"
+    },
+    "souls": {
+      "argv": [
+        "oats",
+        "souls",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "3adfd3d085f5d23a64d662278ab9173b7d29abd5e968a147f37abe4ad34de189",
+      "fixtureSha256": "ed0a80150fc4fc3d49b94dba33865b7f2786839534ebe9e77e41e3245734fcb3"
+    },
+    "preview-messaging-default": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "api-v2",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "a8bf20f846013a45336fde712ff54ab8936619e170021eda5f1ff50e5f57ea72",
+      "fixtureSha256": "2509cc67cca48ac381bd7dbfc24c27637e56c2b7274b7c457a3aeb294ea2581c"
+    },
+    "preview-messaging-local": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "api-v2",
+        "--provider",
+        "nw.messaging",
+        "identity.mode=local",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "bc5d8e54b9ed606a479ccdbec9ca5928095c93dd69c965d1443ef645325ec548",
+      "fixtureSha256": "d1142bd6ddaef387b037cd8931d32bbca7150d3537db535ac3b2b65639237628"
+    },
+    "preview-messaging-global": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "api-v2",
+        "--provider",
+        "nw.messaging",
+        "identity.mode=global",
+        "--provider",
+        "nw.messaging",
+        "identity.resident=ops",
+        "--preview",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "53b931b09d49416c0ae0664ed76c5e4f0aa07452a9bffc0dca39864f2120b39d",
+      "fixtureSha256": "153eaeb3c8ea345bd5ef7b0167c2803412dca338d9be44f677073930f3a40d2d"
+    },
+    "preview-provider-unknown": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "api-v2",
+        "--provider",
+        "nw.nothing",
+        "identity.mode=global",
+        "--preview",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.8",
+      "sourceSha256": "be86c2de3a761e0cb1fe1a76007e1076c66617ba6748416c81bc78e3ebb56b50",
+      "fixtureSha256": "5d4f76665ea972faee7cd6484b10bd7c6be942ce59e60bea889345aa8b0d84ab"
+    },
+    "apply-messaging-global": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "api-v2",
+        "--provider",
+        "nw.messaging",
+        "identity.mode=global",
+        "--provider",
+        "nw.messaging",
+        "identity.resident=ops",
+        "--expect-decision",
+        "b13e0bdda958d4af3f0a0a5a",
+        "--idempotency-key",
+        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "--no-launch",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "2d1db901e822e1d2e91d1791d1fe9d67c08982889a734dfad411585374d8721c",
+      "fixtureSha256": "7c01d1e6146bb8760bbfbbe6e97477c3c74ea1114d8aff4187c81f23003f3d67"
+    },
+    "apply-messaging-mismatch": {
+      "argv": [
+        "oats",
+        "spawn",
+        "release-manager",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--purpose",
+        "api-v2",
+        "--provider",
+        "nw.messaging",
+        "identity.mode=global",
+        "--provider",
+        "nw.messaging",
+        "identity.resident=ops",
+        "--expect-decision",
+        "b4d3f640f24b628214ea42a2",
+        "--idempotency-key",
+        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "--no-launch",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.8",
+      "sourceSha256": "a5246083aa3e7be73f9f88fa2639679e906226d6a7d59839264a31712c5b7c26",
+      "fixtureSha256": "cd873d88230e0a5b1d06d413966c41a6deda2ec57cf7675a1ddde84e85516ae3"
+    },
+    "apply-messaging-global-instance": {
+      "argv": [
+        "(read)",
+        "<home>/instance.json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.8",
+      "sourceSha256": "dde5f68d1ca8f9cb6bcc226a5300206812a6bc5ffd2f2ef988ef05a9fd6b32d2",
+      "fixtureSha256": "191a98d20b0b5a98554fb0154b07c2df67fd61d833dc18bdeb20a475aa72d25e"
+    }
+  }
+}

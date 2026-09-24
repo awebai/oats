@@ -1,0 +1,258 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "modules": [
+      {
+        "name": "nw-deploy",
+        "from": {
+          "kind": "package",
+          "package": "nw.tools",
+          "version": "0.4.0",
+          "commit": "317315a2b888fe8fed086049cd1f77390aea0875",
+          "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+          "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "nw-house-style",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "nw-release-tooling",
+        "from": {
+          "kind": "member",
+          "repoKey": "local//fixture/base/fx/remotes/agents.git",
+          "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "nw.messaging",
+        "from": {
+          "kind": "package",
+          "package": "nw.messaging",
+          "version": "0.1.0",
+          "commit": "ed4ea6cadfa4b8c4d7cb533020d3afff6b67b126",
+          "integrity": "sha256-aec7b3c4d1eb5043072ab10bdef46a50653c249e32899b787b3bfb419bcfe247",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-messaging.git"
+        },
+        "layer": "messaging",
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "oats.core",
+        "from": {
+          "kind": "package",
+          "package": "oats.framework",
+          "version": "1.1.3",
+          "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+          "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+        },
+        "layer": null,
+        "private": false,
+        "changedSince": null
+      },
+      {
+        "name": "oats.okf",
+        "from": {
+          "kind": "package",
+          "package": "oats.okf",
+          "version": "2.1.3",
+          "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
+          "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
+          "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
+        },
+        "layer": "knowledge",
+        "private": false,
+        "changedSince": null
+      }
+    ],
+    "team": "engineering",
+    "resolution": "416fc00dead87f7ef82179a3",
+    "declRevision": "373abed01e6492cd50ce33e9",
+    "payloadRevision": "fb902b2e220f7816e6b89e53",
+    "workspace": "local//fixture/base/fx/remotes/agents.git",
+    "standalone": false,
+    "providers": {
+      "nw.messaging": {
+        "identity": {
+          "mode": "local"
+        }
+      }
+    },
+    "settings": {
+      "nw-deploy": {},
+      "nw-house-style": {},
+      "nw-release-tooling": {},
+      "nw.messaging": {
+        "private": "per-human",
+        "channels": [
+          "northwind-eng"
+        ],
+        "identity": {
+          "mode": "local"
+        }
+      },
+      "oats.core": {},
+      "oats.okf": {
+        "owns": "release-manager",
+        "reads": [
+          "platform-engineer",
+          "data-analyst"
+        ]
+      }
+    },
+    "spawnPreviewApi": 2,
+    "preview": true,
+    "agent": "release-manager",
+    "kind": "persistent",
+    "instance": "release-manager-api-v2",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2",
+    "repo": "/fixture/base/northwind-workspace/agents-repo",
+    "work": "worktree",
+    "subject": {
+      "soul": "release-manager",
+      "agentsRoot": "/fixture/base/northwind-workspace/agents",
+      "dir": "/fixture/base/northwind-workspace"
+    },
+    "decision": {
+      "instance": "release-manager-api-v2",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2",
+      "branch": "agents/release-manager-api-v2",
+      "base": {
+        "ref": "HEAD",
+        "oid": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+      },
+      "effective": {
+        "repo": "/fixture/base/northwind-workspace/agents-repo",
+        "work": "worktree",
+        "runtime": "pi",
+        "model": null,
+        "launchConfig": null,
+        "yolo": null,
+        "backend": "tmux",
+        "childSpawns": true,
+        "relation": null,
+        "providers": {
+          "nw-deploy": {},
+          "nw-house-style": {},
+          "nw-release-tooling": {},
+          "nw.messaging": {
+            "private": "per-human",
+            "channels": [
+              "northwind-eng"
+            ],
+            "identity": {
+              "mode": "local"
+            }
+          },
+          "oats.core": {},
+          "oats.okf": {
+            "owns": "release-manager",
+            "reads": [
+              "platform-engineer",
+              "data-analyst"
+            ]
+          }
+        }
+      },
+      "resolution": "416fc00dead87f7ef82179a3",
+      "revision": "cefabcde700bb5b7d88170dd"
+    },
+    "preflight": {
+      "status": "complete",
+      "budgetMs": 20000,
+      "elapsedMs": 66
+    },
+    "backendStatus": {
+      "name": "tmux",
+      "installed": true,
+      "started": false
+    },
+    "runtime": "pi",
+    "model": null,
+    "modelSource": "native default",
+    "launchConfig": null,
+    "backend": "tmux",
+    "branch": "agents/release-manager-api-v2",
+    "base": {
+      "ref": "HEAD",
+      "oid": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+    },
+    "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-api-v2/work",
+    "relation": null,
+    "parentInstance": null,
+    "policy": {
+      "childSpawns": {
+        "allowed": true,
+        "origin": {
+          "kind": "default",
+          "detail": "no declaration: children allowed"
+        }
+      }
+    },
+    "executable": "/fixture/base/bin/pi",
+    "capabilities": [
+      {
+        "name": "nw-deploy",
+        "origin": "package:nw.tools@0.4.0"
+      },
+      {
+        "name": "nw-house-style",
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+      },
+      {
+        "name": "nw-release-tooling",
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+      },
+      {
+        "name": "nw.messaging",
+        "origin": "package:nw.messaging@0.1.0"
+      },
+      {
+        "name": "oats.core",
+        "origin": "package:oats.framework@1.1.3"
+      },
+      {
+        "name": "oats.okf",
+        "origin": "package:oats.okf@2.1.3"
+      }
+    ],
+    "skills": [
+      "release-checklist",
+      {
+        "name": "deploy",
+        "source": "module:nw-deploy"
+      },
+      {
+        "name": "cut-release",
+        "source": "module:nw-release-tooling"
+      },
+      {
+        "name": "oats-operate",
+        "source": "module:oats.core"
+      },
+      {
+        "name": "okf",
+        "source": "module:oats.okf"
+      }
+    ],
+    "task": null,
+    "soulFetched": false
+  }
+}

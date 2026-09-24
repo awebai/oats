@@ -1,0 +1,99 @@
+{
+  "providers": {
+    "nw-deploy": {},
+    "nw-house-style": {},
+    "nw-release-tooling": {},
+    "nw.messaging": {
+      "private": "per-human",
+      "channels": [
+        "northwind-eng"
+      ],
+      "identity": {
+        "mode": "global",
+        "resident": "ops"
+      }
+    },
+    "oats.core": {},
+    "oats.okf": {
+      "owns": "release-manager",
+      "reads": [
+        "platform-engineer",
+        "data-analyst"
+      ]
+    }
+  },
+  "modules": {
+    "nw-deploy": {
+      "from": {
+        "kind": "package",
+        "package": "nw.tools",
+        "version": "0.4.0",
+        "commit": "317315a2b888fe8fed086049cd1f77390aea0875",
+        "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+        "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
+      },
+      "commit": "317315a2b888fe8fed086049cd1f77390aea0875",
+      "digest": "sha256-6686299d44ecc531b50efc321b1ae6017aa2aead3d66dbbe09c4d926b7c8105b",
+      "materializedAt": "2026-09-24T16:56:50.167Z"
+    },
+    "nw-house-style": {
+      "from": {
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+      },
+      "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1",
+      "digest": "sha256-0d70104b8882948b9cf1a9086bf1f0f33a50c6b4cef6e7e9fcfaa2a1632265c2",
+      "materializedAt": "2026-09-24T16:56:50.208Z"
+    },
+    "nw-release-tooling": {
+      "from": {
+        "kind": "member",
+        "repoKey": "local//fixture/base/fx/remotes/agents.git",
+        "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1"
+      },
+      "commit": "15395aeb4fe469bf7c192907dddb8eee058e1bb1",
+      "digest": "sha256-3573a7185cb97ee5c46a661e63b39ab41ac015cab8b9756214c91a6c3e7a9e2c",
+      "materializedAt": "2026-09-24T16:56:50.267Z"
+    },
+    "nw.messaging": {
+      "from": {
+        "kind": "package",
+        "package": "nw.messaging",
+        "version": "0.1.0",
+        "commit": "ed4ea6cadfa4b8c4d7cb533020d3afff6b67b126",
+        "integrity": "sha256-aec7b3c4d1eb5043072ab10bdef46a50653c249e32899b787b3bfb419bcfe247",
+        "repoKey": "local//fixture/base/fx/remotes/pkg-messaging.git"
+      },
+      "commit": "ed4ea6cadfa4b8c4d7cb533020d3afff6b67b126",
+      "digest": "sha256-834e69636666ed120f294346d2b2eabe667019ebf765b08808bb82edd56c12d7",
+      "materializedAt": "2026-09-24T16:56:50.299Z"
+    },
+    "oats.core": {
+      "from": {
+        "kind": "package",
+        "package": "oats.framework",
+        "version": "1.1.3",
+        "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+        "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+        "repoKey": "local//fixture/base/fx/remotes/pkg-framework.git"
+      },
+      "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+      "digest": "sha256-735e7ab1868206d8decfffc51e7f2b8cf3e1e619e6ebd7af7cf6de7ead6e32c3",
+      "materializedAt": "2026-09-24T16:56:50.349Z"
+    },
+    "oats.okf": {
+      "from": {
+        "kind": "package",
+        "package": "oats.okf",
+        "version": "2.1.3",
+        "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
+        "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
+        "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
+      },
+      "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
+      "digest": "sha256-dd7bec47f25cf9f24a88195561e084f08ea0e3fbb2bc6c2c2e590db014cac91b",
+      "materializedAt": "2026-09-24T16:56:50.418Z"
+    }
+  }
+}

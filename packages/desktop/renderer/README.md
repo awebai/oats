@@ -107,8 +107,11 @@ with a *default* pill), **Relationship** (None / Child of / Sibling of /
 Parent of; choosing one reveals the instance picker) and the **Opening
 instruction**. **Developer settings** is collapsed: work area (base | branch,
 the worktree path relative to the deployment, *Use a worktree instead* for
-checkout souls), permissions, launch configuration, session backend, Run on
-and the wake schedule. The footer (Cancel, Spawn ⌘↵) is sticky.
+checkout souls), permissions, **messaging identity** (Default / Local /
+Global + resident, sent as `--provider <cap> identity.mode=…` to the messaging
+provider the preview reports; shown only with `spawn-provider-payload` and a
+messaging provider, and its hint says what the decision binds), launch
+configuration, session backend, Run on and the wake schedule. The footer (Cancel, Spawn ⌘↵) is sticky.
 
 Every value shown is the kernel's own preview: the dialog reads
 `POST /api/workspace-spawn-preview` in the background (debounced, one latest
