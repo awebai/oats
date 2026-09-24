@@ -87,15 +87,26 @@ the purpose field becomes a name field that shows `<soul>-<purpose>` live and
 then the kernel's final name from the preview. A no-prefix toggle maps to
 `spawn --name <slug>`, gated on the `spawn-name` feature; `--purpose` stays the
 default. **Runtime and model** are always visible, with their resolved value and
-its source. **Work** comes from the soul's `work:` mode, and a `checkout` soul is
-offered "Use a worktree instead?" (`--work worktree`). There is **no**
-modules/capabilities list and no attach-knowledge / child-spawn / open-PR
-toggles, because those behaviours come from capabilities. There is **no**
-preview button either. The preview runs in the background to fill the real
-defaults, and apply still binds with `--expect-decision` (`E_DECISION_STALE`
-re-previews). A collapsed **Advanced** section holds harness permissions, launch
-config, relation, messaging identity (`--provider <cap> identity.mode=…`,
-decision 27), branch/base overrides and the execution server. Every modal gets a darker backdrop.
+its source. **Relationship** sits in the main form, shown by default: None /
+Child of / Sibling of / Parent of. There is **no** modules/capabilities list and
+no attach-knowledge / child-spawn / open-PR toggles, because those behaviours
+come from capabilities. There is **no** preview button either. The preview runs
+in the background to fill the real defaults, and apply still binds with
+`--expect-decision` (`E_DECISION_STALE` re-previews). A collapsed section named
+**Developer settings** holds:
+- **work**: base | branch and the worktree path. A `checkout` soul is offered
+  "Use a worktree instead?" (`--work worktree`); the work mode itself comes
+  from the soul's `work:`.
+- harness permissions
+- launch config
+- session backend
+- Run on (the execution server)
+- wake-up
+- messaging identity (`--provider <cap> identity.mode=…`, decision 27)
+
+(Second human redirect, same day: relationship moved into the main form, work
+moved into the collapsed section, and the section was renamed from "Advanced".)
+Every modal gets a darker backdrop.
 
 **F4 — Instance card and roster on v2 facts.** The served-identity line (`acts
 as <address> via grant, expires <t>` / `alias <a> on <team>`); module rows with
