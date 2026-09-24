@@ -120,3 +120,36 @@ test('a passing provider item shows its warnings as reported, counted on its lin
   assert.match(u.text(), /Ready — every required check passes/, 'a warning does not unready the subject');
   assert.doesNotMatch(u.one('.readiness-status').textContent, /warning/i, 'warnings do not count in the summary');
 });
+
+// One provider item per answer, with the item status the kernel maps it to.
+function providers(...answers) {
+  const raw = data(), [base] = raw.checks.providers.items, counts = { pass: 0, fail: 0, unknown: 0 };
+  raw.checks.providers.items = answers.map(([subject, status]) => {
+    const itemStatus = { ready: 'pass', 'needs-configuration': 'fail', 'authorization-required': 'fail', unavailable: 'unknown' }[status]; counts[itemStatus]++;
+    return { ...structuredClone(base), subject, status: itemStatus, reason: null, problems: [], result: { status, problems: [], warnings: [] } };
+  });
+  raw.checks.providers.status = counts.fail ? 'fail' : counts.unknown ? 'unknown' : 'pass';
+  const others = Object.entries(raw.checks).filter(([k]) => k !== 'providers').flatMap(([, c]) => c.items.filter(i => i.required));
+  raw.summary = { ready: false, required: others.length + answers.length, pass: others.filter(i => i.status === 'pass').length + counts.pass,
+    fail: others.filter(i => i.status === 'fail').length + counts.fail, unknown: others.filter(i => i.status === 'unknown').length + counts.unknown };
+  raw.summary.ready = raw.summary.fail === 0 && raw.summary.unknown === 0;
+  return raw;
+}
+const providerCheck = u => [...u.host.querySelectorAll('.readiness-check')].find(c => c.querySelector('h3').textContent === 'Providers');
+test('authorization-required is its own state — "sign in needed" — not a broken provider', async t => {
+  const u = setup(t, () => view(target, providers(['oats.okf', 'ready'], ['oats.aweb', 'authorization-required']))); await u.update();
+  const check = providerCheck(u), badge = check.querySelector('.readiness-badge');
+  assert.equal(badge.dataset.state, 'sign-in'); assert.equal(check.querySelector('.readiness-check-head > span:last-child').textContent, 'sign in needed');
+  const aweb = [...check.querySelectorAll('.readiness-item')].find(i => i.querySelector('summary').textContent.startsWith('oats.aweb'));
+  assert.equal(aweb.querySelector('summary').textContent, 'oats.aweb · sign in needed · required');
+  assert.match(aweb.textContent, /Sign in needed: the provider is set up but is not signed in\./);
+  assert.doesNotMatch(check.textContent, /needs configuration|· fail ·/);
+});
+test('a check with a real failure stays failing even when another provider only needs a sign-in; unavailable is unknown', async t => {
+  const u = setup(t, () => view(target, providers(['oats.okf', 'needs-configuration'], ['oats.aweb', 'authorization-required'], ['nw.tasks', 'unavailable']))); await u.update();
+  const check = providerCheck(u);
+  assert.equal(check.querySelector('.readiness-badge').dataset.state, 'fail'); assert.equal(check.querySelector('.readiness-check-head > span:last-child').textContent, 'fail');
+  const lines = [...check.querySelectorAll('.readiness-item summary')].map(s => s.textContent);
+  assert.deepEqual(lines, ['oats.okf · fail · required', 'oats.aweb · sign in needed · required', 'nw.tasks · unknown · required']);
+  assert.match(check.textContent, /The provider says: needs configuration\./); assert.match(check.textContent, /The provider says: unavailable right now\./);
+});

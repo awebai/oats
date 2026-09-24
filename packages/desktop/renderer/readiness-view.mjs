@@ -20,7 +20,7 @@ export const readinessCSS = `
 .readiness-badge { display:grid; place-items:center; flex:none; width:28px; height:28px; border-radius:50%; background:var(--surface-2); color:var(--muted); font-weight:700; }
 .readiness-badge[data-state=pass] { color:var(--ok); }
 .readiness-badge[data-state=fail] { color:var(--danger); }
-.readiness-badge[data-state=unknown] { color:var(--warn); }
+.readiness-badge[data-state=unknown], .readiness-badge[data-state=sign-in] { color:var(--warn); }
 .readiness-item { margin:10px 0; overflow-wrap:anywhere; }
 .readiness-item p, .readiness-item dd { margin:2px 0; }
 .readiness-item dt { font-size:11px; }
@@ -33,6 +33,11 @@ export const readinessCSS = `
 .soul-inspector .readiness-check { padding:12px 8px; }
 `;
 const label = v => v[0].toUpperCase() + v.slice(1);
+const PROVIDER_SAYS = {
+  ready: 'The provider says: ready.', 'needs-configuration': 'The provider says: needs configuration.',
+  'authorization-required': 'Sign in needed: the provider is set up but is not signed in.', unavailable: 'The provider says: unavailable right now.',
+};
+const signIn = i => i.result?.status === 'authorization-required';
 export function createReadinessView(host, { ctx } = {}) {
   const doc = host.ownerDocument;
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
@@ -69,20 +74,24 @@ export function createReadinessView(host, { ctx } = {}) {
     body.append(node('p', `Observed: ${data.at}. Target: ${value.target.observedAs}. This is not an atomic snapshot or a permission lease.`, 'readiness-note'), checks);
     for (const key of CHECKS) {
       const c = data.checks[key], row = node('section', undefined, 'readiness-check'), head = node('div', undefined, 'readiness-check-head');
-      const mark = node('span', c.status === 'pass' || c.status === 'fail' ? undefined : c.status === 'not-applicable' ? '—' : '?', 'readiness-badge'); if (c.status === 'pass' || c.status === 'fail') mark.append(iconElement(mark.ownerDocument, c.status === 'pass' ? 'check' : 'alert', { size: 12 })); mark.dataset.state = c.status; mark.setAttribute('aria-hidden', 'true');
-      head.append(mark, node('h3', label(key)), node('span', c.status)); row.append(head);
+      // A check failing only because providers need a sign-in is its own state, not broken.
+      const failing = c.items.filter(i => i.status === 'fail'), state = c.status === 'fail' && failing.length && failing.every(signIn) ? 'sign-in' : c.status;
+      const mark = node('span', ['pass', 'fail', 'sign-in'].includes(state) ? undefined : state === 'not-applicable' ? '—' : '?', 'readiness-badge');
+      if (['pass', 'fail', 'sign-in'].includes(state)) mark.append(iconElement(mark.ownerDocument, state === 'pass' ? 'check' : state === 'sign-in' ? 'info' : 'alert', { size: 12 }));
+      mark.dataset.state = state; mark.setAttribute('aria-hidden', 'true');
+      head.append(mark, node('h3', label(key)), node('span', state === 'sign-in' ? 'sign in needed' : c.status)); row.append(head);
       for (const i of c.items) {
         if (query && !JSON.stringify(i).toLowerCase().includes(query)) continue;
         const item = node('details', undefined, 'readiness-item');
         const warned = i.result?.warnings?.length || 0;
-        item.append(node('summary', `${i.subject} · ${i.status} · ${i.required ? 'required' : 'optional'}${warned ? ` · ${warned} warning${warned === 1 ? '' : 's'}` : ''}`));
+        item.append(node('summary', `${i.subject} · ${signIn(i) ? 'sign in needed' : i.status} · ${i.required ? 'required' : 'optional'}${warned ? ` · ${warned} warning${warned === 1 ? '' : 's'}` : ''}`));
         const facts = node('dl'); item.append(facts);
         const evidence = Object.entries(i.evidence).map(([k, v]) => k === 'from' ? ['Origin', originText(v)] : [k, v]);
         for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...evidence, ['Remedy (display only)', i.remedy]]) {
           if (content !== null && content !== undefined) facts.append(node('dt', name), node('dd', content));
         }
         // providers: the provider's own answer, verbatim; "unknown" stays unknown.
-        if (i.result) item.append(node('p', `The provider says: ${i.result.status === 'ready' ? 'ready' : 'needs configuration'}.`));
+        if (i.result) item.append(node('p', PROVIDER_SAYS[i.result.status]));
         // Warnings never change the status and do not count in the summary; shown as reported.
         for (const w of i.result?.warnings || []) item.append(node('p', `Warning: ${w.message} (${w.code})`, 'readiness-warning'));
         // The kernel's reason is the first problem's message: say it once, with its code.

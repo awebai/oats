@@ -142,3 +142,28 @@ test('a provider that cannot answer stays unknown, with its problems verbatim; n
   assert.equal(Object.hasOwn(projected.checks, 'trusted'), false); assert.equal(Object.hasOwn(projected.checks, 'enrolled'), false);
   assert.doesNotMatch(JSON.stringify(projected), /signature/);
 });
+
+test('a provider answer is one of four, and the item status follows from it; a contradiction fails closed', () => {
+  const answer = (status, itemStatus) => {
+    const d = data(), provider = d.checks.providers.items[0], was = provider.status;
+    Object.assign(provider, { status: itemStatus, reason: null, problems: [], result: { status, problems: [], warnings: [] } });
+    d.checks.providers.status = itemStatus === 'pass' ? 'pass' : itemStatus;
+    d.summary[was]--; d.summary[itemStatus]++; d.summary.ready = d.summary.fail === 0 && d.summary.unknown === 0;
+    return readinessData(d, target);
+  };
+  for (const [status, itemStatus] of [['ready', 'pass'], ['needs-configuration', 'fail'], ['authorization-required', 'fail'], ['unavailable', 'unknown']]) {
+    const projected = answer(status, itemStatus); assert.ok(projected, status);
+    assert.deepEqual(projected.checks.providers.items[0].result, { status, problems: [], warnings: [] });
+    for (const other of ['pass', 'fail', 'unknown'].filter(s => s !== itemStatus)) assert.equal(answer(status, other), null, `${status} with item ${other}`);
+  }
+  assert.equal(answer('signed-out', 'fail'), null);
+});
+test("dispatch on the payload's own integer: a classic scope's readinessApi 1 answer is named, never read", async () => {
+  const c = context();
+  for (const [api, code] of [[1, 'classic-workspace'], [3, 'E_CLI_PROTOCOL']]) {
+    const classic = data(); classic.readinessApi = api;
+    const result = await createReadinessBoundary({ invoke: () => envelope(classic) })(request(), () => c);
+    assert.equal(result.status, 'unavailable'); assert.equal(result.data, null); assert.equal(result.reason.code, code, String(api));
+  }
+  assert.match(readinessFailure('classic-workspace').reason.message, /classic layout/);
+});

@@ -62,8 +62,13 @@ caller revalidates its admission and CLI identity after success **or** rejection
 - **member** is the soul's member repository confirmed in the workspace
   (`oats-membership.yaml`), never login or team registration.
 - **providers** relays each bound provider's own binding check **verbatim**:
-  `item.result {status: ready | needs-configuration, problems[{code, message}],
-  warnings[{code, message}]}`. `warnings` is always present (possibly `[]`) and
+  `item.result {status, problems[{code, message}], warnings[{code, message}]}`.
+  The provider's `status` is one of four, and the item status follows from it:
+  `ready` → pass, `needs-configuration` → fail, `authorization-required` →
+  fail, `unavailable` → unknown. A result that contradicts its item status
+  fails closed. `authorization-required` is its own state, shown as **sign in
+  needed** (item line and, when every failing provider only needs a sign-in,
+  the check's badge), never as a broken provider. `warnings` is always present (possibly `[]`) and
   never changes the status: a passing item can carry warnings (e.g. E2EE
   disabled on a ready messaging binding). The Desktop shows them as reported
   under the item and counts them on the item's line, never in the summary.
@@ -98,3 +103,13 @@ requests, the exact integer gate, bounded coalescing, stale results on both
 paths, subject binding and every typed state. Computed contrast of actual
 readiness markup is checked in all three themes; this is not native GUI
 acceptance.
+
+## Classic scopes answer v1 shapes
+
+Until the kernel deletes its classic path, a classic scope still answers
+`readinessApi: 1` / `operationsApi: 1` even from a kernel whose probe reports 2.
+The Desktop dispatches on the payload's own integer, not only on the probe: a
+v1 readiness answer is `classic-workspace` ("still uses the classic layout"),
+and a v1 inspection says the same in the inspector. Neither is read, and any
+other integer is a protocol error.
+

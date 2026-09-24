@@ -46,7 +46,9 @@ export function createReadinessBoundary({ invoke = cliReadiness } = {}) {
         const flight = Promise.resolve().then(() => invoke(bin, { target })).then(envelope => {
           if (envelope?.schemaVersion !== 1 || envelope.ok !== true) return readinessFailure(envelope?.error?.code, target);
           const data = readinessData(envelope.result, target);
-          return data ? { readinessViewApi: 1, status: 'available', target, data, reason: null } : readinessFailure('E_CLI_PROTOCOL', target);
+          if (data) return { readinessViewApi: 1, status: 'available', target, data, reason: null };
+          // Dispatch on the payload's own integer: a classic scope still answers readinessApi 1.
+          return readinessFailure(envelope.result?.readinessApi === 1 ? 'classic-workspace' : 'E_CLI_PROTOCOL', target);
         }).catch(() => readinessFailure('E_CLI_FAILED', target)).finally(() => { flights.delete(slot); pending.delete(identity); });
         pending.set(identity, flight);
       }

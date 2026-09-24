@@ -38,8 +38,11 @@ const ERRORS = {
   'unsupported-action': 'Readiness is unavailable for this captured target; no classic fallback.', E_BUSY: 'The readiness read limit is reached. Retry when another read finishes.',
   E_FORBIDDEN_FRAME: 'This frame cannot request readiness.', E_CLI_FAILED: 'The installed CLI could not complete the readiness read.',
   E_CLI_TIMEOUT: 'The readiness read timed out.', E_CLI_OUTPUT_LIMIT: 'The readiness read exceeded its output limit.',
-  E_CLI_PROTOCOL: 'The installed CLI returned invalid or contradictory readiness data.', E_USAGE: 'The installed CLI does not support this read.',
+  E_CLI_PROTOCOL: 'The installed CLI returned invalid or contradictory readiness data.',
+  'classic-workspace': 'This workspace still uses the classic layout, which answers an older readiness shape. Readiness shows here once it is on the workspace model.', E_USAGE: 'The installed CLI does not support this read.',
 };
+/** A provider binding check's own answer → the item status the kernel reports for it. */
+export const PROVIDER_ITEM_STATUS = Object.freeze({ ready: 'pass', 'needs-configuration': 'fail', 'authorization-required': 'fail', unavailable: 'unknown' });
 export function readinessFailure(code, target = null) {
   if (!Object.hasOwn(ERRORS, code)) code = 'E_CLI_FAILED';
   return { readinessViewApi: 1, status: 'unavailable', target: readinessTarget(target), data: null, reason: { code, message: ERRORS[code] } };
@@ -72,7 +75,8 @@ function item(v) {
   // {status, problems, warnings}. Warnings (always emitted, maybe []) never change status.
   if (Object.hasOwn(v, 'result')) {
     if (v.result === null) out.result = null;
-    else if (record(v.result) && ['ready', 'needs-configuration'].includes(v.result.status)) {
+    // The item status follows from the provider's answer; a contradiction fails closed.
+    else if (record(v.result) && Object.hasOwn(PROVIDER_ITEM_STATUS, v.result.status) && PROVIDER_ITEM_STATUS[v.result.status] === v.status) {
       out.result = { status: v.result.status, problems: problems(v.result.problems), warnings: problems(v.result.warnings) };
     } else throw Error();
   }

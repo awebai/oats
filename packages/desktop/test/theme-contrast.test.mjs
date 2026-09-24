@@ -429,6 +429,22 @@ for (const [name] of palettes) test(`${name}: actual readiness checks, provider 
   assert.equal(doc.querySelector('.readiness-verify, .readiness-enrol'), null, 'no signature or enrolment control (readinessApi 2)');
 });
 
+for (const [name] of palettes) test(`${name}: the "sign in needed" provider state uses a computed AA surface`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
+  for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
+  const raw = readinessFixture(), provider = raw.checks.providers.items[0];
+  Object.assign(provider, { status: 'fail', reason: null, problems: [], result: { status: 'authorization-required', problems: [], warnings: [] } });
+  raw.checks.providers.status = 'fail'; raw.summary.unknown--; raw.summary.fail++;
+  const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
+  t.after(() => { component.dispose(); dom.window.close(); });
+  await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });
+  const root = dom.window.getComputedStyle(doc.documentElement), el = doc.querySelector('.readiness-badge[data-state=sign-in]');
+  assert.ok(el, 'sign-in badge');
+  assert.equal(dom.window.getComputedStyle(el).color, 'var(--warn)'); assert.equal(dom.window.getComputedStyle(el).background, 'var(--surface-2)');
+  assert.ok(contrast(opaqueChannels(root.getPropertyValue('--warn').trim()), opaqueChannels(root.getPropertyValue('--surface-2').trim())) >= 4.5);
+  for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
+});
+
 for (const [name] of palettes) test(`${name}: actual Connections and reported PR checks use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="instance-git"><section id="pr"></section></main></body></html>`);
   const doc = dom.window.document;

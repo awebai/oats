@@ -152,7 +152,12 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     operationSerial++;
     content.replaceChildren();
     const inspected = inspectData(data, selection);
-    if (!inspected) { message('The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and refresh.', true); return; }
+    if (!inspected) {
+      // Dispatch on the payload's own integer: a classic scope still answers operationsApi 1.
+      message(data?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older inspection. The inspector shows it once it is on the workspace model.'
+        : 'The installed OATS CLI returned an inspection this Desktop cannot read. Update OATS and refresh.', true);
+      return;
+    }
     for (const p of inspected.problems) problem(p);
     const soul = inspected.souls[0] ?? null;
     if (inspected.subject.kind === 'instance') {

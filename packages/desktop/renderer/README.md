@@ -149,7 +149,9 @@ selected **soul** (`--soul`, what a spawn of it resolves now) or the selected
 There is no scope subject. The gate is the probe integer `operationsApi === 2`
 (`inspect-contract.mjs`); a 0.25 kernel gets the "update OATS" line and no
 request. The response must name exactly the selected subject, or it is not
-rendered.
+rendered The payload's own integer is checked too: a classic scope
+still answers `operationsApi: 1`, which the inspector names ("still uses the
+classic layout") instead of reading.
 
 The inspector is read-only (the soul is edited in its repository) and shows the
 kernel's records: the soul row's source (`member <repo> @ <c7>`), team, path,

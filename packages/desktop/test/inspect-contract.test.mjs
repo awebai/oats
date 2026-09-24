@@ -78,3 +78,12 @@ test('the inspector renders a soul and a home from the capture, read-only, with 
   assert.match(h.textContent, /As spawned/); assert.match(h.textContent, /Composed from: kernel:instance-boundary/);
   assert.match(h.textContent, new RegExp(home.instance.resolution.slice(0, 12)));
 });
+test("dispatch on the payload's own integer: a classic scope's operationsApi 1 inspection is named, never read", async t => {
+  const classic = structuredClone(soul); classic.operationsApi = 1;
+  const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, classic);
+  assert.match(s.textContent, /This workspace still uses the classic layout, which answers an older inspection/);
+  assert.doesNotMatch(s.textContent, /Update OATS|What a spawn of this soul resolves now/);
+  const future = structuredClone(soul); future.operationsApi = 3;
+  const f = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, future);
+  assert.match(f.textContent, /cannot read\. Update OATS and refresh/);
+});
