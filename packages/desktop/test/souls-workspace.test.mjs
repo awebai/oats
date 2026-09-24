@@ -945,7 +945,7 @@ test("Spawn modal: picker sends the anchor's agents root; E_RELATIVE_AMBIGUOUS s
     // f1e3211) and the renderer must surface the tail verbatim
     const caseD = `relation "child": inherited lineage edge "other-coord" is ambiguous — it matches `
       + `/Users/u/very/long/workspace/path/agents/other-coord/instances/other-coord and `
-      + `/Users/u/second/equally/long/team/checkout/local-agents/other-coord/instances/other-coord; `
+      + `/Users/u/second/equally/long/team/second-deployment/agents/other-coord/instances/other-coord; `
       + `qualify with --relative-root or rename one instance`;
     assert.ok(caseD.length > 300, "fixture exercises the truncation boundary");
     failNext = { error: caseD, code: "E_RELATIVE_AMBIGUOUS" };
@@ -1043,7 +1043,7 @@ test("spawn: post-spawn poll and terminal open use COMPOSITE identity — a same
   // twin with the SAME NAME but a different home is already in the panel;
   // a bare-name match would return true on the first poll and the follow-up
   // open would then refuse the ambiguous name
-  const twin = { instance: "dev-1", home: "/ws/local-agents/dev/instances/dev-1", agentsRoot: "/ws/local-agents", running: true, tmux: { session: "pi-agents" } };
+  const twin = { instance: "dev-1", home: "/ws/second/agents/dev/instances/dev-1", agentsRoot: "/ws/second/agents", running: true, tmux: { session: "pi-agents" } };
   const mine = { instance: "dev-1", home: "/ws/agents/dev/instances/dev-1", agentsRoot: "/ws/agents", running: true, tmux: { session: "pi-agents" } };
   let polls = 0;
   const panels = [

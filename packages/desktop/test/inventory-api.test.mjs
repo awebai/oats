@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
-import { cliCatalog, cliList, cliCapability } from '../cli-adapter.mjs';
-import { createCatalogBoundary, CATALOG_MINIMUM_VERSION } from '../server/catalog.mjs';
+import * as adapter from '../cli-adapter.mjs';
+const { cliList, cliCapability } = adapter;
 import { capabilityRequest, createInventoryBoundary } from '../server/capabilities.mjs';
 
 const cli = { ok: true, bin: '/installed/oats', version: '0.24.6' }; // deliberately no operationsApi
@@ -14,12 +14,6 @@ const member = '/team/a space; $(literal)';
 const agents = [{ name: 'dev', agentsRoot: `${member}/agents` }];
 const envelope = result => ({ schemaVersion: 1, ok: true, result });
 const failure = code => ({ schemaVersion: 1, ok: false, error: { code, message: 'SECRET child diagnostic' } });
-const description = () => ({
-  schemaVersion: 1, catalog: { origin: 'override', file: '/installed/catalog.json', kernelVersion: '0.24.6' },
-  packages: [{ package: 'oats.dev', url: 'https://example.invalid/dev.git', ref: null, path: 'oats', acquire: { argv: ['oats', 'install', 'oats.dev'] } }],
-  capabilityAliases: [{ capability: 'oats.review', package: 'oats.dev', capabilityInPackage: 'oats.review', via: 'alias', available: true }],
-  notes: ['Catalog identity grants no executable trust'],
-});
 const inventory = () => ({
   packages: [{ package: 'oats.dev', version: '1.0.0', level: member, source: null, path: null, commit: null, integrity: null, locked: true, dependencies: [], capabilities: ['oats.review'] }],
   capabilities: [{ capability: 'oats.review', version: null, package: 'oats.dev', level: member, trusted: null, installed: true, integrity: null, executableSurface: { commands: [], hooks: [], environment: [] }, status: 'untrusted' }],
@@ -33,18 +27,10 @@ function deferred() {
   return { promise, resolve, reject };
 }
 const asExec = result => (_bin, _argv, _opts, done) => done(null, JSON.stringify(envelope(result)));
-function assertUnavailable(result, code) {
-  assert.deepEqual(result, {
-    catalogApi: 1, scope: 'local-cli', status: 'unavailable', minimumVersion: '0.24.6', description: null,
-    reason: { code, message: result.reason.message },
-  });
-  assert.ok(result.reason.message.length > 0);
-  assert.doesNotMatch(JSON.stringify(result), /SECRET/);
-}
 
 test('read adapters fix argv/cwd, use no shell, and bound timeout/output', async () => {
+  assert.equal(Object.hasOwn(adapter, 'cliCatalog'), false, 'the removed catalog verb has no adapter');
   for (const [read, args, expected] of [
-    [cliCatalog, { localCwd: '/server/local' }, ['catalog', '--json']],
     [cliList, { localCwd: member, context: member }, ['list', '--dir', member, '--json']],
   ]) {
     let calls = 0;
@@ -75,8 +61,8 @@ test('read adapters always resolve typed failures, never accept success on faile
     [(_b, _a, _o, done) => done(new Error('exit 1'), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_UNKNOWN_COMMAND', message: 'SECRET removed', details: { removed: 'list', replacement: 'SECRET oats capabilities' } } })), 'E_USAGE'],
     [(_b, _a, _o, done) => done(null, JSON.stringify(failure('SECRET'))), 'E_CLI_FAILED'],
   ];
-  for (const read of [cliCatalog, cliList]) for (const [exec, code] of executions) {
-    const result = await read(cli.bin, read === cliList ? { context: member, localCwd: member } : { localCwd: member }, { exec });
+  for (const read of [cliList]) for (const [exec, code] of executions) {
+    const result = await read(cli.bin, { context: member, localCwd: member }, { exec });
     assert.equal(result.schemaVersion, 1); assert.equal(result.ok, false); assert.equal(result.error.code, code);
     assert.doesNotMatch(JSON.stringify(result), /SECRET/);
   }
@@ -88,8 +74,8 @@ test('read adapters always resolve typed failures, never accept success on faile
 });
 
 test('read adapter options cannot supply env, bin, source, extra argv or option-shaped paths', async () => {
-  for (const read of [cliCatalog, cliList]) {
-    const base = read === cliList ? { localCwd: member, context: member } : { localCwd: member };
+  for (const read of [cliList]) {
+    const base = { localCwd: member, context: member };
     for (const args of [null, [], {}, { ...base, localCwd: '--dir' }, { ...base, localCwd: '/bad\0path' },
       ...['env', 'bin', 'source', 'path', 'argv', 'server', 'home'].map(key => ({ ...base, [key]: 'forbidden' }))]) {
       const result = await read(cli.bin, args, { exec: assert.fail });
@@ -100,83 +86,6 @@ test('read adapter options cannot supply env, bin, source, extra argv or option-
   for (const context of [undefined, null, '--server', '/bad\0path']) {
     assert.equal((await cliList(cli.bin, { localCwd: member, context }, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
   }
-});
-
-test('catalog floor uses released semver and outer acceptance, without operationsApi', async () => {
-  assert.equal(CATALOG_MINIMUM_VERSION, '0.24.6');
-  const read = createCatalogBoundary({ invoke: assert.fail });
-  for (const state of [null, { ...cli, ok: false }, { ...cli, ok: 'true' }, { ...cli, bin: 'oats' }]) {
-    assertUnavailable(await read({}, { cli: state, localCwd: member }), 'cli-unavailable');
-  }
-  for (const version of ['0.24.5', '0.23.99', '0.24.6-rc.1', '0.24.7-beta', 'garbage', undefined]) {
-    assertUnavailable(await read({}, { cli: { ...cli, version }, localCwd: member }), 'cli-no-catalog');
-  }
-  const data = description();
-  for (const version of ['0.24.6', '0.24.6+build.1', '0.24.7']) {
-    const result = await read({}, { cli: { ...cli, version }, localCwd: member, invoke: async () => envelope(data) });
-    assert.deepEqual(result, { catalogApi: 1, scope: 'local-cli', status: 'available', minimumVersion: '0.24.6', description: data, reason: null });
-  }
-  assertUnavailable(await read({}, { cli: { ...cli, ok: false, version: '0.25.0' }, localCwd: member }), 'cli-unavailable');
-});
-
-test('catalog accepts no arguments and validates minimal landed shape without inventing unknown facts', async () => {
-  const read = createCatalogBoundary({ invoke: assert.fail });
-  for (const body of [null, [], '', 1, ...['source', 'path', 'env', 'bin', 'argv', 'context', 'ws', 'server'].map(k => ({ [k]: 'x' }))]) {
-    await assert.rejects(read(body, { cli, localCwd: member }), { code: 'E_BAD_ARGS' });
-  }
-  const data = description(); data.packages[0].url = null; data.packages[0].path = null;
-  data.packages[0].signatures = null; data.capabilityAliases[0].available = null;
-  const result = await read({}, { cli, localCwd: member, invoke: async () => envelope(data) });
-  assert.strictEqual(result.description, data);
-  assert.equal(Object.hasOwn(result.description.packages[0], 'exports'), false);
-  for (const change of [
-    d => { d.schemaVersion = 2; }, d => { d.catalog.origin = 'remote'; }, d => { delete d.catalog.file; },
-    d => { d.packages = null; }, d => { d.packages[0].acquire.argv.push('--trust'); }, d => { d.packages[0].ref = 2; },
-    d => { d.capabilityAliases[0].available = 'true'; }, d => { d.capabilityAliases = [{}]; }, d => { d.notes = 'SECRET'; },
-  ]) {
-    const bad = description(); change(bad);
-    assertUnavailable(await read({}, { cli, localCwd: member, invoke: async () => envelope(bad) }), 'E_CLI_PROTOCOL');
-  }
-});
-
-test('catalog missing command, failed child, malformed envelope and rejection are recoverable unavailable', async () => {
-  for (const returned of [failure('E_USAGE'), failure('invalid-source'), null, { ok: true, result: description() }]) {
-    const read = createCatalogBoundary({ invoke: async () => returned });
-    assertUnavailable(await read({}, { cli, localCwd: member }), 'E_CLI_FAILED');
-  }
-  for (const exec of [
-    (_b, _a, _o, done) => done(new Error('SECRET'), JSON.stringify(envelope(description()))),
-    (_b, _a, _o, done) => done(new Error('SECRET'), 'unknown command catalog', 'SECRET'),
-  ]) {
-    const read = createCatalogBoundary({ invoke: (bin, args) => cliCatalog(bin, args, { exec }) });
-    assertUnavailable(await read({}, { cli, localCwd: member }), 'E_CLI_FAILED');
-  }
-});
-
-test('catalog coalesces pending success/rejection only, releases each flight and recovers', async () => {
-  for (const reject of [false, true]) {
-    let calls = 0; const pending = deferred();
-    const read = createCatalogBoundary({ invoke: () => { calls++; return calls === 1 ? pending.promise : envelope(description()); } });
-    const requests = Array.from({ length: 8 }, () => read({}, { cli, localCwd: member }));
-    await tick(); assert.equal(calls, 1);
-    if (reject) pending.reject(new Error('SECRET')); else pending.resolve(envelope(description()));
-    const results = await Promise.all(requests);
-    for (const r of results) assert.deepEqual(r, results[0]);
-    assert.equal(results[0].status, reject ? 'unavailable' : 'available');
-    assert.equal((await read({}, { cli, localCwd: member })).status, 'available');
-    assert.equal(calls, 2, 'no response cache, including errors');
-  }
-});
-
-test('catalog coalescing distinguishes binary, version, cwd and invoker', async () => {
-  let calls = 0; const pending = deferred();
-  const invoke = () => { calls++; return pending.promise; };
-  const other = () => { calls++; return pending.promise; };
-  const read = createCatalogBoundary({ invoke });
-  const base = { cli, localCwd: member };
-  const requests = [base, base, { ...base, cli: { ...cli, bin: '/another/oats' } },
-    { ...base, cli: { ...cli, version: '0.24.7' } }, { ...base, localCwd: '/elsewhere' }, { ...base, invoke: other }].map(o => read({}, o));
-  await tick(); assert.equal(calls, 5); pending.resolve(envelope(description())); await Promise.all(requests);
 });
 
 test('list uses exact admitted classic context and genuine CLI arrays, without an operations gate', async () => {
@@ -248,19 +157,17 @@ test('list coalescing keys binary/version/scoped cwd/invoker independently', asy
   await tick(); assert.equal(calls, 5); pending.resolve(envelope(inventory())); await Promise.all(requests);
 });
 
-function httpHarness({ state = cli, exec = asExec(description()), listExec = asExec(inventory()) } = {}) {
+function httpHarness({ state = cli, listExec = asExec(inventory()) } = {}) {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const start = source.indexOf('const send = (res, code, body, type');
   const end = source.indexOf('\nserver.on("error",');
   assert.ok(start > 0 && end > start);
   const errorStart = source.indexOf('function spawnErrorPayload(e)');
   const errorEnd = source.indexOf('/* OATSWEB_SPAWNERR_END */', errorStart);
-  let catalogCalls = 0, listCalls = 0, lookups = 0;
-  const readCatalog = createCatalogBoundary({ invoke: (bin, args) => cliCatalog(bin, args, { exec(...params) { catalogCalls++; return exec(...params); } }) });
+  let listCalls = 0, lookups = 0;
   const invokeList = (bin, args) => cliList(bin, args, { exec(...params) { listCalls++; return listExec(...params); } });
   const dependencies = {
     createServer: callback => callback,
-    catalogRequest: readCatalog,
     capabilityRequest: (req, opts) => capabilityRequest(req, { ...opts, invokeList }),
     cliState: state, ctxs: ['/server/local'],
     workspaces: () => { lookups++; return [workspace, { id: 'remote:team', scope: '/remote/team', remote: true, server: 'registered' }]; },
@@ -268,8 +175,8 @@ function httpHarness({ state = cli, exec = asExec(description()), listExec = asE
   };
   const handler = new Function(...Object.keys(dependencies), `${source.slice(errorStart, errorEnd)}\n${source.slice(start, end)}\nreturn server;`)(...Object.values(dependencies));
   return {
-    counts: () => ({ catalogCalls, listCalls, lookups }),
-    async request({ url = '/api/catalog', method = 'POST', body = '{}', headers = { host: '127.0.0.1:4820', origin: 'http://localhost:4820' } } = {}) {
+    counts: () => ({ listCalls, lookups }),
+    async request({ url = '/api/capabilities?ws=%2Fteam', method = 'POST', body = '{}', headers = { host: '127.0.0.1:4820', origin: 'http://localhost:4820' } } = {}) {
       const req = new EventEmitter(); req.url = url; req.method = method; req.headers = headers;
       let result;
       const res = { writeHead(status, responseHeaders) { result = { status, headers: responseHeaders }; }, end(raw) { result.body = JSON.parse(raw); } };
@@ -280,8 +187,8 @@ function httpHarness({ state = cli, exec = asExec(description()), listExec = asE
   };
 }
 
-test('real HTTP Host/Origin guards run first for catalog/list, even with malformed bodies', async () => {
-  const http = httpHarness({ exec: assert.fail, listExec: assert.fail });
+test('real HTTP Host/Origin guards run first for the removed catalog path and list, even with malformed bodies', async () => {
+  const http = httpHarness({ listExec: assert.fail });
   for (const url of ['/api/catalog', '/api/capabilities?ws=%2Fteam']) {
     for (const headers of [
       {}, { host: 'evil.invalid' }, { host: '127.0.0.1.evil.invalid:4820' },
@@ -291,42 +198,22 @@ test('real HTTP Host/Origin guards run first for catalog/list, even with malform
       assert.equal(response.status, 403); assert.deepEqual(response.body, { error: 'forbidden origin' });
     }
   }
-  assert.deepEqual(http.counts(), { catalogCalls: 0, listCalls: 0, lookups: 0 });
+  assert.deepEqual(http.counts(), { listCalls: 0, lookups: 0 });
 });
 
-test('real HTTP GET and bad catalog arguments never execute a read', async () => {
-  const http = httpHarness({ exec: assert.fail, listExec: assert.fail });
-  for (const url of ['/api/catalog', '/api/capabilities?ws=%2Fteam']) {
-    assert.equal((await http.request({ url, method: 'GET' })).status, 404);
-    assert.equal((await http.request({ url, method: 'GET', headers: { host: 'evil.invalid' } })).status, 403);
+test('the removed catalog route is not served for any method or body, and GET list never executes', async () => {
+  const http = httpHarness({ listExec: assert.fail });
+  for (const method of ['GET', 'POST']) for (const body of ['{}', '', '{"env":{}}']) {
+    const result = await http.request({ url: '/api/catalog', method, body });
+    assert.equal(result.status, 404); assert.deepEqual(result.body, { error: 'not found' });
   }
-  for (const body of ['null', '[]', '1', '""', '{', '{"env":{}}', '{"source":"/other"}', '{"argv":["install"]}', ' '.repeat(65537)]) {
-    const result = await http.request({ body }); assert.equal(result.status, 400); assert.equal(result.body.code, 'E_BAD_ARGS');
-  }
-  for (const query of ['?ws=remote', '?bin=/other', '?source=override', '?argv=catalog', '?x=']) {
-    const result = await http.request({ url: `/api/catalog${query}` }); assert.equal(result.status, 400); assert.equal(result.body.code, 'E_BAD_ARGS');
-  }
-  assert.deepEqual(http.counts(), { catalogCalls: 0, listCalls: 0, lookups: 0 });
-});
-
-test('HTTP catalog exact wrapper uses local cwd; empty body accepted and failures stay recoverable', async () => {
-  const data = description(); let argvSeen, cwdSeen;
-  const http = httpHarness({ exec(_bin, argv, opts, done) { argvSeen = argv; cwdSeen = opts.cwd; done(null, JSON.stringify(envelope(data))); } });
-  for (const body of ['', '{}']) {
-    const result = await http.request({ body });
-    assert.equal(result.status, 200); assert.equal(result.headers['cache-control'], 'no-store');
-    assert.deepEqual(result.body, { catalogApi: 1, scope: 'local-cli', status: 'available', minimumVersion: '0.24.6', description: data, reason: null });
-    assert.deepEqual(argvSeen, ['catalog', '--json']); assert.equal(cwdSeen, '/server/local');
-  }
-  assert.equal(http.counts().catalogCalls, 2);
-  const old = httpHarness({ state: { ...cli, version: '0.24.5' }, exec: assert.fail });
-  assertUnavailable((await old.request()).body, 'cli-no-catalog');
-  const missing = httpHarness({ exec: (_b, _a, _o, done) => done(new Error('SECRET'), JSON.stringify(failure('E_USAGE')), 'SECRET stderr') });
-  const unavailable = await missing.request(); assert.equal(unavailable.status, 200); assertUnavailable(unavailable.body, 'E_CLI_FAILED');
+  assert.equal((await http.request({ method: 'GET' })).status, 404);
+  assert.equal((await http.request({ method: 'GET', headers: { host: 'evil.invalid' } })).status, 403);
+  assert.deepEqual(http.counts(), { listCalls: 0, lookups: 0 });
 });
 
 test('HTTP list rejects remote/foreign/captured/query misuse and keeps lock refusal visible', async () => {
-  const http = httpHarness({ exec: assert.fail, listExec: assert.fail });
+  const http = httpHarness({ listExec: assert.fail });
   for (const [url, body, code] of [
     ['/api/capabilities?ws=remote:team', '{"action":"list","selector":{}}', 'unsupported-remote-operation'],
     ['/api/capabilities?ws=foreign', '{"action":"list","selector":{}}', 'E_WORKSPACE_UNKNOWN'],
@@ -346,30 +233,27 @@ test('HTTP list rejects remote/foreign/captured/query misuse and keeps lock refu
   assert.equal(Object.hasOwn(result.body, 'packages'), false); assert.doesNotMatch(JSON.stringify(result), /SECRET/);
 });
 
-test('HTTP concurrent catalog/list share successful/failed adapter flights, then refresh and recover', async () => {
-  for (const list of [false, true]) for (const failed of [false, true]) {
+test('HTTP concurrent list requests share successful/failed adapter flights, then refresh and recover', async () => {
+  for (const failed of [false, true]) {
     let done;
-    const data = list ? inventory() : description();
-    const exec = (_b, _a, _o, callback) => { done = callback; };
-    const http = httpHarness(list ? { listExec: exec } : { exec });
-    const args = list ? { url: '/api/capabilities?ws=/team', body: JSON.stringify({ action: 'list', selector: { context: member } }) } : {};
+    const data = inventory();
+    const http = httpHarness({ listExec: (_b, _a, _o, callback) => { done = callback; } });
+    const args = { url: '/api/capabilities?ws=/team', body: JSON.stringify({ action: 'list', selector: { context: member } }) };
     const requests = Array.from({ length: 5 }, () => http.request(args));
-    await tick(); assert.equal(list ? http.counts().listCalls : http.counts().catalogCalls, 1);
+    await tick(); assert.equal(http.counts().listCalls, 1);
     if (failed) done(new Error('SECRET'), JSON.stringify(failure('invalid-lock')), 'SECRET stderr');
     else done(null, JSON.stringify(envelope(data)));
     const results = await Promise.all(requests);
     for (const r of results) {
-      assert.equal(r.status, list && failed ? 409 : 200); assert.deepEqual(r.body, results[0].body);
+      assert.equal(r.status, failed ? 409 : 200); assert.deepEqual(r.body, results[0].body);
       assert.doesNotMatch(JSON.stringify(r), /SECRET/);
     }
-    if (failed) {
-      if (list) assert.equal(results[0].body.code, 'invalid-lock');
-      else assertUnavailable(results[0].body, 'E_CLI_FAILED');
-    } else if (list) assert.deepEqual(results[0].body, { inventoryApi: 1, scope: { kind: 'classic', context: member }, ...data });
+    if (failed) assert.equal(results[0].body.code, 'invalid-lock');
+    else assert.deepEqual(results[0].body, { inventoryApi: 1, scope: { kind: 'classic', context: member }, ...data });
     const next = http.request({ ...args, headers: { host: '127.0.0.1:4820' } }); await tick();
-    assert.equal(list ? http.counts().listCalls : http.counts().catalogCalls, 2);
+    assert.equal(http.counts().listCalls, 2);
     done(null, JSON.stringify(envelope(data)));
     const recovery = await next; assert.equal(recovery.status, 200);
-    assert.equal(list ? recovery.body.inventoryApi : recovery.body.status, list ? 1 : 'available');
+    assert.equal(recovery.body.inventoryApi, 1);
   }
 });

@@ -1,63 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import * as deployment from '../server/deployment.mjs';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import * as remote from '../server/remote-roster.mjs';
 import { normalizeSoulColor } from '../renderer/soul-colors.mjs';
+import { deploymentStatusData } from '../deployment-data.mjs';
 
 // Exercise the actual response projection without starting the backend, CLI or
-// tmux. Capability resolution is injected; its existing trust/containment tests
-// remain authoritative. Local canonical metadata uses the real read-only reader.
+// tmux. Local souls are the kernel's `oats status --json` rows, captured from a
+// real Northwind run; the Desktop reads no soul.yaml.
 const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
 const start = source.indexOf('function agentsData(');
 const end = source.indexOf('/* ── Model catalog', start);
 assert.ok(start >= 0 && end > start);
-const project = (ws, reader) => new Function('workspaceById', 'workspaces', 'reader', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
-  `${source.slice(start, end)}; return agentsData;`)(() => ws, () => [ws], reader, remote, dirname, resolve, normalizeSoulColor)();
+const project = (ws, snapshot) => new Function('workspaceById', 'workspaces', 'snapshot', 'remote', 'dirname', 'resolve', 'normalizeSoulColor',
+  `${source.slice(start, end)}; return agentsData;`)(() => ws, () => [ws], snapshot, remote, dirname, resolve, normalizeSoulColor)();
+const status = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/status.json', import.meta.url), 'utf8'));
+const context = dirname(status.root);
 
-test('canonical local metadata and capability rows reach the actual agents response with only named colors', t => {
-  const dir = mkdtempSync(join(tmpdir(), 'oats-desktop-colors-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const root = join(dir, 'agents');
-  function soul(base, name, metadata, file = 'soul.yaml') {
-    const home = join(base, name, 'soul'); mkdirSync(home, { recursive: true });
-    writeFileSync(join(home, file), `name: ${name}\nruntime: pi\n${metadata}\n`);
-  }
-  soul(root, 'dev', 'color: "SAGE"');
-  soul(join(dir, 'local-agents'), 'local', 'color: clay');
-  soul(root, 'invalid', 'color: url(https://invalid.example)');
-  soul(root, 'missing', 'description: no color');
-  soul(root, 'wrong-file', 'color: sage', 'soul.yml');
-  const resolved = [];
-  const reader = { ...deployment,
-    listCapabilityAgents: () => [{ name: 'dev' }, { name: 'helper' }, { name: 'bad-capability' }],
-    findCapabilityAgent: (_context, agentsRoot, name) => {
-      assert.equal(agentsRoot, root); resolved.push(name);
-      return { name, kind: 'capability', capability: 'fixture.notes', color: name === 'helper' ? ' slate ' : '#ffffff' };
-    },
-  };
-  const result = project({ id: 'fixture', name: 'Fixture', roots: [root] }, reader);
-  assert.deepEqual(result.workspace, { id: 'fixture', name: 'Fixture' });
+test('kernel-reported soul metadata reaches the actual agents response with only named colors', () => {
+  // Variants of the captured row: the kernel passes a soul's optional
+  // canonical color through; the Desktop admits named colors only.
+  const raw = structuredClone(status);
+  const base = raw.agents[0];
+  const variant = (name, extra) => ({ ...structuredClone(base), ...extra, name, dir: `${context}/agents/${name}`, instances: [] });
+  raw.agents = [{ ...base, color: 'SAGE' }, variant('helper', { color: ' slate ' }),
+    variant('invalid', { color: 'url(https://invalid.example)' }), variant('missing', {})];
+  const roster = deploymentStatusData(raw, context);
+  const souls = roster.agents.map(({ instances: _i, ...soul }) => soul);
+  const snapshot = { byWs: new Map([[context, { deployment: { status: 'observed', root: roster.root, souls } }]]) };
+  const result = project({ id: context, name: 'northwind', roots: [roster.root] }, snapshot);
+  assert.deepEqual(result.workspace, { id: context, name: 'northwind' });
   const rows = Object.fromEntries(result.agents.map(row => [row.name, row]));
-  assert.equal(rows.dev.color, 'sage'); assert.equal(rows.local.color, 'clay');
-  assert.equal(rows.helper.color, 'slate'); assert.equal(rows.helper.capability, 'fixture.notes');
-  assert.equal(rows.local.kind, 'local'); assert.equal(rows.dev.runtime, 'pi');
-  for (const name of ['invalid', 'missing', 'bad-capability']) assert.equal(Object.hasOwn(rows[name], 'color'), false);
-  assert.equal(rows['wrong-file'], undefined);
-  assert.deepEqual(resolved, ['helper', 'bad-capability'], 'local soul retains precedence');
-  for (const row of result.agents) assert.equal(row.agentsRoot, root);
+  assert.equal(rows['release-manager'].color, 'sage'); assert.equal(rows.helper.color, 'slate');
+  for (const name of ['invalid', 'missing']) assert.equal(Object.hasOwn(rows[name], 'color'), false);
+  assert.equal(rows['release-manager'].team, 'engineering');
+  assert.deepEqual(rows['release-manager'].soulSource, status.agents[0].soulSource);
+  for (const row of result.agents) { assert.equal(row.agentsRoot, roster.root); assert.equal(row.workspace, context); }
+});
+
+test('an unobserved deployment has no spawnable souls — never a filesystem fallback', () => {
+  for (const deployment of [undefined, { status: 'pending' }, { status: 'unavailable', reason: { code: 'E_DEPLOYMENT_FEATURE', feature: 'workspace-v2' } }]) {
+    const snapshot = { byWs: new Map([[context, { deployment }]]) };
+    assert.deepEqual(project({ id: context, name: 'x', roots: [] }, snapshot).agents, []);
+  }
 });
 
 test('remote projection never reads a remote soul path or invents missing color', () => {
   const group = { id: 'host', server: 'host', registrationPresent: true, probe: { ok: true },
     target: { workspace: '/remote' }, agentsRoot: '/remote/agents', souls: [{ name: 'dev' }] };
   const ws = remote.remoteWorkspace(group);
-  const reader = new Proxy({}, { get() { assert.fail('remote metadata must not use the local reader'); } });
-  const result = project(ws, reader);
+  const snapshot = new Proxy({}, { get() { assert.fail('remote metadata must not use the local observation'); } });
+  const result = project(ws, snapshot);
   assert.equal(result.agents[0].server, 'host');
   assert.equal(Object.hasOwn(result.agents[0], 'color'), false);
   group.registrationPresent = false;
-  assert.deepEqual(project(ws, reader).agents, []);
+  assert.deepEqual(project(ws, snapshot).agents, []);
 });

@@ -2,19 +2,19 @@
 // (Phase-2 hook 3; the renderer switcher/modal is the UX designer's.)
 //
 // Discovery is BOUNDED and deterministic — never arbitrary filesystem
-// scanning: (a) workspaces the app already knows, (b) team-scope siblings of
-// known workspaces (via the same core seams the server's workspaceEntry uses),
-// (c) a persisted recently-added list. Every candidate must resolve to a
-// real OATS config/team scope AT SUGGESTION TIME; `reason` says why it is
-// offered. workspace:add canonicalizes, re-validates, persists to a recents
+// scanning: (a) deployments the app already knows, (b) a persisted
+// recently-added list. Every candidate must still be a workspace-model v2
+// deployment directory AT SUGGESTION TIME; `reason` says why it is offered.
+// The deployment's content is the kernel's to read (`oats workspace status`);
+// the registry never parses it and knows no team scope. workspace:add canonicalizes, re-validates, persists to a recents
 // store (path-validated on read-back — never trusted blindly), and the
 // caller replaces only an app-OWNED backend server.
 import { mkdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
 
 /** Restore explicitly opened workspaces, independently of recent suggestions.
- * Re-resolve identities on startup: moved/deleted workspaces are skipped and
- * members/symlinks resolving to the same team scope open only once. */
+ * Re-validate on startup: moved/deleted deployments are skipped and
+ * symlinks resolving to the same canonical deployment open only once. */
 export function restoreWorkspaceDirs(startup, raw, validate) {
   let saved;
   try { saved = JSON.parse(raw); } catch { saved = []; }
@@ -51,32 +51,26 @@ export function saveWorkspaceDirs(file, dirs) {
 }
 
 /**
- * Validate a directory as an OATS workspace and resolve its identity.
+ * Validate a directory as a workspace-model v2 deployment and derive its
+ * identity: the canonical deployment directory itself.
  * @param {string} path       canonicalized absolute path
  * @param {object} io
- * @param {(p: string) => { team?: { name: string, scope: string } } | null} io.resolveConfig
- *        core.resolveOatsConfig wrapper; null/throw = not a workspace
- * @param {(p: string) => boolean} io.hasAgentsRoot   agents/ dir present (ensureRoot-style)
- * @returns {{ id: string, name: string, team: { name: string } | null, path: string } | null}
+ * @param {(p: string) => boolean} io.isDeployment  the directory holds its
+ *        deployment file (a regular, non-symlink oats-local.yaml); existence
+ *        only — the kernel reads and validates it
+ * @returns {{ id: string, name: string, team: null, path: string } | null}
  */
 export function validateWorkspace(path, io) {
-  let cfg = null;
-  try { cfg = io.resolveConfig(path); } catch { return null; }
-  if (cfg?.team?.scope) {
-    const scope = cfg.team.scope;
-    return { id: scope, name: scope.split("/").pop(), team: { name: cfg.team.name }, path: scope };
-  }
-  if (io.hasAgentsRoot(path)) {
-    return { id: path, name: path.split("/").pop(), team: null, path };
-  }
-  return null;
+  if (typeof path !== "string" || !path.startsWith("/")) return null;
+  let deployment = false;
+  try { deployment = io.isDeployment(path) === true; } catch { return null; }
+  return deployment ? { id: path, name: path.split("/").pop() || path, team: null, path } : null;
 }
 
 /**
  * Assemble the suggestion list: validated candidates NOT currently advertised.
  * @param {object} io
- * @param {string[]} io.knownPaths      workspace paths the app already knows (startup --dir set)
- * @param {(p: string) => string[]} io.teamSiblings   sibling workspace paths within p's team scope
+ * @param {string[]} io.knownPaths      deployment paths the app already knows (startup --dir set)
  * @param {string[]} io.recents         persisted recently-added paths (validated on read)
  * @param {Set<string>} io.advertised   workspace ids the current server advertises
  * @param {(p: string) => ReturnType<typeof validateWorkspace>} io.validate
@@ -90,10 +84,7 @@ export function workspaceSuggestions(io) {
     if (io.advertised.has(v.id)) return;  // already advertised — not a suggestion
     if (!out.has(v.id)) out.set(v.id, { ...v, reason });
   };
-  for (const p of io.knownPaths) {
-    consider(p, "known workspace");
-    for (const sib of io.teamSiblings(p)) consider(sib, `team sibling of ${p.split("/").pop()}`);
-  }
+  for (const p of io.knownPaths) consider(p, "known workspace");
   for (const p of io.recents) consider(p, "recently used");
   return [...out.values()];
 }
@@ -147,7 +138,7 @@ export function decideAdd(requestedPath, io) {
     return { ok: false, code: "not-suggested", reason: "path is not in the suggestion set (use the directory picker)" };
   }
   const ws = io.validate(canonical);
-  if (!ws) return { ok: false, code: "not-a-workspace", reason: "not an OATS workspace (no team scope or agents root)" };
+  if (!ws) return { ok: false, code: "not-a-workspace", reason: "not an OATS deployment (no oats-local.yaml)" };
   if (io.advertised.has(ws.id)) return { ok: true, workspace: ws, action: "already-advertised" };
   if (!io.serverOwned) {
     // Never mutate or kill a foreign server — fail closed with a reason.

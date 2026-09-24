@@ -1,0 +1,616 @@
+{
+  "root": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents",
+  "agents": [
+    {
+      "schemaVersion": "2",
+      "name": "release-manager",
+      "description": "Cuts, verifies and announces platform releases.",
+      "work": "worktree",
+      "team": "engineering",
+      "capabilities": "",
+      "knowledge": "",
+      "messaging": "",
+      "kind": "persistent",
+      "dir": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager",
+      "instances": [
+        {
+          "agent": "release-manager",
+          "kind": "persistent",
+          "instance": "release-manager-desktop-study",
+          "home": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+          "repo": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment",
+          "work": "directory",
+          "runtime": "pi",
+          "team": {
+            "name": "default",
+            "id": "default:oats.aweb.ai",
+            "scope": "/fixture/operator"
+          },
+          "spawnOrigin": "operator",
+          "policy": {
+            "childSpawns": {
+              "allowed": true,
+              "origin": {
+                "kind": "default",
+                "detail": "no declaration: children allowed"
+              }
+            }
+          },
+          "decision": {
+            "instance": "release-manager-desktop-study",
+            "home": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+            "branch": null,
+            "base": null,
+            "effective": {
+              "repo": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment",
+              "work": "directory",
+              "runtime": "pi",
+              "model": null,
+              "launchConfig": null,
+              "yolo": null,
+              "backend": "tmux",
+              "childSpawns": true,
+              "relation": null,
+              "providers": {
+                "nw-deploy": {},
+                "nw-house-style": {},
+                "nw-release-tooling": {},
+                "oats.core": {},
+                "oats.okf": {
+                  "owns": "release-manager",
+                  "reads": [
+                    "platform-engineer",
+                    "data-analyst"
+                  ]
+                }
+              }
+            },
+            "resolution": "c76d159abcbebb174531da18",
+            "revision": "a02fe99df6f0149b239149bf"
+          },
+          "spawnIdempotencyKey": "desktop-study-13ff9517",
+          "spawnCompleted": true,
+          "layers": {
+            "knowledge": "none @ /fixture/operator",
+            "tasks": "none @ /fixture/operator"
+          },
+          "capabilities": [
+            {
+              "id": "nw-deploy",
+              "origin": "package:nw.tools@0.4.0",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "provenance": [
+                "package nw.tools v0.4.0"
+              ],
+              "skills": [
+                "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/nw-deploy/deploy"
+              ],
+              "hooks": [],
+              "trusted": true
+            },
+            {
+              "id": "nw-house-style",
+              "origin": "member:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git@42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "provenance": [
+                "member local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git @ 42dda7718975"
+              ],
+              "skills": [],
+              "hooks": [],
+              "trusted": true
+            },
+            {
+              "id": "nw-release-tooling",
+              "origin": "member:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git@42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "provenance": [
+                "member local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git @ 42dda7718975"
+              ],
+              "skills": [
+                "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/nw-release-tooling/cut-release"
+              ],
+              "hooks": [],
+              "trusted": true
+            },
+            {
+              "id": "oats.core",
+              "origin": "package:oats.framework@1.1.3",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "provenance": [
+                "package oats.framework v1.1.3"
+              ],
+              "skills": [
+                "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/oats.core/oats-operate"
+              ],
+              "hooks": [],
+              "trusted": true
+            },
+            {
+              "id": "oats.okf",
+              "layer": "knowledge",
+              "command": "okf",
+              "origin": "package:oats.okf@2.1.3",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {
+                "owns": "release-manager",
+                "reads": [
+                  "platform-engineer",
+                  "data-analyst"
+                ]
+              },
+              "provenance": [
+                "package oats.okf v2.1.3"
+              ],
+              "skills": [
+                "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/oats.okf/okf"
+              ],
+              "hooks": [
+                "spawn",
+                "retire"
+              ],
+              "trusted": true
+            }
+          ],
+          "skills": [
+            {
+              "name": "release-checklist",
+              "source": "soul"
+            }
+          ],
+          "instructions": [
+            {
+              "source": "kernel:instance-boundary",
+              "file": "/fixture/desktop-study/work/injects/instance-boundary.md"
+            },
+            {
+              "source": "work-mode:directory",
+              "file": "/fixture/desktop-study/work/injects/work-directory.md"
+            },
+            {
+              "source": "config:oats-framework-repo:framework",
+              "file": "/fixture/operator/oats/injects/framework-workspace.md"
+            },
+            {
+              "source": "capability:nw-house-style",
+              "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-house-style/injects/house-style.md"
+            },
+            {
+              "source": "capability:nw-release-tooling",
+              "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-release-tooling/injects/release-policy.md"
+            },
+            {
+              "source": "capability:oats.core",
+              "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.core/injects/oats.md"
+            },
+            {
+              "source": "capability:oats.okf",
+              "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/injects/okf.md"
+            }
+          ],
+          "composition": {
+            "expected": [
+              {
+                "type": "skill-tree",
+                "source": "soul",
+                "declared": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/soul/skills",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/soul/skills"
+              },
+              {
+                "type": "skill-tree",
+                "source": "nw-deploy",
+                "declared": "skills/deploy",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/nw-deploy",
+                "origin": "package:nw.tools@0.4.0",
+                "deferred": "materialize"
+              },
+              {
+                "type": "injection",
+                "source": "nw-house-style",
+                "declared": "injects/house-style.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-house-style/injects/house-style.md",
+                "origin": "member:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git@42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+                "deferred": "materialize"
+              },
+              {
+                "type": "skill-tree",
+                "source": "nw-release-tooling",
+                "declared": "skills/cut-release",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/nw-release-tooling",
+                "origin": "member:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git@42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+                "deferred": "materialize"
+              },
+              {
+                "type": "injection",
+                "source": "nw-release-tooling",
+                "declared": "injects/release-policy.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-release-tooling/injects/release-policy.md",
+                "origin": "member:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git@42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+                "deferred": "materialize"
+              },
+              {
+                "type": "skill-tree",
+                "source": "oats.core",
+                "declared": "skills/oats-operate",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/oats.core",
+                "origin": "package:oats.framework@1.1.3",
+                "deferred": "materialize"
+              },
+              {
+                "type": "injection",
+                "source": "oats.core",
+                "declared": "injects/oats.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.core/injects/oats.md",
+                "origin": "package:oats.framework@1.1.3",
+                "deferred": "materialize"
+              },
+              {
+                "type": "skill-tree",
+                "source": "oats.okf",
+                "declared": "skills/okf",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills/oats.okf",
+                "origin": "package:oats.okf@2.1.3",
+                "deferred": "materialize"
+              },
+              {
+                "type": "injection",
+                "source": "oats.okf",
+                "declared": "injects/okf.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/injects/okf.md",
+                "origin": "package:oats.okf@2.1.3",
+                "deferred": "materialize"
+              },
+              {
+                "type": "instruction-block",
+                "source": "kernel:instance-boundary",
+                "declared": "/fixture/desktop-study/work/injects/instance-boundary.md",
+                "resolved": "/fixture/desktop-study/work/injects/instance-boundary.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "work-mode:directory",
+                "declared": "/fixture/desktop-study/work/injects/work-directory.md",
+                "resolved": "/fixture/desktop-study/work/injects/work-directory.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "config:oats-framework-repo:framework",
+                "declared": "/fixture/operator/oats/injects/framework-workspace.md",
+                "resolved": "/fixture/operator/oats/injects/framework-workspace.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "capability:nw-house-style",
+                "declared": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-house-style/injects/house-style.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-house-style/injects/house-style.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "capability:nw-release-tooling",
+                "declared": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-release-tooling/injects/release-policy.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-release-tooling/injects/release-policy.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "capability:oats.core",
+                "declared": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.core/injects/oats.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.core/injects/oats.md"
+              },
+              {
+                "type": "instruction-block",
+                "source": "capability:oats.okf",
+                "declared": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/injects/okf.md",
+                "resolved": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/injects/okf.md"
+              }
+            ],
+            "materialized": {
+              "skills": [
+                {
+                  "name": "release-checklist",
+                  "source": "soul",
+                  "from": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/soul/skills/release-checklist"
+                }
+              ],
+              "instructions": [
+                {
+                  "source": "kernel:instance-boundary",
+                  "file": "/fixture/desktop-study/work/injects/instance-boundary.md"
+                },
+                {
+                  "source": "work-mode:directory",
+                  "file": "/fixture/desktop-study/work/injects/work-directory.md"
+                },
+                {
+                  "source": "config:oats-framework-repo:framework",
+                  "file": "/fixture/operator/oats/injects/framework-workspace.md"
+                },
+                {
+                  "source": "capability:nw-house-style",
+                  "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-house-style/injects/house-style.md"
+                },
+                {
+                  "source": "capability:nw-release-tooling",
+                  "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/nw-release-tooling/injects/release-policy.md"
+                },
+                {
+                  "source": "capability:oats.core",
+                  "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.core/injects/oats.md"
+                },
+                {
+                  "source": "capability:oats.okf",
+                  "file": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/injects/okf.md"
+                }
+              ],
+              "runtimePackages": [],
+              "runtimePosture": {
+                "oatsComposed": "skills via --skill <instance-home>/.agents/skills; instructions via --append-system-prompt",
+                "curtailed": [
+                  "user skills",
+                  "project and ancestor skills",
+                  "package skills",
+                  "ambient AGENTS.md/CLAUDE.md discovery",
+                  "ambient prompt templates"
+                ],
+                "ambient": [
+                  "globally configured pi extensions, and any resources they contribute"
+                ],
+                "why": "founder ruling: shared cross-agent pi extensions (web search, output formatting) stay available to every instance."
+              },
+              "canonicalSkillTree": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.agents/skills",
+              "skillAlias": {
+                "path": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.claude/skills",
+                "target": "../.agents/skills"
+              }
+            }
+          },
+          "capabilityRuntime": [
+            {
+              "id": "nw-deploy",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "hooks": {},
+              "requiredHooks": [],
+              "environment": [],
+              "environmentNamespaces": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "reason": "approved package version"
+              },
+              "executable": true
+            },
+            {
+              "id": "nw-house-style",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "hooks": {},
+              "requiredHooks": [],
+              "environment": [],
+              "environmentNamespaces": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "reason": "workspace member"
+              },
+              "executable": false
+            },
+            {
+              "id": "nw-release-tooling",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "hooks": {},
+              "requiredHooks": [],
+              "environment": [],
+              "environmentNamespaces": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "reason": "workspace member"
+              },
+              "executable": true
+            },
+            {
+              "id": "oats.core",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {},
+              "hooks": {},
+              "requiredHooks": [],
+              "environment": [],
+              "environmentNamespaces": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "reason": "approved package version"
+              },
+              "executable": false
+            },
+            {
+              "id": "oats.okf",
+              "layer": "knowledge",
+              "level": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study",
+              "settings": {
+                "owns": "release-manager",
+                "reads": [
+                  "platform-engineer",
+                  "data-analyst"
+                ]
+              },
+              "hooks": {
+                "spawn": "node '/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/bin/oats-okf.mjs' spawn",
+                "retire": "node '/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/.oats/modules/oats.okf/bin/oats-okf.mjs' retire"
+              },
+              "requiredHooks": [
+                "spawn"
+              ],
+              "environment": [],
+              "environmentNamespaces": [],
+              "missingRequires": [],
+              "trust": {
+                "trusted": true,
+                "reason": "approved package version"
+              },
+              "executable": true
+            }
+          ],
+          "tmux": {
+            "session": "northwind-desktop-study-no-session",
+            "window": "release-manager-desktop-study"
+          },
+          "launch": {
+            "version": 1,
+            "runtime": "pi",
+            "launchConfig": null,
+            "launchConfigSource": null,
+            "executable": "/fixture/desktop-study/artifacts/redesign/phase-f/study-env/bin/pi",
+            "executableDeclared": null,
+            "executableResolvedFrom": "PATH",
+            "args": [],
+            "env": {},
+            "model": null,
+            "hooks": {
+              "launch": {},
+              "env": {},
+              "contributions": []
+            },
+            "prompt": {
+              "kind": "task-file",
+              "file": "TASK.md"
+            }
+          },
+          "command": "OATS_INSTANCE='release-manager-desktop-study' OATS_INSTANCE_HOME='/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study' PI_AGENT_INSTANCE='release-manager-desktop-study' PI_AGENT_HOME='/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study' '/fixture/desktop-study/artifacts/redesign/phase-f/study-env/bin/pi' --append-system-prompt '/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/agents/release-manager/instances/release-manager-desktop-study/AGENTS.md' --approve --name 'release-manager-desktop-study' '@TASK.md'",
+          "createdAt": "2026-09-24T10:54:57.575Z",
+          "modules": [
+            {
+              "name": "nw-deploy",
+              "from": {
+                "kind": "package",
+                "package": "nw.tools",
+                "version": "0.4.0",
+                "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+                "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+                "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/nw-tools.git"
+              },
+              "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+              "current": {
+                "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+                "version": "0.4.0"
+              },
+              "status": "current"
+            },
+            {
+              "name": "nw-house-style",
+              "from": {
+                "kind": "member",
+                "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+                "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7"
+              },
+              "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+              "current": {
+                "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7"
+              },
+              "status": "current"
+            },
+            {
+              "name": "nw-release-tooling",
+              "from": {
+                "kind": "member",
+                "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+                "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7"
+              },
+              "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+              "current": {
+                "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7"
+              },
+              "status": "current"
+            },
+            {
+              "name": "oats.core",
+              "from": {
+                "kind": "package",
+                "package": "oats.framework",
+                "version": "1.1.3",
+                "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+                "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+                "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/pkg-framework.git"
+              },
+              "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+              "current": {
+                "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+                "version": "1.1.3"
+              },
+              "status": "current"
+            },
+            {
+              "name": "oats.okf",
+              "from": {
+                "kind": "package",
+                "package": "oats.okf",
+                "version": "2.1.3",
+                "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+                "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+                "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/pkg-okf.git"
+              },
+              "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+              "current": {
+                "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+                "version": "2.1.3"
+              },
+              "status": "current"
+            }
+          ],
+          "providers": {
+            "nw-deploy": {},
+            "nw-house-style": {},
+            "nw-release-tooling": {},
+            "oats.core": {},
+            "oats.okf": {
+              "owns": "release-manager",
+              "reads": [
+                "platform-engineer",
+                "data-analyst"
+              ]
+            }
+          },
+          "workspace": {
+            "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+            "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+            "resolution": "c76d159abcbebb174531da18",
+            "standalone": false,
+            "soul": {
+              "id": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git#release-manager",
+              "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+              "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+              "team": "engineering"
+            }
+          },
+          "launched": false,
+          "wake": {
+            "requested": false,
+            "saved": null,
+            "error": null
+          },
+          "running": false,
+          "soul": {
+            "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+            "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+            "current": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+            "status": "current"
+          }
+        }
+      ],
+      "soulSource": {
+        "repoKey": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+        "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+        "path": "souls/release-manager",
+        "current": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+        "status": "current"
+      }
+    }
+  ],
+  "workspace": {
+    "reachable": true
+  }
+}

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { JSDOM } from "jsdom";
 import { createSoulMark, createRuntimeBadge, identityCSS } from "../renderer/identity-marks.mjs";
-import { createOfficialCatalog, officialCatalogCSS } from "../renderer/official-catalog.mjs";
+import { createDeploymentHeader, deploymentHeaderCSS } from "../renderer/deployment-header.mjs";
+import { workspaceStatusData } from "../deployment-data.mjs";
 import { createDeploymentInventory, inventoryCSS } from "../renderer/deployment-inventory.mjs";
 import { createConnections, connectionsCSS } from '../renderer/connections.mjs';
 import { createForgePrPanel } from '../renderer/forge-pr.mjs';
@@ -298,27 +299,32 @@ for (const [name] of palettes) test(`${name}: actual identity/runtime markup win
   }
 });
 
-for (const [name] of palettes) test(`${name}: catalog and inventory text use AA tokens on their computed surfaces`, async t => {
-  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`);
+for (const [name] of palettes) test(`${name}: workspace header and inventory text use AA tokens on their computed surfaces`, async t => {
+  const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"><section class="header-host"></section></main></body></html>`);
   const doc = dom.window.document, host = doc.querySelector('main');
-  for (const source of [css, identityCSS, officialCatalogCSS, inventoryCSS]) {
+  for (const source of [css, identityCSS, deploymentHeaderCSS, inventoryCSS]) {
     const style = doc.createElement('style'); style.textContent = source; doc.head.append(style);
   }
-  const ctx = { api: async path => path === '/api/catalog' ? {
-    catalogApi: 1, scope: 'local-cli', status: 'available', minimumVersion: '0.24.6', reason: null,
-    description: { schemaVersion: 1, catalog: { origin: 'override', file: '/fixture/catalog.json', kernelVersion: '0.24.6' },
-      packages: [{ package: 'fixture.pkg', url: null, ref: null, path: 'oats', acquire: { argv: ['oats', 'install', 'fixture.pkg'] } }], capabilityAliases: [], notes: [] },
-  } : { inventoryApi: 1, scope: { kind: 'classic', context: '/fixture' }, packages: [], capabilities: [{ capability: 'fixture.cap', level: '/fixture' }], legacy: [] } };
-  const catalog = createOfficialCatalog(host, { ctx }), inventory = createDeploymentInventory(host, { ctx });
-  t.after(() => { catalog.dispose(); inventory.dispose(); dom.window.close(); });
-  await catalog.update({ active: true, identity: name });
+  const ctx = { api: async () => ({ inventoryApi: 1, scope: { kind: 'classic', context: '/fixture' }, packages: [], capabilities: [{ capability: 'fixture.cap', level: '/fixture' }], legacy: [] }) };
+  // Captured kernel header, with one pending approval and one problem so every
+  // painted status variant is present.
+  const raw = JSON.parse(readFileSync(new URL("fixtures/workspace-v2/workspace-status.json", new URL("./", import.meta.url)), "utf8"));
+  const dir = raw.result.workspace.local.replace(/\/oats-local\.yaml$/, '');
+  raw.result.approval.needed = ['nw.tools']; raw.result.problems = [{ code: 'E_FIXTURE', message: 'fixture problem' }];
+  const header = createDeploymentHeader(doc.querySelector('.header-host')), inventory = createDeploymentInventory(host, { ctx });
+  t.after(() => { header.dispose(); inventory.dispose(); dom.window.close(); });
+  header.update({ status: 'observed', workspaceStatus: workspaceStatusData(raw, dir), reachable: { reachable: true } });
   await inventory.update({ active: true, identity: name, workspace: { scope: '/fixture' }, context: '/fixture', selector: {}, cli: { ok: true } });
   const root = dom.window.getComputedStyle(doc.documentElement);
   for (const [selector, painted, fg, bg] of [
-    ['.official-catalog-note', '.oats-view', 'muted', 'bg'],
-    ['.official-catalog-warning', '.official-catalog-warning', 'danger', 'surface'],
-    ['.official-catalog-command', '.official-catalog-command', 'fg', 'surface'],
-    ['.official-catalog-table th', '.official-catalog-table th', 'muted', 'surface-2'],
+    ['.deployment-header h2', '.oats-view', 'fg', 'bg'],
+    ['.deployment-header-key', '.oats-view', 'muted', 'bg'],
+    ['.deployment-header-status:not(.warn)', '.oats-view', 'muted', 'bg'],
+    ['.deployment-header-status.warn', '.oats-view', 'fg', 'bg'],
+    ['.deployment-header h3', '.oats-view', 'fg', 'bg'],
+    ['.deployment-header li strong', '.deployment-header li', 'fg', 'surface'],
+    ['.deployment-header li small', '.deployment-header li', 'muted', 'surface'],
+    ['.deployment-header-fact', '.deployment-header-fact', 'muted', 'surface-2'],
     ['.inventory-note', '.oats-view', 'muted', 'bg'],
     ['.inventory-table th', '.inventory-table th', 'muted', 'surface-2'],
     ['.inventory-table small', '.inventory-table', 'muted', 'surface'],

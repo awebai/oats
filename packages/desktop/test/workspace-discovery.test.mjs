@@ -8,13 +8,17 @@ import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { capabilityFacts, installedSources, createWorkspaceDiscovery } from '../renderer/workspace-discovery.mjs';
 import { remotePanel } from '../server/remote-roster.mjs';
+import { workspaceStatusData } from '../deployment-data.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const CLI = { ok: true, bin: '/fixture/oats', version: '0.24.6', operationsApi: 1, features: ['operations'], remote: ['operations'], relations: true };
-const catalogData = (id = 'catalog.package') => ({ catalogApi: 1, scope: 'local-cli', status: 'available', minimumVersion: '0.24.6', reason: null,
-  description: { schemaVersion: 1, catalog: { origin: 'bundled', file: '/fixture/catalog.json', kernelVersion: '0.24.6' },
-    packages: [{ package: id, url: 'https://example.invalid/source.git', ref: 'v9.9.9', path: 'oats', acquire: { argv: ['oats', 'install', id] } }], capabilityAliases: [], notes: [] } });
+// The kernel's workspace header, captured from a real Northwind run and
+// projected exactly as the server does; the panel carries it with the roster.
+const northwind = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/workspace-status.json', import.meta.url), 'utf8'));
+const northwindDir = northwind.result.workspace.local.replace(/\/oats-local\.yaml$/, '');
+const observed = () => ({ status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
+  workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } });
 const soul = (root = '/team/one/agents', name = 'dev') => ({ name, agentsRoot: root, description: 'Build and review', runtime: 'pi', work: 'worktree', repoName: 'project' });
 const inspectData = (id = 'fixture.notes', selector = {}) => ({ operationsApi: 1, scope: { context: selector.context || '/team' }, selected: { source: 'config' },
   souls: [{ ...soul(selector.agentsRoot), editable: { fields: ['model'], instructions: true }, model: 'default-model', instructions: { text: '# Literal AGENTS.md\n<img src=x onerror=evil()>' } }],
@@ -31,7 +35,8 @@ async function setup(t, options = {}) {
   let agents = options.agents || [soul()];
   let getAgents = options.getAgents, getPanel = options.getPanel;
   const calls = [], files = [], opens = [];
-  const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace(), ...(options.workspace || {}) }, workspaces: options.workspaces || [], instances: options.instances || [] });
+  const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace(), ...(options.workspace || {}) }, workspaces: options.workspaces || [], instances: options.instances || [],
+    ...(options.deployment !== null ? { deployment: options.deployment ? options.deployment() : observed() } : {}) });
   const ctx = { hasWorkspaceSwitcher: options.shell ?? true,
     api: async (path, opts = {}) => {
       const body = opts.body ? JSON.parse(opts.body) : undefined; calls.push({ path, body, method: opts.method || 'GET' });
@@ -42,7 +47,6 @@ async function setup(t, options = {}) {
         inventoryApi: 1, scope: { kind: 'classic', context: body.selector.context || currentWorkspace() }, packages: [], capabilities: [], legacy: [],
       };
       if (path.startsWith('/api/capabilities')) return options.inspect ? options.inspect(body) : inspectData('fixture.notes', body.selector);
-      if (path === '/api/catalog') return options.catalog ? options.catalog() : catalogData();
       if (path === '/api/servers') return { servers: [] };
       if (path === '/api/spawn' && options.spawn) return options.spawn(body);
       throw new Error(`Unexpected fixture API request: ${path}`);
@@ -59,7 +63,6 @@ async function setup(t, options = {}) {
     change: (selector, value) => { const el = doc.querySelector(selector); el.value = value; el.dispatchEvent(new dom.window.Event('change', { bubbles: true })); return el; },
     inspections: () => calls.filter(call => call.path.startsWith('/api/capabilities') && call.body.action === 'inspect'),
     inventories: () => calls.filter(call => call.path.startsWith('/api/capabilities') && call.body.action === 'list'),
-    catalogs: () => calls.filter(call => call.path === '/api/catalog'),
     setAgents: value => { agents = value; },
     setLoaders: (a, p) => { getAgents = a; getPanel = p; },
     setCli: async value => { cli = value; await refreshCli({ api: async () => cli }); },
@@ -68,7 +71,7 @@ async function setup(t, options = {}) {
 
 test('Workspace has semantic tabs, current counts, explicit inspection and no incidental mutation', async t => {
   const u = await setup(t);
-  assert.equal(u.doc.querySelector('h1').textContent, 'Workspace');
+  assert.equal(u.doc.querySelector('h1').textContent, 'northwind');
   assert.deepEqual([...u.doc.querySelectorAll('[role=tab]')].map(el => el.id), ['workspace-tab-souls', 'workspace-tab-capabilities', 'workspace-tab-sources']);
   assert.equal(u.doc.querySelector('#workspace-tab-souls .workspace-count').textContent, '1');
   assert.equal(u.doc.querySelector('#workspace-tab-capabilities .workspace-count').textContent, '');
@@ -92,68 +95,68 @@ test('Workspace has semantic tabs, current counts, explicit inspection and no in
   assert.equal(u.doc.querySelector('.souls-grid').hidden, false);
   assert.equal(u.doc.querySelector('.workspace-discovery').hidden, true);
   assert.equal(u.doc.querySelector('.spawn-modal'), null);
-  assert.deepEqual(u.calls.filter(c => c.method === 'POST').map(c => c.path === '/api/catalog' ? 'catalog' : c.body.action), ['catalog', 'list', 'inspect']);
+  assert.deepEqual(u.calls.filter(c => c.method === 'POST').map(c => c.body.action), ['list', 'inspect'], 'the header is roster data: no separate catalog or header read');
 });
 
-test('catalog stays explicitly local on a remote workspace and does not require remote inspection readiness', async t => {
-  const u = await setup(t, { workspace: { remote: true, server: 'remote-host', registrationPresent: false } });
-  assert.equal(u.catalogs().length, 0);
+test('the kernel workspace header renders exactly the reported name, key, members, packages and approval IDs', async t => {
+  const u = await setup(t);
+  assert.equal(u.doc.querySelector('h1').textContent, 'northwind', 'title is the kernel-reported workspace name');
   u.tab('capabilities'); await tick();
-  assert.equal(u.inspections().length, 0, 'unregistered remote inspection is refused');
-  assert.match(u.doc.querySelector('.discovery-status').textContent, /registered server/);
-  const catalog = u.doc.querySelector('.official-catalog');
-  assert.equal(catalog.hidden, false);
-  assert.match(catalog.getAttribute('aria-label'), /Local CLI catalog/);
-  assert.equal(catalog.querySelector('.official-catalog-scope').textContent, 'Local CLI catalog');
-  assert.equal(catalog.querySelector('.official-catalog-command').value, 'oats install catalog.package');
-  assert.deepEqual(u.catalogs(), [{ path: '/api/catalog', body: {}, method: 'POST' }]);
-  u.tab('sources'); assert.equal(catalog.hidden, true); u.tab('capabilities'); await tick();
-  assert.equal(u.catalogs().length, 1);
-  assert.deepEqual(u.opens, []); assert.deepEqual(u.files, []);
+  const header = u.doc.querySelector('.deployment-header');
+  assert.equal(header.hidden, false);
+  assert.equal(header.querySelector('h2').textContent, 'northwind');
+  assert.equal(header.querySelector('.deployment-header-key').textContent, `${northwind.result.workspace.key} @ ${northwind.result.workspace.commit.slice(0, 7)}`);
+  const rows = [...header.querySelectorAll('li')].map(li => li.textContent);
+  for (const member of northwind.result.members) assert.ok(rows.some(row => row.startsWith(member.name) && row.includes('Confirmed') && row.includes(`Team: ${member.team}`)), member.name);
+  for (const pkg of northwind.result.packages) assert.ok(rows.some(row => row.startsWith(pkg.id) && row.includes('Approved')), pkg.id);
+  assert.match(header.textContent, /Every locked package is approved/);
+  assert.doesNotMatch(header.textContent, /approvalNeeded|install|catalog/i, 'no sync-row, acquisition or catalog vocabulary');
+  // Identical polls neither rebuild the header under focus nor re-read.
+  const before = header.firstChild; header.tabIndex = -1; header.focus();
+  u.polls[0](); await tick();
+  assert.equal(header.firstChild, before); assert.equal(u.doc.activeElement, header);
+  u.tab('souls'); assert.equal(header.hidden, true);
 });
 
-test('catalog unavailable on an older CLI cannot suppress deployment inspection and retries independently', async t => {
-  let data = { catalogApi: 1, scope: 'local-cli', status: 'unavailable', minimumVersion: '0.24.6', description: null,
-    reason: { code: 'cli-no-catalog', message: 'Catalog requires OATS 0.24.6 or newer.' } };
-  const u = await setup(t, { cli: { ...CLI, version: '0.24.5' }, catalog: () => data });
+test('approval needed and unsynced/stale lock state are the header ID arrays, never sync rows', async t => {
+  const status = structuredClone(northwind);
+  status.result.approval = { approved: ['oats.framework'], needed: ['nw.tools', 'oats.okf'] };
+  status.result.packages = status.result.packages.map(pkg => pkg.id === 'oats.framework' ? pkg : { ...pkg, approved: null });
+  status.result.unsynced = ['new.package']; status.result.stale = ['old.package'];
+  const u = await setup(t, { deployment: () => ({ ...observed(), workspaceStatus: workspaceStatusData(status, northwindDir) }) });
   u.tab('capabilities'); await tick();
-  assert.match(u.doc.querySelector('.official-catalog-status').textContent, /Catalog unavailable/);
-  assert.match(u.doc.querySelector('.discovery-table').textContent, /fixture.notes/);
-  assert.equal(u.inspections().length, 1);
-  data = catalogData(); u.doc.querySelector('.official-catalog-refresh').click(); await tick();
-  assert.equal(u.doc.querySelector('.official-catalog-status').textContent, '');
-  assert.equal(u.catalogs().length, 2); assert.equal(u.inspections().length, 1);
-  const command = u.doc.querySelector('.official-catalog-command'); command.focus(); command.setSelectionRange(1, 5);
-  for (let n = 0; n < 3; n++) { u.polls[0](); await tick(); }
-  await u.setCli({ ...CLI, version: '0.24.5' });
-  assert.equal(u.doc.activeElement, command); assert.equal(command.selectionEnd, 5);
-  assert.equal(u.catalogs().length, 2, 'same CLI/roster polls do not rerun catalog or reconstruct controls');
+  const header = u.doc.querySelector('.deployment-header');
+  assert.match(header.textContent, /Approval needed: nw\.tools, oats\.okf/);
+  assert.match(header.textContent, /Declared but not locked \(run oats sync\): new\.package/);
+  assert.match(header.textContent, /Locked but no longer declared \(run oats sync\): old\.package/);
+  const approval = [...header.querySelectorAll('li')].filter(li => li.textContent.includes('Approval needed')).map(li => li.querySelector('strong').textContent);
+  assert.deepEqual(approval, ['nw.tools', 'oats.okf']);
 });
 
-for (const change of ['workspace', 'CLI']) for (const outcome of ['success', 'rejection']) test(`Workspace catalog rejects stale ${outcome} after ${change} A→B→A`, async t => {
-  const reads = [];
-  const u = await setup(t, { catalog: () => { const d = deferred(); reads.push(d); return d.promise; } });
-  u.tab('capabilities'); assert.equal(reads.length, 1);
-  if (change === 'workspace') { setWorkspace('/other'); await tick(); setWorkspace('/team'); await tick(); }
-  else { await u.setCli({ ...CLI, bin: '/fixture/other-oats' }); await u.setCli(CLI); }
-  assert.equal(reads.length, 3);
-  reads[2].resolve({ catalogApi: 1, scope: 'local-cli', status: 'unavailable', minimumVersion: '0.24.6', description: null,
-    reason: { code: 'E_CLI_FAILED', message: 'newest catalog failed' } }); await tick();
-  reads[1].resolve(catalogData('other-generation'));
-  if (outcome === 'success') reads[0].resolve(catalogData('old-generation')); else reads[0].reject(new Error('old-generation failure'));
-  await tick();
-  const section = u.doc.querySelector('.official-catalog');
-  assert.match(section.querySelector('.official-catalog-status').textContent, /newest catalog failed/);
-  assert.doesNotMatch(section.textContent, /other-generation|old-generation/);
-  assert.equal(section.querySelector('.official-catalog-command'), null);
-  assert.match(u.doc.querySelector('.discovery-table').textContent, /fixture.notes/);
+test('an unreachable workspace says module drift is not current, with the kernel reason', async t => {
+  const u = await setup(t, { deployment: () => ({ ...observed(), reachable: { reachable: false, code: 'E_REMOTE_UNREADABLE', message: 'network' } }) });
+  u.tab('capabilities'); await tick();
+  assert.match(u.doc.querySelector('.deployment-header').textContent, /Workspace unreachable — module drift is not current\. E_REMOTE_UNREADABLE: network/);
+});
+
+for (const [name, deployment, expected] of [
+  ['missing feature', { status: 'unavailable', reason: { code: 'E_DEPLOYMENT_FEATURE', message: 'x', feature: 'instance-modules' } }, /does not advertise instance-modules/],
+  ['kernel refusal', { status: 'unavailable', reason: { code: 'E_LOCAL_MISSING', message: 'no oats-local.yaml at this directory' } }, /E_LOCAL_MISSING: no oats-local\.yaml at this directory/],
+  ['pending', { status: 'pending' }, /Reading the deployment/],
+]) test(`unobserved deployment (${name}) is explained in the header and the soul roster, never shown as empty`, async t => {
+  const u = await setup(t, { agents: [], deployment: () => deployment });
+  assert.equal(u.doc.querySelector('h1').textContent, 'Workspace');
+  assert.match(u.doc.querySelector('.souls-grid').textContent, expected);
+  u.tab('capabilities'); await tick();
+  const status = u.doc.querySelector('.deployment-header-status');
+  assert.match(status.textContent, expected); assert.equal(status.getAttribute('role'), 'status');
 });
 
 const inventoryData = (context = '/team', capability = 'acquired.export') => ({ inventoryApi: 1, scope: { kind: 'classic', context },
   packages: [{ package: 'acquired.package', level: context, version: '1.0', capabilities: [capability], locked: true }],
   capabilities: [{ capability, package: 'acquired.package', level: context, installed: false, trusted: true, status: 'missing' }], legacy: [] });
 
-test('classic inventory failure stays independent of catalog and activation; explicit retry preserves scope', async t => {
+test('classic inventory failure stays independent of the header and activation; explicit retry preserves scope', async t => {
   let failed = true;
   const u = await setup(t, { inventory: body => {
     if (failed) throw Object.assign(new Error('scope lock cannot be listed'), { code: 'invalid-lock' });
@@ -163,12 +166,12 @@ test('classic inventory failure stays independent of catalog and activation; exp
   assert.match(u.doc.querySelector('.inventory-status').textContent, /invalid-lock/);
   assert.equal(u.doc.querySelector('.inventory-table'), null);
   assert.match(u.doc.querySelector('.discovery-table').textContent, /fixture.notes/);
-  assert.ok(u.doc.querySelector('.official-catalog-command'));
+  assert.equal(u.doc.querySelector('.deployment-header h2').textContent, 'northwind');
   failed = false; u.doc.querySelector('.inventory-refresh').click(); await tick();
   const rows = u.doc.querySelector('.inventory-capabilities');
   assert.match(rows.textContent, /acquired.export/); assert.match(rows.textContent, /Installation: Not installed/);
   assert.match(rows.textContent, /Executable approval: Approved/); assert.match(rows.textContent, /Readiness: Unknown/);
-  assert.equal(u.catalogs().length, 1); assert.equal(u.inspections().length, 1); assert.equal(u.inventories().length, 2);
+  assert.equal(u.inspections().length, 1); assert.equal(u.inventories().length, 2);
   const details = rows.querySelector('details'); details.open = true; details.querySelector('summary').focus();
   u.polls[0](); await tick();
   assert.equal(u.doc.querySelector('.inventory-capabilities details'), details); assert.equal(details.open, true);
@@ -199,10 +202,10 @@ for (const change of ['scope', 'CLI']) for (const outcome of ['success', 'reject
   assert.match(u.doc.querySelector('.inventory-status').textContent, /current inventory failed/);
   assert.equal(u.doc.querySelector('.inventory-table'), null);
   assert.doesNotMatch(u.doc.querySelector('.deployment-inventory').textContent, /stale.export|stale inventory failed/);
-  assert.ok(u.doc.querySelector('.official-catalog-command')); assert.ok(u.doc.querySelector('.discovery-table'));
+  assert.ok(u.doc.querySelector('.deployment-header h2')); assert.ok(u.doc.querySelector('.discovery-table'));
 });
 
-for (const outcome of ['success', 'rejection']) test(`CLI A→B→A supersedes old inspection ${outcome}, not just the new list/catalog sections`, async t => {
+for (const outcome of ['success', 'rejection']) test(`CLI A→B→A supersedes old inspection ${outcome}, not just the new list section`, async t => {
   const requests = [];
   const u = await setup(t, { inspect: () => { const d = deferred(); requests.push(d); return d.promise; } });
   u.tab('capabilities');
@@ -214,7 +217,7 @@ for (const outcome of ['success', 'rejection']) test(`CLI A→B→A supersedes o
   await tick();
   assert.match(u.doc.querySelector('.discovery-status').textContent, /latest inspection failed/);
   assert.equal(u.doc.querySelector('.discovery-table'), null);
-  assert.ok(u.doc.querySelector('.inventory-table')); assert.ok(u.doc.querySelector('.official-catalog-command'));
+  assert.ok(u.doc.querySelector('.inventory-table')); assert.ok(u.doc.querySelector('.deployment-header h2'));
 });
 
 test('shell feature-detect removes duplicate selector; standalone selection uses literal safe ids', async t => {
@@ -524,7 +527,6 @@ for (const invalidation of ['workspace', 'dispose']) for (const outcome of ['suc
   const calls = [];
   const discovery = createWorkspaceDiscovery(doc.querySelector('header'), doc.querySelector('section'), {
     soulsPanel: doc.querySelector('main'), ctx: { api: (path, opts) => {
-      if (path === '/api/catalog') return catalogData();
       calls.push({ path, body: JSON.parse(opts.body) }); return pending.promise;
     } },
   });

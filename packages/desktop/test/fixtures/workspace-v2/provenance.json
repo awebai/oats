@@ -1,0 +1,41 @@
+{
+  "source": "Hand-built Northwind via source CLI; no invented deployment DTOs",
+  "sourceVersion": "0.25.5 with unreleased served-identity addition; NOT a released-version receipt",
+  "redactions": [
+    "Instance-home prefix → /fixture/desktop-study",
+    "Remaining operator-scope prefix → /fixture/operator"
+  ],
+  "authority": "6c2302ad permits captured envelopes as study fixture shapes; native guards retained",
+  "warning": "status exited86 after a prevented tmux probe. Its bytes are schema evidence, not a successful live-status receipt. Production transport must reject nonzero exits.",
+  "files": {
+    "version": {
+      "recording": "01-version",
+      "sourceSha256": "33a70309db23c49fd9bf641b6e94d9fa52a8879b03790a9c358a9a7950e525a7",
+      "fixtureSha256": "3e8fb0ea040409b22f29f35718fefe4502b767911dcf48fe6e6a2f3469e6a053",
+      "exit": 0,
+      "sourceHead": null
+    },
+    "workspace-status": {
+      "recording": "06-workspace-status",
+      "sourceSha256": "c139c5a8c26b098a6c133f22fdbcdf246918a408ed3e243500a5cdd25a0e414b",
+      "fixtureSha256": "9c821933ff3daa5a1aed939a9e06e4e51fd10f276506b8e978cd5bee7ff6cb21",
+      "exit": {
+        "status": 0,
+        "signal": null,
+        "error": null
+      },
+      "sourceHead": "b2c63b797c6d71f368c68162e1662cff9bf95223"
+    },
+    "status": {
+      "recording": "09-status-stub",
+      "sourceSha256": "04d736e046b43163ebe3f55a6db1e59da04f5c25b4eb036c69dc78e38f7f2577",
+      "fixtureSha256": "2191da57f095cfad5d01cd6139cd8c296441fb9fbf776c4cab2893fcf0c15c83",
+      "exit": {
+        "status": 86,
+        "signal": null,
+        "error": null
+      },
+      "sourceHead": "56f0e41c158104dbca26c0b6cdea85969e62158a"
+    }
+  }
+}

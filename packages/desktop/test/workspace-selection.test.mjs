@@ -43,8 +43,6 @@ async function setup(t, { hold = false, beforeMount } = {}) {
       if (path.startsWith('/api/capabilities') && body.action === 'inspect') return inspection(body.selector);
       if (path.startsWith('/api/capabilities') && body.action === 'list') return { inventoryApi: 1,
         scope: { kind: 'classic', context: body.selector.context || currentWorkspace() }, packages: [], capabilities: [], legacy: [] };
-      if (path === '/api/catalog') return { catalogApi: 1, scope: 'local-cli', status: 'unavailable', minimumVersion: '0.24.6', description: null,
-        reason: { code: 'cli-no-catalog', message: 'This fixture has no catalog.' } };
       if (path === '/api/servers') return { servers: [] };
       throw new Error(`Unexpected fixture API: ${path}`);
     },
@@ -172,12 +170,9 @@ for (const kind of ['soul', 'home']) for (const [label, choose, tab] of choices)
     assertNoHandoff(u, tab);
     assert.equal(u.doc.querySelector('#workspace-tab-souls .workspace-count').textContent, '2');
     for (const { path, body } of u.calls.filter(call => call.body)) {
-      if (path === '/api/catalog') assert.deepEqual(body, {}, 'catalog has no client arguments');
-      else {
-        assert.equal(path.split('?')[0], '/api/capabilities');
-        if (body.action === 'list') assert.deepEqual(body, { action: 'list', selector: {} });
-        else assert.equal(body.action, 'inspect', 'no implicit launch/mutation');
-      }
+      assert.equal(path.split('?')[0], '/api/capabilities');
+      if (body.action === 'list') assert.deepEqual(body, { action: 'list', selector: {} });
+      else assert.equal(body.action, 'inspect', 'no implicit launch/mutation');
     }
   });
 }

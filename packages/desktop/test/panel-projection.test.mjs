@@ -58,7 +58,7 @@ test("/api/spawn errors: E_RELATIVE_AMBIGUOUS passes through UNSLICED; others st
   // name differs from any picked anchor, >300 chars end to end
   const homes = [
     "/Users/someone/very/long/workspace/path/agents/dev-coordinator/instances/dev-coordinator-parallel",
-    "/Users/someone/other/equally/long/team/checkout/local-agents/dev-coordinator/instances/dev-coordinator-parallel",
+    "/Users/someone/other/equally/long/team/second-deployment/agents/dev-coordinator/instances/dev-coordinator-parallel",
   ];
   const long = `relation "sibling": inherited lineage edge "dev-coordinator-parallel" is ambiguous — `
     + `it matches ${homes[0]} and ${homes[1]}; qualify with --relative-root or rename one instance`;
@@ -94,7 +94,7 @@ function findInstanceFns() {
 
 test("instance routes: same name across TWO ROOTS in one workspace — home qualifier resolves exactly, bare name refuses 409", () => {
   const twinA = { instance: "dev-1", home: "/ws/agents/dev/instances/dev-1", agentsRoot: "/ws/agents", running: true };
-  const twinB = { instance: "dev-1", home: "/ws/local-agents/dev/instances/dev-1", agentsRoot: "/ws/local-agents", running: false };
+  const twinB = { instance: "dev-1", home: "/ws/second/agents/dev/instances/dev-1", agentsRoot: "/ws/second/agents", running: false };
   const solo = { instance: "solo", home: "/ws/agents/s/instances/solo", agentsRoot: "/ws/agents" };
   const { findInstance, resolveInstanceOr } = findInstanceFns()(new Map([
     ["w1", { instances: [twinA, twinB, solo] }],

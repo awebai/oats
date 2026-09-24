@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "workspaceStatusApi": 1,
+    "workspace": {
+      "name": "northwind",
+      "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+      "url": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+      "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+      "observedAt": "2026-09-24T10:05:40.388Z",
+      "local": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/oats-local.yaml",
+      "teams": [
+        "global",
+        "engineering",
+        "marketing"
+      ]
+    },
+    "members": [
+      {
+        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+        "name": "agents",
+        "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "global",
+        "souls": [
+          "release-manager",
+          "support-triager"
+        ],
+        "capabilities": [
+          "nw-house-style",
+          "nw-release-tooling"
+        ],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/platform.git",
+        "name": "platform",
+        "commit": "598fe4e585cf06fcbf4ef8ef99a705baafb9fb7b",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "engineering",
+        "souls": [
+          "platform-engineer",
+          "platform-reviewer"
+        ],
+        "capabilities": [],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/data.git",
+        "name": "data",
+        "commit": "015be270ebf83da94424dbb2832f634a4d8996eb",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "engineering",
+        "souls": [
+          "data-analyst"
+        ],
+        "capabilities": [
+          "nw-warehouse-access"
+        ],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/marketing.git",
+        "name": "marketing",
+        "commit": "e45732cb1969ae2f8e510644ed3cd0e888b7cbf8",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "marketing",
+        "souls": [
+          "campaign-writer",
+          "positioning-analyst"
+        ],
+        "capabilities": [
+          "nw-brand-voice",
+          "nw-campaign-metrics"
+        ],
+        "publishes": null
+      },
+      {
+        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/nw-tools.git",
+        "name": "nw-tools",
+        "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+        "confirmed": true,
+        "status": "confirmed",
+        "detail": null,
+        "team": "engineering",
+        "souls": [
+          "tools-expert"
+        ],
+        "capabilities": [
+          "nw-tools-dev"
+        ],
+        "publishes": {
+          "package": "nw.tools",
+          "version": "0.4.0"
+        }
+      }
+    ],
+    "packages": [
+      {
+        "id": "nw.tools",
+        "version": "0.4.0",
+        "source": "git:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/nw-tools.git@v0.4.0",
+        "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+        "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+        "capabilities": [
+          "nw-deploy",
+          "nw-lint"
+        ],
+        "approved": {
+          "executables": "sha256-7923d48128ac7dc7fe71c5bff27ceb22e13ba5223247b53c2763fd77caa258c5",
+          "at": "2026-09-24T10:04:48.652Z"
+        }
+      },
+      {
+        "id": "oats.framework",
+        "version": "1.1.3",
+        "source": "catalog:oats.framework",
+        "commit": "b80344dcafd4b614e58bb8dc5d766eca9ea0403c",
+        "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
+        "capabilities": [
+          "oats.core"
+        ],
+        "approved": {
+          "executables": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "at": "2026-09-24T10:04:48.786Z"
+        }
+      },
+      {
+        "id": "oats.okf",
+        "version": "2.1.3",
+        "source": "catalog:oats.okf",
+        "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
+        "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+        "capabilities": [
+          "oats.okf"
+        ],
+        "approved": {
+          "executables": "sha256-488fbf9cbd41b88e049af77a3ce108ee78cd5a8d3817ea6159014d428396d012",
+          "at": "2026-09-24T10:04:48.932Z"
+        }
+      }
+    ],
+    "declaredPackages": [
+      "nw.tools",
+      "oats.framework",
+      "oats.okf"
+    ],
+    "unsynced": [],
+    "stale": [],
+    "approval": {
+      "approved": [
+        "nw.tools",
+        "oats.framework",
+        "oats.okf"
+      ],
+      "needed": []
+    },
+    "external": [
+      {
+        "source": "file:///fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/experts.git@3c606e09ea25c9976d9c8371d48e9737564e6896",
+        "soul": "security-reviewer",
+        "team": "unassigned"
+      }
+    ],
+    "problems": []
+  }
+}

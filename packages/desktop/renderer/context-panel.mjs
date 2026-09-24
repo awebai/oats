@@ -1,3 +1,4 @@
+import { moduleDriftText, servedIdentityText, soulSourceText } from './deployment-facts.mjs';
 /** Shell-owned contextual surface. Optional Git reads are delegated to an
  * injected controller; this host performs no IO, lookup or lifecycle actions. */
 export const contextPanelCSS = `
@@ -168,7 +169,8 @@ export function createContextPanel({
   pages.get('instance').append(node('h2', null, 'Reported instance'));
   facts('instance', [['instance', 'Instance'], ['running', 'Session'], ['runtime', 'Runtime'], ['model', 'Model'],
     ['home', 'Home'], ['work', 'Work mode'], ['repo', 'Repository'], ['createdAt', 'Created'],
-    ['parentInstance', 'Parent'], ['siblingInstance', 'Sibling'], ['team', 'Team']]);
+    ['parentInstance', 'Parent'], ['siblingInstance', 'Sibling'], ['team', 'Team'],
+    ['soulSource', 'Soul source'], ['modules', 'Modules'], ['identity', 'Served identity']]);
   pages.get('soul').append(node('h2', null, 'Reported soul'), node('p', 'context-panel-note',
     'Metadata reported by this instance. Soul defaults, instructions, and capability configuration are not inspected or changed here.'));
   facts('soul', [['agent', 'Soul'], ['description', 'Description'], ['agentsRoot', 'Agents root']]);
@@ -246,7 +248,12 @@ export function createContextPanel({
     const instance = context.instance ?? {};
     for (const [id, el] of fields) {
       const value = id === 'running' ? instance.running === true ? 'Running'
-        : instance.running === false ? 'Stopped' : 'Not reported' : reported(instance[id]);
+        : instance.running === false ? 'Stopped' : 'Not reported'
+        : id === 'soulSource' ? soulSourceText(instance.soul) ?? 'Not reported'
+        : id === 'modules' ? moduleDriftText(instance.modules) ?? 'Not reported'
+        // Absent identity is the provider's absent fact: nothing is inferred.
+        : id === 'identity' ? servedIdentityText(instance.identity) ?? 'Not reported'
+        : reported(instance[id]);
       if (el.textContent !== value) el.textContent = value;
     }
   }

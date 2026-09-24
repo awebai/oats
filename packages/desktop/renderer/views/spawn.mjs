@@ -7,6 +7,7 @@
 import { createSoulInspector, inspectorCSS } from "../soul-inspector.mjs";
 import { createWorkspaceDiscovery, discoveryCSS, workspaceTabs } from "../workspace-discovery.mjs";
 import { runtimeState } from "../instance-presentation.mjs";
+import { deploymentUnavailableText } from "../deployment-header.mjs";
 import { composeSpawnDialog, spawnDialogCSS } from "../spawn-dialog.mjs";
 import { createSpawnLaunch } from "../spawn-launch.mjs";
 import { createSpawnPreview } from '../spawn-preview-view.mjs';
@@ -397,6 +398,7 @@ export async function refresh(s) {
   s.rosterGen = myGen; // this roster belongs to the current workspace generation
   s.panelInstances = panel.instances || []; // reference-instance picker source
   s.workspace = panel.workspace || null; // reported context, never derived from a display label
+  s.deployment = panel.deployment || null; // kernel observation state (status/header or unavailable reason)
   s.syncModalFacts?.();
   const select = s.q("wssel");
   if (select && typeof select.replaceChildren === "function") {
@@ -471,7 +473,11 @@ function renderGrid(s, { restoreFocus = true } = {}) {
   if (!list.length) {
     const empty = grid.ownerDocument.createElement("div");
     empty.className = "empty"; empty.style.gridColumn = "1/-1";
-    empty.textContent = s.souls.agents.length ? "Nothing matches the filter." : "No agents defined in this workspace.";
+    // An unobserved deployment is not an empty one: say why (a missing
+    // advertised feature is named; a kernel refusal keeps its code/message).
+    const unobserved = s.deployment && s.deployment.status !== "observed";
+    empty.textContent = s.souls.agents.length ? "Nothing matches the filter."
+      : unobserved ? deploymentUnavailableText(s.deployment) : "No souls are materialized in this deployment yet.";
     grid.append(empty);
     return;
   }
