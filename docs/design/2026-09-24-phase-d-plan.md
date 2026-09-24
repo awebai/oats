@@ -22,7 +22,7 @@ pushes. Agreed by both on 2026-09-24:
 | oats.aweb 1.13.0 re-land end to end | Antares | assigned |
 | D1 operator node + integrations node | Antares | assigned (draft PR `d1/operator-node` handed over) |
 | aweb and okf package-expert seams | Antares | assigned |
-| D2, D3, D4, desktop + kernel bundle migrations (D1 remainder) | lead, driven by the child instance `oats-expert-phase-d` | assigned (human, 2026-09-24: picked up by the lead's side after all, so as not to wait on the other deployment's human). The lead reviews and merges; Class B items go to Antares for ACK; D3's aweb/okf seams are drafted by the driver and settled with Antares. |
+| D2, D3, D4, desktop + kernel bundle migrations (D1 remainder) | lead, driven by the child instance `oats-expert-phase-d` | assigned (human, 2026-09-24: picked up by the lead's side after all, so as not to wait on the other deployment's human). The lead reviews and merges; Class B items go to Antares for ACK; D3's aweb/okf seams are drafted by the driver and settled with Antares. **Antares is a REQUIRED cross-reviewer** on D4's `oats.setup` rewrite (it must not drift from the operator node) and on D3's `aweb-expert` and `okf-expert` souls (the seams); the rest of the driver's PRs it reads without gating. |
 
 **Push protocol.**
 - **Class A** — notify after, one line: stewardship, docs and knowledge inside
