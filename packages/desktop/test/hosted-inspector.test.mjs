@@ -14,22 +14,18 @@ import { currentWorkspace, setWorkspace, postJson, wsQuery, workspaceGeneration 
 import { refreshCli, cliStatus } from '../renderer/views/cli-status.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
+import { inspectData, inspectFacts } from '../renderer/inspect-contract.mjs';
+import { soulInspection, operation } from './helpers/inspect-fixture.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { soulRepository } from '../renderer/soul-repository.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const CLI = { ok: true, operationsApi: 1, features: ['operations'], relations: true };
+const CLI = { ok: true, operationsApi: 2, features: ['operations'], relations: true };
 const soul = root => ({ name: 'dev', agentsRoot: `/${root}/agents`, runtime: 'pi', work: 'worktree', description: root });
 const selection = root => ({ agent: soul(root), selector: { soul: 'dev', agentsRoot: soul(root).agentsRoot } });
-const inspection = (root = 'a') => ({
-  operationsApi: 1, scope: { context: `/${root}` }, selected: { source: 'config' },
-  souls: [{ ...soul(root), model: `${root}-model`, instructions: { text: `${root}-instructions` } }],
-  layers: { knowledge: { id: 'fixture.notes' } },
-  capabilities: [{ id: 'fixture.notes', layer: 'knowledge', activation: { enabled: true },
-    operations: [{ name: 'inspect', kind: 'view', available: true, args: [] }] }],
-});
+// operationsApi 2 inspection from the kernel capture, with one documented operation.
+const inspection = (root = 'a') => soulInspection('dev', { instructions: { text: `${root}-instructions`, truncated: false }, operations: [operation('inspect', 'view')] });
 const button = (el, text) => { const found = [...el.querySelectorAll('button')].find(control => control.textContent === text); assert.ok(found, `button ${text}`); return found; };
 const settle = (request, outcome, value) => outcome === 'success' ? request.resolve(value) : request.reject(new Error('controlled late rejection'));
 
@@ -299,7 +295,7 @@ test('focusLaunch requires effective hosted visibility; silent close/disposal pr
 test('mutation: focusLaunch test detects removal of the effective hosted visibility guard', async () => {
   const source = createSoulInspector.toString(), guard = ' || (presentation && !presentation.isVisible())';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, capabilityFacts, reportedText, createReadinessView, cliStatus, iconElement, soulRepository });
+  const mutant = runInNewContext(`(${source.replace(guard, '')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, createReadinessView, cliStatus, iconElement, soulRepository, inspectData, inspectFacts });
   await assert.rejects(launchVisibility(mutant), /hidden lease refuses focusLaunch/);
 });
 

@@ -7,21 +7,18 @@ import { runInNewContext } from 'node:vm';
 import { createSelectionOwnership } from '../renderer/selection-ownership.mjs';
 import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace, workspaceGeneration } from '../renderer/views/common.mjs';
+import { soulInspection, homeInspection } from './helpers/inspect-fixture.mjs';
 import { refreshCli } from '../renderer/views/cli-status.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const CLI = { ok: true, operationsApi: 1, features: ['operations'], relations: true };
+const CLI = { ok: true, operationsApi: 2, features: ['operations'], relations: true };
 const soul = (agentsRoot = '/a/agents') => ({ name: 'dev', agentsRoot, runtime: 'pi', work: 'worktree', description: 'Current roster soul' });
 const home = { agent: 'dev', instance: 'dev-seat', agentsRoot: '/b/agents', home: '/b/agents/dev/instances/dev-seat' };
-// The CURRENT CLI inspect contract: selected.source and souls/snapshot,
-// not the illustrative Portable Souls identity/knowledge/tasks schema.
-const inspection = selector => ({
-  operationsApi: 1, scope: { context: '/team' }, selected: { source: selector.home ? 'snapshot' : 'config' },
-  souls: selector.soul ? [{ ...soul(selector.agentsRoot), name: selector.soul, editable: { fields: [], instructions: false }, instructions: { text: '# Saved instructions' } }] : [],
-  snapshot: selector.home ? { instructions: { text: '# Captured instructions' }, drift: [] } : null,
-  capabilities: [], layers: {},
-});
+// operationsApi 2 inspections from the kernel capture: a soul subject, or an instance home.
+const inspection = selector => selector.home
+  ? homeInspection(selector.home, { instance: 'dev-seat', soul: 'dev', instructions: { file: `${selector.home}/AGENTS.md`, text: '# Captured instructions', truncated: false, sources: [] } })
+  : soulInspection(selector.soul, { instructions: { file: '/a/AGENTS.md', text: '# Saved instructions', truncated: false } });
 
 async function setup(t, { hold = false, beforeMount } = {}) {
   const dom = new JSDOM('<!doctype html><body><div id="host"></div>', { url: 'http://localhost' });
@@ -199,7 +196,7 @@ for (const latest of ['soul', 'home']) for (const outcome of ['success', 'reject
       u.doc.querySelector('.fcancel').click();
       assert.equal(u.doc.querySelector('.soul-card.open').dataset.root, '/b/agents', 'same composite soul remains selected');
       assert.equal(u.doc.activeElement, u.doc.querySelector('.soul-inspector .spawn-act'), 'Launch cancellation returns to its inspector action');
-    } else assert.match(u.doc.querySelector('.soul-inspector').textContent, /Instance snapshot.*Captured instructions/s);
+    } else assert.match(u.doc.querySelector('.soul-inspector').textContent, /As spawned.*Captured instructions/s);
   });
 }
 

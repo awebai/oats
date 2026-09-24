@@ -123,7 +123,7 @@ export function createSchedulesView(el, ctx, readOptions = {}) {
     try {
       const inspection = await postJson(ctx, `/api/capabilities${wsQuery()}`, { action: "inspect", selector: { home: field("home").value } });
       if (token !== operationRequest || !ownsForm(formToken, lease) || form.hidden) return;
-      const operations = (inspection.capabilities || []).filter(cap => cap.layer && cap.activation?.enabled).flatMap(cap =>
+      const operations = (inspection.capabilities || []).filter(cap => cap.layer).flatMap(cap =>
         (cap.operations || []).filter(op => op.kind === "action" && op.available && !op.args?.some(arg => arg.required)).map(op => ({ address: `${cap.layer}:${op.name}`, label: `${cap.layer}: ${op.name} — ${op.description || cap.id}` })));
       fill(field("providerOperation"), operations, op => op.label, op => op.address);
       if (operations.some(op => op.address === preferred)) field("providerOperation").value = preferred;

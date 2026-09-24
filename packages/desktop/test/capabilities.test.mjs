@@ -7,8 +7,9 @@ import { capabilityRequest } from '../server/capabilities.mjs';
 import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { setWorkspace } from '../renderer/views/common.mjs';
 import { scheduleRequest } from '../server/schedules.mjs';
+import { soulInspection, homeInspection, operation } from './helpers/inspect-fixture.mjs';
 
-const cli = { ok: true, bin: '/installed/oats', operationsApi: 1, scheduleApi: 1, features: ['operations', 'schedule'], remote: ['operations', 'schedule'] };
+const cli = { ok: true, bin: '/installed/oats', operationsApi: 2, scheduleApi: 1, features: ['operations', 'schedule'], remote: ['operations', 'schedule'] };
 const workspace = { id: '/team', scope: '/team' };
 const agents = ['one', 'two'].map(name => ({ name: 'dev', agentsRoot: `/team/${name}/agents`, workspace: `/team/${name}` }));
 const home = '/team/two/agents/dev/instances/dev-seat';
@@ -28,6 +29,9 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
     await assert.rejects(capabilityRequest({ action, selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, options), { code: 'E_BAD_ARGS', message: 'Unknown capability action' });
   }
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home: '/foreign' } }, options), /existing home/);
+  // Inspection has no scope subject (operationsApi 2): a context selector is refused before any CLI call.
+  await assert.rejects(capabilityRequest({ action: 'inspect', selector: { context: '/team' } }, options), /no scope subject/);
+  await assert.rejects(capabilityRequest({ action: 'inspect' }, options), /no scope subject/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: undefined }), /known workspace/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: { ...workspace, remote: true } }), /registered server/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, cli: { ...cli, operationsApi: undefined } }), /Update/);
@@ -54,11 +58,11 @@ test('scheduled actions require an available declaration on the selected home', 
 });
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
+// operationsApi 2 inspections from the kernel capture (soul subject, or the seat's home).
 function inspection(name = 'dev', source = 'config') {
-  return { operationsApi: 1, scope: { context: '/team/two' }, selected: { source }, layers: { knowledge: { id: 'test.notes' } }, souls: [{ name, agentsRoot: agents[1].agentsRoot, runtime: 'claude', model: 'opus', backend: 'tmux', yolo: true, description: 'Review', editable: { fields: ['runtime', 'model', 'backend', 'yolo', 'description'], instructions: true }, instructions: { text: '# Instructions' } }],
-    snapshot: source === 'snapshot' ? { instructions: { text: '# Composed' }, drift: [] } : null,
-    capabilities: [{ id: 'test.notes', version: '1.0', layer: 'knowledge', source: 'fixture', health: { status: 'ok' }, activation: { enabled: true, target: source === 'snapshot' ? 'snapshot' : 'soul:dev' }, operations: [{ name: 'inspect', kind: 'view', available: source === 'snapshot', reason: 'Needs a home', description: 'Read memory' }] }],
-  };
+  return source === 'snapshot'
+    ? homeInspection(home, { instance: 'dev-seat', soul: 'dev', operations: [operation('inspect', 'view', { description: 'Read memory' })] })
+    : soulInspection(name, { operations: [operation('inspect', 'view', { available: false, reason: 'needs a running home (--home)', description: 'Read memory' })] });
 }
 function ui(api) {
   setWorkspace('/team'); const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'); const el = dom.window.document.querySelector('aside');
@@ -94,34 +98,17 @@ test('instance knowledge comes from provider text, with no local path read or HT
   } finally { view.close(); }
 });
 
-test('unreadable instructions are explained and never offered as an empty editable draft', async () => {
-  const value = inspection(); value.souls[0].instructions = { text: null, error: 'EACCES: cannot read AGENTS.md' };
-  const view = ui(() => value);
-  try {
-    await view.controller.show(selection);
-    assert.match(view.el.textContent, /EACCES: cannot read AGENTS.md/);
-    assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Edit instructions'), false);
-  } finally { view.close(); }
-});
-
-test('soul launchConfig inspection is shown as a reported fact', async () => {
-  const value = inspection(); value.souls[0].launchConfig = 'personal';
-  const view = ui(() => value);
-  try {
-    await view.controller.show(selection); assert.match(view.el.textContent, /personal/);
-  } finally { view.close(); }
-});
-
 test('inspector preserves current provider, availability, kind and required-argument operation contracts', async () => {
   const value = inspection('dev', 'snapshot');
-  value.capabilities[0].operations.push(
+  const provider = value.capabilities.find(cap => cap.layer === 'knowledge');
+  provider.operations.push(
     { name: 'digest', kind: 'action', available: true, args: [{ name: 'depth', flag: '--depth', required: false }] },
     { name: 'search', kind: 'view', available: true, args: [{ name: 'query', flag: '--query', required: true }] },
     { name: 'unavailable', kind: 'action', available: false, reason: 'Provider is unavailable' },
   );
   value.capabilities.push(
-    { id: 'inactive.notes', layer: 'knowledge', activation: { enabled: false }, operations: [{ name: 'inactive', kind: 'view', available: true }] },
-    { id: 'unbound.notes', activation: { enabled: true }, operations: [{ name: 'unbound', kind: 'view', available: true }] },
+    // A module that fills no layer is not a provider: its operations are not offered.
+    { id: 'unbound.notes', version: '1.0.0', layer: null, from: null, settings: {}, missingRequires: [], operations: [{ name: 'unbound', kind: 'view', available: true }] },
   );
   const view = ui(body => body.action === 'inspect' ? value : { result: { digested: true } });
   try {

@@ -1,6 +1,9 @@
-/** Owned offline readiness presentation. No background polling or remediation. */
+/** Owned offline readiness presentation (readinessApi 2: a soul or an instance;
+ * installed · configured · member · providers). No background polling or
+ * remediation; a provider's own binding check is shown as it answered. */
 import { postJson, workspaceGeneration } from './views/common.mjs';
-import { CHECKS, VERIFY_UNAVAILABLE, ENROL_UNAVAILABLE, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from './readiness-contract.mjs';
+import { CHECKS, readinessSelector, readinessSupported, readinessTarget, readinessData, readinessFailure } from './readiness-contract.mjs';
+import { originText } from './inspect-contract.mjs';
 import { iconElement } from './shell-icons.mjs';
 export const readinessCSS = `
 .readiness-view { color:var(--fg); min-width:0; margin:18px 0; font-size:12px; line-height:1.5; }
@@ -35,15 +38,12 @@ export function createReadinessView(host, { ctx } = {}) {
   const node = (tag, value, cls) => { const el = doc.createElement(tag); if (value !== undefined) el.textContent = value; if (cls) el.className = cls; return el; };
   let alive = true, active = false, serial = 0, identity = null, gen = null, state = {}, attempted = false, busy = false, value = null, blocked = '', query = '';
   const section = node('section', undefined, 'readiness-view'); section.hidden = true; section.setAttribute('aria-label', 'Effective readiness');
-  const title = node('h2', 'Workspace readiness'), context = node('p', '', 'readiness-context');
+  const title = node('h2', 'Readiness'), context = node('p', '', 'readiness-context');
   const status = node('p', '', 'readiness-status'); status.setAttribute('role', 'status');
   const body = node('div'), actions = node('div', undefined, 'readiness-actions');
   const refresh = node('button', 'Refresh readiness', 'act readiness-refresh'); refresh.type = 'button';
-  const verify = node('button', 'Verify signatures…', 'act readiness-verify'); verify.type = 'button'; verify.disabled = true; verify.title = VERIFY_UNAVAILABLE;
-  const enrol = node('button', 'Enrol workspace', 'act readiness-enrol'); enrol.type = 'button'; enrol.disabled = true; enrol.title = ENROL_UNAVAILABLE;
-  actions.append(refresh, verify, enrol);
-  section.append(title, context, node('p', 'Independent kernel observations, not launch permission. Unknown is not granted; an empty required set is not Ready.', 'readiness-note'), status, body, actions,
-    node('p', VERIFY_UNAVAILABLE, 'readiness-note'), node('p', ENROL_UNAVAILABLE, 'readiness-note'));
+  actions.append(refresh);
+  section.append(title, context, node('p', 'Independent kernel observations, not launch permission. Unknown is not granted; an empty required set is not Ready.', 'readiness-note'), status, body, actions);
   host.append(section);
   const current = () => alive && active && gen === workspaceGeneration();
   const owns = ticket => current() && serial === ticket;
@@ -54,7 +54,8 @@ export function createReadinessView(host, { ctx } = {}) {
   }
   refresh.addEventListener('click', () => { if (current() && visible() && !refresh.disabled) void load(); });
   function availability(next) {
-    if (!next.workspace?.id || !next.workspace?.scope || !readinessSelector(next.selector)) return 'Waiting for a qualified workspace selection…';
+    // The panel's workspace is {id, name} (v2); the server admits the read against its own registry.
+    if (!next.workspace?.id || !readinessSelector(next.selector)) return 'Waiting for a qualified workspace selection…';
     if (next.workspace.remote || next.workspace.server || next.selector.server) return readinessFailure('unsupported-remote-operation').reason.message;
     if (!readinessSupported(next.cli)) return readinessFailure(next.cli?.ok ? 'cli-no-readiness' : 'cli-unavailable').reason.message;
     return '';
@@ -75,14 +76,16 @@ export function createReadinessView(host, { ctx } = {}) {
         const item = node('details', undefined, 'readiness-item');
         item.append(node('summary', `${i.subject} · ${i.status} · ${i.required ? 'required' : 'optional'}`));
         const facts = node('dl'); item.append(facts);
-        for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...Object.entries(i.evidence), ['Remedy (display only)', i.remedy]]) {
+        const evidence = Object.entries(i.evidence).map(([k, v]) => k === 'from' ? ['Origin', originText(v)] : [k, v]);
+        for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...evidence, ['Remedy (display only)', i.remedy]]) {
           if (content !== null && content !== undefined) facts.append(node('dt', name), node('dd', content));
         }
-        if (i.signature) {
-          const s = i.signature;
-          item.append(node('p', s.status === 'verified' && s.signer?.label ? `Signed by ${s.signer.label}` : `Signature: ${s.status}`), node('p', s.reason));
-          if (s.signer?.id) item.append(node('p', `Signer ID: ${s.signer.id}`));
-          if (s.trust === 'untrusted-key') item.append(node('p', 'Signing key is not trusted in the local keyring.'));
+        // providers: the provider's own answer, verbatim; "unknown" stays unknown.
+        if (i.result) item.append(node('p', `The provider says: ${i.result.status === 'ready' ? 'ready' : 'needs configuration'}.`));
+        // The kernel's reason is the first problem's message: say it once, with its code.
+        for (const p of [...(i.result?.problems || []), ...(i.problems || [])]) {
+          if (p.message === i.reason) facts.append(node('dt', 'Problem code'), node('dd', p.code));
+          else item.append(node('p', `${p.message} (${p.code})`, 'readiness-problem'));
         }
         row.append(item);
       }
@@ -120,8 +123,8 @@ export function createReadinessView(host, { ctx } = {}) {
       if (identity !== key || blocked !== reason) {
         serial++; identity = key; gen = nextGen; attempted = false; busy = false; value = null;
         state = { workspace: { ...next.workspace }, selector }; blocked = reason;
-        context.textContent = selector?.kind === 'scope' ? `Configuration scope: ${selector.context}` : selector?.kind === 'soul' ? `Soul: ${selector.soul} · ${selector.agentsRoot}` : selector ? `Instance: ${selector.instance} · ${selector.agentsRoot}` : '';
-        title.textContent = selector?.kind === 'instance' ? 'Instance readiness' : selector?.kind === 'soul' ? 'Soul readiness' : 'Workspace readiness';
+        context.textContent = selector?.kind === 'soul' ? `Soul: ${selector.soul} · ${selector.agentsRoot}` : selector ? `Instance: ${selector.instance} · ${selector.agentsRoot}` : '';
+        title.textContent = selector?.kind === 'instance' ? 'Instance readiness' : selector?.kind === 'soul' ? 'Soul readiness' : 'Readiness';
         status.textContent = blocked; refresh.disabled = !!blocked; render();
       }
       if (active && !next.active) { serial++; if (busy) { busy = false; attempted = false; } }

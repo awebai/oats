@@ -1,0 +1,114 @@
+{
+  "source": "oats-desktop-engineer for the Desktop F3b-2 slice (kernel #162 fbd13ed4); test/fixtures/northwind/build.mjs; capture-baseline.mjs",
+  "kernel": "0.25.9",
+  "redactions": [
+    "<base> (capture scratch) → /fixture/base",
+    "<oats> (checkout) → /fixture/oats"
+  ],
+  "files": {
+    "version": {
+      "argv": [
+        "oats",
+        "version",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "1016a7e1702edeeae915c76ef2f74deff9d27963aaaef0f51911e8caa7699f34",
+      "fixtureSha256": "5747971903f756c636c6a4ba5076ea252cf6a25b2162f0bf649bcc12278aeb7e"
+    },
+    "inspect-soul": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--soul",
+        "release-manager",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "c339b10e3ca4186e131e1e8df173b43e5be4a3b6a1d67687178370ae9803749b",
+      "fixtureSha256": "1036eb7fafad17beef1ae7cf4251f5bd25c8528ad87fa30e99d79aca22eaa56c"
+    },
+    "inspect-home": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--home",
+        "<base>/northwind-workspace/agents/release-manager/instances/release-manager-cap",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "31980b9fd9835ec6f92ee7824af3b082af04a4e68369d5a183d6ec4d5eca9fad",
+      "fixtureSha256": "82e7d6ab8fcae5440e1d6294ea34c4b60f1196bab9199073c09c197704454640"
+    },
+    "inspect-scope": {
+      "argv": [
+        "oats",
+        "inspect",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "add2edd59af7c3d04664451ed75c3a941165f0450a50918b1877b5c7ff4e69f0",
+      "fixtureSha256": "85c9cd85732e1735feaebfecdb7f45ce2a56adc17aa0d60c87b008f6a5d5ef48"
+    },
+    "readiness-soul": {
+      "argv": [
+        "oats",
+        "readiness",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--soul",
+        "release-manager",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--policy",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "79a703d5e65295f906df0a17bd83c93e3fe71cf528faecffae0214bd6a723f71",
+      "fixtureSha256": "f3ac3e5271f6cb66bb72ec0c61abe9f12071883eea18e64f26c59aefaa1db59e"
+    },
+    "readiness-instance": {
+      "argv": [
+        "oats",
+        "readiness",
+        "--home",
+        "<base>/northwind-workspace/agents/release-manager/instances/release-manager-cap",
+        "--soul",
+        "release-manager",
+        "--agents-root",
+        "<base>/northwind-workspace/agents",
+        "--policy",
+        "--json"
+      ],
+      "exit": 0,
+      "kernel": "0.25.9",
+      "sourceSha256": "0a9fa47b20227ebe47b3a97a55f610be463451da2397e509b03b6f95af810fca",
+      "fixtureSha256": "413af6977eca2be4daeb2549cff0148378d04c2beb410151d5070352d412cb1b"
+    },
+    "readiness-scope": {
+      "argv": [
+        "oats",
+        "readiness",
+        "--dir",
+        "<base>/northwind-workspace",
+        "--policy",
+        "--json"
+      ],
+      "exit": 1,
+      "kernel": "0.25.9",
+      "sourceSha256": "137bd21024669ce80010089347ca170bf0718b65d8a70a540dd40e8fc65c8524",
+      "fixtureSha256": "563337d100af7759dddfc46a388a1e1043c50ef31fe6820096a6f93c26d1f0ae"
+    }
+  }
+}

@@ -10,11 +10,7 @@ function admit(selector, { workspace: w, cli, agents = [], instances = [] } = {}
   if (!w || typeof w.id !== 'string' || !w.id || !absolute(w.scope)) return fail('E_WORKSPACE_UNKNOWN');
   if (w.remote || w.server || selector.server) return fail('unsupported-remote-operation');
   let context = w.scope, home, incarnation = null;
-  if (selector.kind === 'scope') {
-    const contexts = [w.scope, ...agents.filter(a => !a.remote && !a.server && absolute(a.agentsRoot)).map(a => dirname(a.agentsRoot))];
-    if (!contexts.includes(selector.context)) return fail('E_BAD_ARGS');
-    context = selector.context;
-  } else if (selector.kind === 'soul') {
+  if (selector.kind === 'soul') {
     const rows = agents.filter(a => a.name === selector.soul && a.agentsRoot === selector.agentsRoot);
     if (rows.length !== 1) return fail('E_SOUL_UNKNOWN');
     if (rows[0].remote || rows[0].server) return fail('unsupported-remote-operation');

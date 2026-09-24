@@ -4,22 +4,16 @@ import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
 import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 import { createSoulInspector, inspectorCSS } from '../renderer/soul-inspector.mjs';
+import { soulInspection } from './helpers/inspect-fixture.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
-const CLI = { ok: true, bin: '/fixture/oats', version: '0.24.7', operationsApi: 1, features: ['operations'], remote: ['operations'] };
+const CLI = { ok: true, bin: '/fixture/oats', version: '0.25.9', operationsApi: 2, features: ['operations'], remote: ['operations'] };
 const agent = (root = '/team/agents', server) => ({ name: 'dev', agentsRoot: root, server, runtime: 'pi', work: 'worktree' });
-const provenance = (source = 'git:https://example.invalid/editions.git') => ({ kind: 'exported-edition-copy', source, revision: 'commit-one', path: 'souls/dev', workspaceRevision: 'workspace-commit' });
-const declared = (root = '/team/agents') => ({ ...agent(root), soulsApi: 1,
-  declarations: { requires: { capabilities: { 'test.tools': { source: 'git:declared@pin#package' } } }, defaults: { knowledge: 'none' }, knowledge: { include: ['guides/node'] }, teams: null, resources: { skills: ['review'] } },
-  provenance: provenance(), declarationProblems: [],
-  readiness: { source: 'recorded', status: 'sources-installed', requirements: [{ capability: 'test.tools', source: 'git:declared@pin#package', installed: true, approved: false, active: false, version: '1.2.3' }] },
-  editable: { fields: ['model'], instructions: true }, instructions: { text: '# Instructions' }, model: 'reported-model',
-});
-const sources = () => ({ soulsApi: 1, kind: 'recorded-provenance', note: null, items: [{ ...provenance(), souls: ['dev'] }] });
-const inspection = (soul = declared()) => ({ operationsApi: 1, scope: { context: '/team' }, selected: { source: 'config', soul: soul.name, agentsRoot: soul.agentsRoot },
-  souls: [soul], sources: sources(), capabilities: [], layers: {}, problems: [] });
+// The kernel-captured soul row (operationsApi 2 inspect, soulsApi 2), as `dev`.
+const declared = () => soulInspection('dev').souls[0];
+const inspection = () => soulInspection('dev');
 function domFixture(t) {
   const dom = new JSDOM('<!doctype html><body><main class="oats-view"><aside class="soul-inspector"></aside><header></header><section id="discovery"></section><section id="souls"></section></main></body>');
   t.after(() => dom.window.close());
@@ -34,10 +28,10 @@ function inspectorFixture(t, api = () => inspection(), create = createSoulInspec
   return { ...u, controller, calls, show: (a = agent()) => controller.show({ agent: a, selector: { soul: a.name, agentsRoot: a.agentsRoot } }),
     click: label => { const b = [...u.aside.querySelectorAll('button')].find(b => b.textContent === label); assert.ok(b, label); b.click(); } };
 }
-test('hostile declarations/provenance remain literal text, not markup, links or filesystem authority', t => {
+test('hostile declarations remain literal text, not markup, links or filesystem authority', t => {
   const u = domFixture(t), hostile = `'"><img src=x onerror=evil()><script>evil()</script>[a='b']`, soul = declared();
-  soul.declarations.resources = { files: ['../../private', hostile] }; soul.provenance = provenance('javascript:evil()');
-  soul.declarationProblems = [{ code: hostile, message: hostile }]; soul.readiness.requirements[0].capability = hostile;
+  soul.declarations.resources = { files: ['../../private', hostile] }; soul.declarations.capabilities = { [hostile]: { from: 'javascript:evil()' } };
+  soul.declarationProblems = [{ code: hostile, message: hostile }];
   renderSoulDeclarations(u.aside, soul);
   assert.ok(u.host.textContent.includes(hostile)); assert.ok(u.host.textContent.includes('../../private'));
   assert.equal(u.host.querySelector('script,img,a,iframe,form,button'), null);
@@ -75,7 +69,7 @@ function luminance(hex) {
   const c = hex.slice(1).match(/../g).map(v => parseInt(v, 16) / 255).map(v => v <= .04045 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4);
   return c[0] * .2126 + c[1] * .7152 + c[2] * .0722;
 }
-for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: real declaration/source nodes use computed-token AA pairs`, async t => {
+for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: real declaration nodes use computed-token AA pairs`, async t => {
   const u = inspectorFixture(t); await u.show();
   const style = u.doc.createElement('style'); style.textContent = readFileSync(new URL('../renderer/theme.css', import.meta.url), 'utf8') + inspectorCSS;
   u.doc.head.append(style); u.doc.documentElement.dataset.theme = theme;

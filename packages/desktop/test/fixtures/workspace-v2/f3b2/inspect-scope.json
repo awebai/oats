@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_BAD_ARGS",
+    "message": "inspect on a workspace deployment needs --soul <name> or --home <abs> (the deployment's souls and capabilities: oats souls / oats capabilities)"
+  }
+}

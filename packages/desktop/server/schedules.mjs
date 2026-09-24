@@ -53,7 +53,7 @@ export async function scheduleRequest(request, { workspace, cli, agents = [], in
       const source = instances.find(i => i.home === value.home);
       if (!source) fail("Select an existing agent home in this workspace");
       const inspection = await inspect({ action: "inspect", selector: { home: source.home } }, { workspace, cli, agents, instances, localCwd });
-      const supported = inspection.capabilities?.some(cap => cap.layer && cap.activation?.enabled && cap.operations?.some(op =>
+      const supported = inspection.capabilities?.some(cap => cap.layer && cap.operations?.some(op =>
         `${cap.layer}:${op.name}` === value.operation && op.kind === "action" && op.available && !op.args?.some(arg => arg.required)));
       if (!supported) fail("Select an available provider action for this home", "E_OPERATION_UNAVAILABLE");
       spec = { ...spec, kind: "operation", home: source.home, operation: value.operation };

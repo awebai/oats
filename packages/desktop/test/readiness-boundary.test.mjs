@@ -7,14 +7,13 @@ import { discover } from '../cli-locator.mjs';
 import { context, cli, selector, target, data, item, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';
 const request = s => ({ action: 'read', selector: s || selector });
 test('installed probe forwards only exact readiness API integer, never fabricates missing support', async () => {
-  for (const readinessApi of [undefined, '1', 2, true, 1]) {
+  for (const readinessApi of [undefined, '2', 1, true, 3, 2]) {
     const found = await discover({ persisted: () => cli.bin, env: {}, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({
       schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.25.8', features: ['readiness'], readinessApi }) }));
-    assert.equal(found.ok, true); assert.equal(found.readinessApi, readinessApi === 1 ? 1 : undefined);
+    assert.equal(found.ok, true); assert.equal(found.readinessApi, readinessApi === 2 ? 2 : undefined);
   }
 });
 for (const [kind, s, expected] of [
-  ['scope', selector, ['--dir', '/team']],
   ['soul', { kind: 'soul', soul: 'dev', agentsRoot: '/team/agents' }, ['--dir', '/team', '--soul', 'dev', '--agents-root', '/team/agents']],
   ['instance', { kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', server: null }, ['--home', '/team/agents/dev/instances/dev-1', '--soul', 'dev', '--agents-root', '/team/agents']],
 ]) test(`${kind}: real boundary to fixed argv, observedAs and ambient redirection stripped`, async () => {
@@ -29,8 +28,9 @@ for (const [kind, s, expected] of [
   assert.deepEqual(invocation.opts.env, { PATH: '/fixture/bin', HOME: '/fixture/home' });
 });
 for (const [name, alter] of [
-  ['feature absent', c => c.cli.features = []], ['feature string', c => c.cli.features = 'readiness'], ['feature object', c => c.cli.features = {}], ['API absent', c => delete c.cli.readinessApi], ['API string', c => c.cli.readinessApi = '1'],
-  ['API future', c => c.cli.readinessApi = 2], ['CLI unavailable', c => c.cli.ok = false], ['remote workspace', c => c.workspace.remote = true],
+  // The probe integer is the gate (no feature string): 0.25 kernels (API 1) are refused.
+  ['API absent', c => delete c.cli.readinessApi], ['API string', c => c.cli.readinessApi = '2'], ['API 1 (0.25)', c => c.cli.readinessApi = 1],
+  ['API future', c => c.cli.readinessApi = 3], ['CLI unavailable', c => c.cli.ok = false], ['remote workspace', c => c.workspace.remote = true],
   ['server-marked workspace', c => c.workspace.server = 'host'], ['missing workspace', c => c.workspace = null],
 ]) test(`${name} refuses BEFORE process, without optimistic probing`, async () => {
   const c = context(); alter(c); let calls = 0;
@@ -38,7 +38,7 @@ for (const [name, alter] of [
   assert.equal(result.status, 'unavailable'); assert.equal(result.data, null); assert.equal(calls, 0);
 });
 for (const bad of [null, {}, [], { action: 'verify', selector }, { action: 'read', selector, verifySignatures: true },
-  request({ ...selector, home: '/arbitrary' }), request({ kind: 'scope', context: '/team/../team' }), request({ kind: 'scope', context: '/foreign' }),
+  request({ ...selector, home: '/arbitrary' }), request({ kind: 'scope', context: '/team' }), request({ kind: 'scope', context: '/foreign' }),
   request({ kind: 'soul', soul: '--verify-signatures', agentsRoot: '/team/agents' }), request({ kind: 'soul', soul: 'dev', agentsRoot: '/foreign/agents' }),
   request({ kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', server: 'remote' }),
   request({ kind: 'instance', instance: 'dev-1', agent: 'dev', agentsRoot: '/foreign/agents' }),
@@ -85,7 +85,7 @@ test('same-name home replacement does not coalesce with or accept the former inc
   gates[1].resolve(envelope(data(args[1].target))); assert.equal((await newer).status, 'available');
   gates[0].resolve(envelope(data(args[0].target))); assert.equal((await old).reason?.code, 'E_TARGET_CHANGED');
 });
-for (const code of ['E_UNSUPPORTED_MODE', 'unsupported-action', 'migration-required', 'invalid-lock']) test(`${code} is a stable refusal without classic retry`, async () => {
+for (const code of ['E_UNSUPPORTED_MODE', 'unsupported-action']) test(`${code} is a stable refusal without classic retry`, async () => {
   let calls = 0; const result = await createReadinessBoundary({ invoke: async () => { calls++; return { schemaVersion: 1, ok: false, error: { code, message: 'PRIVATE details' } }; } })(request(), context);
   assert.equal(result.reason.code, code); assert.equal(calls, 1); assert.doesNotMatch(JSON.stringify(result), /PRIVATE/);
 });
@@ -99,13 +99,16 @@ test('adapter synchronous launch failure resolves sanitized error; bad bin never
   assert.equal((await cliReadiness(cli.bin, { target }, { exec: () => { throw Error('PRIVATE'); } })).error.code, 'E_CLI_FAILED');
   assert.equal((await cliReadiness('oats', { target }, { exec: assert.fail })).error.code, 'E_BAD_ARGS');
 });
-test('producer quartet is bounded, requiredness-checked, no synthetic revision; optional echo projected without secrets', () => {
-  const d = data(); d.settings = { secret: 'PRIVATE' }; d.subject.selector = { kind: 'scope', context: '/team', secret: 'PRIVATE' };
+test('the four kernel checks are bounded and requiredness-checked; the subject is exactly the target; no synthetic revision or secrets', () => {
+  const d = data(); d.settings = { secret: 'PRIVATE' }; d.selector.secret = 'PRIVATE';
   const projected = readinessData(d, target); assert.ok(projected); assert.equal(projected.summary.ready, false); assert.equal(projected.revision, undefined);
-  assert.deepEqual(projected.subject.selector, { kind: 'scope', context: '/team' }); assert.doesNotMatch(JSON.stringify(projected), /PRIVATE|Raw diagnostics/);
-  for (const mutate of [v => v.summary.ready = true, v => v.summary.required = 0, v => v.checks.trusted.items[0].required = 'true',
-    v => v.subject.context = '/other', v => v.checks.installed.items = Array.from({ length: 1001 }, () => item()), v => v.policy.childSpawns.enforced = 'true',
-    v => v.readinessApi = '1', v => v.checks.configured.status = 'future', v => v.checks.installed.items[0].reason = 'x'.repeat(1025)]) {
+  assert.deepEqual(Object.keys(projected.checks), ['installed', 'configured', 'member', 'providers']);
+  assert.deepEqual(projected.subject, { kind: 'soul', soul: 'dev', repoKey: d.subject.repoKey, commit: d.subject.commit, team: d.subject.team });
+  assert.doesNotMatch(JSON.stringify(projected), /PRIVATE/);
+  for (const mutate of [v => v.summary.ready = true, v => v.summary.required = 0, v => v.checks.member.items[0].required = 'true',
+    v => v.subject.soul = 'other', v => v.subject.kind = 'scope', v => v.checks.installed.items = Array.from({ length: 1001 }, () => item()), v => v.policy.childSpawns.enforced = 'true',
+    v => v.readinessApi = 1, v => delete v.checks.providers, v => v.checks.configured.status = 'future', v => v.checks.installed.items[0].reason = 'x'.repeat(1025),
+    v => v.checks.providers.items[0].result = { status: 'future', problems: [] }]) {
     const value = data(); mutate(value); assert.equal(readinessData(value, target), null);
   }
 });
@@ -113,11 +116,17 @@ test('Ready is never inferred from zero items or optional success; only consiste
   const d = data(); for (const c of Object.values(d.checks)) { c.status = 'not-applicable'; c.items = []; }
   d.summary = { ready: false, required: 0, pass: 0, fail: 0, unknown: 0 }; assert.equal(readinessData(d, target).summary.ready, false);
   d.summary.ready = true; assert.equal(readinessData(d, target), null);
-  const ready = data(); ready.checks.configured = { status: 'pass', items: [item()] }; ready.summary = { ready: true, required: 3, pass: 3, fail: 0, unknown: 0 };
-  assert.equal(readinessData(ready, target).summary.ready, true);
+  // The provider's own "ready" makes the last required item pass (relayed verbatim).
+  const ready = data(), provider = ready.checks.providers.items[0];
+  Object.assign(provider, { status: 'pass', reason: null, result: { status: 'ready', problems: [] }, problems: [] }); ready.checks.providers.status = 'pass';
+  ready.summary = { ...ready.summary, ready: true, pass: ready.summary.required, fail: 0, unknown: 0 };
+  const projected = readinessData(ready, target);
+  assert.equal(projected.summary.ready, true); assert.deepEqual(projected.checks.providers.items[0].result, { status: 'ready', problems: [] });
 });
-for (const state of ['verified', 'unsigned', 'unknown', 'invalid', 'not-applicable']) test(`signature ${state} stays independent of trust and drops raw reasons`, () => {
-  const d = data(); d.checks.trusted.items[0].signature = { status: state, reason: 'fatal: https://user:token@example.invalid PRIVATE', signer: { id: 'key', label: 'Signer' }, trust: 'untrusted-key' };
-  const sig = readinessData(d, target).checks.trusted.items[0].signature;
-  assert.equal(sig.status, state); assert.equal(sig.signer?.label ?? null, state === 'verified' ? 'Signer' : null); assert.doesNotMatch(JSON.stringify(sig), /PRIVATE|token|fatal/);
+test('a provider that cannot answer stays unknown, with its problems verbatim; no trusted check or signature exists', () => {
+  const projected = readinessData(data(), target), provider = projected.checks.providers.items[0];
+  assert.equal(provider.status, 'unknown'); assert.equal(provider.result, null);
+  assert.deepEqual(provider.problems, [{ code: 'provider-unavailable', message: 'oats.okf check answered an unrecognised result' }]);
+  assert.equal(Object.hasOwn(projected.checks, 'trusted'), false); assert.equal(Object.hasOwn(projected.checks, 'enrolled'), false);
+  assert.doesNotMatch(JSON.stringify(projected), /signature/);
 });

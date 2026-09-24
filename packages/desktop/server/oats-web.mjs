@@ -466,7 +466,10 @@ function cliStatus() {
     scheduleApi: cliState.scheduleApi || null,
     scheduleHistoryApi: cliState.scheduleHistoryApi === 3 ? 3 : null,
     lifecycleApi: cliState.lifecycleApi === 1 ? 1 : null,
-    readinessApi: cliState.readinessApi === 1 ? 1 : null,
+    readinessApi: cliState.readinessApi === 2 ? 2 : null,
+    // The inspector's gate (inspect on the workspace model); absent before, so
+    // the Workspace inspector could never become available.
+    operationsApi: cliState.operationsApi === 2 ? 2 : null,
     spawnPreviewApi: cliState.spawnPreviewApi === 2 ? 2 : null,
     spawnApplyApi: cliState.spawnApplyApi === 1 ? 1 : null,
     eventsApi: cliState.eventsApi === 2 ? 2 : null,

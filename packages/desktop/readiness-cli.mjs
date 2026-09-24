@@ -7,11 +7,9 @@ export async function cliReadiness(bin, { target } = {}, io = {}) {
   const t = readinessTarget(target);
   if (!absolute(bin) || !t) return error('E_BAD_ARGS');
   const s = t.selector, argv = ['readiness'];
+  // The subject is an instance (--home) or a soul (--soul), never a scope (readinessApi 2).
   if (s.kind === 'instance') argv.push('--home', t.home, '--soul', s.agent, '--agents-root', s.agentsRoot);
-  else {
-    argv.push('--dir', t.context);
-    if (s.kind === 'soul') argv.push('--soul', s.soul, '--agents-root', s.agentsRoot);
-  }
+  else argv.push('--dir', t.context, '--soul', s.soul, '--agents-root', s.agentsRoot);
   argv.push('--policy', '--json');
   const env = { ...(io.env ?? process.env) };
   for (const key of ['PI_AGENTS_ROOT', 'OATS_DEPLOYMENT', 'OATS_RESOLUTION']) delete env[key];

@@ -8,7 +8,8 @@ import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
+import { inspectData, inspectFacts } from '../renderer/inspect-contract.mjs';
+import { soulInspection, operation } from './helpers/inspect-fixture.mjs';
 import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { soulRepository } from '../renderer/soul-repository.mjs';
@@ -21,19 +22,11 @@ const deferred = () => {
 };
 const settle = (request, outcome, value) => outcome === 'resolve' ? request.resolve(value) : request.reject(new Error('obsolete request failed'));
 const selection = root => ({ agent: { name: 'dev', agentsRoot: `/team/${root}/agents` }, selector: { soul: 'dev', agentsRoot: `/team/${root}/agents` } });
-// Current CLI inspection contract: operation declarations are arrays on enabled
-// layer capabilities; souls use camelCase values. The inspector is read-only
-// (a v2 soul is edited in its repository), so only provider operations await.
-function inspection(root) {
-  return {
-    operationsApi: 1, scope: { context: `/team/${root}` }, selected: { source: 'config' },
-    souls: [{ ...selection(root).agent, runtime: 'pi', model: `${root}-model`, launchConfig: `${root}-launch`,
-      instructions: { text: `${root}-instructions` } }],
-    layers: { knowledge: { id: `fixture.${root}` } },
-    capabilities: [{ id: `fixture.${root}`, layer: 'knowledge', activation: { enabled: true },
-      operations: [{ name: 'inspect', kind: 'view', available: true, args: [] }, { name: 'digest', kind: 'action', available: true, args: [] }] }],
-  };
-}
+// Inspection on the workspace model (operationsApi 2, from the kernel capture):
+// the knowledge provider declares two operations. The inspector is read-only,
+// so only provider operations await.
+const inspection = root => soulInspection('dev', { instructions: { text: `${root}-instructions`, truncated: false },
+  operations: [operation('inspect', 'view'), operation('digest', 'action')] });
 function ui(api, factory = createSoulInspector) {
   const previousWorkspace = currentWorkspace(); setWorkspace('/team');
   const dom = new JSDOM('<body><main><aside></aside></main></body>');
@@ -135,7 +128,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText, createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, soulRepository });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, soulRepository, inspectData, inspectFacts });
 }
 test('mutation: pending ownership is essential during availability sync', async () => {
   const factory = mutant('pendingOperations.has(control) || !available()', '!available()');

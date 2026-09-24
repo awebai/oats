@@ -396,10 +396,11 @@ for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations m
   }
 });
 
-for (const [name] of palettes) test(`${name}: actual readiness quartet, policy and unavailable controls use computed AA surfaces`, async t => {
+for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems and policy use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const raw = readinessFixture(); raw.checks.installed.status = 'fail'; raw.checks.installed.items[0].status = 'fail'; raw.summary.pass--; raw.summary.fail++;
+  raw.checks.providers.items[0].problems.push({ code: 'needs-configuration', message: 'A second provider problem' }); // painted as .readiness-problem
   const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
   t.after(() => { component.dispose(); dom.window.close(); });
   await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });
@@ -412,6 +413,7 @@ for (const [name] of palettes) test(`${name}: actual readiness quartet, policy a
     ['.readiness-badge[data-state=unknown]', '.readiness-badge[data-state=unknown]', 'warn', 'surface-2'],
     ['.readiness-badge[data-state=not-applicable]', '.readiness-badge[data-state=not-applicable]', 'muted', 'surface-2'],
     ['.readiness-policy summary', '.oats-view', 'fg', 'bg'], ['.readiness-refresh', '.readiness-refresh', 'fg', 'surface'],
+    ['.readiness-problem', '.readiness-checks', 'fg', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);
@@ -419,9 +421,7 @@ for (const [name] of palettes) test(`${name}: actual readiness quartet, policy a
     assert.ok(contrast(opaqueChannels(root.getPropertyValue(`--${fg}`).trim()), opaqueChannels(root.getPropertyValue(`--${bg}`).trim())) >= 4.5, selector);
     for (let parent = el; parent; parent = parent.parentElement) assert.equal(dom.window.getComputedStyle(parent).opacity, '1');
   }
-  for (const selector of ['.readiness-verify', '.readiness-enrol']) {
-    const el = doc.querySelector(selector); assert.equal(el.disabled, true); assert.equal(dom.window.getComputedStyle(el).opacity, '1');
-  }
+  assert.equal(doc.querySelector('.readiness-verify, .readiness-enrol'), null, 'no signature or enrolment control (readinessApi 2)');
 });
 
 for (const [name] of palettes) test(`${name}: actual Connections and reported PR checks use computed AA surfaces`, async t => {
