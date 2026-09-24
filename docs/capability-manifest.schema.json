@@ -55,6 +55,15 @@
       "type": "string",
       "minLength": 1
     },
+    "private": {
+      "type": "boolean",
+      "description": "Workspace discovery: true makes this member capability usable only by souls of its own repository (E_CAPABILITY_PRIVATE elsewhere)."
+    },
+    "team": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "Workspace discovery: the team label for this capability; else the repository's default from oats-membership.yaml."
+    },
     "layer": {
       "enum": [
         "knowledge",
