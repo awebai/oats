@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { cliSpawnPreview } from '../spawn-preview-cli.mjs';
 import { createSpawnPreviewBoundary } from '../server/spawn-preview.mjs';
-import { previewData } from '../renderer/spawn-preview-contract.mjs';
+import { previewData, INSTANCE_NAME_MAX } from '../renderer/spawn-preview-contract.mjs';
 import { cli, kernel, DEPLOYMENT, ROOT } from './helpers/spawn-preview-fixture.mjs';
 const provenance = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f3/provenance.json', import.meta.url), 'utf8'));
 const souls = { 'release-manager': 'worktree', 'platform-reviewer': 'checkout', 'support-triager': 'directory', 'no-such-soul': 'worktree' };
@@ -32,13 +32,13 @@ const cases = {
   'preview-name-early': ['release-manager', { name: 'api-gateway' }],
   'preview-name-invalid': ['release-manager', { name: 'Api-Gateway' }],
   'preview-name-soul': ['release-manager', { name: 'support-triager' }],
-  'preview-name-too-long': ['release-manager', { name: 'a'.repeat(65) }],
   'preview-name-taken': ['release-manager', { name: 'api-gateway' }],
   'preview-name-taken-other-soul': ['support-triager', { name: 'api-gateway' }],
 };
 test('every captured preview is replayed here', () => {
   assert.equal(provenance.kernel, '0.25.9');
-  assert.deepEqual(Object.keys(provenance.files).filter(name => name.startsWith('preview-')).sort(), Object.keys(cases).sort());
+  // preview-name-too-long is the kernel's cap, which the Desktop enforces before any call (below).
+  assert.deepEqual(Object.keys(provenance.files).filter(name => name.startsWith('preview-') && name !== 'preview-name-too-long').sort(), Object.keys(cases).sort());
 });
 for (const [name, [soul, choices]] of Object.entries(cases)) test(`kernel preview through adapter/boundary: ${name}`, async () => {
   const envelope = kernel(name), selector = { soul, agentsRoot: ROOT }, target = { workspace: 'northwind', context: DEPLOYMENT, selector };
@@ -87,5 +87,17 @@ test('spawn-name: the kernel names the instance exactly and refuses taken names 
     assert.equal(e.code, 'E_INSTANCE_NAME_TAKEN'); assert.equal(e.details.instance, 'api-gateway');
   }
   for (const name of ['preview-name-invalid', 'preview-name-soul', 'preview-name-too-long']) assert.equal(kernel(name).error.code, 'E_INSTANCE_NAME_INVALID');
-  assert.match(kernel('preview-name-too-long').error.message, /at most 64 characters/);
+});
+test('the Desktop caps instance names where the kernel does (#159): 64 reaches the kernel, 65 never does', async () => {
+  const refusal = kernel('preview-name-too-long').error, argv = provenance.files['preview-name-too-long'].argv;
+  const tooLong = argv[argv.indexOf('--name') + 1];
+  assert.equal(tooLong.length, INSTANCE_NAME_MAX + 1); assert.match(refusal.message, new RegExp(`at most ${INSTANCE_NAME_MAX} characters`));
+  const selector = { soul: 'release-manager', agentsRoot: ROOT };
+  const context = () => ({ workspace: { id: 'northwind', scope: DEPLOYMENT }, cli, agents: [{ name: 'release-manager', agentsRoot: ROOT, work: 'worktree' }], instances: [] });
+  let calls = 0;
+  const read = createSpawnPreviewBoundary({ invoke: (c, opts) => cliSpawnPreview(c, opts, { env: {}, exec: (_b, _a, _o, callback) => { calls++; callback({ code: 1 }, JSON.stringify(kernel('preview-name-too-long'))); } }) });
+  const refused = await read({ action: 'preview', selector, choices: { name: tooLong } }, context);
+  assert.equal(calls, 0, 'a name the kernel must refuse is never sent'); assert.equal(refused.reason.code, 'E_BAD_ARGS');
+  await read({ action: 'preview', selector, choices: { name: 'a'.repeat(INSTANCE_NAME_MAX) } }, context);
+  assert.equal(calls, 1, 'the longest valid name reaches the kernel');
 });

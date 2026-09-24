@@ -450,3 +450,21 @@ for (const theme of ['light', 'solarized', 'dark']) test(`${theme}: every spawn 
   }
   assert.ok(dialog.isConnected);
 });
+
+test('a name longer than the kernel cap (#159) is refused at the field before any preview: exact and derived', async t => {
+  const u = await mountSpawn(t);
+  await u.open(); await settle(20);
+  const before = u.previews().length;
+  // Prefix on: the kernel names <soul>-<purpose>, so the purpose may use 64 - "release-manager-".length.
+  const room = 64 - 'release-manager-'.length;
+  await u.type('.fpurpose', 'a'.repeat(room + 1)); await settle(20);
+  assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.q('.fspawn').disabled, true);
+  assert.equal(u.previews().length, before, 'never sent');
+  await u.type('.fpurpose', 'a'.repeat(room)); await settle(400);
+  assert.doesNotMatch(u.text('.spawn-name-result'), /at most 64/); assert.ok(u.previews().length > before, 'the longest derived name is previewed');
+  // Prefix off: the exact name itself is capped.
+  await u.change('.fprefix', false);
+  const sent = u.previews().length;
+  await u.type('.fpurpose', 'b'.repeat(65)); await settle(20);
+  assert.match(u.text('.spawn-name-result'), /at most 64 characters/); assert.equal(u.previews().length, sent);
+});

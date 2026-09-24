@@ -5,6 +5,11 @@ import { spawnDecision } from './spawn-decision.mjs';
 export { absolute, record };
 const exact = (v, keys) => record(v) && Object.keys(v).every(k => keys.includes(k));
 const name = v => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(v);
+/** The kernel caps instance names, explicit and derived, at 64 characters
+ * (#159, E_INSTANCE_NAME_INVALID). A longer --name or --purpose can never
+ * name an instance, so it is refused before any CLI call. */
+export const INSTANCE_NAME_MAX = 64;
+const INSTANCE_TOKEN = new RegExp(`^[a-z0-9][a-z0-9-]{0,${INSTANCE_NAME_MAX - 1}}$`, 'i');
 const arg = (v, max = 1024) => typeof v === 'string' && !!v && v.length <= max && !v.startsWith('-') && !/[\x00-\x1f\x7f]/.test(v);
 const safe = (v, max = 4096) => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]|https?:\/\/[^/\s]*@|(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{16,}/.test(v);
 const nullable = v => v === null || safe(v);
@@ -49,7 +54,7 @@ export function previewChoices(v) {
   if (Object.hasOwn(v, 'purpose') && Object.hasOwn(v, 'name')) return null;
   const out = {};
   for (const k of ['purpose', 'name', 'branch', 'base', 'runtime', 'launchConfig', 'backend']) if (Object.hasOwn(v, k)) {
-    if (!arg(v[k]) || (k === 'purpose' || k === 'name') && !/^[a-z0-9][a-z0-9-]{0,127}$/i.test(v[k])
+    if (!arg(v[k]) || (k === 'purpose' || k === 'name') && !INSTANCE_TOKEN.test(v[k])
       || k === 'launchConfig' && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(v[k])
       || k === 'runtime' && !['pi', 'claude', 'codex'].includes(v[k]) || k === 'backend' && !['tmux', 'herdr'].includes(v[k])) return null;
     out[k] = v[k];
