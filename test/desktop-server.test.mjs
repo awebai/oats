@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 const FAKE = join(ROOT, "test", "helpers", "desktop-fake-oats.mjs");
-const SOUL = "release-manager", INSTANCE = "release-manager-desktop-study";
+const SOUL = "release-manager", INSTANCE = "release-manager-cap";
 
 async function freePort() {
   const server = createServer();

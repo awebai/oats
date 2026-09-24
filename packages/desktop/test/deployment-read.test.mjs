@@ -17,13 +17,17 @@ const cli = () => ({ ...probe, ok: true, bin: '/fixture/bin/oats' });
 const input = action => ({ action, context });
 const reply = (document, error = null) => (_bin, _args, _options, callback) => callback(error, JSON.stringify(document));
 
-test('Northwind producer fixtures have recorded hashes and honest source/exit provenance', () => {
+test('Northwind producer fixtures are exit-0 kernel documents with recorded hashes, argv and kernel', () => {
   const provenance = fixture('provenance');
   for (const [name, entry] of Object.entries(provenance.files)) {
     assert.equal(createHash('sha256').update(readFileSync(file(name))).digest('hex'), entry.fixtureSha256);
   }
-  assert.equal(provenance.files.status.exit.status, 86);
-  assert.equal(provenance.files['workspace-status'].exit.status, 0);
+  // Every fixture is an exit-0 document of the released kernel, with its argv.
+  assert.deepEqual(Object.keys(provenance.files).sort(), ['status', 'status-identities', 'version', 'workspace-status']);
+  for (const entry of Object.values(provenance.files)) {
+    assert.equal(entry.exit, 0); assert.equal(entry.kernel, provenance.kernel); assert.equal(entry.argv.at(-1), '--json');
+  }
+  assert.equal(probe.version, provenance.kernel);
   assert.equal(probe.workspaceApi, 2);
   for (const feature of DEPLOYMENT_FEATURES) assert.ok(probe.features.includes(feature), feature);
 });

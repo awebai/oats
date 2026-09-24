@@ -5,11 +5,11 @@
     "workspaceStatusApi": 1,
     "workspace": {
       "name": "northwind",
-      "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
-      "url": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
-      "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
-      "observedAt": "2026-09-24T10:05:40.388Z",
-      "local": "/fixture/desktop-study/artifacts/redesign/phase-f/manual/deployment/oats-local.yaml",
+      "key": "local//fixture/base/fx/remotes/agents.git",
+      "url": "/fixture/base/fx/remotes/agents.git",
+      "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+      "observedAt": "2026-09-24T11:52:09.504Z",
+      "local": "/fixture/base/northwind-workspace/oats-local.yaml",
       "teams": [
         "global",
         "engineering",
@@ -18,9 +18,9 @@
     },
     "members": [
       {
-        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/agents.git",
+        "key": "local//fixture/base/fx/remotes/agents.git",
         "name": "agents",
-        "commit": "42dda771897514e4e2b2bfbbcec3de1879cb5ff7",
+        "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -36,9 +36,9 @@
         "publishes": null
       },
       {
-        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/platform.git",
+        "key": "local//fixture/base/fx/remotes/platform.git",
         "name": "platform",
-        "commit": "598fe4e585cf06fcbf4ef8ef99a705baafb9fb7b",
+        "commit": "c16800474dcb3dd41527f6b9bb9702587c45d440",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -51,9 +51,9 @@
         "publishes": null
       },
       {
-        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/data.git",
+        "key": "local//fixture/base/fx/remotes/data.git",
         "name": "data",
-        "commit": "015be270ebf83da94424dbb2832f634a4d8996eb",
+        "commit": "5c6a91c17d41a7085eecec3e680069860d4639ed",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -67,9 +67,9 @@
         "publishes": null
       },
       {
-        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/marketing.git",
+        "key": "local//fixture/base/fx/remotes/marketing.git",
         "name": "marketing",
-        "commit": "e45732cb1969ae2f8e510644ed3cd0e888b7cbf8",
+        "commit": "a5e6d5850f4e7db2fb655e2d6803a20e649e5116",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -85,9 +85,9 @@
         "publishes": null
       },
       {
-        "key": "local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/nw-tools.git",
+        "key": "local//fixture/base/fx/remotes/nw-tools.git",
         "name": "nw-tools",
-        "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+        "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -108,8 +108,8 @@
       {
         "id": "nw.tools",
         "version": "0.4.0",
-        "source": "git:local//fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/nw-tools.git@v0.4.0",
-        "commit": "98aa32bdb07e28bc676c83e3d845f60b3eb0f280",
+        "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
+        "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
         "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
         "capabilities": [
           "nw-deploy",
@@ -117,7 +117,7 @@
         ],
         "approved": {
           "executables": "sha256-7923d48128ac7dc7fe71c5bff27ceb22e13ba5223247b53c2763fd77caa258c5",
-          "at": "2026-09-24T10:04:48.652Z"
+          "at": "2026-09-24T11:52:04.492Z"
         }
       },
       {
@@ -131,7 +131,7 @@
         ],
         "approved": {
           "executables": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "at": "2026-09-24T10:04:48.786Z"
+          "at": "2026-09-24T11:52:06.975Z"
         }
       },
       {
@@ -145,7 +145,7 @@
         ],
         "approved": {
           "executables": "sha256-488fbf9cbd41b88e049af77a3ce108ee78cd5a8d3817ea6159014d428396d012",
-          "at": "2026-09-24T10:04:48.932Z"
+          "at": "2026-09-24T11:52:09.364Z"
         }
       }
     ],
@@ -166,7 +166,7 @@
     },
     "external": [
       {
-        "source": "file:///fixture/desktop-study/artifacts/redesign/phase-f/manual/fx/remotes/experts.git@3c606e09ea25c9976d9c8371d48e9737564e6896",
+        "source": "file:///fixture/base/fx/remotes/experts.git@3c606e09ea25c9976d9c8371d48e9737564e6896",
         "soul": "security-reviewer",
         "team": "unassigned"
       }

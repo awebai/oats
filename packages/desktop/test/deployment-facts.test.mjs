@@ -20,12 +20,24 @@ test('captured roster facts render in the kernel\'s own terms', () => {
   assert.equal(memberLabel('local//x/fx/remotes/nw-tools.git'), 'nw-tools');
 });
 
+test('served identity from the exit-0 capture: absent key stays absent; local and grant rows are copied, keyed on provider presence', () => {
+  const rows = Object.fromEntries(deploymentStatusData(fixture('status-identities'), context).agents[0].instances.map(i => [i.instance, i]));
+  assert.equal(Object.hasOwn(rows['release-manager-cap'], 'identity'), false, 'no identity key is synthesized');
+  assert.equal(servedIdentityText(rows['release-manager-cap'].identity), null);
+  assert.deepEqual(rows['release-manager-local-id'].identity, { mode: 'local', alias: 'release-manager-local-id', team: 'engineering:example.org', address: null, resident: null, provider: 'example.chat' });
+  assert.equal(servedIdentityText(rows['release-manager-local-id'].identity), 'alias release-manager-local-id on engineering:example.org');
+  assert.deepEqual(rows['release-manager-grant-id'].identity.grant, { expiresAt: '2026-12-31T00:00:00Z' });
+  assert.equal(servedIdentityText(rows['release-manager-grant-id'].identity), 'acts as example.org/release-manager via grant, expires 2026-12-31T00:00:00Z');
+  const renamed = { ...rows['release-manager-local-id'].identity, provider: 'some.other.provider' };
+  assert.equal(servedIdentityText(renamed), servedIdentityText(rows['release-manager-local-id'].identity), 'rendering never keys on a provider name');
+});
+
 test('module drift names moved/missing rows with reason and origin; the recorded map says drift is unobserved', () => {
   const i = instance();
   i.modules[0] = { ...i.modules[0], status: 'moved', current: { commit: 'f'.repeat(40) } };
   i.modules[1] = { ...i.modules[1], status: 'missing', reason: 'capability-absent', current: null };
   const text = moduleDriftText(i.modules);
-  assert.match(text, /^nw-deploy: moved since — package nw\.tools @ 98aa32b; nw-house-style: missing \(capability-absent\) — member agents @ 42dda77; 3 current$/);
+  assert.match(text, /^nw-deploy: moved since — package nw\.tools @ 6bba1dc; nw-house-style: missing \(capability-absent\) — member agents @ 7bc8403; 3 current$/);
   assert.equal(moduleDriftText({ a: {}, b: {} }), '2 recorded — drift not observed (workspace unreachable)');
   assert.equal(moduleDriftText([]), 'None');
   assert.equal(moduleDriftText(undefined), null);
