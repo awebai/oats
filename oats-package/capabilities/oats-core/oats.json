@@ -1,9 +1,9 @@
 {
   "capability": "oats.core",
-  "version": "1.0.1",
-  "description": "Explicit OATS operation, soul discovery and lifecycle guidance; no fundamental-layer or executable authority.",
+  "version": "2.0.0",
+  "description": "OATS operation from inside an instance under the workspace model: home and work, modules, status and drift, spawn preview and apply, relations, soul discovery; no layer or executable authority.",
   "compatibility": {
-    "oats": ">=0.24.0"
+    "oats": ">=0.25.5"
   },
   "requires": [],
   "skills": [

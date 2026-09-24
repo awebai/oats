@@ -1,228 +1,144 @@
 ---
 name: oats-operate
 description: >-
-  Use when operating OATS instances: inspect retained composition, spawn, start,
-  status, retire, doctor, home/work layout or generated instructions. Distinguish
-  captured authority from classic config commands before acting. For soul discovery
-  and relationships use oats-souls; setup belongs to oats.setup.
+  Use when operating OATS from inside an instance: your home and work
+  directories, what a module is, reading `oats status` (modules, soul source,
+  drift), spawning with preview then apply, relations, stopping or retiring
+  instances you spawned, lifecycle events and doctor. For which souls exist and where they
+  come from, use oats-souls; deployment setup belongs to oats.setup.
 ---
 
-# Operating OATS
+# Operating OATS from an instance
 
-Moved from the existing OATS operation skills; command baseline **0.24.0**.
-Choose the path from `instance.json.executionBinding`: present means captured,
-absent means classic. Invalid-present is a refusal, never a legacy fallback.
-This resource capability does not itself change lifecycle or grant permission
-to spawn, retire, approve software or alter a deployment.
+OATS realizes an organisation's **workspace** (a Git-shared declaration of
+member repositories and pinned packages) on a machine, in a **deployment
+directory** the operator chose. Souls are defined in member repositories;
+instances are spawned from them into homes under the deployment's `agents/`.
 
-A **soul** is a durable specialized agent. An **instance** is one disposable,
-resumable incarnation. A **capability package** distributes reusable skills,
-instructions, commands, and approved lifecycle hooks. An **integration** is a
-capability selected for one exclusive knowledge, messaging, or tasks layer.
+Run `oats` commands from **your instance home** (they find the deployment by
+walking up to `oats-local.yaml`), or pass `--dir <deployment>`. Use `--json`
+when you parse output. When a flag is not shown here, read `oats help` — never
+invent one.
 
-## Instance home
+## Your two directories
 
-| Path | Meaning |
-|---|---|
-| `TASK.md` | briefing and task |
-| `soul/` | linked canonical soul |
-| `AGENTS.md` | generated canonical soul + active capability instructions |
-| `CLAUDE.md -> AGENTS.md` | compatibility view |
-| `.agents/skills/` | exact runtime skill set |
-| `work/` | all repository work happens here |
-| `instance.json` | repo, branch, capabilities, skills, instruction sources, trust, hooks |
+```
+<deployment>/agents/<soul>/instances/<instance>/   ← your home ($OATS_INSTANCE_HOME)
+├── AGENTS.md            composed instructions: the soul's own + each module's inject + work-mode block
+├── CLAUDE.md → AGENTS.md
+├── .agents/skills/<capability>/<skill>/             every skill you were given, copied
+├── .claude/skills → ../.agents/skills
+├── .oats/modules/<capability>/                      each capability, copied whole
+├── instance.json        what you were given and from where
+├── TASK.md              this task
+└── work/                your repository view (per your work mode)
+```
 
-Memory files exist only when the selected knowledge integration creates them.
-Follow their injected protocol.
+- **The home is your state and your brain**: instructions, task, working
+  notes, whatever your knowledge capability keeps. OATS operational commands
+  run here.
+- **`work/` is where repository work happens**: reading, editing, building,
+  testing, Git. Never run Git from the home root or from the operator's own
+  checkout.
+- **A change to a soul is repository work**: an ordinary, reviewed change to
+  the member repository that defines it, made in a work tree.
 
-## Captured operation — 0.24 baseline
+Work modes (from the soul's `work:`): `worktree` — your own branch in a Git
+worktree of the soul's repository; `checkout` — a shared checkout;
+`directory` — an owned directory, no repository; `workspace` — `work/` is the
+deployment directory itself, read-only across members, for coordination.
 
-A captured instance executes one immutable managed composition identified by an
-explicit deployment and resolution. Its source soul, adopter alias, capability
-artifacts, settings, provider bindings, curriculum, helpers, and executable
-resources come from that record—not from the current checkout or config chain.
-Credentials, provider readiness, memberships, knowledge contents, the work target,
-and host tools remain separately checked mutable inputs.
+## Modules: what you were given
 
-### Authority checklist
+A **module** is one capability copied whole into your home at spawn — its
+skills, instruction inject, scripts and hooks — from one of two sources:
 
-1. Read `instance.json.executionBinding` for the exact deployment and resolution.
-2. Pass both selectors together. Never infer either from cwd, a source path, a
-   package lock, an OS user, or another instance.
-3. If the record, retained resource, approval, binding, or host requirement is
-   missing or invalid, stop. Do not retry through an unqualified legacy command.
-4. Treat `responsibleHuman: null` only as explicit messaging-disabled state. It
-   is not an anonymous human or a private-team identity.
+- a **member** repository at its latest commit (trusted by membership), or
+- a **package** at the version the workspace pins (locked, approved per
+  version).
 
-### Implemented commands
+`instance.json` records each module's source, commit and content digest
+(`modules`), the provider payloads it received (`providers`), and the soul
+source (`workspace.soul`). A running instance never changes under itself: a
+member moving or a package being bumped affects only new spawns.
+
+## Status and drift
 
 ```bash
-oats inspect --deployment <absolute-deployment> --resolution <sha256-id> --json
-oats inspect --deployment <absolute-deployment> --resolution <sha256-id> --composition --json
-oats <namespace> <command> --deployment <absolute-deployment> --resolution <sha256-id> -- [provider-args]
-oats operation run <knowledge|messaging|tasks>:<name> \
-  --deployment <absolute-deployment> --resolution <sha256-id> \
-  [--home <absolute-instance-home>] [--arg name=value ...] --json
+oats status                  # souls, instances, and per instance: soul source + modules
+oats status --json
 ```
 
-For capability helpers, inspect the source's captured helper map and resolve one
-exact key before selecting a helper record:
+Per instance, status shows `soul: <name> from <member> @ <commit>` and each
+module's recorded source. An unmarked row is current; otherwise it is marked
+`[member moved since (now @ …)]` (a package module: package moved since),
+`[soul no longer present]`, `[capability no longer present]`,
+`[package no longer locked]`, or `[member <reason>]` when the member is not
+confirmed. Drift is information, not a fault: the
+running instance keeps its commit; a re-spawn picks up the new state.
+
+Other read-only views:
 
 ```bash
-oats inspect --deployment <source-deployment> --resolution <source-id> \
-  --helper <exact-map-key> --composition --json
+oats workspace status        # members confirmed or why not; packages and approval
+oats souls                   # souls the workspace offers (see oats-souls)
+oats capabilities            # capabilities, member or package, with origin and team
+oats instance events <instance>          # what happened to an instance, as recorded
+oats instance git <instance>             # its work tree: branch, status, ahead/behind
+oats doctor                  # this deployment's local file and lock, plus diagnostics
 ```
 
-Keep `sourceExecutionBinding` for provider completion commands and the returned
-`executionBinding` for the helper. Do not complete through a worker's inherited
-selector or use legacy helper-name discovery. Helper inspection is not worker
-launch; use the staged public start below and retain its actual dispatch result.
+## Spawn: preview, then apply
 
-A fresh captured directory scaffold is available only with explicit placement
-and no launch:
+Spawn only when your task or your human asks for it.
 
 ```bash
-oats spawn <captured-subject> \
-  --deployment <absolute-deployment> --resolution <sha256-id> \
-  --home <absolute-new-home> --no-launch --json
+oats spawn <soul> --preview                         # nothing is created
+oats spawn <soul> --purpose <slug> --task "…" --parent "$OATS_INSTANCE"
+oats spawn <soul> --purpose <slug> --no-launch      # scaffold only
 ```
 
-The subject must match the retained soul alias or helper name. The home must be
-new and its parent physical. This command materializes retained instructions and
-skills, creates owned directory work, and runs captured spawn hooks. It does not
-select a work repository, launch a model, or infer a team.
+The preview lists the modules with source, commit and `changedSince` the
+newest earlier instance of that soul, the team, the resolution revision, the
+composed skill names and `settings.<capability>` — the merged payload each
+provider will receive. Read it before creating anything; a spawn that uses a
+preview's decision is refused if the member moved in between.
 
-### Start the owned captured home
+**Relations.** An instance you spawn for your own work is your **child**:
+pass `--parent "$OATS_INSTANCE"` (sugar for `--relative-to <you> --relation
+child`). Use `--relation sibling|parent|unrelated --relative-to <instance>`
+only when that is the true relation; without one the new instance is
+top-level. Ask your human when the relation is unclear.
 
-After the explicit scaffold/hooks stage, start using the same retained authority:
+**Naming.** `--purpose <slug>` names the instance `<soul>-<slug>`; without it
+the kernel numbers it.
+
+A soul with `work: worktree | checkout` needs a clone of its repository on
+this machine; the kernel finds it through `--repo <path>`, the local file's
+`clones:`, or `<deployment>/<repo name>`, and names the remedies when none
+exists. Setting that up is the operator's (oats.setup), not yours.
+
+## Stopping, starting and retiring other instances
 
 ```bash
-oats session start --deployment <absolute-deployment> --resolution <sha256-id> \
-  --home <owned-home> --request <absolute-native-request-json> --json
+oats instance stop <instance> --plan                 # what Stop would touch
+oats session start --home <abs-home>                 # start a stopped instance in its home
+oats retire <instance> --plan                        # what Remove would touch, with retention
+oats retire <instance>                               # retire (window, hooks, worktree, home)
 ```
 
-The native request is a closed object, for example:
+These act on **other** instances — typically children you spawned — and only
+when your task or your human says so. Retirement runs every module's retire
+hook (identities, scheduled jobs) and retains a worktree with work in it
+unless told to discard.
 
-```json
-{"schemaVersion":1,"backend":{"backend":"tmux","binary":"/absolute/tmux","socket":"/absolute/socket","session":"captured"},"task":"Explicit task"}
-```
+## Rules
 
-For Herdr, replace only `backend` with
-`{"backend":"herdr","binary":"/absolute/herdr","socket":"/absolute/herdr.sock","protocol":20}`. The 0.24 baseline also supports Herdr protocol22; use the
-actual supported protocol of the selected operator endpoint.
-Use an explicit existing operator-managed socket; this route never starts a
-Herdr daemon or falls back to tmux. Actual workspace/pane/terminal IDs arrive in
-the receipt after allocation, never from caller naming. API discovery advertises
-`oats.captured-session@2` with both backends and `readiness:not-checked`.
-
-Runtime/model/yolo come from the capture, never this request. Optional
-`stopGraceMs` is bounded 1–300000. No env/io/credential/provider/config fields.
-For an already scaffolded helper, pass the SOURCE selectors and add
-`--helper <exact-map-key>`; the home must match the returned dedicated helper
-binding. This revalidates the edge, not just a helper name.
-
-Use `session restart` for a distinct restart request in the same incarnation.
-Once stored, task/backend can be omitted to use owned values. Use
-`--retry-intent <saved-executionId>` only for an explicit replay/retry of that
-same logical request. An unknown Herdr allocation must remain held under its
-saved intent; never repeat workspace creation or guess its IDs from a label.
-Preserve `error.details.nativeCustody` and the indexed
-pending identity on uncertainty; never allocate another home/ID to disguise it.
-`dispatchAccepted` means native dispatch, not task completion/model health or
-privacy. A completed receipt replay may return `replayed:true` instead.
-
-### Current refusal boundary
-
-Captured input/wake/retire, unqualified managed runtime packages/contributions, extra
-native arguments, non-directory work targets and backends other than tmux/Herdr
-still refuse. Do not strip selectors or call legacy forms as a workaround. A scaffold marked `spawn-failed-cleanup-required`
-may contain external hook effects; preserve it and escalate rather than deleting
-it. A scaffold marked `spawned-launch-pending` is not a running instance.
-
-
-Preparation and exact approval guidance live in **oats-workspace-setup** and
-**oats-packages** from `oats.setup`. If that capability is not selected, ask the
-operator/setup expert; do not assume those skills are ambient.
-
-## Classic uncaptured compatibility — 0.24
-
-These commands use the config chain, not retained source authority. Do not use
-them as a fallback for a captured failure. Run operational commands from instance
-home, not its work tree; use an explicit scope only when deliberately operating elsewhere.
-
-### Lifecycle and roster
-
-```bash
-oats status [--json]
-oats status --team [--json]   # whole-team roster when config declares team: (all repos in the team scope)
-# with the aweb messaging integration active, `oats aweb roster` adds the
-# cross-machine view: aweb team members, where OATS aliases are instance names
-oats create <name> [--description ...] [--type <agent-type>] [--repo ...] [--work worktree|checkout|attached|workspace|directory]
-# directory mode = owned execution directory; repo is config context (no Git
-# required); --work-dir and --branch are rejected; retirement preserves work.
-# workspace mode = cross-repo coordinator: ./work is the whole team scope; read
-# all member repos, edit none; if a knowledge layer is active, IT defines how
-# soul updates are delivered (see that capability's own instructions)
-oats spawn <agent> [--task ...] [--purpose ...] [--relation child|sibling|parent|unrelated --relative-to <instance>] [--parent <instance>] [--no-launch] [--json]
-# lineage is explicit: agents spawning sub-agents declare their RELATION to the
-# new instance with --relation + --relative-to (--parent X is sugar for
-# --relative-to X --relation child). Without a relation the spawn is
-# operator-origin and appears top-level. Attached-mode spawns are ALWAYS
-# children of the work-tree owner (relation flags are rejected there).
-# when config declares team:, spawn/retire also resolve souls and instances
-# defined in sibling repos of the team scope (unique match wins; the instance
-# homes with its owning repo, works in that repo, resolves that repo's config)
-oats retire <instance> [--delete-branch]
-```
-
-For discovery, creation, naming and relationships, load **oats-souls**.
-
-To self-retire, first finish memory/commit/reporting requirements, report final
-status, then run `oats retire <own-instance> --self`. That returns at once and
-a detached completion retires you a few seconds later exactly as an external
-`oats retire` would (quiesce, preserve work, hooks, remove the home). If the
-completion fails, your window stays, the failure shows in `oats status` with
-the retry command, and an operator retries. Never retire merely to clean up;
-retirement deletes the instance home.
-
-## Canonical versus generated
-
-Edit the canonical source `AGENTS.md` in the tracked source/work tree you own,
-NOT through the instance home's `soul/` link. Instance `AGENTS.md` is a generated
-view; marked blocks name their source. Retained artifacts are immutable: edit
-the source and prepare a new composition, never patch the captured copy. Config
-changes do not mutate the committed soul. For classic composition, preview with:
-
-```bash
-oats doctor /path/to/context --soul <name>
-```
-
-The instance's `.agents/skills/` holds the exact OATS-composed set (kernel +
-soul + active capabilities); `.claude/skills` mirrors it. Harness-ambient
-skills (user-level, packages, work tree) coexist with this set. Duplicate
-names *within* the OATS set fail spawn unless `skill-overrides` explicitly
-chooses a source.
-
-## Commands and doctor
-
-For CLASSIC uncaptured instances, operational namespaces run only when their
-package is active in the current context/instance:
-
-```bash
-oats okf harvest
-oats linear issue list ...
-```
-
-Package-management commands remain global. Use doctor first when something is
-missing:
-
-```bash
-oats doctor [context] [--soul <name>] [--json]
-```
-
-It shows config chain, acquired/active packages, layer selection, target and
-settings provenance, requirements, trust, skill sources, instruction blocks,
-and—with `--soul`—final composed text.
-
-Infrastructure faults should be reported to the spawner/human, not repaired by
-an instance ad hoc.
+- Never edit `instance.json`, `oats-lock.json`, `oats-local.yaml` or anything
+  under `.oats/` by hand. Report a wrong value instead.
+- Never re-onboard, sync-approve or change a deployment from an instance
+  unless that is your task; those are operator actions (oats.setup).
+- A scaffold is not a working session, a sent message is not a delivered
+  one, and a green command on the wrong tree is not evidence. Say which tree
+  and which instance a result belongs to.
+- Report infrastructure faults to your spawner or human; do not self-repair.
