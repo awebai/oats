@@ -1,7 +1,0 @@
-schemaVersion: 2
-name: oats-setup-expert
-description: Guide an operator through OATS workspace adoption and explicit capability setup.
-work: directory
-capabilities:
-  oats.setup: { from: package }   # oats.core comes from the workspace defaults
-knowledge: none                     # owns no node yet; becomes oats-operator-expert (Phase D, D3)

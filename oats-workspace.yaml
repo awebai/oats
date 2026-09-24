@@ -38,7 +38,12 @@ defaults:
   knowledge: { oats.okf: { from: package } }
   tasks: none
 
-# The central knowledge base. Where the base sits inside the repository (and the
-# host state it needs) is the knowledge provider's binding, on each machine.
+# Knowledge stores. The provider does not read this block; each machine binds
+# the bases in its knowledge bindings file. The store names below are also the
+# BASE ALIASES the souls' okf.json files commit to ("oats/<node>",
+# "aweb/<node>"), so every machine must bind them under exactly these names:
+#   oats → the OATS central base   (root knowledge/, accepted branch main)
+#   aweb → the aweb project's base, read-only (root knowledge/, accepted branch main)
 stores:
   oats: git:github.com/awebai/oats-knowledge
+  aweb: git:github.com/awebai/aweb
