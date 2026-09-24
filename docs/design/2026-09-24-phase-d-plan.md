@@ -124,7 +124,9 @@ oats-dev-expert), the expert in that package, with a node in the central base
 from day one. **Messaging (lead, 2026-09-24):** there is no workspace-wide messaging
 default, because it would mint a real identity on every spawn, helpers and
 acceptance runs included. Every soul that is *addressed by mail* declares it
-itself, `messaging: { oats.aweb: { from: package } }`: the coordinating
+itself, `capabilities: { oats.aweb: { from: package } }` (a slot is filled
+through `capabilities:` by the manifest's `layer`; a top-level `messaging:`
+object is only the provider payload): the coordinating
 experts (`oats-expert`, `oats-operator-expert`, `integrations-expert`) and all
 six package experts, which own their repository's PRs and receive review asks.
 Short-lived helpers do not.
@@ -163,6 +165,12 @@ the harvester delivers to that node as a PR the owning expert reviews.
   `oats-config.yaml` scope chain and its readers, the `local-agents/` and
   `tmp-agents/` layouts, the OAS-scope probes, the installed-capability tier
   remnants. Removed, not flagged; the `REMOVED_VERBS` answers stay.
+- **In-repo package copies** (`capabilities/oats-{okf,aweb,jira,linear,authoring}`)
+  are NOT removed in D4: `package.json` ships `capabilities/` as the kernel's
+  bundled providers, pinned by the mirror-parity, release-packaging and
+  clean-room tests. Whether 0.26.0 still bundles them is a release decision
+  for D5 (lead); until then they stay unmarked. `private` becomes a schema key
+  (the kernel already reads it); `oats-review` is marked private.
 - **Legacy souls** (`agents/*` and their knowledge bundles) are NOT part of D4:
   they go when the live instances linking them retire (human rule).
 
