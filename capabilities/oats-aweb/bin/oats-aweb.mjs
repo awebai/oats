@@ -285,7 +285,8 @@ function custodyPreflight(custody, resident, team, { e2eeRequired = true, fatalO
   catch (e) { failNow(`custody preflight failed for ${resident}: aw custody status --json could not run (${e.message || e}); start aw custody serve for ${resident}`); }
   const state = String(status.status || "unknown");
   const firstError = Array.isArray(status.errors) && status.errors.length ? status.errors[0] : undefined;
-  const code = firstError?.code ? ` error=${firstError.code}` : "";
+  const firstErrorCode = typeof firstError === "string" ? firstError : firstError?.code;
+  const code = firstErrorCode ? ` error=${firstErrorCode}` : "";
   const fail = (why) => failNow(`custody preflight failed for ${resident}: status=${state}${code}; ${why}; start aw custody serve for ${resident}`);
   if (state !== "running") fail("custody service is not running");
   const teamRow = (Array.isArray(status.teams) ? status.teams : []).find((t) => t && (t.team_id || t.id) === team);
@@ -293,7 +294,7 @@ function custodyPreflight(custody, resident, team, { e2eeRequired = true, fatalO
   if (teamRow.ready !== true) fail(`team ${team} is not ready in custody status`);
   if (status.keys?.signing_ready !== true) fail("keys.signing_ready is false");
   const ops = new Set(Array.isArray(status.ops) ? status.ops.map(String) : []);
-  const requiredOps = ["sign_plain_message/1", ...(e2eeRequired ? ["unwrap_e2ee_message/1", "create_e2ee_envelope/1"] : [])];
+  const requiredOps = ["sign_plain_message.v1", ...(e2eeRequired ? ["unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] : [])];
   const missingOps = requiredOps.filter((op) => !ops.has(op));
   if (missingOps.length) fail(`required custody operations are missing: ${missingOps.join(", ")}`);
   if (e2eeRequired && status.keys?.encryption_ready !== true) fail("keys.encryption_ready is false");

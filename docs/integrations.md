@@ -231,10 +231,14 @@ but do not yet enforce provenance in the hook payload).
   minting, the hook runs `aw custody status --json` from that custody directory
   with `AWEB_IDENTITY_HOME` removed and requires `status: running`, the selected
   team present and `ready`, `keys.signing_ready`, and the custody operations the
-  grant needs (`sign_plain_message/1`, plus `create_e2ee_envelope/1` and
-  `unwrap_e2ee_message/1` when `identity.e2ee` is not `false`). Encryption
+  grant needs (`sign_plain_message.v1`, plus `create_e2ee_envelope.v1` and
+  `unwrap_e2ee_message.v1` when `identity.e2ee` is not `false`; `status.v1` is
+  also advertised by the custody service). Encryption
   readiness is fatal when E2E is required; with `identity.e2ee: false` it is a
-  warning in the brief. Failures name the status / first error code and the
+  warning in the brief. The pinned custody status wire modeled here is commit
+  `4c353d6d` (`status`, `service_id`, `socket_path`, `resident`, `teams[]`,
+  `keys`, `ops`, `freshness`, `errors[]` as stable code strings). Failures name
+  the status / first error code and the
   remedy `start aw custody serve for <resident>`. There is no manifest `requires`
   row for the custody service because it is a daemon, not a command-presence
   check.

@@ -38,11 +38,12 @@ if (a[0] === "custody" && a[1] === "status" && a.includes("--json")) {
   const team = process.env.FAKE_CUSTODY_TEAM || "t:example.test";
   const doc = {
     status: process.env.FAKE_CUSTODY_STATUS || "running",
+    service_id: "custody-fake-4c353d6d",
     socket_path: path.join(process.cwd(), "custody.sock"),
     resident: { did_aw: "did:aw:resident", did_key: "did:key:resident", address: "oats.aweb.ai/resident-alias", alias: "resident-alias" },
     teams: process.env.FAKE_CUSTODY_TEAMS ? JSON.parse(process.env.FAKE_CUSTODY_TEAMS) : [{ team_id: team, ready: process.env.FAKE_TEAM_READY !== "0", certificate_present: true, grant_status_endpoint_ready: true }],
     keys: { signing_ready: process.env.FAKE_SIGNING_READY !== "0", encryption_ready: process.env.FAKE_ENCRYPTION_READY !== "0", encryption_key_id: "enc-1" },
-    ops: csv("FAKE_CUSTODY_OPS", "sign_plain_message/1,create_e2ee_envelope/1,unwrap_e2ee_message/1,status/1"),
+    ops: csv("FAKE_CUSTODY_OPS", "sign_plain_message.v1,create_e2ee_envelope.v1,unwrap_e2ee_message.v1,status.v1"),
     freshness: { source: "fake", last_checked_at: "2026-09-24T00:00:00Z", max_cache_age_seconds: 30 },
     errors: process.env.FAKE_CUSTODY_ERRORS ? JSON.parse(process.env.FAKE_CUSTODY_ERRORS) : []
   };
@@ -150,7 +151,7 @@ test("reviewer profile narrows defaults, explicit scopes win, and unknown profil
 test("custody preflight fails closed with typed status/error and serve remedy before mint", () => {
   const base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_STATUS: "not_running", FAKE_CUSTODY_ERRORS: JSON.stringify([{ code: "daemon_down", message: "no socket" }]) });
+    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_STATUS: "not_running", FAKE_CUSTODY_ERRORS: JSON.stringify(["daemon_down"]) });
     assert.notEqual(r.status, 0);
     assert.match(r.doc.warning, /custody.*not_running/);
     assert.match(r.doc.warning, /daemon_down/);
@@ -162,14 +163,14 @@ test("custody preflight fails closed with typed status/error and serve remedy be
 test("custody preflight requires e2ee operations by default; identity.e2ee false needs signing only and briefs a warning", () => {
   let base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_OPS: "sign_plain_message/1,status/1", FAKE_ENCRYPTION_READY: "0" });
+    const { r } = spawnGrant(base, {}, { FAKE_CUSTODY_OPS: "sign_plain_message.v1,status.v1", FAKE_ENCRYPTION_READY: "0" });
     assert.notEqual(r.status, 0);
-    assert.match(r.doc.warning, /create_e2ee_envelope\/1/);
+    assert.match(r.doc.warning, /create_e2ee_envelope\.v1/);
     assert.match(r.doc.warning, /start aw custody serve for merlin/);
   } finally { rmSync(base, { recursive: true, force: true }); }
   base = mkdtempSync(join(tmpdir(), "oats-aweb-113-"));
   try {
-    const { r } = spawnGrant(base, { identity: { e2ee: false } }, { FAKE_CUSTODY_OPS: "sign_plain_message/1,status/1", FAKE_ENCRYPTION_READY: "0" });
+    const { r } = spawnGrant(base, { identity: { e2ee: false } }, { FAKE_CUSTODY_OPS: "sign_plain_message.v1,status.v1", FAKE_ENCRYPTION_READY: "0" });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.doc.brief, /E2E encryption is disabled/);
   } finally { rmSync(base, { recursive: true, force: true }); }
