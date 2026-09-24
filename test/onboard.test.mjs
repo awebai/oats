@@ -3,7 +3,7 @@
 // Runs the REAL CLI as a child process over the Northwind fixture (real bare Git
 // remotes, real lib/remote.mjs). `oats onboard <dir> --workspace <ref>` writes
 // <dir>/oats-local.yaml + <dir>/agents/ and then runs exactly the `oats sync`
-// path: lock v3 with every package unapproved (stdin is never a TTY here → exit 2).
+// path: lock v3 (commit + integrity per package; no approval step) and exit 0.
 // It creates NO soul, spawns NOTHING, writes NO oats-config.yaml and NO installed/
 // tier; a second onboard of the same directory is E_ALREADY_ONBOARDED.
 // Never invokes bare `oats setup`; never touches ~/.cache (OATS_REMOTE_CACHE).
@@ -50,7 +50,7 @@ function tree(dir, prefix = "") {
   return out;
 }
 
-test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, runs the sync path (lock v3, unapproved, exit 2 non-TTY), creates nothing else, refuses a repeat", { timeout: 300_000 }, async () => {
+test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, runs the sync path (lock v3, exit 0), creates nothing else, refuses a repeat", { timeout: 300_000 }, async () => {
   const base = fixtureBase();
   try {
     const fx = await buildNorthwind(join(base, "fx"));
@@ -63,7 +63,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
 
     // ---- --json, non-TTY ----
     let r = oats(["onboard", dep, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
-    assert.equal(r.status, 2, `onboard exits 2 when approvals are pending (like sync)\n${r.stdout}\n${r.stderr}`);
+    assert.equal(r.status, 0, `onboard exits 0 once the lock is written (like sync)\n${r.stdout}\n${r.stderr}`);
     let doc = envelope(r);
     assert.equal(doc.ok, true);
     const res = doc.result;
@@ -77,7 +77,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     // The embedded sync result IS the `oats sync --json` result (same code path).
     const sync = res.sync;
     assert.equal(sync.syncApi, 1);
-    assert.deepEqual(Object.keys(sync).sort(), ["approvalNeeded", "changes", "members", "packages", "problems", "syncApi", "workspace"]);
+    assert.deepEqual(Object.keys(sync).sort(), ["changes", "members", "packages", "problems", "syncApi", "workspace"]);
     assert.equal(sync.workspace.name, "northwind");
     assert.equal(sync.workspace.key, fx.keys.agents);
     assert.equal(sync.workspace.commit, fx.commits.agents);
@@ -85,8 +85,6 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(sync.members.length, 5);
     assert.ok(sync.members.every((m) => m.confirmed && m.status === "confirmed"), JSON.stringify(sync.members.map((m) => [m.name, m.status])));
     assert.deepEqual(sync.packages.map((p) => p.id), ["nw.tools", "oats.framework", "oats.okf"]);
-    assert.ok(sync.packages.every((p) => p.approved === null), "nothing is approved without a terminal");
-    assert.deepEqual(sync.approvalNeeded.map((a) => a.id), ["nw.tools", "oats.framework", "oats.okf"]);
     assert.deepEqual(sync.problems, []);
 
     // Next steps: what the chosen directory now holds; clone members you work IN, then spawn. The setup-expert hint is
@@ -109,7 +107,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.equal(lock.lockfileVersion, 3);
     assert.deepEqual(Object.keys(lock.packages), ["nw.tools", "oats.framework", "oats.okf"]);
     for (const [id, entry] of Object.entries(lock.packages)) {
-      assert.equal(entry.approved, null, `${id} is locked unapproved`);
+      assert.ok(!Object.hasOwn(entry, "approved"), `${id} carries no approval record`);
       assert.match(entry.commit, /^[0-9a-f]{40}$/);
       assert.match(entry.integrity, /^sha256-[0-9a-f]{64}$/);
     }
@@ -124,7 +122,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
 
     // ---- the directory now syncs like any deployment (same lock, nothing changed) ----
     r = oats(["sync", "--json", "--dir", dep], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     doc = envelope(r);
     assert.deepEqual(doc.result.changes, [], "onboard's lock already describes the workspace");
     assert.equal(doc.result.workspace.name, "northwind");
@@ -151,10 +149,10 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     const dep2 = join(base, "nw2");
     mkdirSync(dep2);
     r = oats(["onboard", "--workspace", fx.refs.agents], { cwd: dep2, env, base });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^Onboarded .*nw2 into workspace northwind/m);
     assert.match(r.stdout, /^workspace {2}northwind {2}\(/m, "the sync §8 report is printed");
-    assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(approval needed\)/m);
+    assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(@ [0-9a-f]{8}\)/m);
     assert.match(r.stdout, /oats-local\.yaml {5}which workspace this machine realizes/);
     assert.match(r.stdout, /agents\/ {13}instance homes/);
     assert.match(r.stdout, /Members you will work IN need a clone/);
@@ -163,7 +161,7 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     assert.doesNotMatch(r.stdout, /oats spawn oats-operator-expert/, "no such soul in this workspace → no operator-expert hint");
     assert.match(r.stdout, /No soul named oats-operator-expert is listed here/);
     assert.match(r.stdout, new RegExp(`spawn any listed soul: oats spawn <soul> --dir \\S*nw2 \\(e\\.g\\. campaign-writer, data-analyst, platform-engineer\\)`));
-    assert.match(r.stdout, /oats sync --dir \S*nw2` in a terminal to approve nw\.tools 0\.4\.0, oats\.framework 1\.1\.3, oats\.okf 2\.1\.3/);
+    assert.doesNotMatch(r.stdout, /approv/i, "next steps never mention approving");
     assert.deepEqual(tree(dep2), ["agents/", "oats-local.yaml", "oats-lock.json"]);
 
     // ---- M14, the positive branch: once a member lists a soul named oats-operator-expert, the hint appears ----
@@ -175,11 +173,11 @@ test("oats onboard <dir> --workspace <ref>: writes oats-local.yaml + agents/, ru
     }, { message: "data: add oats-operator-expert" });
     const dep2c = join(base, "nw2c");
     r = oats(["onboard", dep2c, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     doc = envelope(r);
     assert.equal(doc.result.next.spawn, `oats spawn oats-operator-expert --dir ${dep2c}`, "a discovered soul named oats-operator-expert enables the hint");
     r = oats(["onboard", join(base, "nw2d"), "--workspace", fx.refs.agents], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Spawn the operator expert to guide the rest/);
     assert.match(r.stdout, new RegExp(`oats spawn oats-operator-expert --dir \\S*nw2d`));
     assert.doesNotMatch(r.stdout, /spawn any listed soul/);
@@ -242,7 +240,7 @@ test("0.25.2 R10: onboard next-steps treat the host as a member like the others 
     spawnSync("git", ["clone", "-q", fx.refs.platform, join(dep, "platform")], { encoding: "utf8" });
     assert.ok(existsSync(join(dep, "platform", ".git")), "a platform clone is present before onboarding");
     let r = oats(["onboard", dep, "--workspace", fx.refs.agents, "--json"], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
     const res = envelope(r).result;
     assert.equal(res.hosting.hostIsMember, true);
     const host = res.next.clone.find((c) => c.name === "agents");
@@ -255,7 +253,7 @@ test("0.25.2 R10: onboard next-steps treat the host as a member like the others 
     // Text: the host line is an ordinary `git clone` line plus the rule; the present clone is reported, not re-suggested.
     rmSync(join(dep, "oats-local.yaml")); rmSync(join(dep, "oats-lock.json")); // onboard again in text mode over the same directory
     r = oats(["onboard", dep, "--workspace", fx.refs.agents], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, new RegExp(`git clone \\S+agents\\.git \\S*dep/agents-repo`), "the host is listed as a clone like the others");
     assert.match(r.stdout, /↑ the host is a member like the others: clone it only if someone works IN it — the workspace file is read over the remote/);
     assert.doesNotMatch(r.stdout, /workspace clone/i);
@@ -268,7 +266,7 @@ test("0.25.2 R10: onboard next-steps treat the host as a member like the others 
     mkdirSync(join(sa, "agents"), { recursive: true });
     writeFileSync(join(sa, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.marketing}\nstandalone: ${fx.refs.marketing}\n`);
     r = oats(["sync", "--dir", sa], { cwd: sa, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /^workspace {2}\(standalone view of marketing \(explicit in oats-local\.yaml\): its own souls \+ oats\.core\)/m, r.stdout);
     assert.doesNotMatch(r.stdout, /cannot be read/, "nothing was refused: the header must not claim the workspace cannot be read");
     r = oats(["souls", "--dir", sa], { cwd: sa, env, base });
@@ -283,10 +281,10 @@ test("0.25.2 R10: onboard next-steps treat the host as a member like the others 
     mkdirSync(join(un, "agents"), { recursive: true });
     writeFileSync(join(un, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.data}\n`);
     r = oats(["sync", "--dir", un], { cwd: un, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /^workspace {2}\(standalone — the workspace of data cannot be read \(E_REMOTE_UNREADABLE: (?:not-found|auth) — \S+agents\.git\); its own souls \+ oats\.core\)/m, r.stdout);
     r = oats(["onboard", join(base, "un2"), "--workspace", fx.refs.data], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.match(r.stdout, /^ {2}\(standalone — the workspace of data cannot be read from here \(E_REMOTE_UNREADABLE: (?:not-found|auth) — \S+agents\.git\); its own souls \+ oats\.core\)$/m, r.stdout);
     assert.match(r.stdout, /\(the host \S+agents\.git is not a member: nothing to clone|git clone \S+data\.git/, "standalone next steps still list the member");
   } finally {

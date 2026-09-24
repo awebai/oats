@@ -1,5 +1,6 @@
 /**
- * lib/packages.mjs — lock v3, resolvePackages, executablesDigest, approve, packageProviding.
+ * lib/packages.mjs — lock v3, resolvePackages, packageProviding. No approval step (human decision
+ * 2026-09-24): declaring a package in `packages:` is the trust decision.
  * Runs without git: the remote is an in-memory fake implementing the lib/remote.mjs surface.
  */
 import test from "node:test";
@@ -10,8 +11,8 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import * as packages from "../lib/packages.mjs";
 import {
-  approve, classifyPackageValue, executablesDigest, executablesDigestAt, manifestExecutables, packageProviding, parsePackageRequest,
-  readLock, readPackageManifests, readPackageTree, resolvePackages, writeLock, canonicalLock, validateLock,
+  classifyPackageValue, packageProviding, parsePackageRequest,
+  readLock, readPackageManifests, resolvePackages, writeLock, canonicalLock, validateLock,
   LOCK_FILE, DEFAULT_PACKAGE_PATH,
 } from "../lib/packages.mjs";
 
@@ -129,7 +130,7 @@ const workspace = (pkgs) => ({ schemaVersion: 2, name: "northwind", packages: pk
 
 // ---------- resolvePackages ----------
 
-test("first resolve creates v3 entries: approved null, approvalNeeded true, exact commit + integrity + capabilities", async () => {
+test("first resolve creates v3 entries: exact commit + integrity + capabilities, no approval record", async () => {
   const f = fixture();
   const ws = workspace({ "oats.okf": "v2.1.3", "oats.framework": "v1.1.3", "nw.tools": "git:github.com/northwind/tooling@v0.3.0" });
   const { lock, changes } = await resolvePackages(ws, { catalog: f.catalog, remote: f.remote });
@@ -146,7 +147,7 @@ test("first resolve creates v3 entries: approved null, approvalNeeded true, exac
   assert.match(okf.integrity, /^sha256-[0-9a-f]{64}$/);
   assert.equal(okf.integrity, (await f.remote.fetchRemoteTree(f.repos.okf.url, f.commits.okf213, "oats-package", "/dev/null")).digest, "integrity is the digest fetchRemoteTree reports for the package tree");
   assert.deepEqual(okf.capabilities, ["oats.okf"]);
-  assert.equal(okf.approved, null);
+  assert.ok(!("approved" in okf), "lock v3 entries carry no approval record");
 
   const fw = lock.packages["oats.framework"];
   assert.equal(fw.commit, f.commits.fw113, "a prefixed catalog tag (oats-framework/v1.1.3) is recomposed from the version");
@@ -157,11 +158,11 @@ test("first resolve creates v3 entries: approved null, approvalNeeded true, exac
   assert.equal(nw.version, "0.3.0");
   assert.equal(nw.commit, f.commits.nwMain);
 
-  assert.deepEqual(changes.map((c) => [c.id, c.from, c.to, c.approvalNeeded]), [
-    ["nw.tools", null, "0.3.0", true], ["oats.framework", null, "1.1.3", true], ["oats.okf", null, "2.1.3", true],
+  assert.deepEqual(changes.map((c) => [c.id, c.from, c.to]), [
+    ["nw.tools", null, "0.3.0"], ["oats.framework", null, "1.1.3"], ["oats.okf", null, "2.1.3"],
   ]);
-  for (const c of changes) assert.match(c.commit, /^[0-9a-f]{40}$/);
-  for (const e of Object.values(lock.packages)) assert.deepEqual(Object.keys(e).sort(), ["approved", "capabilities", "commit", "integrity", "path", "source", "url", "version"]);
+  for (const c of changes) { assert.match(c.commit, /^[0-9a-f]{40}$/); assert.deepEqual(Object.keys(c).sort(), ["commit", "from", "id", "to"]); }
+  for (const e of Object.values(lock.packages)) assert.deepEqual(Object.keys(e).sort(), ["capabilities", "commit", "integrity", "path", "source", "url", "version"]);
   // Phase B (e2e MED): the lock records the repo url it read each package from, so resolve/materialize
   // of a catalog-locked package need no catalog at spawn time.
   assert.equal(okf.url, f.repos.okf.url);
@@ -172,35 +173,30 @@ test("first resolve creates v3 entries: approved null, approvalNeeded true, exac
   assert.throws(() => validateLock({ lockfileVersion: 3, packages: { x: { ...okf, url: 7 } } }), (e) => e.code === "E_LOCK_SCHEMA" && e.details.path === "/packages/x/url");
 });
 
-test("second resolve with unchanged versions is a no-op and keeps approvals; input lock not mutated", async () => {
+test("second resolve with unchanged versions is a no-op; input lock not mutated", async () => {
   const f = fixture();
   const ws = workspace({ "oats.okf": "v2.1.3", "nw.tools": "git:github.com/northwind/tooling@v0.3.0" });
   const first = await resolvePackages(ws, { catalog: f.catalog, remote: f.remote });
-  const digest = executablesDigest(await readPackageTree(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package"));
-  const approved = approve(first.lock, "oats.okf", digest, "2026-09-23T09:02:11Z");
-  const snapshot = JSON.stringify(approved);
+  const snapshot = JSON.stringify(first.lock);
 
-  const second = await resolvePackages(ws, { catalog: f.catalog, lock: approved, remote: f.remote });
+  const second = await resolvePackages(ws, { catalog: f.catalog, lock: first.lock, remote: f.remote });
   assert.deepEqual(second.changes, []);
-  assert.deepEqual(second.lock, approved);
-  assert.notEqual(second.lock, approved, "a new object is returned");
-  assert.equal(JSON.stringify(approved), snapshot, "the input lock is untouched");
-  assert.equal(second.lock.packages["oats.okf"].approved.executables, digest);
+  assert.deepEqual(second.lock, first.lock);
+  assert.notEqual(second.lock, first.lock, "a new object is returned");
+  assert.equal(JSON.stringify(first.lock), snapshot, "the input lock is untouched");
 });
 
-test("a version bump changes the commit and needs approval again", async () => {
+test("a version bump changes the commit and the integrity", async () => {
   const f = fixture();
   const first = await resolvePackages(workspace({ "oats.okf": "v2.1.3" }), { catalog: f.catalog, remote: f.remote });
-  const approved = approve(first.lock, "oats.okf", `sha256-${"b".repeat(64)}`, "2026-09-23T09:02:11Z");
 
-  const bumped = await resolvePackages(workspace({ "oats.okf": "v2.2.0" }), { catalog: f.catalog, lock: approved, remote: f.remote });
-  assert.deepEqual(bumped.changes, [{ id: "oats.okf", from: "2.1.3", to: "2.2.0", commit: f.commits.okf220, approvalNeeded: true }]);
+  const bumped = await resolvePackages(workspace({ "oats.okf": "v2.2.0" }), { catalog: f.catalog, lock: first.lock, remote: f.remote });
+  assert.deepEqual(bumped.changes, [{ id: "oats.okf", from: "2.1.3", to: "2.2.0", commit: f.commits.okf220 }]);
   const e = bumped.lock.packages["oats.okf"];
   assert.equal(e.version, "2.2.0");
   assert.equal(e.commit, f.commits.okf220);
   assert.notEqual(e.commit, first.lock.packages["oats.okf"].commit);
   assert.notEqual(e.integrity, first.lock.packages["oats.okf"].integrity);
-  assert.equal(e.approved, null);
 });
 
 test("a moved tag (same version string, different commit) → E_PACKAGE_INTEGRITY with details", async () => {
@@ -235,7 +231,7 @@ test("a package removed from the workspace is dropped from the lock and reported
   const { lock } = await resolvePackages(workspace({ "oats.okf": "v2.1.3", "oats.framework": "v1.1.3" }), { catalog: f.catalog, remote: f.remote });
   const next = await resolvePackages(workspace({ "oats.okf": "v2.1.3" }), { catalog: f.catalog, lock, remote: f.remote });
   assert.deepEqual(Object.keys(next.lock.packages), ["oats.okf"]);
-  assert.deepEqual(next.changes, [{ id: "oats.framework", from: "1.1.3", to: null, commit: null, approvalNeeded: false }]);
+  assert.deepEqual(next.changes, [{ id: "oats.framework", from: "1.1.3", to: null, commit: null }]);
 });
 
 test("catalog miss → E_PACKAGE_MISSING; malformed git value → E_REPO_REF; unknown tag → E_REMOTE_UNREADABLE", async () => {
@@ -253,25 +249,7 @@ test("catalog may be passed as the bare packages map", async () => {
   assert.equal(lock.packages["oats.okf"].commit, f.commits.okf213, "a version without the leading v still selects the v-tag");
 });
 
-// ---------- approve / packageProviding ----------
-
-test("approve records digest + at (normalized to ISO UTC) and returns a NEW lock", async () => {
-  const f = fixture();
-  const { lock } = await resolvePackages(workspace({ "oats.okf": "v2.1.3" }), { catalog: f.catalog, remote: f.remote });
-  const digest = `sha256-${"c".repeat(64)}`;
-  const next = approve(lock, "oats.okf", digest, "2026-09-23T09:02:11Z");
-  assert.notEqual(next, lock);
-  assert.notEqual(next.packages, lock.packages);
-  assert.equal(lock.packages["oats.okf"].approved, null, "original untouched");
-  assert.deepEqual(next.packages["oats.okf"].approved, { executables: digest, at: "2026-09-23T09:02:11.000Z" });
-
-  const auto = approve(lock, "oats.okf", digest);
-  assert.match(auto.packages["oats.okf"].approved.at, /^\d{4}-\d{2}-\d{2}T.*Z$/);
-
-  assert.throws(() => approve(lock, "ghost", digest), (e) => e.code === "E_PACKAGE_MISSING" && e.details.id === "ghost");
-  assert.throws(() => approve(lock, "oats.okf", "md5-nope"), (e) => e.code === "E_PACKAGE_INTEGRITY");
-  assert.throws(() => approve(lock, "oats.okf", digest, "yesterday"), (e) => e.code === "E_LOCK_SCHEMA");
-});
+// ---------- packageProviding ----------
 
 test("packageProviding finds the package providing a capability, null otherwise", async () => {
   const f = fixture();
@@ -308,53 +286,16 @@ test("readLock: missing file → empty v3; lockfileVersion 2 → E_LOCK_SCHEMA n
 
     const f = fixture();
     const { lock } = await resolvePackages(workspace({ "oats.okf": "v2.1.3", "oats.framework": "v1.1.3" }), { catalog: f.catalog, remote: f.remote });
-    const approved = approve(lock, "oats.okf", `sha256-${"d".repeat(64)}`, "2026-09-23T09:02:11Z");
-    const file = writeLock(dir, approved);
+    const file = writeLock(dir, lock);
     assert.equal(file, join(dir, LOCK_FILE));
     const text = readFileSync(file, "utf8");
     assert.ok(text.endsWith("\n"));
     assert.ok(text.indexOf('"oats.framework"') < text.indexOf('"oats.okf"'), "package ids sorted");
-    assert.deepEqual(readLock(dir), approved);
+    assert.deepEqual(readLock(dir), lock);
 
-    writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ lockfileVersion: 3, packages: { x: { source: "catalog:x", path: "p", version: "1", commit: "short", integrity: `sha256-${"0".repeat(64)}`, capabilities: [], approved: null } } }));
+    writeFileSync(join(dir, LOCK_FILE), JSON.stringify({ lockfileVersion: 3, packages: { x: { source: "catalog:x", path: "p", version: "1", commit: "short", integrity: `sha256-${"0".repeat(64)}`, capabilities: [] } } }));
     assert.throws(() => readLock(dir), (e) => e.code === "E_LOCK_SCHEMA" && e.details.path === "/packages/x/commit");
   } finally { rmSync(dir, { recursive: true, force: true }); }
-});
-
-// ---------- executablesDigest ----------
-
-test("executablesDigest: deterministic over command targets, order-independent, sensitive to bytes, ignores non-command files", () => {
-  const tree = (toolA, toolB, extra = "x") => ({
-    manifests: [
-      { name: "b.cap", manifest: { commands: { run: "bin/b.mjs run --flag", check: "bin/b.mjs check" } }, files: new Map([["bin/b.mjs", Buffer.from(toolB)], ["skills/s/SKILL.md", Buffer.from(extra)]]) },
-      { name: "a.cap", manifest: { commands: { cut: "bin/a.mjs cut" } }, files: new Map([["bin/a.mjs", Buffer.from(toolA)]]) },
-    ],
-  });
-  const d1 = executablesDigest(tree("A", "B"));
-  assert.match(d1, /^sha256-[0-9a-f]{64}$/);
-  assert.equal(executablesDigest(tree("A", "B", "other skill text")), d1, "non-command files do not affect the digest");
-  const reordered = { manifests: [...tree("A", "B").manifests].reverse() };
-  assert.equal(executablesDigest(reordered), d1, "manifest order does not matter");
-  assert.notEqual(executablesDigest(tree("A2", "B")), d1);
-  assert.notEqual(executablesDigest(tree("A", "B2")), d1);
-  assert.equal(executablesDigest({ manifests: [{ name: "n", manifest: {}, files: new Map() }] }), executablesDigest({ manifests: [] }), "no commands → digest of nothing");
-
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: "bin/missing.mjs" } }, files: new Map() }] }),
-    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.capability === "c" && e.details.command === "go" && e.details.target === "bin/missing.mjs");
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: "../escape.mjs" } }, files: new Map() }] }), (e) => e.code === "E_PACKAGE_MANIFEST");
-  assert.throws(() => executablesDigest(null), (e) => e.code === "E_PACKAGE_MANIFEST");
-});
-
-test("readPackageTree builds a packageTree from the remote; digest changes with the executable across versions", async () => {
-  const f = fixture();
-  const t213 = await readPackageTree(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package");
-  assert.deepEqual(t213.manifests.map((m) => m.name), ["oats.okf"]);
-  assert.ok(t213.manifests[0].files.has("bin/tool.mjs"));
-  assert.ok(t213.manifests[0].files.has("skills/s/SKILL.md"));
-  const t220 = await readPackageTree(f.remote, f.repos.okf.url, f.commits.okf220, "oats-package");
-  assert.notEqual(executablesDigest(t213), executablesDigest(t220));
-  const fw = await readPackageTree(f.remote, f.repos.fw.url, f.commits.fw113, "oats-package");
-  assert.deepEqual(fw.manifests.map((m) => m.name), ["oats.core", "oats.setup"]);
 });
 
 // ---------- deprecated shims ----------
@@ -385,47 +326,6 @@ test("phase-A shims: kernel-imported names still exist and throw E_REMOVED point
 
 // ---------- adversarial review regressions ----------
 
-test("HIGH: executablesDigest is locale-independent (codepoint order) and pinned to a known constant", () => {
-  const tree = { manifests: [
-    { name: "\u00e4", manifest: { commands: { run: "bin/x.mjs" } }, files: new Map([["bin/x.mjs", Buffer.from("A")]]) },
-    { name: "z", manifest: { commands: { run: "bin/x.mjs" } }, files: new Map([["bin/x.mjs", Buffer.from("A")]]) },
-  ] };
-  // "z" (U+007A) sorts BEFORE "ä" (U+00E4) by codepoint; ICU en/sv locales would disagree with each other.
-  const expected = (() => {
-    const h = createHash("sha256");
-    for (const name of ["z", "\u00e4"]) { h.update(`${name}\x00run\x00bin/x.mjs\x001\x00`); h.update("A"); h.update("\x00"); }
-    return `sha256-${h.digest("hex")}`;
-  })();
-  assert.equal(executablesDigest(tree), expected);
-  assert.equal(executablesDigest({ manifests: [...tree.manifests].reverse() }), expected);
-  assert.equal(executablesDigest({ manifests: [] }), `sha256-${"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}`);
-});
-
-test("MED: hooks.*.command targets enter the executables digest; commands and hooks of the same name do not collide", () => {
-  const mk = (hookBody) => ({ manifests: [{ name: "c", manifest: { commands: { spawn: "bin/cmd.mjs" }, hooks: { spawn: { command: "bin/hook.mjs spawn", required: true }, retire: { command: "bin/hook.mjs retire" } } },
-    files: new Map([["bin/cmd.mjs", Buffer.from("cmd")], ["bin/hook.mjs", Buffer.from(hookBody)]]) }] });
-  assert.notEqual(executablesDigest(mk("benign")), executablesDigest(mk("rm -rf ~")), "a hook body change changes the digest");
-  assert.deepEqual(manifestExecutables(mk("x").manifests[0].manifest).map((e) => [e.kind, e.name, e.target]),
-    [["command", "spawn", "bin/cmd.mjs"], ["hook", "retire", "bin/hook.mjs"], ["hook", "spawn", "bin/hook.mjs"]]);
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { hooks: { spawn: { command: "bin/nope.mjs" } } }, files: new Map() }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.kind === "hook");
-  // Phase B (CLI M2): a hook object WITHOUT `command` is malformed — E_PACKAGE_MANIFEST, never an invisible no-op.
-  assert.equal(manifestExecutables({ hooks: { spawn: { script: "bin/hidden.mjs", required: true } } }).length, 1, "the malformed hook is listed (spec undefined)");
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { hooks: { spawn: { script: "bin/hidden.mjs", required: true } } }, files: new Map([["bin/hidden.mjs", Buffer.from("x")]]) }] }),
-    (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.kind === "hook" && e.details.command === "spawn");
-});
-
-test("MED: a recorded approval that does not match the tree's executables → E_PACKAGE_UNAPPROVED on the fast path", async () => {
-  const f = fixture();
-  const ws = workspace({ "oats.okf": "v2.1.3" });
-  const { lock } = await resolvePackages(ws, { catalog: f.catalog, remote: f.remote });
-  const bogus = approve(lock, "oats.okf", `sha256-${"f".repeat(64)}`);
-  await assert.rejects(resolvePackages(ws, { catalog: f.catalog, lock: bogus, remote: f.remote }), (e) => {
-    assert.equal(e.code, "E_PACKAGE_UNAPPROVED"); assert.equal(e.details.id, "oats.okf");
-    assert.match(e.details.executables, /^sha256-/); assert.equal(e.details.approved.executables, `sha256-${"f".repeat(64)}`);
-    return true;
-  });
-});
-
 test("MED: a branch is refused as a package version (E_PACKAGE_INTEGRITY why:branch); a full OID is accepted", async () => {
   const f = fixture();
   await assert.rejects(resolvePackages(workspace({ "nw.tools": "git:github.com/northwind/tooling@main" }), { remote: f.remote }),
@@ -450,7 +350,7 @@ test("MED: a catalog path change at the same version is a new entry, not a silen
   const moved = { packages: { "oats.okf": { url: f.repos.okf.url, ref: "v2.1.3", path: "pkg2" } } };
   const second = await resolvePackages(ws, { catalog: moved, lock: first.lock, remote: f.remote });
   assert.equal(second.lock.packages["oats.okf"].path, "pkg2");
-  assert.equal(second.changes.length, 1); assert.equal(second.lock.packages["oats.okf"].approved, null);
+  assert.equal(second.changes.length, 1);
 });
 
 test("MED: duplicate capability providers fail closed — intra-package E_PACKAGE_MANIFEST, cross-package E_PACKAGE_MISSING{ambiguous}", async () => {
@@ -461,8 +361,8 @@ test("MED: duplicate capability providers fail closed — intra-package E_PACKAG
   const remote = fakeRemote([dup]);
   await assert.rejects(readPackageManifests(remote, dup.url, c, "oats-package"), (e) => e.code === "E_PACKAGE_MANIFEST" && e.details.duplicate === "shared");
   const lock = { lockfileVersion: 3, packages: {
-    aaa: { source: "catalog:aaa", path: "p", version: "1", commit: "a".repeat(40), integrity: `sha256-${"a".repeat(64)}`, capabilities: ["shared", "only-a"], approved: null },
-    zzz: { source: "catalog:zzz", path: "p", version: "1", commit: "b".repeat(40), integrity: `sha256-${"b".repeat(64)}`, capabilities: ["shared"], approved: null },
+    aaa: { source: "catalog:aaa", path: "p", version: "1", commit: "a".repeat(40), integrity: `sha256-${"a".repeat(64)}`, capabilities: ["shared", "only-a"] },
+    zzz: { source: "catalog:zzz", path: "p", version: "1", commit: "b".repeat(40), integrity: `sha256-${"b".repeat(64)}`, capabilities: ["shared"] },
   } };
   assert.throws(() => packageProviding(lock, "shared"), (e) => e.code === "E_PACKAGE_MISSING" && JSON.stringify(e.details.ambiguous) === JSON.stringify(["aaa", "zzz"]));
   assert.equal(packageProviding(lock, "only-a").id, "aaa");
@@ -485,72 +385,45 @@ test("HIGH: packages: values accept exactly two forms — a catalog version or g
   assert.deepEqual(parsePackageRequest("x", "git:/abs/bare.git@v0.4.0", {}), { kind: "git", remoteRef: "/abs/bare.git", at: "v0.4.0", path: "oats-package" });
 });
 
-test("LOW: manifest/tree hygiene — missing capability dir is E_PACKAGE_MANIFEST, deep blobs are read, prototype keys and backslash paths are refused", async () => {
-  const f = fixture();
+test("LOW: manifest hygiene — a missing capability dir or package path is E_PACKAGE_MANIFEST", async () => {
   const ghost = new FakeRepo("github.com/x/ghost");
   const c = ghost.commit("1", { "oats-package/oats-package.json": JSON.stringify({ package: "x.ghost", version: "1.0.0", capabilities: ["capabilities/ghost"] }) });
   ghost.tag("v1.0.0", c);
   const remote = fakeRemote([ghost]);
   await assert.rejects(readPackageManifests(remote, ghost.url, c, "oats-package"), (e) => e.code === "E_PACKAGE_MANIFEST" && /missing/.test(e.message) && e.details.cause === "E_REMOTE_PATH_MISSING");
   await assert.rejects(readPackageManifests(remote, ghost.url, c, "nope"), (e) => e.code === "E_PACKAGE_MANIFEST");
-
-  const deep = new FakeRepo("github.com/x/deep");
-  const deepPath = "a/b/c/d/e/f/g/h/i/tool.mjs";
-  const dc = deep.commit("1", pkgFiles("x.deep", "1.0.0", [{ dir: "d", name: "x.deep", commands: { go: `${deepPath} go` } }]));
-  deep.commits.get(dc).set(`oats-package/capabilities/d/${deepPath}`, Buffer.from("deep"));
-  const t = await readPackageTree(fakeRemote([deep]), deep.url, dc, "oats-package");
-  assert.ok(t.manifests[0].files.has(deepPath), "9-segment target is read");
-  assert.match(executablesDigest(t), /^sha256-/);
-
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: "constructor" } }, files: {} }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && /not in the package/.test(e.message));
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: 42 } }, files: {} }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && /must be a string/.test(e.message));
-  assert.throws(() => executablesDigest({ manifests: [{ name: "c", manifest: { commands: { go: "..\\x.mjs" } }, files: { "..\\x.mjs": "x" } }] }), (e) => e.code === "E_PACKAGE_MANIFEST" && /relative path/.test(e.message));
 });
 
-// ---------- 0.25.1 fix lanes: M3 (lane 4) — executablesDigestAt, the ONE definition bin and resolve share ----------
+// ---------- pre-0.26 locks (approval removed, human decision 2026-09-24) ----------
 
-test("M3: executablesDigestAt(remote, ref, commit, path, capabilities?) equals executablesDigest(readPackageTree(...)), lists the executables, verifies the capability set, and is cached per (remote, commit, path)", async () => {
+test("a pre-0.26 lock carrying approved { executables, at } or approved: null validates; writeLock/canonicalLock/resolvePackages drop the field", async () => {
   const f = fixture();
-  const expected = executablesDigest(await readPackageTree(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package"));
-  const r = await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package");
-  assert.equal(r.digest, expected, "same computation sync approves with");
-  assert.deepEqual(r.capabilities, ["oats.okf"]);
-  assert.deepEqual(r.executables, [
-    { capability: "oats.okf", kind: "command", name: "harvest", target: "bin/tool.mjs" },
-    { capability: "oats.okf", kind: "command", name: "inspect", target: "bin/tool.mjs" },
-  ]);
-  assert.ok(Object.isFrozen(r) && Object.isFrozen(r.executables), "frozen: shared through the cache");
-  // another commit → another digest (the executable moved)
-  const r2 = await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf220, "oats-package");
-  assert.notEqual(r2.digest, r.digest);
-  // capability-set verification: the lock's list must equal what the tree declares
-  assert.deepEqual((await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package", ["oats.okf"])).digest, expected);
-  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package", ["oats.okf", "ghost"]), (e) => e.code === "E_PACKAGE_INTEGRITY" && e.details.why === "capabilities" && e.details.listed.join() === "oats.okf" && e.details.locked.join() === "ghost,oats.okf");
-  // cache: same (remote, commit, path) → same object, no new reads; a different remote object has its own cache
-  const before = f.remote.calls.length;
-  assert.equal(await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package"), r, "identical (cached) result object");
-  assert.equal(f.remote.calls.length, before, "no further remote calls");
-  const g = fixture();
-  const rg = await executablesDigestAt(g.remote, g.repos.okf.url, g.commits.okf213, "oats-package");
-  assert.notEqual(rg, r, "per-remote cache"); assert.equal(rg.digest, r.digest, "same tree, same digest");
-  // input hygiene
-  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, "short", "oats-package"), (e) => e.code === "E_PACKAGE_INTEGRITY");
-  await assert.rejects(executablesDigestAt({}, f.repos.okf.url, f.commits.okf213, "oats-package"), TypeError);
-  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package", "oats.okf"), TypeError);
-  // a failed read is NOT pinned: an unknown commit rejects now and again (no cached error)
-  const bad = "0".repeat(40);
-  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, bad, "oats-package"), (e) => e.code === "E_REMOTE_UNREADABLE");
-  await assert.rejects(executablesDigestAt(f.remote, f.repos.okf.url, bad, "oats-package"), (e) => e.code === "E_REMOTE_UNREADABLE");
-});
+  const ws = workspace({ "oats.okf": "v2.1.3", "oats.framework": "v1.1.3" });
+  const { lock } = await resolvePackages(ws, { catalog: f.catalog, remote: f.remote });
+  const legacy = { lockfileVersion: 3, packages: {
+    "oats.framework": { ...lock.packages["oats.framework"], approved: null },
+    "oats.okf": { ...lock.packages["oats.okf"], approved: { executables: `sha256-${"d".repeat(64)}`, at: "2026-09-23T09:02:11.000Z" } },
+  } };
+  assert.equal(validateLock(legacy), legacy, "the legacy field is ignored, not refused");
+  // even a malformed legacy approval is ignored — the field has no meaning any more
+  assert.doesNotThrow(() => validateLock({ lockfileVersion: 3, packages: { "oats.okf": { ...lock.packages["oats.okf"], approved: "yes" } } }));
 
-test("M3: resolvePackages' fast path uses the shared executablesDigestAt — a kept approval must still describe the tree", async () => {
-  const f = fixture();
-  const ws = workspace({ "oats.okf": "v2.1.3" });
-  const first = await resolvePackages(ws, { catalog: f.catalog, lock: undefined, remote: f.remote });
-  const genuine = (await executablesDigestAt(f.remote, f.repos.okf.url, f.commits.okf213, "oats-package")).digest;
-  const approved = approve(first.lock, "oats.okf", genuine, "2026-09-23T09:02:11Z");
-  const second = await resolvePackages(ws, { catalog: f.catalog, lock: approved, remote: f.remote });
-  assert.equal(second.lock.packages["oats.okf"].approved.executables, genuine);
-  const forged = approve(first.lock, "oats.okf", `sha256-${"f".repeat(64)}`, "2026-09-23T09:02:11Z");
-  await assert.rejects(resolvePackages(ws, { catalog: f.catalog, lock: forged, remote: f.remote }), (e) => e.code === "E_PACKAGE_UNAPPROVED" && e.details.executables === genuine);
+  const canon = canonicalLock(legacy);
+  for (const e of Object.values(canon.packages)) assert.ok(!("approved" in e), "canonicalLock drops approved");
+  assert.deepEqual(canon, canonicalLock(lock));
+
+  const dir = mkdtempSync(join(tmpdir(), "oats-lock-legacy-"));
+  try {
+    writeFileSync(join(dir, LOCK_FILE), JSON.stringify(legacy));
+    assert.deepEqual(readLock(dir), legacy, "readLock accepts the legacy file");
+    writeLock(dir, readLock(dir));
+    const text = readFileSync(join(dir, LOCK_FILE), "utf8");
+    assert.ok(!text.includes("approved"), "writeLock output has no approved key");
+    assert.deepEqual(readLock(dir), canonicalLock(lock));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+
+  const resynced = await resolvePackages(ws, { catalog: f.catalog, lock: legacy, remote: f.remote });
+  assert.deepEqual(resynced.changes, [], "dropping the legacy field is not a change");
+  for (const e of Object.values(resynced.lock.packages)) assert.ok(!("approved" in e), "resolvePackages drops approved on write");
+  assert.ok("approved" in legacy.packages["oats.okf"], "the input lock is untouched");
 });

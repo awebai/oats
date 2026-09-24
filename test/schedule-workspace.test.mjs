@@ -129,13 +129,13 @@ test("M4: over a workspace deployment the scheduler delegates to `oats spawn --j
 test("M4: a workspace spawn's typed refusal is launch-failed with the child's code; an unconfirmed answer (no envelope, timeout, retained home) keeps the attempt for reconcile", () => {
   // typed refusal → launch-failed, slot freed, the child's code kept
   let ws = deployment({ local: true });
-  let stub = stubOats(ws, { mode: "fail", error: { code: "E_PACKAGE_UNAPPROVED", message: "package oats.okf v2.1.3 is not approved; run oats sync" } });
+  let stub = stubOats(ws, { mode: "fail", error: { code: "E_PACKAGE_MISSING", message: "package oats.okf v2.1.3 is not in the lock; run oats sync" } });
   S.addSchedule(ws, { id: "j", cron: "*/5 * * * *", tz: "UTC", kind: "spawn", agent: "triager", task: "t" });
   let io = { oatsBin: stub.bin, inspect: () => ({ present: false, state: "shell" }), noLaunch: true };
   let c = tick(ws, io);
-  assert.equal(c[0].action, "launch-failed"); assert.match(c[0].error, /not approved/);
+  assert.equal(c[0].action, "launch-failed"); assert.match(c[0].error, /not in the lock/);
   let d = S.describe(ws, "j", io);
-  assert.equal(d.lastRun.outcome, "launch-failed"); assert.equal(d.lastRun.errorCode, "E_PACKAGE_UNAPPROVED"); assert.equal(d.running, false); assert.equal(d.attempt, undefined);
+  assert.equal(d.lastRun.outcome, "launch-failed"); assert.equal(d.lastRun.errorCode, "E_PACKAGE_MISSING"); assert.equal(d.running, false); assert.equal(d.attempt, undefined);
   // no envelope → unknown, attempt kept, slot held
   ws = deployment({ local: true });
   stub = stubOats(ws, { mode: "garbage" });
@@ -195,11 +195,7 @@ test("M4 live: a schedule over a Northwind deployment with a workspace soul mate
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   const oats = (args) => spawnSync(process.execPath, [CLI, ...args], { cwd: dep, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   let r = oats(["sync", "--dir", dep, "--json"]);
-  assert.equal(r.status, 2, `sync: ${r.stdout}${r.stderr}`);
-  const lockFile = join(dep, "oats-lock.json"); const lock = readJson(lockFile);
-  const approvalNeeded = JSON.parse(r.stdout.trim().split("\n").pop()).result.approvalNeeded;
-  for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: new Date().toISOString() };
-  writeFileSync(lockFile, JSON.stringify(lock, null, 2));
+  assert.equal(r.status, 0, `sync: ${r.stdout}${r.stderr}`);
   // The precondition of any schedule: the soul has been spawned once by hand, so its source sits under agents/<name>/soul (ensureWorkspaceSoul's stamp beside it).
   r = oats(["spawn", "support-triager", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "first", "--work", "directory", "--no-launch", "--json"]);
   const first = JSON.parse(r.stdout.trim().split("\n").pop() || "{}");
