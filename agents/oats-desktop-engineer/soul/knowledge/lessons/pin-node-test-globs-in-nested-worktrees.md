@@ -23,3 +23,4 @@ Destructive test helpers need their own guard as well. Tests that exercise retir
 - Before running `npm test` on a branch in a repo that can nest agent worktrees or other checkouts, make sure the branch includes the pinned test globs.
 - Treat unexpectedly high test counts as possible nested-suite inflation; the honest per-tree count observed after pinning was about 130.
 - Any test helper that can kill tmux panes, processes, or files should anchor itself to an explicit sandbox target by environment instead of defaulting to a live target.
+- File globs bound discovery, not effects inside a selected file. For mixed inert/native modules, apply [test-selection and effect-isolation discipline](/lessons/test-name-filters-are-not-effect-isolation.md); a negative name filter cannot establish that native cases were excluded.

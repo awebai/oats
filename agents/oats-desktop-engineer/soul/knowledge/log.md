@@ -1,5 +1,9 @@
 # Knowledge Log
 
+## 2026-09-24
+* **Creation**: recorded [Test-name filters are selection, not native-effect isolation](/lessons/test-name-filters-are-not-effect-isolation.md): use explicit selection, establish effect isolation before execution, inspect actual TAP, and report unexpected native cases without speculative cleanup; incident closure is distinct from native acceptance.
+* **Update**: linked the [nested-worktree test-glob lesson](/lessons/pin-node-test-globs-in-nested-worktrees.md) to the separate per-file selection/effect-isolation boundary.
+
 ## 2026-07-27
 * **Creation**: promoted [Claude launch argv needs option terminator and runtime model translation](/lessons/claude-launch-argv-model-translation.md) from the oats-desktop-engineer-claude-code-spawn notes.
 * **Update**: merged the stale pre-adapter phrasing follow-up from the oats-desktop-engineer-claude-code-spawn notes into [desktop deployment reader](/architecture/desktop-deployment-reader.md), [desktop backend architecture](/architecture/desktop-backend-architecture.md), and [desktop panel decisions](/references/desktop-panel-decisions.md): `cli-unavailable` now means no compatible installed `oats` CLI was discovered after the shipped CLI adapter boundary, not an interim pre-adapter state.
