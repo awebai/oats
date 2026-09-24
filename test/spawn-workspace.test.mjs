@@ -656,3 +656,55 @@ test("0.25.3 OATS_SOUL_ID: hooks of a workspace spawn receive `<repo key>#<soul>
     assert.equal(stableSoulId({ soulDir: classicDir }), realpathSync(classicDir));
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
+
+test("0.25.4 quarantine retry: a workspace home retained after a required spawn-hook failure carries a PRE-HOOK instance.json stub; `oats retire` must read the cleanup descriptor, re-run the owed retire hook, keep the home while it fails and remove it once it succeeds", { timeout: 300_000 }, async () => {
+  const base = fixtureBase();
+  try {
+    const fx = await buildNorthwind(join(base, "fx"));
+    // A package edition whose spawn/retire hooks fail while <deployment>/FAIL exists.
+    const moved = await moveMember(fx, "pkg-okf", async (work, { fs, path }) => {
+      const p = path.join(work, "oats-package/capabilities/oats-okf/bin/oats-okf.mjs");
+      const s = await fs.readFile(p, "utf8");
+      await fs.writeFile(p, s.replace('const [cmd = "help", ...rest] = process.argv.slice(2);',
+        'const [cmd = "help", ...rest] = process.argv.slice(2);\nif ((cmd === "spawn" || cmd === "retire") && process.env.OATS_INSTANCE_HOME && (await import("node:fs")).existsSync(process.env.OATS_INSTANCE_HOME + "/../../../../FAIL")) { process.stderr.write("fixture: " + cmd + " hook failing on purpose\\n"); process.exit(3); }'));
+    });
+    spawnSync("git", ["-C", fx.refs["pkg-okf"].replace(/^file:\/\//, ""), "tag", "-f", "v2.1.3", moved.commit], { stdio: "ignore" });
+    const catalogFile = join(base, "catalog.json");
+    writeFileSync(catalogFile, JSON.stringify({ packages: fx.catalog }));
+    const env = { OATS_PACKAGE_CATALOG: catalogFile };
+    const dep = join(base, "dep"); mkdirSync(join(dep, "agents"), { recursive: true });
+    writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
+    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 2, r.stderr);
+    const approvalNeeded = envelope(r).result.approvalNeeded;
+    const lockFile = join(dep, "oats-lock.json");
+    const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    for (const [id, p] of Object.entries(lock.packages)) p.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: "2026-09-23T00:00:00.000Z" };
+    writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+    // checkout mode: the member clone at <deployment>/agents-repo (R1 convention)
+    spawnSync("git", ["clone", "-q", fx.refs.agents.replace(/^file:\/\//, ""), join(dep, "agents-repo")], { stdio: "ignore" });
+    writeFileSync(join(dep, "FAIL"), "1");
+    r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "q", "--work", "checkout", "--no-launch", "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 1, r.stdout);
+    assert.equal(envelope(r).error.code, "E_SPAWN_FAILED");
+    const home = join(dep, "agents", "release-manager", "instances", "release-manager-q");
+    assert.ok(existsSync(join(home, ".oats-rollback-incomplete.json")), "home quarantined");
+    const stub = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+    assert.equal(stub.repo, undefined, "precondition: the retained instance.json is the pre-hook materialization stub, not a spawn record");
+    const q = JSON.parse(readFileSync(join(home, ".oats-rollback-incomplete.json"), "utf8"));
+    assert.equal(q.cleanup.repo, join(dep, "agents-repo")); assert.deepEqual(q.cleanup.outstanding.hooks, ["oats.okf"]);
+    // retry while the hook still fails: the hook RUNS (its failure is reported), the home stays
+    r = oats(["retire", "release-manager-q", "--dir", dep, "--agents-root", join(dep, "agents"), "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 1, r.stdout);
+    const doc1 = JSON.parse(r.stdout);
+    const incomplete = doc1.rollbackIncomplete ?? doc1.result?.rollbackIncomplete ?? [];
+    assert.ok(incomplete.some((m) => /^retire hook oats\.okf: Command failed/.test(m)), `hook was re-run: ${JSON.stringify(incomplete)}`);
+    assert.ok(!incomplete.some((m) => /lost its context repo|did not run on this retry/.test(m)), `descriptor was read: ${JSON.stringify(incomplete)}`);
+    assert.ok(existsSync(home), "home retained while cleanup is owed");
+    // the hook can now succeed: the retry completes and removes the home
+    rmSync(join(dep, "FAIL"));
+    r = oats(["retire", "release-manager-q", "--dir", dep, "--agents-root", join(dep, "agents"), "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.ok(!existsSync(home), "quarantine cleared without --force");
+  } finally { rmSync(base, { recursive: true, force: true }); }
+});
