@@ -70,6 +70,8 @@ infers a field that is not there:
   - `requirements: [{ capability, source, installed, approved, active, version }] | null`
     (`null` = nothing declared). `installed: false` = not in the inventory;
     `approved`/`active`/`version` are `null` when there is no inventory row.
+    `approved` reports the 0.24 per-artifact approval; on a workspace
+    deployment a package is trusted by its declaration in `packages:`.
   - `status: "undeclared" | "sources-installed" | "sources-missing" | "unknown"`
 - `declarationProblems: [{ code, message }]` — an unreadable file reports why;
   the soul is still listed.
@@ -512,7 +514,9 @@ is the first-run readiness view (frame 09) and the Capabilities readiness rows
   `summary.ready`**: every *required* item passes (or is not-applicable) and
   there is at least one required item — never inferred from an empty set.
 - **`installed`**: artifact present, locked, integrity matches. **`trusted`**:
-  executable approval of the exact artifact (`oats trust`). Separately,
+  the 0.24 producer, executable approval of the exact artifact (`oats trust`);
+  on a workspace deployment declaring the package is the trust (see the 0.25
+  status note above). Separately,
   `signature {status: verified | unsigned | unknown | invalid | not-applicable,
   signer: {id, label} | null, reason}` — the source commit's **verified Git
   signature**, named signer or nothing. It is `unknown` unless

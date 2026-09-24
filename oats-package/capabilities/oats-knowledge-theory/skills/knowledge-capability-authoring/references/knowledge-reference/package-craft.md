@@ -115,16 +115,18 @@ defaults:
 ```
 
 ```bash
-oats sync --dir /path/to/test-workspace      # resolve, lock, approve once
+oats sync --dir /path/to/test-workspace      # resolve, fetch, verify integrity, lock
 oats spawn <soul> --preview --json           # the module as it would be materialized
 ```
 
 These are illustrative user operations, not instructions to change a live
-deployment. The `oats`, `oats-config` and `oats-packages` kernel skills describe
-the installed kernel's operational commands. Installation exact-locks the
-package closure and activates nothing. Capabilities with executable commands or
-hooks require per-artifact trust before execution. A skills-only package needs
-lock integrity, not executable approval. Official catalog identity is not trust.
+deployment. The `oats.setup` capability's **oats-package-pins** skill describes
+the operational commands. Declaring the package in `packages:` is the trust
+decision: its commands and hooks run at spawn, so whoever adds the pin reviews
+them first. Syncing exact-locks the package (commit and integrity) and activates
+nothing; a soul receives a capability only when it or a workspace default
+selects it. Official catalog identity is a reviewed listing, not trust on the
+operator's behalf.
 Targets belong in config, not manifests. A manifest with `layer: knowledge`
 occupies that exclusive slot; an additive authoring aid must not replace it.
 

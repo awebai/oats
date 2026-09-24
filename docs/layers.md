@@ -12,7 +12,7 @@ Git workspace definition
   ├── supplies bounded defaults and provider declarations
   └── imports exported souls by source reference and revision
         └── soul declares requirements, defaults and software sources
-              └── preparation resolves and retains an approved composition
+              └── resolution pins and records an exact composition
                     └── instance runs against an independent work target
                           ├── knowledge capability
                           ├── messaging capability
@@ -38,7 +38,7 @@ Classic `kind`/`type`/`repo` declarations and config-targeted agent types are a 
 - `oats-membership.yaml` is a repository's half of the handshake: the workspace backlink plus an optional default team label. Everything under `souls/` and `capabilities/` is discoverable by convention (`private: true` opts out); there are no export lists.
 - Membership requires compatible observations on both sides; folder adjacency or a copied declaration is not admission.
 - External source import does not adopt the publisher's workspace. A framework repository may host its own development workspace without imposing it on consumers.
-- Operator choices and workspace defaults must respect source requirements. Git read access is not write permission, executable approval or messaging enrollment.
+- Operator choices and workspace defaults must respect source requirements. Git read access is not write permission, a trust declaration or messaging enrollment.
 
 The [workspace guide](workspaces.md) explains these boundaries and the [declaration contract](design/2026-09-15-portable-declarations.md) defines their versioned forms.
 
@@ -49,7 +49,7 @@ A capability's `oats.json` declares its identity, optional fundamental `layer`, 
 The current [manifest schema](capability-manifest.schema.json) includes the published binding interface and helper/input declarations. A manifest shape alone does not certify its implementation:
 
 - Captured fundamental providers expose their declared normalize/bind/check phases through the existing broker. The kernel resolves their fields without implementing their domain model.
-- Commands/hooks execute only with the appropriate exact artifact approval and invocation authority.
+- Commands/hooks execute only from a declared source (a member, or a package the workspace declares, at its locked commit and integrity) — or, for a prepared artifact, its exact `oats trust` approval — and with invocation authority.
 - Helper behavior and optional source-receipt inputs are declared by their owner, not guessed from a layer name.
 - Required setup/capture outcomes cannot be silently omitted to make a launch or cleanup appear successful.
 - Legacy hook environment and captured binding/invocation inputs are distinct contracts. A legacy hook is not automatically safe for retained execution.
@@ -62,7 +62,7 @@ Knowledge, messaging and tasks are exclusive provider slots: zero or one selecte
 
 ### The knowledge contract
 
-The kernel supplies selection, retained identity/resources, approval, invocation/lifecycle context, independent helper execution and truthful outcomes. It does not mandate OKF, memory filenames, a taxonomy, a harvester or external-only mutable placement.
+The kernel supplies selection, retained identity/resources, exact locking, invocation/lifecycle context, independent helper execution and truthful outcomes. It does not mandate OKF, memory filenames, a taxonomy, a harvester or external-only mutable placement.
 
 The knowledge capability supplies organization, stores, readers, evidence capture, judgment, maintenance and delivery/acceptance policy. Mutable knowledge is never permission to alter immutable retained software/source artifacts.
 
@@ -96,7 +96,7 @@ The work target is independent of source publication and knowledge placement. Pr
 
 ## Kernel briefings versus operational capabilities
 
-The kernel owns only what describes the layout it creates: the `instance-boundary` briefing (home versus `work/`), the selected work-mode briefing and config-declared injections. Knowing how to *operate* OATS (status, spawn, retire, soul discovery) and how to *configure* it (workspaces, packages, approval) is capability content — the official capabilities `oats.core` (a workspace default via `defaults.capabilities`, removable per soul with `off`) and `oats.setup` (held by an onboarding expert), both provided by the `oats.framework` package; see [souls and instances](souls-and-instances.md#oats-operational-knowledge-is-a-capability).
+The kernel owns only what describes the layout it creates: the `instance-boundary` briefing (home versus `work/`), the selected work-mode briefing and config-declared injections. Knowing how to *operate* OATS (status, spawn, retire, soul discovery) and how to *configure* it (workspaces, packages, the lock) is capability content — the official capabilities `oats.core` (a workspace default via `defaults.capabilities`, removable per soul with `off`) and `oats.setup` (held by an onboarding expert), both provided by the `oats.framework` package; see [souls and instances](souls-and-instances.md#oats-operational-knowledge-is-a-capability).
 
 ## Capture and knowledge are separate
 

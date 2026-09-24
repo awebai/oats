@@ -305,8 +305,8 @@ oats sync
 It creates `agents/` if it is absent (0.25.2; a hand-written `oats-local.yaml`
 no longer needs a `mkdir`), confirms every member (fix any `no-backlink` /
 `backlink-elsewhere` / `cannot-read` row before going on), resolves `packages:`
-to commits, writes `oats-lock.json` (lockfileVersion 3) and asks for executable
-approval once per package version. The 0.24 lock is not read; delete it
+to commits, fetches each package, verifies its integrity and writes
+`oats-lock.json` (lockfileVersion 3). The 0.24 lock is not read; delete it
 (`E_LOCK_SCHEMA` names it if you leave it in the way).
 
 The legacy "You run on OATS" block is no longer composed into `AGENTS.md` when
@@ -314,36 +314,27 @@ The legacy "You run on OATS" block is no longer composed into `AGENTS.md` when
 the one `oats.core`'s inject carries. If you see two, the soul resolved without
 `oats.core` (check `oats spawn <soul> --preview`).
 
-## 7. Approve packages
+## 7. What the lock pins
 
-Approval is **per package version, once, in the lock** — no `oats trust`, no
-per-capability approval, no per-operator trust list. `oats sync` on a terminal
-prints every executable (`commands.*` and `hooks.*.command` targets of every
-capability the package provides) and asks `approve <id> <version>? [y/N]`.
-Declined, **Ctrl+D at the prompt**, or non-interactive → exit `2`, the lock
-records the entry unapproved, and spawns of souls using it are refused
-(`E_PACKAGE_UNAPPROVED`) until you run `oats sync` in a terminal and say yes.
-Member capabilities need no approval: membership is the trust.
+Declaring a package in `packages:` is the trust decision: review what a package
+runs (its capabilities' `commands.*` and `hooks.*.command` targets) before the
+pin goes into the workspace file, because every operator who syncs runs it.
+Member capabilities are trusted by membership in the same way.
 
-**Non-interactive approval (CI, scripted rebuilds):**
+`oats sync` then needs nothing from you: it resolves each pin to a commit,
+fetches the package, computes the integrity of its tree, writes the lock and
+exits `0`. The same command runs unchanged in CI and scripted rebuilds:
 
 ```bash
-oats sync --approve oats.okf@v2.1.5 --approve oats.aweb@v1.12.1
+oats sync
 ```
 
-`--approve <id>@<version>` is repeatable and approves **exactly** the entry the
-resolution contains for that id and version — the executables digest is always
-computed by `sync` over the fetched tree and recorded in the lock; you never
-type a digest. An `--approve` that names an id or version the resolution does
-not contain is an error, not a silent skip; an entry the flags do not cover
-stays unapproved (exit `2`, as above).
-
-`<version>` is the value `sync --json` reports as `approvalNeeded[].version`,
-which is what the lock records as the package's `version`. For a **catalog**
-package that is the published version (`oats.okf@2.1.5`). For a **git** source
-pinned by commit (`git:github.com/awebai/oats-okf@<oid>`) it is the **full
-commit OID**, not the `git:` reference and not a tag name — copy it from the
-`approvalNeeded` line rather than from your workspace file.
+The lock is what makes a rebuild reproducible. For an entry already locked at
+the same version, the commit and the integrity must be unchanged — a moved tag
+or changed content is `E_PACKAGE_INTEGRITY`, and a version string must change
+when its content does. At spawn the package's capability list at the locked
+commit must still match the lock, and only packages the workspace still
+declares are used.
 
 ## 7b. OKF 2: start a FRESH `state-dir` — do not re-point the old one
 
@@ -492,7 +483,7 @@ elsewhere through `oats-local.yaml` `clones:`.
 | `agents/<name>/soul/` as the tracked soul source | `souls/<name>/` (tracked); `agents/` is deployment state — instance homes and the kernel's per-commit soul cache `agents/<name>/souls/<commit12>/` |
 | `.agents/capabilities/installed/` and `owned/` | nothing is installed; `<instance>/.oats/modules/<cap>/` per instance; member capabilities under `<repo>/capabilities/` |
 | `oats init`, `oats use`, `oats install`, `oats restore`, `oats trust`, `oats list`, `oats catalog`, `oats remove`, `oats migrate`, `oats config` | `oats sync`, `oats package add \| remove`, `oats workspace status`, `oats capabilities`, `oats souls` — each removed verb answers `E_UNKNOWN_COMMAND` naming its replacement |
-| lock v1 / v2 | lock v3 (`packages` only, with `url`, `capabilities`, `approved`) |
+| lock v1 / v2 | lock v3 (`packages` only, with `url`, `commit`, `integrity`, `capabilities`) |
 | per-soul `source: git:…@v#…`, `repo:`, `path:` | `from: here \| <repo key> \| package` + `packages:` in the workspace |
 | `imports:` of member souls, `exports:` lists | discovery by convention; `private: true` |
 | `stores.<x>.inherit` | `stores:` in the workspace |
@@ -502,8 +493,8 @@ elsewhere through `oats-local.yaml` `clones:`.
 
 ## What is kept
 
-Kernel-neutral provider payloads and the `binding` contract; per-version
-executable approval (now in the lock); spawn preview / confirmed apply
+Kernel-neutral provider payloads and the `binding` contract; exact
+commit-and-integrity locking (now lock v3); spawn preview / confirmed apply
 (`decision.revision`, now binding the resolution revision) and idempotency;
 retirement and retention; the official catalog; the canonical-plus-alias
 instance construction (`CLAUDE.md → AGENTS.md`, `.claude/skills →

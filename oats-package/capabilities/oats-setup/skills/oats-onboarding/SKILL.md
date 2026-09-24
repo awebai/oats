@@ -4,8 +4,8 @@ description: >-
   Use when helping an operator realize an OATS workspace on a machine: deciding
   where the workspace file is hosted, writing or checking the shared
   declarations, choosing the deployment directory, running `oats onboard`,
-  placing host settings, approving packages, setting up messaging, cloning work
-  targets and verifying before the first spawn. For package pins see oats-package-pins; for moving an
+  placing host settings, syncing, setting up messaging, cloning work targets
+  and verifying before the first spawn. For package pins see oats-package-pins; for moving an
   existing deployment see oats-rebuild.
 ---
 
@@ -19,7 +19,7 @@ in the installed kernel (`"$(oats root)/docs/"` — they ship with it and
 match the running version). Do not restate either to the operator from
 memory; read them.
 
-Explain each decision, ask before writing a file, approving a package or
+Explain each decision, ask before writing a file, declaring a package or
 spawning, and never run a step on a deployment the operator did not name.
 
 ## 1. Ask two things first
@@ -37,11 +37,13 @@ spawning, and never run a step on a deployment the operator did not name.
   dedicated private repository that is not itself a public member; decide
   this before the first sync. *Rationale:* operator node, decision
   "private member requires a private workspace host".
-- **Executable rule for public members.** Membership is the whole trust
-  decision for member capabilities: a member's hooks and scripts run on every
-  operator's machine at spawn. In a mixed organisation keep executables in
-  packages (approved per version) or private members; public members carry
-  souls.
+- **Trust is declaration.** Listing a member is the whole trust decision for
+  its capabilities, and listing a package in `packages:` is the whole trust
+  decision for that package: their hooks and scripts run on every operator's
+  machine at spawn. Before declaring a package, show the operator what it
+  runs (its manifests' `commands` and `hooks`). In a mixed organisation keep
+  executables in packages (a reviewed pin, locked to a commit) or private
+  members; public members carry souls.
 - Write `oats-workspace.yaml` in the host, `oats-membership.yaml` in every
   member (the host included), and `souls/<name>/` for each soul, as reviewed
   changes. Shapes, field by field: `docs/workspaces.md` ("The files"). No absolute paths, accounts or team
@@ -57,8 +59,8 @@ oats onboard <deployment-dir> --workspace <repo-ref>
 Read the report row by row. Every member must be `confirmed` (`✓↔`); any other
 status (`no-backlink`, `backlink-elsewhere`, `not-listed`, `cannot-read`) is
 fixed in the member's repository or the operator's Git access, not worked
-around. Exit code 2 means packages await approval (step 5). `oats workspace
-status --dir <deployment-dir>` re-reads the same picture.
+around. `oats workspace status --dir <deployment-dir>` re-reads the same
+picture.
 
 ## 4. Host settings before the first spawn
 
@@ -76,22 +78,23 @@ lesson "the installed provider is the authority for a setting".
   is one — use `/private/tmp`). A soul whose knowledge slot is `oats.okf`
   does not spawn until these exist — set them before spawning any soul, the
   operator expert included.
-- **Messaging** is set up in its own step, after approval (step 6).
+- **Messaging** is set up in its own step, after sync (step 6).
 - A fact true of **one spawn** (a retained messaging seat) is not a host
   setting: it is `oats spawn <soul> --provider <cap> key=value`.
 
-## 5. Approve packages
+## 5. Sync after any change
 
-See **oats-package-pins**. In short: show the operator each package's
-executables, then `oats sync` on a terminal, or `oats sync --approve
-<id>@<version>` for exactly the locked entries.
+`oats onboard` already synced. After any change to the workspace file (a pin,
+a member, a default), run `oats sync`: it resolves every package to a commit,
+fetches it, verifies its integrity and writes `oats-lock.json`. See
+**oats-package-pins**.
 
 ## 6. Set up messaging before the first spawn
 
 If the workspace's messaging default, or any soul, uses `oats.aweb`, its spawn
 hook is required: with no initialised aweb root among the places it looks, the
 spawn is rolled back. With messaging as the workspace default that is **every**
-soul, the operator expert included. So set the root up now, after approval and
+soul, the operator expert included. So set the root up now, after sync and
 before any spawn.
 
 Put the root **in the deployment directory**. The hook looks in the parent of
@@ -139,7 +142,7 @@ Positive enumeration, in order — absence of errors proves nothing
 (*rationale:* operator node, playbook "outsider verification of a rebuild"):
 
 ```bash
-oats workspace status --dir <deployment-dir>   # every member confirmed, every package approved
+oats workspace status --dir <deployment-dir>   # every member confirmed, every package locked
 oats souls --dir <deployment-dir>              # every expected soul, with origin and team
 oats spawn <soul> --preview                    # modules at locked commits; merged settings show the host values
 ```
@@ -153,8 +156,8 @@ Only then spawn for real.
 
 ## Never
 
-Re-onboard, re-point or clean a deployment the operator did not name; approve
-packages on the operator's behalf without showing what runs; edit
+Re-onboard, re-point or clean a deployment the operator did not name; declare
+a package without showing the operator what it runs; edit
 `oats-lock.json` or `instance.json` by hand; put host facts in shared files;
 initialise or copy a messaging root above the deployment directory; treat a
 scaffold as a working session.
