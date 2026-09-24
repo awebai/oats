@@ -3,6 +3,7 @@
   "kind": "persistent",
   "instance": "dev-pi-worktree-knone-mstub",
   "home": "<base>/scope/agents/dev/instances/dev-pi-worktree-knone-mstub",
+  "soulDir": "<base>/scope/agents/dev/soul",
   "repo": "<base>/scope/repo",
   "work": "worktree",
   "branch": "agents/dev-pi-worktree-knone-mstub",

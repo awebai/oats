@@ -15,6 +15,7 @@
           "kind": "persistent",
           "instance": "dev-pi-checkout-knone-mnone",
           "home": "<base>/scope/agents/dev/instances/dev-pi-checkout-knone-mnone",
+          "soulDir": "<base>/scope/agents/dev/soul",
           "repo": "<base>/scope/repo",
           "work": "checkout",
           "branch": "main",

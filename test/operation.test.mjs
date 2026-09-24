@@ -65,14 +65,18 @@ else if (cmd === "noisy") { console.log("progress 1/2"); console.log(JSON.string
   write(join(repo, "oats-config.yaml"), "name: t\ncapabilities:\n  layers:\n    knowledge:\n      capability: test.notes\n      from: owned\n      global: true\n      settings:\n        tone: dry\n    messaging: none\n    tasks: none\n");
   write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: worktree\nruntime: claude\n");
   write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
+  // The home records a per-commit soul directory distinct from agents/dev/soul, so a
+  // provider handed the pointer (or a home link) instead of the record is caught.
+  const soulDir = join(repo, "agents", "dev", "souls", "0123456789ab");
+  write(join(soulDir, "soul.yaml"), "name: dev\nrepo: .\nwork: worktree\nruntime: claude\n");
   const home = join(repo, "agents", "dev", "instances", "dev-one");
-  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-one", home, repo, work: "worktree", runtime: "claude", launched: true, layers: { knowledge: "test.notes [global @ " + repo + "]" }, capabilities: [{ id: "test.notes", level: repo, settings: { tone: "cold" } }] }));
+  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-one", home, soulDir, repo, work: "worktree", runtime: "claude", launched: true, layers: { knowledge: "test.notes [global @ " + repo + "]" }, capabilities: [{ id: "test.notes", level: repo, settings: { tone: "cold" } }] }));
   write(join(home, "MEMORY.md"), "# remembered\n");
-  return { repo, home };
+  return { repo, home, soulDir };
 }
 
 test("operation run resolves the home's provider from its snapshot, runs the provider command in the home with the snapshot settings, relays the envelope and surfaces a launch receipt", () => {
-  const { repo, home } = scope("s1");
+  const { repo, home, soulDir } = scope("s1");
   let r = oats(["operation", "run", "knowledge:harvest", "--home", home, "--arg", "depth=2", "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const res = r.json().result;
@@ -83,7 +87,7 @@ test("operation run resolves the home's provider from its snapshot, runs the pro
   const inv = JSON.parse(readFileSync(join(home, "notes-invocation.json"), "utf8"));
   assert.equal(inv.cmd, "digest"); assert.deepEqual(inv.rest, ["--depth", "2", "--json"]); assert.equal(inv.cwd, home);
   assert.equal(inv.env.OATS_HOME, home); assert.equal(inv.env.OATS_INSTANCE, "dev-one"); assert.equal(inv.env.OATS_OPERATION, "knowledge:harvest"); assert.equal(inv.env.OATS_CAPABILITY, "test.notes");
-  assert.equal(inv.env.OATS_AGENT, "dev"); assert.equal(inv.env.OATS_SOUL, join(repo, "agents", "dev", "soul")); assert.equal(inv.env.OATS_ROOT, join(repo, "agents")); assert.equal(inv.env.PI_AGENTS_ROOT, join(repo, "agents"));
+  assert.equal(inv.env.OATS_AGENT, "dev"); assert.equal(inv.env.OATS_SOUL, soulDir, "the home's recorded soulDir, not agents/dev/soul"); assert.equal(inv.env.OATS_ROOT, join(repo, "agents")); assert.equal(inv.env.PI_AGENTS_ROOT, join(repo, "agents"));
   assert.equal(inv.env.OATS_CONTEXT, repo); assert.equal(inv.env.OATS_WORKSPACE, repo); assert.equal(inv.env.OATS_EVENT, null); assert.equal(inv.env.PI_AGENT_HOME, home);
   for (const v of Object.values(inv.env)) assert.ok(!String(v).startsWith("/elsewhere") && v !== "other-seat" && v !== "other", `ambient identity leaked: ${v}`);
   assert.deepEqual(JSON.parse(inv.env.OATS_SETTINGS), { tone: "cold" }, "the snapshot's captured settings, not the current config's");
@@ -213,4 +217,18 @@ test("operation run for a soul resolves the provider at the soul's own member co
   const r = oats(["operation", "run", "knowledge:sweep", "--soul", "dev", "--dir", team, "--agents-root", join(member, "agents"), "--json"]);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.equal(r.json().result.cwd, member, "runs in the member scope, not the team root"); assert.equal(r.json().result.result.context, member);
+});
+
+test("in-home capability dispatch: OATS_SOUL is the home's recorded soulDir, and an ambient OATS_SOUL never reaches the command when the home records none", () => {
+  const { home, soulDir } = scope("s-dispatch");
+  const dispatch = () => spawnSync(process.execPath, [CLI, "notes", "sweep"], { encoding: "utf8", cwd: home, env: { ...process.env, ...ambient, PI_AGENT_HOME: home, OATS_HOME: home } });
+  let r = dispatch();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(readFileSync(join(home, "notes-invocation.json"), "utf8")).env.OATS_SOUL, soulDir);
+  const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  delete meta.soulDir;
+  writeFileSync(join(home, "instance.json"), JSON.stringify(meta));
+  r = dispatch();
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.equal(JSON.parse(readFileSync(join(home, "notes-invocation.json"), "utf8")).env.OATS_SOUL, null, "no record → no OATS_SOUL (the ambient /elsewhere one is dropped)");
 });

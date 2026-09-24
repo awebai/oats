@@ -190,7 +190,7 @@ test("ordinary native launch retains complete approved OATS homes for Claude and
       assert.equal(lstatSync(join(home,'work')).isDirectory(),true);assert.equal(lstatSync(join(home,'work')).isSymbolicLink(),false);
       assert.equal(lstatSync(join(home,'AGENTS.md')).isFile(),true);assert.equal(lstatSync(join(home,'AGENTS.md')).isSymbolicLink(),false);
       assert.equal(readlinkSync(join(home,'CLAUDE.md')),'AGENTS.md');assert.equal(readlinkSync(join(home,'.claude','skills')),'../.agents/skills');
-      assert.equal(readlinkSync(join(home,'soul')),soul);
+      assert.equal(existsSync(join(home,'soul')),false);assert.equal(meta.soulDir,soul);
       const instructions=readFileSync(join(home,'AGENTS.md'),'utf8');
       assert.ok(instructions.includes(canonical.trim()));assert.match(instructions,/Resolved native capability instructions/);assert.match(instructions,/Work mode: directory/);
       const names=readdirSync(join(home,'.agents','skills')).sort();

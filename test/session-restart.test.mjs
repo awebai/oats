@@ -534,7 +534,8 @@ test("session recompose: refreshes a LIVE home's AGENTS.md from its current soul
   const root = join(repo, "agents");
   const h = makeHome("recompose-me");
   const soulMd = join(root, "dev", "soul", "AGENTS.md");
-  symlinkSync(join(root, "dev", "soul"), join(h.home, "soul"));
+  const recorded = JSON.parse(readFileSync(join(h.home, "instance.json"), "utf8"));
+  writeFileSync(join(h.home, "instance.json"), JSON.stringify({ ...recorded, soulDir: join(root, "dev", "soul") }, null, 2) + "\n");
   writeFileSync(join(h.home, "AGENTS.md"), recomposeInstanceInstructions(h.home, { dryRun: true }).text ?? "");
   // Seed the home with what spawn would have composed, so "unchanged" is honest.
   recomposeInstanceInstructions(h.home);

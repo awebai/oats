@@ -3,6 +3,7 @@
   "kind": "persistent",
   "instance": "dev-claude-worktree-kstub-mnone",
   "home": "<base>/scope/agents/dev/instances/dev-claude-worktree-kstub-mnone",
+  "soulDir": "<base>/scope/agents/dev/soul",
   "repo": "<base>/scope/repo",
   "work": "worktree",
   "branch": "agents/dev-claude-worktree-kstub-mnone",

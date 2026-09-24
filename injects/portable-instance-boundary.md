@@ -13,10 +13,11 @@ another home or composition appear authorized.
   instructions, aliases and metadata; do not hand-edit them to change authority.
   Task material and provider-managed state belong where their owning contract
   specifies. The selected capabilities define any knowledge or memory protocol.
-- **`./soul` is a read-only retained source link, not your edit surface.** Reading
-  it must not depend on the publisher's current checkout. Never write through it
-  or modify retained artifacts. If a task authorizes source changes, use its
-  explicitly authorized tracked work surface and review path instead.
+- **Your soul is retained source, not your edit surface.** The home carries no
+  soul link: the composed `AGENTS.md` already holds your soul's instructions,
+  and nothing you read depends on the publisher's current checkout. Never modify
+  retained artifacts. If a task authorizes source changes, use its explicitly
+  authorized tracked work surface and review path instead.
 - **`./work` is the task's work surface.** The work-mode instructions determine
   whether it is an owned directory or another permitted repository view. Make
   task edits only on that authorized surface, not in deployment stores or a

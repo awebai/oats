@@ -27,7 +27,6 @@ instances/dev-owner/AGENTS.md
 instances/dev-owner/CLAUDE.md -> AGENTS.md
 instances/dev-owner/TASK.md
 instances/dev-owner/instance.json
-instances/dev-owner/soul -> <base>/scope/agents/dev/soul
 instances/dev-owner/work/
 instances/dev-owner/work/.git
 instances/dev-owner/work/.gitignore

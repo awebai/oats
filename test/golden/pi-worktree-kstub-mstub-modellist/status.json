@@ -15,6 +15,7 @@
           "kind": "persistent",
           "instance": "dev-pi-worktree-kstub-mstub-modellist",
           "home": "<base>/scope/agents/dev/instances/dev-pi-worktree-kstub-mstub-modellist",
+          "soulDir": "<base>/scope/agents/dev/soul",
           "repo": "<base>/scope/repo",
           "work": "worktree",
           "branch": "agents/dev-pi-worktree-kstub-mstub-modellist",

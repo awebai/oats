@@ -20,7 +20,6 @@ TASK.md
 instance.json
 notes/
 notes/.keep
-soul -> <base>/scope/agents/dev/soul
 work/
 work/.git
 work/.gitignore
