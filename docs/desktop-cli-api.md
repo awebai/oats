@@ -1204,6 +1204,13 @@ instance name is **exactly** `<slug>`, with no `<agent>-` prefix.
   `E_INSTANCE_NAME_INVALID`, and so is a name equal to any soul name of the
   deployment (souls on the agents root, and every soul the workspace
   declares, fetched or not). Soul and instance references stay unambiguous.
+- **Instance names are at most 64 characters** (0.26.0; the tightest
+  consumer is the messaging alias, which allows 1–64). This covers every
+  name, explicit and derived. A longer name is `E_INSTANCE_NAME_INVALID`
+  ("instance names are at most 64 characters"), in preview and apply alike,
+  and is never truncated. For a derived name the refusal names the purpose
+  to shorten, and the de-duplication suffix counts: when `<agent>-<purpose>`
+  is taken and `<agent>-<purpose>-2` would exceed 64, the spawn is refused.
 - **Names are unique across the deployment.** An explicit name that any
   `<agents-root>/<soul>/instances/` already holds (including homes whose soul
   was since removed), or that a live window in the target tmux session carries

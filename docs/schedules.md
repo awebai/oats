@@ -55,7 +55,10 @@ editing UI remains later Desktop work; use the explicit CLI for those definition
   options `oats spawn` takes. `agentsRoot` names the exact agents root that
   holds the soul (it must lie inside the workspace and defaults to the
   workspace's own root); it is what tells same-named souls in different
-  member repositories apart. `repo` is the work repository, as `--repo`. The task gets a trailing schedule block naming the job and the
+  member repositories apart. `repo` is the work repository, as `--repo`.
+  Each run is named `<agent>-<purpose or id>-<YYYYMMDDHHMM>`. Instance names
+  are at most 64 characters, so a definition whose run names would be longer
+  is refused when it is saved (`E_SCHEDULE_INVALID`, field `purpose` or `id`). The task gets a trailing schedule block naming the job and the
   minute and ending with `oats retire --self`. An optional `wake` object
   (`{cron, tz, message}`) attaches a wake schedule to each launched instance;
   nothing is attached unless you ask.

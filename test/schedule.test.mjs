@@ -48,6 +48,11 @@ test("definitions are validated field by field, with croner and IANA zones", () 
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "wake", home: join(base, "elsewhere"), message: "hi" }, "home");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "wake", home: home(ws, "dev-x"), message: "" }, "message");
   bad({ id: "a", cron: "* * * * *", tz: "UTC", kind: "other" }, "kind");
+  // Runs are named <agent>-<purpose|id>-<YYYYMMDDHHMM>, and instance names are at most 64 characters.
+  const long = (spec, field) => assert.throws(() => S.validateDefinition(ws, spec, { checkAgent: false }), (e) => e.code === "E_SCHEDULE_INVALID" && e.field === field && /at most 64 characters/.test(e.message), `${field} (64-char cap)`);
+  long({ id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "a".repeat(20), purpose: "p".repeat(40), task: "t" }, "purpose");
+  long({ id: "i".repeat(40), cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "a".repeat(20), task: "t" }, "id");
+  assert.equal(S.validateDefinition(ws, { id: "a", cron: "* * * * *", tz: "UTC", kind: "spawn", agent: "a".repeat(10), purpose: "p".repeat(40), task: "t" }, { checkAgent: false }).purpose, "p".repeat(40), "10 + 1 + 40 + 1 + 12 = 64 fits");
   const ok = S.validateDefinition(ws, { id: "nightly", cron: " 0 3 * * * ", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "do it", yolo: true, backend: "tmux" });
   assert.deepEqual(ok, { id: "nightly", enabled: true, cron: "0 3 * * *", tz: "Europe/Madrid", kind: "spawn", agent: "dev", task: "do it", yolo: true, backend: "tmux" });
 });
