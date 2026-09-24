@@ -141,6 +141,7 @@ test("desktop server: the roster, header and souls are the kernel's status/works
     assert.equal(panel.deployment.root, join(scope, "agents"));
     assert.equal(panel.deployment.workspaceStatus.workspaceStatusApi, 1);
     assert.deepEqual(panel.deployment.workspaceStatus.packages.map((p) => p.id), ["nw.tools", "oats.framework", "oats.okf"]);
+    assert.equal(Object.hasOwn(panel.deployment.workspaceStatus, "approval"), false, "there is no package approval (packages-no-approval)");
     assert.equal(Object.hasOwn(panel.deployment, "souls"), false, "private soul rows stay server-side");
     assert.equal(panel.instances.length, 1);
     const i = panel.instances[0];
@@ -164,7 +165,7 @@ test("desktop server: the roster, header and souls are the kernel's status/works
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 
-for (const feature of ["workspace-v2", "instance-modules", "served-identity"]) test(`desktop server: a CLI without ${feature} yields an unavailable deployment naming it — no fallback reader`, async () => {
+for (const feature of ["workspace-v2", "instance-modules", "served-identity", "packages-no-approval"]) test(`desktop server: a CLI without ${feature} yields an unavailable deployment naming it — no fallback reader`, async () => {
   const { scope } = northwindDeployment();
   const { proc, get, calls } = await startServer(scope, { drop: [feature], observed: false });
   try {

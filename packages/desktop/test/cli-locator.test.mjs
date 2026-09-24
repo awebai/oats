@@ -10,21 +10,21 @@ import {
   ACCEPT_RANGE, ACCEPT_RANGE_TEXT,
 } from "../cli-locator.mjs";
 
-const PROBE = (v = "0.22.0") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
+const PROBE = (v = "0.25.8") => ({ schemaVersion: 1, name: "@awebai/oats", version: v, desktopApi: 1 });
 
 test("acceptProbe: exact v1 payload accepted; every deviation rejected with a reason", () => {
   assert.equal(acceptProbe(PROBE()).ok, true);
-  assert.equal(acceptProbe(PROBE("0.22.1")).ok, true);
-  assert.equal(acceptProbe(PROBE("0.22.7")).ok, true, "later patches of the 0.22 kernel line are inside the band");
-  assert.equal(acceptProbe(PROBE("0.22.12")).ok, true);
+  assert.equal(acceptProbe(PROBE("0.25.9")).ok, true);
+  assert.equal(acceptProbe(PROBE("0.26.0")).ok, true, "the 0.26 kernel line is inside the band");
+  assert.equal(acceptProbe(PROBE("0.26.12")).ok, true);
   const cases = [
     [null, /no probe/],
     [{ ...PROBE(), schemaVersion: 2 }, /schemaVersion/],
     [{ ...PROBE(), name: "@other/pkg" }, /not the oats CLI/],
     [{ ...PROBE(), desktopApi: 2 }, /desktopApi 2/],
     [{ ...PROBE(), desktopApi: undefined }, /desktopApi missing/],
-    [PROBE("0.21.9"), /outside/],
-    [PROBE("0.26.0"), /outside/],
+    [PROBE("0.25.7"), /outside/],
+    [PROBE("0.27.0"), /outside/],
     [PROBE("1.0.0"), /outside/],
     [PROBE("not-a-version"), /unparsable/],
   ];
@@ -37,7 +37,7 @@ test("acceptProbe: exact v1 payload accepted; every deviation rejected with a re
 
 test("acceptProbe: API version is authoritative — a 0.22.x CLI without desktopApi is rejected", () => {
   // Source adjacency / same version number is NOT enough: the probe field decides.
-  const r = acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: "0.22.0" });
+  const r = acceptProbe({ schemaVersion: 1, name: "@awebai/oats", version: "0.25.8" });
   assert.equal(r.ok, false);
   assert.match(r.reason, /desktopApi/);
 });
@@ -50,13 +50,13 @@ test("parseSemver handles pre-release/build suffixes and rejects garbage", () =>
   assert.equal(parseSemver(""), null);
 });
 
-test("acceptProbe: prereleases are rejected — 0.22.0-rc.1 precedes 0.22.0 (review 53a20c7)", () => {
-  for (const v of ["0.22.0-rc.1", "0.22.0-0", "0.22.5-beta.2", "0.23.0-rc.1", "0.24.0-rc.1", "0.24.5-beta.2"]) {
+test("acceptProbe: prereleases are rejected — 0.26.0-rc.1 precedes 0.26.0 (review 53a20c7)", () => {
+  for (const v of ["0.25.9-rc.1", "0.25.9-0", "0.25.10-beta.2", "0.26.0-rc.1", "0.26.0-0", "0.26.5-beta.2"]) {
     const r = acceptProbe(PROBE(v));
     assert.equal(r.ok, false, v);
     assert.match(r.reason, /prerelease/, v);
   }
-  assert.equal(acceptProbe(PROBE("0.22.0+build.7")).ok, true, "build metadata does not affect precedence");
+  assert.equal(acceptProbe(PROBE("0.25.8+build.7")).ok, true, "build metadata does not affect precedence");
 });
 
 // Release-gate invariant. Desktop and the kernel ship from ONE tag, and the
@@ -72,39 +72,41 @@ test("the accepted band admits the kernel version this Desktop ships with", () =
 
 test("the human-readable band is derived from the enforced numbers", () => {
   assert.equal(ACCEPT_RANGE_TEXT, `>=${ACCEPT_RANGE.min.join(".")} <${ACCEPT_RANGE.maxExclusive.join(".")}`);
-  assert.match(acceptProbe(PROBE("0.26.0")).reason, new RegExp(ACCEPT_RANGE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(acceptProbe(PROBE("0.27.0")).reason, new RegExp(ACCEPT_RANGE_TEXT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 });
 
-// v0.24.0 band contract, spelled with LITERALS on purpose. The tests above
+// F2b band contract, spelled with LITERALS on purpose. The tests above
 // derive from ACCEPT_RANGE (so they follow any widening); these pin the exact
 // edges this release promises, so a stray re-narrowing — or a widening past
 // the v1 surface without a deliberate DESKTOP_API decision — fails here.
-test("band edges: released 0.22.x through 0.25.x are accepted, 0.26.0 and the pre-0.22 floor are not", () => {
-  assert.deepEqual(ACCEPT_RANGE, { min: [0, 22, 0], maxExclusive: [0, 26, 0] });
-  assert.equal(ACCEPT_RANGE_TEXT, ">=0.22.0 <0.26.0");
+test("band edges: 0.25.8 through 0.26.x are accepted; 0.25.7 and 0.27.0 are not (the feature fence is the real gate)", () => {
+  // Floor 0.25.8, not 0.26.0: main's kernel reports 0.25.8 until 0.26.0 is
+  // tagged. packages-no-approval (workspace + deployment fences) decides.
+  assert.deepEqual(ACCEPT_RANGE, { min: [0, 25, 8], maxExclusive: [0, 27, 0] });
+  assert.equal(ACCEPT_RANGE_TEXT, ">=0.25.8 <0.27.0");
   assert.equal(DESKTOP_API, 1, "Desktop API stays v1 across the v0.25.0 kernel bump (workspace model)");
   // inside — including both edges of the newly admitted minor
-  for (const v of ["0.22.0", "0.22.1", "0.22.12", "0.23.0", "0.23.1", "0.23.99", "0.24.0", "0.24.1", "0.24.99", "0.24.0+build.7", "0.25.0", "0.25.1", "0.25.99"]) {
+  for (const v of ["0.25.8", "0.25.9", "0.25.99", "0.25.8+build.7", "0.26.0", "0.26.1", "0.26.99"]) {
     assert.equal(acceptProbe(PROBE(v)).ok, true, `${v} must be accepted`);
   }
   // outside — the exclusive ceiling and everything above it
-  for (const v of ["0.21.9", "0.26.0", "0.26.1", "1.0.0"]) {
+  for (const v of ["0.22.0", "0.25.0", "0.25.7", "0.27.0", "0.27.1", "1.0.0"]) {
     const r = acceptProbe(PROBE(v));
     assert.equal(r.ok, false, `${v} must be rejected`);
-    assert.match(r.reason, /outside >=0\.22\.0 <0\.26\.0/, v);
+    assert.match(r.reason, /outside >=0\.25\.8 <0\.27\.0/, v);
   }
   // a PRERELEASE of the new minor is still not a released kernel
-  const pre = acceptProbe(PROBE("0.24.0-rc.1"));
+  const pre = acceptProbe(PROBE("0.26.0-rc.1"));
   assert.equal(pre.ok, false);
   assert.match(pre.reason, /prerelease/);
 });
 
 test("0.24 version acceptance does not grant API2 or unadvertised execution capabilities", async () => {
-  assert.equal(acceptProbe({ ...PROBE("0.24.0"), desktopApi: 2 }).ok, false);
-  assert.equal(acceptProbe({ ...PROBE("0.24.0"), schemaVersion: 2 }).ok, false);
+  assert.equal(acceptProbe({ ...PROBE("0.25.8"), desktopApi: 2 }).ok, false);
+  assert.equal(acceptProbe({ ...PROBE("0.25.8"), schemaVersion: 2 }).ok, false);
   const cli = await discover({ persisted: () => "/fixture/oats", env: { PATH: "" }, isExecutableFile: () => true },
-    async () => ({ stdout: JSON.stringify(PROBE("0.24.0")) }));
-  assert.equal(cli.ok, true); assert.equal(cli.version, "0.24.0");
+    async () => ({ stdout: JSON.stringify(PROBE("0.25.8")) }));
+  assert.equal(cli.ok, true); assert.equal(cli.version, "0.25.8");
   assert.throws(() => requireRemoteSupport(cli, "spawn"), { code: "unsupported-remote-operation" });
 });
 
@@ -192,13 +194,13 @@ test("discover: first ACCEPTABLE candidate wins — earlier rejects are recorded
     canonicalize: (p) => p,
   };
   const probe = async (path) => ({
-    stdout: JSON.stringify(path === "/old/oats" ? PROBE("0.21.0") : PROBE("0.22.2")),
+    stdout: JSON.stringify(path === "/old/oats" ? PROBE("0.21.0") : PROBE("0.25.9")),
   });
   const r = await discover(io, probe);
   assert.equal(r.ok, true);
   assert.equal(r.bin, "/good/oats");
   assert.equal(r.source, "path");
-  assert.equal(r.version, "0.22.2");
+  assert.equal(r.version, "0.25.9");
 });
 
 test("discover: full failure returns per-candidate stable diagnostics", async () => {

@@ -16,11 +16,12 @@ const SRV = join(ROOT, "packages", "desktop", "server", "oats-web.mjs");
 /** A fake `oats` that speaks Desktop CLI API v1 exactly. It logs its argv/cwd
  * so assertions can verify the adapter's invocation shape. */
 const V2_FIXTURES = join(ROOT, "packages", "desktop", "test", "fixtures", "workspace-v2");
-const V2_FEATURES = ["workspace-v2", "instance-modules", "served-identity"];
+// packages-no-approval: the Desktop drives the kernel line without package approval (F2b).
+const V2_FEATURES = ["workspace-v2", "instance-modules", "served-identity", "packages-no-approval"];
 /** The workspace-model v2 reads replay JSON captured from a real CLI run on the
  * hand-built Northwind deployment, rebased onto the --dir under test.
  * `status` may be replaced by a test-supplied document (written to a file). */
-function fakeCli(dir, { version = "0.22.0", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [], v2 = true, status } = {}) {
+function fakeCli(dir, { version = "0.25.8", desktopApi = 1, probeExit = 0, probeHangMs = 0, remote, features, operationsApi, groups = [], v2 = true, status } = {}) {
   const log = join(dir, "cli-calls.jsonl");
   const statusFile = status ? join(dir, "status-override.json") : null;
   if (statusFile) writeFileSync(statusFile, JSON.stringify(status));
@@ -147,9 +148,9 @@ test("desktop server: /api/cli reports discovery status; compatible fake CLI acc
     // startup probe may still be running — reprobe deterministically
     const s = await (await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
     assert.equal(s.ok, true, JSON.stringify(s));
-    assert.equal(s.version, "0.22.0");
+    assert.equal(s.version, "0.25.8");
     assert.equal(s.source, "env");
-    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.22.0 <0.26.0" });
+    assert.deepEqual(s.required, { desktopApi: 1, range: ">=0.25.8 <0.27.0" });
     // The recovery command is DERIVED from this app's own version, so it names
     // the lockstep-published kernel and always lands inside the band above —
     // never a hand-pinned version that rots below a feature floor.
@@ -196,8 +197,8 @@ test("desktop server: incompatible CLI → status carries per-candidate diagnost
 // release published, so it degraded to observation-only in the field while
 // every unit test passed. Preserve 0.23.x acceptance, accept the paired 0.24.x
 // kernel, and reject the next minor at the exclusive ceiling.
-test("desktop server: released 0.23.x through 0.25.x CLIs are ACCEPTED and 0.26.0 is REJECTED at the band ceiling", async () => {
-  for (const version of ["0.23.0", "0.24.0", "0.25.0"]) {
+test("desktop server: 0.25.8 through 0.26.x CLIs are ACCEPTED and 0.27.0 is REJECTED at the band ceiling", async () => {
+  for (const version of ["0.25.8", "0.26.0", "0.26.4"]) {
     const okDir = mkdtempSync(join(tmpdir(), "oats-cli-compatible-"));
     const compatible = fakeCli(okDir, { version });
     const a = await startServer({ OATS_DESKTOP_OATS_BIN: compatible.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
@@ -211,15 +212,15 @@ test("desktop server: released 0.23.x through 0.25.x CLIs are ACCEPTED and 0.26.
   }
 
   const badDir = mkdtempSync(join(tmpdir(), "oats-cli-ceiling-"));
-  const next = fakeCli(badDir, { version: "0.26.0" });
+  const next = fakeCli(badDir, { version: "0.27.0" });
   const b = await startServer({ OATS_DESKTOP_OATS_BIN: next.bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     const s = await (await fetch(`http://127.0.0.1:${b.port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
-    assert.equal(s.ok, false, "0.26.0 is past the exclusive ceiling and must not become the mutation binary");
+    assert.equal(s.ok, false, "0.27.0 is past the exclusive ceiling and must not become the mutation binary");
     const tried = s.tried.find((t) => t.path === next.real);
     assert.ok(tried, "the rejected candidate is in diagnostics");
-    assert.match(tried.reason, /outside >=0\.22\.0 <0\.26\.0/);
-    assert.equal(tried.version, "0.26.0");
+    assert.match(tried.reason, /outside >=0\.25\.8 <0\.27\.0/);
+    assert.equal(tried.version, "0.27.0");
   } finally { b.proc.kill(); }
 });
 

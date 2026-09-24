@@ -8,6 +8,7 @@
 import { readFileSync, appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { specProbe } from "../../packages/desktop/test/helpers/no-approval-spec.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(HERE, "..", "..", "packages", "desktop", "test", "fixtures", "workspace-v2");
@@ -21,7 +22,9 @@ const rebase = (text, dir) => text.split(CAPTURED).join(dir);
 const dirArg = () => { const i = args.indexOf("--dir"); return i >= 0 ? args[i + 1] : null; };
 
 if (args[0] === "version" && args[1] === "--json") {
-  const probe = JSON.parse(fixture("version"));
+  // The kernel line without package approval (F2b), per the published spec
+  // until the 0.26.0 kernel branch is captured.
+  const probe = specProbe(JSON.parse(fixture("version")));
   const drop = new Set(String(process.env.FAKE_OATS_DROP_FEATURES || "").split(",").filter(Boolean));
   probe.features = probe.features.filter((f) => !drop.has(f));
   out(probe);

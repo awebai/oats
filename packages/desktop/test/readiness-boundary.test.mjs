@@ -9,7 +9,7 @@ const request = s => ({ action: 'read', selector: s || selector });
 test('installed probe forwards only exact readiness API integer, never fabricates missing support', async () => {
   for (const readinessApi of [undefined, '1', 2, true, 1]) {
     const found = await discover({ persisted: () => cli.bin, env: {}, isExecutableFile: () => true }, async () => ({ stdout: JSON.stringify({
-      schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.24.8', features: ['readiness'], readinessApi }) }));
+      schemaVersion: 1, name: '@awebai/oats', desktopApi: 1, version: '0.25.8', features: ['readiness'], readinessApi }) }));
     assert.equal(found.ok, true); assert.equal(found.readinessApi, readinessApi === 1 ? 1 : undefined);
   }
 });

@@ -150,9 +150,9 @@ test('the locator carries only an integer workspaceApi 2 from the probe into the
   const { discover } = await import('../cli-locator.mjs');
   const run = async payload => discover({ persisted: () => '/fixture/bin/oats', env: {}, isExecutableFile: () => true },
     async () => ({ stdout: JSON.stringify(payload) }));
-  assert.equal((await run(probe)).workspaceApi, 2, 'the captured probe advertises workspaceApi 2');
+  assert.equal((await run(specProbe(probe))).workspaceApi, 2, 'the captured probe advertises workspaceApi 2');
   for (const value of [1, '2', 3, undefined]) {
-    const state = await run({ ...probe, workspaceApi: value });
+    const state = await run({ ...specProbe(probe), workspaceApi: value });
     assert.equal(state.ok, true); assert.equal(Object.hasOwn(state, 'workspaceApi'), false, String(value));
     assert.equal(deploymentReadGate(state, 'workspace-status').reason.feature, 'workspace-v2');
   }
