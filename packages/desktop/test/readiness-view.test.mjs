@@ -6,7 +6,7 @@ import { createSoulInspector } from '../renderer/soul-inspector.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { readinessFailure } from '../renderer/readiness-contract.mjs';
-import { cli, workspace, selector, target, data, view, deferred, tick } from './helpers/readiness-fixture.mjs';
+import { cli, workspace, selector, target, instanceTarget, data, view, deferred, tick } from './helpers/readiness-fixture.mjs';
 function setup(t, api = () => view()) {
   const dom = new JSDOM('<!doctype html><body><button id="other">Other</button><main></main>', { pretendToBeVisual: true }), doc = dom.window.document, host = doc.querySelector('main');
   const previous = currentWorkspace(); setWorkspace('team'); const calls = [];
@@ -18,12 +18,14 @@ function setup(t, api = () => view()) {
 test('the four kernel checks and policy use real facts; no signature or enrolment control exists', async t => {
   const u = setup(t); await u.update();
   assert.equal(u.calls.length, 1); assert.deepEqual(u.calls[0], { path: '/api/workspace-readiness?ws=team', method: 'POST', body: { action: 'read', selector } });
-  assert.match(u.text(), /1 unknown/); assert.match(u.text(), /not-applicable/); assert.match(u.text(), /advisory, not enforced/); assert.match(u.text(), /not an OS sandbox/);
+  assert.match(u.text(), /1 failing · 0 unknown · 7 required checks/); assert.match(u.text(), /not-applicable/); assert.match(u.text(), /advisory, not enforced/); assert.match(u.text(), /not an OS sandbox/);
   for (const check of ['Installed', 'Configured', 'Member', 'Providers']) assert.ok([...u.host.querySelectorAll('.readiness-check h3')].some(h => h.textContent === check), check);
-  // A provider that cannot answer stays unknown; its own problem is shown verbatim.
+  // The captured provider answer (oats.okf without state-dir), verbatim; its reason is said once.
   const provider = [...u.host.querySelectorAll('.readiness-check')].find(c => c.querySelector('h3').textContent === 'Providers');
-  assert.equal(provider.textContent.split('oats.okf check answered an unrecognised result').length, 2, 'the reason is said once');
-  assert.match(provider.textContent, /Problem code\s*provider-unavailable/);
+  assert.equal(provider.querySelector('.readiness-item summary').textContent, 'oats.okf · fail · required');
+  assert.match(provider.textContent, /The provider says: needs configuration\./);
+  assert.equal(provider.textContent.split('setting state-dir is required (absolute host path)').length, 2, 'the reason is said once');
+  assert.match(provider.textContent, /Problem code\s*needs-configuration/);
   assert.equal(u.one('.readiness-verify'), null); assert.equal(u.one('.readiness-enrol'), null);
   assert.doesNotMatch(u.text(), /signature|Trusted|Enrol/i);
   const policy = u.one('.readiness-policy'); policy.open = true; policy.querySelector('summary').focus();
@@ -60,7 +62,7 @@ test('malformed or wrong qualified target never paints Ready; explicit retry rec
   let result = view(); result.data.summary.ready = true; const u = setup(t, () => result); await u.update();
   assert.match(u.text(), /invalid or contradictory/); assert.doesNotMatch(u.one('.readiness-status').textContent, /^Ready/);
   result = view({ ...target, selector: { kind: 'soul', soul: 'other', agentsRoot: '/team/agents' } }); await u.component.refresh(); assert.match(u.text(), /invalid or contradictory/);
-  result = view(); await u.component.refresh(); assert.match(u.text(), /1 unknown/); assert.equal(u.calls.length, 3);
+  result = view(); await u.component.refresh(); assert.match(u.text(), /1 failing/); assert.equal(u.calls.length, 3);
 });
 test('hostile evidence, remedies and provider problems are inert text', async t => {
   const d = data(); const hostile = '<img src=x onerror=evil()>[x]';
@@ -152,4 +154,21 @@ test('a check with a real failure stays failing even when another provider only 
   const lines = [...check.querySelectorAll('.readiness-item summary')].map(s => s.textContent);
   assert.deepEqual(lines, ['oats.okf · fail · required', 'oats.aweb · sign in needed · required', 'nw.tasks · unknown · required']);
   assert.match(check.textContent, /The provider says: needs configuration\./); assert.match(check.textContent, /The provider says: unavailable right now\./);
+});
+
+test('captured: a home spawned with the provider configured is Ready, and the provider says ready', async t => {
+  const u = setup(t, () => view(instanceTarget, data(instanceTarget, 'readiness-instance-provider-pass'))); await u.update({ selector: instanceTarget.selector });
+  assert.deepEqual(u.calls[0].body, { action: 'read', selector: instanceTarget.selector });
+  assert.match(u.text(), /Ready — every required check passes/);
+  const check = providerCheck(u); assert.equal(check.querySelector('.readiness-badge').dataset.state, 'pass');
+  assert.equal(check.querySelector('.readiness-item summary').textContent, 'oats.okf · pass · required'); assert.match(check.textContent, /The provider says: ready\./);
+  assert.equal(check.querySelector('.readiness-warning'), null, 'warnings: [] shows nothing');
+});
+test('an unrecognised provider answer is shown as sent, under the item status the kernel reported', async t => {
+  const raw = providers(['oats.okf', 'ready']), provider = raw.checks.providers.items[0];
+  Object.assign(provider, { status: 'unknown', result: { status: 'rate-limited', problems: [], warnings: [] } }); raw.checks.providers.status = 'unknown';
+  raw.summary = { ...raw.summary, ready: false, pass: raw.summary.pass - 1, unknown: raw.summary.unknown + 1 };
+  const u = setup(t, () => view(target, raw)); await u.update();
+  const check = providerCheck(u);
+  assert.equal(check.querySelector('.readiness-item summary').textContent, 'oats.okf · unknown · required'); assert.match(check.textContent, /The provider answered: rate-limited\./);
 });

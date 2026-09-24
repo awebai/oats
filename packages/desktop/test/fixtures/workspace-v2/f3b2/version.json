@@ -49,7 +49,6 @@
     "schedule-history",
     "schedule-read-2",
     "session-recompose",
-    "readiness-verify",
     "spawn-preview-2",
     "spawn-idempotency",
     "spawn-idempotency-2",

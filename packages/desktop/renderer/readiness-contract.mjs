@@ -75,8 +75,11 @@ function item(v) {
   // {status, problems, warnings}. Warnings (always emitted, maybe []) never change status.
   if (Object.hasOwn(v, 'result')) {
     if (v.result === null) out.result = null;
-    // The item status follows from the provider's answer; a contradiction fails closed.
-    else if (record(v.result) && Object.hasOwn(PROVIDER_ITEM_STATUS, v.result.status) && PROVIDER_ITEM_STATUS[v.result.status] === v.status) {
+    // A known answer fixes the item status (a contradiction fails closed). The four
+    // statuses are additive: an unrecognised one is relayed as sent, and the kernel's
+    // item status stands (docs/desktop-cli-api.md, providers).
+    else if (record(v.result) && typeof v.result.status === 'string' && v.result.status && v.result.status.length <= 64
+      && (!Object.hasOwn(PROVIDER_ITEM_STATUS, v.result.status) || PROVIDER_ITEM_STATUS[v.result.status] === v.status)) {
       out.result = { status: v.result.status, problems: problems(v.result.problems), warnings: problems(v.result.warnings) };
     } else throw Error();
   }

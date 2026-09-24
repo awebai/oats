@@ -65,8 +65,10 @@ caller revalidates its admission and CLI identity after success **or** rejection
   `item.result {status, problems[{code, message}], warnings[{code, message}]}`.
   The provider's `status` is one of four, and the item status follows from it:
   `ready` → pass, `needs-configuration` → fail, `authorization-required` →
-  fail, `unavailable` → unknown. A result that contradicts its item status
-  fails closed. `authorization-required` is its own state, shown as **sign in
+  fail, `unavailable` → unknown. A known answer that contradicts its item
+  status fails closed. The statuses are additive, so an unrecognised one is
+  relayed as sent ("The provider answered: <status>.") under the item status
+  the kernel reported. `authorization-required` is its own state, shown as **sign in
   needed** (item line and, when every failing provider only needs a sign-in,
   the check's badge), never as a broken provider. `warnings` is always present (possibly `[]`) and
   never changes the status: a passing item can carry warnings (e.g. E2EE

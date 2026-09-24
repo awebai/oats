@@ -1,6 +1,6 @@
-// Import the F3b-2 kernel capture (kernel #162: inspect/readiness on the workspace model —
-// operationsApi 2, soulsApi 2, readinessApi 2; Northwind scratch, capture-baseline.mjs
-// + provenance.json alongside it). NEVER runs a CLI, runtime or native probe.
+// Import the F3b-2 kernel capture (kernel #162 final head f5ee0e26: inspect/readiness/
+// operation run on the workspace model — operationsApi 2, soulsApi 2, readinessApi 2;
+// Northwind scratch, capture-final.mjs + provenance.json alongside it). NEVER runs a CLI, runtime or native probe.
 // <base>/<oats> placeholders become absolute fixture paths so projections'
 // absolute-path contracts apply unchanged. Refusal documents keep their exit.
 // Usage: node import-capture.mjs CAPTURE_OUT_DIR
@@ -11,10 +11,11 @@ import { createHash } from 'node:crypto';
 const [source] = process.argv.slice(2);
 if (typeof source !== 'string' || !source.startsWith('/')) throw new Error('One explicit absolute capture directory required');
 const target = fileURLToPath(new URL('.', import.meta.url));
-const documents = ['version', 'inspect-soul', 'inspect-home', 'inspect-scope', 'readiness-soul', 'readiness-instance', 'readiness-scope'];
+const documents = ['version', 'inspect-scope', 'inspect-soul', 'inspect-home', 'inspect-home-operations', 'readiness-soul', 'readiness-instance',
+  'readiness-soul-provider-fail', 'readiness-instance-provider-pass', 'operation-run-status', 'operation-run-unknown'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
-const provenance = { source: `${captured.capturedBy}; test/fixtures/northwind/build.mjs; capture-baseline.mjs`, kernel: captured.kernel,
+const provenance = { source: `${captured.capturedBy}; test/fixtures/northwind/build.mjs; capture-final.mjs`, kernel: captured.kernel,
   redactions: ['<base> (capture scratch) → /fixture/base', '<oats> (checkout) → /fixture/oats'], files: {} };
 for (const name of documents) {
   const original = readFileSync(join(source, `${name}.json`));

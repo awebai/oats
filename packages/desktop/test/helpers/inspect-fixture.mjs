@@ -1,8 +1,8 @@
 // Inspections on the workspace model (operationsApi 2) for inspector tests,
-// derived from the kernel capture (fixtures/workspace-v2/f3b2, kernel #162) and
-// retargeted to a test's soul or home. Operation rows follow the documented
-// shape (docs/desktop-cli-api.md, operationsApi 2) until the Northwind fixture
-// declares an operation (finding sent to the maintainer: its oats.okf has none).
+// derived from the kernel capture (fixtures/workspace-v2/f3b2, kernel #162
+// f5ee0e26) and retargeted to a test's soul or home. oats.okf declares two home
+// operations: `status` (view) and `reindex` (action, optional --scope) —
+// unavailable on a soul ("needs a running home (--home)"), available on a home.
 import { readFileSync } from 'node:fs';
 
 const captured = name => JSON.parse(readFileSync(new URL(`../fixtures/workspace-v2/f3b2/${name}.json`, import.meta.url), 'utf8'));
@@ -26,6 +26,7 @@ export function homeInspection(home, { instance = 'release-manager-cap', soul = 
   if (operations) v.capabilities = v.capabilities.map(cap => cap.layer === 'knowledge' ? { ...cap, operations } : cap);
   return v;
 }
-/** A documented operationsApi 2 operation row. */
-export const operation = (name, kind = 'view', extra = {}) => ({ name, kind, command: name, context: 'home', description: `${name} operation`,
-  args: [], argv: ['okf', name], available: true, reason: null, ...extra });
+/** The captured oats.okf operation rows as a home reports them (available). */
+export const capturedOperations = () => capturedInspect('inspect-home').result.capabilities.find(cap => cap.id === 'oats.okf').operations;
+/** The captured operationsApi 2 run result (`oats operation run knowledge:status --home`), optionally varied. */
+export const capturedRun = (fields = {}) => ({ ...capturedInspect('operation-run-status').result, ...fields });

@@ -4,7 +4,7 @@ import { cliReadiness } from '../readiness-cli.mjs';
 import { createReadinessBoundary } from '../server/readiness.mjs';
 import { readinessData, readinessFailure } from '../renderer/readiness-contract.mjs';
 import { discover } from '../cli-locator.mjs';
-import { context, cli, selector, target, data, item, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';
+import { context, cli, selector, target, instanceTarget, data, item, envelope, deferred, tick } from './helpers/readiness-fixture.mjs';
 const request = s => ({ action: 'read', selector: s || selector });
 test('installed probe forwards only exact readiness API integer, never fabricates missing support', async () => {
   for (const readinessApi of [undefined, '2', 1, true, 3, 2]) {
@@ -108,7 +108,6 @@ test('the four kernel checks are bounded and requiredness-checked; the subject i
   for (const mutate of [v => v.summary.ready = true, v => v.summary.required = 0, v => v.checks.member.items[0].required = 'true',
     v => v.subject.soul = 'other', v => v.subject.kind = 'scope', v => v.checks.installed.items = Array.from({ length: 1001 }, () => item()), v => v.policy.childSpawns.enforced = 'true',
     v => v.readinessApi = 1, v => delete v.checks.providers, v => v.checks.configured.status = 'future', v => v.checks.installed.items[0].reason = 'x'.repeat(1025),
-    v => v.checks.providers.items[0].result = { status: 'future', problems: [], warnings: [] },
     v => v.checks.providers.items[0].result = { status: 'ready', problems: [] },
     v => v.checks.providers.items[0].result = { status: 'ready', problems: [], warnings: [{ code: 'x' }] },
     v => v.checks.providers.items[0].result = { status: 'ready', problems: [], warnings: 'e2ee-disabled' }]) {
@@ -135,12 +134,22 @@ test('provider warnings are relayed verbatim and never change the item status or
   assert.equal(projected.summary.ready, true); assert.equal(projected.checks.providers.items[0].status, 'pass');
   assert.deepEqual(projected.checks.providers.items[0].result.warnings, warnings);
 });
-test('a provider that cannot answer stays unknown, with its problems verbatim; no trusted check or signature exists', () => {
-  const projected = readinessData(data(), target), provider = projected.checks.providers.items[0];
-  assert.equal(provider.status, 'unknown'); assert.equal(provider.result, null);
-  assert.deepEqual(provider.problems, [{ code: 'provider-unavailable', message: 'oats.okf check answered an unrecognised result' }]);
-  assert.equal(Object.hasOwn(projected.checks, 'trusted'), false); assert.equal(Object.hasOwn(projected.checks, 'enrolled'), false);
-  assert.doesNotMatch(JSON.stringify(projected), /signature/);
+test("the provider's own answer is relayed verbatim (captured: needs-configuration, then ready once state-dir is set); no trusted check or signature", () => {
+  const failing = readinessData(data(), target), provider = failing.checks.providers.items[0];
+  const needs = { code: 'needs-configuration', message: 'setting state-dir is required (absolute host path)' };
+  assert.equal(provider.status, 'fail'); assert.equal(provider.reason, needs.message); assert.equal(failing.summary.ready, false);
+  assert.deepEqual(provider.result, { status: 'needs-configuration', problems: [needs], warnings: [] });
+  const passing = readinessData(data(instanceTarget, 'readiness-instance-provider-pass'), instanceTarget), ok = passing.checks.providers.items[0];
+  assert.equal(ok.status, 'pass'); assert.equal(ok.reason, null); assert.deepEqual(ok.result, { status: 'ready', problems: [], warnings: [] });
+  assert.equal(passing.summary.ready, true, 'the capture is Ready once the provider is');
+  assert.equal(Object.hasOwn(failing.checks, 'trusted'), false); assert.equal(Object.hasOwn(failing.checks, 'enrolled'), false);
+  assert.doesNotMatch(JSON.stringify(failing), /signature/);
+});
+test('a provider that cannot answer stays unknown with result null and its problems verbatim (documented shape)', () => {
+  const d = data(), p = d.checks.providers.items[0], problem = { code: 'provider-unavailable', message: 'oats.okf check answered an unrecognised result' };
+  Object.assign(p, { status: 'unknown', result: null, problems: [problem], reason: problem.message }); d.checks.providers.status = 'unknown'; d.summary.fail--; d.summary.unknown++;
+  const provider = readinessData(d, target).checks.providers.items[0];
+  assert.equal(provider.status, 'unknown'); assert.equal(provider.result, null); assert.deepEqual(provider.problems, [problem]);
 });
 
 test('a provider answer is one of four, and the item status follows from it; a contradiction fails closed', () => {
@@ -156,7 +165,9 @@ test('a provider answer is one of four, and the item status follows from it; a c
     assert.deepEqual(projected.checks.providers.items[0].result, { status, problems: [], warnings: [] });
     for (const other of ['pass', 'fail', 'unknown'].filter(s => s !== itemStatus)) assert.equal(answer(status, other), null, `${status} with item ${other}`);
   }
-  assert.equal(answer('signed-out', 'fail'), null);
+  // Additive statuses: an unrecognised answer is relayed as sent and the kernel's item status stands.
+  for (const itemStatus of ['fail', 'unknown']) assert.deepEqual(answer('signed-out', itemStatus).checks.providers.items[0].result, { status: 'signed-out', problems: [], warnings: [] });
+  assert.equal(answer('x'.repeat(65), 'unknown'), null, 'bounded'); assert.equal(answer('', 'unknown'), null);
 });
 test("dispatch on the payload's own integer: a classic scope's readinessApi 1 answer is named, never read", async () => {
   const c = context();

@@ -15,7 +15,7 @@
       "soul": "release-manager",
       "agentsRoot": "/fixture/base/northwind-workspace/agents"
     },
-    "at": "2026-09-24T20:22:56.970Z",
+    "at": "2026-09-24T21:24:14.310Z",
     "checks": {
       "installed": {
         "status": "pass",
@@ -31,7 +31,7 @@
                 "kind": "package",
                 "package": "nw.tools",
                 "version": "0.4.0",
-                "commit": "eb1f9f6ea7b5938292a50a072233d957e93a0094",
+                "commit": "cf19e24b578748bfb115cb1f1420402705f20749",
                 "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
                 "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
               }
@@ -51,7 +51,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "e6805336df4234989582df68d756b7e2824b5b63"
+                "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
               }
             },
             "remedy": null,
@@ -69,7 +69,7 @@
               "from": {
                 "kind": "member",
                 "repoKey": "local//fixture/base/fx/remotes/agents.git",
-                "commit": "e6805336df4234989582df68d756b7e2824b5b63"
+                "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
               }
             },
             "remedy": null,
@@ -109,8 +109,8 @@
                 "kind": "package",
                 "package": "oats.okf",
                 "version": "2.1.3",
-                "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
-                "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
+                "commit": "6c9742aa531b9be30fcb5fe8753c456b5a64f910",
+                "integrity": "sha256-8df2d930614743f3b973e405461aa4d73fc40dc6a5887ff32a177f8d59e244cb",
                 "repoKey": "local//fixture/base/fx/remotes/pkg-okf.git"
               }
             },
@@ -137,30 +137,33 @@
             "evidence": {
               "repoKey": "local//fixture/base/fx/remotes/agents.git",
               "workspace": "local//fixture/base/fx/remotes/agents.git",
-              "commit": "e6805336df4234989582df68d756b7e2824b5b63"
+              "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
             },
             "remedy": null
           }
         ]
       },
       "providers": {
-        "status": "unknown",
+        "status": "fail",
         "items": [
           {
             "subject": "oats.okf",
-            "status": "unknown",
+            "status": "fail",
             "required": true,
-            "reason": "oats.okf check answered an unrecognised result",
+            "reason": "setting state-dir is required (absolute host path)",
             "producer": "provider binding check",
             "evidence": null,
             "remedy": null,
-            "result": null,
-            "problems": [
-              {
-                "code": "provider-unavailable",
-                "message": "oats.okf check answered an unrecognised result"
-              }
-            ],
+            "result": {
+              "status": "needs-configuration",
+              "problems": [
+                {
+                  "code": "needs-configuration",
+                  "message": "setting state-dir is required (absolute host path)"
+                }
+              ],
+              "warnings": []
+            },
             "capability": {
               "id": "oats.okf"
             }
@@ -172,8 +175,8 @@
       "ready": false,
       "required": 7,
       "pass": 6,
-      "fail": 0,
-      "unknown": 1,
+      "fail": 1,
+      "unknown": 0,
       "byCapability": [
         {
           "capability": {
@@ -235,7 +238,7 @@
             "installed": "pass",
             "configured": "not-applicable",
             "member": "not-applicable",
-            "providers": "unknown"
+            "providers": "fail"
           },
           "ownReady": false,
           "ready": false

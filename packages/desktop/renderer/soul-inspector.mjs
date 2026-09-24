@@ -262,6 +262,12 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
           try {
             const result = await request({ action: 'run', selector: selection.selector, operation: address });
             if (!owns()) return;
+            // Dispatch on the payload's own integer; the result must be for this operation.
+            if (result?.operationsApi !== 2 || result.operation !== address) {
+              message(result?.operationsApi === 1 ? 'This workspace still uses the classic layout, which answers an older operation result.'
+                : 'The installed OATS CLI returned an operation result this Desktop cannot read.', true);
+              return;
+            }
             const output = result.result;
             const area = node('div');
             if (operation.kind === 'view') {

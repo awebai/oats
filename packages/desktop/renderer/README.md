@@ -164,6 +164,15 @@ layer providers' operations. Top-level `problems[]` read as one plain sentence
 each (the kernel's message), the code behind **Details**. No classic field
 (scope chain, activation, trust, snapshot drift, sources provenance) is read.
 
+Provider operations are addressed `<layer>:<name>` (`oats operation run
+knowledge:status --home <h> --json`). An operation that is unavailable (e.g. a
+home operation on a soul: "needs a running home (--home)") or that has a
+required argument shows its reason instead of a control; optional arguments are
+never synthesized. A run result is read only when it is `operationsApi: 2` for
+exactly the operation pressed (a classic scope's `1` is named); a view renders
+its `summary` and `documents` as inert text, and an action its JSON. Kernel
+refusals (e.g. `E_OPERATION_UNKNOWN`) are shown in the kernel's words.
+
 These reuse the existing inspection lifetimes and latest-intent guards; there is
 no per-card request fan-out or polling inspection. Routine roster/CLI polls keep
 the settled DOM; stale successes and rejections cannot overwrite the current

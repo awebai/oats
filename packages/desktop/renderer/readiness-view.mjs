@@ -91,7 +91,7 @@ export function createReadinessView(host, { ctx } = {}) {
           if (content !== null && content !== undefined) facts.append(node('dt', name), node('dd', content));
         }
         // providers: the provider's own answer, verbatim; "unknown" stays unknown.
-        if (i.result) item.append(node('p', PROVIDER_SAYS[i.result.status]));
+        if (i.result) item.append(node('p', Object.hasOwn(PROVIDER_SAYS, i.result.status) ? PROVIDER_SAYS[i.result.status] : `The provider answered: ${i.result.status}.`));
         // Warnings never change the status and do not count in the summary; shown as reported.
         for (const w of i.result?.warnings || []) item.append(node('p', `Warning: ${w.message} (${w.code})`, 'readiness-warning'));
         // The kernel's reason is the first problem's message: say it once, with its code.

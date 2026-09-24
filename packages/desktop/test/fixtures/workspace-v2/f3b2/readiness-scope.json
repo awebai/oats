@@ -1,8 +1,0 @@
-{
-  "schemaVersion": 1,
-  "ok": false,
-  "error": {
-    "code": "E_BAD_ARGS",
-    "message": "readiness on a workspace deployment needs --soul <name> or --home <abs>"
-  }
-}

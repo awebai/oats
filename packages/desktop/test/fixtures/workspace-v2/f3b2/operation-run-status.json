@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "result": {
+    "operationsApi": 2,
+    "operation": "knowledge:status",
+    "capability": "oats.okf",
+    "version": "2.1.3",
+    "argv": [
+      "okf",
+      "status"
+    ],
+    "cwd": "/fixture/base/northwind-workspace/agents/campaign-writer/instances/campaign-writer-okf",
+    "target": {
+      "home": "/fixture/base/northwind-workspace/agents/campaign-writer/instances/campaign-writer-okf",
+      "instance": "campaign-writer-okf"
+    },
+    "result": {
+      "summary": "fixture knowledge status",
+      "documents": [
+        {
+          "label": "Status",
+          "kind": "markdown",
+          "text": "# okf status\n\nInstance: campaign-writer-okf\n"
+        }
+      ]
+    }
+  }
+}

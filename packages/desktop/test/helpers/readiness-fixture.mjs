@@ -1,7 +1,9 @@
 // Readiness on the workspace model (readinessApi 2) for the boundary, HTTP,
 // proxy and view tests. `data()` is the kernel capture (fixtures/workspace-v2/
-// f3b2, kernel #162) retargeted to the test's soul or instance; the subject is
-// a soul or an instance, never a scope.
+// f3b2, kernel #162 f5ee0e26) retargeted to the test's soul or instance; the
+// subject is a soul or an instance, never a scope. The default captures carry
+// oats.okf's real `needs-configuration` answer (no state-dir); the
+// `readiness-instance-provider-pass` capture is a home spawned with one.
 import { readFileSync } from 'node:fs';
 
 const captured = name => JSON.parse(readFileSync(new URL(`../fixtures/workspace-v2/f3b2/${name}.json`, import.meta.url), 'utf8')).result;
@@ -11,14 +13,16 @@ export const soul = { name: 'dev', agentsRoot: '/team/agents' };
 export const instance = { instance: 'dev-1', agent: 'dev', agentsRoot: '/team/agents', home: '/team/agents/dev/instances/dev-1', server: null };
 export const selector = { kind: 'soul', soul: 'dev', agentsRoot: '/team/agents' };
 export const target = { workspace: 'team', context: '/team', observedAs: 'soul', selector };
+export const instanceTarget = { workspace: 'team', context: '/team', observedAs: 'instance', home: instance.home,
+  selector: { kind: 'instance', instance: instance.instance, agent: instance.agent, agentsRoot: instance.agentsRoot, server: null } };
 export const context = () => ({ cli: structuredClone(cli), workspace: { ...workspace }, agents: [{ ...soul }], instances: [{ ...instance }] });
 /** A readinessApi 2 item (the kernel's item fields). */
 export const item = (status = 'pass', fields = {}) => ({ subject: 'fixture.cap', status, required: true, producer: 'workspace resolution', reason: null,
   evidence: { from: { kind: 'package', package: 'fixture.cap', version: '1.0.0', commit: 'a'.repeat(40), integrity: 'sha256-fixture' } }, remedy: null,
   capability: { id: 'fixture.cap' }, ...fields });
 /** The captured readiness document for this target (soul or instance). */
-export function data(t = target) {
-  const v = structuredClone(captured(t.observedAs === 'instance' ? 'readiness-instance' : 'readiness-soul'));
+export function data(t = target, capture = t.observedAs === 'instance' ? 'readiness-instance' : 'readiness-soul') {
+  const v = structuredClone(captured(capture));
   if (t.observedAs === 'instance') {
     v.subject = { kind: 'instance', instance: t.selector.instance, home: t.home, soul: t.selector.agent };
     v.selector = { kind: 'home', home: t.home, soul: t.selector.agent, agentsRoot: t.selector.agentsRoot };

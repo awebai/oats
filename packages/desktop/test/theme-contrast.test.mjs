@@ -401,10 +401,9 @@ for (const [name] of palettes) test(`${name}: actual readiness checks, provider 
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   // One check per badge state: installed pass, configured not-applicable, member unknown, providers fail.
   const raw = readinessFixture();
-  raw.checks.providers.items[0].problems.push({ code: 'needs-configuration', message: 'A second provider problem' }); // painted as .readiness-problem
-  // The provider answered: needs-configuration, with a warning (painted as .readiness-warning).
-  Object.assign(raw.checks.providers.items[0], { status: 'fail', result: { status: 'needs-configuration', problems: [], warnings: [{ code: 'e2ee-disabled', message: 'A provider warning' }] } });
-  raw.checks.providers.status = 'fail'; raw.summary.unknown--; raw.summary.fail++;
+  // The captured answer (needs-configuration) plus a second problem (.readiness-problem) and a warning (.readiness-warning).
+  const answer = raw.checks.providers.items[0].result;
+  answer.problems.push({ code: 'needs-configuration', message: 'A second provider problem' }); answer.warnings.push({ code: 'e2ee-disabled', message: 'A provider warning' });
   raw.checks.member.status = 'unknown'; raw.checks.member.items[0].status = 'unknown'; raw.checks.member.items[0].reason = 'unreadable'; raw.summary.pass--; raw.summary.unknown++; // keeps an unknown badge
   const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
   t.after(() => { component.dispose(); dom.window.close(); });
@@ -434,7 +433,7 @@ for (const [name] of palettes) test(`${name}: the "sign in needed" provider stat
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
   const raw = readinessFixture(), provider = raw.checks.providers.items[0];
   Object.assign(provider, { status: 'fail', reason: null, problems: [], result: { status: 'authorization-required', problems: [], warnings: [] } });
-  raw.checks.providers.status = 'fail'; raw.summary.unknown--; raw.summary.fail++;
+  raw.checks.providers.status = 'fail'; // the captured provider already fails (needs-configuration)
   const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
   t.after(() => { component.dispose(); dom.window.close(); });
   await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });

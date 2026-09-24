@@ -4,42 +4,56 @@
   "result": {
     "readinessApi": 2,
     "subject": {
-      "kind": "soul",
-      "soul": "release-manager",
-      "repoKey": "local//fixture/base/fx/remotes/agents.git",
-      "commit": "88e75d34e77b8e33d9930692db20add546967eb1",
-      "team": "engineering"
+      "kind": "instance",
+      "instance": "campaign-writer-okf",
+      "home": "/fixture/base/northwind-workspace/agents/campaign-writer/instances/campaign-writer-okf",
+      "soul": "campaign-writer"
     },
     "selector": {
-      "kind": "soul",
-      "soul": "release-manager",
-      "agentsRoot": "/fixture/base/northwind-workspace/agents",
-      "dir": "/fixture/base/northwind-workspace"
+      "kind": "home",
+      "home": "/fixture/base/northwind-workspace/agents/campaign-writer/instances/campaign-writer-okf",
+      "soul": "campaign-writer",
+      "agentsRoot": "/fixture/base/northwind-workspace/agents"
     },
-    "at": "2026-09-24T21:24:13.157Z",
+    "at": "2026-09-24T21:24:18.794Z",
     "checks": {
       "installed": {
         "status": "pass",
         "items": [
           {
-            "subject": "nw-deploy",
+            "subject": "nw-brand-voice",
             "status": "pass",
             "required": true,
             "reason": null,
-            "producer": "workspace resolution",
+            "producer": "instance modules",
             "evidence": {
               "from": {
-                "kind": "package",
-                "package": "nw.tools",
-                "version": "0.4.0",
-                "commit": "cf19e24b578748bfb115cb1f1420402705f20749",
-                "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
-                "repoKey": "local//fixture/base/fx/remotes/nw-tools.git"
+                "kind": "member",
+                "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+                "commit": "90bec5cc671f5c82f283008890360f140cc6381d"
               }
             },
             "remedy": null,
             "capability": {
-              "id": "nw-deploy"
+              "id": "nw-brand-voice"
+            }
+          },
+          {
+            "subject": "nw-campaign-metrics",
+            "status": "pass",
+            "required": true,
+            "reason": null,
+            "producer": "instance modules",
+            "evidence": {
+              "from": {
+                "kind": "member",
+                "repoKey": "local//fixture/base/fx/remotes/marketing.git",
+                "commit": "90bec5cc671f5c82f283008890360f140cc6381d"
+              }
+            },
+            "remedy": null,
+            "capability": {
+              "id": "nw-campaign-metrics"
             }
           },
           {
@@ -47,7 +61,7 @@
             "status": "pass",
             "required": true,
             "reason": null,
-            "producer": "workspace resolution",
+            "producer": "instance modules",
             "evidence": {
               "from": {
                 "kind": "member",
@@ -65,7 +79,7 @@
             "status": "pass",
             "required": true,
             "reason": null,
-            "producer": "workspace resolution",
+            "producer": "instance modules",
             "evidence": {
               "from": {
                 "kind": "member",
@@ -83,7 +97,7 @@
             "status": "pass",
             "required": true,
             "reason": null,
-            "producer": "workspace resolution",
+            "producer": "instance modules",
             "evidence": {
               "from": {
                 "kind": "package",
@@ -104,7 +118,7 @@
             "status": "pass",
             "required": true,
             "reason": null,
-            "producer": "workspace resolution",
+            "producer": "instance modules",
             "evidence": {
               "from": {
                 "kind": "package",
@@ -130,39 +144,34 @@
         "status": "pass",
         "items": [
           {
-            "subject": "member local//fixture/base/fx/remotes/agents.git",
+            "subject": "member local//fixture/base/fx/remotes/marketing.git",
             "status": "pass",
             "required": true,
             "reason": null,
             "producer": "workspace discovery",
             "evidence": {
-              "repoKey": "local//fixture/base/fx/remotes/agents.git",
+              "repoKey": "local//fixture/base/fx/remotes/marketing.git",
               "workspace": "local//fixture/base/fx/remotes/agents.git",
-              "commit": "88e75d34e77b8e33d9930692db20add546967eb1"
+              "commit": "90bec5cc671f5c82f283008890360f140cc6381d"
             },
             "remedy": null
           }
         ]
       },
       "providers": {
-        "status": "fail",
+        "status": "pass",
         "items": [
           {
             "subject": "oats.okf",
-            "status": "fail",
+            "status": "pass",
             "required": true,
-            "reason": "setting state-dir is required (absolute host path)",
+            "reason": null,
             "producer": "provider binding check",
             "evidence": null,
             "remedy": null,
             "result": {
-              "status": "needs-configuration",
-              "problems": [
-                {
-                  "code": "needs-configuration",
-                  "message": "setting state-dir is required (absolute host path)"
-                }
-              ],
+              "status": "ready",
+              "problems": [],
               "warnings": []
             },
             "capability": {
@@ -173,15 +182,28 @@
       }
     },
     "summary": {
-      "ready": false,
-      "required": 7,
-      "pass": 6,
-      "fail": 1,
+      "ready": true,
+      "required": 8,
+      "pass": 8,
+      "fail": 0,
       "unknown": 0,
       "byCapability": [
         {
           "capability": {
-            "id": "nw-deploy"
+            "id": "nw-brand-voice"
+          },
+          "checks": {
+            "installed": "pass",
+            "configured": "not-applicable",
+            "member": "not-applicable",
+            "providers": "not-applicable"
+          },
+          "ownReady": true,
+          "ready": true
+        },
+        {
+          "capability": {
+            "id": "nw-campaign-metrics"
           },
           "checks": {
             "installed": "pass",
@@ -239,10 +261,10 @@
             "installed": "pass",
             "configured": "not-applicable",
             "member": "not-applicable",
-            "providers": "fail"
+            "providers": "pass"
           },
-          "ownReady": false,
-          "ready": false
+          "ownReady": true,
+          "ready": true
         }
       ],
       "subjectBlockers": []
@@ -256,19 +278,19 @@
     "policy": {
       "childSpawns": {
         "allowed": true,
-        "enforced": false,
+        "enforced": true,
         "origin": {
           "kind": "default",
           "detail": "no declaration: children allowed"
         }
       },
       "worktrees": {
-        "allowed": true,
-        "mode": "worktree",
-        "enforced": false,
+        "allowed": false,
+        "mode": "directory",
+        "enforced": true,
         "origin": {
-          "kind": "soul",
-          "detail": "work: worktree"
+          "kind": "work-mode",
+          "detail": "work: directory"
         }
       }
     }

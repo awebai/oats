@@ -87,3 +87,41 @@ test("dispatch on the payload's own integer: a classic scope's operationsApi 1 i
   const f = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, future);
   assert.match(f.textContent, /cannot read\. Update OATS and refresh/);
 });
+
+// Provider operations and the operationsApi 2 run envelope, both captured (oats.okf status/reindex).
+async function operated(t, run) {
+  const previous = currentWorkspace(); setWorkspace('/team'); const calls = [];
+  const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'), el = dom.window.document.querySelector('aside');
+  const inspector = createSoulInspector(el, { ctx: { api: async (url, opts) => {
+    const body = JSON.parse(opts.body); calls.push(body);
+    if (body.action === 'inspect') return home;
+    const out = run(body); if (out instanceof Error) throw out; return out;
+  } } });
+  t.after(() => { inspector.dispose(); dom.window.close(); setWorkspace(previous); });
+  await inspector.show(homeSelection); return { el, calls, press: async name => { el.querySelector(`[data-operation="knowledge:${name}"]`).click(); await new Promise(r => setTimeout(r, 0)); } };
+}
+test('captured operations: unavailable on a soul with the kernel reason, runnable on a home (layer:name address)', async t => {
+  const s = await rendered(t, { ...soulSelection, selector: { soul: 'release-manager', agentsRoot: soulSelection.agent.agentsRoot } }, soul);
+  assert.equal(s.querySelectorAll('[data-operation]').length, 0); assert.equal(s.textContent.split('needs a running home (--home)').length, 3, 'status and reindex both say why');
+  const u = await operated(t, () => doc('operation-run-status').result);
+  assert.deepEqual([...u.el.querySelectorAll('[data-operation]')].map(b => [b.dataset.operation, b.textContent]), [['knowledge:status', 'View'], ['knowledge:reindex', 'Run']]);
+  assert.match(u.el.textContent, /This instance's knowledge status/);
+  await u.press('status');
+  assert.deepEqual(u.calls[1], { action: 'run', selector: { home: home.subject.home }, operation: 'knowledge:status' });
+  const output = u.el.querySelector('.operation-output');
+  assert.match(output.textContent, /fixture knowledge status/); assert.equal(output.querySelector('h4').textContent, 'Status'); assert.match(output.querySelector('pre').textContent, /^# okf status/);
+});
+test("a run result is read only when it is operationsApi 2 for exactly this operation (payload's own integer)", async t => {
+  for (const [variant, expected] of [[{ operationsApi: 1 }, /classic layout, which answers an older operation result/], [{ operationsApi: 3 }, /cannot read/],
+    [{ operation: 'knowledge:reindex' }, /cannot read/]]) {
+    const u = await operated(t, () => ({ ...doc('operation-run-status').result, ...variant }));
+    await u.press('status');
+    assert.match(u.el.textContent, expected, JSON.stringify(variant)); assert.equal(u.el.querySelector('.operation-output'), null);
+  }
+});
+test('a refused run shows the kernel refusal (captured E_OPERATION_UNKNOWN) and no output', async t => {
+  const refusal = doc('operation-run-unknown').error;
+  const u = await operated(t, () => Object.assign(new Error(refusal.message), { code: refusal.code }));
+  await u.press('status');
+  assert.match(u.el.textContent, /oats\.okf declares no operation "nope" \(declared: status, reindex\)/); assert.equal(u.el.querySelector('.operation-output'), null);
+});
