@@ -552,6 +552,8 @@ function pkgOkfRepo() {
           "harvest-runtime": { default: "pi", values: ["pi", "claude", "codex"], description: "Harness for the memory harvester." },
           "bindings-file": { description: "Absolute host-owned path identifying the version:1 bindings document." },
           "state-dir": { description: "Absolute host-owned durable state directory for portable bindings." },
+          // Decision 27 (K1″): a host fact only oats-local.yaml may supply — the resolver refuses it elsewhere.
+          "custody-root": { description: "Absolute host-owned custody directory (fixture edition of a hostOnly key).", hostOnly: true },
         },
         skills: ["skills/okf"],
         commands: {

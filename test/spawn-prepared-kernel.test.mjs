@@ -344,3 +344,45 @@ test("R5: a prepared preview shows `providers` (the --provider map as parsed) an
     assert.equal(classic.providers, undefined); assert.equal(classic.settings, undefined);
   });
 });
+
+test("decision 27 K1′: the spawn decision binds the merged per-module payloads as effective.providers (exactly the resolution's payloads); the revision changes when a payload changes", { timeout: 300_000 }, async () => {
+  const d = await deployment();
+  await withFixtureEnv(d, async () => {
+    const common = { purpose: "k1", work: "directory", repo: d.dep, launch: false, preview: true };
+    const a = await prepareWithProviders(d, "release-manager", { "oats.okf": { "state-dir": "/tmp/x" } });
+    const pa = await spawnInstanceAsync(d.root, a.agent, { prepared: a.prepared, ...common });
+    assert.ok(pa.decision?.effective, "preview carries the decision");
+    assert.deepEqual(pa.decision.effective.providers, a.prepared.resolution.payloads, "effective.providers is the resolution's merged payloads by value");
+    assert.equal(pa.decision.effective.providers["oats.okf"]["state-dir"], "/tmp/x");
+    const b = await prepareWithProviders(d, "release-manager", { "oats.okf": { "state-dir": "/tmp/y" } });
+    const pb = await spawnInstanceAsync(d.root, b.agent, { prepared: b.prepared, ...common });
+    assert.notEqual(pb.decision.revision, pa.decision.revision, "a different provider fact is a different decision");
+    assert.equal(pb.decision.effective.providers["oats.okf"]["state-dir"], "/tmp/y");
+  });
+});
+
+test("decision 27 K1″: a settings key the manifest marks hostOnly is accepted from oats-local.yaml only — refused in a --provider flag, the soul's slot payload and the workspace messaging payload with E_WORKSPACE_SCHEMA reason host-only-key", { timeout: 300_000 }, async () => {
+  const d = await deployment();
+  await withFixtureEnv(d, async () => {
+    // --provider (per-spawn layer): refused, path and key named.
+    await assert.rejects(prepareInstance(d.dep, "release-manager", { spawn: { providers: { "oats.okf": { "custody-root": "/srv/custody" } } }, remoteOptions: d.remoteOptions }),
+      (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "host-only-key" && e.details.key === "custody-root" && e.details.capability === "oats.okf" && /\/spawn\/providers\/oats\.okf\/custody-root/.test(e.details.path) && /oats-local\.yaml/.test(e.message));
+    // oats-local.yaml settings.<cap> (the host layer): accepted and reaches the merged payload.
+    writeFileSync(join(d.dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${d.fx.refs.agents}\nsettings:\n  oats.okf:\n    custody-root: /srv/custody\n`);
+    const ok = await prepareInstance(d.dep, "release-manager", { spawn: { providers: {} }, remoteOptions: d.remoteOptions });
+    assert.equal(ok.resolution.payloads["oats.okf"]["custody-root"], "/srv/custody", "the host layer may carry a hostOnly key");
+    // a key that is NOT hostOnly stays legal everywhere (control).
+    const ctl = await prepareInstance(d.dep, "release-manager", { spawn: { providers: { "oats.okf": { "state-dir": "/tmp/z" } } }, remoteOptions: d.remoteOptions });
+    assert.equal(ctl.resolution.payloads["oats.okf"]["state-dir"], "/tmp/z");
+    // the soul's committed slot payload (knowledge:): refused — a committed file must never point a spawn at a custody root.
+    const moved = await moveMember(d.fx, "agents", async (work, { fs, path }) => {
+      const file = path.join(work, "souls/release-manager/soul.yaml");
+      const text = await fs.readFile(file, "utf8");
+      assert.match(text, /^knowledge:\n/m, "fixture soul declares a knowledge: block");
+      await fs.writeFile(file, text.replace(/^knowledge:\n/m, "knowledge:\n  custody-root: /evil\n"));
+    });
+    assert.ok(moved.commit);
+    await assert.rejects(prepareInstance(d.dep, "release-manager", { spawn: { providers: {} }, remoteOptions: d.remoteOptions }),
+      (e) => e.code === "E_WORKSPACE_SCHEMA" && e.details?.reason === "host-only-key" && e.details.path === "/knowledge/custody-root");
+  });
+});

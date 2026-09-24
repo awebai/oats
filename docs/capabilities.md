@@ -282,6 +282,14 @@ for this contract. Hyphenated vendors are also excluded because translating a
 hyphen to `_` would let `aweb-evil.*` collide with names already inside
 `aweb.*`'s `AWEB_*` namespace.
 
+A manifest's `settings.<key>` may carry `hostOnly: true` (decision 27). Such a
+key is a fact about the machine — a custody directory, a state root — and the
+resolver accepts it only from the deployment's own `oats-local.yaml`
+`settings.<capability>`; a committed workspace or soul file or a `--provider`
+flag carrying it is refused (`E_WORKSPACE_SCHEMA`, reason `host-only-key`).
+Declare it for any key whose value points at something a committed file must
+never be able to choose.
+
 A hook may return only names in its manifest's exact `environment` declaration.
 For package capabilities that declaration is part of the integrity-locked tree
 and of what the per-version approval showed; for member capabilities it is

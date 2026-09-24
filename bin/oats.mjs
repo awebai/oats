@@ -31,7 +31,7 @@ import {
   packageIntegrity, capabilityArtifactIntegrity, verifyCapabilityInstallation, installedCapabilityDir,
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
-  ensureRoot, findRoot, findAgent, listAgents, listInstances, listAgentDefs, createAgent as coreCreateAgent,
+  ensureRoot, findRoot, findAgent, listAgents, listInstances, servedIdentityLine, servedIdentityOf, listAgentDefs, createAgent as coreCreateAgent,
   spawnInstance, spawnInstanceAsync, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
@@ -935,7 +935,9 @@ function computeInspect({ onFail } = {}) {
   const result = {
     operationsApi: 1, kernel: OATS_VERSION,
     scope: { context: ctx, requestedContext: requestedContext === ctx ? null : requestedContext, workspace: roots.length ? workspaceOf(roots[0]) : ctx, team: r.team || null, chain: chain.map((c) => ({ file: c._file, level: c._level, levelKind: levelOf(c._level) })), agentsRoots: roots },
-    selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config" },
+    selected: { soul: selectedSoul?.name || null, agentsRoot: selectedSoul?.agentsRoot || null, home: home || null, source: meta ? "snapshot" : "config",
+      // Decision 27 (K2): the principal this home acts as, from its messaging provider's hook meta.
+      ...(meta ? { identity: servedIdentityOf(meta) } : {}) },
     souls, sources, layers, capabilities, knowledge, snapshot, currentConfig,
     problems: [...(lockError ? [lockError] : []), ...packagedDiagnostics.map((d) => ({ code: d.code, message: d.message, capability: d.capability })),
       ...(meta ? snapshotCaps.filter((c) => !mans[c.id]).map((c) => ({ code: "captured-capability-missing", message: `${c.id} was active when this home was composed but no manifest for it is acquired now`, capability: c.id })) : [])],
@@ -947,6 +949,7 @@ function printInspect(result) {
   const { ctx, selectedSoul, home } = result._print; delete result._print;
   const { souls, layers, capabilities } = result;
   console.log(`oats inspect — ${shortPath(ctx)}${selectedSoul ? ` soul ${selectedSoul.name}` : ""}${home ? ` home ${shortPath(home)}` : ""}`);
+  if (result.selected?.identity) console.log(`  identity: ${servedIdentityLine(result.selected.identity)}`);
   for (const s of souls) console.log(`  soul ${s.name} [${s.kind}${s.capability ? ` ${s.capability}` : ""}] runtime ${s.runtime}${s.model ? ` model ${s.model}` : ""} work ${s.work}${s.editable.fields.length ? "" : " (read-only)"}`);
   for (const l of LAYERS) console.log(`  layer ${l}: ${layers[l].id || (layers[l].disabled ? "disabled" : "none")}${layers[l].provenance ? `  (${layers[l].provenance})` : ""}`);
   for (const c of capabilities) console.log(`  ${c.id}@${c.version || "?"} ${c.health.status}${c.activation.enabled ? ` active:${c.activation.target}` : " inactive"}${c.operations.length ? `  ops: ${c.operations.map((o) => `${o.name}${o.available ? "" : "(unavailable)"}`).join(", ")}` : ""}`);
@@ -2343,6 +2346,7 @@ async function status() {
     for (const i of a.instances) {
       console.log(`      • ${i.instance}  ${i.retirePending ? "RETIRING" : i.running ? "RUNNING" : "idle"}  (branch ${i.branch || "?"}, ${i.work || "?"})`);
       const key = i.home ?? `${a.name}/${i.instance}`;
+      if (i.identity) console.log(`          identity: ${servedIdentityLine(i.identity)}`);
       const s = ws?.soul.get(key);
       if (s && (verbose || s.status !== "current")) console.log(`          ${soulDriftLine(s, a.name)}`);
       const rows = ws?.drift.get(key) || [];
@@ -3366,7 +3370,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);

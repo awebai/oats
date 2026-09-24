@@ -137,8 +137,25 @@ the event first" in the inject and skill; contribute launch arguments so the
 session is woken; enforce the soul type's `reach` on both sides; state
 whether the address outlives the instance; and keep task coordination out.
 Any messaging provider emits `identity: { mode, alias, team, address|null,
-resident|null, grant?: { id, expiresAt, scopes } }` in its spawn meta;
-`oats.aweb` is the reference implementation.
+resident|null, grant?: { id, expiresAt, scopes } }` in its spawn meta (and
+in its launch meta when it renews); `oats.aweb` is the reference
+implementation. **This is a messaging-layer contract, not an oats.aweb
+detail** (decision 27): from kernel 0.25.6 the kernel copies it through as
+the principal the instance *acts as* — `oats status --json
+instances[].identity`, the roster's `identity:` line, `oats inspect --home …
+selected.identity` — preferring the capability whose captured layer is
+`messaging`, adding `provider: <capability id>`, and never interpreting
+`grant`. The kernel offers no `--identity` flag: the choice travels as
+`--provider <cap> identity.mode=… identity.resident=…` and is bound by the
+spawn decision's `effective.providers`.
+
+A provider whose settings include a **host fact** — a custody directory, a
+state root — declares that key `hostOnly: true` in its manifest. The
+resolver then accepts it **only** from the deployment's `oats-local.yaml`
+`settings.<cap>` and refuses it in the workspace file, `byTeam` payloads, a
+soul's slot payload and `--provider` flags (`E_WORKSPACE_SCHEMA`, reason
+`host-only-key`, path and key named). The provider cannot enforce this
+itself: it receives one merged payload without provenance.
 
 **Tasks.** Teach claim, update, block, hand off, and complete; identify the
 instance to the tracker in a way that survives it; keep conversation out.

@@ -196,3 +196,32 @@ test("instruction text is capped by bytes at a character boundary and unreadable
   const gone = oats(["inspect", "--dir", repo, "--soul", "gone", "--json"]).json().result.souls[0].instructions;
   assert.equal(gone.text, null); assert.match(gone.error, /ENOENT/);
 });
+
+test("decision 27 K2: the served identity a messaging provider reported in its hook meta shows on the instance — `status --json instances[].identity`, the text roster's `identity:` line, and `inspect --home selected.identity`; no provider meta → absent", () => {
+  const { repo, home } = scope("k2");
+  const meta = JSON.parse(readFileSync(join(home, "instance.json"), "utf8"));
+  // (a) nothing emitted an identity: the field is absent, not null-filled.
+  let st = oats(["status", "--dir", repo, "--json"]).json();
+  let row = st.agents.find((a) => a.name === "dev").instances.find((i) => i.instance === "dev-one");
+  assert.equal(row.identity, undefined);
+  assert.equal(oats(["inspect", "--home", home, "--json"]).json().result.selected.identity, null);
+  // (b) a global grant-served identity from the MESSAGING module (preferred over another capability's `identity`).
+  const grant = { mode: "global", alias: "coordinator", team: "aweb:example", address: "example.aweb.ai/coordinator", resident: "oss-seat", grant: { id: "g-1", expiresAt: "2026-09-24T18:00:00Z", scopes: ["mail.read", "mail.send"] } };
+  write(join(home, "instance.json"), JSON.stringify({ ...meta,
+    capabilityRuntime: [...meta.capabilityRuntime, { id: "test.chat", layer: "messaging", trust: { trusted: true, integrity: null } }],
+    capabilityMeta: { "test.notes": { identity: { mode: "local", alias: "not-this-one" } }, "test.chat": { identity: grant } } }));
+  st = oats(["status", "--dir", repo, "--json"]).json();
+  row = st.agents.find((a) => a.name === "dev").instances.find((i) => i.instance === "dev-one");
+  assert.deepEqual(row.identity, { ...grant, provider: "test.chat" }, "the messaging module's identity wins; provider named");
+  const text = oats(["status", "--dir", repo]).stdout;
+  assert.match(text, /identity: acts as example\.aweb\.ai\/coordinator via grant, expires 2026-09-24T18:00:00Z/);
+  const insp = oats(["inspect", "--home", home, "--json"]).json().result;
+  assert.deepEqual(insp.selected.identity, { ...grant, provider: "test.chat" });
+  assert.match(oats(["inspect", "--home", home]).stdout, /identity: acts as example\.aweb\.ai\/coordinator via grant/);
+  // (c) local mode: alias on team; grant absent.
+  write(join(home, "instance.json"), JSON.stringify({ ...meta, capabilityMeta: { "test.notes": { identity: { mode: "local", alias: "dev-one", team: "aweb:example", address: null, resident: null } } } }));
+  st = oats(["status", "--dir", repo, "--json"]).json();
+  row = st.agents.find((a) => a.name === "dev").instances.find((i) => i.instance === "dev-one");
+  assert.equal(row.identity.mode, "local"); assert.equal(row.identity.provider, "test.notes");
+  assert.match(oats(["status", "--dir", repo]).stdout, /identity: alias dev-one on aweb:example/);
+});
