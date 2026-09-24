@@ -8,7 +8,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "8ada287b0783af9e721a7681c0265ec5197b5be0"
+          "commit": "87327edae3488f6fa33608843f30883511d2dde9"
         },
         "layer": null,
         "private": false,
@@ -19,7 +19,7 @@
         "from": {
           "kind": "member",
           "repoKey": "local//fixture/base/fx/remotes/agents.git",
-          "commit": "8ada287b0783af9e721a7681c0265ec5197b5be0"
+          "commit": "87327edae3488f6fa33608843f30883511d2dde9"
         },
         "layer": null,
         "private": false,
@@ -55,8 +55,8 @@
       }
     ],
     "team": "engineering",
-    "resolution": "2f17c4decf24e6a2e8d3fc14",
-    "declRevision": "98bd22438c8ffd6d4a448c2c",
+    "resolution": "94bef6939e708bc5fa6e9038",
+    "declRevision": "58b37fbf174cc87f41e31529",
     "payloadRevision": "d8f4f11f42a78258a62603d4",
     "workspace": "local//fixture/base/fx/remotes/agents.git",
     "standalone": false,
@@ -106,13 +106,13 @@
           }
         }
       },
-      "resolution": "2f17c4decf24e6a2e8d3fc14",
-      "revision": "ce3a8583df4953dcb318b763"
+      "resolution": "94bef6939e708bc5fa6e9038",
+      "revision": "27a56bc9f28ba84d55fc18b7"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 63
+      "elapsedMs": 54
     },
     "backendStatus": {
       "name": "tmux",
@@ -142,11 +142,11 @@
     "capabilities": [
       {
         "name": "nw-house-style",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@8ada287b0783af9e721a7681c0265ec5197b5be0"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@87327edae3488f6fa33608843f30883511d2dde9"
       },
       {
         "name": "nw-release-tooling",
-        "origin": "member:local//fixture/base/fx/remotes/agents.git@8ada287b0783af9e721a7681c0265ec5197b5be0"
+        "origin": "member:local//fixture/base/fx/remotes/agents.git@87327edae3488f6fa33608843f30883511d2dde9"
       },
       {
         "name": "oats.core",

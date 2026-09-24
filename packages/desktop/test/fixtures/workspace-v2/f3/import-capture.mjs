@@ -14,7 +14,7 @@ const documents = ['souls', 'version', 'preview-worktree-default', 'preview-work
   'preview-yolo', 'preview-branch-base', 'preview-base-unknown', 'preview-checkout-default', 'preview-checkout-as-worktree', 'preview-directory',
   'preview-soul-unknown', 'preview-clone-missing', 'apply-bound', 'apply-replayed', 'apply-stale', 'preview-after-apply',
   'preview-other', 'apply-idempotency-conflict', 'preview-race', 'apply-concurrent-a', 'apply-concurrent-b',
-  'preview-name', 'preview-name-invalid', 'preview-name-soul', 'preview-name-early', 'apply-name',
+  'preview-name', 'preview-name-invalid', 'preview-name-soul', 'preview-name-too-long', 'preview-name-early', 'apply-name',
   'preview-name-taken', 'preview-name-taken-other-soul', 'apply-name-taken'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));

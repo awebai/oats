@@ -118,7 +118,7 @@ const errors = {
   E_LAUNCH_EXECUTABLE: 'The selected launch executable is unavailable.', E_LAUNCH_PROBE_UNSUPPORTED: 'The selected launch cannot be preflighted safely.',
   E_LAUNCH_CONFIG_UNKNOWN: 'The selected launch configuration is unavailable.', E_MODEL_UNKNOWN: 'The selected model could not be resolved.',
   E_CLONE_MISSING: 'This soul works in a member repository that is not cloned on this machine.',
-  E_INSTANCE_NAME_INVALID: 'That name is not a valid instance name (a slug that is not a soul name).',
+  E_INSTANCE_NAME_INVALID: 'That name is not a valid instance name (a lowercase slug of at most 64 characters that is not a soul name).',
   E_INSTANCE_NAME_TAKEN: 'An instance with that name already exists in this deployment.',
   E_SOUL_AMBIGUOUS: 'More than one member declares a soul with this name.',
   E_BUSY: 'Two spawn previews are already running. Retry when one finishes.',

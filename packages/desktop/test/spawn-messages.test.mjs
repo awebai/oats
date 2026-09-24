@@ -44,3 +44,8 @@ test('there is no package approval: no sentence mentions it; integrity names the
   }
   assert.equal(spawnProblem({ code: 'E_PACKAGE_INTEGRITY', message: 'x' }).text, 'A package this soul uses no longer matches the lock. Run Sync in the Workspace view.');
 });
+
+test('an invalid instance name says every rule, including the 64-character cap (#159)', () => {
+  const text = spawnProblem({ code: 'E_INSTANCE_NAME_INVALID', message: 'instance names are at most 64 characters; "a…" is 65 — pass a shorter --name' }).text;
+  assert.match(text, /at most 64 characters/); assert.match(text, /lowercase/); assert.match(text, /soul/);
+});

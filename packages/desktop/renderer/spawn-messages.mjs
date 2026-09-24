@@ -31,7 +31,7 @@ const COMMON = {
   E_LAUNCH_PROBE_UNSUPPORTED: 'The chosen launch configuration can’t be checked safely. Choose another in Developer settings.',
   E_LAUNCH_CONFIG_UNKNOWN: 'That launch configuration no longer exists. Choose another in Developer settings.',
   E_MODEL_UNKNOWN: 'That model isn’t available for this runtime. Pick another model, or keep the default.',
-  E_INSTANCE_NAME_INVALID: 'Use lowercase letters, numbers and dashes, and don’t reuse a soul’s name.',
+  E_INSTANCE_NAME_INVALID: 'Use lowercase letters, numbers and dashes, at most 64 characters, and don’t reuse a soul’s name.',
   E_INSTANCE_NAME_TAKEN: 'An instance with this name already exists. Choose another name.',
   E_PACKAGE_MISSING: 'A package this soul uses isn’t installed yet. Run Sync in the Workspace view.',
   E_PACKAGE_INTEGRITY: 'A package this soul uses no longer matches the lock. Run Sync in the Workspace view.',

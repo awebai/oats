@@ -3,7 +3,7 @@
   "ok": false,
   "error": {
     "code": "E_DECISION_STALE",
-    "message": "the previewed decision changed (fb0144597d14b072219f1e81 → 8b7e0a5156ea96b41de95631): release-manager-api-v2-2 from HEAD@8ada287b0783; preview again",
+    "message": "the previewed decision changed (1e678310146b1c8874f65e6c → 215868dd19a260a77e7faee3): release-manager-api-v2-2 from HEAD@87327edae348; preview again",
     "details": {
       "decision": {
         "instance": "release-manager-api-v2-2",
@@ -11,7 +11,7 @@
         "branch": "agents/release-manager-api-v2-2",
         "base": {
           "ref": "HEAD",
-          "oid": "8ada287b0783af9e721a7681c0265ec5197b5be0"
+          "oid": "87327edae3488f6fa33608843f30883511d2dde9"
         },
         "effective": {
           "repo": "/fixture/base/northwind-workspace/agents-repo",
@@ -37,8 +37,8 @@
             }
           }
         },
-        "resolution": "cd5f2efbacd9f70cc786af58",
-        "revision": "8b7e0a5156ea96b41de95631"
+        "resolution": "759658af35a344bd9c44bce8",
+        "revision": "215868dd19a260a77e7faee3"
       }
     }
   }

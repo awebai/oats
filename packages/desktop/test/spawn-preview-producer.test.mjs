@@ -32,6 +32,7 @@ const cases = {
   'preview-name-early': ['release-manager', { name: 'api-gateway' }],
   'preview-name-invalid': ['release-manager', { name: 'Api-Gateway' }],
   'preview-name-soul': ['release-manager', { name: 'support-triager' }],
+  'preview-name-too-long': ['release-manager', { name: 'a'.repeat(65) }],
   'preview-name-taken': ['release-manager', { name: 'api-gateway' }],
   'preview-name-taken-other-soul': ['support-triager', { name: 'api-gateway' }],
 };
@@ -85,5 +86,6 @@ test('spawn-name: the kernel names the instance exactly and refuses taken names 
     const e = kernel(name).error;
     assert.equal(e.code, 'E_INSTANCE_NAME_TAKEN'); assert.equal(e.details.instance, 'api-gateway');
   }
-  for (const name of ['preview-name-invalid', 'preview-name-soul']) assert.equal(kernel(name).error.code, 'E_INSTANCE_NAME_INVALID');
+  for (const name of ['preview-name-invalid', 'preview-name-soul', 'preview-name-too-long']) assert.equal(kernel(name).error.code, 'E_INSTANCE_NAME_INVALID');
+  assert.match(kernel('preview-name-too-long').error.message, /at most 64 characters/);
 });

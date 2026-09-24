@@ -1,88 +1,12 @@
 {
   "schemaVersion": 1,
-  "ok": true,
-  "result": {
-    "instance": "release-manager-race",
-    "agent": "release-manager",
-    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race",
-    "work": "worktree",
-    "branch": "agents/release-manager-race",
-    "launched": false,
-    "warnings": [],
-    "tmux": {
-      "session": "none-88033",
-      "window": "release-manager-race"
-    },
-    "repo": "/fixture/base/northwind-workspace/agents-repo",
-    "runtime": "pi",
-    "model": null,
-    "parent": null,
-    "sibling": null,
-    "relation": null,
-    "spawnOrigin": "operator",
-    "attach": "tmux attach -t none-88033",
-    "decision": {
+  "ok": false,
+  "error": {
+    "code": "E_PLACEMENT_TAKEN",
+    "message": "release-manager-race already exists at /fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race (a concurrent spawn won the placement); nothing was created by this call",
+    "details": {
       "instance": "release-manager-race",
-      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race",
-      "branch": "agents/release-manager-race",
-      "base": {
-        "ref": "HEAD",
-        "oid": "8ada287b0783af9e721a7681c0265ec5197b5be0"
-      },
-      "effective": {
-        "repo": "/fixture/base/northwind-workspace/agents-repo",
-        "work": "worktree",
-        "runtime": "pi",
-        "model": null,
-        "launchConfig": null,
-        "yolo": null,
-        "backend": "tmux",
-        "childSpawns": true,
-        "relation": null,
-        "providers": {
-          "nw-deploy": {},
-          "nw-house-style": {},
-          "nw-release-tooling": {},
-          "oats.core": {},
-          "oats.okf": {
-            "owns": "release-manager",
-            "reads": [
-              "platform-engineer",
-              "data-analyst"
-            ]
-          }
-        }
-      },
-      "resolution": "cd5f2efbacd9f70cc786af58",
-      "revision": "d882ebc0ad96de02aa3299e1"
-    },
-    "replayed": false,
-    "wake": {
-      "requested": false,
-      "saved": null,
-      "error": null
-    },
-    "launchConfig": null,
-    "launch": {
-      "version": 1,
-      "runtime": "pi",
-      "launchConfig": null,
-      "launchConfigSource": null,
-      "executable": "/fixture/base/bin/pi",
-      "executableDeclared": null,
-      "executableResolvedFrom": "PATH",
-      "args": [],
-      "env": {},
-      "model": null,
-      "hooks": {
-        "launch": {},
-        "env": {},
-        "contributions": []
-      },
-      "prompt": {
-        "kind": "task-file",
-        "file": "TASK.md"
-      }
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race"
     }
   }
 }
