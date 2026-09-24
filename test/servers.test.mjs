@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { linkExecutables } from "./helpers/host-fixture.mjs";
 import { dirname, join, resolve } from "node:path";
 
+import { findAgent, spawnInstance } from "../lib/core.mjs";
 import { attachArgv, checkRemoteSupport, resolveRoute, routeCommand, runRemote, compareSemver, remoteQuote, snapshotPath, sshArgv, validateServer } from "../lib/servers.mjs";
 
 const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
@@ -391,8 +392,10 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
   try {
     const { bin, tools } = fakeBin(base);
     const repo = remoteWorkspace(base);
-    // A second soul whose generated name collides: dev --purpose foo-1 and
-    // dev-foo --purpose 1 both yield dev-foo-1.
+    // A second soul whose name can collide with dev's: dev --purpose foo-1 and
+    // dev-foo --purpose 1 both derived dev-foo-1 before 0.26.0. A 0.26 spawn
+    // de-duplicates names deployment-wide (it would derive dev-foo-1-2), but
+    // homes an earlier kernel created keep sharing the name — the twins below.
     write(join(repo, "agents", "dev-foo", "soul", "soul.yaml"), "name: dev-foo\nrepo: .\nwork: checkout\nruntime: pi\n");
     write(join(repo, "agents", "dev-foo", "soul", "AGENTS.md"), "You are dev-foo.\n");
     execFileSync("git", ["-C", repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "add", "-A"]);
@@ -417,14 +420,20 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     mkdirSync(dirname(snapshotPath("old", "dev-foo-1")), { recursive: true });
     const snapNew = JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8"));
     writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify({ ...snapNew, serverId: "old", target: { ...snapNew.target, oatsPath: oldOats } }));
-    // The twin: a routed spawn whose GENERATED name collides with dev's saved
-    // route. The remote spawn succeeds, the existing route is not overwritten,
-    // and the result says the new instance has no saved route here.
-    r = oats(env, ["spawn", "dev-foo", "--server", "new", "--purpose", "1", "--no-launch", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
-    const twinHome = r.json().result.home;
-    assert.equal(r.json().result.instance, "dev-foo-1"); assert.notEqual(devHome, twinHome);
-    assert.deepEqual(r.json().result.routeConflict, { instance: "dev-foo-1", existingHome: devHome });
-    assert.equal(r.json().result.snapshot, null); assert.match(r.json().result.warnings.join("\n"), /--home/);
+    // The twin: dev-foo's home of the same name, as an earlier kernel left it on
+    // the remote (created here by a direct kernel call naming the instance; a
+    // 0.26 spawn never derives it). It has no saved route here. That a routed
+    // spawn reporting a colliding name never overwrites a saved route
+    // (routeConflict) is lib/servers.mjs's own, covered by the routeCommand test.
+    const makeTwin = () => {
+      const prevPath = process.env.PATH; process.env.PATH = `${tools}:${bin}`;
+      try { return spawnInstance(join(repo, "agents"), findAgent(join(repo, "agents"), "dev-foo"), { instance: "dev-foo-1", launch: false }).home; }
+      finally { process.env.PATH = prevPath; }
+    };
+    const twinHome = makeTwin();
+    assert.notEqual(devHome, twinHome);
+    r = oats(env, ["spawn", "dev-foo", "--server", "new", "--purpose", "1", "--no-launch", "--preview", "--json"]); assert.equal(r.status, 0, r.stderr + r.stdout);
+    assert.equal(r.json().result.instance, "dev-foo-1-2", "a 0.26 spawn skips the name the twins share");
     assert.equal(JSON.parse(readFileSync(snapshotPath("new", "dev-foo-1"), "utf8")).home, devHome, "the saved route is untouched");
     // The roster gives the saved route to the row with the saved HOME only;
     // the twin under dev-foo is observed, never actionable from here.
@@ -462,8 +471,7 @@ test("routed retire with same-named twins: exact home on a 0.22.3 remote, refusa
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH", r.stdout); assert.match(r.json().error.message, /stale/);
     assert.equal(existsSync(devHome), true);
     writeFileSync(snapshotPath("old", "dev-foo-1"), JSON.stringify(driftSnap));
-    r = oats({ ...env, PATH: `${tools}:${env.PATH}` }, ["spawn", "dev-foo", "--purpose", "1", "--dir", repo, "--no-launch", "--json"], { cwd: repo }); assert.equal(r.status, 0, r.stderr + r.stdout);
-    assert.equal(r.json().result.home, twinHome);
+    assert.equal(makeTwin(), twinHome, "the earlier-kernel twin is back");
     // New remote, an explicit home that is not the saved route: refused.
     r = oats(env, ["retire", "dev-foo-1", "--server", "new", "--home", twinHome, "--json"]);
     assert.equal(r.json().error?.code, "E_HOME_MISMATCH"); assert.equal(existsSync(twinHome), true);
