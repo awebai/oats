@@ -1,6 +1,6 @@
 {
   "source": "oats-desktop-engineer for the Desktop F3c slice (messaging identity); test/fixtures/northwind/build.mjs + one stand-in messaging package (below); capture-f3c.mjs",
-  "kernel": "0.25.8",
+  "kernel": "0.25.9",
   "redactions": [
     "<base> (capture scratch) → /fixture/base",
     "<oats> (checkout) → /fixture/oats"
@@ -8,12 +8,12 @@
   "standIn": {
     "reason": "No fixture binds a messaging provider; oats.aweb itself would run aw at spawn. The stand-in copies oats.aweb's settings.identity declaration byte for byte and declares no executables.",
     "copiedFrom": "capabilities/oats-aweb/oats.json#/settings/identity",
-    "copiedFromSha256": "80ae4e9f9083369c3a3ebc2078fff22b1526a0a1d26f4f589ab6a03cf611f0cc",
+    "copiedFromSha256": "e659749d52236b03e4ec0481c7b5e142adc35a46903a2dc123f53fa45f7a2840",
     "declaration": {
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
     },
     "manifest": {
       "capability": "nw.messaging",
@@ -29,11 +29,11 @@
           "default": {
             "mode": "local"
           },
-          "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
+          "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
         }
       }
     },
-    "manifestSha256": "ad59a6c221fcff473fad21ad064dbbaa612f23e1fc200883e90268e3271a9e09",
+    "manifestSha256": "7f8a88aefb7fe22bf5e387e23caf3e8f49cd5771183f4238877fd5bb8194dc5e",
     "package": {
       "package": "nw.messaging",
       "version": "0.1.0",
@@ -64,9 +64,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "d342462d406b6818d50863bd849df6f52a21597bc10f2f3648cc319984a9a592",
-      "fixtureSha256": "81c10d0dcd01f7b87b131752227bc75351c02b4b0ad08ba439f16e658f005107"
+      "kernel": "0.25.9",
+      "sourceSha256": "1e94f5fd37777124adc317414428036e53120258a783032c522c0651842c38f2",
+      "fixtureSha256": "352f02ce46c6a725ee3ad98edf4d5f1e223a61bdd00c1f524adc1d2fc59bf86d"
     },
     "souls": {
       "argv": [
@@ -77,9 +77,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "3adfd3d085f5d23a64d662278ab9173b7d29abd5e968a147f37abe4ad34de189",
-      "fixtureSha256": "ed0a80150fc4fc3d49b94dba33865b7f2786839534ebe9e77e41e3245734fcb3"
+      "kernel": "0.25.9",
+      "sourceSha256": "b06e33aa9f991bcaa31f0501d3073822011bf58e6bd101c5a8007f17bc9fec1b",
+      "fixtureSha256": "612433b053a25b65e15b4a3b9f431b33c8ed5b51665c33568fbd4c4b5d4ec2d7"
     },
     "preview-messaging-default": {
       "argv": [
@@ -96,9 +96,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "a8bf20f846013a45336fde712ff54ab8936619e170021eda5f1ff50e5f57ea72",
-      "fixtureSha256": "2509cc67cca48ac381bd7dbfc24c27637e56c2b7274b7c457a3aeb294ea2581c"
+      "kernel": "0.25.9",
+      "sourceSha256": "e99ab7f4b8ab7b000034101bb6dcf741b9c4fdee090cefe00655f4880ae53217",
+      "fixtureSha256": "662036a6eb7092700130a617b8da25dc822fca1141cd9b11e4bb7807c0241e4a"
     },
     "preview-messaging-local": {
       "argv": [
@@ -118,9 +118,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "bc5d8e54b9ed606a479ccdbec9ca5928095c93dd69c965d1443ef645325ec548",
-      "fixtureSha256": "d1142bd6ddaef387b037cd8931d32bbca7150d3537db535ac3b2b65639237628"
+      "kernel": "0.25.9",
+      "sourceSha256": "b2c4ea10632e147f11624dd67b07838f1a37e79c7aed274d5371e58a955360db",
+      "fixtureSha256": "652956ad65229e50bebae11670d5bb402161c11690a3500c6408abddec565023"
     },
     "preview-messaging-global": {
       "argv": [
@@ -143,9 +143,9 @@
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "53b931b09d49416c0ae0664ed76c5e4f0aa07452a9bffc0dca39864f2120b39d",
-      "fixtureSha256": "153eaeb3c8ea345bd5ef7b0167c2803412dca338d9be44f677073930f3a40d2d"
+      "kernel": "0.25.9",
+      "sourceSha256": "3ad71cdb08d971d119d07f0e1fde4b1b63aff7dab8b6cf35e63f5abc0b38c5ab",
+      "fixtureSha256": "184d023d9ba432b147239e2f422e9004245972268eb44419692e0d17cdb20a93"
     },
     "preview-provider-unknown": {
       "argv": [
@@ -165,7 +165,7 @@
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.8",
+      "kernel": "0.25.9",
       "sourceSha256": "be86c2de3a761e0cb1fe1a76007e1076c66617ba6748416c81bc78e3ebb56b50",
       "fixtureSha256": "5d4f76665ea972faee7cd6484b10bd7c6be942ce59e60bea889345aa8b0d84ab"
     },
@@ -187,16 +187,16 @@
         "nw.messaging",
         "identity.resident=ops",
         "--expect-decision",
-        "b13e0bdda958d4af3f0a0a5a",
+        "1e606fdb2b5bf143afc37cff",
         "--idempotency-key",
         "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
         "--no-launch",
         "--json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "2d1db901e822e1d2e91d1791d1fe9d67c08982889a734dfad411585374d8721c",
-      "fixtureSha256": "7c01d1e6146bb8760bbfbbe6e97477c3c74ea1114d8aff4187c81f23003f3d67"
+      "kernel": "0.25.9",
+      "sourceSha256": "bc36ad1c94e7fa163eb0cf4779b75610c3b771b9ed07f4d6f515b69877d3503c",
+      "fixtureSha256": "ffb412aff131e7b298046a451e510aa286d60a26a686fb072f6e32fa78caae71"
     },
     "apply-messaging-mismatch": {
       "argv": [
@@ -216,16 +216,16 @@
         "nw.messaging",
         "identity.resident=ops",
         "--expect-decision",
-        "b4d3f640f24b628214ea42a2",
+        "62bbfd8bac1d68147b0b81c2",
         "--idempotency-key",
         "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "--no-launch",
         "--json"
       ],
       "exit": 1,
-      "kernel": "0.25.8",
-      "sourceSha256": "a5246083aa3e7be73f9f88fa2639679e906226d6a7d59839264a31712c5b7c26",
-      "fixtureSha256": "cd873d88230e0a5b1d06d413966c41a6deda2ec57cf7675a1ddde84e85516ae3"
+      "kernel": "0.25.9",
+      "sourceSha256": "52c60cacbf71296b0170eb44a08f9620ffe633c45d691e456a2b476bf3d0666e",
+      "fixtureSha256": "5ded2c5e45a54ca4d1f848e10549b5b302f891249e3eb1ffa46cdb451fbfbcb9"
     },
     "apply-messaging-global-instance": {
       "argv": [
@@ -233,9 +233,9 @@
         "<home>/instance.json"
       ],
       "exit": 0,
-      "kernel": "0.25.8",
-      "sourceSha256": "dde5f68d1ca8f9cb6bcc226a5300206812a6bc5ffd2f2ef988ef05a9fd6b32d2",
-      "fixtureSha256": "191a98d20b0b5a98554fb0154b07c2df67fd61d833dc18bdeb20a475aa72d25e"
+      "kernel": "0.25.9",
+      "sourceSha256": "54c1bcb964ac33b1dd6c1ba8dccdfc404abd40afc2f22354fd8496558b87a5ca",
+      "fixtureSha256": "5eddf12ad166b9427a9dd2ff576ee2f89f32563d0ce72a1de3966eb9f0ac6c50"
     }
   }
 }
