@@ -140,6 +140,21 @@ rule, the rebuild guide as procedure with the operator node as rationale.
 Developer souls in `oats.dev` gain `promotesTo: <node>` (roster amendment);
 the harvester delivers to that node as a PR the owning expert reviews.
 
+**D4 also removes the legacy the v2 model already declared gone** (human,
+2026-09-24; boundary §3b's native-rework rule applied to the repository):
+- **Docs, skills, examples** (driver, in D4): delete what v2 removed rather than
+  rewriting it (e.g. the OAS migration guide, the legacy Desktop succession
+  doc, `oats-config.yaml` examples, the `oats-config` skill); rewrite what
+  survives against `oats-local.yaml` and the workspace file; every remaining
+  mention of `oats-config.yaml` either describes its removal or is gone.
+- **Kernel** (lead, one Class B PR after D2 lands, because the OATS workspace
+  itself stops reading `oats-config.yaml` only once D2 converts it): the
+  `oats-config.yaml` scope chain and its readers, the `local-agents/` and
+  `tmp-agents/` layouts, the OAS-scope probes, the installed-capability tier
+  remnants. Removed, not flagged; the `REMOVED_VERBS` answers stay.
+- **Legacy souls** (`agents/*` and their knowledge bundles) are NOT part of D4:
+  they go when the live instances linking them retire (human rule).
+
 ### D5 — Catalog update and 0.26.0
 
 Catalog pins for the new package versions; **widen Desktop `ACCEPT_RANGE` and
