@@ -4,3 +4,4 @@ description: Cross-package provider integration — capability and hook contract
 work: directory
 capabilities:
   oats.authoring: { from: package }   # capability, skill and soul authoring procedures; oats.core and oats.okf come from the workspace defaults
+  oats.aweb: { from: package }        # the messaging slot

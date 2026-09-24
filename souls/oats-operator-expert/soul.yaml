@@ -4,3 +4,4 @@ description: Deployment operator expert — onboarding, rebuilds, multi-machine 
 work: directory
 capabilities:
   oats.setup: { from: package }   # oats.core and the oats.okf knowledge slot come from the workspace defaults
+  oats.aweb: { from: package }    # the messaging slot

@@ -2,5 +2,7 @@ schemaVersion: 2
 name: oats-expert
 description: OATS direction, architecture rationale, maintainer review and adoption judgment.
 work: directory
+capabilities:
+  oats.aweb: { from: package }   # the messaging slot: mail and chat with the maintainers and the dev team
 # oats.core and the oats.okf knowledge slot come from the workspace defaults.
 # What this soul owns and reads in the central base is okf.json beside this file.
