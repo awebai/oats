@@ -18,8 +18,8 @@ description: >-
 Config lives in `oats-config.yaml` at laptop (`~`), workspace, and repository
 levels; resolution walks from a soul's repository outward, closest scope wins.
 Prefer the CLI for config edits (`oats init`, `oats use`, `oats type`,
-`oats inject eject`, `oats create --type`); hand-editing is valid but the CLI
-writes the canonical shape.
+`oats inject eject`); hand-editing is valid but the CLI writes the canonical
+shape. A soul's type is declared in its own `soul.yaml` in its member repository.
 
 ## Shape
 

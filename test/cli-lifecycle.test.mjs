@@ -86,6 +86,20 @@ function scope(base, name = "scope", config = "name: t\n") {
 
 // ---------- usage errors refuse before any side effect ----------
 
+test("retire of an unknown instance is E_INSTANCE_UNKNOWN: one --json envelope, no stack", () => {
+  const base = temp();
+  const s = scope(base);
+  mkdirSync(join(s, "agents"));
+  const r = cli(["retire", "nope", "--json"], { cwd: s });
+  assert.equal(r.status, 1);
+  assert.match(failEnvelope(r, "E_INSTANCE_UNKNOWN").message, /no instance named "nope"/);
+  assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace");
+  const text = cli(["retire", "nope"], { cwd: s });
+  assert.equal(text.status, 1);
+  assert.equal(text.stderr, 'oats: no instance named "nope"\n');
+  rmSync(base, { recursive: true, force: true });
+});
+
 test("a valueless --dir is refused by the roster commands too, before any scaffold", () => {
   const base = temp();
   const s = scope(base);
