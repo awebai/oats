@@ -68,11 +68,13 @@ function item(v) {
     evidence, remedy: nullable(v.remedy) };
   if (v.capability != null) { if (!record(v.capability)) throw Error(); out.capability = { id: text(v.capability.id, 256) }; }
   if (typeof v.code === 'string') out.code = text(v.code, 128);
-  // The provider's own binding-check answer, relayed verbatim (`providers`).
+  // The provider's own binding-check answer, relayed verbatim (`providers`):
+  // {status, problems, warnings}. Warnings (always emitted, maybe []) never change status.
   if (Object.hasOwn(v, 'result')) {
     if (v.result === null) out.result = null;
-    else if (record(v.result) && ['ready', 'needs-configuration'].includes(v.result.status)) out.result = { status: v.result.status, problems: problems(v.result.problems) };
-    else throw Error();
+    else if (record(v.result) && ['ready', 'needs-configuration'].includes(v.result.status)) {
+      out.result = { status: v.result.status, problems: problems(v.result.problems), warnings: problems(v.result.warnings) };
+    } else throw Error();
   }
   if (Object.hasOwn(v, 'problems')) out.problems = problems(v.problems);
   return out;

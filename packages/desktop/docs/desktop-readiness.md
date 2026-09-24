@@ -62,7 +62,11 @@ caller revalidates its admission and CLI identity after success **or** rejection
 - **member** is the soul's member repository confirmed in the workspace
   (`oats-membership.yaml`), never login or team registration.
 - **providers** relays each bound provider's own binding check **verbatim**:
-  `item.result {status: ready | needs-configuration, problems[{code, message}]}`.
+  `item.result {status: ready | needs-configuration, problems[{code, message}],
+  warnings[{code, message}]}`. `warnings` is always present (possibly `[]`) and
+  never changes the status: a passing item can carry warnings (e.g. E2EE
+  disabled on a ready messaging binding). The Desktop shows them as reported
+  under the item and counts them on the item's line, never in the summary.
   A provider that cannot answer is `unknown` with its `problems` and
   `result: null`. The Desktop renders unknown as unknown; it never special-cases
   a provider.

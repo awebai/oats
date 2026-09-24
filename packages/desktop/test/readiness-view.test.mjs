@@ -106,3 +106,17 @@ test('the Workspace panel shape ({id, name}, no scope) is enough to read: the se
   assert.equal(u.calls.length, 1); assert.deepEqual(u.calls[0].body, { action: 'read', selector });
   assert.doesNotMatch(u.text(), /Waiting for a qualified workspace selection/);
 });
+
+test('a passing provider item shows its warnings as reported, counted on its line, never in the summary', async t => {
+  const raw = data(), provider = raw.checks.providers.items[0];
+  const warning = { code: 'e2ee-disabled', message: '<img src=x onerror=alert(1)> end-to-end encryption is disabled' };
+  Object.assign(provider, { status: 'pass', reason: null, result: { status: 'ready', problems: [], warnings: [warning] }, problems: [] }); raw.checks.providers.status = 'pass';
+  raw.summary = { ...raw.summary, ready: true, pass: raw.summary.required, fail: 0, unknown: 0 };
+  const u = setup(t, () => view(target, raw)); await u.update();
+  const item = [...u.host.querySelectorAll('.readiness-check')].find(c => c.querySelector('h3').textContent === 'Providers').querySelector('details');
+  assert.equal(item.querySelector('summary').textContent, 'oats.okf · pass · required · 1 warning');
+  assert.equal(item.querySelector('.readiness-warning').textContent, `Warning: ${warning.message} (e2ee-disabled)`);
+  assert.equal(u.host.querySelector('img'), null, 'inert text');
+  assert.match(u.text(), /Ready — every required check passes/, 'a warning does not unready the subject');
+  assert.doesNotMatch(u.one('.readiness-status').textContent, /warning/i, 'warnings do not count in the summary');
+});

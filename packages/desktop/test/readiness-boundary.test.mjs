@@ -108,7 +108,10 @@ test('the four kernel checks are bounded and requiredness-checked; the subject i
   for (const mutate of [v => v.summary.ready = true, v => v.summary.required = 0, v => v.checks.member.items[0].required = 'true',
     v => v.subject.soul = 'other', v => v.subject.kind = 'scope', v => v.checks.installed.items = Array.from({ length: 1001 }, () => item()), v => v.policy.childSpawns.enforced = 'true',
     v => v.readinessApi = 1, v => delete v.checks.providers, v => v.checks.configured.status = 'future', v => v.checks.installed.items[0].reason = 'x'.repeat(1025),
-    v => v.checks.providers.items[0].result = { status: 'future', problems: [] }]) {
+    v => v.checks.providers.items[0].result = { status: 'future', problems: [], warnings: [] },
+    v => v.checks.providers.items[0].result = { status: 'ready', problems: [] },
+    v => v.checks.providers.items[0].result = { status: 'ready', problems: [], warnings: [{ code: 'x' }] },
+    v => v.checks.providers.items[0].result = { status: 'ready', problems: [], warnings: 'e2ee-disabled' }]) {
     const value = data(); mutate(value); assert.equal(readinessData(value, target), null);
   }
 });
@@ -118,10 +121,19 @@ test('Ready is never inferred from zero items or optional success; only consiste
   d.summary.ready = true; assert.equal(readinessData(d, target), null);
   // The provider's own "ready" makes the last required item pass (relayed verbatim).
   const ready = data(), provider = ready.checks.providers.items[0];
-  Object.assign(provider, { status: 'pass', reason: null, result: { status: 'ready', problems: [] }, problems: [] }); ready.checks.providers.status = 'pass';
+  Object.assign(provider, { status: 'pass', reason: null, result: { status: 'ready', problems: [], warnings: [] }, problems: [] }); ready.checks.providers.status = 'pass';
   ready.summary = { ...ready.summary, ready: true, pass: ready.summary.required, fail: 0, unknown: 0 };
   const projected = readinessData(ready, target);
-  assert.equal(projected.summary.ready, true); assert.deepEqual(projected.checks.providers.items[0].result, { status: 'ready', problems: [] });
+  assert.equal(projected.summary.ready, true); assert.deepEqual(projected.checks.providers.items[0].result, { status: 'ready', problems: [], warnings: [] });
+});
+test('provider warnings are relayed verbatim and never change the item status or the summary', () => {
+  const ready = data(), provider = ready.checks.providers.items[0];
+  const warnings = [{ code: 'e2ee-disabled', message: 'end-to-end encryption is disabled for this binding' }];
+  Object.assign(provider, { status: 'pass', reason: null, result: { status: 'ready', problems: [], warnings }, problems: [] }); ready.checks.providers.status = 'pass';
+  ready.summary = { ...ready.summary, ready: true, pass: ready.summary.required, fail: 0, unknown: 0 };
+  const projected = readinessData(ready, target);
+  assert.equal(projected.summary.ready, true); assert.equal(projected.checks.providers.items[0].status, 'pass');
+  assert.deepEqual(projected.checks.providers.items[0].result.warnings, warnings);
 });
 test('a provider that cannot answer stays unknown, with its problems verbatim; no trusted check or signature exists', () => {
   const projected = readinessData(data(), target), provider = projected.checks.providers.items[0];

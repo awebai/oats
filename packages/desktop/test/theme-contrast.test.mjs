@@ -396,11 +396,16 @@ for (const [name] of palettes) test(`${name}: actual Stop/Remove confirmations m
   }
 });
 
-for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems and policy use computed AA surfaces`, async t => {
+for (const [name] of palettes) test(`${name}: actual readiness checks, provider problems, warnings and policy use computed AA surfaces`, async t => {
   const dom = new JSDOM(`<!doctype html><html data-theme="${name}"><body><main class="oats-view"></main></body></html>`), doc = dom.window.document;
   for (const source of [css, readinessCSS]) { const style = doc.createElement('style'); style.textContent = source; doc.head.append(style); }
-  const raw = readinessFixture(); raw.checks.installed.status = 'fail'; raw.checks.installed.items[0].status = 'fail'; raw.summary.pass--; raw.summary.fail++;
+  // One check per badge state: installed pass, configured not-applicable, member unknown, providers fail.
+  const raw = readinessFixture();
   raw.checks.providers.items[0].problems.push({ code: 'needs-configuration', message: 'A second provider problem' }); // painted as .readiness-problem
+  // The provider answered: needs-configuration, with a warning (painted as .readiness-warning).
+  Object.assign(raw.checks.providers.items[0], { status: 'fail', result: { status: 'needs-configuration', problems: [], warnings: [{ code: 'e2ee-disabled', message: 'A provider warning' }] } });
+  raw.checks.providers.status = 'fail'; raw.summary.unknown--; raw.summary.fail++;
+  raw.checks.member.status = 'unknown'; raw.checks.member.items[0].status = 'unknown'; raw.checks.member.items[0].reason = 'unreadable'; raw.summary.pass--; raw.summary.unknown++; // keeps an unknown badge
   const component = createReadinessView(doc.querySelector('main'), { ctx: { api: async () => readinessView(undefined, raw) } });
   t.after(() => { component.dispose(); dom.window.close(); });
   await component.update({ active: true, workspace: readinessWorkspace, selector: readinessSelector, cli: readinessCli });
@@ -413,7 +418,7 @@ for (const [name] of palettes) test(`${name}: actual readiness checks, provider 
     ['.readiness-badge[data-state=unknown]', '.readiness-badge[data-state=unknown]', 'warn', 'surface-2'],
     ['.readiness-badge[data-state=not-applicable]', '.readiness-badge[data-state=not-applicable]', 'muted', 'surface-2'],
     ['.readiness-policy summary', '.oats-view', 'fg', 'bg'], ['.readiness-refresh', '.readiness-refresh', 'fg', 'surface'],
-    ['.readiness-problem', '.readiness-checks', 'fg', 'surface'],
+    ['.readiness-problem', '.readiness-checks', 'fg', 'surface'], ['.readiness-warning', '.readiness-checks', 'fg', 'surface'],
   ]) {
     const el = doc.querySelector(selector), surface = doc.querySelector(painted); assert.ok(el && surface, selector);
     assert.equal(dom.window.getComputedStyle(el).color, `var(--${fg})`, selector);

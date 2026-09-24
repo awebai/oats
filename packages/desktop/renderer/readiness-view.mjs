@@ -74,7 +74,8 @@ export function createReadinessView(host, { ctx } = {}) {
       for (const i of c.items) {
         if (query && !JSON.stringify(i).toLowerCase().includes(query)) continue;
         const item = node('details', undefined, 'readiness-item');
-        item.append(node('summary', `${i.subject} · ${i.status} · ${i.required ? 'required' : 'optional'}`));
+        const warned = i.result?.warnings?.length || 0;
+        item.append(node('summary', `${i.subject} · ${i.status} · ${i.required ? 'required' : 'optional'}${warned ? ` · ${warned} warning${warned === 1 ? '' : 's'}` : ''}`));
         const facts = node('dl'); item.append(facts);
         const evidence = Object.entries(i.evidence).map(([k, v]) => k === 'from' ? ['Origin', originText(v)] : [k, v]);
         for (const [name, content] of [['Producer', i.producer], ['Reason', i.reason], ...(i.code ? [['Code', i.code]] : []), ...evidence, ['Remedy (display only)', i.remedy]]) {
@@ -82,6 +83,8 @@ export function createReadinessView(host, { ctx } = {}) {
         }
         // providers: the provider's own answer, verbatim; "unknown" stays unknown.
         if (i.result) item.append(node('p', `The provider says: ${i.result.status === 'ready' ? 'ready' : 'needs configuration'}.`));
+        // Warnings never change the status and do not count in the summary; shown as reported.
+        for (const w of i.result?.warnings || []) item.append(node('p', `Warning: ${w.message} (${w.code})`, 'readiness-warning'));
         // The kernel's reason is the first problem's message: say it once, with its code.
         for (const p of [...(i.result?.problems || []), ...(i.problems || [])]) {
           if (p.message === i.reason) facts.append(node('dt', 'Problem code'), node('dd', p.code));
