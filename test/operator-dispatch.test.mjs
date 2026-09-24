@@ -150,20 +150,11 @@ test("oats okf init --soul probe from the deployment (no home) provisions the ba
     delete env.PI_AGENT_HOME; delete env.OATS_HOME; delete env.OATS_INSTANCE_HOME; delete env.OATS_INSTANCE;
     const run = (a, cwd = dep) => { const r = spawnSync(process.execPath, [OATS, ...a], { env, cwd, encoding: "utf8" }); const last = r.stdout.trim().split("\n").pop() ?? ""; let json = null; try { json = JSON.parse(last); } catch { /* text */ } return { code: r.status, json, out: r.stdout, err: r.stderr }; };
 
-    // sync + approve the package (the lock's approval is the gate, as for spawn).
+    // sync locks the package (commit + integrity); declaring it in packages: is the trust decision.
     let r = run(["sync", "--dir", dep, "--json"]);
-    assert.ok(r.json?.ok, r.out + r.err);
+    assert.equal(r.code, 0, r.out + r.err); assert.ok(r.json?.ok, r.out + r.err);
     const lockPath = join(dep, "oats-lock.json"); const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-    const needs = r.json.result.approvalNeeded?.[0];
-    assert.ok(needs?.executables, "sync reports the digest to approve");
-
-    // Unapproved: the operator command is refused exactly as a spawn would be — nothing runs, nothing is fetched.
     const nodes = join(room, "nodes.json"); writeFileSync(nodes, JSON.stringify({ expert: { path: "expert", owner: "opd-owner" } }));
-    r = run(["okf", "init", "--base", "project", "--nodes", nodes, "--confirm", "--soul", "probe", "--json"]);
-    assert.equal(r.code, 1); assert.equal(r.json?.error?.code, "E_PACKAGE_UNAPPROVED", r.out + r.err);
-    assert.ok(!existsSync(join(dep, MODULES_DIR)), "no store write before approval");
-    lock.packages["oats.okf"].approved = { executables: needs.executables, at: new Date().toISOString() };
-    writeFileSync(lockPath, JSON.stringify(lock, null, 2));
 
     // Without --soul: E_BAD_ARGS naming --soul (in both modes).
     r = run(["okf", "init", "--json"]);

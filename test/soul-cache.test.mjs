@@ -29,7 +29,7 @@ const CLI = resolve(new URL("../bin/oats.mjs", import.meta.url).pathname);
 const c12 = (c) => String(c).slice(0, 12);
 const isRealDir = (p) => existsSync(p) && lstatSync(p).isDirectory() && !lstatSync(p).isSymbolicLink();
 
-/** Fixture + deployment + `oats sync` (child process) + approval by editing the lock. */
+/** Fixture + deployment + `oats sync` (child process). */
 async function deployment() {
   const base = mkdtempSync(join(tmpdir(), "oats-soul-cache-"));
   if (/[\s@]/.test(base)) { rmSync(base, { recursive: true, force: true }); throw new Error(`tmpdir ${base} contains whitespace or @`); }
@@ -43,16 +43,7 @@ async function deployment() {
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   const env = { ...process.env, PI_AGENT_HOME: "", OATS_HOME: "", PI_AGENTS_ROOT: "", OATS_PACKAGE_CATALOG: catalogFile, OATS_REMOTE_CACHE: join(base, "cache"), HOME: join(base, "home"), OATS_TMUX_SESSION: `none-${process.pid}`, PI_AGENTS_TMUX_SESSION: `none-${process.pid}` };
   const r = spawnSync(process.execPath, [CLI, "sync", "--dir", dep, "--json"], { cwd: dep, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
-  assert.equal(r.status, 2, `sync exits 2 with approvals pending\n${r.stdout}\n${r.stderr}`);
-  const lockFile = join(dep, "oats-lock.json");
-  const lock = JSON.parse(readFileSync(lockFile, "utf8"));
-  // Approve exactly what a TTY sync would record: the digest the sync report computed per package.
-  const needed = JSON.parse(r.stdout).result?.approvalNeeded ?? JSON.parse(r.stdout).approvalNeeded ?? [];
-  for (const [id, p] of Object.entries(lock.packages)) {
-    const need = needed.find((a) => a.id === id);
-    p.approved = { executables: need?.executables ?? "sha256-" + "0".repeat(64), at: "2026-09-23T00:00:00.000Z" };
-  }
-  writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
+  assert.equal(r.status, 0, `sync exits 0\n${r.stdout}\n${r.stderr}`);
   return { base, fx, dep, root, env, remoteOptions: { cacheDir: join(base, "cache") } };
 }
 /** What bin does before spawnInstanceAsync (and ALL a `--preview` does to the soul cache). */

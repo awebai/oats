@@ -443,7 +443,7 @@ function nwToolsRepo({ refs }) {
     },
     "capabilities/nw-tools-dev/skills/package-conventions/SKILL.md": skill("package-conventions", "Follow nw.tools package conventions when editing manifests.", "Every capability under oats-package/capabilities/ lists its executables in `commands`."),
     "capabilities/nw-tools-dev/injects/nw-tools-dev.md": "## nw-tools development\n\nYou work on the package source; consumers see it only through the pinned version.\n",
-    // package-tier: consumed only through packages: (git:<ref>@v0.4.0), locked, approved
+    // package-tier: consumed only through packages: (git:<ref>@v0.4.0), locked (commit + integrity)
     "oats-package/oats-package.json": {
       json: {
         package: "nw.tools",
@@ -468,7 +468,7 @@ function nwToolsRepo({ refs }) {
       json: {
         capability: "nw-deploy",
         version: "0.4.0",
-        description: "Deploys Northwind services; carries an executable approved once per version.",
+        description: "Deploys Northwind services; carries an executable (bin/nw-deploy.mjs).",
         compatibility: { oats: ">=0.24.0" },
         requires: [],
         skills: ["skills/deploy"],

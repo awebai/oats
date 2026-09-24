@@ -19,7 +19,7 @@ versioned.**
 | Source kind | `from:` | Versioned | Trust |
 |---|---|---|---|
 | Member repo | `<repo key>` or `here` | no — always the member's **latest** default-branch state | membership (the reciprocal handshake) |
-| Package | `package` | yes — the version pinned in the workspace's `packages:`; `oats-lock.json` records the exact commit + integrity | executables approved **once per version**, recorded in the lock |
+| Package | `package` | yes — the version pinned in the workspace's `packages:`; `oats-lock.json` records the exact commit + integrity | the declaration in `packages:` (no separate approval) |
 
 A soul names each capability **with where it comes from — a location, never a
 version**. The workspace's `packages:` says which version; materialization
@@ -188,7 +188,11 @@ with the right name, is not admission.
 model as a repo's committed `.agents/skills/`: whoever can push to the repo
 decides what runs, and the branch's latest state is what runs. No per-operator
 trust lists, no per-capability approval for members. Packages come from
-*outside* that boundary and keep a one-time executable approval per version.
+*outside* that boundary, and **declaring one in the workspace's `packages:` is
+the trust decision** (human decision, 2026-09-24): people install a package only
+when they trust it, so there is no second, per-version approval step. The lock
+is reproducibility, not approval — it pins the exact commit and content
+integrity, and drift is refused.
 
 **The handshake is observed with the operator's own Git read access, in one
 access context.** The kernel reads both halves over the remotes
@@ -226,7 +230,7 @@ its slots. An `external[].team` overrides the soul's own `team`.
 A repository may be a **member** (it completed the handshake; its `souls/*` and
 `capabilities/*` are member-tier: latest state, trusted by membership) **and** a
 **package publisher** (its `oats-package/` is consumed only through
-`packages:`: versioned, locked, approved). The two never collapse:
+`packages:`: versioned and locked). The two never collapse:
 
 - `from: <repo key>` looks **only** under `<repo>/capabilities/<name>/oats.json`
   at the member's latest state. It never looks inside `oats-package/`. A name
@@ -244,7 +248,7 @@ So the framework's own souls say `oats.okf: { from: package }` even though
 member soul that is the expert in that capability (`okf-expert`, `aweb-expert`,
 …), discoverable at latest state like any member soul.
 
-## Packages, lock, approval, catalog
+## Packages, lock, catalog
 
 `packages:` values have exactly two forms:
 
@@ -257,18 +261,19 @@ member soul that is the expert in that capability (`okf-expert`, `aweb-expert`,
   `file:///…`), `<ref>` a tag name or a full commit OID. The package is read at
   `oats-package/` inside that repo.
 
-Both are packages: versioned, locked, approved. A ref that resolves to a
-**branch** is refused (`E_PACKAGE_INTEGRITY { why: "branch" }`) — versions are
-immutable. A tag that moved (same version string, different commit) fails
-integrity on the next `oats sync` and asks again.
+Both are packages: versioned and locked. A ref that resolves to a **branch** is
+refused (`E_PACKAGE_INTEGRITY { why: "branch" }`) — versions are immutable. A
+tag that moved (same version string, different commit), or content that no
+longer matches the locked integrity, fails with `E_PACKAGE_INTEGRITY` on the
+next `oats sync`.
 
-`oats sync` confirms membership, resolves every `packages:` entry to a commit +
-content digest, asks (on a terminal) for any missing per-version executable
-approval — or takes it from repeatable `--approve <id>@<version>` flags for
-unattended runs (each approves exactly the entry the resolution contains; the
-digest is always computed, never typed; Ctrl+D at the prompt is a decline,
-exit `2`) — writes `oats-lock.json` (lockfileVersion 3), creates `agents/` if
-absent and reports what changed. `oats package add <id> <version|git:…@…>` / `oats package remove <id>` edit
+**There is no package approval** (human decision, 2026-09-24). Declaring a
+package in `packages:` is the trust decision; `oats sync` asks nothing and
+`--approve` is `E_BAD_ARGS`. `oats sync` confirms membership, resolves every
+`packages:` entry to a commit + content digest, writes `oats-lock.json`
+(lockfileVersion 3), creates `agents/` if absent, reports what changed and
+exits `0`. A lock written by an earlier kernel may still carry an `approved`
+record per entry: it is ignored, and the next write drops it. `oats package add <id> <version|git:…@…>` / `oats package remove <id>` edit
 `packages:` in the workspace file when it is tracked by the current checkout,
 else print the line to add — the workspace file is shared through Git. Details:
 [packages.md](packages.md).
@@ -282,8 +287,8 @@ the workspace's slot default):
 
 ```
 from: package → some locked package provides `name`            else E_PACKAGE_MISSING (run `oats sync`)
-              → that package version is approved                 else E_PACKAGE_UNAPPROVED
-              → read its capability manifest at the locked commit; copy; record package/version/commit/digest
+              → read its manifests at the locked commit; the lock's capability list must match   else E_PACKAGE_INTEGRITY
+              → copy; record package/version/commit/digest
 from: <repo>  → <repo> is a CONFIRMED member                     else E_NOT_A_MEMBER / E_MEMBERSHIP_UNCONFIRMED
  (or `here`)  → it has capabilities/<name>/oats.json             else E_CAPABILITY_MISSING
               → not private, unless <repo> is the soul's own    else E_CAPABILITY_PRIVATE
@@ -428,7 +433,7 @@ The deployment directory is **yours to choose** (decision 9) — an existing fol
 ```
 ~/acme/                           ← the directory you chose
 ├── oats-local.yaml               ← which workspace this machine realizes + host paths + disabled souls
-├── oats-lock.json                ← exact commit + integrity + per-version approval per package
+├── oats-lock.json                ← exact commit + integrity per package
 ├── agents/                       ← instance homes (each self-contained) + fetched soul sources
 ├── platform/                     ← clone of github.com/acme/platform (only if someone works IN it; may live elsewhere — see clones:)
 └── tools/
@@ -454,8 +459,8 @@ the host repo readable (it holds declarations, no secrets) or grant access.
 
 Two things keep the standalone spawn useful rather than hollow: `oats.core`
 (the framework's own operational package) is the kernel's default here as
-well, resolved from the official catalog through the operator's own lock and
-approved like any package (a soul may say `oats.core: off`); and the
+well, resolved from the official catalog through the operator's own lock like any
+package (a soul may say `oats.core: off`); and the
 operator's `oats-local.yaml` may name the repo directly (`workspace: <member
 ref>` — the kernel notices it is a member whose workspace it cannot read and
 falls back to the standalone view — or `standalone: <repo ref>` to ask for
@@ -467,8 +472,8 @@ an explicit `standalone:` header its next steps say so and name that one repo.
 member capability's hooks and command scripts run on every operator's machine at
 spawn, gated by nothing but the handshake. In a mixed public/private
 organisation keep **souls only** in public members and let executable
-capabilities come from packages (approved per version in the lock) or from
-private members.
+capabilities come from packages (declared in `packages:`, pinned by the lock)
+or from private members.
 
 **Hosting the workspace file when some members are private.** Everyone who
 can read the workspace file sees the member list. So: a public member never

@@ -37,7 +37,7 @@ function envelope(r) {
   return doc;
 }
 
-test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, lock written unapproved), workspace status, capabilities/souls, package add, removed verbs", { timeout: 300_000 }, async () => {
+test("workspace v2 CLI over the Northwind fixture: sync (exit 0, lock v3 written, no approval step), workspace status, capabilities/souls, package add, removed verbs", { timeout: 300_000 }, async () => {
   const base = fixtureBase();
   try {
     const fx = await buildNorthwind(join(base, "fx"));
@@ -53,7 +53,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
 
     // ---- oats sync --json (stdin is not a TTY) ----
     let r = oats(["sync", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, `sync exits 2 when approvals are pending\n${r.stdout}\n${r.stderr}`);
+    assert.equal(r.status, 0, `sync exits 0 once the lock is written\n${r.stdout}\n${r.stderr}`);
     let doc = envelope(r);
     assert.equal(doc.ok, true);
     const sync = doc.result;
@@ -61,46 +61,44 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     assert.equal(sync.workspace.name, "northwind");
     assert.equal(sync.workspace.key, fx.keys.agents);
     assert.equal(sync.workspace.commit, fx.commits.agents);
-    assert.deepEqual(Object.keys(sync).sort(), ["approvalNeeded", "changes", "members", "packages", "problems", "syncApi", "workspace"]);
+    assert.deepEqual(Object.keys(sync).sort(), ["changes", "members", "packages", "problems", "syncApi", "workspace"]);
     assert.equal(sync.members.length, 5);
     assert.ok(sync.members.every((m) => m.confirmed && m.status === "confirmed"), JSON.stringify(sync.members.map((m) => [m.name, m.status])));
     assert.deepEqual(sync.members.map((m) => m.name).sort(), ["agents", "data", "marketing", "nw-tools", "platform"]);
     assert.deepEqual(sync.members.find((m) => m.name === "nw-tools").publishes, { package: "nw.tools", version: "0.4.0" });
     assert.deepEqual(sync.packages.map((p) => p.id), ["nw.tools", "oats.framework", "oats.okf"]);
-    assert.ok(sync.packages.every((p) => p.approved === null), "nothing is approved without a terminal");
+    assert.ok(sync.packages.every((p) => !Object.hasOwn(p, "approved")), "package rows carry no approval");
     assert.deepEqual(sync.changes.map((c) => [c.id, c.from, c.to]), [["nw.tools", null, "0.4.0"], ["oats.framework", null, "1.1.3"], ["oats.okf", null, "2.1.3"]]);
-    assert.deepEqual(sync.approvalNeeded.map((a) => a.id), ["nw.tools", "oats.framework", "oats.okf"]);
-    for (const a of sync.approvalNeeded) { assert.match(a.executables, /^sha256-[0-9a-f]{64}$/); assert.match(a.commit, /^[0-9a-f]{40}$/); }
-    assert.ok(sync.approvalNeeded.find((a) => a.id === "nw.tools").targets.length > 0, "nw.tools has bin/ executables to approve");
     assert.deepEqual(sync.problems, []);
-    assert.equal(existsSync(join(dep, "oats-lock.json")), true, "the lock is written even when approvals are pending");
+    assert.equal(existsSync(join(dep, "oats-lock.json")), true, "sync writes the lock");
     const lock = JSON.parse(readFileSync(join(dep, "oats-lock.json"), "utf8"));
     assert.equal(lock.lockfileVersion, 3);
     assert.deepEqual(Object.keys(lock.packages), ["nw.tools", "oats.framework", "oats.okf"]);
-    assert.equal(lock.packages["nw.tools"].approved, null);
+    assert.ok(!Object.hasOwn(lock.packages["nw.tools"], "approved"), "lock v3 entries carry no approval");
     assert.equal(lock.packages["nw.tools"].commit, fx.commits["nw-tools"]);
     assert.equal(lock.packages["nw.tools"].source, `git:${fx.keys["nw-tools"]}@v0.4.0`);
     assert.equal(lock.packages["oats.okf"].commit, fx.commits["pkg-okf"]);
     assert.equal(existsSync(join(base, "cache")), true, "OATS_REMOTE_CACHE is honoured (nothing under ~/.cache from this test)");
 
-    // The human report (§8 shape), still exit 2, still no prompt.
+    // The human report (§8 shape), exit 0, no prompt.
     r = oats(["sync"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^workspace {2}northwind {2}\(/m);
     assert.match(r.stdout, /^members {4}.*agents ✓↔/m);
-    assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(approval needed\)/m);
+    assert.match(r.stdout, /^packages {3}.*oats\.okf 2\.1\.3 ✓ \(@ [0-9a-f]{8}\)/m);
     assert.match(r.stdout, /^changed {4}/m);
     assert.match(r.stdout, /^souls {6}9 discovered \(8 members, 1 external, 1 disabled here\) · 1 private \(platform-reviewer, platform only\)/m);
     assert.match(r.stdout, /^teams {6}.*engineering 5 souls, 3 capabilities.*marketing 2 souls, 2 capabilities/m);
-    assert.match(r.stdout, /Approval needed for nw\.tools 0\.4\.0, oats\.framework 1\.1\.3, oats\.okf 2\.1\.3 — not a terminal/);
+    assert.match(r.stdout, /^lock {7}/m);
+    assert.doesNotMatch(r.stdout, /approv/i, "the report never mentions approval");
     // A second sync is idempotent: the lock already describes the workspace (nothing changed).
     r = oats(["sync", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2);
+    assert.equal(r.status, 0);
     assert.deepEqual(envelope(r).result.changes, []);
 
     // --dir from elsewhere (the flag, not cwd) reaches the deployment.
     r = oats(["sync", "--json", "--dir", dep], { cwd: base, env, base });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     assert.equal(envelope(r).result.workspace.name, "northwind");
 
     // ---- oats workspace status --json ----
@@ -114,14 +112,14 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     const platform = st.members.find((m) => m.name === "platform");
     assert.equal(platform.status, "confirmed"); assert.equal(platform.team, "engineering");
     assert.deepEqual(platform.souls, ["platform-engineer", "platform-reviewer"], "status lists every soul, private ones included (it is the membership view)");
-    assert.deepEqual(st.approval, { approved: [], needed: ["nw.tools", "oats.framework", "oats.okf"] });
+    assert.ok(!Object.hasOwn(st, "approval"), "workspace status has no approval section");
     assert.deepEqual(st.unsynced, []); assert.deepEqual(st.stale, []);
     assert.deepEqual(st.external.map((e) => e.soul), ["security-reviewer"]);
     r = oats(["workspace", "status"], { cwd: dep, env, base });
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /member\s+status\s+commit\s+team/);
     assert.match(r.stdout, /nw-tools\s+confirmed\s+[0-9a-f]{8}\s+engineering.*nw\.tools v0\.4\.0/);
-    assert.match(r.stdout, /oats\.okf\s+2\.1\.3\s+catalog:oats\.okf\s+[0-9a-f]{8}\s+NEEDED\s+oats\.okf/);
+    assert.match(r.stdout, /oats\.okf\s+2\.1\.3\s+catalog:oats\.okf\s+[0-9a-f]{8}\s+oats\.okf/);
     r = oats(["workspace", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_USAGE");
 
@@ -136,7 +134,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     assert.equal(brand.origin, `member ${fx.keys.marketing} @ ${fx.commits.marketing.slice(0, 8)}`);
     const okf = caps.find((c) => c.name === "oats.okf");
     assert.ok(okf, "oats.okf is listed from the lock");
-    assert.equal(okf.kind, "package"); assert.equal(okf.package, "oats.okf"); assert.equal(okf.origin, "package oats.okf v2.1.3"); assert.equal(okf.approved, false);
+    assert.equal(okf.kind, "package"); assert.equal(okf.package, "oats.okf"); assert.equal(okf.origin, "package oats.okf v2.1.3"); assert.ok(!Object.hasOwn(okf, "approved"));
     // Non-collapse: nw-tools-dev is a MEMBER capability; nw-lint / nw-deploy are PACKAGE capabilities.
     assert.equal(caps.find((c) => c.name === "nw-tools-dev").kind, "member");
     assert.equal(caps.find((c) => c.name === "nw-lint").kind, "package");
@@ -248,7 +246,7 @@ test("workspace v2 CLI over the Northwind fixture: sync (non-TTY → exit 2, loc
     assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /Workspace \(v2, offline view\):/);
     assert.match(r.stdout, /Locked packages \(oats-lock\.json v3\):/);
-    assert.match(r.stdout, /oats\.okf 2\.1\.3 {2}catalog:oats\.okf {2}@ [0-9a-f]{12} {2}APPROVAL NEEDED/);
+    assert.match(r.stdout, /oats\.okf 2\.1\.3 {2}catalog:oats\.okf {2}@ [0-9a-f]{12} {2}sha256-[0-9a-f]{64}$/m);
     // Phase C (M18): a v2 deployment has no config chain / layers / installed tier — the v1 half is not printed.
     for (const v1 of [/Config chain/, /Layers:/, /Layers unresolved/, /Kernel injection:/, /Unconditional injections/, /Acquired capability packages/, /Active capabilities:/, /is in installed\/ but has no lock entry/, /oats-config\.yaml/]) assert.doesNotMatch(r.stdout, v1, `v1 doctor section leaks on a v2 deployment: ${v1}`);
     r = oats(["doctor", dep, "--json"], { cwd: dep, env, base });
@@ -328,11 +326,10 @@ test("Phase B (CLI M5): `oats status --json` on a v2 deployment without agents/ 
 });
 
 // ---- lane 3 (0.25.2) ----
-// R9: `oats sync --approve <id>@<version>` approves exactly that locked entry without a terminal,
-// recording the digest computed over the locked tree (never anything typed); an id@version that
-// is not in the resolution is E_BAD_ARGS and writes nothing. Ctrl+D at the TTY prompt is covered
-// by askYesNo's abort handling (a real pty is needed to exercise it; see the 0.25.2 notes).
-test("0.25.2 R9: sync --approve <id>@<version> approves what is there with the real digest (exit 0 when nothing else is pending); wrong version / unknown id → E_BAD_ARGS, lock untouched", { timeout: 300_000 }, async () => {
+// Package approval was removed (human decision 2026-09-24): declaring a package in packages: is the
+// trust decision. `--approve` is refused naming that decision, and a lock written with a stale
+// per-entry `approved` record is read with the field ignored and rewritten without it.
+test("package approval removed: sync --approve → E_BAD_ARGS naming the decision; a stale approved record in the lock is accepted and dropped on write", { timeout: 300_000 }, async () => {
   const base = fixtureBase();
   try {
     const fx = await buildNorthwind(join(base, "fx"));
@@ -345,55 +342,24 @@ test("0.25.2 R9: sync --approve <id>@<version> approves what is there with the r
     writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
     const lockFile = join(dep, "oats-lock.json");
 
-    // Baseline: the real digests a non-TTY sync reports.
-    let r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
-    const need = envelope(r).result.approvalNeeded;
-    const digestOf = (id) => need.find((a) => a.id === id).executables;
-    assert.match(digestOf("nw.tools"), /^sha256-[0-9a-f]{64}$/);
-
-    // Wrong version → E_BAD_ARGS naming the locked version; nothing approved.
-    r = oats(["sync", "--dir", dep, "--approve", "nw.tools@0.9.9", "--json"], { cwd: dep, env, base });
+    let r = oats(["sync", "--dir", dep, "--approve", "x@1", "--json"], { cwd: dep, env, base });
     assert.equal(r.status, 1, r.stdout + r.stderr);
-    let err = envelope(r).error;
+    const err = envelope(r).error;
     assert.equal(err.code, "E_BAD_ARGS");
-    assert.match(err.message, /approve what is there: --approve nw\.tools@0\.4\.0/);
-    assert.deepEqual({ id: err.details.id, version: err.details.version, locked: err.details.locked }, { id: "nw.tools", version: "0.9.9", locked: "0.4.0" });
-    assert.ok(Object.values(JSON.parse(readFileSync(lockFile, "utf8")).packages).every((p) => p.approved === null), "a refused --approve writes no approval");
-    // Unknown id → E_BAD_ARGS listing what IS locked.
-    r = oats(["sync", "--dir", dep, "--approve", "nope@1.0.0", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 1); err = envelope(r).error;
-    assert.equal(err.code, "E_BAD_ARGS"); assert.deepEqual(err.details.locked, ["nw.tools", "oats.framework", "oats.okf"]);
-    // Malformed → E_BAD_ARGS.
-    r = oats(["sync", "--dir", dep, "--approve", "nw.tools", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_BAD_ARGS");
-    r = oats(["sync", "--dir", dep, "--approve", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 1); assert.equal(envelope(r).error.code, "E_BAD_ARGS");
+    assert.match(err.message, /package approval was removed; declaring a package in packages: is the trust decision/);
+    assert.equal(existsSync(lockFile), false, "a refused sync writes no lock");
 
-    // Two of three, repeatable, non-interactive: approved with the REAL digest; exit 2 (one still pending).
-    r = oats(["sync", "--dir", dep, "--approve", "nw.tools@0.4.0", "--approve", "oats.okf@2.1.3", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
-    let res = envelope(r).result;
-    assert.deepEqual(res.approved.map((a) => a.id).sort(), ["nw.tools", "oats.okf"]);
-    assert.deepEqual(res.approvalNeeded.map((a) => a.id), ["oats.framework"]);
-    let lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    assert.equal(lock.packages["nw.tools"].approved.executables, digestOf("nw.tools"), "the digest is the tree's, computed by sync");
-    assert.equal(lock.packages["oats.okf"].approved.executables, digestOf("oats.okf"));
-    assert.match(lock.packages["nw.tools"].approved.at, /^\d{4}-\d{2}-\d{2}T/);
-    assert.equal(lock.packages["oats.framework"].approved, null);
-    // Text mode reports the approval line.
-    r = oats(["sync", "--dir", dep, "--approve", "oats.framework@1.1.3"], { cwd: dep, env, base });
-    assert.equal(r.status, 0, `nothing else pending → exit 0\n${r.stdout}\n${r.stderr}`);
-    assert.match(r.stdout, /^approved {3}oats\.framework 1\.1\.3 @ [0-9a-f]{8} {2}\(--approve; /m);
-    assert.match(r.stdout, /^lock {7}/m);
-    lock = JSON.parse(readFileSync(lockFile, "utf8"));
-    assert.equal(lock.packages["oats.framework"].approved.executables, digestOf("oats.framework"));
-    // Re-approving an approved entry is a no-op (exit 0, no approved[] in the report).
-    r = oats(["sync", "--dir", dep, "--approve", "oats.framework@1.1.3", "--json"], { cwd: dep, env, base });
-    assert.equal(r.status, 0); res = envelope(r).result;
-    assert.ok(!Object.hasOwn(res, "approved")); assert.deepEqual(res.approvalNeeded, []);
-    // The flag is documented.
-    r = oats(["help"], { cwd: dep, env, base });
-    assert.match(r.stdout + r.stderr, /--approve <id>@<version>/);
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    const clean = JSON.parse(readFileSync(lockFile, "utf8"));
+    const stale = structuredClone(clean);
+    for (const entry of Object.values(stale.packages)) entry.approved = { executables: `sha256-${"0".repeat(64)}`, at: "2026-09-01T00:00:00.000Z" };
+    writeFileSync(lockFile, JSON.stringify(stale, null, 2));
+    r = oats(["sync", "--dir", dep, "--json"], { cwd: dep, env, base });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.deepEqual(envelope(r).result.changes, [], "the stale record is not a change");
+    const rewritten = JSON.parse(readFileSync(lockFile, "utf8"));
+    assert.ok(Object.values(rewritten.packages).every((p) => !Object.hasOwn(p, "approved")), "the next write drops approved");
+    assert.deepEqual(rewritten, clean);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });

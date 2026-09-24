@@ -76,8 +76,8 @@ nothing else.
   activation or targeting.
 - **Versions** — `packages:` in the workspace file; exact commits in
   `oats-lock.json`.
-- **Trust** — membership for members; per-version approval in the lock for
-  packages. No per-operator trust list.
+- **Trust** — membership for members; the declaration in the workspace's
+  `packages:` for packages (no approval step). No per-operator trust list.
 - **Per-instance provider facts** (a retained messaging seat, a one-off state
   root) — `oats spawn <soul> --provider <cap> key=value`, recorded in
   `instance.json.providers`.
@@ -86,8 +86,8 @@ nothing else.
 ## Inspecting the effective configuration
 
 ```bash
-oats workspace status          # membership table, locked packages, approval state, external souls
-oats sync                      # confirm, resolve, approve, report the diff
+oats workspace status          # membership table, locked packages, external souls
+oats sync                      # confirm, resolve, lock, report the diff
 oats capabilities | oats souls # everything a soul may name, with origin and team
 oats spawn <soul> --preview    # the exact modules (from/commit/changedSince), team, resolution revision
 oats doctor                    # this deployment's oats-local.yaml and lock, plus kernel diagnostics

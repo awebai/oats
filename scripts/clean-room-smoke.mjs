@@ -248,22 +248,14 @@ try {
     return r;
   };
 
-  // ---- sync: resolve + lock (v3) both packages. Approval is per package
-  // version and is asked for every package (exit 2, digests reported); the
-  // theory package has NO executable targets, the OKF package has its scripts.
-  const syncText = cli(["sync", "--dir", deployment, "--json"], { expectExit: 2 });
+  // ---- sync: resolve + lock (v3) both packages at exact commit + integrity.
+  // No approval step: declaring a package in packages: is the trust decision.
+  const syncText = cli(["sync", "--dir", deployment, "--json"]);
   const synced = JSON.parse(syncText);
   assert.equal(synced.ok, true, syncText);
   assert.deepEqual(synced.result.members.map((m) => m.status), ["confirmed"], syncText);
-  assert.deepEqual(synced.result.approvalNeeded.map((a) => a.id).sort(), ["oats.framework", "oats.okf"]);
-  const approval = synced.result.approvalNeeded.find((a) => a.id === "oats.okf");
-  const theoryApproval = synced.result.approvalNeeded.find((a) => a.id === "oats.framework");
-  assert.equal(approval.commit, okfCommit);
-  assert.match(approval.executables, /^sha256-[0-9a-f]{64}$/);
-  assert.ok(approval.targets.some((t) => /oats-okf\.mjs/.test(t)), JSON.stringify(approval.targets));
-  assert.equal(theoryApproval.commit, theoryCommit);
-  assert.deepEqual(theoryApproval.targets, [], "oats.framework carries no commands or hooks");
-  assert.match(theoryApproval.executables, /^sha256-[0-9a-f]{64}$/);
+  assert.deepEqual(synced.result.packages.map((p) => p.id).sort(), ["oats.framework", "oats.okf"]);
+  assert.ok(!Object.hasOwn(synced.result, "approvalNeeded"), "sync reports no approval");
   const lockPath = join(deployment, "oats-lock.json");
   const checkLockShape = (lock) => {
     assert.equal(lock.lockfileVersion, 3);
@@ -281,22 +273,11 @@ try {
     assert.equal(lock.packages["oats.framework"].version, distribution.version);
     assert.doesNotMatch(JSON.stringify(lock), /"lockfileVersion":\s*2/);
   };
-  const unapproved = readJson(lockPath);
-  checkLockShape(unapproved);
-  assert.equal(unapproved.packages["oats.okf"].approved ?? null, null);
-  assert.equal(unapproved.packages["oats.framework"].approved ?? null, null);
-  // Record the reported digests as approvals (what a TTY `oats sync` writes on "y").
-  const approvedLock = structuredClone(unapproved);
-  const at = new Date().toISOString();
-  approvedLock.packages["oats.okf"].approved = { executables: approval.executables, at };
-  approvedLock.packages["oats.framework"].approved = { executables: theoryApproval.executables, at };
-  write(lockPath, JSON.stringify(approvedLock, null, 2));
-  const approved = readJson(lockPath);
-  checkLockShape(approved);
-  assert.equal(approved.packages["oats.okf"].approved.executables, approval.executables);
-  assert.equal(approved.packages["oats.framework"].approved.executables, theoryApproval.executables);
-  assert.equal(JSON.parse(cli(["sync", "--dir", deployment, "--json"])).result.approvalNeeded.length, 0, "approved sync exits 0 with nothing pending");
-  assert.deepEqual(readJson(lockPath), approved, "a second sync is a no-op on an approved lock");
+  const locked = readJson(lockPath);
+  checkLockShape(locked);
+  for (const row of Object.values(locked.packages)) assert.ok(!Object.hasOwn(row, "approved"), "lock v3 entries carry no approval");
+  assert.ok(!Object.hasOwn(JSON.parse(cli(["sync", "--dir", deployment, "--json"])).result, "approvalNeeded"), "a second sync exits 0");
+  assert.deepEqual(readJson(lockPath), locked, "a second sync is a no-op on the lock");
   for (const residue of [".agents/capabilities/installed", ".agents/capabilities", "oats-config.yaml", ".agents/packages"]) {
     assert.ok(!existsSync(join(deployment, residue)), `workspace model wrote v1 residue ${residue}`);
   }
@@ -322,7 +303,7 @@ try {
   assert.ok(existsSync(join(accepted, "okf-base.json")), "okf init wrote the accepted base");
   const storeEntries = readdirSync(join(deployment, ".oats", "modules")).filter((n) => !n.startsWith("."));
   assert.deepEqual(storeEntries.map((n) => n.replace(/@[0-9a-f]{12}$/, "@<commit12>")), ["oats.okf@<commit12>"], `module store: ${storeEntries.join(", ")}`);
-  assert.equal(storeEntries[0].slice("oats.okf@".length), approvedLock.packages["oats.okf"].commit.slice(0, 12), "the store copy is the LOCKED commit");
+  assert.equal(storeEntries[0].slice("oats.okf@".length), locked.packages["oats.okf"].commit.slice(0, 12), "the store copy is the LOCKED commit");
   assert.ok(existsSync(join(deployment, ".oats", "modules", storeEntries[0], "bin", "oats-okf.mjs")), "the store copy carries the executable that ran");
   assert.ok(!existsSync(join(agentsRoot, "probe", "instances")), "init ran before any instance existed");
 
@@ -444,7 +425,7 @@ try {
   // No source home exists. The real capability asks the installed public CLI
   // for its own independent directory worker, then stages durable evidence.
   // memory-harvest is a CAPABILITY-DEFINED agent (oats.okf agents/): with no live instance carrying
-  // the module, the kernel resolves it from the deployment's lock (approved package → fetched into
+  // the module, the kernel resolves it from the deployment's lock (locked package → fetched into
   // <deployment>/.oats/modules/<cap>@<commit>/) and homes it under local-agents/.
   const requested = boundary(["okf", "run-source", "--source", marker.source, "--manual", "--no-launch", "--soul", "probe", "--json"], inScope);
   assert.equal(requested.status, "ready");
@@ -482,7 +463,7 @@ try {
   assert.deepEqual(payloadEntries(join(freshHome, ".oats/modules/oats.okf")), inventory.entries);
   retire(fresh.instance, freshHome);
   assert.notEqual(boundary(["schedule", "list", "--dir", deployment, "--json"]).scheduler.active, true);
-  assert.deepEqual(readJson(lockPath), approved, "lifecycle never mutates the lock");
+  assert.deepEqual(readJson(lockPath), locked, "lifecycle never mutates the lock");
   // Module copies are per-instance and gone with their homes; the lock is the
   // durable trust record and the scope copy's module set is still pristine.
   assert.deepEqual(payloadEntries(join(scopeHome, ".oats/modules/oats.okf")), inventory.entries, "lifecycle never mutates a materialized module");
@@ -525,14 +506,14 @@ try {
     }
     theoryProbes.push(`directory/${runtime}`);
   }
-  assert.deepEqual(readJson(lockPath), approved, "theory spawns never mutate the lock");
+  assert.deepEqual(readJson(lockPath), locked, "theory spawns never mutate the lock");
   assert.ok(!existsSync(env.OATS_SMOKE_UNEXPECTED_EXEC), "a runtime/backend/host scheduler was invoked");
 
   console.log(JSON.stringify({
     passed: true, seconds: Math.round((Date.now() - started) / 1000),
     kernelTarball: basename(kernelTgz), adapterTarball: basename(adapterTgz),
     adapterResolvedPackedKernel: true, installedJsChecked,
-    workspace: { host: hostCommit, lockfileVersion: 3, packages: Object.keys(approved.packages).sort(), approvalDigest: approval.executables, v1Residue: false, doctorLockError: null },
+    workspace: { host: hostCommit, lockfileVersion: 3, packages: Object.keys(locked.packages).sort(), okfIntegrity: locked.packages["oats.okf"].integrity, v1Residue: false, doctorLockError: null },
     exactSkills: skills, canonicalSoulUnchanged: true, launchLoadsSkills: true,
     stubbedInactiveStatusProbes: existsSync(statusProbes) ? readFileSync(statusProbes, "utf8").trim().split("\n").length : 0,
     okf: { version: bundledVersion, catalogRef: pinnedRef, npm: npmOkf,

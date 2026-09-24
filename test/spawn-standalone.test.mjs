@@ -37,17 +37,16 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
   try {
     // sync: standalone view, one package request (the catalog's oats.framework pin)
     let r = oats(["sync", "--dir", dep, "--json"], { base, env });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     let doc = envelope(r);
     assert.equal(doc.ok, true);
-    const approvalNeeded = doc.result.approvalNeeded;
     assert.equal(doc.result.standalone, true);
     assert.equal(doc.result.workspace.name, "standalone:data");
     const lockPath = join(dep, "oats-lock.json");
     const lock = JSON.parse(readFileSync(lockPath, "utf8"));
     assert.equal(lock.lockfileVersion, 3);
     assert.deepEqual(Object.keys(lock.packages), ["oats.framework"], "no workspace file → no version list; only the kernel's own default is requested");
-    assert.equal(lock.packages["oats.framework"].approved, null);
+    assert.equal("approved" in lock.packages["oats.framework"], false, "lock v3 entries carry no approval");
 
     // souls: the standalone member's own rows are listed (its row is unconfirmed by definition)
     r = oats(["souls", "--dir", dep, "--json"], { base, env });
@@ -78,26 +77,19 @@ test("standalone: unreadable workspace host → sync locks only the oats.core pa
     // setup-expert hint is conditional (M14) — the member's own souls are offered instead.
     const dep2 = join(base, "dep2"); mkdirSync(dep2);
     r = oats(["onboard", dep2, "--workspace", fx.refs.data], { base, env });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /^Onboarded .*dep2 into workspace standalone:data /m);
     assert.match(r.stdout, /standalone — the workspace of data cannot be read from here/);
     assert.match(r.stdout, /No soul named oats-operator-expert is listed here/);
     assert.match(r.stdout, /spawn any listed soul: oats spawn <soul> --dir \S*dep2 \(e\.g\. data-analyst\)/);
     assert.doesNotMatch(r.stdout, /oats spawn oats-operator-expert/);
     r = oats(["onboard", join(base, "dep3"), "--workspace", fx.refs.data, "--json"], { base, env });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     const ob = envelope(r).result;
     assert.equal(ob.standalone, true); assert.equal(ob.next.spawn, null); assert.deepEqual(ob.next.souls, ["data-analyst"]);
     assert.equal(ob.next.clone.length, 1, "the standalone repo itself is the one clone target"); assert.equal(ob.next.clone[0].name, "data");
 
-    // spawn before approval: refused (the package path is the same as in a workspace)
-    r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
-    assert.equal(r.status, 1);
-    assert.equal(envelope(r).error.code, "E_PACKAGE_UNAPPROVED");
-
-    // approve, spawn
-    for (const [id, e] of Object.entries(lock.packages)) e.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: new Date().toISOString(), by: "test" };
-    writeFileSync(lockPath, JSON.stringify(lock, null, 2));
+    // spawn (the package path is the same as in a workspace)
     r = oats(["spawn", "data-analyst", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr + r.stdout);
     doc = envelope(r);
@@ -154,13 +146,13 @@ test("onboard states the hosting rule (decision 26): hostIsMember + the rule in 
   const dep = join(base, "dep"); mkdirSync(dep);
   try {
     let r = oats(["onboard", dep, "--workspace", fx.refs.agents, "--json"], { base, env });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     const doc = envelope(r);
     assert.equal(doc.result.hosting.hostIsMember, true, "Northwind's host (agents) is itself a member");
     assert.match(doc.result.hosting.rule, /private repo that is not a public member/);
     rmSync(join(dep, "oats-local.yaml")); rmSync(join(dep, "oats-lock.json"), { force: true });
     r = oats(["onboard", dep, "--workspace", fx.refs.agents], { base, env });
-    assert.equal(r.status, 2, r.stderr);
+    assert.equal(r.status, 0, r.stderr);
     assert.match(r.stdout, /is itself a member/);
     assert.match(r.stdout, /if any member is private the host must be a private repo/);
   } finally { rmSync(base, { recursive: true, force: true }); }
@@ -184,7 +176,7 @@ test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framewor
     // H3: the request is the catalog id at the ref's VERSION (last path segment), never the raw ref the one grammar refuses.
     const dep = mkdep("dep-path");
     let r = oats(["sync", "--dir", dep, "--json"], { base, env: { OATS_PACKAGE_CATALOG: pathStyle } });
-    assert.equal(r.status, 2, r.stdout + r.stderr);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
     let doc = envelope(r);
     assert.equal(doc.ok, true, JSON.stringify(doc));
     assert.deepEqual(doc.result.packages.map((p) => [p.id, p.version, p.source]), [["oats.framework", "1.1.3", "catalog:oats.framework"]]);
@@ -192,7 +184,7 @@ test("standalone packages (H3/M10): a catalog ref with a tag PATH (oats-framewor
     assert.deepEqual(doc.result.problems, []);
     const lock = JSON.parse(readFileSync(join(dep, "oats-lock.json"), "utf8"));
     assert.deepEqual(Object.keys(lock.packages), ["oats.framework"]);
-    // M10: no package provides oats.core → a problem row in the sync report (exit unchanged: 0, nothing to approve), printed in text mode…
+    // M10: no package provides oats.core → a problem row in the sync report (exit unchanged: 0), printed in text mode…
     const dep2 = mkdep("dep-none");
     r = oats(["sync", "--dir", dep2, "--json"], { base, env: { OATS_PACKAGE_CATALOG: noAlias } });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -229,11 +221,7 @@ test("H4: an oats-config.yaml beside a v3 lock (a launch-config, say) does not m
   writeFileSync(join(dep, "oats-local.yaml"), `schemaVersion: 2\nworkspace: ${fx.refs.agents}\n`);
   try {
     const synced = oats(["sync", "--dir", dep, "--json"], { base, env });
-    assert.equal(synced.status, 2);
-    const approvalNeeded = envelope(synced).result.approvalNeeded;
-    const lockPath = join(dep, "oats-lock.json"); const lock = JSON.parse(readFileSync(lockPath, "utf8"));
-    for (const [id, e] of Object.entries(lock.packages)) e.approved = { executables: approvalNeeded.find((a) => a.id === id).executables, at: new Date().toISOString(), by: "test" };
-    writeFileSync(lockPath, JSON.stringify(lock, null, 2));
+    assert.equal(synced.status, 0, synced.stdout + synced.stderr);
     writeFileSync(join(dep, "oats-config.yaml"), "name: northwind-workspace\nlaunch-configs:\n  default:\n    runtime: pi\n");
     const r = oats(["spawn", "release-manager", "--dir", dep, "--agents-root", join(dep, "agents"), "--purpose", "x", "--work", "directory", "--no-launch", "--json"], { base, env });
     assert.equal(r.status, 0, r.stderr + r.stdout);

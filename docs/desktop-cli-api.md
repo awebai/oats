@@ -477,15 +477,15 @@ the pre-fix marker and is never accepted for dispatch.
 > that `oats trust` wrote, `configured` by `oats-config.yaml` activation, and
 > `enrolled` by the `oats.yaml` backlink. On a **workspace deployment**
 > (`oats-local.yaml` present) none of those sources exists: nothing is installed,
-> approval is per package version in `oats-lock.json` v3 (`oats sync`), activation
+> there is no package approval (declaring a package in `packages:` is the trust
+> decision; `oats-lock.json` v3 pins commit + integrity), activation
 > is derived (workspace defaults ⊕ soul `capabilities:`), and membership is
 > `oats-membership.yaml` observed over the remotes. `oats list` and `oats trust`
 > are removed verbs (`E_UNKNOWN_COMMAND`), so a `remedy` naming them cannot be
 > run. Treat the field names and producer strings as the stable wire shape they
 > are; for the workspace-model facts read `oats spawn <soul> --preview --json`
-> (`modules[]` with from/commit/digest — the "installed" and "configured"
-> truth), `oats sync --json` `approvalNeeded[]` (the "trusted" truth) and
-> `oats workspace status --json` (the "enrolled" truth). Re-basing the quartet on
+> (`modules[]` with from/commit/digest — the "installed", "configured" and
+> "trusted" truth) and `oats workspace status --json` (the "enrolled" truth). Re-basing the quartet on
 > those producers is an open thread of [the workspace model](#workspace-model-workspaceapi-2);
 > when it lands it will be announced as a new feature name, not a silent change of
 > `readinessApi: 1`.
@@ -772,8 +772,7 @@ machine in the directory the operator chooses (any existing folder). It writes
 `<dir>/oats-local.yaml` (`{ schemaVersion: 2, workspace: <ref> }`), creates
 `<dir>/agents/` (the instance homes), then runs exactly the `oats sync` body
 over the directory just written — discover over the remotes, confirm
-membership, resolve `packages:`, approve (TTY) or list what needs approval,
-write `oats-lock.json`. It installs nothing, creates no soul, spawns nothing
+membership, resolve `packages:`, write `oats-lock.json`. It installs nothing, creates no soul, spawns nothing
 and writes no `oats-config.yaml`; the member clones and the setup-expert spawn
 are printed as next steps. `<dir>` defaults to cwd; `--dir <d>` is the same
 argument (give it once). `--workspace` is required and must be a ref
@@ -793,13 +792,9 @@ written. Captured selectors are refused (`E_BAD_ARGS`).
 ```
 
 - `sync` is the `syncApi: 1` report of the first sync (members, packages,
-  changes, `approvalNeeded`, `problems`); `lock` is the lock it wrote.
-- **Exit `2` with `ok: true`** when `sync.approvalNeeded` is non-empty. Approve
-  non-interactively with `oats sync --dir <dir> --approve <id>@<version> …`
-  (0.25.2+; `<version>` is `approvalNeeded[].version` verbatim — a catalog
-  version, or the full commit OID for a git-pinned package); a Desktop renders
-  `approvalNeeded[].executables` (the digest of the executable set it is
-  approving) and `targets`, then runs that command. Exit `0` otherwise.
+  changes, `problems`); `lock` is the lock it wrote. Exit `0` on success —
+  there is no approval-pending outcome (0.26.0, feature
+  `packages-no-approval`; earlier kernels exited `2` with `approvalNeeded`).
 - `hosting` states decision 26 (the kernel cannot see forge visibility, so it
   reports `hostIsMember` and the rule rather than judging).
 - `next.clone[]` is one row per **confirmed** member (`url` = what the
@@ -822,12 +817,14 @@ written. Captured selectors are refused (`E_BAD_ARGS`).
 
 ### `oats sync [--dir <d>] --json` → `syncApi: 1`
 
-Discovers, confirms membership, resolves `packages:` to commits, writes
-`oats-lock.json` (lockfileVersion 3), reports. **Exit `2` with `ok: true`** when
-the lock was written but approvals are pending (`approvalNeeded` non-empty).
-Approve with repeatable `--approve <id>@<version>` (0.25.2+, non-interactive;
-`<version>` = `approvalNeeded[].version` verbatim); the interactive prompt is
-the TTY fallback, not the contract. Exit `0` otherwise.
+Discovers, confirms membership, resolves `packages:` to commits + integrity,
+writes `oats-lock.json` (lockfileVersion 3), reports; exit `0` on success.
+**No package approval** (0.26.0, human decision 2026-09-24; feature
+`packages-no-approval`): declaring a package in `packages:` is the trust
+decision. The report has no `approvalNeeded`, package rows no `approved`,
+`changes[]` rows no `approvalNeeded`; there is no prompt and no exit `2`, and
+`--approve` is `E_BAD_ARGS`. A lock written by an earlier kernel keeps working
+(its `approved` records are ignored and dropped on the next write).
 
 ```json
 {"syncApi":1,
@@ -839,12 +836,9 @@ the TTY fallback, not the contract. Exit `0` otherwise.
              "souls":["tools-expert"],"capabilities":["acme-tools-dev"],"publishes":{"package":"acme.tools","version":"0.4.0"}},
             {"key":"github.com/acme/billing","name":"billing","commit":"<oid>","confirmed":false,"status":"no-backlink","detail":"github.com/acme/billing@… has no oats-membership.yaml","team":null,
              "souls":[],"capabilities":[],"publishes":null}],
- "packages":[{"id":"oats.okf","version":"2.1.3","source":"catalog:oats.okf","commit":"<oid>","integrity":"sha256-…","capabilities":["oats.okf"],
-              "approved":{"executables":"sha256-…","at":"<iso>"}},
-             {"id":"acme.tools","version":"0.4.0","source":"git:github.com/acme/tools@v0.4.0","commit":"<oid>","integrity":"sha256-…","capabilities":["acme-deploy","acme-lint"],"approved":null}],
- "changes":[{"id":"acme.tools","from":null,"to":"0.4.0","commit":"<oid>","approvalNeeded":true}],
- "approvalNeeded":[{"id":"acme.tools","version":"0.4.0","commit":"<oid>","executables":"sha256-…",
-                    "targets":["acme-deploy: command apply → bin/acme-deploy.mjs","acme-deploy: hook spawn → bin/acme-deploy.mjs"]}],
+ "packages":[{"id":"oats.okf","version":"2.1.3","source":"catalog:oats.okf","commit":"<oid>","integrity":"sha256-…","capabilities":["oats.okf"]},
+             {"id":"acme.tools","version":"0.4.0","source":"git:github.com/acme/tools@v0.4.0","commit":"<oid>","integrity":"sha256-…","capabilities":["acme-deploy","acme-lint"]}],
+ "changes":[{"id":"acme.tools","from":null,"to":"0.4.0","commit":"<oid>"}],
  "problems":[]}
 ```
 
@@ -854,17 +848,14 @@ the TTY fallback, not the contract. Exit `0` otherwise.
   capabilities are **not** in `capabilities[]`; the non-collapse rule).
 - `changes[]`: `from` = previously locked version or `null`; `to` = `null` when
   the package was dropped from `packages:` and from the lock.
-- `approvalNeeded[].targets` are human-readable lines
-  (`<cap>: command|hook <name> → <relpath>`); `executables` is the digest an
-  approval would record.
 - `problems[]`: `{ code, path, message, repoKey? }` — per-item discovery
   problems (`E_WORKSPACE_SCHEMA`, `E_TEAM_UNKNOWN`, `E_REMOTE_*`, …). Never an
   abort: an unreadable member directory is a problem of that member.
 - Errors: `E_LOCAL_MISSING`, `E_WORKSPACE_SCHEMA { path, problems[] }`,
   `E_REMOTE_UNREADABLE`, `E_LOCK_SCHEMA`, `E_PACKAGE_MISSING` (catalog has no
   such id), `E_PACKAGE_INTEGRITY { why: "branch" | locked/observed }`,
-  `E_PACKAGE_UNAPPROVED` (approval digest no longer matches),
-  `E_PACKAGE_MANIFEST`, `E_REPO_REF`.
+  `E_PACKAGE_MANIFEST`, `E_REPO_REF`, `E_BAD_ARGS` (`--approve`: package
+  approval was removed).
 
 ### `oats package add <id> <version|git:<repo>@<ref>> | remove <id> [--dir] --json`
 
@@ -896,13 +887,13 @@ found to check the declaration even though it does not edit it. `E_USAGE`,
  "declaredPackages":["acme.tools","oats.okf"],
  "unsynced":[],
  "stale":[],
- "approval":{"approved":["oats.okf"],"needed":["acme.tools"]},
  "external":[{"source":"git:github.com/oss-collective/experts@<oid>","soul":"security-reviewer","team":"unassigned"}],
  "problems":[]}
 ```
 
 `unsynced` = declared in `packages:` but not in the lock (run `sync`);
 `stale` = locked but no longer declared. Read-only: does not write the lock.
+(0.26.0: the `approval` object is gone with package approval.)
 
 ### `oats capabilities [--dir] --json` → `capabilitiesApi: 1` · `oats souls [--dir] --json` → `soulsApi: 1`
 
@@ -918,7 +909,7 @@ or `"unassigned"`.
    {"name":"acme-house-style","origin":"member github.com/acme/agents @ 3f2a9c1e","kind":"member","repoKey":"github.com/acme/agents","commit":"<oid>",
     "team":"global","private":false,"path":"capabilities/acme-house-style","layer":null,"version":"0.0.0-workspace"},
    {"name":"oats.okf","origin":"package oats.okf v2.1.3","kind":"package","package":"oats.okf","version":"2.1.3","commit":"<oid>",
-    "team":"unassigned","private":false,"approved":true}],
+    "team":"unassigned","private":false}],
  "problems":[]}
 ```
 
@@ -982,7 +973,7 @@ between preview and apply is `E_DECISION_STALE`):
   members or externals), `E_SOUL_AMBIGUOUS { name, repos[] }` (name it
   `<repo>/<soul>`). Resolution errors keep their codes (`E_NOT_A_MEMBER`,
   `E_MEMBERSHIP_UNCONFIRMED { repoKey, reason }`, `E_CAPABILITY_MISSING { hint? }`,
-  `E_CAPABILITY_PRIVATE`, `E_PACKAGE_MISSING`, `E_PACKAGE_UNAPPROVED { id, version, commit }`,
+  `E_CAPABILITY_PRIVATE`, `E_PACKAGE_MISSING`, `E_PACKAGE_INTEGRITY { why: "capabilities", listed, locked }`,
   `E_SLOT_CONFLICT { slot, modules[], reason? }`, `E_SKILL_DUPLICATE { name, modules[] }`,
   `E_COMPATIBILITY { capability, package, version, range, why? }`).
 
@@ -1050,7 +1041,7 @@ top-level `workspace` reachability field:
 ### Probe
 
 ```json
-{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload"],"workspaceApi":2}
+{"…":"…","features":["…","workspace-v2","instance-modules","spawn-provider-payload","packages-no-approval"],"workspaceApi":2}
 ```
 
 A feature is listed only once the binary implements it. Gate `sync`/`package`/

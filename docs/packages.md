@@ -4,8 +4,7 @@ A **package** is a place to fetch capabilities from *with a version attached*.
 It is one of the two kinds of capability source in the
 [workspace model](workspaces.md); the other — a member repo — is never
 versioned. Nothing is installed: a package is resolved to an exact commit by
-`oats sync`, recorded in `oats-lock.json`, approved once per version, and
-**copied whole into each instance at spawn** (`<home>/.oats/modules/<cap>/`).
+`oats sync`, recorded in `oats-lock.json`, and **copied whole into each instance at spawn** (`<home>/.oats/modules/<cap>/`).
 
 Ground truth: [`oats-package.schema.json`](oats-package.schema.json) (the
 package manifest), [`oats-lock-v3.schema.json`](oats-lock-v3.schema.json) (the
@@ -24,7 +23,7 @@ A Git repository **contains** a package at `oats-package/`:
         ├── acme-lint/oats.json          # ordinary capability manifests (docs/capabilities.md)
         └── acme-deploy/
             ├── oats.json
-            └── bin/acme-deploy.mjs      # an executable → approved once per version
+            └── bin/acme-deploy.mjs      # an executable — trusted by declaring the package
 ```
 
 `oats-package.json` must declare `package` and `capabilities` (a list of
@@ -75,15 +74,12 @@ decision recorded in the lock.
 $ oats sync
 workspace  acme  (github.com/acme/agents @ 3f2a9c1e)
 members    agents ✓↔ (@ 3f2a9c1e)   platform ✓↔ (@ 77c0a1b2)   tools ✓↔ (@ 47f4b816)   billing ✗ (no-backlink)
-packages   acme.tools 0.4.0 ✓ (approval needed)   oats.framework 1.1.3 ✓ (approved)   oats.okf 2.1.3 ✓ (approved)
+packages   acme.tools 0.4.0 ✓ (@ 47f4b816)   oats.framework 1.1.3 ✓ (@ 9c3e27aa)   oats.okf 2.1.3 ✓ (@ b2e16f2e)
 changed    acme.tools  — → 0.4.0 (@ 47f4b816)
 souls      7 discovered (6 members, 1 external, 0 disabled here) · 1 private (platform-reviewer, platform only)
 teams      engineering 4 souls, 3 capabilities · global 2 souls, 2 capabilities · unassigned 1 soul
 
-acme.tools 0.4.0 @ 47f4b816 needs executable approval (2 executables, digest sha256-7923…):
-  acme-deploy: command apply → bin/acme-deploy.mjs
-  acme-deploy: command plan → bin/acme-deploy.mjs
-approve acme.tools 0.4.0? [y/N]
+lock       oats-lock.json
 ```
 
 `sync` (run from the deployment — where `oats-local.yaml` is, or `--dir`):
@@ -94,19 +90,15 @@ approve acme.tools 0.4.0? [y/N]
    and records `url`, `path`, `version`, `commit`, `integrity`, `capabilities`;
 3. for an entry already locked at the same version/source/path: the commit must
    be unchanged (else `E_PACKAGE_INTEGRITY` — "the tag moved; a version string
-   must change when its content does"), the integrity must match, and a
-   recorded approval must still describe the package's executables (else
-   `E_PACKAGE_UNAPPROVED` — approve again);
-4. for every unapproved entry, prints the exact executables (every `commands.*`
-   target and every `hooks.*.command` target of every capability manifest —
-   hooks run unattended at spawn/retire) and asks **once** on a terminal;
-5. writes `oats-lock.json` and reports the diff. Entries dropped from
+   must change when its content does") and the integrity must match
+   (`E_PACKAGE_INTEGRITY`);
+4. writes `oats-lock.json` and reports the diff. Entries dropped from
    `packages:` are dropped from the lock.
 
-Exit status `2` means the lock is written but approvals are pending
-(non-interactive, or declined). Spawns of souls using an unapproved package are
-refused (`E_PACKAGE_UNAPPROVED`) until `oats sync` is run in a terminal and the
-approval given. `--json` emits the `syncApi: 1` envelope documented in
+There is **no approval step** (human decision, 2026-09-24): declaring a package
+in the workspace's `packages:` is the trust decision, so `sync` asks nothing,
+exits `0` on success, and `--approve` is `E_BAD_ARGS`. `--json` emits the
+`syncApi: 1` envelope documented in
 [desktop-cli-api.md](desktop-cli-api.md#workspace-model-workspaceapi-2).
 
 ## `oats package add | remove`
@@ -128,7 +120,7 @@ machine. Nothing network-bound happens in `package add`; `sync` resolves.
 ## Lock v3
 
 `oats-lock.json` lives beside `oats-local.yaml`. Two operators who synced the
-same workspace commit and approved the same versions hold identical locks.
+same workspace commit hold identical locks.
 
 ```json
 {
@@ -141,8 +133,7 @@ same workspace commit and approved the same versions hold identical locks.
       "version": "2.1.3",
       "commit": "b2e16f2ea1555be519db76fda30cd0bea06f8609",
       "integrity": "sha256-1c34dbe9c1cc3826dbe6ecbafbd9a1e189ed36a74bfb2ba8fb6f46a382e95c2d",
-      "capabilities": ["oats.okf"],
-      "approved": { "executables": "sha256-0d7615fa…", "at": "2026-09-24T09:02:11.000Z" }
+      "capabilities": ["oats.okf"]
     },
     "acme.tools": {
       "source": "git:github.com/acme/tools@v0.4.0",
@@ -151,8 +142,7 @@ same workspace commit and approved the same versions hold identical locks.
       "version": "0.4.0",
       "commit": "47f4b81660e4cc9701d373088de52462762585a3",
       "integrity": "sha256-4cd126a7…",
-      "capabilities": ["acme-deploy", "acme-lint"],
-      "approved": null
+      "capabilities": ["acme-deploy", "acme-lint"]
     }
   }
 }
@@ -167,28 +157,25 @@ same workspace commit and approved the same versions hold identical locks.
 | `commit` | full 40-hex OID the version resolved to |
 | `integrity` | `sha256-<hex>` content digest of the package tree at `path` |
 | `capabilities` | the capability names the package provides (sorted) — what `from: package` looks up |
-| `approved` | `{ executables: "sha256-<hex>", at }` — the digest of the approved executables — or `null` |
 
 A capability provided by **two** locked packages is ambiguous and fails
 closed (`E_PACKAGE_MISSING { ambiguous: [ids] }`): keep one of them in
 `packages:`. A lock that is not v3 (a 0.24 lock, an unreadable file) is
-`E_LOCK_SCHEMA`; it is never auto-repaired — delete it and `oats sync`. Agents
-never hand-edit the lock.
+`E_LOCK_SCHEMA`; it is never auto-repaired — delete it and `oats sync`. A v3
+lock written before 0.26.0 may carry an `approved` record per entry: it is read
+with the field ignored, and the next write drops it. Agents never hand-edit the
+lock.
 
-## Approval
+## Trust
 
-Member capabilities are trusted by membership; **package executables are
-approved once per version**, and every instance that materializes that version
-inherits the approval. What is approved is a digest over the bytes of every
-executable a manifest can make the kernel run — `commands.*` targets and
-`hooks.*.command` targets — in canonical order; a hook object without
-`command` is `E_PACKAGE_MANIFEST`, never an invisible no-op. Skills, injects
-and other files are covered by `integrity`, not by the approval.
-
-The approval lives next to the commit it approved. A new version starts
-unapproved; a moved tag fails integrity and asks again; an approval whose digest
-no longer matches the tree is refused. `oats spawn` re-checks `approved` on the
-way to `from: package`: reaching materialization means approved.
+Member capabilities are trusted by membership; **a package is trusted by its
+declaration in the workspace's `packages:`** (human decision, 2026-09-24) —
+people install a package only when they trust it, so there is no second,
+per-version approval step. The lock is reproducibility, not approval: it pins
+the exact commit and the content integrity, a moved tag or drifted content is
+`E_PACKAGE_INTEGRITY`, and at spawn the lock's capability list must match what
+the package declares at the locked commit (`E_PACKAGE_INTEGRITY { why:
+"capabilities" }`).
 
 ## Materialization from a package
 
@@ -230,7 +217,7 @@ roles never collapse (see [workspaces.md](workspaces.md#member-tier-vs-package-t
    plus `acme-tools-dev: { from: here }`.
 3. Tag a release (`v0.4.0`). Tags are immutable: a new content needs a new tag.
 4. Consumers pin it: `oats package add acme.tools git:github.com/acme/tools@v0.4.0`
-   → commit → `oats sync` → approve once. Discovery shows the member row with
+   → commit → `oats sync`. Discovery shows the member row with
    `publishes: { package: "acme.tools", version: "0.4.0" }`.
 5. To become pinnable by id, open a PR adding the package to
    `package-catalog.json` in the `oats` repo ([official-marketplace.md](official-marketplace.md)).
@@ -253,7 +240,7 @@ A soul that names one of the package's capabilities with
 
 `ref` carries the tag convention: a workspace's `oats.framework: v1.2.0`
 resolves to tag `oats-framework/v1.2.0`. Resolving through the catalog never
-grants approval and never advances a lock by itself — `oats sync` does, and
+advances a lock by itself — `oats sync` does, and
 says so.
 
 ## Removed verbs
