@@ -135,6 +135,18 @@ explicitly rather than by search; `aw mail` usable from `work/`; retired aliases
 reusable. Kernel (lead): in v2 the team scope is the deployment directory and
 the team id comes from the messaging payload, not the classic `team:` block.
 #140 merges together with the first answer to the unspawnable-default item.
+**Teams (human, 2026-09-24): seamless by default.** (R1) Every person gets a
+**personal team per workspace**, created on first use with no invite and no
+manual initialisation — two people, or one person on two workspaces, get
+separate teams; stable across one person's machines. (R2) When a soul whose
+`team:` label the workspace maps to a shared team (`messaging.byTeam.<label>.team`)
+is spawned, the instance **joins that team seamlessly**. Authorization for R2
+(what entitles a person to join without an invite) is oats.aweb's design call
+with the aweb project, fail-closed and visible when the entitlement is missing.
+Kernel (lead): pass the soul's team label and the workspace identity so the
+provider derives the personal team deterministically; an unmapped team means
+"personal". The onboarding skill's manual invite-then-join step is the 1.12.0
+path and is rewritten when the provider ships R1/R2.
 **Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
 it matches the repository names and the roster's `oats-kernel-`/`oats-desktop-`/
 `oats-operator-expert`, and it keeps instance aliases from colliding with the
