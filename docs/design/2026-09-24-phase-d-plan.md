@@ -22,7 +22,7 @@ pushes. Agreed by both on 2026-09-24:
 | oats.aweb 1.13.0 re-land end to end | Antares | assigned |
 | D1 operator node + integrations node | Antares | assigned (draft PR `d1/operator-node` handed over) |
 | aweb and okf package-expert seams | Antares | assigned |
-| D2, D3, D4, desktop + kernel bundle migrations (D1 remainder) | — | **unassigned**: offered to Antares; held for the second deployment's human, whose capacity it spends. If declined in whole or part, the co-leads split what remains. |
+| D2, D3, D4, desktop + kernel bundle migrations (D1 remainder) | Antares | assigned (both humans agreed, 2026-09-24). D2's machine-bound onboard of the lead's deployment is run by the lead on Antares' word; kernel gaps come to the lead as asks. |
 
 **Push protocol.**
 - **Class A** — notify after, one line: stewardship, docs and knowledge inside
