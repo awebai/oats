@@ -70,11 +70,11 @@ test("spawn with delivery=session: AWEB_DELIVERY in the launch env, no Claude ch
     assert.equal(channel.status, 0, channel.stdout + channel.stderr);
     assert.equal(channel.doc.meta.delivery, "channel");
     assert.match(channel.doc.launch?.claude || "", /aweb-channel@awebai-marketplace/);
-    assert.equal(channel.doc.env, undefined);
+    assert.deepEqual(channel.doc.env, { AWEB_IDENTITY_HOME: join(home, ".aw") });
     const session = runHook(base, bin, "spawn", { ...env, OATS_SETTINGS: JSON.stringify({ delivery: "session" }) });
     assert.equal(session.status, 0, session.stdout + session.stderr);
     assert.equal(session.doc.meta.delivery, "session");
-    assert.deepEqual(session.doc.env, { AWEB_DELIVERY: "session" });
+    assert.deepEqual(session.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aw") });
     assert.equal(session.doc.launch, undefined, "no channel flag in session mode");
     assert.match(session.doc.brief, /Notification delivery: external \(AWEB_DELIVERY=session\)/);
     assert.match(readFileSync(join(base, "aw.log"), "utf8"), new RegExp(`^wake register --home ${home.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")} --identity-home .*/.aw --delivery session`, "m"), "registered with the broker");

@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
 import {
@@ -79,8 +81,12 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
 function settings(value) {
   if(!obj(value)) wireError('invalid-binding');
   if(Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,['delivery'],[]);
+  keys(value,['delivery','team','root','roots'],[]);
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
+  if(value.team!==undefined && (typeof value.team!=='string' || !value.team.trim())) wireError('needs-configuration');
+  if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
+  if(value.roots!==undefined && !obj(value.roots)) wireError('needs-configuration');
+  if(obj(value.roots)) for(const [team,root] of Object.entries(value.roots)) if(!team || typeof root!=='string' || !root.trim()) wireError('needs-configuration');
   return value;
 }
 function request(value,phase) {
@@ -142,6 +148,23 @@ function binding(value) {
   return value;
 }
 function checkResult(message) {return {status:'needs-configuration',problems:[{code:'needs-configuration',message}]};}
+function checkProblems(problems) {return problems.length?{status:'needs-configuration',problems}:null;}
+function teamFromSettings(settings) {return typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);}
+function classicEnv() {return !!process.env.OATS_TEAM_SCOPE && !(process.env.OATS_WORKSPACE_KEY || process.env.OATS_WORKSPACE_NAME || process.env.OATS_TEAM_LABEL);}
+function rootCandidate(settings,team) {
+  const roots=obj(settings.roots)?settings.roots:{};
+  if(team && typeof roots[team]==='string' && roots[team].trim()) return {root:roots[team].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(team)}]`,declared:true};
+  if(typeof settings.root==='string' && settings.root.trim()) return {root:settings.root.trim(),key:'settings.oats.aweb.root',declared:true};
+  const candidates=classicEnv()?[process.env.OATS_TEAM_SCOPE,process.env.OATS_WORKSPACE].filter(Boolean):[process.env.OATS_WORKSPACE || process.env.OATS_TEAM_SCOPE || process.cwd()];
+  for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
+  return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
+}
+function readinessFromSettings(settings) {
+  const team=teamFromSettings(settings),candidate=rootCandidate(settings,team),problems=[];
+  if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
+  if(!team) problems.push({code:'needs-configuration',message:'no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'});
+  return checkProblems(problems) || {status:'ready',problems:[]};
+}
 function checkPhase(req) {
   keys(req.input,['binding','context','action','invocation'],['binding','context','action']);
   if(!obj(req.input.action) || typeof req.input.action.kind!=='string') wireError('invalid-binding');
@@ -150,6 +173,9 @@ function checkPhase(req) {
   const invocation=Object.hasOwn(req.input,'invocation')?validateAwebInvocationContext(req.input.invocation,current,{context:req.input.context,action:req.input.action}):null;
   if(['command','hook','operation'].includes(req.input.action.kind) && (!invocation || invocation.instance===null || invocation.intent===null)) return checkResult('an admitted captured instance intent is required for execution');
   if(current.payload.privateTeam===null) return checkResult('an explicit private-team binding is required');
+  const hostReady=readinessFromSettings(req.settings);
+  if(hostReady.status!=='ready') return hostReady;
+  if(!invocation) return hostReady;
   // Read-only public kernel observations, not an account/grant attestation.
   // Native setup is performed only by the separately admitted execution path.
   return assessCapturedSessionReadiness({binding:current,invocation,settings:req.settings});

@@ -94,7 +94,7 @@ test("local mode keeps existing behaviour and adds messaging-layer meta.identity
     assert.equal(r.doc.meta.team, "t:example.test");
     assert.equal(r.doc.meta.delivery, "channel");
     assert.deepEqual(r.doc.meta.identity, { mode: "local", alias: "probe", team: "t:example.test", address: null, resident: null });
-    assert.equal(r.doc.env, undefined);
+    assert.deepEqual(r.doc.env, { AWEB_IDENTITY_HOME: join(home, ".aw") });
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
