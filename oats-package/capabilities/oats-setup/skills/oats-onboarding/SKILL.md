@@ -101,20 +101,29 @@ the instances join.
 *Rationale:* operator node, lesson "messaging root placement decides the
 team" — read it before choosing another place.
 
-```bash
-cd <deployment-dir>
-aw init --do-not-touch-agents-md   # connects the team certificate already in .aw/, or creates an account — the operator's call
-aw check                           # identity, team and service reachable
-```
+The root must be a **member of the team the workspace's messaging payload
+names** (`messaging:` / `messaging.byTeam` in the workspace file). `aw init`
+alone in a clean directory creates a hosted account and joins no team, so every
+spawn would still be refused. Obtain the membership first:
 
-- Initialising can create an account on the messaging service: ask the
-  operator first, and let them run it.
-- The root's team must be the team the workspace's messaging payload names
-  (`messaging:` / `messaging.byTeam` in the workspace file); a root joined to
-  another team mints instances into the wrong one.
-- oats.aweb 1.12.0's `oats aweb setup` still reads the earlier configuration
-  file's team block; in a workspace-model deployment initialise with `aw`
-  directly as above.
+1. **Join the team** from the clean deployment directory. An existing member
+   of that team creates an invite; the operator joins here. (Or, for a new
+   team, create it here.)
+
+   ```bash
+   aw team invite --team-id <team id>              # run by an existing member, where their root is
+   cd <deployment-dir>
+   aw team join <invite-token> --name <alias>      # the operator, in the clean deployment directory
+   ```
+2. **Connect**, only if the join did not: `aw init --do-not-touch-agents-md`.
+3. **Check**: `aw check --online`, then `aw team list --json` must show the
+   payload's team as the active one. A root in another team mints instances
+   into the wrong one.
+
+Joining and initialising act on the messaging service: ask the operator first,
+and let them run it. oats.aweb 1.12.0's `oats aweb setup` still reads the
+earlier configuration file's team block; in a workspace-model deployment use
+`aw` directly as above.
 
 ## 7. Clone work targets
 
@@ -138,11 +147,14 @@ oats spawn <soul> --preview                    # modules at locked commits; merg
 Then spawn one soul with `--no-launch` and check its home: exactly one "You run
 on OATS" block in `AGENTS.md` (two means `oats.core` did not resolve), the
 expected skills under `.agents/skills/`, and — with messaging — a spawn the
-aweb hook did not roll back. Only then spawn for real.
+aweb hook did not roll back: its output carries a `Comms:` line, and
+`instance.json` → `capabilityMeta["oats.aweb"].team` equals the payload's team.
+Only then spawn for real.
 
 ## Never
 
 Re-onboard, re-point or clean a deployment the operator did not name; approve
 packages on the operator's behalf without showing what runs; edit
 `oats-lock.json` or `instance.json` by hand; put host facts in shared files;
-treat a scaffold as a working session.
+initialise or copy a messaging root above the deployment directory; treat a
+scaffold as a working session.
