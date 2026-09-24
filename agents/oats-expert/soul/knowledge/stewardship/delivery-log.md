@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–161) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–161, 155) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -39,6 +39,7 @@ decisions/ and referenced from here.
   - PR136 capability manifest schema accepts `private` and `team`, as discovery already reads them; oats.review is private. `ac8d5de8`, on Antares' ACK, combined with main locally 128/128.
   - PR161 oats.aweb 1.12.3 mirror (alias rule 1–64 matching aweb and the kernel cap; the reuse remedy names `--name` and `--purpose`; catalog pin v1.12.3) `b0f64d5a`. Antares' lane; I cross-reviewed. The payload is byte-identical to oats-aweb `e234c865`, and tag v1.12.3 peels to it. First returned for 33 stray soul files (the branch came from a shared checkout's unpushed local main), then for a cherry-picked guide hunk that brought back the removed `--approve`.
   - oats-aweb #12 (1.12.3 stage) cross-reviewed; tag v1.12.3 ACKed. oats-knowledge #17 (12 concepts promoted from unpushed local harvests) and #18 (2 review lessons) cross-reviewed, and Antares merged them.
+  - PR155 kernel v2-native (1/5): instance homes carry no soul link; `OATS_SOUL` is the recorded `soulDir` `d7de6675`. Returned once by Antares for stale texts in skills/injects, the lib header and the release note. Re-probe 7/7; Antares ACKed at `565b042e`.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
