@@ -2,7 +2,7 @@
 
 **Purpose:** the one accurate view of every work stream in the redesign, what is on main, what is in flight, who owns it, and what blocks it. Lead: `oats-expert` (redesign lead). Updated whenever anything merges, is returned, or reality changes. Older per-lane boards are superseded by this file.
 
-**Last update:** 2026-09-23 20:00Z · **0.25.0–0.25.3 PUBLISHED** (workspace model A–C; team-review fixes; operator-rebuild round; OATS_SOUL_ID) · **OKF 2.1.4 pending human GO** (owner pin by id, clone/timeout, retire-schedule seam; Antares writes the PRs) · Phase D plan next · **Desktop engineer paused by the human** (10B-0 uncommitted foundation preserved; resume is the human's call; 0.24.14 to be cut from a maintenance branch off `e5cdaf95` when its PR lands) · parity pipeline ⏸.
+**Last update:** 2026-09-23 20:00Z · **0.25.0–0.25.4 PUBLISHED** (workspace model A–C; team-review fixes; operator-rebuild round; OATS_SOUL_ID; quarantine-retry fix) · **OKF 2.1.4 content complete on oats-okf main, tag pending human GO** · **oats.aweb 1.12.0 (PR #107) in rehearsal round 4; decision 27 (per-spawn identity) proposed to the human** · Phase D plan next · **Desktop engineer paused by the human** (10B-0 uncommitted foundation preserved; resume is the human's call; 0.24.14 to be cut from a maintenance branch off `e5cdaf95` when its PR lands) · parity pipeline ⏸.
 
 Legend: ✅ on main/published · 🔄 in flight (PR/branch) · 🟡 preserved, not adopted · ⬜ not started · ⛔ blocked
 
