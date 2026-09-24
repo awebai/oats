@@ -187,6 +187,11 @@ oats spawn release-manager --preview --json                        # decide ever
 oats spawn release-manager --provider oats.aweb identity.source=/abs/path/to/retained/.aw   # instance-level payload
 ```
 
+An instance is named `<soul>-<purpose>` by default, or exactly `--name <slug>`.
+Names are unique per deployment (a workspace-model deployment has one agents
+root): a derived name in use gets `-2`, `-3`…; an explicit `--name` in use is
+refused (`E_INSTANCE_NAME_TAKEN`).
+
 From a deployment (where `oats-local.yaml` is), a spawn: reads the local file →
 discovers the workspace over its remotes and confirms membership → finds the
 soul among the confirmed members (or `external:`; an ambiguous bare name is
@@ -194,7 +199,7 @@ soul among the confirmed members (or `external:`; an ambiguous bare name is
 `<agents-root>/<soul>/souls/<commit12>/` at its commit (the home links that
 directory; `<agents-root>/<soul>/soul` points at the current one) → resolves
 every capability by
-`from:` (member = latest, package = locked + approved) → creates the home →
+`from:` (member = latest, package = locked) → creates the home →
 **materializes each module whole** into `.oats/modules/` and copies its skills
 into `.agents/skills/` (a transaction: any failure leaves nothing behind) →
 composes `AGENTS.md` → records `modules`/`providers`/`workspace` in
