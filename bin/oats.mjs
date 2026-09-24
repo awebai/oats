@@ -2340,7 +2340,7 @@ async function spawnCmd() {
   }
   let agent = findAgent(root, name);
   // Workspace model: with an oats-local.yaml the soul is ALWAYS discovered over the
-  // remotes and resolved (member = latest state, package = locked+approved) — never
+  // remotes and resolved (member = latest state, package = locked) — never
   // "whatever <agents-root>/<name>/soul/ happens to hold": that copy is a per-commit
   // cache (ensureWorkspaceSoul refreshes it when the member moved), so a second
   // spawn sees the member's CURRENT soul, not the first spawn's. A preview runs the
@@ -2411,7 +2411,7 @@ async function spawnCmd() {
       agent = modAgent;
       note(`(capability agent: "${name}" from ${modAgent.capability}, materialized in ${shortPath(modAgent._manifestSource)} — fresh soul, instances home locally)`);
     } else {
-      // No instance carries it: resolve from the deployment's LOCK — an approved
+      // No instance carries it: resolve from the deployment's LOCK — a locked
       // package whose capability declares agents/<name> is fetched into the
       // deployment's module store and read from there.
       try {
@@ -2522,7 +2522,7 @@ async function spawnCmd() {
   } catch (e) { if (e?.code?.startsWith?.("E_")) bail(e.code, e.message); throw e; }
   // Workspace model: when this deployment has an oats-local.yaml, the soul's
   // capabilities are resolved over the workspace's remotes (member = latest,
-  // package = locked+approved) and copied whole into the new home. Without one
+  // package = locked) and copied whole into the new home. Without one
   // (a bare agents root, tests) the classic soul-directory spawn proceeds.
   let prepared;
   // Workspace model: a `work: worktree|checkout` soul works IN its member's clone on
