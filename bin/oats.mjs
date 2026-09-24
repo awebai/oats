@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, servedIdentityLine, servedIdentityOf, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, spawnInstanceAsync, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  spawnInstance, spawnInstanceAsync, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
@@ -2317,12 +2317,18 @@ async function spawnCmd() {
   };
   checkDirectoryOptions(requestedWork); // before a local soul could be upserted
   const name = args[1];
-  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
+  if (!name || name.startsWith("--")) bail("E_USAGE", "usage: oats spawn <agent> [--task <text>|--task-file <f>] [--purpose <slug>|--name <slug>] [--preview] [--base <ref>] [--model <id>|@native-default] [--allow-child-spawns|--no-child-spawns] [--relation child|sibling|parent|unrelated --relative-to <instance> [--relative-root <agents-root>]] [--parent <instance>] [--repo <r>] [--work worktree|checkout|attached|workspace|directory] [--work-dir <owner-work>] [--runtime pi|claude|codex] [--backend tmux|herdr] [--herdr-socket <path>] [--yolo|--no-yolo] [--model <m>] [--branch <b>] [--instructions-file <f>|--def-file <f>] [--no-launch] [--json]");
   // Retired boundary flags (maintainer transport ruling): fail LOUDLY before
   // ANY side effect — including root discovery and local-agent upsert (an
   // --instructions-file spawn must not scaffold/overwrite a local soul before
   // this rejection; reviewer-b671de0).
-  if (args.includes("--instance")) bail("E_BAD_ARGS", "--instance was removed by the runtime-boundary ruling — use --purpose <slug> (deterministic <agent>-<purpose> naming)");
+  if (args.includes("--instance")) bail("E_BAD_ARGS", "--instance was removed by the runtime-boundary ruling — use --purpose <slug> (deterministic <agent>-<purpose> naming) or --name <slug> (the exact instance name)");
+  // --name <slug>: the exact, unprefixed instance name (human decision 2026-09-24).
+  const nameFlag = flag("name");
+  if (nameFlag === true) bail("E_BAD_ARGS", "--name needs an instance name (a slug: lowercase letters and digits, single dashes between them)");
+  if (nameFlag !== undefined && flag("purpose") !== undefined) bail("E_BAD_ARGS", "--name and --purpose are mutually exclusive: --name is the exact instance name, --purpose derives <agent>-<purpose>");
+  // The slug rule is checked here too, before any side effect (soul fetch, local-agent upsert).
+  if (nameFlag !== undefined) { try { explicitInstanceName(String(nameFlag)); } catch (e) { bail(e.code, e.message); throw e; } }
   if (args.includes("--ephemeral")) bail("E_BAD_ARGS", "--ephemeral was removed by the runtime-boundary ruling — declare the agent in a capability manifest (agents:) for automatic ephemeral semantics");
   let root;
   try { root = ensureRoot(dirFlag()); }
@@ -2547,7 +2553,7 @@ async function spawnCmd() {
     if (flag("base") === true) bail("E_BAD_ARGS", "--base needs a ref");
     { const spawnOpts = {
       prepared,
-      purpose: flag("purpose"), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
+      purpose: flag("purpose"), ...(nameFlag !== undefined ? { name: String(nameFlag) } : {}), task: taskText, taskFile: taskFileFlag, relation, relativeTo, relativeRoot,
       ...(args.includes("--allow-child-spawns") ? { allowChildSpawns: true } : args.includes("--no-child-spawns") ? { allowChildSpawns: false } : {}),
       // Directory execution uses deployment configuration, not an ambient Git
       // checkout (especially when invoked via --dir from a source instance).
@@ -2594,6 +2600,8 @@ async function spawnCmd() {
     if (e?.code === "E_DECISION_STALE") { bail(e.code, e.message, { decision: e.decision }); throw e; }
     if (e?.code === "E_IDEMPOTENCY_CONFLICT") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
     if (e?.code === "E_PLACEMENT_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home }); throw e; }
+    if (e?.code === "E_INSTANCE_NAME_TAKEN") { bail(e.code, e.message, { instance: e.instance, home: e.home ?? null, ...(e.session ? { session: e.session } : {}) }); throw e; }
+    if (e?.code === "E_INSTANCE_NAME_INVALID") { bail(e.code, e.message); throw e; }
     if (e?.code === "E_SPAWN_INCOMPLETE") { bail(e.code, e.message, { instance: e.instance, home: e.home, launched: e.launched }); throw e; }
     bail(["E_BAD_ARGS", "E_RELATIVE_AMBIGUOUS"].includes(e.code) ? e.code : "E_SPAWN_FAILED", e.message || e); throw e;
   }
@@ -3290,7 +3298,7 @@ function versionCmd() {
     // Phase B: `instance-modules` and `spawn-provider-payload` are advertised only once spawn
     // runs on resolve/materialize (contract §6); a feature the binary does not implement is
     // never listed.
-    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
+    console.log(JSON.stringify({ schemaVersion: 1, name: "@awebai/oats", version: OATS_VERSION, desktopApi: 1, runtimes: ["pi", "claude", "codex"], sessionBackends: ["tmux", "herdr"], launchOptions: ["yolo"], remote: ["spawn", "retire", "status", "session", "session-start", "session-restart", "launch-config", "roster", "harvest", "schedule", "session-upload", "operations"], features: ["retire-home", "session-start", "session-restart", "launch-config", "schedule", "session-upload", "operations", "instance-git", "instance-git-remote", "souls-declarations", "lifecycle-plans", "retire-retention", "readiness", "spawn-preview", "instance-events", "instance-events-2", "schedule-history", "schedule-read-2", "session-recompose", "readiness-verify", "spawn-preview-2", "spawn-idempotency", "spawn-idempotency-2", "spawn-apply-2", "workspace-v2", "instance-modules", "spawn-provider-payload", "served-identity", "packages-no-approval", "spawn-name"], workspaceApi: 2, instanceGitApi: 1, spawnApplyApi: 1, soulsApi: 1, lifecycleApi: 1, readinessApi: 1, spawnPreviewApi: 2, eventsApi: 2, scheduleHistoryApi: 3, scheduleApi: SCHEDULE_API, operationsApi: 1, capturedDispatchApi: 1, capturedDispatchActions: ["inspect", "compose", "command", "operation", "spawn", "trust"] }));
     return;
   }
   console.log(`@awebai/oats ${OATS_VERSION} (desktop API v1)`);
@@ -3873,6 +3881,9 @@ Usage:
                                             resolve across the team scope's repos
                                             directory: owned home/work, config context may
                                             be non-Git; rejects --work-dir and --branch
+      [--name <slug>]                        the exact instance name (no <agent>- prefix;
+                                            not with --purpose); must be a slug, not a
+                                            soul name, and unused in the deployment
   oats retire <instance> [--force]           retire an instance (window, hooks,
       [--self] [--delete-branch]            worktree, home); --self = retire the
       [--keep-dir] [--json]                 CALLING instance: the window dies, then

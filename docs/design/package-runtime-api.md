@@ -80,7 +80,9 @@ this contract remains authoritative).
    only when a reusable use case proves it.
 2. **Spawn** — `oats spawn <agent> ... --json` with the EXISTING flags:
    `--purpose <slug>` (deterministic derived naming
-   `<agent>-<purpose>`; no raw instance-name authority), `--parent`,
+   `<agent>-<purpose>`; derived naming stays the default) or the explicit
+   opt-in `--name <slug>` (the exact instance name; human decision
+   2026-09-24), `--parent`,
    `--repo`, `--work attached|worktree|checkout|workspace|directory`, `--work-dir`,
    `--branch`, `--model`, `--task`/`--task-file` (owner-only tempfiles:
    mode 0600, removed on every outcome). Existing validation and error codes
