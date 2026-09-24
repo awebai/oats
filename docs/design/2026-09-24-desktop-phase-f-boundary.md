@@ -123,6 +123,40 @@ sync`, `oats sync --approve`, `oats spawn --preview`, `oats spawn --no-launch`,
 remotes, and keep the transcript: F1's tests are written against exactly those
 JSON shapes.
 
+## 3b. Native rework, not a compatibility layer (human, 2026-09-24)
+
+The human's rule, verbatim intent: *"do a native rework — do not keep v1-specific
+things, and no v1 modules calling v2 modules."* Concretely:
+
+- **Remove, do not wrap.** A 0.24 reader (`server/deployment.mjs`'s
+  `oats-config.yaml`/`soul.yaml`/manifest parsing, `local-agents/`,
+  `.agents/capabilities/installed/`, the `oats catalog` DTO) is deleted in the
+  slice that replaces it — never kept behind a flag, a fallback branch, or an
+  "if the kernel is old" path. The Desktop supports one kernel line
+  (`ACCEPT_RANGE` from 0.25.6) and refuses older ones with the upgrade command.
+- **No adapters between generations.** No module whose job is to translate a
+  v1-shaped object into a v2-shaped one or vice versa (no `legacyRosterToV2()`,
+  no `toOldCard()`); the v2 kernel JSON is consumed where it is read and shaped
+  once for rendering. If a v1 module still needs a v2 fact, the v1 module is
+  the thing being replaced — replace it, do not feed it.
+- **Names and types follow v2.** Types, fields and UI labels use the kernel's
+  vocabulary (workspace, member, package, module, deployment, soul source,
+  served identity); 0.24 vocabulary (installed capability, config chain, team
+  block, agents root as identity) leaves the codebase with the code that used
+  it. `git grep` for the old terms is part of each slice's exit check.
+- **Tests follow the same rule.** Fixtures shaped like 0.24 deployments are
+  deleted with the readers; new fixtures are v2 deployments produced by the
+  kernel (Northwind or a hand-built scratch deployment), not hand-written
+  JSON imitating old shapes.
+- **One exception, stated per case.** Where a 0.24 concept has a genuine v2
+  successor with the same meaning and the Desktop code is already correct for
+  it (a terminal broker, a tmux target admission), it stays — the PR names it
+  as "unchanged, v2-agnostic", not as "kept for compatibility".
+
+Exit check for Phase F as a whole: no file under `packages/desktop/` reads a
+deployment file, names a 0.24 concept, or contains a code path that exists
+only for a kernel below the floor.
+
 ## 4. Rules that do not change
 
 - `packages/desktop/**` only; kernel gaps go to the lead as a written ask
