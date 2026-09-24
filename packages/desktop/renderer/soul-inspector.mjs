@@ -1,4 +1,6 @@
-/** On-demand kernel inspection. Roster polling never replaces an editor. */
+/** On-demand kernel inspection, read-only: a v2 soul is edited in its
+ * repository (soul-repository.mjs), never in place. Roster polling never
+ * rebuilds the selected inspector. */
 import { postJson, wsQuery, workspaceGeneration } from './views/common.mjs';
 import { runtimeState } from './instance-presentation.mjs';
 import { createSoulMark } from './identity-marks.mjs';
@@ -6,6 +8,7 @@ import { declarationsCSS, renderSoulDeclarations } from './soul-declarations.mjs
 import { createReadinessView, readinessCSS } from './readiness-view.mjs';
 import { cliStatus } from './views/cli-status.mjs';
 import { iconElement } from './shell-icons.mjs';
+import { soulRepository } from './soul-repository.mjs';
 
 
 /* Operations-API capability facts for the soul inspector (replaced with the
@@ -62,9 +65,6 @@ ${readinessCSS}
 .inspector-instance { display:block; width:100%; min-height:56px; height:auto; margin:6px 0; text-align:left; overflow-wrap:anywhere; white-space:normal; }
 .inspector-cap h4 { margin:0 0 7px; font-size:14px; }
 .inspector-actions { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
-.inspector-form { display:grid; gap:12px; max-width:650px; }
-.inspector-form label { display:grid; gap:5px; font-size:13px; color:var(--muted); }
-.inspector-form textarea { width:100%; min-height:250px; box-sizing:border-box; font:13px/1.6 monospace; }
 .inspector-status { min-height:1.5em; font-size:13px; color:var(--muted); white-space:pre-wrap; }
 .inspector-status:empty { min-height:0; margin:0; }
 .inspector-status.error { color:var(--danger); }
@@ -78,9 +78,9 @@ ${readinessCSS}
 
 /** presentation is an optional host lease. Presence belongs to this controller;
  * effective visibility/collapse belongs to the host, not request completions. */
-export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, changed, closed }) {
+export function createSoulInspector(container, { ctx, presentation, launch, schedule, files, canFiles = () => false, canLaunch = () => true, launchReason = () => 'Requires a compatible installed OATS CLI.', available = () => true, instances = () => [], workspace = () => null, closed }) {
   const doc = container.ownerDocument;
-  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data, busy = false;
+  let alive = true, serial = 0, operationSerial = 0, selectionGen = null, selection, data;
   const pendingOperations = new WeakMap();
   const node = (tag, text, cls) => {
     const el = doc.createElement(tag); if (text !== undefined) el.textContent = text; if (cls) el.className = cls; return el;
@@ -139,7 +139,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (alive) reset(restoreFocus);
   }
   function reset(restoreFocus = false) {
-    serial++; selection = null; selectionGen = null; data = null; busy = false; container.hidden = true;
+    serial++; selection = null; selectionGen = null; data = null; container.hidden = true;
     readiness?.dispose(); readiness = null;
     container.replaceChildren();
     if (presentation) presentation.setPresent(false);
@@ -148,7 +148,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   }
   async function show(next) {
     if (!next || !alive) return;
-    selection = next; const id = ++serial, gen = workspaceGeneration(); selectionGen = gen; data = null; busy = false;
+    selection = next; const id = ++serial, gen = workspaceGeneration(); selectionGen = gen; data = null;
     frame(next.agent?.name || next.instance?.instance || 'Reported capabilities'); message('Loading…');
     if (!available()) { message('Capability inspection requires a compatible OATS CLI with operations support. Check the CLI and refresh.', true); return; }
     try {
@@ -156,30 +156,6 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       if (!valid(id, gen)) return;
       data = result; message(''); render();
     } catch (error) { if (valid(id, gen)) message(`${error.code ? `${error.code}: ` : ''}${error.message || 'Inspection failed. Refresh to retry.'}`, true); }
-  }
-  async function mutate(body) {
-    if (busy || !available() || !selection || selectionGen !== workspaceGeneration()) return;
-    operationSerial++;
-    busy = true; const id = serial, gen = workspaceGeneration(), target = selection, query = wsQuery();
-    content.querySelectorAll('button, input, textarea, select').forEach(el => { el.disabled = true; });
-    syncAvailability(); message('Saving…');
-    let saved = false;
-    try {
-      const receipt = await request({ ...body, selector: target.selector }, query);
-      saved = true;
-      if (!valid(id, gen)) return;
-      // Refresh only after this explicit write, never in the roster interval.
-      const refreshed = await request({ action: 'inspect', selector: target.selector }, query);
-      if (!valid(id, gen)) return;
-      data = refreshed;
-      busy = false; render(); syncAvailability(); message(`Saved${receipt.file ? ` to ${receipt.file}` : ''}. Future instances use these defaults; existing homes retain their snapshot.`);
-      changed?.();
-    } catch (error) {
-      if (!valid(id, gen)) return;
-      busy = false; content.querySelectorAll('button, input, textarea, select').forEach(el => { el.disabled = false; });
-      syncAvailability();
-      message(saved ? `Saved, but refreshing failed: ${error.message}. Refresh to see the new state.` : error.message, true);
-    }
   }
   function facts(entries, parent = content) {
     const dl = node('dl', undefined, 'inspector-facts');
@@ -192,7 +168,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     if (!data || data.operationsApi !== 1) { message('This CLI does not support capability inspection. Update OATS and refresh.', true); return; }
     for (const problem of data.problems || []) content.append(node('p', `${problem.code}: ${problem.message}`));
     const snapshot = data.selected?.source === 'snapshot';
-    content.append(node('p', snapshot ? 'Instance snapshot: the instructions and capabilities this home was created with.' : 'Saved configuration for future instances. Changes here do not rewrite existing agent homes.', 'muted'));
+    content.append(node('p', snapshot ? 'Instance snapshot: the instructions and capabilities this home was created with.' : 'The configuration future instances resolve, as the kernel reports it. Existing agent homes keep their snapshot.', 'muted'));
     facts([['Scope', data.scope?.context], ['Source', snapshot ? 'Instance snapshot' : selection.agent ? `Soul: ${selection.agent.name}` : 'Workspace defaults']]);
     const matches = selection.agent ? (Array.isArray(data.souls) ? data.souls : []).filter(s => s?.name === selection.agent.name && s?.agentsRoot === selection.agent.agentsRoot) : [];
     const soul = matches.length === 1 ? matches[0] : null;
@@ -216,7 +192,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     const actions = node('div', undefined, 'inspector-actions');
     const action = (label, cls, can, run) => {
       const control = button(label, () => {
-        if (valid(id, gen) && control.isConnected && !control.disabled && !busy && can(agent)) run?.(agent);
+        if (valid(id, gen) && control.isConnected && !control.disabled && can(agent)) run?.(agent);
       });
       control.classList.add(cls); return control;
     };
@@ -228,6 +204,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     const homes = instances(agent);
     const roster = node('div', undefined, 'inspector-content');
     facts([['Reported runtime', agent.runtime], ['Source', agent.repoName || agent.workspace], ['Description', agent.description]], roster);
+    renderRepository(agent, roster, id, gen);
     roster.append(node('h3', `Instances · ${homes.length}`));
     if (!homes.length) roster.append(node('p', 'No instances reported for this soul.', 'muted'));
     for (const instance of homes) {
@@ -240,67 +217,33 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
     }
     summary.append(roster);
   }
+  // Roster-owned like the actions above: from the `oats souls` source, never
+  // from inspection. The Desktop does not edit a declared soul in place.
+  function renderRepository(agent, parent, id, gen) {
+    const where = soulRepository(agent.soulSource);
+    const block = node('div', undefined, 'inspector-repository');
+    block.append(node('h3', 'Edit this soul in its repository'));
+    if (!where) { block.append(node('p', 'Its repository is not reported.', 'muted')); parent.append(block); return; }
+    block.append(node('p', where.path ? `${where.path} in ${where.repository}` : where.repository, 'muted'));
+    if (where.url) {
+      const open = button('Open repository', () => {
+        if (valid(id, gen) && open.isConnected && typeof ctx?.openExternal === 'function') ctx.openExternal(where.url);
+      });
+      open.title = where.url; block.append(open);
+    }
+    parent.append(block);
+  }
   function renderSoul(soul) {
     renderSoulDeclarations(content, soul);
     content.append(node('h3', 'Future-instance defaults'));
     facts([['Runtime', soul.runtime], ['Launch configuration', soul.launchConfig || 'None'], ['Model', soul.model || 'Runtime default'], ['Permissions', soul.yolo === null || soul.yolo === undefined ? 'Scope default' : soul.yolo ? 'YOLO enabled' : 'Ask for permission'], ['Session backend', soul.backend], ['Description', soul.description]]);
-    const editable = soul.editable || {};
-    if (editable.fields?.length) content.append(button('Edit defaults', () => editDefaults(soul)));
-    else if (editable.reason) content.append(node('p', editable.reason, 'muted'));
     const instructions = node('details'); instructions.append(node('summary', 'AGENTS.md / instructions'), node('pre', soul.instructions?.error || soul.instructions?.text || 'No instructions reported.'));
     content.append(instructions);
-    if (soul.instructions?.truncated) content.append(node('p', 'Instructions are truncated. Edit the source file to preserve the full document.', 'muted'));
-    if (editable.instructions && !soul.instructions?.truncated && !soul.instructions?.error) content.append(button('Edit instructions', () => editInstructions(soul)));
-  }
-  function field(form, label, key, value, choices) {
-    const wrap = node('label', label); const input = node(choices ? 'select' : 'input'); input.className = 'field'; input.name = key;
-    if (choices) for (const [val, text] of choices) { const option = node('option', text); option.value = val; input.append(option); }
-    input.value = value ?? ''; wrap.append(input); form.append(wrap); return input;
-  }
-  function editor(title) {
-    operationSerial++;
-    content.replaceChildren(node('h3', title)); const form = node('form', undefined, 'inspector-form'); content.append(form); return form;
-  }
-  function editDefaults(soul) {
-    const form = editor('Edit launch defaults'); const inputs = {};
-    // The inspect JSON uses camelCase; mutations use the CLI field names.
-    const valueOf = key => key === 'launch-config' ? soul.launchConfig : soul[key];
-    for (const key of ['runtime', 'launch-config', 'model', 'backend', 'yolo', 'description']) {
-      if (!soul.editable.fields.includes(key)) continue;
-      const options = key === 'runtime' ? ['pi', 'claude', 'codex'].map(x => [x, x]) : key === 'backend' ? ['tmux', 'herdr'].map(x => [x, x]) : key === 'yolo' ? [...(soul.yolo === null || soul.yolo === undefined ? [['', 'Scope default']] : []), ['false', 'Ask for permission'], ['true', 'YOLO — skip permission prompts']] : null;
-      inputs[key] = field(form, key === 'yolo' ? 'Permissions' : key === 'launch-config' ? 'Launch configuration' : key[0].toUpperCase() + key.slice(1), key, key === 'yolo' ? valueOf(key) == null ? '' : String(valueOf(key)) : valueOf(key), options);
-    }
-    form.append(node('p', 'Leave Model empty to use the runtime default. Changes apply when creating future instances.', 'muted'));
-    const save = mutationButton('Save defaults', () => form.requestSubmit()); form.append(save, button('Cancel', render));
-    form.addEventListener('submit', event => {
-      event.preventDefault(); const fields = {};
-      for (const [key, input] of Object.entries(inputs)) {
-        if (key === 'yolo' && input.value === '') continue;
-        const value = key === 'yolo' ? input.value === 'true' : input.value;
-        if (value !== (key === 'yolo' ? valueOf(key) : valueOf(key) ?? '')) fields[key] = value;
-      }
-      if (!Object.keys(fields).length) { render(); return; }
-      void mutate({ action: 'set', fields });
-    });
-  }
-  function editInstructions(soul) {
-    const form = editor('Edit instructions'); const text = node('textarea'); text.className = 'field'; text.setAttribute('aria-label', 'Soul instructions'); text.value = soul.instructions?.text || '';
-    form.append(text, mutationButton('Save instructions', () => form.requestSubmit()), button('Cancel', render));
-    form.addEventListener('submit', event => { event.preventDefault(); void mutate({ action: 'set', fields: { instructions: text.value } }); });
+    if (soul.instructions?.truncated) content.append(node('p', 'Instructions are truncated here. The full document is in the soul\'s repository.', 'muted'));
   }
   function renderCapabilities(snapshot) {
     content.append(node('h3', 'Effective providers'));
     facts(['knowledge', 'messaging', 'tasks'].map(layer => [layer[0].toUpperCase() + layer.slice(1), data.layers?.[layer] === undefined ? 'Not reported' : data.layers[layer]?.id || (data.layers[layer]?.disabled ? 'Disabled' : 'None configured')]));
-    if (!snapshot && !selection.agent) {
-      const actions = node('details'); actions.append(node('summary', 'Layer defaults'));
-      for (const layer of ['knowledge', 'messaging', 'tasks']) {
-        const row = node('div', undefined, 'inspector-actions'); row.append(node('span', layer));
-        row.append(mutationButton('Disable layer', () => mutate({ action: 'use', binding: { action: 'none', layer } })),
-          mutationButton('Inherit layer', () => mutate({ action: 'use', binding: { action: 'inherit', capability: data.layers?.[layer]?.id || 'none', layer } })));
-        actions.append(row);
-      }
-      content.append(actions);
-    }
     content.append(node('h3', 'Reported capabilities'));
     if (!Array.isArray(data.capabilities)) content.append(node('p', 'Reported capabilities are unavailable from this CLI.'));
     else if (!data.capabilities.length) content.append(node('p', 'No capabilities reported at this scope.'));
@@ -313,16 +256,8 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       if (Object.keys(activation.settings || {}).length) {
         const settings = node('details'); settings.append(node('summary', 'Effective settings'), node('pre', JSON.stringify(activation.settings, null, 2))); card.append(settings);
       }
-      if (!snapshot) {
-        const actions = node('div', undefined, 'inspector-actions');
-        for (const [action, label] of [['enable', cap.layer ? `Use for ${cap.layer}` : 'Enable'], ['disable', 'Disable here'], ['inherit', 'Inherit']]) {
-          actions.append(mutationButton(label, () => mutate({ action: 'use', binding: { capability: cap.id, action } })));
-        }
-        card.append(actions);
-      }
       content.append(card);
     }
-    if (!snapshot) content.append(node('p', '“Inherit” removes the binding at this scope. “Disable here” explicitly excludes that capability. Installing a capability does not activate it.', 'muted'));
   }
   function renderOperations() {
     const id = serial, gen = selectionGen;
@@ -336,7 +271,7 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
       else {
         const address = `${provider.layer}:${operation.name}`;
         const control = mutationButton(operation.kind === 'view' ? 'View' : 'Run', async () => {
-          if (busy || !available() || !valid(id, gen) || !control.isConnected || !content.contains(control) || pendingOperations.has(control)) return;
+          if (!available() || !valid(id, gen) || !control.isConnected || !content.contains(control) || pendingOperations.has(control)) return;
           const op = ++operationSerial; pendingOperations.set(control, op); control.disabled = true;
           // Output/status follow latest intent; each pending control owns only its lock.
           const ownsControl = () => valid(id, gen) && control.isConnected && content.contains(control) && pendingOperations.get(control) === op;
@@ -370,13 +305,13 @@ export function createSoulInspector(container, { ctx, presentation, launch, sche
   function syncAvailability() {
     syncReadiness();
     if (!selection || !content) return;
-    for (const control of content.querySelectorAll('[data-mutate]')) control.disabled = busy || pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration();
+    for (const control of content.querySelectorAll('[data-mutate]')) control.disabled = pendingOperations.has(control) || !available() || selectionGen !== workspaceGeneration();
     for (const control of container.querySelectorAll('[data-launch]')) {
-      control.disabled = busy || !alive || selectionGen !== workspaceGeneration() || !canLaunch(selection.agent) || selection.agent?.work === 'attached' || !selection.agent?.agentsRoot;
+      control.disabled = !alive || selectionGen !== workspaceGeneration() || !canLaunch(selection.agent) || selection.agent?.work === 'attached' || !selection.agent?.agentsRoot;
       control.title = selection.agent?.work === 'attached' ? 'Attached only — requires an owning instance.' : control.disabled ? launchReason(selection.agent) : '';
     }
     for (const control of container.querySelectorAll('[data-files]')) {
-      control.disabled = busy || !alive || selectionGen !== workspaceGeneration() || !canFiles(selection.agent);
+      control.disabled = !alive || selectionGen !== workspaceGeneration() || !canFiles(selection.agent);
       control.title = control.disabled ? 'Files need an unambiguous local soul in this workspace.' : 'Read-only soul files';
     }
   }
