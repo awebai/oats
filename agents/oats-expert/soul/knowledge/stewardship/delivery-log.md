@@ -22,6 +22,26 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Batch — 2026-09-24 night (PRs 131, 151–160) → toward v0.26.0 (unreleased; main carries breaking changes)
+- **Merged:**
+  - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
+  - PR153 docs for it `b97de554`.
+  - PR131 D4(1) declared-gone docs removed `05867164`.
+  - PR156 D4 follow-up (execution-targets, example pins v2.1.5, desktop accept gate) `78e08165`.
+  - PR152 oats.aweb 1.12.2 mirror with the in-PR catalog pin `5ed99b91`. Antares' lane; I cross-reviewed. It was returned once for a harvest commit onto a legacy in-repo soul.
+  - PR147 Desktop F2b (approval UI removed; gated on `packages-no-approval`) `950e982b`. Native gate 8/8, including the refusal of an old 0.25.9 kernel.
+  - PR149 Desktop messaging identity (decision 27) `f25dcef5`. Security read: strict shapes and regexes, fixed argv.
+  - PR154 `spawn --name` + deployment-wide uniqueness `a4a3a19b`. Probe 27/27.
+  - PR157 naming docs `75a5403e`.
+  - PR158 Desktop F3b-1 (read-only soul inspector; "Edit this soul in its repository") `0f53d8cd`.
+  - PR159 64-character instance-name cap, explicit and derived, with a schedule definition check `d1739335`. Probe 6/6.
+  - PR160 Desktop F3a-name (unprefixed names; a name taken at apply is stale; local cap on one shared constant) `1c0cb2c1`. Native gate 8/8. The squashed tree is identical to the approved head `f1edc201`.
+- **taught us:**
+  - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
+  - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
+  - (3) **A commit that is "in the PR" can still be orphaned by the squash.** #158's copy fix `9beed8ea` never reached main, so check `git merge-base --is-ancestor` before telling an author a fix has landed.
+  - (4) **For removal PRs, grep the removed noun across `skills/`, `injects/` and `oats-package/capabilities/*/skills/`.** Those texts are composed into every AGENTS.md; #155 was returned for stale `./soul` wording there.
+
 ## Batch — 2026-09-24 evening (PRs 145–150) → v0.25.9
 - **Merged:**
   - PR145 oats.aweb 1.12.1 `6cbda9d0` (Antares' lane; I cross-reviewed; the pin landed on its branch).
