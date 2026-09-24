@@ -1,8 +1,7 @@
 // Workspace model v2 verbs (F2, without package approval): fixed argv, exit
 // semantics, refusal projection, projectors and the server's sync boundary —
 // against kernel-captured fixtures (test/fixtures/workspace-v2/f2,
-// provenance.json) read through the published no-approval spec
-// (helpers/no-approval-spec.mjs) until the 0.26.0 kernel branch is captured.
+// provenance.json), captured from main's kernel (packages-no-approval).
 // No CLI, network, GUI or native process is launched.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,18 +11,17 @@ import { EventEmitter } from 'node:events';
 import { cliWorkspace, workspaceArgv, validWorkspaceRef, WORKSPACE_READ_TIMEOUT, WORKSPACE_WRITE_TIMEOUT, WORKSPACE_MAX_BUFFER, WORKSPACE_ACTIONS } from '../workspace-cli.mjs';
 import { syncData, capabilitiesData, onboardData } from '../deployment-data.mjs';
 import { createWorkspaceSyncBoundary } from '../server/workspace-sync.mjs';
-import { specProbe, specDocument, specExit, NO_APPROVAL } from './helpers/no-approval-spec.mjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url);
 const raw = name => JSON.parse(readFileSync(file(name), 'utf8'));
-const fixture = name => specDocument(raw(name));
+const fixture = name => raw(name);
 const provenance = raw('provenance');
 const deployment = '/fixture/base/northwind-workspace';
-const cli = () => ({ ...specProbe(raw('version')), ok: true, bin: '/fixture/bin/oats' });
+const cli = () => ({ ...raw('version'), ok: true, bin: '/fixture/bin/oats' });
 const exitError = code => Object.assign(new Error(`exit ${code}`), { code });
 /** Replays a captured document with the exit the kernel produced (spec: never 2). */
 const replay = name => (_bin, _argv, _options, done) => {
-  const exit = specExit(provenance.files[name].exit);
+  const exit = provenance.files[name].exit;
   done(exit ? exitError(exit) : null, JSON.stringify(fixture(name)));
 };
 const APPROVAL_KEYS = /"(approved|approvalNeeded|approval)"/;
@@ -41,7 +39,7 @@ test('F2 fixtures are kernel documents with recorded argv, exit and hashes; no a
 });
 
 test('argv is fixed per verb; there is no approve verb', () => {
-  assert.deepEqual(WORKSPACE_ACTIONS, ['capabilities', 'sync', 'onboard']);
+  assert.deepEqual(WORKSPACE_ACTIONS, ['capabilities', 'souls', 'sync', 'onboard']);
   assert.deepEqual(workspaceArgv({ action: 'capabilities', context: deployment }).argv, ['capabilities', '--dir', deployment, '--json']);
   assert.equal(workspaceArgv({ action: 'capabilities', context: deployment }).timeout, WORKSPACE_READ_TIMEOUT);
   assert.deepEqual(workspaceArgv({ action: 'sync', context: deployment }).argv, ['sync', '--dir', deployment, '--json']);
@@ -64,7 +62,7 @@ test('exec: bounded, no shell, scrubbed instance selectors, caller env untouched
   const result = await cliWorkspace(cli(), { action: 'capabilities', context: deployment }, { env, exec(bin, argv, options, done) {
     assert.equal(bin, '/fixture/bin/oats'); assert.equal(options.shell, false); assert.equal(options.cwd, deployment);
     assert.equal(options.maxBuffer, WORKSPACE_MAX_BUFFER); assert.deepEqual(options.env, { KEEP: '1' });
-    replay('capabilities-approved')(bin, argv, options, done);
+    replay('capabilities')(bin, argv, options, done);
   } });
   assert.deepEqual(Object.keys(result), ['ok', 'document']); assert.equal(result.ok, true);
   assert.equal(env.OATS_INSTANCE_HOME, '/foreign');
@@ -74,7 +72,7 @@ test('exit semantics: success is exit 0 only (no "pending"); refusals keep only 
   const run = (options, name) => cliWorkspace(cli(), options, { exec: replay(name) });
   assert.deepEqual(await run({ action: 'sync', context: deployment }, 'sync-current'), { ok: true, document: fixture('sync-current') });
   for (const action of ['sync', 'capabilities']) {
-    const name = action === 'sync' ? 'sync-current' : 'capabilities-approved';
+    const name = action === 'sync' ? 'sync-current' : 'capabilities';
     const two = await cliWorkspace(cli(), { action, context: deployment }, { exec: (_b, _a, _o, done) => done(exitError(2), JSON.stringify(fixture(name))) });
     assert.equal(two.reason.code, 'E_CLI_FAILED', `${action}: exit 2 is not a success any more`);
   }
@@ -93,7 +91,7 @@ test('exit semantics: success is exit 0 only (no "pending"); refusals keep only 
 });
 
 test('gate: API 2, workspace-v2 and packages-no-approval are all required; nothing dispatches otherwise', async () => {
-  const older = { ...cli(), features: cli().features.filter(f => f !== NO_APPROVAL) };
+  const older = { ...cli(), features: cli().features.filter(f => f !== 'packages-no-approval') };
   for (const state of [{ ...cli(), ok: false }, { ...cli(), workspaceApi: 1 }, { ...cli(), features: [] }, { ...cli(), bin: 'oats' }, older]) {
     const result = await cliWorkspace(state, { action: 'sync', context: deployment }, { exec: assert.fail });
     assert.equal(result.ok, false);
@@ -109,14 +107,14 @@ test('projectors keep command shapes and carry no approval state, whatever the d
   const current = syncData(fixture('sync-current'), deployment);
   assert.ok(current.packages.length > 0 && current.packages.every(p => p.commit && p.integrity));
   // Even an old-kernel document's approval fields are not projected.
-  for (const projected of [syncData(raw('sync-current'), deployment), capabilitiesData(raw('capabilities-approved')), onboardData(specDocument(raw('onboard-pending')), deployment)])
+  for (const projected of [syncData(raw('sync-current'), deployment), capabilitiesData(raw('capabilities')), onboardData(raw('onboard'), deployment)])
     assert.doesNotMatch(JSON.stringify(projected), APPROVAL_KEYS);
-  const catalog = capabilitiesData(fixture('capabilities-approved'));
+  const catalog = capabilitiesData(fixture('capabilities'));
   assert.deepEqual([...new Set(catalog.capabilities.map(c => c.kind))].sort(), ['member', 'package']);
-  const onboard = onboardData(fixture('onboard-pending'), deployment);
+  const onboard = onboardData(fixture('onboard'), deployment);
   assert.deepEqual(onboard.next.clone.map(c => c.name), ['agents', 'platform', 'data', 'marketing', 'nw-tools']);
   assert.equal(onboard.hosting.hostIsMember, true);
-  assert.throws(() => onboardData(fixture('onboard-pending'), '/fixture/base/other'), { code: 'E_DEPLOYMENT_SCOPE' });
+  assert.throws(() => onboardData(fixture('onboard'), '/fixture/base/other'), { code: 'E_DEPLOYMENT_SCOPE' });
 });
 
 /* ── the server boundary ─────────────────────────────────────────────── */
@@ -133,7 +131,7 @@ function boundary(script) {
 }
 
 test('read returns the projected catalog; sync returns the lock it wrote', async () => {
-  const b = boundary(['capabilities-approved', 'sync-current']);
+  const b = boundary(['capabilities', 'sync-current']);
   const read = await b.request({ action: 'read' }, { workspace, cli: cli() });
   assert.equal(read.status, 'ok'); assert.equal(read.capabilities.capabilities.length, 10);
   const sync = await b.request({ action: 'sync' }, { workspace, cli: cli() });
@@ -169,7 +167,7 @@ test('one sync per deployment; a malformed report is a protocol failure', async 
 
 test('remote, unknown, pre-v2 or pre-no-approval contexts never dispatch', async () => {
   const b = boundary([]);
-  const older = { ...cli(), features: cli().features.filter(f => f !== NO_APPROVAL) };
+  const older = { ...cli(), features: cli().features.filter(f => f !== 'packages-no-approval') };
   for (const [ws, state] of [[null, cli()], [{ ...workspace, remote: true }, cli()], [{ ...workspace, server: 'h' }, cli()], [workspace, { ...cli(), features: [] }], [workspace, older]]) {
     const result = await b.request({ action: 'sync' }, { workspace: ws, cli: state });
     assert.notEqual(result.status, 'ok');
@@ -207,7 +205,7 @@ function httpHarness(workspaceSyncRequest) {
 }
 
 test('HTTP: loopback Host/Origin guards first, one ws selector, snapshot refresh only after a sync', async () => {
-  const b = boundary(['capabilities-approved', 'sync-current', 'sync-integrity']);
+  const b = boundary(['capabilities', 'sync-current', 'sync-integrity']);
   const http = httpHarness(b.request);
   for (const headers of [{ host: 'evil.invalid' }, { host: 'localhost', origin: 'https://evil.invalid' }, { host: 'localhost', origin: 'null' }])
     assert.equal((await http.request({ headers, body: '{"action":"sync"}' })).status, 403);

@@ -1,8 +1,7 @@
 // The v2 Workspace view (F2, no package approval): the Capabilities table from
 // `oats capabilities`, team/source filter pills, Sources from `oats workspace
-// status`, and Sync. Kernel-captured fixtures read through the published
-// no-approval spec (helpers/no-approval-spec.mjs) until the 0.26.0 kernel
-// branch is captured; the shipped Workspace stage is mounted in jsdom with a
+// status`, and Sync. Fixtures captured from main's kernel (packages-no-approval);
+// the shipped Workspace stage is mounted in jsdom with a
 // fixture ctx.api. No CLI, server, GUI or network.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,14 +13,13 @@ import { refreshCli } from '../renderer/views/cli-status.mjs';
 import { workspaceStatusData, deploymentStatusData, syncData } from '../deployment-data.mjs';
 import { filterChoices, capabilityUse, memberNames } from '../renderer/workspace-catalog.mjs';
 import { syncStateText } from '../renderer/workspace-sync-view.mjs';
-import { specProbe, specDocument } from './helpers/no-approval-spec.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const settle = async () => { for (let i = 0; i < 4; i++) await tick(); };
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
-const f2 = name => specDocument(JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8')));
+const f2 = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
 const dir = '/fixture/base/northwind-workspace';
-const CLI = { ...specProbe(f2('version')), ok: true, bin: '/fixture/bin/oats', operationsApi: 1, relations: true };
+const CLI = { ...f2('version'), ok: true, bin: '/fixture/bin/oats', operationsApi: 1, relations: true };
 const APPROVAL_TEXT = /approv/i;
 const statusOf = name => workspaceStatusData(f2(name), dir);
 const roster = deploymentStatusData(f2('status'), dir);
@@ -29,7 +27,7 @@ const instances = roster.agents.flatMap(agent => agent.instances.map(i => ({ ...
 const catalog = name => ({ workspaceSyncApi: 1, status: 'ok', report: null, capabilities: { capabilitiesApi: 1, ...f2(name).result }, reason: null });
 const report = (name, status) => ({ workspaceSyncApi: 1, status, report: syncData(f2(name), dir), capabilities: null, reason: null });
 
-async function setup(t, { status = 'workspace-status-approved', cli = CLI, sync, workspace = {}, deployment } = {}) {
+async function setup(t, { status = 'workspace-status', cli = CLI, sync, workspace = {}, deployment } = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
   globalThis.document = dom.window.document; globalThis.window = dom.window; globalThis.setInterval = () => 0;
@@ -42,7 +40,7 @@ async function setup(t, { status = 'workspace-status-approved', cli = CLI, sync,
     if (path === '/api/cli') return cli;
     if (path.startsWith('/api/agents')) return { agents: roster.agents.map(({ instances: _i, ...soul }) => ({ ...soul, agentsRoot: roster.root })) };
     if (path.startsWith('/api/panel')) return panel();
-    if (path.startsWith('/api/workspace-sync')) return sync ? sync(body, calls) : catalog('capabilities-approved');
+    if (path.startsWith('/api/workspace-sync')) return sync ? sync(body, calls) : catalog('capabilities');
     if (path === '/api/servers') return { servers: [] };
     throw new Error(`Unexpected fixture API request: ${path}`);
   } };
@@ -90,7 +88,7 @@ test('Capabilities is the kernel catalog: counts, three design columns and readi
 test('team and source pills filter the table (AND), name only what the catalog holds, and reset to All', async t => {
   const u = await setup(t);
   await u.tab('capabilities');
-  const choices = filterChoices(f2('capabilities-approved').result.capabilities, memberNames(statusOf('workspace-status-approved')));
+  const choices = filterChoices(f2('capabilities').result.capabilities, memberNames(statusOf('workspace-status')));
   assert.deepEqual(choices.teams, ['engineering', 'global', 'marketing', 'unassigned']);
   assert.deepEqual(choices.sources.map(s => s === 'sep' ? '|' : s.label), ['agents', 'data', 'marketing', 'nw-tools', '|', 'nw.tools', 'oats.framework', 'oats.okf']);
   assert.equal(u.pill('team', 'All').getAttribute('aria-pressed'), 'true');
@@ -122,7 +120,7 @@ test('Sources: repositories with team and confirmation, packages with their lock
   assert.doesNotMatch(u.doc.querySelector('.workspace-discovery').textContent, APPROVAL_TEXT);
   assert.deepEqual(u.syncCalls(), [], 'Sources render the observation only');
   // An unconfirmed member (kernel row from a later sync) keeps its status and detail.
-  const status = { ...statusOf('workspace-status-approved'), members: moved.members };
+  const status = { ...statusOf('workspace-status'), members: moved.members };
   const { renderSources } = await import('../renderer/workspace-catalog.mjs');
   const host = u.doc.createElement('div'); renderSources(host, { status });
   const marketing = host.querySelector('[data-member$="marketing.git"]');
@@ -131,14 +129,14 @@ test('Sources: repositories with team and confirmation, packages with their lock
 });
 
 test('header state: lock out of date or current — from workspace status; there is no approval state', async () => {
-  assert.deepEqual(syncStateText({ ...statusOf('workspace-status-approved'), unsynced: ['x'] }), { text: 'Lock out of date', warn: true });
-  assert.deepEqual(syncStateText({ ...statusOf('workspace-status-approved'), stale: ['x'] }), { text: 'Lock out of date', warn: true });
-  assert.deepEqual(syncStateText(statusOf('workspace-status-approved')), { text: 'Lock current', warn: false });
+  assert.deepEqual(syncStateText({ ...statusOf('workspace-status'), unsynced: ['x'] }), { text: 'Lock out of date', warn: true });
+  assert.deepEqual(syncStateText({ ...statusOf('workspace-status'), stale: ['x'] }), { text: 'Lock out of date', warn: true });
+  assert.deepEqual(syncStateText(statusOf('workspace-status')), { text: 'Lock current', warn: false });
   assert.equal(syncStateText(null).text, '');
 });
 
 test('Sync runs oats sync and nothing else: no approval control, no sheet for a clean sync, the catalog re-read', async t => {
-  const u = await setup(t, { sync: body => body.action === 'sync' ? report('sync-current', 'ok') : catalog('capabilities-approved') });
+  const u = await setup(t, { sync: body => body.action === 'sync' ? report('sync-current', 'ok') : catalog('capabilities') });
   assert.equal(u.doc.querySelector('.ws-sync-state').textContent, 'Lock current');
   assert.equal(u.button('Review approvals'), undefined); assert.equal(u.doc.querySelector('.ws-approval'), null);
   await u.tab('capabilities');
@@ -151,7 +149,7 @@ test('Sync runs oats sync and nothing else: no approval control, no sheet for a 
 test('a sync that reports problems says so in a sheet, in the kernel\'s words', async t => {
   const withProblems = report('sync-current', 'ok');
   withProblems.report.problems = [{ code: 'E_MEMBER_UNREADABLE', message: 'member marketing could not be read', path: null, repoKey: null }];
-  const u = await setup(t, { sync: body => body.action === 'sync' ? withProblems : catalog('capabilities-approved') });
+  const u = await setup(t, { sync: body => body.action === 'sync' ? withProblems : catalog('capabilities') });
   u.doc.querySelector('.ws-sync button.primary').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
   assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Synced, with problems');
@@ -162,7 +160,7 @@ test('a sync that reports problems says so in a sheet, in the kernel\'s words', 
 test('a refused sync reads plainly; the kernel code and message stay verbatim behind Details', async t => {
   const integrity = f2('sync-integrity').error;
   const u = await setup(t, { sync: body => body.action === 'sync'
-    ? { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: integrity.code, message: integrity.message } } : catalog('capabilities-approved') });
+    ? { workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: integrity.code, message: integrity.message } } : catalog('capabilities') });
   u.doc.querySelector('.ws-sync button.primary').click(); await settle();
   const sheet = u.doc.querySelector('.ws-sync-sheet');
   assert.equal(sheet.hidden, false); assert.equal(sheet.querySelector('h2').textContent, 'Sync didn’t finish');
@@ -176,7 +174,7 @@ test('a refused sync reads plainly; the kernel code and message stay verbatim be
 
 test('a sync that settles after a workspace switch is inert', async t => {
   const gate = deferred();
-  const u = await setup(t, { sync: body => body.action === 'sync' ? gate.promise : catalog('capabilities-approved') });
+  const u = await setup(t, { sync: body => body.action === 'sync' ? gate.promise : catalog('capabilities') });
   u.button('Sync').click(); await tick();
   setWorkspace('/other'); await settle();
   gate.resolve({ workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'old' } }); await settle();
@@ -192,7 +190,7 @@ test('no workspace-v2 CLI or a remote workspace: nothing is read or synced, and 
 });
 
 test('hostile catalog text renders literally', async t => {
-  const hostile = f2('capabilities-approved');
+  const hostile = f2('capabilities');
   hostile.result.capabilities[0] = { ...hostile.result.capabilities[0], name: '<img src=x onerror=alert(1)>', origin: '"><script>bad()</script>' };
   const u = await setup(t, { sync: () => ({ workspaceSyncApi: 1, status: 'ok', capabilities: { capabilitiesApi: 1, ...hostile.result } }) });
   await u.tab('capabilities');
@@ -215,7 +213,7 @@ async function syncOwnership(t, create, outcome) {
   const ctx = { api: () => gate.promise };
   const view = create(dom.window.document.querySelector('header'), { ctx });
   t.after(() => { view.dispose(); setWorkspace(previous); dom.window.close(); });
-  view.update({ status: statusOf('workspace-status-approved'), canSync: true });
+  view.update({ status: statusOf('workspace-status'), canSync: true });
   dom.window.document.querySelector('.ws-sync button.primary').click(); await tick();
   setWorkspace('/other'); // a newer workspace intent
   if (outcome === 'success') gate.resolve({ workspaceSyncApi: 1, status: 'refused', report: null, reason: { code: 'E_PACKAGE_INTEGRITY', message: 'OLD refusal' } });
@@ -240,11 +238,11 @@ async function catalogOwnership(t, create, outcome) {
   const doc = dom.window.document, host = doc.querySelector('#panel');
   const view = create(doc.querySelector('header'), host, { ctx, soulsPanel: doc.querySelector('#souls') });
   t.after(() => { view.dispose(); setWorkspace(previous); dom.window.close(); });
-  const observed = statusOf('workspace-status-approved');
+  const observed = statusOf('workspace-status');
   const panel = () => ({ workspace: { id: currentWorkspace(), scope: currentWorkspace() }, instances: [], deployment: { status: 'observed', workspace: observed.workspace, workspaceStatus: observed } });
   view.updateRoster([], panel()); view.setTab('capabilities'); await tick();
   setWorkspace('/other'); view.updateRoster([], panel());
-  if (outcome === 'success') gate.resolve(catalog('capabilities-approved')); else gate.resolve(Promise.reject(new Error('OLD catalog failure')));
+  if (outcome === 'success') gate.resolve(catalog('capabilities')); else gate.resolve(Promise.reject(new Error('OLD catalog failure')));
   await settle();
   return { rows: host.querySelectorAll('.catalog-row:not(.head)').length, text: host.textContent };
 }
@@ -259,7 +257,7 @@ for (const outcome of ['success', 'rejection']) test(`catalog ${outcome} for a p
 
 test('a failed catalog read names the failure and offers an explicit retry', async t => {
   let fail = true;
-  const u = await setup(t, { sync: () => fail ? { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_TIMEOUT', message: 'The workspace command exceeded its time limit.' } } : catalog('capabilities-approved') });
+  const u = await setup(t, { sync: () => fail ? { workspaceSyncApi: 1, status: 'unavailable', reason: { code: 'E_CLI_TIMEOUT', message: 'The workspace command exceeded its time limit.' } } : catalog('capabilities') });
   await u.tab('capabilities');
   assert.equal(u.doc.querySelector('.discovery-status').textContent, 'E_CLI_TIMEOUT: The workspace command exceeded its time limit.');
   const retry = u.doc.querySelector('.discovery-retry');

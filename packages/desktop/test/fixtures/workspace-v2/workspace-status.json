@@ -7,8 +7,8 @@
       "name": "northwind",
       "key": "local//fixture/base/fx/remotes/agents.git",
       "url": "/fixture/base/fx/remotes/agents.git",
-      "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
-      "observedAt": "2026-09-24T11:52:09.504Z",
+      "commit": "f6775a2b498edcde656b647ab9388812d974526c",
+      "observedAt": "2026-09-24T18:26:09.422Z",
       "local": "/fixture/base/northwind-workspace/oats-local.yaml",
       "teams": [
         "global",
@@ -20,7 +20,7 @@
       {
         "key": "local//fixture/base/fx/remotes/agents.git",
         "name": "agents",
-        "commit": "7bc8403a93ec4e745c22bb37144ee0db6c8e3cc9",
+        "commit": "f6775a2b498edcde656b647ab9388812d974526c",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -38,7 +38,7 @@
       {
         "key": "local//fixture/base/fx/remotes/platform.git",
         "name": "platform",
-        "commit": "c16800474dcb3dd41527f6b9bb9702587c45d440",
+        "commit": "3ac2fe7a93b04fd65edd54e389bb42db36398f42",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -53,7 +53,7 @@
       {
         "key": "local//fixture/base/fx/remotes/data.git",
         "name": "data",
-        "commit": "5c6a91c17d41a7085eecec3e680069860d4639ed",
+        "commit": "6958d2689aefbbe17632cf37df327b84528dcfb6",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -69,7 +69,7 @@
       {
         "key": "local//fixture/base/fx/remotes/marketing.git",
         "name": "marketing",
-        "commit": "a5e6d5850f4e7db2fb655e2d6803a20e649e5116",
+        "commit": "e1998c6ea60335abcfb9635403c27ac634c8d38e",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -87,7 +87,7 @@
       {
         "key": "local//fixture/base/fx/remotes/nw-tools.git",
         "name": "nw-tools",
-        "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
+        "commit": "8601103d1b78a3d9bb7ef1ca22057c1e5ef07cd4",
         "confirmed": true,
         "status": "confirmed",
         "detail": null,
@@ -109,16 +109,12 @@
         "id": "nw.tools",
         "version": "0.4.0",
         "source": "git:local//fixture/base/fx/remotes/nw-tools.git@v0.4.0",
-        "commit": "6bba1dc244996a23ee568064daebb01d81fcd042",
-        "integrity": "sha256-4cd126a7b19ba38bc34eb6ce8b97f864da9cffaa8c52b9d6a70b87f01618ad8b",
+        "commit": "8601103d1b78a3d9bb7ef1ca22057c1e5ef07cd4",
+        "integrity": "sha256-4a0ee48230d65cc6c0b9d0c9a3883e64182cfc7b2410e4f5839bacf551fcf1cf",
         "capabilities": [
           "nw-deploy",
           "nw-lint"
-        ],
-        "approved": {
-          "executables": "sha256-7923d48128ac7dc7fe71c5bff27ceb22e13ba5223247b53c2763fd77caa258c5",
-          "at": "2026-09-24T11:52:04.492Z"
-        }
+        ]
       },
       {
         "id": "oats.framework",
@@ -128,25 +124,17 @@
         "integrity": "sha256-8f69a58cef42b8b3a1ab3edbd5eeb15793acb7ed5f23b4604bcf3b8303bc3903",
         "capabilities": [
           "oats.core"
-        ],
-        "approved": {
-          "executables": "sha256-e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-          "at": "2026-09-24T11:52:06.975Z"
-        }
+        ]
       },
       {
         "id": "oats.okf",
         "version": "2.1.3",
         "source": "catalog:oats.okf",
-        "commit": "f06f5bb3feed4c5d75f695df70a6cfd043fea6df",
-        "integrity": "sha256-101314ba91f2375a93bf535e329c8093e41b5bc954fdf20ae559031a816086c3",
+        "commit": "4166085a3ee7b12d5a8e8106c8bee701c9de8d51",
+        "integrity": "sha256-f96d8e669d38972de53856ad95e391714d386816c9062eb576083ff9ef17885f",
         "capabilities": [
           "oats.okf"
-        ],
-        "approved": {
-          "executables": "sha256-488fbf9cbd41b88e049af77a3ce108ee78cd5a8d3817ea6159014d428396d012",
-          "at": "2026-09-24T11:52:09.364Z"
-        }
+        ]
       }
     ],
     "declaredPackages": [
@@ -156,14 +144,6 @@
     ],
     "unsynced": [],
     "stale": [],
-    "approval": {
-      "approved": [
-        "nw.tools",
-        "oats.framework",
-        "oats.okf"
-      ],
-      "needed": []
-    },
     "external": [
       {
         "source": "file:///fixture/base/fx/remotes/experts.git@3c606e09ea25c9976d9c8371d48e9737564e6896",

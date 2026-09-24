@@ -38,7 +38,10 @@ test('module drift names moved/missing rows with reason and origin; the recorded
   i.modules[0] = { ...i.modules[0], status: 'moved', current: { commit: 'f'.repeat(40) } };
   i.modules[1] = { ...i.modules[1], status: 'missing', reason: 'capability-absent', current: null };
   const text = moduleDriftText(i.modules);
-  assert.match(text, /^nw-deploy: moved since — package nw\.tools @ 6bba1dc; nw-house-style: missing \(capability-absent\) — member agents @ 7bc8403; 3 current$/);
+  // Names, origins and recorded commits come from the capture (never hand-typed SHAs).
+  const [a, b] = i.modules, at = m => m.commit.slice(0, 7);
+  assert.deepEqual([a.name, a.from.kind, a.from.package, b.name, b.from.kind], ['nw-deploy', 'package', 'nw.tools', 'nw-house-style', 'member']);
+  assert.equal(text, `nw-deploy: moved since — package nw.tools @ ${at(a)}; nw-house-style: missing (capability-absent) — member agents @ ${at(b)}; 3 current`);
   assert.equal(moduleDriftText({ a: {}, b: {} }), '2 recorded — drift not observed (workspace unreachable)');
   assert.equal(moduleDriftText([]), 'None');
   assert.equal(moduleDriftText(undefined), null);

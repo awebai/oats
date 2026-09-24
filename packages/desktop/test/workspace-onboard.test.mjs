@@ -8,17 +8,15 @@ import { readFileSync } from 'node:fs';
 import { createOnboardOffers, createOnboardExecutor, MAX_ONBOARD_OFFERS } from '../workspace-registry.mjs';
 import { cliWorkspace, validWorkspaceRef } from '../workspace-cli.mjs';
 import { onboardData } from '../deployment-data.mjs';
-import { specProbe, specDocument, specExit } from './helpers/no-approval-spec.mjs';
 
-// Captured 0.25.x documents read through the published no-approval spec until
-// the 0.26.0 kernel branch is captured (helpers/no-approval-spec.mjs).
-const fixture = name => specDocument(JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8')));
+// Documents captured from main's kernel (packages-no-approval).
+const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/f2/${name}.json`, import.meta.url), 'utf8'));
 const exits = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/provenance.json', import.meta.url), 'utf8')).files;
 const dir = '/fixture/base/northwind-workspace';
-const cli = { ...specProbe(fixture('version')), ok: true, bin: '/fixture/bin/oats' };
-const replay = name => (_bin, _argv, _options, done) => { const exit = specExit(exits[name].exit); done(exit ? Object.assign(new Error('exit'), { code: exit }) : null, JSON.stringify(fixture(name))); };
+const cli = { ...fixture('version'), ok: true, bin: '/fixture/bin/oats' };
+const replay = name => (_bin, _argv, _options, done) => { const exit = exits[name].exit; done(exit ? Object.assign(new Error('exit'), { code: exit }) : null, JSON.stringify(fixture(name))); };
 
-function harness({ document = 'onboard-pending', deployment = () => false, realpath = p => p, add = async p => ({ ok: true, workspace: { id: p, path: p } }) } = {}) {
+function harness({ document = 'onboard', deployment = () => false, realpath = p => p, add = async p => ({ ok: true, workspace: { id: p, path: p } }) } = {}) {
   let n = 0;
   const offers = createOnboardOffers({ token: () => `token-${++n}` });
   const runs = [], adds = [];

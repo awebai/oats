@@ -187,7 +187,7 @@ workspace is observed through its server and never synced from here.
 - **Sync** (header) runs `oats sync --json`: it resolves every `packages:`
   entry, fetches it and writes the lock. There is **no package approval** —
   declaring a package is the trust decision (kernel feature
-  `packages-no-approval`, 0.26.0+; an older kernel gets the "update OATS"
+  `packages-no-approval`; a kernel without it gets the "update OATS"
   state, never a half-working view). The header says *Lock current* or *Lock
   out of date* (from `oats workspace status`). A sync that did not finish
   (`E_PACKAGE_INTEGRITY`, lock drift, an unreadable remote…) or that reports

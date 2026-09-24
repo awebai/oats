@@ -14,7 +14,7 @@ import { workspaceStatusData } from '../deployment-data.mjs';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const CLI = { ok: true, bin: '/fixture/oats', version: '0.25.7', operationsApi: 1, workspaceApi: 2, features: ['operations', 'workspace-v2'], remote: ['operations'], relations: true };
-const catalogFixture = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/capabilities-approved.json', import.meta.url), 'utf8'));
+const catalogFixture = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/capabilities.json', import.meta.url), 'utf8'));
 // The kernel's workspace header, captured from a real Northwind run and
 // projected exactly as the server does; the panel carries it with the roster.
 const northwind = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/workspace-status.json', import.meta.url), 'utf8'));

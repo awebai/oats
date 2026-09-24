@@ -3,12 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createDeploymentObserver, MAX_DEPLOYMENT_OBSERVATIONS } from '../server/deployment-observer.mjs';
-import { specProbe } from './helpers/no-approval-spec.mjs';
 const fixture = name => JSON.parse(readFileSync(new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url), 'utf8'));
 const status = fixture('status'), header = fixture('workspace-status'), version = fixture('version');
 const context = dirname(status.root);
-// packages-no-approval per the published spec until the 0.26.0 capture (helpers/no-approval-spec.mjs).
-const cli = () => ({ ...specProbe(structuredClone(version)), ok: true, bin: '/fixture/bin/oats' });
+const cli = () => ({ ...structuredClone(version), ok: true, bin: '/fixture/bin/oats' });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const flush = async () => { for (let n = 0; n < 8; n++) await Promise.resolve(); };
 const answer = (action, dir = context) => ({ ok: true, document: JSON.parse(JSON.stringify(action === 'status' ? status : header).replaceAll(context, dir)) });

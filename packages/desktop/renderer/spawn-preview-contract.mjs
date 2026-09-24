@@ -77,7 +77,6 @@ const errors = {
   E_INSTANCE_NAME_INVALID: 'That name is not a valid instance name (a slug that is not a soul name).',
   E_INSTANCE_NAME_TAKEN: 'An instance with that name already exists in this deployment.',
   E_SOUL_AMBIGUOUS: 'More than one member declares a soul with this name.',
-  E_PACKAGE_UNAPPROVED: 'A package this soul uses needs approval. Review approvals in the Workspace view.',
   E_BUSY: 'Two spawn previews are already running. Retry when one finishes.',
   E_CLI_TIMEOUT: 'The spawn preview timed out.', E_CLI_OUTPUT_LIMIT: 'The spawn preview exceeded its output limit.',
   E_CLI_PROTOCOL: 'The CLI returned an invalid or mismatched API 2 preview.', E_CLI_FAILED: 'The installed CLI could not complete the preview.',

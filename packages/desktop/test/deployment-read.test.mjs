@@ -6,7 +6,6 @@ import { dirname, join } from 'node:path';
 import { cliDeploymentRead, DEPLOYMENT_READ_MAX_BUFFER, DEPLOYMENT_READ_TIMEOUT } from '../deployment-read-cli.mjs';
 import { deploymentReadGate, DEPLOYMENT_FEATURES } from '../renderer/deployment-contract.mjs';
 import { deploymentStatusData, workspaceStatusData } from '../deployment-data.mjs';
-import { specProbe, NO_APPROVAL } from './helpers/no-approval-spec.mjs';
 
 const file = name => new URL(`./fixtures/workspace-v2/${name}.json`, import.meta.url);
 const fixture = name => JSON.parse(readFileSync(file(name), 'utf8'));
@@ -14,9 +13,7 @@ const status = fixture('status'), header = fixture('workspace-status'), probe = 
 const context = dirname(status.root);
 // An already accepted locator result. The producer's source version is retained
 // in the fixture and provenance; version-band tests belong to the locator.
-// The 0.26.0 feature (packages-no-approval) is applied per the published spec
-// until the kernel branch is captured (helpers/no-approval-spec.mjs).
-const cli = () => ({ ...specProbe(probe), ok: true, bin: '/fixture/bin/oats' });
+const cli = () => ({ ...probe, ok: true, bin: '/fixture/bin/oats' });
 const input = action => ({ action, context });
 const reply = (document, error = null) => (_bin, _args, _options, callback) => callback(error, JSON.stringify(document));
 
@@ -32,7 +29,7 @@ test('Northwind producer fixtures are exit-0 kernel documents with recorded hash
   }
   assert.equal(probe.version, provenance.kernel);
   assert.equal(probe.workspaceApi, 2);
-  for (const feature of DEPLOYMENT_FEATURES.filter(f => f !== NO_APPROVAL)) assert.ok(probe.features.includes(feature), feature);
+  for (const feature of DEPLOYMENT_FEATURES.filter(f => f !== 'packages-no-approval')) assert.ok(probe.features.includes(feature), feature);
 });
 
 for (const action of ['status', 'workspace-status']) test(`${action}: fixed argv, selected cwd, bounded I/O and ambient selector removal`, async () => {
@@ -150,9 +147,9 @@ test('the locator carries only an integer workspaceApi 2 from the probe into the
   const { discover } = await import('../cli-locator.mjs');
   const run = async payload => discover({ persisted: () => '/fixture/bin/oats', env: {}, isExecutableFile: () => true },
     async () => ({ stdout: JSON.stringify(payload) }));
-  assert.equal((await run(specProbe(probe))).workspaceApi, 2, 'the captured probe advertises workspaceApi 2');
+  assert.equal((await run(probe)).workspaceApi, 2, 'the captured probe advertises workspaceApi 2');
   for (const value of [1, '2', 3, undefined]) {
-    const state = await run({ ...specProbe(probe), workspaceApi: value });
+    const state = await run({ ...probe, workspaceApi: value });
     assert.equal(state.ok, true); assert.equal(Object.hasOwn(state, 'workspaceApi'), false, String(value));
     assert.equal(deploymentReadGate(state, 'workspace-status').reason.feature, 'workspace-v2');
   }

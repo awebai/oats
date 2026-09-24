@@ -308,8 +308,8 @@ for (const [name] of palettes) test(`${name}: workspace catalog, sources and syn
   // sync's members carry an unconfirmed (warn) row with its detail.
   const f2 = file => JSON.parse(readFileSync(new URL(`fixtures/workspace-v2/f2/${file}.json`, new URL("./", import.meta.url)), "utf8"));
   const dir = '/fixture/base/northwind-workspace';
-  const status = { ...workspaceStatusData(f2('workspace-status-approved'), dir), members: syncData(f2('sync-moved'), dir).members };
-  const rows = f2('capabilities-approved').result.capabilities;
+  const status = { ...workspaceStatusData(f2('workspace-status'), dir), members: syncData(f2('sync-moved'), dir).members };
+  const rows = f2('capabilities').result.capabilities;
   const names = memberNames(status);
   renderFilters(doc.querySelector('.filters'), { ...filterChoices(rows, names), value: { team: 'marketing', source: null }, onChange() {} });
   renderCapabilities(doc.querySelector('.caps'), { rows, status, instances: [], root: dir });
