@@ -102,7 +102,6 @@ full copy** of every capability the soul resolved to:
 
 ```text
 <agents-root>/<soul>/instances/<instance>/
-  soul → ../../soul                # the soul, for reference (read-only)
   AGENTS.md                        # generated: soul AGENTS.md + kernel/work-mode blocks + each module's inject
   CLAUDE.md → AGENTS.md
   .agents/skills/                  # canonical skill tree — soul skills + <capability>/<skill>/ full copies
@@ -111,7 +110,7 @@ full copy** of every capability the soul resolved to:
   .oats/modules/<capability>/      # the whole capability: oats.json, bin/, injects/, skills/ (hooks run from here)
   work/                            # worktree, checkout symlink, attached tree, or private directory
   TASK.md                          # briefing and task
-  instance.json                    # provenance (below)
+  instance.json                    # provenance (below); `soulDir` = the soul directory hooks get as OATS_SOUL
   STATE.md, log.md, notes/         # optional, from the knowledge capability
 ```
 
@@ -325,9 +324,11 @@ instructions state first (`injects/instance-boundary.md`):
 - `<instance-home>/work` — the repository or workspace view — is where
   repository reading, editing, building, testing, git and commits happen, to the
   extent the mode below permits.
-- The home's `soul` link is to be treated as read-only: writes through it bypass
-  the branch and review path. Durable soul edits go through tracked paths under
-  `work/` under the applicable review rules. OKF v2 harvest edits external
+- The home has no soul link: the composed `AGENTS.md` already carries the
+  soul's instructions, and `instance.json` `soulDir` records the (read-only,
+  per-commit) soul directory every hook and dispatched command receives as
+  `OATS_SOUL`. Durable soul edits go through tracked paths under `work/` under
+  the applicable review rules. OKF v2 harvest edits external
   owned knowledge, not canonical soul files or skills.
 
 Agents move between the two as the task needs; the boundary is what each

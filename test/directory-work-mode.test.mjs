@@ -103,7 +103,8 @@ test("package-only non-Git configured workspace is discoverable and CLI-spawnabl
   const result = cliSpawn(f);
   assert.equal(result.work, "directory");
   assert.equal(result.home, join(f.context, "local-agents", "worker", "instances", "worker-cli"));
-  assert.equal(readlinkSync(join(result.home, "soul")), f.soul);
+  assert.equal(existsSync(join(result.home, "soul")), false, "an instance home carries no soul link");
+  assert.equal(JSON.parse(readFileSync(join(result.home, "instance.json"), "utf8")).soulDir, f.soul);
   const status = cli(f, ["status"]);
   assert.equal(status.status, 0, status.stderr);
   assert.equal(JSON.parse(status.stdout).agents[0].instances[0].instance, result.instance);

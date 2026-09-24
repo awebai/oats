@@ -3,6 +3,7 @@
   "kind": "persistent",
   "instance": "dev-pi-attached-knone-mnone",
   "home": "<base>/scope/agents/dev/instances/dev-pi-attached-knone-mnone",
+  "soulDir": "<base>/scope/agents/dev/soul",
   "repo": "<base>/scope/repo",
   "work": "attached",
   "branch": "agents/dev-owner",

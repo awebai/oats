@@ -66,7 +66,7 @@ else if (cmd === "noisy") { console.log("progress 1/2"); console.log(JSON.string
   write(join(repo, "agents", "dev", "soul", "soul.yaml"), "name: dev\nrepo: .\nwork: worktree\nruntime: claude\n");
   write(join(repo, "agents", "dev", "soul", "AGENTS.md"), "# dev\n");
   const home = join(repo, "agents", "dev", "instances", "dev-one");
-  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-one", home, repo, work: "worktree", runtime: "claude", launched: true, layers: { knowledge: "test.notes [global @ " + repo + "]" }, capabilities: [{ id: "test.notes", level: repo, settings: { tone: "cold" } }] }));
+  write(join(home, "instance.json"), JSON.stringify({ agent: "dev", instance: "dev-one", home, soulDir: join(repo, "agents", "dev", "soul"), repo, work: "worktree", runtime: "claude", launched: true, layers: { knowledge: "test.notes [global @ " + repo + "]" }, capabilities: [{ id: "test.notes", level: repo, settings: { tone: "cold" } }] }));
   write(join(home, "MEMORY.md"), "# remembered\n");
   return { repo, home };
 }

@@ -133,7 +133,7 @@ async function installedFixture() {
       assert.equal(meta.launched, false);
       assert.equal(meta.work, "checkout");
       assert.equal(readlinkSync(join(instance.home, "CLAUDE.md")), "AGENTS.md");
-      assert.equal(realpathSync(join(instance.home, "soul")), realpathSync(agent._soulDir));
+      assert.equal(realpathSync(meta.soulDir), realpathSync(agent._soulDir));
       assert.deepEqual(meta.skills.map((s) => s.name).sort(), ["knowledge-capability-authoring", "oats", "oats-config", "oats-operate", "oats-packages", "oats-souls"]);
       for (const [name, expected] of Object.entries(coreSkillFingerprints)) {
         assert.deepEqual(fingerprint(join(instance.home, ".agents/skills", name)), expected, `source-independent core skill: ${name}`);

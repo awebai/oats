@@ -1020,6 +1020,11 @@ spawn. The same view is marked `standalone: true` in `oats sync --json` (with
 `workspace.name` = `standalone:<repo>`) and in the roster. `capabilities[]` is
 the per-module row set (`toCapabilityRows`) that `oats inspect`/`status` read.
 
+`soulDir` (0.26.0) is the absolute soul directory the instance incarnates — a
+workspace soul's per-commit copy `<deployment>/agents/<soul>/souls/<commit12>`, or
+the read-only soul inside a capability package — and is what every hook and
+dispatched command receives as `OATS_SOUL`. Instance homes carry no `soul` link.
+
 `digest` is the sha256 of the copied module tree (`<home>/.oats/modules/<cap>/`);
 `providers.<cap>` is the merged payload (soul ⊕ `oats-local.yaml`
 `settings.<cap>` ⊕ `--provider`), `{}` for a capability with none. Copies live at
@@ -1073,8 +1078,8 @@ refreshes the home in place:
 
 - `oats session recompose --home <abs> [--dry-run] --json` → `{home, instance,
   agent, soulDir, contextDir, changed, dryRun, blocks[{source,file}], previous,
-  note}`. Same composer spawn used, the home's own `soul` link and recorded
-  context/work mode. `changed:false` is a no-op (no receipt). On change the
+  note}`. Same composer spawn used, the home's recorded soul directory
+  (`instance.json` `soulDir`) and recorded context/work mode. `changed:false` is a no-op (no receipt). On change the
   prior text is retained as `previous` (`<home>/.oats-agents-md.<stamp>.previous`),
   `instance.json` gains `instructions[]`/`recomposedAt`, and a `recomposed`
   event is appended.

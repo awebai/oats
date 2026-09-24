@@ -77,13 +77,13 @@ test("M1: per-commit soul cache — a preview/spawn at a newer commit swaps the 
     assert.equal(a.agent._dir, agentDir, "findAgent reads the soul through the pointer");
     assert.ok(listAgents(d.root).some((x) => x.name === "release-manager"), "listAgents reads through the pointer too");
     const A = await spawnInstanceAsync(d.root, a.agent, { prepared: a.prepared, purpose: "a", work: "directory", repo: d.dep, launch: false });
-    const aSoul = join(A.home, "soul");
-    assert.ok(lstatSync(aSoul).isSymbolicLink());
-    const aReal = realpathSync(aSoul);
-    assert.equal(aReal, realpathSync(join(souls, c12(c1))), "A's home/soul links ITS commit's directory (realpath), never the pointer");
-    const aAgentsMd = readFileSync(join(aSoul, "AGENTS.md"), "utf8");
-    // The OKF spawn hook pins its owner by realpath(<home>/soul): remember what it saw.
+    assert.ok(!existsSync(join(A.home, "soul")), "an instance home carries no soul link");
     const aMeta = JSON.parse(readFileSync(join(A.home, "instance.json"), "utf8"));
+    const aSoul = aMeta.soulDir;
+    const aReal = realpathSync(aSoul);
+    assert.equal(aSoul, realpathSync(join(souls, c12(c1))), "A records ITS commit's directory (realpath), never the pointer");
+    const aAgentsMd = readFileSync(join(aSoul, "AGENTS.md"), "utf8");
+    // The OKF spawn hook pins its owner by realpath($OATS_SOUL) = the recorded soulDir: remember what it saw.
     assert.equal(aMeta.workspace.soul.commit, c1);
 
     // ---- the soul moves upstream (commit2) ----
@@ -101,7 +101,8 @@ test("M1: per-commit soul cache — a preview/spawn at a newer commit swaps the 
     assert.equal(JSON.parse(readFileSync(stamp, "utf8")).commit, c2, "the stamp follows the pointer");
     assert.match(readFileSync(join(pointer, "AGENTS.md"), "utf8"), /M1: release policy revised/, "classic readers see 'current' at agents/<name>/soul");
     // A is untouched.
-    assert.equal(realpathSync(aSoul), aReal, "A's soul realpath is unchanged (the OKF owner pin stays valid)");
+    assert.equal(JSON.parse(readFileSync(join(A.home, "instance.json"), "utf8")).soulDir, aReal, "A's recorded soul directory is unchanged (the OKF owner pin stays valid)");
+    assert.equal(realpathSync(aSoul), aReal);
     assert.equal(readFileSync(join(aSoul, "AGENTS.md"), "utf8"), aAgentsMd, "A's soul/AGENTS.md is byte-identical");
     assert.doesNotMatch(readFileSync(join(aSoul, "AGENTS.md"), "utf8"), /M1: release policy revised/);
     assert.doesNotMatch(readFileSync(join(A.home, "AGENTS.md"), "utf8"), /M1: release policy revised/, "A's composed instructions are unchanged");
@@ -111,11 +112,12 @@ test("M1: per-commit soul cache — a preview/spawn at a newer commit swaps the 
 
     // ---- spawn B at commit2 ----
     const B = await spawnInstanceAsync(d.root, p.agent, { prepared: p.prepared, purpose: "b", work: "directory", repo: d.dep, launch: false });
-    assert.equal(realpathSync(join(B.home, "soul")), realpathSync(join(souls, c12(c2))), "B's home/soul links souls/<c2>/");
-    assert.match(readFileSync(join(B.home, "soul", "AGENTS.md"), "utf8"), /M1: release policy revised/);
+    const bSoul = JSON.parse(readFileSync(join(B.home, "instance.json"), "utf8")).soulDir;
+    assert.equal(bSoul, realpathSync(join(souls, c12(c2))), "B records souls/<c2>/");
+    assert.match(readFileSync(join(bSoul, "AGENTS.md"), "utf8"), /M1: release policy revised/);
     assert.match(readFileSync(join(B.home, "AGENTS.md"), "utf8"), /M1: release policy revised/, "B is composed from c2");
     assert.equal(JSON.parse(readFileSync(join(B.home, "instance.json"), "utf8")).workspace.soul.commit, c2);
-    assert.equal(realpathSync(aSoul), aReal, "…and A still links c1");
+    assert.equal(JSON.parse(readFileSync(join(A.home, "instance.json"), "utf8")).soulDir, aReal, "…and A still records c1");
 
     // ---- idempotence: same commit → the entry is reused as is (never rewritten), pointer untouched ----
     writeFileSync(join(souls, c12(c2), ".marker"), "x");
@@ -127,7 +129,8 @@ test("M1: per-commit soul cache — a preview/spawn at a newer commit swaps the 
     assert.equal(back, aReal);
     assert.equal(soulPointerTarget(pointer), aReal);
     assert.equal(JSON.parse(readFileSync(stamp, "utf8")).commit, c1);
-    assert.equal(realpathSync(join(B.home, "soul")), realpathSync(join(souls, c12(c2))), "B still links c2 — swapping the pointer back touches no instance");
+    assert.equal(JSON.parse(readFileSync(join(B.home, "instance.json"), "utf8")).soulDir, realpathSync(join(souls, c12(c2))), "B still records c2 — swapping the pointer back touches no instance");
+    assert.match(readFileSync(join(bSoul, "AGENTS.md"), "utf8"), /M1: release policy revised/, "…and its per-commit directory is intact");
   });
 });
 

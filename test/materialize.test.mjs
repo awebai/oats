@@ -11,7 +11,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { contentDigest } from "../lib/remote.mjs";
-import { driftOf, materialize, refForKey } from "../lib/materialize.mjs";
+import { driftOf, materialize as materializeHome, refForKey } from "../lib/materialize.mjs";
 
 const roots = [];
 function scratch() { const d = mkdtempSync(join(tmpdir(), "oats-materialize-")); roots.push(d); return d; }
@@ -68,13 +68,19 @@ function memoryFetch({ failOn, digestOf = contentDigest, calls = [] } = {}) {
   };
 }
 
+// The soul's canonical AGENTS.md lives OUTSIDE the home (a home carries no soul
+// link); spawn hands it to materialize, as `soulAgentsMd` or `soulDir`.
+const SOUL_OF_HOME = new Map();
 function makeHome(base, { soulAgents = "# Soul\n\nYou are the release expert.\n", instance } = {}) {
   const home = join(base, "instances", "release-expert-1");
-  mkdirSync(join(home, "soul"), { recursive: true });
-  writeFileSync(join(home, "soul", "AGENTS.md"), soulAgents);
+  const soulDir = join(base, "souls", "release-expert");
+  mkdirSync(home, { recursive: true }); mkdirSync(soulDir, { recursive: true });
+  writeFileSync(join(soulDir, "AGENTS.md"), soulAgents);
+  SOUL_OF_HOME.set(home, soulDir);
   if (instance) writeFileSync(join(home, "instance.json"), JSON.stringify(instance, null, 2) + "\n");
   return home;
 }
+const materialize = (resolution, home, options = {}) => materializeHome(resolution, home, { ...(SOUL_OF_HOME.has(home) ? { soulDir: SOUL_OF_HOME.get(home) } : {}), ...options });
 
 const LOCK = {
   lockfileVersion: 3,
@@ -235,7 +241,7 @@ test("materialize: package repo derived from the lock's git: source and from a c
   const e = await caughtAsync(materialize(only(), h3, { fetch: memoryFetch(), lock: catalogLock }));
   assert.equal(e.code, "E_MATERIALIZE_SOURCE");
   assert.equal(e.details.package, "oats.okf");
-  assert.deepEqual(listAll(h3), ["soul/", "soul/AGENTS.md"]);
+  assert.deepEqual(listAll(h3), []);
   // from.repoKey recorded by the resolver wins over the lock
   const h4 = makeHome(join(base, "four")); const c4 = [];
   await materialize(only({ repoKey: PKG_KEY }), h4, { fetch: memoryFetch({ calls: c4 }), lock: catalogLock });
@@ -285,7 +291,7 @@ test("materialize: a capability absent at the source is E_CAPABILITY_MISSING and
   const e = await caughtAsync(materialize(res, home, { fetch: memoryFetch() }));
   assert.equal(e.code, "E_CAPABILITY_MISSING");
   assert.equal(e.details.path, "capabilities/nw-nope");
-  assert.deepEqual(listAll(home), ["soul/", "soul/AGENTS.md"]);
+  assert.deepEqual(listAll(home), []);
 });
 
 test("materialize: digest mismatch between fetch report and the copy → E_MATERIALIZE_INTEGRITY, nothing left", async () => {
@@ -298,7 +304,7 @@ test("materialize: digest mismatch between fetch report and the copy → E_MATER
   assert.equal(e.details.why, "copy");
   assert.equal(e.details.expected, `sha256-${"f".repeat(64)}`);
   assert.equal(e.details.actual, contentDigestOfFixture(`${AGENTS_KEY}@${COMMIT_A}:capabilities/nw-release-tooling`));
-  assert.deepEqual(listAll(home), ["soul/", "soul/AGENTS.md"]);
+  assert.deepEqual(listAll(home), []);
 });
 
 test("materialize: a resolution-pinned module.digest that disagrees with the copy → E_MATERIALIZE_INTEGRITY (why: resolution)", async () => {
@@ -310,7 +316,7 @@ test("materialize: a resolution-pinned module.digest that disagrees with the cop
   assert.equal(e.code, "E_MATERIALIZE_INTEGRITY");
   assert.equal(e.details.module, "nw-house-style");
   assert.equal(e.details.why, "resolution");
-  assert.deepEqual(listAll(home), ["soul/", "soul/AGENTS.md"]);
+  assert.deepEqual(listAll(home), []);
   // and a matching pin passes, recording it
   const home2 = makeHome(join(base, "two"));
   const res2 = resolution();
@@ -343,7 +349,7 @@ test("materialize: duplicate skill names across modules → E_SKILL_DUPLICATE na
   const e = await caughtAsync(materialize(dup, home, { fetch: memoryFetch(), lock: LOCK }));
   assert.equal(e.code, "E_SKILL_DUPLICATE");
   assert.deepEqual(e.details, { name: "cut-release", modules: ["nw-release-tooling", "oats.okf"] });
-  assert.deepEqual(listAll(home), ["soul/", "soul/AGENTS.md"]);
+  assert.deepEqual(listAll(home), []);
 
   const missingSkill = resolution({ skills: [{ module: "nw-house-style", name: "ghost", path: "skills/ghost" }] });
   const e2 = await caughtAsync(materialize(missingSkill, home, { fetch: memoryFetch(), lock: LOCK }));
@@ -359,7 +365,7 @@ test("materialize: duplicate skill names across modules → E_SKILL_DUPLICATE na
   const e4 = await caughtAsync(materialize(missingInject, home, { fetch: memoryFetch(), lock: LOCK }));
   assert.equal(e4.code, "E_MATERIALIZE_RESOLUTION");
   assert.equal(e4.details.path, "injects/nope.md");
-  assert.deepEqual(listAll(home), ["soul/", "soul/AGENTS.md"]);
+  assert.deepEqual(listAll(home), []);
 });
 
 test("materialize: refuses to overwrite a module already in the home; invalid resolution / missing home are named errors", async () => {

@@ -15,7 +15,7 @@ its contents.
   config cascade, package lock or another instance.
 - Preserve home/work separation and canonical instruction aliases:
   `AGENTS.md` in home, `CLAUDE.md -> AGENTS.md`, and the generated skill aliases.
-  The home's `./soul` link and retained software are read-only, not edit surfaces.
+  Retained soul source and software are read-only, not edit surfaces.
 - Deliver results using the task and selected capability's supported protocol.
   This mode imposes no knowledge layout, harvester, storage backend or publication
   policy. A recovery copy, if independently verified, is not publication or

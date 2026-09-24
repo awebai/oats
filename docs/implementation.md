@@ -49,7 +49,6 @@ and the `oats.web` browser panel were retired in its favor.)
     CLAUDE.md -> AGENTS.md
     skills/                   # soul-private skills
   instances/<instance>/
-    soul -> ../../soul
     AGENTS.md                 # generated composition (regular file)
     CLAUDE.md -> AGENTS.md
     .agents/skills/           # exact materialized set
@@ -130,9 +129,9 @@ work-mode block it frames: `<instance-home>` (`$OATS_INSTANCE_HOME`) holds the
 brain, task, provenance and working state, and is where OATS operational/lifecycle
 commands are run from — together with the commands of whatever capabilities are
 active, `aw` among them when aweb messaging is — since they resolve scope from
-the working directory (`--dir <path>` reaches another deliberately); the home's
-`soul` link is to be treated as read-only because writes through it bypass the
-branch and review path; and `<instance-home>/work` is the repository or workspace
+the working directory (`--dir <path>` reaches another deliberately); the home
+carries no soul link (the composed AGENTS.md holds the soul's instructions, and
+hooks receive the recorded soul directory as `OATS_SOUL`); and `<instance-home>/work` is the repository or workspace
 view where repository reading, editing, building, testing, git and commits
 happen. It bounds *repository* work rather than forbidding all output elsewhere —
 episodic state lives in the home, and a service agent's own artifacts (a report

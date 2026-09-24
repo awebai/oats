@@ -32,7 +32,7 @@ import {
   resolveOatsConfig, resolveWorkMode, composeInstanceAgentsMd, parseYamlNested, assertSafeConfigValue, stripInternalAnnotations, withConfigFile, teamAgentRoots,
   findTeamAgent, findTeamInstance, findCapabilityAgent, findInstanceHome, findInstanceHomes, listCapabilityAgents, workspaceOf, stopInstanceSession, recomposeInstanceInstructions,
   ensureRoot, findRoot, findAgent, listAgents, listInstances, servedIdentityLine, servedIdentityOf, listAgentDefs, createAgent as coreCreateAgent,
-  spawnInstance, spawnInstanceAsync, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
+  spawnInstance, spawnInstanceAsync, instanceSoulDir, explicitInstanceName, findModuleCapabilityAgent, capabilityAgentFromDir, retireInstance, inspectInstanceSession, inputInstanceSession, attachInstanceSession, startInstanceSession, upsertLocalAgent, defaultRepo, RELATIONS, validateLaunchConfig, resolveLaunchSelection, resolveLaunchExecutable, checkLaunchExecutable, missingLaunchEnvRefs, renderLaunchRecipe, describeLaunchCommand, redactLaunchRecipe, LAUNCH_RUNTIMES, LAUNCH_RECIPE_VERSION, parseLaunchCommand, resolveYolo, planLaunch, redactLaunchCommand, restartInstanceSession,
 } from "../lib/core.mjs";
 import {
   assertNoSymlinkedParents, writeFileAtomic,
@@ -1123,7 +1123,7 @@ function operationCmd() {
   const env = { ...process.env };
   for (const k of ["OATS_EVENT", "OATS_INSTANCE", "OATS_INSTANCE_HOME", "OATS_HOME", "OATS_AGENT", "OATS_SOUL", "OATS_CONTEXT", "OATS_ROOT", "OATS_WORKSPACE", "OATS_LEVEL", "OATS_META", "OATS_KIND", "PI_AGENT_INSTANCE", "PI_AGENT_HOME", "PI_AGENTS_ROOT"]) delete env[k];
   const targetRoot = meta ? agentsRootOfHome(realOrResolved(home)) : selectedSoul?.agentsRoot;
-  const soulDir = meta ? join(dirname(dirname(realOrResolved(home))), "soul") : selectedSoul ? dirname(selectedSoul.soulFile) : undefined;
+  const soulDir = meta ? instanceSoulDir(realOrResolved(home), meta) : selectedSoul ? dirname(selectedSoul.soulFile) : undefined;
   Object.assign(env, {
     OATS_CAPABILITY: provider.capability, OATS_SETTINGS: JSON.stringify(settings || {}), OATS_CLI_BIN: CLI_BIN, OATS_OPERATION: address,
     OATS_CONTEXT: ctx, OATS_WORKSPACE: targetRoot ? workspaceOf(targetRoot) : workspaceOf(findRoot(ctx) || ctx),
@@ -3104,6 +3104,7 @@ async function capabilityCommand() {
     let capSettings = Object.create(null);
     let instanceModules = false;
     let deployment = null;
+    let soulDir;
     try {
       if (metaFile && existsSync(metaFile)) {
         const meta = JSON.parse(readFileSync(metaFile, "utf8"));
@@ -3111,6 +3112,7 @@ async function capabilityCommand() {
         activeIds = (meta.capabilities || []).map((c) => c.id);
         for (const c of meta.capabilities || []) capSettings[c.id] = c.settings || {};
         context = meta.repo || context;
+        soulDir = instanceSoulDir(instanceHome, meta);
         // Team: the spawn-time snapshot, but fall back to live config — instances
         // spawned before a team: block was declared have no snapshot.
         teamCtx = meta.team || resolveOatsConfig(context).team;
@@ -3137,14 +3139,14 @@ async function capabilityCommand() {
     if (!activeIds.includes(m.capability)) bail("E_CAPABILITY_INACTIVE", `${m.capability} command namespace is not active in the current context/instance`);
     const trust = capabilityTrust(m, context);
     if (!trust.trusted) bail("E_CAPABILITY_BLOCKED", `${m.capability} executable command is blocked: ${trust.reason}`);
-    return runManifestCommand(m, capSettings[m.capability] || {}, teamCtx, () => m._dir);
+    return runManifestCommand(m, capSettings[m.capability] || {}, teamCtx, () => m._dir, soulDir);
   }
 
   /** Help / unknown-command / spec validation / exec — shared by every context.
    *  `m` is the manifest (with `capability`; `_dir` may be absent until `ensureDir`
    *  resolves the directory holding the executable — the operator branch fetches
    *  the module tree only when a command is actually going to run). */
-  async function runManifestCommand(m, settings, teamCtx, ensureDir) {
+  async function runManifestCommand(m, settings, teamCtx, ensureDir, soulDir) {
     const sub = args[1];
     const cmds = Object.keys(m.commands);
     // `oats <ns> --help` and `oats <ns> <cmd> --help` answer from the manifest
@@ -3191,6 +3193,9 @@ async function capabilityCommand() {
       // it directly and never resolve `oats` from PATH or a shell.
       OATS_CLI_BIN: CLI_BIN,
       OATS_TEAM_NAME: teamCtx?.name || "", OATS_TEAM_ID: teamCtx?.id || "", OATS_TEAM_SCOPE: teamCtx?.scope || "",
+      // The soul the command acts for (an instance home's recorded soul directory):
+      // homes carry no soul link, so providers read it here.
+      ...(soulDir ? { OATS_SOUL: soulDir } : {}),
     } });
     // Child never ran (spawn error): nothing reached stdout — keep the envelope contract.
     if (r.error) bail("E_CAPABILITY_BROKEN", `oats ${cmd} ${sub}: ${r.error.message || r.error}`);

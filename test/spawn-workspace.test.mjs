@@ -377,8 +377,9 @@ test("B2: a v2 `work: workspace` soul spawns on a plain deployment — home/work
     assert.equal(meta.workspace.soul.commit, added.commit);
     assert.equal(meta.workspace.soul.team, "engineering");
     assert.match(readFileSync(join(home, "AGENTS.md"), "utf8"), /oats:work-mode:workspace/, "the workspace work-mode briefing is composed in");
-    // The M1 soul cache shape holds for this soul too: home/soul → souls/<commit12>/, agents/<name>/soul is the pointer.
-    assert.equal(realpathSync(join(home, "soul")), realpathSync(join(agentsRoot, "coordinator", "souls", added.commit.slice(0, 12))));
+    // The M1 soul cache shape holds for this soul too: the home records souls/<commit12>/ (no soul link), agents/<name>/soul is the pointer.
+    assert.ok(!existsSync(join(home, "soul")), "an instance home carries no soul link");
+    assert.equal(meta.soulDir, realpathSync(join(agentsRoot, "coordinator", "souls", added.commit.slice(0, 12))));
     assert.ok(lstatSync(join(agentsRoot, "coordinator", "soul")).isSymbolicLink());
     // preview is fine on the same soul (nothing created)
     r = oats(["spawn", "coordinator", "--dir", dep, "--agents-root", agentsRoot, "--purpose", "b2p", "--no-launch", "--preview", "--json"], { cwd: dep, env, base });

@@ -3,6 +3,7 @@
   "kind": "persistent",
   "instance": "dev-claude-checkout-knone-mstub",
   "home": "<base>/scope/agents/dev/instances/dev-claude-checkout-knone-mstub",
+  "soulDir": "<base>/scope/agents/dev/soul",
   "repo": "<base>/scope/repo",
   "work": "checkout",
   "branch": "main",

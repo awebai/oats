@@ -18,7 +18,8 @@ function assertPortableDoctrine(text) {
   assert.match(text, /owned home\/incarnation/);
   assert.match(text, /--deployment/); assert.match(text, /--resolution/);
   assert.match(text, /CLAUDE\.md -> AGENTS\.md/);
-  assert.match(text, /\.\/soul.*read-only|read-only retained source link/s);
+  assert.match(text, /soul is retained source, not your edit surface/);
+  assert.doesNotMatch(text, /\.\/soul/, "homes carry no soul link");
   assert.match(text, /\.\/work.*instance-owned execution directory/s);
   assert.match(text, /cwd and a recorded `repo` path never select configuration/);
   assert.match(text, /No Git\s+repository or branch is created/);
