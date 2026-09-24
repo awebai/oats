@@ -1,0 +1,6 @@
+schemaVersion: 2
+name: oats-operator-expert
+description: Deployment operator expert — onboarding, rebuilds, multi-machine layout, custody as host facts, cutover sequencing and outsider verification.
+work: directory
+capabilities:
+  oats.setup: { from: package }   # oats.core and the oats.okf knowledge slot come from the workspace defaults

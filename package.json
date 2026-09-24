@@ -36,8 +36,6 @@
     "docs/",
     "README.md",
     "package-catalog.json",
-    "souls/oats-setup-expert/soul.yaml",
-    "souls/oats-setup-expert/AGENTS.md",
     "packages/record/bin/",
     "packages/record/lib/",
     "packages/record/docs/",

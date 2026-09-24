@@ -34,13 +34,14 @@ role, not a new owner, the five-role rebuild or a completed deployment.
 1. Read this instance's TASK.md and the working state supplied by its knowledge
    capability. Inspect the task's repository instructions through the assigned
    work view. A source export is not a writable checkout or a work-target grant.
-2. Load **oats-portable** for retained operation and **oats-portable-artifacts**
-   for exact inspection/approval. For new preparation, consult the current CLI
-   help and repository adoption guide; do not assume an extra setup skill.
+2. Load the **oats.core** skills for lifecycle, roster and the workspace
+   (`oats status`, `oats workspace status`, `oats spawn --preview`). For
+   deployment setup, consult the current CLI help and the repository's
+   workspace guide; do not assume an extra setup skill.
    Use the selected messaging skills before communication. Missing required
    knowledge or messaging is a readiness failure, not permission to disable it.
 3. Consult the selected external owned-node index, then relevant declared
-   cross-reads. The owner, owned node and read interests are in soul.yaml;
+   cross-reads. The owner, owned node and read interests are in okf.json;
    the provider supplies actual locations and access. No knowledge/ directory
    is bundled here, and no publisher store or private team is inferred.
 4. For architecture questions, distinguish accepted knowledge from hypotheses
