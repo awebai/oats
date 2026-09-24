@@ -131,6 +131,8 @@ const errors = {
   E_DECISION_STALE: 'The confirmed decision changed. Review a fresh preview and explicitly confirm again.',
   E_IDEMPOTENCY_CONFLICT: 'This confirmation key belongs to a different recorded decision. Review a new confirmation; do not retry with a replacement key.',
   E_PLACEMENT_TAKEN: 'Another spawn reserved the confirmed home. Review a new preview before confirming again.',
+  // spawn-name: explicit names are unique across the deployment; a taken name is never suffixed.
+  E_INSTANCE_NAME_TAKEN: 'Another instance took the confirmed name. Review a new preview before confirming again.',
   E_OUTCOME_UNKNOWN: 'The spawn outcome is unknown. Check this same confirmation; never create a replacement key to retry it.',
   E_SPAWN_INCOMPLETE: 'The confirmed home exists but spawn completion is unconfirmed. Inspect its existing session; do not spawn another instance to recover it.',
   E_FORBIDDEN_FRAME: 'This frame cannot use spawn transactions.',

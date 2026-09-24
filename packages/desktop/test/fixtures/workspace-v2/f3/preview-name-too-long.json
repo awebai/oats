@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_INSTANCE_NAME_INVALID",
+    "message": "instance names are at most 64 characters; \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\" is 65 — pass a shorter --name"
+  }
+}

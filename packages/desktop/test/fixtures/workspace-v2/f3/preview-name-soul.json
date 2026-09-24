@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_INSTANCE_NAME_INVALID",
+    "message": "instance name \"support-triager\" is a soul name in this deployment; an instance may not share a soul's name"
+  }
+}

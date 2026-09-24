@@ -92,8 +92,8 @@
     "preview": true,
     "agent": "release-manager",
     "kind": "persistent",
-    "instance": "release-manager-race",
-    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race",
+    "instance": "api-gateway",
+    "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/api-gateway",
     "repo": "/fixture/base/northwind-workspace/agents-repo",
     "work": "worktree",
     "subject": {
@@ -102,9 +102,9 @@
       "dir": "/fixture/base/northwind-workspace"
     },
     "decision": {
-      "instance": "release-manager-race",
-      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race",
-      "branch": "agents/release-manager-race",
+      "instance": "api-gateway",
+      "home": "/fixture/base/northwind-workspace/agents/release-manager/instances/api-gateway",
+      "branch": "agents/api-gateway",
       "base": {
         "ref": "HEAD",
         "oid": "87327edae3488f6fa33608843f30883511d2dde9"
@@ -134,12 +134,12 @@
         }
       },
       "resolution": "759658af35a344bd9c44bce8",
-      "revision": "f37db687f51cd1d9c30a6888"
+      "revision": "0ef77e0cbf1c66c662f04b09"
     },
     "preflight": {
       "status": "complete",
       "budgetMs": 20000,
-      "elapsedMs": 61
+      "elapsedMs": 76
     },
     "backendStatus": {
       "name": "tmux",
@@ -151,12 +151,12 @@
     "modelSource": "native default",
     "launchConfig": null,
     "backend": "tmux",
-    "branch": "agents/release-manager-race",
+    "branch": "agents/api-gateway",
     "base": {
       "ref": "HEAD",
       "oid": "87327edae3488f6fa33608843f30883511d2dde9"
     },
-    "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/release-manager-race/work",
+    "worktree": "/fixture/base/northwind-workspace/agents/release-manager/instances/api-gateway/work",
     "relation": null,
     "parentInstance": null,
     "policy": {

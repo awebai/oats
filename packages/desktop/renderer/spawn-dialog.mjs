@@ -15,7 +15,7 @@ import { createSoulMark, createRuntimeBadge } from './identity-marks.mjs';
 import { distinguishingRootTags } from './instance-tree.mjs';
 import { createChoicePopup } from './choice-popup.mjs';
 import { postJson, workspaceGeneration, wsQuery } from './views/common.mjs';
-import { previewSupported, previewChoices, previewData, previewTarget, previewFailure } from './spawn-preview-contract.mjs';
+import { previewSupported, previewChoices, previewData, previewTarget, previewFailure, INSTANCE_NAME_MAX } from './spawn-preview-contract.mjs';
 import { spawnApplySupported, spawnPrepareInput, spawnApplyView, spawnApplyReason } from './spawn-apply-contract.mjs';
 import { sameSpawnDecision } from './spawn-decision.mjs';
 import { spawnProblem } from './spawn-messages.mjs';
@@ -24,7 +24,7 @@ import { iconElement } from './shell-icons.mjs';
 
 export const PREVIEW_DEBOUNCE_MS = 250;
 export const RUNTIME_NAMES = Object.freeze({ pi: 'Pi', claude: 'Claude Code', codex: 'Codex' });
-const PURPOSE = /^[a-z0-9][a-z0-9-]{0,127}$/i;
+const PURPOSE = /^[a-z0-9][a-z0-9-]*$/i;
 
 export const spawnDialogCSS = `
 .spawn-modal .spawn-dialog { width:880px; max-width:100%; box-sizing:border-box; max-height:calc(100vh - 48px); padding:0; gap:0; overflow:hidden; box-shadow:var(--shadow-modal); }
@@ -460,9 +460,13 @@ export function createSpawnDialog(modal, { ctx, soul, agents, workspace, cli, in
   function choices() {
     const p = purpose.value.trim();
     if (p && !PURPOSE.test(p)) return { error: 'Use letters, digits and dashes in the name (start with a letter or digit).', field: 'name' };
+    const exact = !prefixLabel.hidden && !prefixed.checked;
+    // The final name is what the kernel caps (#159): the exact name, or <soul>-<purpose>.
+    if (p && (exact ? p.length : soul.name.length + 1 + p.length) > INSTANCE_NAME_MAX) {
+      return { error: `Instance names are at most ${INSTANCE_NAME_MAX} characters. Shorten the name.`, field: 'name' };
+    }
     const relationValue = relationChoice();
     if (!relationValue) return { error: `Pick the instance this one is a ${rel.value} of.`, field: 'relation' };
-    const exact = !prefixLabel.hidden && !prefixed.checked;
     if (exact && !p) return { error: 'Type the instance name, or turn the soul-name prefix back on.', field: 'name' };
     const identityChoice = identityOffered() && identity.value ? identity.value === 'local' ? { provider: messagingProvider, mode: 'local' }
       : { provider: messagingProvider, mode: 'global', resident: resident.value.trim() } : null;

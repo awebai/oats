@@ -1,4 +1,4 @@
-// Import the F3 kernel capture (repo kernel, Northwind scratch, capture-f3.mjs
+// Import the F3 kernel capture (main's kernel: no package approval, spawn-name; Northwind scratch, capture-f3-main.mjs
 // + provenance.json alongside it). NEVER runs a CLI, runtime or native probe.
 // <base>/<oats> placeholders become absolute fixture paths so projections'
 // absolute-path contracts apply unchanged. Refusal documents keep their exit.
@@ -13,7 +13,9 @@ const target = fileURLToPath(new URL('.', import.meta.url));
 const documents = ['souls', 'version', 'preview-worktree-default', 'preview-worktree-purpose', 'preview-runtime-claude', 'preview-native-default',
   'preview-yolo', 'preview-branch-base', 'preview-base-unknown', 'preview-checkout-default', 'preview-checkout-as-worktree', 'preview-directory',
   'preview-soul-unknown', 'preview-clone-missing', 'apply-bound', 'apply-replayed', 'apply-stale', 'preview-after-apply',
-  'preview-other', 'apply-idempotency-conflict', 'preview-race', 'apply-concurrent-a', 'apply-concurrent-b'];
+  'preview-other', 'apply-idempotency-conflict', 'preview-race', 'apply-concurrent-a', 'apply-concurrent-b',
+  'preview-name', 'preview-name-invalid', 'preview-name-soul', 'preview-name-too-long', 'preview-name-early', 'apply-name',
+  'preview-name-taken', 'preview-name-taken-other-soul', 'apply-name-taken'];
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const captured = JSON.parse(readFileSync(join(source, 'provenance.json'), 'utf8'));
 const provenance = { source: `${captured.capturedBy}; ${captured.fixture}; ${captured.script}`, kernel: captured.kernel,

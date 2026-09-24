@@ -15,7 +15,7 @@ function refusal(doc) {
     const decision = spawnDecision(doc.error?.details?.decision, { effectiveRequired: true });
     if (!decision) return failure('E_CLI_PROTOCOL', true);
     details = { decision };
-  } else if (['E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN', 'E_SPAWN_INCOMPLETE'].includes(error.code)) {
+  } else if (['E_IDEMPOTENCY_CONFLICT', 'E_PLACEMENT_TAKEN', 'E_INSTANCE_NAME_TAKEN', 'E_SPAWN_INCOMPLETE'].includes(error.code)) {
     const d = doc.error?.details;
     if (!record(d) || !named(d.instance) || !absolute(d.home)
       || error.code === 'E_SPAWN_INCOMPLETE' && ![false, 'unknown'].includes(d.launched)) return failure('E_CLI_PROTOCOL', true);

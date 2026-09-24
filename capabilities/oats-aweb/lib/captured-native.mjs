@@ -26,7 +26,7 @@ export function runCapturedNative({selected,event,settings,run,env=process.env})
  const refusal=(code,message)=>({exitCode:1,output:{...(meta?{meta}:{}),status:'needs-configuration',problems:[{code,message}],warning:`oats-aweb: ${message}; retain the home and any recorded partial effects`}});
  try{
   assertCurrent();
-  if(!/^[a-z0-9][a-z0-9._-]{0,127}$/i.test(name)||!team)fail('needs-configuration','exact native alias and private-team selection are required');
+  if(!/^[a-z0-9][a-z0-9_-]{0,63}$/i.test(name)||!team)fail('needs-configuration','exact native alias and private-team selection are required');
   if(settings.delivery!=='session')fail('needs-configuration','captured delivery must be session');
   if(binding.payload.wider.length)fail('needs-configuration','selected wider memberships need their explicitly qualified native setup; they were not omitted');
   // A global override may select a different actor even with an exact cwd.
