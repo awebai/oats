@@ -252,6 +252,9 @@ hook payload; the manifest schema does not yet carry a host-only marker).
   set settings.oats.aweb.root`; `no team: set messaging.byTeam.<label>.team in
   the workspace file or settings.oats.aweb.team`. With both present it answers
   `ready` (subject to captured-session checks when an invocation is supplied).
+  In classic deployments this readiness check approximates the full bounded
+  spawn search by checking `OATS_TEAM_SCOPE` before `OATS_WORKSPACE`; the spawn
+  hook itself still keeps the exact 1.12.0 bounded candidate order.
 - `identity.mode: local | global` (default `local`). Any other value is fatal.
   Local mode is the historical behavior: a spawned team identity is minted for
   the instance, or `identity.source` uses the existing retained-seat flow below.
