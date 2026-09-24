@@ -95,7 +95,7 @@ preview button either. The preview runs in the background to fill the real
 defaults, and apply still binds with `--expect-decision` (`E_DECISION_STALE`
 re-previews). A collapsed **Advanced** section holds harness permissions, launch
 config, relation, messaging identity (`--provider <cap> identity.mode=…`,
-decision 27) and branch/base overrides. Every modal gets a darker backdrop.
+decision 27), branch/base overrides and the execution server. Every modal gets a darker backdrop.
 
 **F4 — Instance card and roster on v2 facts.** The served-identity line (`acts
 as <address> via grant, expires <t>` / `alias <a> on <team>`); module rows with
