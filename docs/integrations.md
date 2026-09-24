@@ -257,7 +257,8 @@ but do not yet enforce provenance in the hook payload).
   filled in); older aw versions keep the 1.12 path and the hook verifies the
   returned `team_id`, revoking on mismatch. The hook parses the whole JSON
   document because aw `--json` output is indented across lines, with a fallback
-  to the first brace-prefixed block when progress lines precede it, and returns
+  to the first brace-prefixed block when progress lines precede it, records the
+  locator as `meta.identity.grant.home`, and returns
   `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`.
 
   As of aw 1.36.1, receiving, wake registration and `aw whoami` work through a
@@ -274,7 +275,8 @@ but do not yet enforce provenance in the hook payload).
 - `identity.renew: off | launch` (default `off`). `launch` runs the launch hook
   on every start/restart, mints a fresh grant into a new
   `<home>/.aweb-identity-<unix-seconds>` directory (never in place), returns the
-  new `meta.identity.grant` and `env.AWEB_IDENTITY_HOME`, then revokes the
+  new `meta.identity.grant` (including its `home` locator) and
+  `env.AWEB_IDENTITY_HOME`, then revokes the
   previous grant. If mint fails the old grant and locator are kept; if old revoke
   fails the new grant is kept and the warning says the previous grant was not
   revoked. Keep this setting `off` until kernels persist launch-hook meta

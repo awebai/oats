@@ -340,8 +340,14 @@ function grantHomeDirs() {
   } catch { return []; }
 }
 function removeGrantHomes() { for (const p of grantHomeDirs()) { try { rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } } }
-const previousGrantHome = () => process.env.AWEB_IDENTITY_HOME || join(home, ".aweb-identity");
-function retainedLaunchOutput(meta = {}, identityHome = previousGrantHome()) {
+function newestGrantHome() {
+  const dirs = grantHomeDirs().map((p) => {
+    try { return { path: p, mtime: statSync(p).mtimeMs }; } catch { return { path: p, mtime: 0 }; }
+  }).sort((a, b) => b.mtime - a.mtime || b.path.localeCompare(a.path));
+  return dirs[0]?.path || join(home, ".aweb-identity");
+}
+const priorGrantHome = (meta = {}) => typeof meta.identity?.grant?.home === "string" && meta.identity.grant.home ? meta.identity.grant.home : newestGrantHome();
+function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
   const delivery = meta.delivery || deliveryMode;
   const env = {};
   if (delivery === "session") env.AWEB_DELIVERY = "session";
@@ -352,8 +358,7 @@ function retainedLaunchOutput(meta = {}, identityHome = previousGrantHome()) {
 function grantMintArgv({ team, scopes, ttl, grantHome }) {
   return ["aw", "id", "grant", "mint", ...(awAtLeast(GRANT_TEAM_FLAG_MIN) ? ["--team", team] : []), "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"];
 }
-function parseMintedGrant(raw, grantHome) {
-  const minted = parseAwJson(raw, "aw id grant mint");
+function validateMintedGrant(minted, grantHome) {
   const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;
   const expiresAt = typeof minted.expires_at === "string" ? minted.expires_at : undefined;
   const mintedTeam = typeof minted.team_id === "string" ? minted.team_id : undefined;
@@ -362,19 +367,20 @@ function parseMintedGrant(raw, grantHome) {
   if (resolve(mintedOut) !== resolve(grantHome)) throw new Error(`aw id grant mint wrote ${mintedOut}, not ${grantHome}`);
   return { minted, grantId, expiresAt, mintedTeam, alias: typeof minted.alias === "string" && minted.alias ? minted.alias : undefined, address: typeof minted.address === "string" && minted.address ? minted.address : null };
 }
+function parseMintedGrant(raw, grantHome) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome); }
 function globalGrantRenew() {
   const mode = grantRenewMode();
   const oldMeta = JSON.parse(process.env.OATS_META || "{}");
   if (mode === "off") out(retainedLaunchOutput(oldMeta));
   if (mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
-  if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out({});
+  if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out(retainedLaunchOutput(oldMeta));
   const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
   const custody = resolveResidentCustody(resident);
   const team = payloadTeam().team || oldMeta.identity.team;
   if (!team) fatal("identity.renew launch needs the prior grant team or settings.oats.aweb.team");
   const scopes = grantScopes();
   const ttl = identitySettings.ttl === undefined || identitySettings.ttl === null || identitySettings.ttl === "" ? "8h" : String(identitySettings.ttl);
-  const oldHome = previousGrantHome();
+  const oldHome = priorGrantHome(oldMeta);
   try { custodyPreflight(custody, resident, team, { e2eeRequired: grantE2eeRequired(), fatalOnError: false }); }
   catch (e) { out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` }); }
   let stamp = Math.floor(Date.now() / 1000);
@@ -388,7 +394,7 @@ function globalGrantRenew() {
     out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal mint failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
   }
   const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
-  const newMeta = { ...oldMeta, delivery: oldMeta.delivery || deliveryMode, identity: identityMeta({ mode: "global", alias: mintedAlias || oldMeta.identity.alias || resident, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes } }) };
+  const newMeta = { ...oldMeta, delivery: oldMeta.delivery || deliveryMode, identity: identityMeta({ mode: "global", alias: mintedAlias || oldMeta.identity.alias || resident, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
   if (mintedTeam !== team) {
     try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
     try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
@@ -419,15 +425,15 @@ function globalGrantSpawn() {
     catch (parseError) {
       const recovered = recoverGrantHome(grantHome);
       if (recovered.grantId) {
-        meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes } }) };
+        meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes, home: grantHome } }) };
         try { revokeGrant(custody, recovered.grantId); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
         catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, but revoke failed: ${revokeError.message || revokeError}`); }
       }
       throw parseError;
     }
-    const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parseMintedGrant(JSON.stringify(minted), grantHome);
+    const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
     const alias = mintedAlias || resident;
-    meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes } }) };
+    meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }

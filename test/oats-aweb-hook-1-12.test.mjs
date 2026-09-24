@@ -132,7 +132,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
     const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin", scopes: ["mail.read", "chat.send"], ttl: "90m" }, residents: { merlin: custody } }), AWEB_IDENTITY_HOME: join(base, "ambient-grant-home") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aweb-identity") });
-    assert.deepEqual(r.doc.meta.identity, { mode: "global", alias: "resident-alias", team: "t:example.test", address: "oats.aweb.ai/resident-alias", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read", "chat.send"] } });
+    assert.deepEqual(r.doc.meta.identity, { mode: "global", alias: "resident-alias", team: "t:example.test", address: "oats.aweb.ai/resident-alias", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read", "chat.send"], home: join(home, ".aweb-identity") } });
     assert.equal(r.doc.meta.delivery, "session");
     assert.match(r.doc.brief, /act as resident aweb identity "resident-alias"/);
     assert.match(r.doc.brief, /mail\.read, chat\.send/);
