@@ -1,7 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import { TextDecoder } from 'node:util';
 import { assessCapturedSessionReadiness } from './session-readiness.mjs';
+import { custodyPreflight } from './grant-custody.mjs';
 import {
   MESSAGING_CONTRACT,
   MESSAGING_CONTRACT_VERSION,
@@ -78,21 +80,24 @@ export function parseBindingJson(bytes,limits=BINDING_WIRE_LIMITS) {
   let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch{wireError('invalid-binding');}
   return new StrictJsonParser(text,limits).parse();
 }
-function settings(value) {
+function settings(value,{phase}={}) {
   if(!obj(value)) wireError('invalid-binding');
-  if(Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
-  keys(value,['delivery','team','root','roots'],[]);
+  if(phase!=='check' && Object.hasOwn(value,'identity')) wireError('provider-not-qualified');
+  keys(value,phase==='check'?['delivery','team','root','roots','identity','residents']:['delivery','team','root','roots'],[]);
   if(value.delivery!==undefined && !['channel','session'].includes(value.delivery)) wireError('needs-configuration');
   if(value.team!==undefined && (typeof value.team!=='string' || !value.team.trim())) wireError('needs-configuration');
   if(value.root!==undefined && (typeof value.root!=='string' || !value.root.trim())) wireError('needs-configuration');
   if(value.roots!==undefined && !obj(value.roots)) wireError('needs-configuration');
   if(obj(value.roots)) for(const [team,root] of Object.entries(value.roots)) if(!team || typeof root!=='string' || !root.trim()) wireError('needs-configuration');
+  if(value.identity!==undefined && !obj(value.identity)) wireError('needs-configuration');
+  if(value.residents!==undefined && !obj(value.residents)) wireError('needs-configuration');
+  if(obj(value.residents)) for(const [name,custody] of Object.entries(value.residents)) if(!name || typeof custody!=='string' || !custody.trim()) wireError('needs-configuration');
   return value;
 }
 function request(value,phase) {
   keys(value,['schemaVersion','phase','slot','capability','settings','input'],['schemaVersion','phase','slot','capability','settings','input']);
   if(value.schemaVersion!==1 || value.phase!==phase || value.slot!==SLOT || value.capability!==CAPABILITY) wireError('invalid-binding');
-  settings(value.settings);return value;
+  settings(value.settings,{phase});return value;
 }
 function declaration(value) {
   keys(value,['kind','value','origin','origins'],['kind','value','origin','origins']);
@@ -149,32 +154,69 @@ function binding(value) {
 }
 function checkResult(message) {return {status:'needs-configuration',problems:[{code:'needs-configuration',message}]};}
 function checkProblems(problems) {return problems.length?{status:'needs-configuration',problems}:null;}
+function workspaceReadinessContext(value) {
+  keys(value,['kind','workspace','deployment','soul','team','instance','home'],['kind','workspace','deployment','soul']);
+  if(value.kind!=='workspace' || typeof value.workspace!=='string' || !value.workspace.trim() || typeof value.deployment!=='string' || !value.deployment.trim() || typeof value.soul!=='string' || !value.soul.trim()) wireError('invalid-binding');
+  if(value.team!==null && value.team!==undefined && (typeof value.team!=='string' || !value.team.trim())) wireError('invalid-binding');
+  if(value.instance!==null && value.instance!==undefined && (typeof value.instance!=='string' || !value.instance.trim())) wireError('invalid-binding');
+  if(value.home!==null && value.home!==undefined && (typeof value.home!=='string' || !value.home.trim())) wireError('invalid-binding');
+  return value;
+}
 function yamlScalar(text,key){const m=String(text).match(new RegExp(`^${key}:\\s*["']?([^"'\\n#]+)["']?\\s*$`,'m'));return m?m[1].trim():undefined;}
 function activeTeamAt(root){try{return yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active_team')||yamlScalar(readFileSync(join(resolve(root),'.aw','teams.yaml'),'utf8'),'active');}catch{return undefined;}}
-function teamFromSettings(settings,candidate) {
-  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);
-  if(configured || process.env.OATS_TEAM_LABEL) return configured;
+function teamFromSettings(settings,candidate,{env=process.env}={}) {
+  const configured=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
+  if(configured || env.OATS_TEAM_LABEL) return configured;
   return candidate?.root && isAbsolute(candidate.root) ? activeTeamAt(candidate.root) : undefined;
 }
-function classicEnv() {return !!process.env.OATS_TEAM_SCOPE && !(process.env.OATS_WORKSPACE_KEY || process.env.OATS_WORKSPACE_NAME || process.env.OATS_TEAM_LABEL);}
-function rootCandidate(settings,team) {
+function classicEnv(env=process.env) {return !!env.OATS_TEAM_SCOPE && !(env.OATS_WORKSPACE_KEY || env.OATS_WORKSPACE_NAME || env.OATS_TEAM_LABEL);}
+function rootCandidate(settings,team,{deployment,env=process.env}={}) {
   const roots=obj(settings.roots)?settings.roots:{};
   if(team && typeof roots[team]==='string' && roots[team].trim()) return {root:roots[team].trim(),key:`settings.oats.aweb.roots[${JSON.stringify(team)}]`,declared:true};
   if(typeof settings.root==='string' && settings.root.trim()) return {root:settings.root.trim(),key:'settings.oats.aweb.root',declared:true};
-  const candidates=classicEnv()?[process.env.OATS_TEAM_SCOPE,process.env.OATS_WORKSPACE].filter(Boolean):[process.env.OATS_WORKSPACE || process.env.OATS_TEAM_SCOPE || process.cwd()];
+  const candidates=classicEnv(env)?[env.OATS_TEAM_SCOPE,env.OATS_WORKSPACE].filter(Boolean):[env.OATS_WORKSPACE || deployment || env.OATS_TEAM_SCOPE || process.cwd()];
   for(const root of candidates) if(isAbsolute(root) && existsSync(join(resolve(root),'.aw'))) return {root,key:'settings.oats.aweb.root',declared:false};
   return {root:candidates[0] || process.cwd(),key:'settings.oats.aweb.root',declared:false};
 }
-function readinessFromSettings(settings) {
-  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(process.env.OATS_TEAM_ID || process.env.OATS_TEAM_NAME || undefined);
-  const candidate=rootCandidate(settings,initialTeam),team=teamFromSettings(settings,candidate),problems=[];
+function readinessDetails(settings,{deployment,env=process.env}={}) {
+  const initialTeam=typeof settings.team==='string' && settings.team.trim()?settings.team.trim():(env.OATS_TEAM_ID || env.OATS_TEAM_NAME || undefined);
+  const candidate=rootCandidate(settings,initialTeam,{deployment,env}),team=teamFromSettings(settings,candidate,{env}),problems=[];
   if(!candidate.root || !isAbsolute(candidate.root) || !existsSync(join(resolve(candidate.root),'.aw'))) problems.push({code:'needs-configuration',message:`no messaging root at ${candidate.root?resolve(candidate.root):process.cwd()}: run oats aweb setup there or set ${candidate.key}`});
   if(!team) problems.push({code:'needs-configuration',message:'no team: set messaging.byTeam.<label>.team in the workspace file or settings.oats.aweb.team'});
-  return checkProblems(problems) || {status:'ready',problems:[]};
+  return {team,candidate,result:checkProblems(problems) || {status:'ready',problems:[]}};
+}
+function readinessFromSettings(settings,options) {return readinessDetails(settings,options).result;}
+function runAw(argv,cwd,{unsetEnv=[],timeout=60000}={}) {
+  const env={...process.env};for(const name of unsetEnv) delete env[name];
+  try {return execFileSync(argv[0],argv.slice(1),{cwd,env,encoding:'utf8',stdio:['ignore','pipe','pipe'],timeout}).trim();}
+  catch(e) {throw new Error(`${argv.slice(0,3).join(' ')} failed${e.status===undefined?'':` (exit ${e.status})`}`);}
+}
+function workspaceReadinessPhase(req) {
+  const ctx=workspaceReadinessContext(req.input.context);
+  if(!obj(req.input.action) || req.input.action.kind!=='readiness') wireError('invalid-binding');
+  const details=readinessDetails(req.settings,{deployment:ctx.deployment}),problems=[...details.result.problems],warnings=[];
+  const identity=obj(req.settings.identity)?req.settings.identity:{},mode=identity.mode===undefined || identity.mode===null || identity.mode===''?'local':String(identity.mode);
+  if(mode==='global') {
+    const resident=typeof identity.resident==='string' && identity.resident.trim()?identity.resident.trim():undefined;
+    const residents=obj(req.settings.residents)?req.settings.residents:{};
+    const custody=resident?residents[resident]:undefined;
+    if(!resident) problems.push({code:'custody',message:'identity.mode "global" requires identity.resident; set oats-local.yaml settings.oats.aweb.residents.<name> to the absolute custody directory for that resident identity'});
+    else if(typeof custody!=='string' || !isAbsolute(custody) || !existsSync(join(custody,'.aw','identity.yaml'))) problems.push({code:'custody',message:`identity.mode "global" resident ${JSON.stringify(resident)} is not resolvable; set oats-local.yaml settings.oats.aweb.residents.${resident} to an absolute custody directory whose .aw/identity.yaml exists`});
+    else if(details.team) {
+      try {
+        const preflight=custodyPreflight({custody,resident,team:details.team,e2eeRequired:identity.e2ee!==false,fatalOnError:false,runAw:(argv,cwd,options={})=>runAw(argv,cwd,{...options,timeout:20000})});
+        for(const message of preflight.warnings) warnings.push({code:'e2ee-disabled',message});
+      }
+      catch(e) {problems.push({code:'custody',message:e.message});}
+    }
+  }
+  const result=checkProblems(problems) || {status:'ready',problems:[]};
+  return {...result,warnings};
 }
 function checkPhase(req) {
-  keys(req.input,['binding','context','action','invocation'],['binding','context','action']);
+  keys(req.input,['binding','context','action','invocation'],['context','action']);
   if(!obj(req.input.action) || typeof req.input.action.kind!=='string') wireError('invalid-binding');
+  if(!Object.hasOwn(req.input,'binding')) return workspaceReadinessPhase(req);
   const current=validateAwebBinding(binding(req.input.binding)),selectedContext=context(req.input.context,{request:true});
   if(!same(selectedContext,current.payload.context)) wireError('invalid-binding');
   const invocation=Object.hasOwn(req.input,'invocation')?validateAwebInvocationContext(req.input.invocation,current,{context:req.input.context,action:req.input.action}):null;

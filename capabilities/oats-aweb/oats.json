@@ -1,7 +1,7 @@
 {
   "capability": "oats.aweb",
   "command": "aweb",
-  "version": "1.12.3",
+  "version": "1.13.0",
   "compatibility": {
     "oats": ">=0.25.6"
   },
@@ -121,7 +121,8 @@
       "command": "bin/oats-aweb.mjs spawn",
       "required": true
     },
-    "retire": "bin/oats-aweb.mjs retire"
+    "retire": "bin/oats-aweb.mjs retire",
+    "launch": "bin/oats-aweb.mjs launch"
   },
   "environment": [
     "AWEB_DELIVERY",
@@ -151,7 +152,7 @@
       "default": {
         "mode": "local"
       },
-      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident and optional scopes/ttl."
+      "description": "Identity selection. mode=local (default) mints an instance-local team identity or uses the existing identity.source retained-seat flow. mode=global acts as a named resident identity through a session grant; requires identity.resident. Optional global fields: profile (normal|reviewer), scopes (explicit concrete grant scope list, wins over profile), ttl, e2ee (default true), renew (off|launch, default off)."
     },
     "residents": {
       "hostOnly": true,

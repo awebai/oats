@@ -282,20 +282,23 @@ soul messaging, `oats-local.yaml` `settings.oats.aweb`, then per-spawn
   the `oats-local.yaml settings.oats.aweb.residents.<name>` key to set. Optional
   `identity.scopes` defaults to exactly `[mail.read, mail.send, chat.read,
   chat.send]`; optional `identity.ttl` defaults to `8h` (aw accepts `60s` to
-  `720h`). Spawn runs `aw id grant mint --scope <comma-list> --ttl <ttl>
-  --label oats:<instance> --out <home>/.aweb-identity --json` from the custody
-  directory with `AWEB_IDENTITY_HOME` removed from the child environment: in aw
-  1.36.1, grant commands are not identity-home-aware and intentionally refuse
-  both `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
+  `720h`). Spawn runs `aw id grant mint --team <team-id> --scope
+  <comma-list> --ttl <ttl> --label oats:<instance> --out
+  <home>/.aweb-identity --json` from the custody directory when aw is 1.36.2
+  or later; complete custody operations require aw 1.36.2 paired with aweb
+  server 1.27.5. `AWEB_IDENTITY_HOME` is removed from the child environment:
+  grant commands are not identity-home-aware and intentionally refuse both
+  `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
   custody identity. The hook parses the whole JSON document because aw `--json`
   output is indented across lines, with a fallback to the first brace-prefixed
   block when progress lines precede it; it then verifies the minted grant's
   `team_id` and returns
   `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
-  the hook revokes the grant and keeps nothing. As of aw 1.36.1, receiving,
-  wake registration and `aw whoami` work through a grant, but sending mail or
-  chat through a grant is rejected by the server with 422 (`from_did must match
-  the authenticated sender`) because the aw client signs with the grant-key DID
+  the hook revokes the grant and keeps nothing. As of aw 1.36.2 with aweb
+  server 1.27.5, receiving, wake registration and `aw whoami` work through a
+  grant, but sending mail or chat through a grant is rejected by the server
+  with 422 (`from_did must match the authenticated sender`) because the aw
+  client signs with the grant-key DID
   where the server expects the resident's. Retire revokes
   `meta.identity.grant.id` through the custody directory; with no grant id it
   reports `nothing-to-revoke`. A failed revoke exits nonzero and reports the TTL

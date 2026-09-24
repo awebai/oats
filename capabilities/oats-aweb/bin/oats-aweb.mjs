@@ -44,6 +44,7 @@ import { loadCapturedAwebExecution, requireCapturedAwebAction } from "../lib/cap
 import { assessCapturedSessionReadiness, querySelectedKernel } from "../lib/session-readiness.mjs";
 import { runCapturedNative } from "../lib/captured-native.mjs";
 import { parseBindingJson } from "../lib/binding-wire.mjs";
+import { custodyPreflight } from "../lib/grant-custody.mjs";
 
 /** Run a command as ARGV — never a shell string. Team ids, aliases, instance
  * names and invite tokens all flow through here; quoting them correctly is a
@@ -287,8 +288,23 @@ function wakeRegister(instanceHome, identityHome) {
 function wakeDeregister(instanceHome) {
   try { run(["aw", "wake", "deregister", "--home", instanceHome], instanceHome, 60000); return true; } catch { return false; }
 }
-const DEFAULT_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send"];
+// The first aw release whose grant subtree accepts `aw id grant mint --team
+// <team-id>` (and the full normal/reviewer scope lists): aw 1.36.2, paired with
+// aweb server 1.27.5 for complete custody operations. aw 1.36.1 has neither.
+const GRANT_TEAM_FLAG_MIN = "1.36.2";
+const NORMAL_GRANT_SCOPES = ["mail.read", "mail.send", "chat.read", "chat.send", "events.read", "coord.read", "coord.write", "presence.write", "contacts.read", "contacts.write"];
+const REVIEWER_GRANT_SCOPES = ["mail.read", "chat.read", "events.read", "coord.read", "presence.write"];
 const residentKeyHint = (name) => `oats-local.yaml settings.oats.aweb.residents.${name || "<name>"}`;
+const grantProfile = () => identitySettings.profile === undefined || identitySettings.profile === null || identitySettings.profile === "" ? "normal" : String(identitySettings.profile);
+function grantScopes() {
+  if (Array.isArray(identitySettings.scopes) && identitySettings.scopes.length) return identitySettings.scopes.map(String);
+  const profile = grantProfile();
+  if (profile === "normal") return [...NORMAL_GRANT_SCOPES];
+  if (profile === "reviewer") return [...REVIEWER_GRANT_SCOPES];
+  fatal(`identity.profile must be one of "normal" or "reviewer" (got ${JSON.stringify(identitySettings.profile)})`);
+}
+const grantE2eeRequired = () => identitySettings.e2ee !== false;
+const grantRenewMode = () => identitySettings.renew === undefined || identitySettings.renew === null || identitySettings.renew === "" ? "off" : String(identitySettings.renew);
 function resolveResidentCustody(name) {
   if (!name) fatal(`identity.mode "global" requires identity.resident; set ${residentKeyHint("<name>")} to the absolute custody directory for that resident identity`);
   const residents = settings.residents && typeof settings.residents === "object" && !Array.isArray(settings.residents) ? settings.residents : {};
@@ -328,6 +344,80 @@ function recoverGrantHome(grantHome) {
     return { grantId: scalar("grant_id"), team: scalar("team_id"), expiresAt: scalar("expires_at") };
   } catch { return {}; }
 }
+function grantHomeDirs() {
+  try {
+    return readdirSync(home)
+      .filter((name) => name === ".aweb-identity" || /^\.aweb-identity-\d+$/.test(name))
+      .map((name) => join(home, name))
+      .filter((p) => { try { return statSync(p).isDirectory(); } catch { return false; } });
+  } catch { return []; }
+}
+function removeGrantHomes() { for (const p of grantHomeDirs()) { try { rmSync(p, { recursive: true, force: true }); } catch { /* best effort */ } } }
+function newestGrantHome() {
+  const dirs = grantHomeDirs().map((p) => {
+    try { return { path: p, mtime: statSync(p).mtimeMs }; } catch { return { path: p, mtime: 0 }; }
+  }).sort((a, b) => b.mtime - a.mtime || b.path.localeCompare(a.path));
+  return dirs[0]?.path || join(home, ".aweb-identity");
+}
+const priorGrantHome = (meta = {}) => typeof meta.identity?.grant?.home === "string" && meta.identity.grant.home ? meta.identity.grant.home : newestGrantHome();
+function retainedLaunchOutput(meta = {}, identityHome = priorGrantHome(meta)) {
+  const delivery = meta.delivery || deliveryMode;
+  const env = {};
+  if (delivery === "session") env.AWEB_DELIVERY = "session";
+  if (meta.identity?.mode === "global" && meta.identity?.grant?.id) env.AWEB_IDENTITY_HOME = identityHome;
+  const launch = (process.env.OATS_RUNTIME || "") === "claude" && delivery === "channel" ? { claude: "--dangerously-load-development-channels plugin:aweb-channel@awebai-marketplace" } : undefined;
+  return { ...(Object.keys(env).length ? { env } : {}), ...(launch ? { launch } : {}) };
+}
+function grantMintArgv({ team, scopes, ttl, grantHome }) {
+  return ["aw", "id", "grant", "mint", ...(awAtLeast(GRANT_TEAM_FLAG_MIN) ? ["--team", team] : []), "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"];
+}
+function validateMintedGrant(minted, grantHome) {
+  const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;
+  const expiresAt = typeof minted.expires_at === "string" ? minted.expires_at : undefined;
+  const mintedTeam = typeof minted.team_id === "string" ? minted.team_id : undefined;
+  const mintedOut = typeof minted.out === "string" ? minted.out : undefined;
+  if (!grantId || !expiresAt || !mintedTeam || !mintedOut) throw new Error("aw id grant mint JSON lacked grant_id, expires_at, team_id, or out");
+  if (resolve(mintedOut) !== resolve(grantHome)) throw new Error(`aw id grant mint wrote ${mintedOut}, not ${grantHome}`);
+  return { minted, grantId, expiresAt, mintedTeam, alias: typeof minted.alias === "string" && minted.alias ? minted.alias : undefined, address: typeof minted.address === "string" && minted.address ? minted.address : null };
+}
+function parseMintedGrant(raw, grantHome) { return validateMintedGrant(parseAwJson(raw, "aw id grant mint"), grantHome); }
+function globalGrantRenew() {
+  const mode = grantRenewMode();
+  const oldMeta = JSON.parse(process.env.OATS_META || "{}");
+  if (mode === "off") out(retainedLaunchOutput(oldMeta));
+  if (mode !== "launch") fatal(`identity.renew must be "off" or "launch" (got ${JSON.stringify(identitySettings.renew)})`);
+  if (oldMeta.identity?.mode !== "global" || !oldMeta.identity?.grant?.id) out(retainedLaunchOutput(oldMeta));
+  const resident = String(identitySettings.resident || oldMeta.identity.resident || "");
+  const custody = resolveResidentCustody(resident);
+  const team = payloadTeam().team || oldMeta.identity.team;
+  if (!team) fatal("identity.renew launch needs the prior grant team or settings.oats.aweb.team");
+  const scopes = grantScopes();
+  const ttl = identitySettings.ttl === undefined || identitySettings.ttl === null || identitySettings.ttl === "" ? "8h" : String(identitySettings.ttl);
+  const oldHome = priorGrantHome(oldMeta);
+  try { custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), fatalOnError: false, runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal }); }
+  catch (e) { out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal custody preflight failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` }); }
+  let stamp = Math.floor(Date.now() / 1000);
+  let grantHome = join(home, `.aweb-identity-${stamp}`);
+  while (existsSync(grantHome)) grantHome = join(home, `.aweb-identity-${++stamp}`);
+  let parsed;
+  try {
+    parsed = parseMintedGrant(run(grantMintArgv({ team, scopes, ttl, grantHome }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] }), grantHome);
+  } catch (e) {
+    try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal mint failed (${e.message || e}); keeping previous grant ${oldMeta.identity.grant.id}` });
+  }
+  const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = parsed;
+  const newMeta = { ...oldMeta, delivery: oldMeta.delivery || deliveryMode, identity: identityMeta({ mode: "global", alias: mintedAlias || oldMeta.identity.alias || resident, team: mintedTeam, address: address || oldMeta.identity.address || null, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
+  if (mintedTeam !== team) {
+    try { revokeGrant(custody, grantId); } catch { /* minted mismatch expires by TTL if revoke fails */ }
+    try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ }
+    out({ meta: oldMeta, ...retainedLaunchOutput(oldMeta, oldHome), warning: `oats-aweb: renewal minted grant team ${mintedTeam} differs from ${team}; keeping previous grant ${oldMeta.identity.grant.id}` });
+  }
+  let warning;
+  try { revokeGrant(custody, oldMeta.identity.grant.id); }
+  catch (e) { warning = `oats-aweb: previous grant ${oldMeta.identity.grant.id} was not revoked (${e.message || e}); new grant ${grantId} is kept and the previous grant still expires at ${oldMeta.identity.grant.expiresAt || "its TTL"}`; }
+  out({ meta: newMeta, ...retainedLaunchOutput(newMeta, grantHome), ...(warning ? { warning } : {}) });
+}
 function globalGrantSpawn() {
   const { team, payload, env: envTeam } = payloadTeam();
   if (!team) fatal("identity.mode \"global\" requires settings.oats.aweb.team (or OATS_TEAM_ID/OATS_TEAM_NAME) before minting a grant");
@@ -335,33 +425,28 @@ function globalGrantSpawn() {
   const custody = resolveResidentCustody(resident);
   const grantHome = join(home, ".aweb-identity");
   if (existsSync(grantHome)) fatal(`${grantHome} already exists; refusing to overwrite an existing aweb session grant home`);
-  const scopes = Array.isArray(identitySettings.scopes) && identitySettings.scopes.length ? identitySettings.scopes.map(String) : DEFAULT_GRANT_SCOPES;
+  const scopes = grantScopes();
   const ttl = identitySettings.ttl === undefined || identitySettings.ttl === null || identitySettings.ttl === "" ? "8h" : String(identitySettings.ttl);
+  const preflight = custodyPreflight({ custody, resident, team, e2eeRequired: grantE2eeRequired(), runAw: (argv, cwd, options) => run(argv, cwd, 60000, options), fatal });
   let meta;
   const cleanup = () => { try { rmSync(grantHome, { recursive: true, force: true }); } catch { /* best effort */ } };
   const failAfterMint = (message, code = 1) => { cleanup(); out({ ...(meta ? { meta } : {}), warning: `oats-aweb: ${String(message).slice(0, 300)}` }, code); };
   try {
-    const raw = run(["aw", "id", "grant", "mint", "--scope", scopes.join(","), "--ttl", ttl, "--label", `oats:${instance}`, "--out", grantHome, "--json"], custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
+    const raw = run(grantMintArgv({ team, scopes, ttl, grantHome }), custody, 60000, { unsetEnv: ["AWEB_IDENTITY_HOME"] });
     let minted;
-    try { minted = parseAwJson(raw, "aw id grant mint"); }
+    try { minted = parseMintedGrant(raw, grantHome).minted; }
     catch (parseError) {
       const recovered = recoverGrantHome(grantHome);
       if (recovered.grantId) {
-        meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes } }) };
+        meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias: resident, team: recovered.team || team, resident, grant: { id: recovered.grantId, expiresAt: recovered.expiresAt || "unknown", scopes, home: grantHome } }) };
         try { revokeGrant(custody, recovered.grantId); failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, revoked it, and removed the grant home`); }
         catch (revokeError) { failAfterMint(`${parseError.message}; recovered grant ${recovered.grantId} from grant.yaml, but revoke failed: ${revokeError.message || revokeError}`); }
       }
       throw parseError;
     }
-    const grantId = typeof minted.grant_id === "string" ? minted.grant_id : undefined;
-    const expiresAt = typeof minted.expires_at === "string" ? minted.expires_at : undefined;
-    const mintedTeam = typeof minted.team_id === "string" ? minted.team_id : undefined;
-    const mintedOut = typeof minted.out === "string" ? minted.out : undefined;
-    if (!grantId || !expiresAt || !mintedTeam || !mintedOut) throw new Error("aw id grant mint JSON lacked grant_id, expires_at, team_id, or out");
-    if (resolve(mintedOut) !== resolve(grantHome)) throw new Error(`aw id grant mint wrote ${mintedOut}, not ${grantHome}`);
-    const alias = typeof minted.alias === "string" && minted.alias ? minted.alias : resident;
-    const address = typeof minted.address === "string" && minted.address ? minted.address : null;
-    meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes } }) };
+    const { grantId, expiresAt, mintedTeam, alias: mintedAlias, address } = validateMintedGrant(minted, grantHome);
+    const alias = mintedAlias || resident;
+    meta = { delivery: deliveryMode, identity: identityMeta({ mode: "global", alias, team: mintedTeam, address, resident, grant: { id: grantId, expiresAt, scopes, home: grantHome } }) };
     if (mintedTeam !== team) {
       try { revokeGrant(custody, grantId); failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; the grant was revoked and nothing was kept`); }
       catch (e) { failAfterMint(`minted grant team ${mintedTeam} differs from ${team}; revoke failed: ${e.message || e}`); }
@@ -377,15 +462,16 @@ function globalGrantSpawn() {
         catch (revokeError) { failAfterMint(`session delivery registration failed for minted grant ${grantId}: ${e.message || e}; revoke failed: ${revokeError.message || revokeError}`); }
       }
     }
-    const warnings = [];
+    const warnings = [...preflight.warnings];
     if (payload && envTeam && payload !== envTeam) warnings.push(`oats-aweb: settings.oats.aweb.team ${payload} differs from OATS team ${envTeam}; using payload team`);
+    const e2eeBrief = preflight.warnings.length ? ` Warning: ${preflight.warnings.join(" ")}` : "";
     const deliveryBrief = deliveryMode === "session"
       ? ` Notification delivery: external (AWEB_DELIVERY=session): the host wake broker (aw wake) is registered for this home and nudges you when mail or chat arrives; the native aweb channel is not running. If you have waited long with nothing arriving, check \`aw mail inbox\` and \`aw chat pending\` yourself at task boundaries.`
       : "";
     out({
       meta,
       env,
-      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. Root keys are not in this home, and identity lifecycle commands are not yours to run.${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
+      brief: `Comms: you act as resident aweb identity "${alias}" on team ${mintedTeam} through a session grant for ${resident}; scopes: ${scopes.join(", ")}; expires: ${expiresAt}. Root keys are not in this home, and identity lifecycle commands are not yours to run.${e2eeBrief}${deliveryBrief} Use \`aw mail\`/\`aw chat\` for messaging (see the aweb-messaging skill); coordination stays in your deployment's task layer.`,
       ...(launch ? { launch } : {}),
       ...(warnings.length ? { warning: warnings.join(" | ") } : {}),
     });
@@ -402,8 +488,10 @@ function globalGrantRetire(meta) {
   const custody = resolveResidentCustody(resident);
   try {
     revokeGrant(custody, id);
+    removeGrantHomes();
     out({ meta: { retired: true, identityRevoked: true, grant: id } });
   } catch (e) {
+    removeGrantHomes();
     out({ meta: { retired: false, reason: "grant-revoke-failed", grant: id }, warning: `oats-aweb: grant ${id} was not revoked (${e.message || e}); it still expires at ${meta.identity?.grant?.expiresAt || "its TTL"}` }, 1);
   }
 }
@@ -545,7 +633,10 @@ function retainedSeatSpawn(source, takeOver) {
   }
 }
 
-if (event === "spawn") {
+if (event === "launch") {
+  if (identityMode === "global" || grantRenewMode() === "launch") globalGrantRenew();
+  out(retainedLaunchOutput(JSON.parse(process.env.OATS_META || "{}")));
+} else if (event === "spawn") {
   if (identityMode === "global" && identitySettings.source) fatal('identity.mode "global" cannot be combined with identity.source; use identity.mode "local" with identity.source for a retained seat, or identity.mode "global" with identity.resident for a resident grant');
   if (identityMode === "global") globalGrantSpawn();
   if (identityMode === "local" && settings.identity && typeof settings.identity === "object" && settings.identity.source) retainedSeatSpawn(String(settings.identity.source), settings.identity.takeOver === true);
@@ -660,7 +751,7 @@ if (event === "spawn") {
   // A retained seat: release the lock and leave the identity alone. Never
   // aw workspace delete (it would soft-delete the standing identity's row)
   // and never team retire; the source .aw stays until a human removes it.
-  if (meta.delivery === "session") { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
+  if (meta.delivery === "session" && (meta.retained || meta.identity?.mode !== "global")) { if (!wakeDeregister(home)) process.stderr.write("oats-aweb: aw wake deregister failed; the broker treats a retired home as inactive on its own\n"); }
   if (meta.retained) {
     if (meta.lock) { try { rmSync(meta.lock, { force: true }); } catch { /* the lock may already be gone */ } }
     out({ meta: { retired: true, retained: true, identityReleased: true, ...(meta.tookOverFrom ? { tookOverFrom: meta.tookOverFrom } : {}) }, warning: `oats-aweb: released the retained identity "${meta.alias}" (lock ${meta.lock || "?"} removed); the identity itself and ${meta.source || "its source"} are untouched${meta.tookOverFrom ? `; this seat had taken over from ${meta.tookOverFrom}` : ""}` });

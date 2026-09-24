@@ -29,8 +29,12 @@ if (grantCmd[0] === "id" && grantCmd[1] === "grant" && (a[0] === "--identity-hom
 }
 const cmd = a;
 function val(flag) { const i = a.indexOf(flag); return i >= 0 ? a[i + 1] : undefined; }
-if (s === "version") { console.log("aw 1.36.1"); process.exit(0); }
+if (s === "version") { console.log("aw 1.36.2"); process.exit(0); }
 if (s.startsWith("wake ")) { if (process.env.FAKE_NO_WAKE) { console.error("aw: unknown command wake"); process.exit(2); } process.exit(0); }
+if (cmd[0] === "custody" && cmd[1] === "status" && cmd.includes("--json")) {
+  console.log(j({ status: "running", teams: [{ team_id: "t:example.test", ready: true, certificate_present: true, grant_status_endpoint_ready: true }, { team_id: "expected:team", ready: true, certificate_present: true, grant_status_endpoint_ready: true }], keys: { signing_ready: true, encryption_ready: true }, ops: ["sign_plain_message.v1", "unwrap_e2ee_message.v1", "create_e2ee_envelope.v1"] }));
+  process.exit(0);
+}
 if (s.startsWith("team list")) { console.log(j({ active_team: "t:example.test", memberships: [{ team_id: "t:example.test" }] })); process.exit(0); }
 if (s.startsWith("team invite")) { console.log(j({ token: "TOK-secret" })); process.exit(0); }
 if (s.startsWith("team join")) { console.log(j({ alias: "probe", team_id: "t:example.test" })); process.exit(0); }
@@ -131,7 +135,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
     const r = runHook(bin, "spawn", { OATS_INSTANCE: "probe", OATS_HOME: home, OATS_WORKSPACE: root, OATS_CONTEXT: root, OATS_TEAM_ID: "", OATS_TEAM_NAME: "", OATS_SETTINGS: JSON.stringify({ team: "t:example.test", delivery: "session", identity: { mode: "global", resident: "merlin", scopes: ["mail.read", "chat.send"], ttl: "90m" }, residents: { merlin: custody } }), AWEB_IDENTITY_HOME: join(base, "ambient-grant-home") });
     assert.equal(r.status, 0, r.stdout + r.stderr);
     assert.deepEqual(r.doc.env, { AWEB_DELIVERY: "session", AWEB_IDENTITY_HOME: join(home, ".aweb-identity") });
-    assert.deepEqual(r.doc.meta.identity, { mode: "global", alias: "resident-alias", team: "t:example.test", address: "oats.aweb.ai/resident-alias", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read", "chat.send"] } });
+    assert.deepEqual(r.doc.meta.identity, { mode: "global", alias: "resident-alias", team: "t:example.test", address: "oats.aweb.ai/resident-alias", resident: "merlin", grant: { id: "grant-123", expiresAt: "2026-09-24T07:00:00Z", scopes: ["mail.read", "chat.send"], home: join(home, ".aweb-identity") } });
     assert.equal(r.doc.meta.delivery, "session");
     assert.match(r.doc.brief, /act as resident aweb identity "resident-alias"/);
     assert.match(r.doc.brief, /mail\.read, chat\.send/);
@@ -140,7 +144,7 @@ test("global mode mints a grant from custody, returns AWEB_IDENTITY_HOME and ide
     assert.equal(existsSync(join(home, ".aweb-identity", "grant.yaml")), true);
     const lines = logLines(base);
     const mint = lines.find((l) => l.argv.join(" ").includes("id grant mint"));
-    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--json"]);
+    assert.deepEqual(mint.argv, ["id", "grant", "mint", "--team", "t:example.test", "--scope", "mail.read,chat.send", "--ttl", "90m", "--label", "oats:probe", "--out", join(home, ".aweb-identity"), "--json"]);
     assert.equal(mint.cwd, realpathSync(custody));
     assert.equal(mint.identityHome, null);
     const wake = lines.find((l) => l.argv[0] === "wake" && l.argv[1] === "register");
