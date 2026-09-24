@@ -23,32 +23,27 @@ test('scope boundary keeps same-named souls distinct, rejects foreign homes and 
   await capabilityRequest({ action: 'inspect', selector: { home } }, options);
   assert.equal(calls.at(-1).context, undefined, 'exact home owns its context; agents root is not necessarily the work repo');
   assert.equal(calls.at(-1).localCwd, '/team');
-  await assert.rejects(capabilityRequest({ action: 'set', selector: { soul: 'dev' } }, options), /one soul/);
-  await assert.rejects(capabilityRequest({ action: 'use', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot }, binding: { action: 'none', layer: 'knowledge' } }, options), /whole configuration scope/);
+  // Read-only boundary: no soul editing (edited in its repository) and no `oats use` (removed by v2).
+  for (const action of ['set', 'use']) {
+    await assert.rejects(capabilityRequest({ action, selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, options), { code: 'E_BAD_ARGS', message: 'Unknown capability action' });
+  }
   await assert.rejects(capabilityRequest({ action: 'inspect', selector: { home: '/foreign' } }, options), /existing home/);
-  await assert.rejects(capabilityRequest({ action: 'use', selector: { home } }, options), /snapshot is read-only/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: undefined }), /known workspace/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, workspace: { ...workspace, remote: true } }), /registered server/);
   await assert.rejects(capabilityRequest({ action: 'inspect' }, { ...options, cli: { ...cli, operationsApi: undefined } }), /Update/);
   await capabilityRequest({ action: 'inspect', selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } }, { ...options, workspace: { ...workspace, remote: true, server: 'hetzner', registrationPresent: true } });
   assert.equal(calls.at(-1).server, 'hetzner'); assert.equal(calls.at(-1).context, '/team/two'); assert.equal(calls.at(-1).localCwd, '/local');
+  assert.ok(calls.every(call => ['inspect', 'run'].includes(call.action)), 'only read and provider-operation calls reach the CLI');
 });
 
-test('adapter preserves remote scope and literal instructions in a private file, cleaning after failure', async () => {
-  let file, call;
-  const text = '# Literal\n`code` $(not a command) <tag>\n';
-  const result = await cliCapability(cli.bin, { action: 'set', context: '/remote/member', server: 'hetzner', soul: 'dev', agentsRoot: '/remote/member/agents', localCwd: '/local', fields: { model: '', description: '', instructions: text, yolo: true } }, {
-    exec(bin, argv, opts, done) {
-      call = { argv, opts }; file = argv[argv.indexOf('--instructions-file') + 1];
-      assert.equal(readFileSync(file, 'utf8'), text); assert.equal(statSync(file).mode & 0o777, 0o600);
-      done(new Error('failed'), JSON.stringify({ schemaVersion: 1, ok: false, error: { code: 'E_WRITE', message: 'write failed' } }));
-    },
-  });
-  assert.equal(result.ok, false); assert.equal(existsSync(file), false); assert.equal(call.opts.cwd, '/local'); assert.equal(call.opts.shell, false);
-  assert.ok(call.argv.includes('--no-description')); assert.ok(call.argv.includes('--no-model')); assert.ok(call.argv.includes('--yolo'));
-  assert.equal(call.argv[call.argv.indexOf('--dir') + 1], '/remote/member');
-  assert.equal(call.argv[call.argv.indexOf('--server') + 1], 'hetzner');
-  await assert.rejects(cliCapability(cli.bin, { action: 'set', soul: 'dev', fields: { runtime: '--force' } }, { exec: assert.fail }), /Invalid runtime/);
+test('adapter: inspect and provider operations only — soul set and use are refused before any CLI call', async () => {
+  for (const action of ['set', 'use']) {
+    await assert.rejects(cliCapability(cli.bin, { action, soul: 'dev', agentsRoot: '/team/two/agents' }, { exec: assert.fail }), { code: 'E_BAD_ARGS', message: 'Unknown capability action' });
+  }
+  let argv;
+  await cliCapability(cli.bin, { action: 'inspect', context: '/remote/member', server: 'hetzner', soul: 'dev', agentsRoot: '/remote/member/agents', localCwd: '/local' },
+    { exec(bin, args, opts, done) { argv = args; assert.equal(opts.cwd, '/local'); done(null, JSON.stringify({ schemaVersion: 1, ok: true, result: {} })); } });
+  assert.deepEqual(argv, ['inspect', '--dir', '/remote/member', '--server', 'hetzner', '--soul', 'dev', '--agents-root', '/remote/member/agents', '--json']);
 });
 
 test('scheduled actions require an available declaration on the selected home', async () => {
@@ -74,17 +69,18 @@ function ui(api) {
 }
 const selection = { agent: { name: 'dev', agentsRoot: agents[1].agentsRoot }, selector: { soul: 'dev', agentsRoot: agents[1].agentsRoot } };
 
-test('inspector ignores old responses and keeps an explicit edit scoped to its original soul', async () => {
+test('inspector ignores old responses and offers no in-place editing', async () => {
   let resolveOld;
   const view = ui(body => body.selector.soul === 'old' ? new Promise(resolve => { resolveOld = resolve; }) : inspection());
   try {
     void view.controller.show({ agent: { name: 'old' }, selector: { soul: 'old' } });
     await view.controller.show(selection); resolveOld(inspection('old')); await tick();
     assert.equal(view.el.querySelector('h2').textContent, 'dev');
-    assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === 'Disable layer'), false);
-    view.click('Edit defaults'); view.el.querySelector('[name="model"]').value = 'sonnet'; view.click('Save defaults'); await tick();
-    const write = view.calls.find(c => c.action === 'set'); assert.deepEqual(write.fields, { model: 'sonnet' }); assert.deepEqual(write.selector, selection.selector);
-    assert.match(view.el.textContent, /Future instances/);
+    for (const label of ['Edit defaults', 'Edit instructions', 'Disable layer', 'Inherit', 'Disable here']) {
+      assert.equal([...view.el.querySelectorAll('button')].some(b => b.textContent === label), false, label);
+    }
+    assert.equal(view.el.querySelector('form, textarea, input'), null, 'no editor');
+    assert.ok(view.calls.every(c => c.action === 'inspect'));
   } finally { view.close(); }
 });
 
@@ -98,16 +94,6 @@ test('instance knowledge comes from provider text, with no local path read or HT
   } finally { view.close(); }
 });
 
-test('late save from another workspace never refreshes or paints the current editor', async () => {
-  let finish;
-  const view = ui(body => body.action === 'set' ? new Promise(resolve => { finish = resolve; }) : inspection());
-  try {
-    await view.controller.show(selection); view.click('Edit defaults'); view.el.querySelector('[name="model"]').value = 'new'; view.click('Save defaults');
-    setWorkspace('/different'); view.controller.close(); finish({ file: '/team/two/soul.yaml' }); await tick();
-    assert.equal(view.calls.length, 2); assert.equal(view.el.hidden, true);
-  } finally { view.close(); }
-});
-
 test('unreadable instructions are explained and never offered as an empty editable draft', async () => {
   const value = inspection(); value.souls[0].instructions = { text: null, error: 'EACCES: cannot read AGENTS.md' };
   const view = ui(() => value);
@@ -118,19 +104,11 @@ test('unreadable instructions are explained and never offered as an empty editab
   } finally { view.close(); }
 });
 
-test('soul launchConfig inspection populates its editor and is changed only explicitly', async () => {
+test('soul launchConfig inspection is shown as a reported fact', async () => {
   const value = inspection(); value.souls[0].launchConfig = 'personal';
-  value.souls[0].editable.fields.push('launch-config');
   const view = ui(() => value);
   try {
     await view.controller.show(selection); assert.match(view.el.textContent, /personal/);
-    view.click('Edit defaults');
-    assert.equal(view.el.querySelector('[name="launch-config"]').value, 'personal');
-    view.el.querySelector('[name="model"]').value = 'sonnet'; view.click('Save defaults'); await tick();
-    assert.deepEqual(view.calls.find(c => c.action === 'set').fields, { model: 'sonnet' });
-    view.click('Edit defaults'); view.el.querySelector('[name="launch-config"]').value = '';
-    view.click('Save defaults'); await tick();
-    assert.deepEqual(view.calls.filter(c => c.action === 'set').at(-1).fields, { 'launch-config': '' });
   } finally { view.close(); }
 });
 

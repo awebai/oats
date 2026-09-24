@@ -10,7 +10,11 @@ No frameworks, no dependencies; data comes from the bundled backend HTTP API.
 
 - **spawn.mjs** — **Workspace**, with Souls / Capabilities / Sources subtabs.
   Souls come from `GET /api/agents` (the kernel's `oats souls` catalog);
-  selection opens the side inspector. Its Spawn action opens the Spawn dialog
+  selection opens the side inspector — read-only: a v2 soul is edited in its
+  repository, so the inspector names where (**Edit this soul in its
+  repository**: path and repository from the `oats souls` source, a web link
+  for hosted keys) and never writes it in place; there are no layer bindings
+  (`oats use` was removed by workspace model v2). Its Spawn action opens the Spawn dialog
   (see below), which previews through the kernel and applies through the
   confirmed `/api/spawn?ws=` transaction. An empty opening instruction waits
   for instructions; attached-mode souls cannot launch standalone. The shell's
@@ -296,9 +300,9 @@ workspace/terminal identity and never selects or focuses a panel; a missing or
 ambiguous observation makes session state unknown.
 
 Workspace projects its actual selected-soul inspector into that same region.
-Workspace still owns its requests, editor and lifetime. Collapse or covering the
-stage with a terminal preserves the inspector's DOM, unsaved values and in-flight
-content; a late response cannot reclaim foreground visibility. True stage unmount
+Workspace still owns its requests and lifetime. Collapse or covering the
+stage with a terminal preserves the inspector's DOM, local disclosure state and
+in-flight content; a late response cannot reclaim foreground visibility. True stage unmount
 or workspace reset ends that selection. Standalone view hosts keep the inline
 inspector fallback.
 

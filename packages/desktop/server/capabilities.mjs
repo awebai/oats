@@ -16,7 +16,9 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     fail('This workspace needs a registered server and remote operations support', 'cli-no-operations');
   }
   const { action, selector = {} } = request;
-  if (!['inspect', 'use', 'set', 'run'].includes(action)) fail('Unknown capability action');
+  // Read-only plus provider operations: a v2 soul is edited in its repository,
+  // and workspace model v2 removed `oats use` (capabilities are declared).
+  if (!['inspect', 'run'].includes(action)) fail('Unknown capability action');
   let soul, agentsRoot, home;
   let context = workspace.scope;
   if (selector.home !== undefined) {
@@ -29,7 +31,6 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     // The owning agents root and the recorded work repository may differ.
     // --home is authoritative; the CLI derives its captured context.
     context = undefined;
-    if (!['inspect', 'run'].includes(action)) fail('An instance snapshot is read-only; edit its soul defaults for future instances');
   } else if (selector.soul !== undefined) {
     const matches = agents.filter(a => a.name === selector.soul && a.agentsRoot === selector.agentsRoot);
     if (matches.length !== 1) fail('Select one soul and its agents root in this workspace');
@@ -41,12 +42,10 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     if (!contexts.has(selector.context)) fail('Select a configuration scope in this workspace');
     context = selector.context;
   }
-  if (action === 'use' && soul && (request.binding?.action === 'none' || request.binding?.capability === 'none')) fail('Layer-wide defaults apply to the whole configuration scope; open workspace Capabilities to change them');
-  if (action === 'set' && !soul) fail('Select a soul to edit');
   if (action === 'run' && !home && !soul) fail('Select a soul or home for this operation');
   const envelope = await invoke(cli.bin, {
     action, context, server, soul, agentsRoot, home,
-    binding: request.binding, fields: request.fields, operation: request.operation,
+    operation: request.operation,
     localCwd: server ? localCwd : context || workspace.scope,
   });
   if (!envelope.ok) fail(envelope.error?.message || 'Capability operation failed', envelope.error?.code || 'E_OPERATION_FAILED');
