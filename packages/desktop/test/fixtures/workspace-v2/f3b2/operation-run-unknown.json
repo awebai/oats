@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "error": {
+    "code": "E_OPERATION_UNKNOWN",
+    "message": "oats.okf declares no operation \"nope\" (declared: status, reindex)"
+  }
+}

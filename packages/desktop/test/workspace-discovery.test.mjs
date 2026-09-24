@@ -7,13 +7,13 @@ import * as spawn from '../renderer/views/spawn.mjs';
 import { currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { refreshCli, resetCliStateForTests } from '../renderer/views/cli-status.mjs';
 import { createWorkspaceDiscovery } from '../renderer/workspace-discovery.mjs';
-import { capabilityFacts } from '../renderer/soul-inspector.mjs';
+import { soulInspection, homeInspection } from './helpers/inspect-fixture.mjs';
 import { remotePanel } from '../server/remote-roster.mjs';
 import { workspaceStatusData } from '../deployment-data.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
-const CLI = { ok: true, bin: '/fixture/oats', version: '0.25.7', operationsApi: 1, workspaceApi: 2, features: ['operations', 'workspace-v2'], remote: ['operations'], relations: true };
+const CLI = { ok: true, bin: '/fixture/oats', version: '0.25.7', operationsApi: 2, workspaceApi: 2, features: ['operations', 'workspace-v2'], remote: ['operations'], relations: true };
 const catalogFixture = JSON.parse(readFileSync(new URL('./fixtures/workspace-v2/f2/capabilities.json', import.meta.url), 'utf8'));
 // The kernel's workspace header, captured from a real Northwind run and
 // projected exactly as the server does; the panel carries it with the roster.
@@ -22,12 +22,11 @@ const northwindDir = northwind.result.workspace.local.replace(/\/oats-local\.yam
 const observed = () => ({ status: 'observed', root: `${northwindDir}/agents`, workspace: workspaceStatusData(northwind, northwindDir).workspace,
   workspaceStatus: workspaceStatusData(northwind, northwindDir), reachable: { reachable: true } });
 const soul = (root = '/team/one/agents', name = 'dev') => ({ name, agentsRoot: root, description: 'Build and review', runtime: 'pi', work: 'worktree', repoName: 'project' });
-const inspectData = (id = 'fixture.notes', selector = {}) => ({ operationsApi: 1, scope: { context: selector.context || '/team' }, selected: { source: 'config' },
-  souls: [{ ...soul(selector.agentsRoot), editable: { fields: ['model'], instructions: true }, model: 'default-model', instructions: { text: '# Literal AGENTS.md\n<img src=x onerror=evil()>' } }],
-  // bin/oats.mjs inspect: package-engine health is separate from activation.
-  capabilities: [{ id, package: 'fixture.package', version: '1.2.3', source: 'path:/fixture/source', origin: 'installed', level: '/team',
-    health: { status: 'ok', code: null, detail: null, installed: true, locked: true, trusted: true, integrity: `sha256-${'a'.repeat(64)}`, installedIntegrity: `sha256-${'a'.repeat(64)}` },
-    activation: { enabled: true, source: 'config', target: 'global', level: '/team', provenance: ['global @ /team'], settings: {}, declaredAt: [] }, operations: [] }], layers: {} });
+// operationsApi 2 soul inspection (kernel capture) carrying one package module `id`.
+const capability = id => ({ id, version: '1.2.3', layer: null, command: null, dir: null, settings: {}, missingRequires: [], operations: [],
+  from: { kind: 'package', package: 'fixture.package', version: '1.2.3', commit: 'a'.repeat(40), integrity: `sha256-${'a'.repeat(64)}`, repoKey: 'github.com/fixture/package' } });
+const inspectData = (id = 'fixture.notes', selector = {}) => soulInspection(selector.soul || 'dev', { capabilities: [capability(id)],
+  instructions: { file: '/fixture/AGENTS.md', text: '# Literal AGENTS.md\n<img src=x onerror=evil()>', truncated: false } });
 async function setup(t, options = {}) {
   const dom = new JSDOM('<!doctype html><html><body><div id="host"></div></body></html>', { url: 'http://localhost' });
   const previous = { document: globalThis.document, window: globalThis.window, setInterval: globalThis.setInterval, ws: currentWorkspace() };
@@ -152,7 +151,7 @@ test('the declared soul is read-only; its disclosed instructions are stable unde
   const u = await setup(t);
   u.doc.querySelector('.soul-card').click(); await tick();
   const inspector = u.doc.querySelector('.soul-inspector');
-  assert.match(inspector.textContent, /future instances/);
+  assert.match(inspector.textContent, /What a spawn of this soul resolves now/);
   assert.match(inspector.textContent, /Edit this soul in its repository/);
   assert.equal(inspector.querySelector('form, textarea, input'), null, 'no in-place editor');
   const details = [...inspector.querySelectorAll('details')].find(d => d.querySelector('summary')?.textContent === 'AGENTS.md / instructions');
@@ -165,7 +164,7 @@ test('the declared soul is read-only; its disclosed instructions are stable unde
 
 test('attached launch/schedule and capability downgrade remain disabled in the inspector', async t => {
   const agent = { ...soul(), work: 'attached' };
-  const u = await setup(t, { agents: [agent], inspect: () => ({ ...inspectData(), souls: [{ ...inspectData().souls[0], work: 'attached' }] }) });
+  const u = await setup(t, { agents: [agent], inspect: () => { const v = inspectData(); v.souls[0].work = 'attached'; return v; } });
   u.doc.querySelector('.soul-card').click(); await tick();
   assert.ok([...u.doc.querySelectorAll('.soul-inspector [data-launch]')].every(el => el.disabled));
   assert.equal(u.doc.querySelector('.spawn-act').disabled, true);
@@ -190,35 +189,17 @@ for (const outcome of ['success', 'rejection']) test(`selected inspector ignores
 test('instance rows reflect exact root/host identity and open only read-only snapshots', async t => {
   const instance = { agent: 'dev', instance: 'dev-seat', agentsRoot: '/team/one/agents', home: '/team/one/agents/dev/instances/dev-seat', running: true };
   const u = await setup(t, { instances: [instance, { ...instance, agentsRoot: '/team/two/agents' }, { ...instance, server: 'another-host' }],
-    inspect: body => body.selector.home ? { ...inspectData(), selected: { source: 'snapshot' }, snapshot: { instructions: { text: 'Captured instructions' } } } : inspectData() });
+    inspect: body => body.selector.home ? homeInspection(body.selector.home, { instance: 'dev-seat', soul: 'dev', instructions: { file: '/fixture/AGENTS.md', text: 'Captured instructions', truncated: false, sources: [] } }) : inspectData() });
   assert.equal(u.doc.querySelector('.sactivity').textContent, '1 running · 1 instance');
   u.doc.querySelector('.soul-card').click(); await tick();
   const buttons = u.doc.querySelectorAll('.inspector-instance'); assert.equal(buttons.length, 1);
   buttons[0].click(); await tick();
   assert.deepEqual(u.inspections().at(-1).body.selector, { home: instance.home });
-  assert.match(u.doc.querySelector('.soul-inspector').textContent, /Instance snapshot/);
+  assert.match(u.doc.querySelector('.soul-inspector').textContent, /As spawned/);
   assert.match(u.doc.querySelector('.soul-inspector').textContent, /Captured instructions/);
   assert.equal(u.doc.querySelector('.soul-inspector [data-launch]'), null);
   assert.equal([...u.doc.querySelectorAll('.soul-inspector button')].some(el => el.textContent.startsWith('Edit')), false);
   assert.deepEqual(u.opens, []);
-});
-
-test('CLI health booleans are independent, tri-state facts, not illustrative trust or readiness', () => {
-  for (const [installed, installation] of [[true, 'Installed'], [false, 'Not installed'], [undefined, 'Not reported']]) {
-    for (const [trusted, trust] of [[true, 'Trusted'], [false, 'Not trusted'], [undefined, 'Not reported']]) {
-      const cap = inspectData().capabilities[0];
-      cap.health.installed = installed; cap.health.trusted = trusted;
-      if (installed === undefined) delete cap.health.installed;
-      if (trusted === undefined) delete cap.health.trusted;
-      // Decoys are deliberately NOT the CLI contract and cannot override it,
-      // including when the real field is absent.
-      cap.trust = { executable: !trusted }; cap.health.trust = !trusted; cap.installed = !installed;
-      assert.deepEqual(capabilityFacts(cap), [
-        ['Installation', installation], ['Health', 'ok'], ['Trust', trust],
-        ['Activation', 'Enabled'], ['Target', 'global'], ['Binding', '["global @ /team"]'],
-      ]);
-    }
-  }
 });
 
 function tabGeometry(u) {

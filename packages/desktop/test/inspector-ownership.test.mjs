@@ -8,7 +8,8 @@ import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, currentWorkspace, setWorkspace } from '../renderer/views/common.mjs';
 import { runtimeState } from '../renderer/instance-presentation.mjs';
 import { createSoulMark } from '../renderer/identity-marks.mjs';
-import { capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
+import { inspectData, inspectFacts } from '../renderer/inspect-contract.mjs';
+import { soulInspection, capturedOperations, capturedRun } from './helpers/inspect-fixture.mjs';
 import { renderSoulDeclarations } from '../renderer/soul-declarations.mjs';
 import { iconElement } from '../renderer/shell-icons.mjs';
 import { soulRepository } from '../renderer/soul-repository.mjs';
@@ -21,19 +22,10 @@ const deferred = () => {
 };
 const settle = (request, outcome, value) => outcome === 'resolve' ? request.resolve(value) : request.reject(new Error('obsolete request failed'));
 const selection = root => ({ agent: { name: 'dev', agentsRoot: `/team/${root}/agents` }, selector: { soul: 'dev', agentsRoot: `/team/${root}/agents` } });
-// Current CLI inspection contract: operation declarations are arrays on enabled
-// layer capabilities; souls use camelCase values. The inspector is read-only
-// (a v2 soul is edited in its repository), so only provider operations await.
-function inspection(root) {
-  return {
-    operationsApi: 1, scope: { context: `/team/${root}` }, selected: { source: 'config' },
-    souls: [{ ...selection(root).agent, runtime: 'pi', model: `${root}-model`, launchConfig: `${root}-launch`,
-      instructions: { text: `${root}-instructions` } }],
-    layers: { knowledge: { id: `fixture.${root}` } },
-    capabilities: [{ id: `fixture.${root}`, layer: 'knowledge', activation: { enabled: true },
-      operations: [{ name: 'inspect', kind: 'view', available: true, args: [] }, { name: 'digest', kind: 'action', available: true, args: [] }] }],
-  };
-}
+// Inspection on the workspace model (operationsApi 2, from the kernel capture):
+// oats.okf's two captured operations (status view, reindex action), available as
+// on a home. The inspector is read-only, so only provider operations await.
+const inspection = root => soulInspection('dev', { instructions: { text: `${root}-instructions`, truncated: false }, operations: capturedOperations() });
 function ui(api, factory = createSoulInspector) {
   const previousWorkspace = currentWorkspace(); setWorkspace('/team');
   const dom = new JSDOM('<body><main><aside></aside></main></body>');
@@ -55,16 +47,16 @@ async function operationDowngrade(outcome, factory = createSoulInspector) {
   const view = ui(body => body.action === 'inspect' ? inspection('a') : request.promise, factory);
   try {
     await view.controller.show(selection('a'));
-    const control = view.operation('inspect'); control.click();
+    const control = view.operation('status'); control.click();
     view.controller.syncAvailability();
     assert.equal(control.disabled, true, 'availability sync must preserve the operation pending lock');
     // A queued click cannot bypass the lock even if dispatched directly.
     control.dispatchEvent(new view.dom.window.Event('click'));
     assert.equal(view.calls.length, 2, 'pending operation must not dispatch twice');
     view.setCompatible(false);
-    settle(request, outcome, { result: { summary: 'current view' } }); await tick();
+    settle(request, outcome, capturedRun({ result: { summary: 'current view' } })); await tick();
     assert.equal(control.disabled, true, 'settlement must preserve CLI unavailability');
-    assert.equal(view.operation('digest').disabled, true);
+    assert.equal(view.operation('reindex').disabled, true);
     assert.equal(view.status(), outcome === 'resolve' ? 'Complete.' : 'obsolete request failed', 'current completion still reports its result');
     control.dispatchEvent(new view.dom.window.Event('click'));
     assert.equal(view.calls.length, 2, 'downgrade never reruns an operation');
@@ -76,23 +68,23 @@ async function operationDowngrade(outcome, factory = createSoulInspector) {
 
 async function operationOverlap(outcome, factory = createSoulInspector) {
   const first = deferred(), second = deferred();
-  const view = ui(body => body.action === 'inspect' ? inspection('a') : body.operation === 'knowledge:inspect' ? first.promise : second.promise, factory);
+  const view = ui(body => body.action === 'inspect' ? inspection('a') : body.operation === 'knowledge:status' ? first.promise : second.promise, factory);
   try {
     await view.controller.show(selection('a'));
-    const inspect = view.operation('inspect'), digest = view.operation('digest');
+    const inspect = view.operation('status'), digest = view.operation('reindex');
     inspect.click(); digest.click(); view.controller.syncAvailability();
     assert.ok(inspect.disabled && digest.disabled, 'each overlapping operation keeps its pending lock');
     const message = view.status();
-    settle(first, outcome, { result: { summary: 'obsolete output' } }); await tick();
+    settle(first, outcome, capturedRun({ result: { summary: 'obsolete output' } })); await tick();
     assert.equal(view.status(), message, 'older operation cannot replace latest status on success or rejection');
     assert.equal(view.el.querySelector('.operation-output'), null, 'older operation cannot paint output');
     assert.equal(inspect.disabled, false, 'older operation releases only its own lock');
     assert.equal(digest.disabled, true, 'older settlement must not unlock a different pending operation');
-    settle(second, outcome, { result: { currentDigest: true } }); await tick();
+    settle(second, outcome, capturedRun({ operation: 'knowledge:reindex', result: { currentDigest: true } })); await tick();
     assert.equal(view.status(), outcome === 'resolve' ? 'Complete.' : 'obsolete request failed');
     if (outcome === 'resolve') assert.match(view.el.querySelector('.operation-output pre').textContent, /"currentDigest": true/);
     assert.equal(digest.disabled, false, 'latest operation releases its own lock');
-    assert.deepEqual(view.calls.filter(c => c.action === 'run').map(c => c.operation), ['knowledge:inspect', 'knowledge:digest'], 'no incidental rerun');
+    assert.deepEqual(view.calls.filter(c => c.action === 'run').map(c => c.operation), ['knowledge:status', 'knowledge:reindex'], 'no incidental rerun');
   } finally { view.close(); }
 }
 
@@ -101,22 +93,22 @@ async function operationInvalidation(outcome, boundary, factory = createSoulInsp
   const view = ui(body => body.action === 'inspect' ? inspection(body.selector.agentsRoot === selection('a').selector.agentsRoot ? 'a' : 'b') : ++runs === 1 ? first.promise : second.promise, factory);
   try {
     await view.controller.show(selection('a'));
-    const oldControl = view.operation('inspect'); oldControl.click();
+    const oldControl = view.operation('status'); oldControl.click();
     if (boundary === 'selection') {
-      await view.controller.show(selection('b')); view.operation('inspect').click();
+      await view.controller.show(selection('b')); view.operation('status').click();
       oldControl.dispatchEvent(new view.dom.window.Event('click'));
       assert.equal(runs, 2, 'obsolete control must not dispatch against the new selection');
     } else {
       setWorkspace('/elsewhere'); setWorkspace('/team'); view.controller.syncAvailability();
     }
     const before = view.el.innerHTML;
-    settle(first, outcome, { result: { summary: 'obsolete output' } }); await tick();
+    settle(first, outcome, capturedRun({ result: { summary: 'obsolete output' } })); await tick();
     assert.equal(view.el.innerHTML, before, 'invalidated operation must not paint, report errors or unlock current controls');
     if (boundary === 'selection') {
-      assert.equal(view.operation('inspect').disabled, true);
-      second.resolve({ result: { summary: 'B output' } }); await tick();
+      assert.equal(view.operation('status').disabled, true);
+      second.resolve(capturedRun({ result: { summary: 'B output' } })); await tick();
       assert.match(view.el.textContent, /B output/);
-      assert.equal(view.operation('inspect').disabled, false);
+      assert.equal(view.operation('status').disabled, false);
       assert.deepEqual(view.calls.filter(c => c.action === 'run').map(c => c.selector), [selection('a').selector, selection('b').selector]);
     } else assert.equal(oldControl.disabled, true, 'workspace generation remains unavailable until fresh inspection');
   } finally { view.close(); }
@@ -135,7 +127,7 @@ for (const outcome of ['resolve', 'reject']) {
 function mutant(from, to) {
   const source = createSoulInspector.toString();
   assert.equal(source.split(from).length, 2, 'mutation targets exactly one production guard');
-  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText, createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, soulRepository });
+  return runInNewContext(`(${source.replace(from, to)})`, { postJson, wsQuery, workspaceGeneration, runtimeState, createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, soulRepository, inspectData, inspectFacts });
 }
 test('mutation: pending ownership is essential during availability sync', async () => {
   const factory = mutant('pendingOperations.has(control) || !available()', '!available()');

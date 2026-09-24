@@ -8,8 +8,9 @@ const object = value => !!value && typeof value === 'object' && !Array.isArray(v
 const absolute = value => typeof value === 'string' && isAbsolute(value) && !value.includes('\0');
 export async function capabilityRequest(request, { workspace, cli, agents = [], instances = [], localCwd, invoke = cliCapability }) {
   if (!workspace) fail('Select a known workspace', 'E_WORKSPACE_UNKNOWN');
-  if (!cli?.ok || cli.operationsApi !== 1 || !cli.features?.includes('operations')) {
-    fail('Update the installed OATS CLI to manage capabilities', 'cli-no-operations');
+  // The probe integer is the gate (operationsApi 2: inspect on the workspace model).
+  if (!cli?.ok || cli.operationsApi !== 2) {
+    fail('Update the installed OATS CLI (inspection needs operations API 2)', 'cli-no-operations');
   }
   const server = workspace.server || undefined;
   if (workspace.remote && (!server || !workspace.registrationPresent || !cli.remote?.includes('operations'))) {
@@ -37,12 +38,7 @@ export async function capabilityRequest(request, { workspace, cli, agents = [], 
     const agent = matches[0];
     soul = agent.name; agentsRoot = agent.agentsRoot;
     context = dirname(agentsRoot);
-  } else if (selector.context !== undefined) {
-    const contexts = new Set([workspace.scope, ...agents.filter(a => a.agentsRoot).map(a => dirname(a.agentsRoot))]);
-    if (!contexts.has(selector.context)) fail('Select a configuration scope in this workspace');
-    context = selector.context;
-  }
-  if (action === 'run' && !home && !soul) fail('Select a soul or home for this operation');
+  } else fail('Select a soul or an instance home (inspection has no scope subject)');
   const envelope = await invoke(cli.bin, {
     action, context, server, soul, agentsRoot, home,
     operation: request.operation,

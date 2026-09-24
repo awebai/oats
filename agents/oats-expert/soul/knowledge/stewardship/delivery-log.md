@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 136, 151–161, 155) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–163) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -40,11 +40,27 @@ decisions/ and referenced from here.
   - PR161 oats.aweb 1.12.3 mirror (alias rule 1–64 matching aweb and the kernel cap; the reuse remedy names `--name` and `--purpose`; catalog pin v1.12.3) `b0f64d5a`. Antares' lane; I cross-reviewed. The payload is byte-identical to oats-aweb `e234c865`, and tag v1.12.3 peels to it. First returned for 33 stray soul files (the branch came from a shared checkout's unpushed local main), then for a cherry-picked guide hunk that brought back the removed `--approve`.
   - oats-aweb #12 (1.12.3 stage) cross-reviewed; tag v1.12.3 ACKed. oats-knowledge #17 (12 concepts promoted from unpushed local harvests) and #18 (2 review lessons) cross-reviewed, and Antares merged them.
   - PR155 kernel v2-native (1/5): instance homes carry no soul link; `OATS_SOUL` is the recorded `soulDir` `d7de6675`. Returned once by Antares for stale texts in skills/injects, the lib header and the release note. Re-probe 7/7; Antares ACKed at `565b042e`.
+  - PR162 kernel v2-native: inspect / readiness / operation run on the workspace model `c9dc6012`.
+    - readinessApi 2 / operationsApi 2 / soulsApi 2, with instance or soul subjects and no scope subject.
+    - Checks are installed / configured / member / providers, and `trusted`, `--verify-signatures` and `readiness-verify` are gone.
+    - Providers are relayed verbatim `{status, problems, warnings}`, codec-strict: four statuses and a 60s budget.
+    - Module-store trees are digest-verified before they run.
+    - Three lead rounds, plus the developer's own code-reviewer findings (decided in lead-decisions-review-162). Probes 21/21 and store-tamper 5/5; Antares' independent review passed 204/204, plus a live oats.aweb 1.13.0 probe.
+  - oats-aweb 1.13.0 is tagged at `772e0664`. Its stage #13 carried my floor commit (GRANT_TEAM_FLAG_MIN 1.36.2, checked against the published aw 1.36.1/1.36.2 help), the custody preflight fix, and the binding-less v2 readiness answer. The cross-review returned `context.team: null` → invalid-binding, reproduced by driving the binary. Its mirror to oats is next.
+  - KB #19–#23 (R1/R2 design of record; the nullable-wire lesson plus a wording fix; desktop-parity §3 supersession; the provider-check wire Reference) were cross-reviewed. The contract-asserting ones were held until #162 merged.
+  - PR163 Desktop F3b-2 `ad046534`: the inspector and readiness run on the workspace model (operationsApi 2 / readinessApi 2).
+    - The scope inspector, the readiness scope target, and the trusted/enrolled/signature readers are deleted.
+    - Providers are relayed verbatim, and "sign in needed" is its own state. The payload's own integer is dispatched on, with the classic layout named.
+    - It fixes two pre-existing dead-in-app bugs: `/api/cli` didn't project operationsApi, and readiness required `workspace.scope`.
+    - Native gate 9/9 twice against #163 merged with main's kernel: provider fail/pass, the okf view and action operations, and "needs a running home". The old 0.25.9 kernel gets "Update OATS and retry".
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
   - (3) **A commit that is "in the PR" can still be orphaned by the squash.** #158's copy fix `9beed8ea` never reached main, so check `git merge-base --is-ancestor` before telling an author a fix has landed.
   - (5) **After a rebase or cherry-pick across a moved base, re-read the three-dot diff hunk by hunk, docs included.** Parity tests and green suites can't see a stale example (#161); see the central lesson on cherry-picks across a base change.
+  - (6) **Drive a provider's binary with every nullable field of the wire before approving.** A strict test the implementer wrote passed while `team: null` (the common single-team case) was refused (oats-aweb 1.13.0). See the central lesson on nullable wire fields.
+  - (7) **A merge watcher busy in polling can leave a WATCH+ACT unread for many minutes.** If a green, approved PR sits unmerged, check the watcher's pane and nudge it directly.
+  - (8) **A native gate reads collapsed UI by textContent, scoped to its section.** `innerText` skips closed `<details>`, and a page-wide regex matches the wrong row. Two runs of false FAILs came from the gate, not the app.
   - (4) **For removal PRs, grep the removed noun across `skills/`, `injects/` and `oats-package/capabilities/*/skills/`.** Those texts are composed into every AGENTS.md; #155 was returned for stale `./soul` wording there.
 
 ## Batch — 2026-09-24 evening (PRs 145–150) → v0.25.9

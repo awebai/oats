@@ -30,7 +30,7 @@ test('shipped HTTP Host/Origin/method/query/body guards refuse before readiness 
   for (const body of ['{', 'null', '[]', ' '.repeat(65537)]) assert.equal((await h.request({ body })).status, 400);
   assert.equal(h.calls.length, 0);
   const r = await h.request(); assert.equal(r.status, 200); assert.equal(r.body.status, 'available'); assert.equal(r.headers['cache-control'], 'no-store');
-  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].args.target.observedAs, 'scope');
+  assert.equal(h.calls.length, 1); assert.equal(h.calls[0].args.target.observedAs, 'soul');
 });
 test('shipped HTTP denies verification, remote and missing API without dispatch', async () => {
   const h = http();
@@ -71,7 +71,7 @@ test('proxy refuses foreign frame/GET/transitions without fetch, returns only pr
   const path = '/api/workspace-readiness?ws=team';
   const foreign = await proxyReadiness({ ...f.event, senderFrame: { url: f.frame.url } }, path, f.opts, f.deps); assert.equal(foreign.body.reason.code, 'E_FORBIDDEN_FRAME');
   assert.equal((await proxyReadiness(f.event, path, { method: 'GET' }, f.deps)).body.reason.code, 'E_BAD_ARGS'); assert.equal(calls, 0);
-  const result = await proxyReadiness(f.event, path, f.opts, f.deps); assert.equal(result.body.status, 'available'); assert.equal(result.body.target.observedAs, 'scope');
+  const result = await proxyReadiness(f.event, path, f.opts, f.deps); assert.equal(result.body.status, 'available'); assert.equal(result.body.target.observedAs, 'soul');
   f.transition(); assert.equal((await proxyReadiness(f.event, path, f.opts, f.deps)).body.reason.code, 'E_TARGET_CHANGED'); assert.equal(calls, 1);
 });
 for (const reject of [false, true]) for (const changed of ['frame', 'epoch']) test(`proxy guards late ${reject ? 'rejection' : 'success'} after ${changed} change`, async () => {
@@ -87,8 +87,16 @@ for (const body of ['PRIVATE raw', JSON.stringify({ raw: 'PRIVATE' }), JSON.stri
 test('public CLI status forwards exact readiness API, including explicit unavailable null', () => {
   const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
   const body = source.slice(source.indexOf('function cliStatus() {'), source.indexOf('\n}', source.indexOf('function cliStatus() {')) + 2);
-  for (const readinessApi of [1, 2, '1', undefined]) {
+  for (const readinessApi of [1, 2, '2', 3, undefined]) {
     const status = new Function('cliState', 'locator', 'MANIFEST', `${body}; return cliStatus();`)({ readinessApi }, { supportsRelations: () => false, RELATIONS_MIN: [0, 0, 0] }, { version: 'fixture' });
-    assert.equal(status.readinessApi, readinessApi === 1 ? 1 : null);
+    assert.equal(status.readinessApi, readinessApi === 2 ? 2 : null);
+  }
+});
+test('public CLI status forwards the exact inspection gate (operationsApi 2) that the Workspace inspector reads', () => {
+  const source = readFileSync(new URL('../server/oats-web.mjs', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('function cliStatus() {'), source.indexOf('\n}', source.indexOf('function cliStatus() {')) + 2);
+  for (const operationsApi of [1, 2, '2', 3, undefined]) {
+    const status = new Function('cliState', 'locator', 'MANIFEST', `${body}; return cliStatus();`)({ operationsApi }, { supportsRelations: () => false, RELATIONS_MIN: [0, 0, 0] }, { version: 'fixture' });
+    assert.equal(status.operationsApi, operationsApi === 2 ? 2 : null, String(operationsApi));
   }
 });

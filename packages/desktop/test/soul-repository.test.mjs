@@ -7,7 +7,9 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
 import { soulRepository } from '../renderer/soul-repository.mjs';
-import { createSoulInspector, capabilityFacts, reportedText } from '../renderer/soul-inspector.mjs';
+import { createSoulInspector } from '../renderer/soul-inspector.mjs';
+import { inspectData, inspectFacts } from '../renderer/inspect-contract.mjs';
+import { soulInspection } from './helpers/inspect-fixture.mjs';
 import { createReadinessView } from '../renderer/readiness-view.mjs';
 import { cliStatus } from '../renderer/views/cli-status.mjs';
 import { postJson, wsQuery, workspaceGeneration, setWorkspace, currentWorkspace } from '../renderer/views/common.mjs';
@@ -52,7 +54,7 @@ function ui(soulSource, factory = createSoulInspector) {
   const previous = currentWorkspace(); setWorkspace('/team');
   const dom = new JSDOM('<body><main><aside hidden></aside></main></body>'); const el = dom.window.document.querySelector('aside');
   const opened = [];
-  const inspect = { operationsApi: 1, scope: { context: '/team' }, selected: { source: 'config' }, layers: {}, capabilities: [], souls: [] };
+  const inspect = soulInspection('release-manager');
   const controller = factory(el, { ctx: { api: async () => inspect, openExternal: url => opened.push(url) } });
   const agent = name => ({ name, agentsRoot: '/team/agents', soulSource });
   return { el, opened, controller, show: name => controller.show({ agent: agent(name), selector: { soul: name, agentsRoot: '/team/agents' } }),
@@ -102,7 +104,7 @@ test('inspector: a control from a replaced selection cannot open its link', () =
 test('mutation: the open guard is what refuses the stale control', async () => {
   const source = createSoulInspector.toString(), guard = 'if (valid(id, gen) && open.isConnected && typeof';
   assert.equal(source.split(guard).length, 2);
-  const mutant = runInNewContext(`(${source.replace(guard, 'if (typeof')})`, { postJson, wsQuery, workspaceGeneration, runtimeState, capabilityFacts, reportedText,
-    createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, soulRepository });
+  const mutant = runInNewContext(`(${source.replace(guard, 'if (typeof')})`, { postJson, wsQuery, workspaceGeneration, runtimeState,
+    createSoulMark, renderSoulDeclarations, createReadinessView, cliStatus, iconElement, soulRepository, inspectData, inspectFacts });
   await assert.rejects(staleOpen(mutant), /a stale control never opens a link/);
 });
