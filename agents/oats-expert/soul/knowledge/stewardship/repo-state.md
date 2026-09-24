@@ -16,9 +16,9 @@ than letting the file grow stale.
 ## On main
 
 - **2026-09-24 — main carries the breaking 0.26.0 work (unreleased; the global kernel stays 0.25.9 until the old deployment drains).**
-  - On main: package approval removed (#151/#153); `spawn --name` + deployment-wide uniqueness (#154/#157); the 64-char instance-name cap (#159); D4 docs (#131/#156); oats.aweb 1.12.2 pinned (#152).
-  - Desktop F2b (#147), messaging identity (#149), F3b-1 (#158), F3a-name (#160) are merged; main is `1c0cb2c1`.
-  - Before the 0.26.0 tag: the v2-native kernel series (#155 no soul link, in fix; then the inspect/readiness rewrite, which F3b-2 needs; layouts; config chain; captured path), Desktop F3b-2, and the oats.aweb 1.12.3/1.13.0 pins. Lock compatibility is one-way: never run a dev 0.26 kernel on a 0.25.9-served deployment.
+  - On main: package approval removed (#151/#153); `spawn --name` + deployment-wide uniqueness (#154/#157); the 64-char instance-name cap (#159); D4 docs (#131/#156); **oats.aweb 1.12.3 pinned (#161)**; manifest private/team (#136).
+  - Desktop F2b (#147), messaging identity (#149), F3b-1 (#158), F3a-name (#160) are merged; main is `b0f64d5a`.
+  - Before the 0.26.0 tag: the v2-native kernel series (#155 no soul link, in fix; then the inspect/readiness rewrite, which F3b-2 needs; layouts; config chain; captured path), Desktop F3b-2, and the oats.aweb 1.13.0 pin (the floor commit is on stage/1.13.0 `148e88c7`, in review). Lock compatibility is one-way: never run a dev 0.26 kernel on a 0.25.9-served deployment.
 
 - **2026-09-24 — OATS 0.25.9 PUBLISHED (tag `5ca52ce9`; bump PR150 `74572f4f`, created and merged by the ops watcher under standing authorization; both npm packages at 0.25.9; 7 assets; installed globally).** Pins only; the kernel is unchanged since 0.25.8. `oats.aweb` 1.12.1 (PR145 `6cbda9d0`): explicit root, workspace-model texts, `AWEB_IDENTITY_HOME`, `needs-configuration` before spawn. `oats.okf` 2.1.5 (PR148 `5ca52ce9`): typed base errors, no soul-link fallback. Same day: Desktop F3a merged (PR146 `858223ae`), the first working local Desktop spawn on a workspace-model deployment. **Human decision, same day: no package approval** (4456baab). It ships in 0.26.0 with `spawn --name`; the Desktop's F2b is draft #147.
 

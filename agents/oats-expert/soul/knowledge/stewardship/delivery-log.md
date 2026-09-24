@@ -22,7 +22,7 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
-## Batch — 2026-09-24 night (PRs 131, 151–160) → toward v0.26.0 (unreleased; main carries breaking changes)
+## Batch — 2026-09-24 night (PRs 131, 136, 151–161) → toward v0.26.0 (unreleased; main carries breaking changes)
 - **Merged:**
   - PR151 packages: approval removed (human decision; declaring a package IS the trust decision) `e62b8f16`, plus the release-note follow-up `f0994882`.
   - PR153 docs for it `b97de554`.
@@ -36,10 +36,14 @@ decisions/ and referenced from here.
   - PR158 Desktop F3b-1 (read-only soul inspector; "Edit this soul in its repository") `0f53d8cd`.
   - PR159 64-character instance-name cap, explicit and derived, with a schedule definition check `d1739335`. Probe 6/6.
   - PR160 Desktop F3a-name (unprefixed names; a name taken at apply is stale; local cap on one shared constant) `1c0cb2c1`. Native gate 8/8. The squashed tree is identical to the approved head `f1edc201`.
+  - PR136 capability manifest schema accepts `private` and `team`, as discovery already reads them; oats.review is private. `ac8d5de8`, on Antares' ACK, combined with main locally 128/128.
+  - PR161 oats.aweb 1.12.3 mirror (alias rule 1–64 matching aweb and the kernel cap; the reuse remedy names `--name` and `--purpose`; catalog pin v1.12.3) `b0f64d5a`. Antares' lane; I cross-reviewed. The payload is byte-identical to oats-aweb `e234c865`, and tag v1.12.3 peels to it. First returned for 33 stray soul files (the branch came from a shared checkout's unpushed local main), then for a cherry-picked guide hunk that brought back the removed `--approve`.
+  - oats-aweb #12 (1.12.3 stage) cross-reviewed; tag v1.12.3 ACKed. oats-knowledge #17 (12 concepts promoted from unpushed local harvests) and #18 (2 review lessons) cross-reviewed, and Antares merged them.
 - **taught us:**
   - (1) **Arm a merge watcher with the full approved oid, never "the current head".** #160's head moved twice after approval while mails crossed. The watcher's named-oid guard refused both mismatches, so nothing unreviewed merged. The loop ends with one FINAL mail per party (author and watcher) naming the full oid and "no pushes", and by ignoring the stale mails that follow.
   - (2) **A native gate must wait for the message, not for a spinner.** Preview in the rig is slow, and fixed waits produced false FAILs in both directions. Poll for the expected sentence with a bound.
   - (3) **A commit that is "in the PR" can still be orphaned by the squash.** #158's copy fix `9beed8ea` never reached main, so check `git merge-base --is-ancestor` before telling an author a fix has landed.
+  - (5) **After a rebase or cherry-pick across a moved base, re-read the three-dot diff hunk by hunk, docs included.** Parity tests and green suites can't see a stale example (#161); see the central lesson on cherry-picks across a base change.
   - (4) **For removal PRs, grep the removed noun across `skills/`, `injects/` and `oats-package/capabilities/*/skills/`.** Those texts are composed into every AGENTS.md; #155 was returned for stale `./soul` wording there.
 
 ## Batch — 2026-09-24 evening (PRs 145–150) → v0.25.9
