@@ -71,7 +71,9 @@ resolution revision.
   `res.meta` per capability into `instance.json.capabilityMeta` (the shape
   spawn writes); a hook that returns no meta keeps its prior entry. No change
   to the spawn/retire contracts. Needed before any renewing provider ships;
-  not needed for 1.12.0.
+  not needed for 1.12.0. **Shipped ahead of the rest of this decision as a
+  defect fix (oats PR #111 → 0.25.5): a documented hook return being dropped
+  is a contract defect, not new surface, so it did not wait on acceptance.**
 - **No `--identity` / `--resident` flags.** Desktop shows an *Identity* select
   and a *Resident* field (prefilled from preview `settings.<cap>.identity`) and
   forwards them as `--provider` pairs; its arg allowlist gains one `provider`
