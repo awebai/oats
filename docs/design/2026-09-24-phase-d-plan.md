@@ -118,14 +118,18 @@ for, never named by convention — decision 9) is the acceptance: `oats onboard`
 
 ### D3 — Souls to `souls/<name>` and the six package-expert souls (decision 20)
 
-Each package repo carries `souls/<pkg>-expert` (okf-expert, aweb-expert,
-jira-expert, linear-expert, authoring-expert, dev-expert), the expert in that
-package, with a node in the central base from day one. **Seams named in the
-charters** (roster amendment): `aweb-expert` READS
+Each package repo carries `souls/oats-<pkg>-expert` (oats-okf-expert,
+oats-aweb-expert, oats-jira-expert, oats-linear-expert, oats-authoring-expert,
+oats-dev-expert), the expert in that package, with a node in the central base
+from day one. **Naming (lead, 2026-09-24):** the `oats-` prefix on all six —
+it matches the repository names and the roster's `oats-kernel-`/`oats-desktop-`/
+`oats-operator-expert`, and it keeps instance aliases from colliding with the
+messaging project's own `aweb-expert` soul on a shared team. **Seams named in the
+charters** (roster amendment): `oats-aweb-expert` READS
 `aweb-protocol-expert` in base `aweb-oss-knowledge` (repo
 `github.com/awebai/aweb`, root `knowledge/`, branch `main`, OKF 2.1.x
 descriptor at `knowledge/okf-base.json`; owner `1913b77b-…`) through a
-read-only store reference; `okf-expert` names its seam to the knowledge-theory
+read-only store reference; `oats-okf-expert` names its seam to the knowledge-theory
 material in `oats-expert`. Whether the aweb bookshelf decisions the program
 rests on are published into that node is the aweb side's call (asked).
 
