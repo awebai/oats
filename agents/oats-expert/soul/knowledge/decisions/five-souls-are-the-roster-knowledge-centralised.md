@@ -47,6 +47,15 @@ souls, developer roles ephemeral; (B) developers keep durable souls and nodes.
    base (`oats-expert/roadmap/current-direction`, prune-not-accumulate); the
    repository's program board remains the operational ledger outside the base.
 
+# Amended 2026-09-24
+
+See [the roster amendment](roster-amendment-operator-and-integration-experts.md):
+`oats-setup-expert` becomes `oats-operator-expert` and OWNS the deployment
+operator node (supersedes "owns no knowledge" in decision 1); `integrations-expert`
+stays as the cross-package provider-integration expert with a node; developer
+roles declare `promotesTo`; recipes that encode external-system judgement pass
+the two-part test; cross-project seams are named in the aweb/okf charters.
+
 # Consequences
 
 - Public base `awebai/oats-knowledge` main carries the migrated knowledge;

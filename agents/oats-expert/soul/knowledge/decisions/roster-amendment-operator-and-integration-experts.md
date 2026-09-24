@@ -1,8 +1,8 @@
 ---
 type: Decision
 title: Roster amendment (Phase D) — an operator expert and an integration expert own nodes; developers declare a promotion target; recipes pass when they encode external-system judgement; cross-project seams are named
-status: proposed
-description: PROPOSED (2026-09-24, to the human) after the OSS coordinator's operating review of the five-soul roster. Two additions to the roster (oats-setup-expert becomes the deployment OPERATOR expert and owns a node; integrations-expert stays as the cross-package PROVIDER-INTEGRATION expert and owns a node), one non-addition (release/steward is a Playbook in oats-expert, not a soul), one routing rule (every developer role declares the expert node its lessons promote to), one theory refinement (keep a recipe when it encodes judgement about an external system's behaviour), one seam (how a node in another project's base is read).
+status: accepted
+description: ACCEPTED (2026-09-24 — the human delegated the decision to the lead and the OSS coordinator: "use your best judgement, reaching a decision with Antares") after the OSS coordinator's operating review of the five-soul roster. Two additions to the roster (oats-setup-expert becomes the deployment OPERATOR expert and owns a node; integrations-expert stays as the cross-package PROVIDER-INTEGRATION expert and owns a node), one non-addition (release/steward is a Playbook in oats-expert, not a soul), one routing rule (every developer role declares the expert node its lessons promote to), one theory refinement (keep a recipe when it encodes judgement about an external system's behaviour), one seam (how a node in another project's base is read).
 tags: [decision, roster, knowledge, centralisation, phase-d, operator, integration, seams]
 timestamp: 2026-09-24
 ---
@@ -89,7 +89,7 @@ The recommendation, anchored point by point in that week:
 - *Two of the six package experts sit on seams; name the seam or they own less
   than their title says.* Agreed — see 5.
 
-## Decision (proposed)
+## Decision (accepted 2026-09-24, lead + OSS coordinator under delegated authority)
 
 Roster after Phase D: `oats-expert`, `oats-kernel-expert`, `oats-desktop-expert`,
 **`oats-operator-expert`** (was `oats-setup-expert`; owns the operator node),
