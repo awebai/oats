@@ -22,6 +22,26 @@ before retiring — merge or return, always. Format:
 Entries whose lessons grow beyond a line get promoted to lessons/ or
 decisions/ and referenced from here.
 
+## Batch — 2026-09-24 afternoon (PRs 127–143) → v0.25.8
+- **Merged:**
+  - PR127 D2 `43a9528b`, PR129 D3 `cc28a862`, PR133 D4(2) `e86d92b7`. These are the driver's; I reviewed them and Antares ACKed them.
+  - PR134 onboard hint `ee1297a6`.
+  - PR137 design parity `ca35712a` (visual gate).
+  - PR138 northwind flake `3548dc4c`.
+  - PR140 aweb default `d110790b` and PR141 the onboarding messaging step `132cda13` (Antares' rewrite).
+  - PR142 team env `1aa12ed3`.
+  - PR139 escaping `5bf74d3e` (rebased onto #137).
+  - PR132 status home `c4f94251`.
+  - PR143 Desktop F2 `bd26e0c6` (native gate 6/6).
+- **Closed as superseded:** PR135 and the six per-soul messaging PRs, by the human's aweb-default decision.
+- **taught us:**
+  - (1) **An ACK is bound to a head.** A rebase that moves a Class B PR needs the co-lead to confirm the rebased head. Antares' precise form: the PR's own delta is unchanged (same patch-id), not "the file is identical".
+  - (2) **Two PRs that each create the same release-notes file conflict when the second one lands** (#132 vs #142, add/add). Write the next patch's notes on main once, and have PRs append to them.
+  - (3) **A consumer-side approval binding cannot close a check-then-use gap the kernel leaves open.** `sync --approve id@version` approves the digest at approve time. The kernel will take a pinned `id@version=<digest>` (found in the F2 native gate).
+  - (4) **A test that stops a tmux server must retry its temp-dir removal.** The server exits asynchronously; the fix is `rmSync` `maxRetries` (`b72ab125`, same class as PR138).
+  - (5) **A CDP assertion on a header reads `innerText` after CSS text-transform.** Match it case-insensitively.
+  - (6) **Human direction outranks the design frames.** When the human redirects a slice (F3 spawn dialog), record the amendment in the boundary doc before the review, so the gate reviews against what was asked (`7058babf`).
+
 ## PR #126 — Desktop F1: deployment model on kernel JSON (2026-09-24)
 - verdict: MERGED `033d040b`, first round
 - owner: oats-desktop-engineer-1 · coordinator: none (lead-reviewed)

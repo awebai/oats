@@ -15,6 +15,8 @@ than letting the file grow stale.
 
 ## On main
 
+- **2026-09-24 — v0.25.8 TAGGED (`a2b57d4b`; release.yml running; the ops watcher merges the bump PR on the gate).** Kernel: `oats status` reports the enumerated home (PR132 `c4f94251`); workspace-model team facts for hooks (PR142 `1aa12ed3`); onboarding hint (PR134). Desktop F2 (PR143 `bd26e0c6`), the attribute-escaping fix (PR139 `5bf74d3e`) and design parity (PR137 `ca35712a`). `oats.aweb` became the workspace messaging default (PR140 `d110790b`, PR141). Phase D D2–D4(2) (PR127, PR129, PR133). **Human direction the same day: "v2 becomes the classic".** The kernel drops the classic path in 0.26.0 (a series of Class B PRs by `cli-dev-v2-native`). The globally installed kernel stays on 0.25.x until the old deployment's instances have moved.
+
 - **2026-09-24 — Desktop Phase F slice F1 MERGED (PR126 `033d040b`)**: the deployment model now reads kernel JSON (`oats status --json` + `oats workspace status --json`), and the 0.24 readers are deleted. Next: branding PR, then F2 (onboarding/sync; it deletes the leftover 0.24 inventory/readiness blocks) and F3/F4 (identity fixtures ready).
 
 - **2026-09-24 — OATS 0.25.7 PUBLISHED (tag `41e742ae`; bump PR125 `69ddbd8a`, opened and merged by the ops watcher under the bump-PR gate; 7 assets).** One fix: a v2 deployment root (`oats-local.yaml`) is a configuration boundary. `configChain` stops there, so nested or scratch deployments no longer inherit the outer scope (PR124 `4f3747a4`, from the Desktop engineer's Phase F study). First release under the co-lead protocol: Class B intent 26a4062f → ACK 7997aab9.
