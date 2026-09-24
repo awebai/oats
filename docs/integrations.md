@@ -235,10 +235,16 @@ but do not yet enforce provenance in the hook payload).
   directory with `AWEB_IDENTITY_HOME` removed from the child environment: in aw
   1.36.1, grant commands are not identity-home-aware and intentionally refuse
   both `--identity-home` and external `AWEB_IDENTITY_HOME`, so cwd selects the
-  custody identity. The hook parses the last JSON line, verifies the minted
-  grant's `team_id`, and returns
+  custody identity. The hook parses the whole JSON document because aw `--json`
+  output is indented across lines, with a fallback to the first brace-prefixed
+  block when progress lines precede it; it then verifies the minted grant's
+  `team_id` and returns
   `env.AWEB_IDENTITY_HOME=<home>/.aweb-identity`. If the minted team differs,
-  the hook revokes the grant and keeps nothing. Retire revokes
+  the hook revokes the grant and keeps nothing. As of aw 1.36.1, receiving,
+  wake registration and `aw whoami` work through a grant, but sending mail or
+  chat through a grant is rejected by the server with 422 (`from_did must match
+  the authenticated sender`) because the aw client signs with the grant-key DID
+  where the server expects the resident's. Retire revokes
   `meta.identity.grant.id` through the custody directory; with no grant id it
   reports `nothing-to-revoke`. A failed revoke exits nonzero and reports the TTL
   expiry.
