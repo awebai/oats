@@ -82,7 +82,8 @@ setTimeout(()=>process.exit(0),30000);\n`);
     assert.ok(existsSync(homes[0].home), "stopping a runtime does not require deleting its persistent home");
   } finally {
     try { tmux("kill-server"); } catch { /* fixture server already gone */ }
-    rmSync(base, { recursive: true, force: true });
+    // The tmux server exits asynchronously and may still be writing under base: bounded retry on ENOTEMPTY/EBUSY.
+    rmSync(base, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     for (const [key, value] of savedEnv) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }
 });
