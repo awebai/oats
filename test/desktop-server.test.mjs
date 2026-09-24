@@ -148,11 +148,15 @@ test("desktop server: the roster, header and souls are the kernel's status/works
     assert.equal(i.modules.length, 5); assert.ok(i.modules.every((m) => m.status === "current"));
     assert.equal(i.soul.status, "current"); assert.equal(Object.hasOwn(i, "identity"), false, "absent identity is not synthesized");
     for (const key of ["task", "next", "knowledgeCount", "command", "launch"]) assert.equal(Object.hasOwn(i, key), false, key);
+    // Spawnable souls are the kernel's spawn catalog (`oats souls`), not the roster.
+    const catalog = JSON.parse(readFileSync(join(ROOT, "packages", "desktop", "test", "fixtures", "workspace-v2", "f3", "souls.json"), "utf8")).result.souls;
     const agents = (await (await get("/api/agents")).json()).agents;
-    assert.deepEqual(agents.map((a) => [a.name, a.kind, a.agentsRoot, a.team]), [[SOUL, "persistent", join(scope, "agents"), "engineering"]]);
-    // Exactly the two native reads (plus the probe); no removed verbs.
+    assert.deepEqual(agents.map((a) => a.name), catalog.map((c) => c.name).sort());
+    const rm = agents.find((a) => a.name === SOUL);
+    assert.deepEqual([rm.kind, rm.agentsRoot, rm.team, rm.work], ["persistent", join(scope, "agents"), "engineering", "worktree"]);
+    // The two native reads, the spawn catalog and the probe; no removed verbs.
     const verbs = calls().map((argv) => argv.slice(0, argv[0] === "workspace" ? 2 : 1).join(" "));
-    assert.ok(verbs.includes("status") && verbs.includes("workspace status") && verbs.includes("version"));
+    assert.ok(verbs.includes("status") && verbs.includes("workspace status") && verbs.includes("version") && verbs.includes("souls"));
     assert.ok(!verbs.some((v) => ["catalog", "list", "setup"].includes(v)), verbs.join(", "));
     const reads = calls().filter((a) => a[0] === "status" || a[0] === "workspace");
     assert.ok(reads.length >= 2);
@@ -285,21 +289,21 @@ test("desktop server: harvestHome admits only the exact kernel-reported home ins
   } finally { rmSync(scope, { recursive: true, force: true }); rmSync(outside, { recursive: true, force: true }); }
 });
 
-test("desktop server: /api/spawn validates against the kernel roster; a resolved soul reaches the CLI boundary", async () => {
+test("desktop server: an ordinary /api/spawn body is execution-server only — a local one is refused before any CLI call", async () => {
+  // The legacy local route (its own roster validation, then the CLI) was
+  // deleted with the v2 spawn dialog (§3b: deleted, not ported): every local
+  // spawn is the confirmed prepare → apply transaction on /api/spawn?ws=.
   const { scope } = northwindDeployment();
-  // Without the apply fence the legacy route performs its own validation.
-  const { proc, post, get } = await startServer(scope, { drop: ["spawn-apply-2"], env: { PATH: "/nonexistent", SHELL: "/bin/false" } });
+  const { proc, post, calls } = await startServer(scope, { drop: ["spawn-apply-2"], env: { PATH: "/nonexistent", SHELL: "/bin/false" } });
   try {
-    const root = (await (await get("/api/agents")).json()).agents[0].agentsRoot;
-    assert.equal((await post("/api/spawn", {})).status, 400, "missing fields → 400");
-    assert.equal((await post("/api/spawn", { agent: SOUL, agentsRoot: "/tmp" })).status, 409, "foreign agentsRoot rejected");
-    const unknown = await post("/api/spawn", { agent: "no-such-agent", agentsRoot: root });
-    assert.equal(unknown.status, 409); assert.match((await unknown.json()).error, /unknown agent/);
-    // The fake CLI does not implement spawn: reaching its typed refusal proves
-    // the kernel-reported soul passed validation (no filesystem soul lookup).
-    const r = await post("/api/spawn", { agent: SOUL, agentsRoot: root });
-    assert.equal(r.status, 409); const body = await r.json();
-    assert.doesNotMatch(body.error, /unknown agent/); assert.equal(body.code, "E_FAKE_UNSUPPORTED");
+    for (const body of [{}, { agent: SOUL, agentsRoot: join(scope, "agents") }, { agent: SOUL, agentsRoot: "/tmp" }]) {
+      const r = await post("/api/spawn", body);
+      assert.equal(r.status, 409); assert.equal((await r.json()).code, "E_PLAN_REQUIRED", "even for a CLI without the apply fence");
+    }
+    assert.equal((await post("/api/spawn", { serverId: "host" })).status, 400, "an execution-server body still needs { agent, agentsRoot }");
+    const keyed = await post("/api/spawn", { serverId: "host", agent: SOUL, agentsRoot: join(scope, "agents"), decision: {} });
+    assert.equal(keyed.status, 409); assert.equal((await keyed.json()).code, "E_UNSUPPORTED_OPTION");
+    assert.equal(calls().some((argv) => argv[0] === "spawn"), false);
   } finally { proc.kill(); rmSync(scope, { recursive: true, force: true }); }
 });
 

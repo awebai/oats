@@ -266,39 +266,24 @@ test("desktop server: a CLI that prints a valid probe but exits nonzero (or hang
   } finally { r2.proc.kill(); }
 });
 
-test("desktop server: spawn routes through the CLI with --dir/--task-file argv; harvest addresses the exact instance home", async () => {
+test("desktop server: an unguarded local spawn is refused before the CLI; harvest addresses the exact instance home", async () => {
   const dir = mkdtempSync(join(tmpdir(), "oats-climut-"));
   const { bin, calls } = fakeCli(dir, { features: ["operations"], operationsApi: 1 });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     await observed(port);
-    const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
-    const agent = ad.agents[0];
-    // ---- spawn
+    // ---- spawn: every local spawn is the confirmed prepare → apply transaction
+    // (/api/spawn?ws=…); the ordinary body is execution-server only. The old
+    // unguarded local route this test drove (argv --dir/--task-file) was
+    // deleted with the v2 spawn dialog (§3b: deleted, not ported — the
+    // confirmed apply's argv is covered by packages/desktop/test/spawn-apply-cli).
     const r = await fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent: agent.name, agentsRoot: agent.agentsRoot, task: "secret task text", purpose: "t1" }) });
-    assert.equal(r.status, 200, JSON.stringify(await r.clone().json()));
-    const body = await r.json();
-    assert.equal(body.spawned, true);
-    assert.equal(body.instance, `${agent.name}-t1`);
-    assert.ok(Array.isArray(body.warnings));
-    assert.ok(body.tmux && body.tmux.window, "tmux target present (contract result field)");
-    const spawnCall = calls().find((c) => c.argv[0] === "spawn");
-    assert.ok(spawnCall, "CLI spawn invoked");
-    assert.equal(spawnCall.argv[1], agent.name);
-    assert.equal(spawnCall.argv[spawnCall.argv.indexOf("--dir") + 1], dirname(agent.agentsRoot), "--dir is the workspace context");
-    assert.ok(spawnCall.argv.includes("--task-file"), "task travels by 0600 tempfile, never argv");
-    assert.ok(!spawnCall.argv.includes("secret task text"), "task text NEVER in argv");
-    assert.equal(spawnCall.argv[spawnCall.argv.indexOf("--purpose") + 1], "t1");
-    // ---- spawn failure envelope → 409 with the CLI's stable code
-    const rf = await fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent: "boom", agentsRoot: agent.agentsRoot }) });
-    // "boom" is not a real soul in this repo — unknown agent (409) is also
-    // acceptable; the point is a stable non-2xx with an error body.
-    assert.ok([409, 502].includes(rf.status), `spawn failure surfaces (${rf.status})`);
+      body: JSON.stringify({ agent: "dev", agentsRoot: "/any/agents", task: "secret task text", purpose: "t1" }) });
+    assert.equal(r.status, 409);
+    assert.equal((await r.json()).code, "E_PLAN_REQUIRED");
+    assert.equal(calls().some((c) => c.argv[0] === "spawn"), false, "the CLI is never asked to spawn from an unguarded local body");
     // ---- harvest: pick a real instance from the panel; the bridge names the
     // RESOLVED home explicitly and lets the CLI derive its recorded context
     const pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json();
@@ -352,17 +337,20 @@ test("desktop server: a kernel-reported home outside the soul's instances direct
 });
 
 test("desktop server HTTP boundary: long E_RELATIVE_AMBIGUOUS envelope reaches the client UNSLICED; other codes stay capped (review 835a05f)", async () => {
+  // The ordinary spawn body is execution-server only now (local spawns are the
+  // confirmed prepare → apply transaction), so the error-envelope boundary is
+  // exercised through an execution-server spawn.
   const dir = mkdtempSync(join(tmpdir(), "oats-cliambig-"));
-  const { bin } = fakeCli(dir);
+  const { bin } = fakeCli(dir, { remote: ["spawn"] });
   const { proc, port } = await startServer({ OATS_DESKTOP_OATS_BIN: bin, PATH: "/nonexistent", SHELL: "/bin/false" });
   try {
     await fetch(`http://127.0.0.1:${port}/api/cli/reprobe`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
     await observed(port);
-    const ad = await (await fetch(`http://127.0.0.1:${port}/api/agents`)).json();
-    const agent = ad.agents[0];
+    const pd = await (await fetch(`http://127.0.0.1:${port}/api/panel`)).json();
+    const agentsRoot = pd.instances[0].agentsRoot;
     const post = (purpose) => fetch(`http://127.0.0.1:${port}/api/spawn`, { method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ agent: agent.name, agentsRoot: agent.agentsRoot, purpose }) });
+      body: JSON.stringify({ agent: "dev", agentsRoot, purpose, serverId: "host" }) });
     // case-(d) ambiguity: the fake CLI's envelope carries two deeply nested
     // homes (>2500 chars); the ACTUAL response body must be complete —
     // reverting the endpoint to an inline slice would fail here

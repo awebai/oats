@@ -1,6 +1,7 @@
 // Fake installed `oats` for Desktop server tests. It REPLAYS the JSON a real CLI
 // produced for the hand-built Northwind deployment (packages/desktop/test/
 // fixtures/workspace-v2), rebased onto the deployment directory under test.
+// `souls` replays the F3 capture of `oats souls --json` (the spawn catalog).
 // It never runs a kernel, runtime, tmux or network operation.
 //   FAKE_OATS_DROP_FEATURES   comma-separated features to withhold from the probe
 //   FAKE_OATS_LOG             append one JSON line per invocation (argv)
@@ -28,6 +29,9 @@ if (args[0] === "version" && args[1] === "--json") {
   out(rebase(fixture("status"), dirArg()));
 } else if (args[0] === "workspace" && args[1] === "status" && args.at(-1) === "--json" && dirArg()) {
   out(rebase(fixture("workspace-status"), dirArg()));
+} else if (args[0] === "souls" && args.at(-1) === "--json" && dirArg()) {
+  // The spawn catalog: the kernel's `oats souls --json` capture (F3).
+  out(fixture("f3/souls"));
 } else {
   out({ schemaVersion: 1, ok: false, error: { code: "E_FAKE_UNSUPPORTED", message: `fake oats does not implement: ${args[0]}` } });
   process.exitCode = 1;
